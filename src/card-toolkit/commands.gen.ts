@@ -4262,7 +4262,7 @@ export interface CommandParams {
     /** The run's id (pr_…) */
     "run": string;
   };
-  /** Fill in a card's choices before Start (the person's page also changes models, roles, stops and cycle settings). Names the revision it changes; a stale one is refused. (changes something; needs the card's owner trusted) */
+  /** Fill in a card's choices before Start (the person's page also changes models, members, notes, stops and cycle settings). Names the revision it changes; a stale one is refused. (changes something; needs the card's owner trusted) */
   "playbook.run.edit": {
     /** The run's id (pr_…) */
     "run": string;

@@ -451,7 +451,7 @@ export const OTHER_ENTRIES: CommandEntry[] = [
   {
     id: "playbook.run.edit",
     label: "Change a Playbook Card",
-    summary: "Fill in a card's choices before Start (the person's page also changes models, roles, stops and cycle settings). Names the revision it changes; a stale one is refused.",
+    summary: "Fill in a card's choices before Start (the person's page also changes models, members, notes, stops and cycle settings). Names the revision it changes; a stale one is refused.",
     effect: "changes",
     params: {
       run: { type: "string", description: "The run's id (pr_…)", in: "path", required: true },

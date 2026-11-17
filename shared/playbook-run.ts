@@ -40,6 +40,8 @@ export interface PlaybookChoiceView {
   required: boolean;
   ask: "always" | "once" | "optional";
   eachCycle?: boolean;
+  /** A text choice written over several lines. */
+  multiline?: true;
 }
 
 /** One entry of a role's model chain as resolved now. */
@@ -57,11 +59,14 @@ export interface PlaybookModelView {
 
 export type PlaybookModelSource = "card" | "list" | "profile" | "chat";
 
-export interface PlaybookRoleView {
+/** A team's required member, as the card shows it: who it is, why it is picked, and its model now. */
+export interface PlaybookMemberView {
   id: string;
-  /** "Main chat" for the main role. */
   label: string;
-  main: boolean;
+  /** One line: why this member is on the team, its choices filled in. */
+  brief: string;
+  /** Its working notes page, relative to the playbook's folder, when the playbook names one. */
+  notes?: string;
   kind?: string;
   count: number;
   per?: string;
@@ -75,33 +80,38 @@ export interface PlaybookRoleView {
   /** What the model picker offers. */
   options: PlaybookModelPick[];
   resolved: { model: string; modelLabel: string; provider: string; effort?: string; source: PlaybookModelSource; reason?: string } | null;
-  /** False: an "only these models" role none of whose models can run. */
+  /** False: an "only these models" member none of whose models can run. */
   runnable: boolean;
+  /** Your one-line note for it on this run ("" when none). */
   note: string;
-  /** The exact brief this role receives (its prompt with the choices filled in, then the note). */
-  prompt: string;
-  /** The team it runs in, when it runs in one. */
-  team?: string;
+}
+
+/** A team: its goal and the members it must have; it adds anyone else it needs. Its coordinator and monitor
+    run on your own team settings and aren't shown (they count toward the helper limit). */
+export interface PlaybookTeamView {
+  id: string;
+  /** A short name: the playbook's, else its id. */
+  label: string;
+  /** One line: what the team is for, your choices filled in. */
+  goal: string;
+  /** The steps it works in, by id. */
+  steps: string[];
+  /** Your one-line note for the team on this run ("" when none). */
+  note: string;
+  /** Its required members, in the playbook's order; may be none. */
+  members: PlaybookMemberView[];
 }
 
 export interface PlaybookStepView {
   id: string;
   title: string;
+  goal?: string;
   stop: "always" | "optional" | "never";
   stopOn: boolean;
-  runs: "main" | "team" | "helpers";
-  team?: string;
-  roles: string[];
+  /** The teams that work in it, by id; none: the main chat alone. */
+  teams: string[];
   report?: string;
   cycle?: boolean;
-}
-
-export interface PlaybookTeamView {
-  id: string;
-  label: string;
-  roles: string[];
-  coordinator: { modelLabel: string; effort?: string };
-  monitor: { modelLabel: string; effort?: string };
 }
 
 export interface PlaybookCycleView {
@@ -125,7 +135,7 @@ export interface PlaybookRunStarted {
   newChat: boolean;
   /** The chat whose card started it, when it isn't the conducting chat. */
   fromChat?: { id: string; path: string };
-  /** The run folder: the plan, each helper's brief, team layouts. */
+  /** The run folder: the plan, and the contents pages the run reads. */
   folder: string;
 }
 
@@ -136,13 +146,15 @@ export interface PlaybookRunView {
   state: PlaybookRunState;
   changedSinceLast?: boolean;
   choices: PlaybookChoiceView[];
-  roles: PlaybookRoleView[];
   teams: PlaybookTeamView[];
+  /** Who runs, folded: the number of teams and of required members turned on (a member run three times counts once). */
+  who: { teams: number; members: number };
   steps: PlaybookStepView[];
   cycle: PlaybookCycleView | null;
   howItRuns: string;
   /** The changing Sova commands the playbook lists, by label. */
   commands: string[];
+  /** Every helper the plan starts (each team's coordinator and monitor included), and how many one chat runs at once. */
   helpers: { total: number; limit: number };
   startBlocked: string | null;
   started?: PlaybookRunStarted;
@@ -162,10 +174,16 @@ export interface PlaybookRoleEdit {
   note?: string;
 }
 
-/** What the card sends: each key it names replaces that part of the draft; what it leaves out stays. */
+export interface PlaybookTeamEdit {
+  note?: string;
+}
+
+/** What the card sends: each key it names replaces that part of the draft; what it leaves out stays.
+    `roles` is keyed by member id; `teams` by team id. */
 export interface PlaybookCardEdits {
   choices?: Record<string, unknown>;
   roles?: Record<string, PlaybookRoleEdit>;
+  teams?: Record<string, PlaybookTeamEdit>;
   stops?: Record<string, boolean>;
   cycle?: { max?: number; askEvery?: number; until?: "rule" | "max" };
 }
@@ -236,6 +254,11 @@ export function mergeEdits(base: PlaybookCardEdits, edits: PlaybookCardEdits): P
     ...(base.stops || edits.stops ? { stops: { ...base.stops, ...edits.stops } } : {}),
     ...(base.cycle || edits.cycle ? { cycle: { ...base.cycle, ...edits.cycle } } : {}),
   };
+  if (base.teams || edits.teams) {
+    const teams: Record<string, PlaybookTeamEdit> = { ...base.teams };
+    for (const [id, e] of Object.entries(edits.teams ?? {})) teams[id] = { ...teams[id], ...e };
+    out.teams = teams;
+  }
   if (base.roles || edits.roles) {
     const roles: Record<string, PlaybookRoleEdit> = { ...base.roles };
     for (const [id, e] of Object.entries(edits.roles ?? {})) {

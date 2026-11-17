@@ -3,7 +3,7 @@
 // which only the person's own click on Sova's page passes.
 import { existsSync } from "node:fs";
 import type { Context, Hono } from "hono";
-import { CYCLE_MAX, MAIN_ROLE, parseModelsValue, type PlaybookSpec } from "../../shared/playbook-format";
+import { CYCLE_MAX, membersOf, parseModelsValue, type PlaybookSpec } from "../../shared/playbook-format";
 import { THINKING_LEVELS } from "../../shared/profiles";
 import { isPlaybookRunId, mergeEdits, type PlaybookCardEdits, type PlaybookRoleEdit } from "../../shared/playbook-run";
 import { chatHandle } from "../chat-handle";
@@ -43,8 +43,8 @@ function chatOf(raw: unknown): { id: string; path: string } | null {
 
 /** The card's edits, checked against the playbook: unknown ids and wrong shapes are refused with why. */
 export function cleanEdits(spec: PlaybookSpec, sent: unknown): PlaybookCardEdits | string {
-  if (!isRecord(sent)) return "edits must be an object { choices?, roles?, stops?, cycle? }.";
-  for (const k of Object.keys(sent)) if (!["choices", "roles", "stops", "cycle"].includes(k)) return `edits has no "${k}".`;
+  if (!isRecord(sent)) return "edits must be an object { choices?, roles?, teams?, stops?, cycle? }.";
+  for (const k of Object.keys(sent)) if (!["choices", "roles", "teams", "stops", "cycle"].includes(k)) return `edits has no "${k}".`;
   const out: PlaybookCardEdits = {};
   if (sent.choices !== undefined) {
     if (!isRecord(sent.choices)) return "edits.choices must be an object of choice id → value.";
@@ -69,11 +69,11 @@ export function cleanEdits(spec: PlaybookSpec, sent: unknown): PlaybookCardEdits
     }
   }
   if (sent.roles !== undefined) {
-    if (!isRecord(sent.roles)) return "edits.roles must be an object of role id → { pick?, on?, note? }.";
+    if (!isRecord(sent.roles)) return "edits.roles must be an object of member id → { pick?, on?, note? }.";
     out.roles = {};
     for (const [id, e] of Object.entries(sent.roles)) {
-      const role = spec.roles.find((r) => r.id === id);
-      if (!role) return `This playbook has no role "${id}".`;
+      const role = membersOf(spec).find((r) => r.id === id);
+      if (!role) return `This playbook has no member "${id}".`;
       if (!isRecord(e)) return `edits.roles.${id} must be an object.`;
       const next: PlaybookRoleEdit = {};
       for (const k of Object.keys(e)) if (!["pick", "on", "note"].includes(k)) return `edits.roles.${id} has no "${k}".`;
@@ -87,14 +87,28 @@ export function cleanEdits(spec: PlaybookSpec, sent: unknown): PlaybookCardEdits
       }
       if (e.on !== undefined) {
         if (typeof e.on !== "boolean") return `edits.roles.${id}.on must be true or false.`;
-        if (!e.on && (id === MAIN_ROLE || !role.optional)) return `${role.label} can't be turned off.`;
+        if (!e.on && !role.optional) return `${role.label} can't be turned off.`;
         next.on = e.on;
       }
       if (e.note !== undefined) {
-        if (typeof e.note !== "string" || e.note.length > MAX_NOTE) return `${role.label}'s note must be text, at most ${MAX_NOTE} characters.`;
+        if (typeof e.note !== "string" || e.note.length > MAX_NOTE || /[\r\n]/.test(e.note)) return `${role.label}'s note must be one line of text, at most ${MAX_NOTE} characters.`;
         next.note = e.note;
       }
       out.roles[id] = next;
+    }
+  }
+  if (sent.teams !== undefined) {
+    if (!isRecord(sent.teams)) return "edits.teams must be an object of team id → { note? }.";
+    out.teams = {};
+    for (const [id, e] of Object.entries(sent.teams)) {
+      const team = spec.teams.find((t) => t.id === id);
+      if (!team) return `This playbook has no team "${id}".`;
+      if (!isRecord(e)) return `edits.teams.${id} must be an object.`;
+      for (const k of Object.keys(e)) if (k !== "note") return `edits.teams.${id} has no "${k}".`;
+      if (e.note !== undefined) {
+        if (typeof e.note !== "string" || e.note.length > MAX_NOTE || /[\r\n]/.test(e.note)) return `The note for ${team.label} must be one line of text, at most ${MAX_NOTE} characters.`;
+        out.teams[id] = { note: e.note };
+      } else out.teams[id] = {};
     }
   }
   if (sent.stops !== undefined) {
@@ -205,7 +219,7 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
   app.patch("/api/playbook-runs/:run", async (c) => {
     const b = await body(c);
     if (!Number.isInteger(b.revision)) return c.json({ error: "revision must be the card's revision, a whole number." }, 400);
-    if (!isRecord(b.edits)) return c.json({ error: "edits must be an object { choices?, roles?, stops?, cycle? }." }, 400);
+    if (!isRecord(b.edits)) return c.json({ error: "edits must be an object { choices?, roles?, teams?, stops?, cycle? }." }, 400);
     const r = runById(c.req.param("run"));
     if (!r || r.closed) return c.json({ error: "No such playbook run." }, 404);
     if (r.state !== "draft") return c.json({ error: "This run has started, so its card is closed.", run: await runView(r) }, 409);
@@ -215,7 +229,7 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     const edits = cleanEdits(loaded.spec, b.edits);
     if (typeof edits === "string") return c.json({ error: edits }, 400);
     // A chat or a script fills in the playbook's own choices; models, roles, stops and cycles are the person's.
-    if (notPage(c) && (edits.roles || edits.stops || edits.cycle)) return c.json({ error: "Only the person changes a card's models, roles, stops and cycle settings, on the card in Sova's page. A chat may fill in its choices. Nothing was changed." }, 403);
+    if (notPage(c) && (edits.roles || edits.teams || edits.stops || edits.cycle)) return c.json({ error: "Only the person changes a card's models, members, notes, stops and cycle settings, on the card in Sova's page. A chat may fill in its choices. Nothing was changed." }, 403);
     changeRun(r.id, (x) => {
       x.edits = mergeEdits(x.edits, edits);
       x.revision++;

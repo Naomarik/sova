@@ -3,7 +3,7 @@
 // chat, the prompt and this computer's models are stand-ins (StartHost); everything else is Sova's own.
 import { scratchAgentDir, dropScratchAgentDir } from "../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { checkInputValue, inputValueText, type InputValue } from "../../shared/playbook-format";
@@ -22,13 +22,11 @@ const { loadPlaybook, refOf } = await import("./env");
 
 after(() => dropScratchAgentDir());
 
-/** A playbook of the user's own: a choice, one helper per test model in a team with a blind grader. */
+/** A playbook of the user's own: a choice, and a team with one runner per test model and a blind grader. */
 function playbook(id: string, extra: Record<string, unknown> = {}): void {
   const dir = join(scratchAgentDir, "sova", "playbooks", id);
-  mkdirSync(join(dir, "roles"), { recursive: true });
+  mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "PLAYBOOK.md"), `---\ntitle: ${id}\n---\nConduct the trial.\n`);
-  writeFileSync(join(dir, "roles", "runner.md"), "Run {{topic}} on {{each}}. Write into {{run}}; scripts in {{folder}}/scripts.\nThe person's note, if any: {{note}}\n");
-  writeFileSync(join(dir, "roles", "grader.md"), "Grade {{topic}}.\n");
   writeFileSync(
     join(dir, "playbook.json"),
     JSON.stringify({
@@ -37,14 +35,18 @@ function playbook(id: string, extra: Record<string, unknown> = {}): void {
         { id: "topic", label: "Topic", type: "text", ask: "always", required: true, default: "the parser" },
         { id: "models", label: "Test models", type: "models", ask: "always", required: true, default: [{ model: "zai/glm-5.3", effort: "low" }, { model: "zai/glm-5.2", effort: "low" }] },
       ],
-      roles: {
-        main: { label: "Main chat", models: [{ model: "zai/glm-5.3", effort: "high" }] },
-        runner: { label: "Runner", prompt: "roles/runner.md", kind: "routine", per: { input: "models" }, models: [{ model: "zai/glm-5.3", effort: "low" }] },
-        grader: { label: "Grader", prompt: "roles/grader.md", only: true, sees: "blind", models: [{ model: "claude-code/claude-opus-5-5", effort: "high" }, { model: "zai/glm-5.3", effort: "high" }] },
+      teams: {
+        arms: {
+          goal: "Run {{topic}} on every test model and grade it",
+          members: {
+            runner: { label: "Runner", brief: "Runs {{topic}} on one test model", kind: "routine", per: { input: "models" }, models: [{ model: "zai/glm-5.3", effort: "low" }] },
+            grader: { label: "Grader", brief: "Grades blind", only: true, sees: "blind", models: [{ model: "claude-code/claude-opus-5-5", effort: "high" }, { model: "zai/glm-5.3", effort: "high" }] },
+          },
+        },
       },
       steps: [
-        { id: "baseline", label: "Baseline", roles: ["main"], stop: "always" },
-        { id: "run", label: "Run the arms", roles: ["runner", "grader"], team: true },
+        { id: "baseline", label: "Baseline", stop: "always" },
+        { id: "run", label: "Run the arms", teams: ["arms"] },
       ],
       ...extra,
     }),
@@ -124,7 +126,7 @@ class Chats {
       },
       title: (id, title) => void this.titles.push({ id, title }),
       preflight: async (path) => this.blocked.get(path) ?? null,
-      env: async (spec, info) => fakeEnv(info.dir, spec),
+      env: async () => fakeEnv(),
     };
   }
   request = async (url: string) => {
@@ -136,11 +138,9 @@ class Chats {
 }
 
 /** Opus can't run here; every zai model can. */
-function fakeEnv(dir: string, spec: { roles: { id: string; prompt?: string }[] }): CardEnv {
+function fakeEnv(): CardEnv {
   const off = (c: WorkerChoice) => (c.backend === "claude-code" ? "is turned off in Settings → Models" : null);
   const name = (c: WorkerChoice) => ({ label: c.model, provider: c.backend === "claude-code" ? "claude-code-cli" : c.model.split("/")[0]! });
-  const prompts: Record<string, string> = {};
-  for (const r of spec.roles) prompts[r.id] = r.prompt ? readFileSync(join(dir, r.prompt), "utf8") : "Conduct the trial.\n";
   return {
     needs: null,
     denial: (c) => off(c),
@@ -148,7 +148,6 @@ function fakeEnv(dir: string, spec: { roles: { id: string; prompt?: string }[] }
     routes: null,
     chat: { backend: "pi", model: "ollama-cloud/qwen", effort: "low" },
     team: { coordinator: { model: "zai/glm-5.3", effort: "medium" }, monitor: { model: "zai/glm-5.3", effort: "low" } },
-    prompts,
     page: (rel) => (rel === "phases/stop.md" ? "# Stop rule\n\nStop after **two rounds** in a row with no win.\n\nMore detail.\n" : null),
     commandLabel: (id) => id,
     commandChanges: () => true,
@@ -161,26 +160,26 @@ function fakeEnv(dir: string, spec: { roles: { id: string; prompt?: string }[] }
 async function draft(id: string, shownIn = chatFile(), note?: string) {
   const loaded = (await loadPlaybook({ source: "user", id }, scratchAgentDir))!;
   const r = store.createRun({ playbook: refOf(loaded.info), cwd: scratchAgentDir, shownIn, initial: firstValues(loaded.spec!, {}) });
-  if (note) store.changeRun(r.id, (x) => (x.edits = { roles: { runner: { note } } }));
+  if (note) store.changeRun(r.id, (x) => (x.edits = { roles: { runner: { note } }, teams: { arms: { note: `Team: ${note}` } } }));
   return { run: store.runById(r.id)!, shownIn, dir: loaded.info.dir };
 }
 
 describe("Start", () => {
-  test("in this chat: the run folder gets the plan, one brief per helper with its slots filled, and the team's layout; the chat gets one message and the run's mark", async () => {
+  test("in this chat: the run folder gets the plan with each team's goal and note and each required member's brief, note and models; the chat gets one message and the run's mark, and keeps its own model", async () => {
     const chats = new Chats();
-    const { run, shownIn, dir } = await draft("trial", undefined, "Keep it short.");
+    const { run, shownIn } = await draft("trial", undefined, "Keep it short.");
     const view = await startRun(run.id, run.revision, { request: chats.request, contents: () => [], host: chats.host() });
     assert.equal(view.state, "started");
     assert.deepEqual([view.started!.chat.id, view.started!.newChat, view.started!.fromChat], [shownIn.id, false, undefined]);
     const folder = view.started!.folder;
     assert.equal(folder, join(scratchAgentDir, "shared", shownIn.id, "playbook-runs", run.id));
-    assert.equal(readFileSync(join(folder, "briefs", "runner.1-zai-glm-5-3-low.md"), "utf8"), `Run the parser on zai/glm-5.3 (low). Write into ${folder}; scripts in ${dir}/scripts.\nThe person's note, if any: Keep it short.\n`);
-    assert.equal(readFileSync(join(folder, "briefs", "runner.2-zai-glm-5-2-low.md"), "utf8").includes("zai/glm-5.2 (low)"), true);
-    assert.equal(readFileSync(join(folder, "briefs", "grader.md"), "utf8"), "Grade the parser.\n\nYou judge blind: you are never told which arm or version produced what you are given, and you must not try to find out.\n");
-    const team = JSON.parse(readFileSync(join(folder, "teams", "run.json"), "utf8")) as { members: { role: string; model: string; effort: string }[] };
-    assert.deepEqual(team.members.map((m) => [m.role, m.model, m.effort]), [["runner-1", "zai/glm-5.3", "low"], ["runner-2", "zai/glm-5.3", "low"], ["grader", "zai/glm-5.3", "high"]]);
-    const plan = JSON.parse(readFileSync(join(folder, "plan.json"), "utf8")) as { roles: { id: string; only: boolean; chain: { model: string; why?: string }[]; use: number }[] };
-    const grader = plan.roles.find((r) => r.id === "grader")!;
+    assert.deepEqual(readdirSync(folder).sort(), ["plan.json"], "no briefs and no team layouts: each team's coordinator writes the instructions");
+    type Plan = { teams: { id: string; goal: string; note?: string; members: string[] }[]; members: { id: string; brief: string; note?: string; only: boolean; chain: { model: string; why?: string }[]; use: number }[] };
+    const plan = JSON.parse(readFileSync(join(folder, "plan.json"), "utf8")) as Plan;
+    assert.deepEqual(plan.teams.map((t) => [t.id, t.goal, t.note, t.members]), [["arms", "Run the parser on every test model and grade it", "Team: Keep it short.", ["runner", "grader"]]]);
+    const runner = plan.members.find((m) => m.id === "runner")!;
+    assert.deepEqual([runner.brief, runner.note], ["Runs the parser on one test model", "Keep it short."]);
+    const grader = plan.members.find((r) => r.id === "grader")!;
     assert.deepEqual([grader.only, grader.use, grader.chain.map((m) => [m.model, !!m.why])], [true, 1, [["claude-code/claude-opus-5-5", true], ["zai/glm-5.3", false]]]);
     // One message: the instruction, the playbook block, the run block.
     assert.equal(chats.sent.length, 1);
@@ -188,12 +187,13 @@ describe("Start", () => {
     assert.equal(chats.sent[0]!.path, shownIn.path);
     assert.match(text, /^Run the playbook "trial" as its conductor/);
     assert.match(text, /\n<playbook id="trial" dir="[^"]+" entry="PLAYBOOK.md" sha="[0-9a-f]+" load="full">\n---\ntitle: trial\n---\nConduct the trial.\n<\/playbook>\n<run id="pr_/);
-    assert.ok(text.includes(`${folder}/teams/run.json (roles: runner, grader)`));
+    assert.ok(text.includes("- Team arms [arms], working in run. Goal: Run the parser on every test model and grade it. The user's note for the team: Team: Keep it short."));
+    assert.ok(text.includes("  - Runner [runner] ×2, one per item (zai/glm-5.3 (low); zai/glm-5.2 (low)), kind routine: Runs the parser on one test model."));
     assert.ok(text.trimEnd().endsWith("</run>"));
     // An empty chat is named for the run, not by the message's first words.
     assert.deepEqual(chats.titles, [{ id: shownIn.id, title: "trial (playbook)" }]);
-    // This chat now runs on the main role's model and effort.
-    assert.deepEqual(chats.set, [{ path: shownIn.path, what: "model", to: "zai/glm-5.3" }, { path: shownIn.path, what: "thinking", to: "high" }]);
+    // The main chat runs on what you chose: its model and effort aren't touched.
+    assert.deepEqual(chats.set, []);
     await new Promise((r) => setTimeout(r, 20));
     assert.deepEqual(chats.marks.map((m) => [m.path, (m.data as { type: string; conducts: boolean }).type, (m.data as { conducts: boolean }).conducts]), [[shownIn.path, PLAYBOOK_RUN.type, true]]);
     // Not startable again, before and after a restart.
@@ -285,13 +285,13 @@ describe("Start", () => {
     assert.equal(chats.sent.length, 0);
   });
 
-  test("a Start that fails halfway: this chat's model goes back, a chat made for it is named and used again", async () => {
+  test("a Start that fails halfway: this chat's mode goes back, a chat made for it is named and used again", async () => {
     const chats = new Chats();
     chats.refuse = "the chat is open in a terminal";
     const mine = await draft("trial");
     await assert.rejects(startRun(mine.run.id, mine.run.revision, { request: chats.request, contents: () => [], host: chats.host() }), (e: unknown) => e instanceof RunRefused && e.status === 409 && /the chat is open in a terminal/.test(e.message));
     assert.equal(store.runById(mine.run.id)!.state, "draft");
-    assert.deepEqual(chats.set.slice(-2), [{ path: mine.shownIn.path, what: "model", to: "ollama-cloud/qwen" }, { path: mine.shownIn.path, what: "thinking", to: "low" }]);
+    assert.deepEqual(chats.set, [], "a playbook that sets no mode touches nothing in the chat");
 
     // A playbook that switches this chat's mode: a refused message switches it back, re-pinned only if it was pinned.
     const modes = () => chats.set.filter((x) => x.what === "mode" || x.what === "pin").map((x) => [x.what, x.to]);

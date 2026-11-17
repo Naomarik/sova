@@ -45,20 +45,6 @@ export async function loadPlaybook(ref: { source: string; id: string }, cwd: str
 
 export const refOf = (info: PlaybookInfo): PlaybookRef => ({ source: info.source, id: info.id, dir: info.dir, entry: info.entry, title: info.title });
 
-/** Each role's prompt page as written; main's is the recipe page's body. */
-export function readPrompts(spec: PlaybookSpec, info: Pick<PlaybookInfo, "dir" | "body">): Record<string, string | { error: string }> {
-  const out: Record<string, string | { error: string }> = {};
-  for (const role of spec.roles) {
-    if (!role.prompt) {
-      out[role.id] = role.id === MAIN_ROLE ? info.body : { error: "no prompt page" };
-      continue;
-    }
-    const f = bundleFile(info.dir, role.prompt);
-    out[role.id] = "text" in f ? f.text : { error: f.error };
-  }
-  return out;
-}
-
 /** The live environment: read once per card drawn (one model list, one policy read). */
 export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?: string, cwd?: string): Promise<CardEnv> {
   const t0 = Date.now();
@@ -119,7 +105,6 @@ export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?:
     routes,
     chat: chatModel,
     team,
-    prompts: readPrompts(spec, info),
     page: (rel) => {
       const f = bundleFile(info.dir, rel);
       return "text" in f ? f.text : null;

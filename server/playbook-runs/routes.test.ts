@@ -20,9 +20,8 @@ after(() => dropScratchAgentDir());
 
 // A playbook of the user's own, with a description.
 const pb = join(scratchAgentDir, "sova", "playbooks", "trial");
-mkdirSync(join(pb, "roles"), { recursive: true });
+mkdirSync(pb, { recursive: true });
 writeFileSync(join(pb, "PLAYBOOK.md"), "---\ntitle: Trial\ndescription: A trial playbook\n---\nConduct the trial.\n");
-writeFileSync(join(pb, "roles", "helper.md"), "Look at {{topic}}.\n");
 writeFileSync(
   join(pb, "playbook.json"),
   JSON.stringify({
@@ -31,8 +30,16 @@ writeFileSync(
       { id: "topic", label: "Topic", type: "text", ask: "always", required: true },
       { id: "level", label: "Level", type: "choice", ask: "always", required: true, options: [{ id: "lo", label: "Low" }, { id: "hi", label: "High" }], default: "lo" },
     ],
-    roles: { main: { label: "Main chat", models: [{ model: "zai/glm-5.3", effort: "low" }, { model: "zai/glm-5.2", effort: "low" }] }, helper: { label: "Helper", prompt: "roles/helper.md", kind: "routine", optional: true } },
-    steps: [{ id: "look", label: "Look", roles: ["main", "helper"], stop: "optional" }],
+    teams: {
+      lookers: {
+        goal: "Look at {{topic}}",
+        members: {
+          helper: { label: "Helper", brief: "Looks at {{topic}}", kind: "routine", optional: true, models: [{ model: "zai/glm-5.3", effort: "low" }, { model: "zai/glm-5.2", effort: "low" }] },
+          keeper: { label: "Keeper", brief: "Keeps the notes", models: [{ model: "zai/glm-5.3", effort: "low" }] },
+        },
+      },
+    },
+    steps: [{ id: "look", label: "Look", teams: ["lookers"], stop: "optional" }],
   }),
 );
 // A chat to show the card in.
@@ -69,10 +76,10 @@ describe("a playbook card", () => {
 
   test("a model this computer has no sign-in for isn't skipped: only Settings → Models turns one off", async () => {
     const v = await open();
-    const main = v.roles.find((r) => r.id === "main")!;
-    assert.equal(main.resolved?.model, "zai/glm-5.3");
-    assert.equal(main.models[0]!.usable, true);
-    assert.equal(main.resolved?.reason, undefined);
+    const helper = v.teams[0]!.members.find((m) => m.id === "helper")!;
+    assert.equal(helper.resolved?.model, "zai/glm-5.3");
+    assert.equal(helper.models[0]!.usable, true);
+    assert.equal(helper.resolved?.reason, undefined);
   });
 
   test("a model Settings → Models turns off is skipped, and the reason reads in words", async () => {
@@ -80,9 +87,9 @@ describe("a playbook card", () => {
     writeModelPolicy({ disabledProviders: [], disabledModels: ["zai/glm-5.3"], subagentDisabledProviders: [], subagentDisabledModels: [] });
     try {
       const v = await open();
-      const main = (((await (await app.request(`/api/playbook-runs/${v.id}`)).json()) as PlaybookRunView).roles.find((r) => r.id === "main"))!;
-      assert.equal(main.resolved?.model, "zai/glm-5.2");
-      assert.equal(main.resolved?.reason, "Glm-5.3 · z.ai is turned off in Settings → Models, so glm-5.2 · z.ai");
+      const helper = ((await (await app.request(`/api/playbook-runs/${v.id}`)).json()) as PlaybookRunView).teams[0]!.members.find((m) => m.id === "helper")!;
+      assert.equal(helper.resolved?.model, "zai/glm-5.2");
+      assert.equal(helper.resolved?.reason, "Glm-5.3 · z.ai is turned off in Settings → Models, so glm-5.2 · z.ai");
     } finally {
       writeModelPolicy({ disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] });
     }
@@ -90,14 +97,14 @@ describe("a playbook card", () => {
 
   test("an edit saves against the revision shown; a stale revision is refused with the card as it is", async () => {
     const v = await open();
-    const res = await asPage(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { topic: "parsing" }, roles: { helper: { on: true, note: "Be brief." } }, stops: { look: false } } }));
+    const res = await asPage(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { topic: "parsing" }, roles: { helper: { on: true, note: "Be brief." } }, teams: { lookers: { note: "Quick look only." } }, stops: { look: false } } }));
     assert.equal(res.status, 200);
     const next = (await res.json()) as PlaybookRunView;
     assert.equal(next.revision, v.revision + 1);
     assert.equal(next.choices[0]!.origin, "you");
-    const helper = next.roles.find((r) => r.id === "helper")!;
-    assert.equal(helper.on, true);
-    assert.equal(helper.prompt, "Look at parsing.\n\nNote for this run: Be brief.\n");
+    const team = next.teams[0]!;
+    const helper = team.members.find((m) => m.id === "helper")!;
+    assert.deepEqual([team.goal, team.note, helper.on, helper.brief, helper.note], ["Look at parsing", "Quick look only.", true, "Looks at parsing", "Be brief."]);
     assert.equal(next.steps[0]!.stopOn, false);
     const stale = await app.request(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { topic: "other" } } }));
     assert.equal(stale.status, 409);
@@ -110,8 +117,12 @@ describe("a playbook card", () => {
     const v = await open();
     for (const [edits, want] of [
       [{ choices: { nope: "x" } }, /no choice "nope"/],
-      [{ roles: { ghost: { on: true } } }, /no role "ghost"/],
-      [{ roles: { main: { on: false } } }, /can't be turned off/],
+      [{ roles: { ghost: { on: true } } }, /no member "ghost"/],
+      [{ roles: { keeper: { on: false } } }, /Keeper can't be turned off/],
+      [{ roles: { helper: { note: "one\ntwo" } } }, /Helper's note must be one line/],
+      [{ teams: { ghost: { note: "x" } } }, /no team "ghost"/],
+      [{ teams: { lookers: { note: "one\ntwo" } } }, /The note for lookers must be one line/],
+      [{ teams: { lookers: { goal: "mine" } } }, /edits.teams.lookers has no "goal"/],
       [{ stops: { look: "yes" } }, /must be true or false/],
       [{ cycle: { max: 2 } }, /no cycle/],
       [{ choices: { level: 3 } }, /isn't a choice value/],
@@ -147,10 +158,11 @@ describe("a playbook card", () => {
     assert.equal((await app.request(`/api/playbook-runs/${v.id}`)).status, 200);
   });
 
-  test("a chat fills in choices; models, roles, stops and cycles are the person's", async () => {
+  test("a chat fills in choices; models, members, notes, stops and cycles are the person's", async () => {
     const v = await open();
     const roles = await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { roles: { helper: { on: true } } } }));
     assert.equal(roles.status, 403);
+    assert.equal((await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { teams: { lookers: { note: "from the chat" } } } }))).status, 403, "a team's note is the person's too");
     assert.equal(store.runById(v.id)!.revision, v.revision);
     const choices = await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { topic: "from the chat" } } }));
     assert.equal(choices.status, 200);
@@ -193,7 +205,7 @@ describe("a playbook card", () => {
     const other = join(scratchAgentDir, "sova", "playbooks", "other");
     mkdirSync(other, { recursive: true });
     writeFileSync(join(other, "PLAYBOOK.md"), "---\ntitle: Other\ndescription: Another playbook\n---\nConduct the other.\n");
-    writeFileSync(join(other, "playbook.json"), JSON.stringify({ version: 1, roles: { main: { label: "Main chat", models: [{ model: "zai/glm-5.3", effort: "low" }] } }, steps: [{ id: "go", label: "Go", roles: ["main"] }] }));
+    writeFileSync(join(other, "playbook.json"), JSON.stringify({ version: 1, steps: [{ id: "go", label: "Go" }] }));
     let n = 0;
     const chat = () => {
       const id = `chat-one-${++n}`;

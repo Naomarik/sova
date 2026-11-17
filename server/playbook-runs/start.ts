@@ -5,7 +5,7 @@
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { HEntry, StateKind } from "../../shared/harness";
-import { MAIN_ROLE, type PlaybookSpec } from "../../shared/playbook-format";
+import type { PlaybookSpec } from "../../shared/playbook-format";
 import type { PlaybookInfo } from "../../shared/protocol";
 import type { PlaybookRunView } from "../../shared/playbook-run";
 import { PROFILE_MINOR_MODES, type ProfileMinorMode, type SnapshotProfile } from "../../shared/profiles";
@@ -22,7 +22,7 @@ import { writeAutoTitle } from "../session-titles";
 import { getSessionSummary } from "../sessions-index";
 import { projectOverseerOfPath } from "../project-overseer-store";
 import { answersKey, saveAnswers } from "./answers";
-import { chatRefOf, liveEnv, loadPlaybook, SOVA_SCRIPT } from "./env";
+import { liveEnv, loadPlaybook, SOVA_SCRIPT } from "./env";
 import { runBlock, runMessage, type ContentsSection } from "./message";
 import { effectiveEdits, freezePlan, runCard, runsInNewChat, type CardEnv } from "./plan";
 import { changeRun, oneRunRefusal, runById, runHolding, type PlaybookRunRecord } from "./store";
@@ -122,13 +122,9 @@ function playbookSnapshot(r: PlaybookRunRecord, spec: PlaybookSpec, root: string
   } as SnapshotProfile;
 }
 
-/** Make the conducting chat's model, effort and mode the plan's, where they differ. */
-/** Make the conducting chat's model, effort and mode the plan's, where they differ; true when its mode was switched (and pinned). */
-async function setUpChat(chat: StartChat, use: { model: string; effort?: string } | null, spec: PlaybookSpec): Promise<boolean> {
-  if (use) {
-    if (chat.mirror.model?.ref !== use.model) await chat.setModel(use.model);
-    if (use.effort && chat.mirror.thinking !== use.effort) await chat.setThinking(use.effort);
-  }
+/** Make the conducting chat's mode the playbook's, where it differs; true when its mode was switched (and pinned).
+    Its model and effort stay yours: the main chat runs on what you chose. */
+async function setUpChat(chat: StartChat, spec: PlaybookSpec): Promise<boolean> {
   const want = spec.run.mode;
   const minors = spec.run.minorModes;
   const now = chat.mirror.mode;
@@ -208,7 +204,7 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
 
   // What this Start changed, so a failure halfway can say it or put it back.
   let made: { id: string; path: string } | null = r.halfMade ?? null;
-  let before: { path: string; model?: string; thinking?: string; mode: { mode: string; minorModes: string[] }; pinned: boolean; modeSwitched?: true } | null = null;
+  let before: { path: string; mode: { mode: string; minorModes: string[] }; pinned: boolean; modeSwitched?: true } | null = null;
   try {
     const at = new Date().toISOString();
     const toNew = runsInNewChat(spec, r);
@@ -229,7 +225,6 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
       }
       host.title(chat.id, `${r.playbook.title} (playbook)`);
     } else chat = r.shownIn!;
-    const main = card.resolved[MAIN_ROLE]?.use ?? null;
     if (!toNew) {
       // What would refuse the message is asked first, so a chat that can't take the run is never changed.
       const refused = await host.preflight(chat.path);
@@ -239,13 +234,13 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
     if (!toNew) {
       // A chat with no mode entry follows the default mode; one with an entry is pinned to it.
       const pinned = (await conducting.branch()).some((h) => h.kind === "state" && h.key === MODE.type);
-      before = { path: chat.path, ...(conducting.mirror.model?.ref ? { model: conducting.mirror.model.ref } : {}), ...(conducting.mirror.thinking ? { thinking: conducting.mirror.thinking } : {}), mode: { mode: conducting.mirror.mode.mode, minorModes: [...conducting.mirror.mode.minorModes] }, pinned };
+      before = { path: chat.path, mode: { mode: conducting.mirror.mode.mode, minorModes: [...conducting.mirror.mode.minorModes] }, pinned };
     }
-    const switched = await setUpChat(conducting, main ? { model: chatRefOf(main), ...(main.effort ? { effort: main.effort } : {}) } : null, spec);
+    const switched = await setUpChat(conducting, spec);
     if (switched && before) before.modeSwitched = true;
 
     const folder = runFolderOf(chat.id, r.id);
-    const frozen = freezePlan(r, spec, env, card, toNew, at, folder);
+    const frozen = freezePlan(r, spec, env, card, toNew, at);
     const contents = writeFiles(folder, frozen.files, deps.contents());
     const bundle = { id: loaded.info.id, dir: loaded.info.dir, entry: loaded.info.entry };
     const branch = toNew ? null : await conducting.branch();
@@ -285,12 +280,10 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
     return runView(runById(r.id)!);
   } catch (err) {
     let why = err instanceof Error ? err.message : String(err);
-    // This chat's model, effort and mode go back to what they were (its mode pinned again as it was); a chat made for the run stays, and is named.
-    if (before) {
+    // This chat's mode goes back to what it was (pinned again as it was); a chat made for the run stays, and is named.
+    if (before?.modeSwitched) {
       try {
         const held = await host.chat(before.path);
-        if (before.model && held.mirror.model?.ref !== before.model) await held.setModel(before.model);
-        if (before.thinking && held.mirror.thinking !== before.thinking) await held.setThinking(before.thinking);
         // The switch back writes a mode entry of its own: a chat that followed the default mode is now held at the
         // mode it had (entries are never taken out of a chat's history). Re-pinned only when it was pinned before.
         if (before.modeSwitched) {
@@ -298,7 +291,7 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
           if (before.pinned) await held.pinMode();
         }
       } catch {
-        why += " This chat's model or mode may have changed: check them before you start again.";
+        why += " This chat's mode may have changed: check it before you start again.";
       }
     }
     if (made) why += ` A chat was made for the run (${made.id}); pressing Start again uses it.`;

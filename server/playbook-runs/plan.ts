@@ -1,16 +1,16 @@
 // The card a run draws and the plan Start freezes, from the
 // playbook's description, the run's draft and what this computer can run now. Pure: the environment (which
-// models can run, their names, your profile's routes, team defaults, the prompt pages) comes in as `CardEnv`.
-import { choiceOfRef, CYCLE_MAX, EACH_SLOT, isPageRef, MAIN_ROLE, refOfChoice, type InputValue, type PlaybookFlowItem, type PlaybookInput, type PlaybookModel, type PlaybookRole, type PlaybookSpec, type PlaybookStep } from "../../shared/playbook-format";
+// models can run, their names, your profile's routes, team defaults) comes in as `CardEnv`.
+import { choiceOfRef, CYCLE_MAX, fillSlots, isPageRef, refOfChoice, type InputValue, type PlaybookFlowItem, type PlaybookInput, type PlaybookMember, type PlaybookModel, type PlaybookSpec, type PlaybookStep, type PlaybookTeam } from "../../shared/playbook-format";
 import type { ChainEntry, KindRoute, ResolvedRoleModel } from "../../shared/playbook-models";
-import { HELPER_LIMIT, mergeEdits, type PlaybookCardEdits, type PlaybookChoiceView, type PlaybookModelPick, type PlaybookModelSource, type PlaybookModelView, type PlaybookRoleView, type PlaybookRunView, type PlaybookStepView, type PlaybookTeamView } from "../../shared/playbook-run";
+import { HELPER_LIMIT, mergeEdits, type PlaybookCardEdits, type PlaybookChoiceView, type PlaybookModelPick, type PlaybookModelSource, type PlaybookMemberView, type PlaybookModelView, type PlaybookRunView, type PlaybookStepView, type PlaybookTeamView } from "../../shared/playbook-run";
 import type { DelegateProfileId, WorkerChoice } from "../../shared/protocol";
 import type { PlaybookRef, PlaybookRunRecord } from "./store";
 
 export interface CardEnv {
   /** Why this folder can't run the playbook (its run.needs: a project, one the merge queue serves), or null. */
   needs: string | null;
-  /** Why this model can't run here now, for a helper (a worker) or for the main chat; null: it can. */
+  /** Why this model can't run here now, for a helper (a worker); null: it can. */
   denial(c: WorkerChoice, as: "main" | "helper"): string | null;
   /** "GLM 5.3", and the provider's id ("zai", "claude-code"). */
   name(c: WorkerChoice): { label: string; provider: string };
@@ -20,8 +20,6 @@ export interface CardEnv {
   chat: WorkerChoice | null;
   /** The coordinator and monitor Sova adds to every team, on their models from Settings. */
   team: { coordinator: { model: string; effort?: string }; monitor: { model: string; effort?: string } };
-  /** Each role's prompt page as written (main: the recipe page's body), or why it can't be read. */
-  prompts: Record<string, string | { error: string }>;
   /** A page of the playbook's folder (relative), or null when it can't be read. */
   page(rel: string): string | null;
   /** A catalogue command's label. */
@@ -32,7 +30,7 @@ export interface CardEnv {
   resolve(input: { pick?: WorkerChoice | null; list: readonly WorkerChoice[]; only: boolean; kind?: DelegateProfileId }, as: "main" | "helper"): ResolvedRoleModel;
   /** A choice's value checked against its input: why it is wrong, or null (shared/playbook-format.ts). */
   checkValue(input: PlaybookInput, value: unknown): string | null;
-  /** A choice's value as the words a prompt's {{slot}} takes. */
+  /** A choice's value as the words a goal's or brief's {{slot}} takes. */
   valueText(input: PlaybookInput, value: unknown): string;
 }
 
@@ -59,8 +57,8 @@ const isEmpty = (v: unknown): boolean => v === undefined || v === null || v === 
 /** The value an input has on the card now: the edits', else none. */
 const valueOf = (edits: PlaybookCardEdits, input: PlaybookInput): unknown => edits.choices?.[input.id] ?? null;
 
-/** How many helpers of a role: its count (a number, or a number input's value), else one per item of its `per` input. */
-export function roleCount(role: PlaybookRole, spec: PlaybookSpec, edits: PlaybookCardEdits): { n: number; items?: string[] } {
+/** How many helpers of a member: its count (a number, or a number input's value), else one per item of its `per` input. */
+export function roleCount(role: PlaybookMember, spec: PlaybookSpec, edits: PlaybookCardEdits): { n: number; items?: string[] } {
   if (role.per) {
     const input = spec.inputs.find((i) => i.id === role.per!.input);
     const v = input ? valueOf(edits, input) : null;
@@ -76,11 +74,11 @@ export function roleCount(role: PlaybookRole, spec: PlaybookSpec, edits: Playboo
   return { n: 1 };
 }
 
-const roleOn = (role: PlaybookRole, edits: PlaybookCardEdits): boolean => role.id === MAIN_ROLE || !role.optional || (edits.roles?.[role.id]?.on ?? !role.startsOff);
+const roleOn = (role: PlaybookMember, edits: PlaybookCardEdits): boolean => !role.optional || (edits.roles?.[role.id]?.on ?? !role.startsOff);
 
 const stopOn = (step: PlaybookStep, edits: PlaybookCardEdits): boolean => step.stop === "always" || (step.stop === "optional" && (edits.stops?.[step.id] ?? !step.startsOff));
 
-/** One item of a list, multi or models value, in the words a prompt's {{each}} takes. */
+/** One item of a list, multi or models value, in words. */
 function itemWords(x: unknown, options?: readonly { id: string; label: string }[]): string {
   if (typeof x === "string") return options?.find((o) => o.id === x)?.label ?? x;
   if (x && typeof x === "object" && "ref" in x) {
@@ -94,60 +92,22 @@ function itemWords(x: unknown, options?: readonly { id: string; label: string }[
   return String(x);
 }
 
-/** What Start knows beside the choices: the built-in slots (shared/playbook-format.ts RUN_SLOTS, EACH_SLOT). */
-export interface SlotContext {
-  /** The run folder; before Start, words saying it is made then. */
-  run?: string;
-  /** The playbook's own folder. */
-  folder: string;
-  /** Which helper this is: the item of its `per` input, or "2 of 3". */
-  each?: string;
+/** A goal's or brief's {{slots}} filled from your choices; a slot with no value yet, or a fact not looked up, stays as written. */
+export function filled(text: string, spec: PlaybookSpec, edits: PlaybookCardEdits, env: Pick<CardEnv, "valueText">): string {
+  const words: Record<string, string> = {};
+  for (const input of spec.inputs) {
+    const v = valueOf(edits, input);
+    if (!isEmpty(v)) words[input.id] = env.valueText(input, v);
+  }
+  return fillSlots(text, words);
 }
 
-const RUN_FOLDER_LATER = "(the run folder, made at Start)";
-
-/** A role's prompt with its {{slots}} filled: each input by its id, the built-in run, folder, note and each. */
-export function fillSlots(text: string, spec: PlaybookSpec, edits: PlaybookCardEdits, env: Pick<CardEnv, "valueText">, ctx: SlotContext & { note?: string }): string {
-  // With no note, a line that only carries the note goes, rather than reading as a dangling label.
-  const lines = ctx.note ? text : text.split("\n").filter((l) => !/\{\{\s*note\s*\}\}/.test(l)).join("\n");
-  return lines.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, (whole, id: string) => {
-    if (id === "run") return ctx.run ?? RUN_FOLDER_LATER;
-    if (id === "folder") return ctx.folder;
-    if (id === "note") return ctx.note ?? "";
-    if (id === EACH_SLOT) return ctx.each ?? "";
-    const input = spec.inputs.find((i) => i.id === id);
-    if (input) {
-      const v = valueOf(edits, input);
-      return isEmpty(v) ? "(not set)" : env.valueText(input, v);
-    }
-    if (spec.facts.some((f) => f.id === id)) return "(not looked up)";
-    return whole;
-  });
-}
-
-/** The exact brief a helper gets: its prompt filled in, the blind rule when it judges blind, and your note
-    when the prompt doesn't place it itself with {{note}}. */
-export function briefOf(role: PlaybookRole, spec: PlaybookSpec, edits: PlaybookCardEdits, env: Pick<CardEnv, "valueText" | "prompts">, ctx: SlotContext): string {
-  const raw = env.prompts[role.id];
-  const note = edits.roles?.[role.id]?.note?.trim() ?? "";
-  const text = typeof raw === "string" ? fillSlots(raw, spec, edits, env, { ...ctx, note }) : `(${raw?.error ?? "No prompt page."})`;
-  const parts = [text.replace(/\s+$/, "")];
-  if (role.sees === "blind") parts.push("You judge blind: you are never told which arm or version produced what you are given, and you must not try to find out.");
-  if (note && !(typeof raw === "string" && /\{\{\s*note\s*\}\}/.test(raw))) parts.push(`Note for this run: ${note}`);
-  return `${parts.join("\n\n")}\n`;
-}
-
-/** Each helper of a role: its {{each}} words and a file-name part. */
-export function helpersOf(role: PlaybookRole, spec: PlaybookSpec, edits: PlaybookCardEdits): { each?: string; key: string }[] {
-  const count = roleCount(role, spec, edits);
-  if (count.items) return count.items.map((item, k) => ({ each: item, key: `${k + 1}-${slug(item)}` }));
-  if (count.n <= 1) return [{ key: "" }];
-  return Array.from({ length: count.n }, (_, k) => ({ each: `${k + 1} of ${count.n}`, key: String(k + 1) }));
-}
+/** The one-line notes on the card: trimmed, empty when none. */
+const noteOf = (n: string | undefined): string => n?.trim() ?? "";
 
 // ── models ─────────────────────────────────────────────────────────────────────────────────────
 
-const pickOf = (role: PlaybookRole, edits: PlaybookCardEdits): WorkerChoice | null => {
+const pickOf = (role: PlaybookMember, edits: PlaybookCardEdits): WorkerChoice | null => {
   const p = edits.roles?.[role.id]?.pick;
   return p ? choiceOfRef(p.model, p.effort) : null;
 };
@@ -161,9 +121,8 @@ function modelView(e: ChainEntry, env: CardEnv): PlaybookModelView {
 
 const SOURCE: Record<string, PlaybookModelSource> = { pick: "card", list: "list", profile: "profile", chat: "chat" };
 
-export function resolveRole(role: PlaybookRole, edits: PlaybookCardEdits, env: CardEnv): ResolvedRoleModel {
-  const as = role.id === MAIN_ROLE ? "main" : "helper";
-  return env.resolve({ pick: pickOf(role, edits), list: role.models.map((m) => m.choice), only: role.only, ...(role.kind ? { kind: role.kind } : {}) }, as);
+export function resolveRole(role: PlaybookMember, edits: PlaybookCardEdits, env: CardEnv): ResolvedRoleModel {
+  return env.resolve({ pick: pickOf(role, edits), list: role.models.map((m) => m.choice), only: role.only, ...(role.kind ? { kind: role.kind } : {}) }, "helper");
 }
 
 // ── the view ───────────────────────────────────────────────────────────────────────────────────
@@ -184,87 +143,67 @@ function choiceView(input: PlaybookInput, r: Pick<PlaybookRunRecord, "initial" |
     required: input.required,
     ask: input.ask,
     ...(input.each === "cycle" ? { eachCycle: true } : {}),
+    ...(input.type === "text" && input.multiline ? { multiline: true as const } : {}),
   };
 }
 
-/** Which helper roles a step uses (main never counts as a helper). */
-const helperRoles = (step: PlaybookStep, spec: PlaybookSpec, edits: PlaybookCardEdits): PlaybookRole[] =>
-  step.roles.filter((id) => id !== MAIN_ROLE).map((id) => spec.roles.find((r) => r.id === id)).filter((r): r is PlaybookRole => !!r && roleOn(r, edits));
-
-/** A step runs as a team only while two or more of its helper roles are on: with the others turned off on the
-    card, the one left runs as separate helpers, with no coordinator and monitor to pay for. */
-const asTeam = (step: PlaybookStep, spec: PlaybookSpec, edits: PlaybookCardEdits): boolean => step.team && helperRoles(step, spec, edits).length >= 2;
-
 export interface BuiltCard {
   view: PlaybookRunView;
-  /** Each role resolved (on roles only). */
+  /** Each member turned on, resolved. */
   resolved: Record<string, ResolvedRoleModel>;
 }
 
-export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, opts: { mainMessage?: string; runFolder?: string } = {}): BuiltCard {
+export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv): BuiltCard {
   const edits = effectiveEdits(r);
   const choices = spec.inputs.map((i) => choiceView(i, r, edits));
   const resolved: Record<string, ResolvedRoleModel> = {};
   const steps = flatSteps(spec.steps);
-  const teamOf = new Map<string, string>();
-  for (const { step } of steps) if (asTeam(step, spec, edits)) for (const role of helperRoles(step, spec, edits)) if (!teamOf.has(role.id)) teamOf.set(role.id, step.id);
 
-  const roles: PlaybookRoleView[] = spec.roles.map((role) => {
-    const on = roleOn(role, edits);
-    const res = resolveRole(role, edits, env);
-    if (on) resolved[role.id] = res;
-    const count = role.id === MAIN_ROLE ? { n: 1 } : roleCount(role, spec, edits);
+  const memberView = (m: PlaybookMember): PlaybookMemberView => {
+    const on = roleOn(m, edits);
+    const res = resolveRole(m, edits, env);
+    if (on) resolved[m.id] = res;
     const names = res.use ? env.name(res.use) : null;
-    const note = edits.roles?.[role.id]?.note ?? "";
-    const prompt = role.id === MAIN_ROLE ? (opts.mainMessage ?? (typeof env.prompts[MAIN_ROLE] === "string" ? (env.prompts[MAIN_ROLE] as string) : "")) : briefOf(role, spec, edits, env, { folder: r.playbook.dir, ...(helpersOf(role, spec, edits)[0]?.each ? { each: helpersOf(role, spec, edits)[0]!.each } : {}), ...(opts.runFolder ? { run: opts.runFolder } : {}) });
+    const pick = pickOf(m, edits);
     return {
-      id: role.id,
-      label: role.id === MAIN_ROLE ? role.label || "Main chat" : role.label,
-      main: role.id === MAIN_ROLE,
-      ...(role.kind ? { kind: role.kind } : {}),
-      count: count.n,
-      ...(role.per ? { per: spec.inputs.find((i) => i.id === role.per!.input)?.label ?? role.per.input } : {}),
-      optional: role.optional,
+      id: m.id,
+      label: m.label,
+      brief: filled(m.brief, spec, edits, env),
+      ...(m.notes ? { notes: m.notes } : {}),
+      ...(m.kind ? { kind: m.kind } : {}),
+      count: roleCount(m, spec, edits).n,
+      ...(m.per ? { per: spec.inputs.find((i) => i.id === m.per!.input)?.label ?? m.per.input } : {}),
+      optional: m.optional,
       on,
-      only: role.only,
-      chain: [...(pickOf(role, edits) ? [asPick(pickOf(role, edits)!)] : []), ...role.models.map((m) => asPick(m.choice))],
+      only: m.only,
+      chain: [...(pick ? [asPick(pick)] : []), ...m.models.map((x) => asPick(x.choice))],
       models: res.chain.map((e) => modelView(e, env)),
-      options: role.models.map((m) => asPick(m.choice)),
+      options: m.models.map((x) => asPick(x.choice)),
       resolved: res.use && names ? { model: refOfChoice(res.use), modelLabel: names.label, provider: names.provider, ...(res.use.effort ? { effort: res.use.effort } : {}), source: SOURCE[res.source] ?? "chat", ...(res.reason ? { reason: res.reason } : {}) } : null,
       runnable: !!res.use,
-      note,
-      prompt,
-      ...(teamOf.has(role.id) ? { team: teamOf.get(role.id) } : {}),
+      note: edits.roles?.[m.id]?.note ?? "",
     };
-  });
+  };
 
-  const teams: PlaybookTeamView[] = [];
-  const stepViews: PlaybookStepView[] = steps.map(({ step, cycle }) => {
-    const helpers = helperRoles(step, spec, edits);
-    const team = asTeam(step, spec, edits);
-    if (team) {
-      const c = env.name(choiceOfRef(env.team.coordinator.model, env.team.coordinator.effort));
-      const m = env.name(choiceOfRef(env.team.monitor.model, env.team.monitor.effort));
-      teams.push({
-        id: step.id,
-        label: step.label,
-        roles: helpers.map((h) => h.id),
-        coordinator: { modelLabel: c.label, ...(env.team.coordinator.effort ? { effort: env.team.coordinator.effort } : {}) },
-        monitor: { modelLabel: m.label, ...(env.team.monitor.effort ? { effort: env.team.monitor.effort } : {}) },
-      });
-    }
-    return {
-      id: step.id,
-      title: step.label,
-      stop: step.stop ?? "never",
-      stopOn: stopOn(step, edits),
-      runs: !helpers.length ? "main" : team ? "team" : "helpers",
-      ...(team ? { team: step.id } : {}),
-      roles: step.roles,
-      ...(step.report ? { report: step.report } : {}),
-      ...(cycle ? { cycle: true } : {}),
-    };
-  });
+  const teams: PlaybookTeamView[] = spec.teams.map((t) => ({
+    id: t.id,
+    label: t.label,
+    goal: filled(t.goal, spec, edits, env),
+    steps: steps.filter(({ step }) => step.teams.includes(t.id)).map(({ step }) => step.id),
+    note: edits.teams?.[t.id]?.note ?? "",
+    members: t.members.map(memberView),
+  }));
+
+  const stepViews: PlaybookStepView[] = steps.map(({ step, cycle }) => ({
+    id: step.id,
+    title: step.label,
+    ...(step.goal ? { goal: filled(step.goal, spec, edits, env) } : {}),
+    stop: step.stop ?? "never",
+    stopOn: stopOn(step, edits),
+    teams: [...step.teams],
+    ...(step.report ? { report: step.report } : {}),
+    ...(cycle ? { cycle: true } : {}),
+  }));
 
   const group = spec.steps.find((s): s is Extract<PlaybookFlowItem, { kind: "cycle" }> => s.kind === "cycle");
   const cycle = group
@@ -278,16 +217,17 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, 
       }
     : null;
 
-  // Every helper the plan starts, once each, plus each team's coordinator and monitor.
-  const helperTotal = roles.filter((x) => !x.main && x.on).reduce((n, x) => n + x.count, 0) + 2 * teams.length;
+  // Every helper the plan starts, once each, plus each team's coordinator and monitor (never shown as rows).
+  const on = teams.flatMap((t) => t.members.filter((m) => m.on));
+  const helperTotal = on.reduce((n, m) => n + m.count, 0) + 2 * teams.length;
   const view: PlaybookRunView = {
     id: r.id,
     revision: r.revision,
     playbook: { source: r.playbook.source, id: r.playbook.id, title: r.playbook.title, dir: r.playbook.dir },
     state: r.state,
     choices,
-    roles,
     teams,
+    who: { teams: teams.length, members: on.length },
     steps: stepViews,
     cycle,
     howItRuns: howItRuns(spec, r),
@@ -297,7 +237,7 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, 
     ...(r.started ? { started: r.started } : {}),
     ...(r.startError ? { startError: r.startError } : {}),
   };
-  view.startBlocked = blocked(view, spec, edits, env, teams);
+  view.startBlocked = blocked(view, spec, edits, env);
   return { view, resolved };
 }
 
@@ -332,7 +272,7 @@ function howItRuns(spec: PlaybookSpec, r: PlaybookRunRecord): string {
   return `${parts.join(", ")}.`;
 }
 
-function blocked(view: PlaybookRunView, spec: PlaybookSpec, edits: PlaybookCardEdits, env: CardEnv, teams: PlaybookTeamView[]): string | null {
+function blocked(view: PlaybookRunView, spec: PlaybookSpec, edits: PlaybookCardEdits, env: CardEnv): string | null {
   if (view.state !== "draft") return view.state === "starting" ? "Starting…" : "This run has started.";
   if (env.needs) return env.needs;
   for (const input of spec.inputs) {
@@ -344,16 +284,15 @@ function blocked(view: PlaybookRunView, spec: PlaybookSpec, edits: PlaybookCardE
     const why = env.checkValue(input, v);
     if (why) return why;
   }
-  for (const role of view.roles) {
-    if (!role.on) continue;
-    if (!role.runnable) return `${role.label} has no model that can run here: ${role.models.map((m) => `${m.label} (${m.why ?? "can't run"})`).join(", ") || "its list is empty"}.`;
-    if (!role.main && role.count < 1) return `${role.label} has nobody to run: ${role.per ? `pick at least one in ${role.per}` : "its count is 0"}.`;
-    const p = env.prompts[role.id];
-    if (!role.main && typeof p !== "string") return `${role.label}'s prompt can't be read: ${p?.error ?? "no prompt page"}.`;
-  }
+  for (const t of view.teams)
+    for (const m of t.members) {
+      if (!m.on) continue;
+      if (!m.runnable) return `${m.label} has no model that can run here: ${m.models.map((x) => `${x.label} (${x.why ?? "can't run"})`).join(", ") || "its list is empty"}.`;
+      if (m.count < 1) return `${m.label} has nobody to run: ${m.per ? `pick at least one in ${m.per}` : "its count is 0"}.`;
+    }
   if (view.helpers.total > view.helpers.limit) return `The plan needs ${view.helpers.total} helpers, and one chat runs at most ${view.helpers.limit} at once.`;
-  for (const t of teams) {
-    const seats = view.roles.filter((x) => t.roles.includes(x.id)).reduce((n, x) => n + x.count, 0) + 2;
+  for (const t of view.teams) {
+    const seats = t.members.filter((m) => m.on).reduce((n, m) => n + m.count, 0) + 2;
     if (seats > HELPER_LIMIT) return `The team "${t.label}" needs ${seats} seats, and a team seats at most ${HELPER_LIMIT}.`;
   }
   if (view.cycle && (view.cycle.max < 1 || view.cycle.max > CYCLE_MAX || view.cycle.askEvery < 1 || view.cycle.askEvery > view.cycle.max)) return `The cycle settings don't fit: at most 1 to ${CYCLE_MAX} cycles, asking every 1 to that many.`;
@@ -373,10 +312,14 @@ export interface PlanModel {
   why?: string;
 }
 
-export interface PlanRole {
+export interface PlanMember {
   id: string;
   label: string;
-  main: boolean;
+  team: string;
+  /** One line: why it is on the team, your choices filled in. */
+  brief: string;
+  /** Its working notes page, relative to the playbook's folder. */
+  notes?: string;
   kind?: string;
   count: number;
   /** One helper per item: the items. */
@@ -389,17 +332,14 @@ export interface PlanRole {
   note?: string;
   sees: "all" | "blind";
   fresh: "run" | "cycle";
-  /** Brief files, relative to the run folder: one, or one per item. */
-  briefs: string[];
-  team?: string;
 }
 
 export interface PlanStep {
   id: string;
   label: string;
-  roles: string[];
-  runs: "main" | "team" | "helpers";
-  team?: string;
+  goal?: string;
+  /** The teams that work in it; none: the main chat alone. */
+  teams: string[];
   /** It stops here and asks you. */
   stop: boolean;
   asks: string[];
@@ -411,9 +351,12 @@ export interface PlanStep {
 export interface PlanTeam {
   id: string;
   label: string;
-  roles: string[];
-  /** team_create's argument, relative to the run folder. */
-  file: string;
+  goal: string;
+  note?: string;
+  /** The steps it works in. */
+  steps: string[];
+  /** Its required members turned on, by id (each in `members`). */
+  members: string[];
 }
 
 export interface PlaybookPlan {
@@ -424,8 +367,8 @@ export interface PlaybookPlan {
   playbook: PlaybookRef;
   /** Your choices as frozen: id → label, value and its words. */
   choices: { id: string; label: string; value: InputValue | null; text: string }[];
-  roles: PlanRole[];
   teams: PlanTeam[];
+  members: PlanMember[];
   steps: PlanStep[];
   cycle: { id: string; label: string; max: number; askEvery: number; until: "rule" | "max"; rule?: string; carry?: string; steps: string[] } | null;
   run: { chat: "this" | "new"; worktree: "none" | "new"; mode?: string; minorModes?: string[]; permissions: boolean };
@@ -442,78 +385,57 @@ export interface PlanFiles {
   files: Record<string, string>;
 }
 
-const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "item";
-
-/** Freeze the card: the plan, and every file the run folder gets (briefs, team layouts, the plan itself). */
-export function freezePlan(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, card: BuiltCard, newChat: boolean, at: string, folder: string): PlanFiles {
+/** Freeze the card: the plan, and the file the run folder gets. No member prompt is filled in: each team's
+    coordinator writes its members' instructions from the team's goal and their briefs. */
+export function freezePlan(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv, card: BuiltCard, newChat: boolean, at: string): PlanFiles {
   const edits = effectiveEdits(r);
-  const files: Record<string, string> = {};
-  const roles: PlanRole[] = [];
-  for (const role of spec.roles) {
-    const res = card.resolved[role.id];
-    if (!res || !roleOn(role, edits)) continue;
-    const count = role.id === MAIN_ROLE ? { n: 1 } : roleCount(role, spec, edits);
-    const chain: PlanModel[] = res.chain.map((e) => ({ model: refOfChoice(e.choice), backend: e.choice.backend, ...(e.choice.effort ? { effort: e.choice.effort } : {}), from: SOURCE[e.source] ?? "chat", ...(e.why ? { why: e.why } : {}) }));
-    const use = res.use ? res.chain.findIndex((e) => e.choice.backend === res.use!.backend && e.choice.model === res.use!.model && !e.why) : -1;
-    const briefs: string[] = [];
-    if (role.id !== MAIN_ROLE)
-      for (const h of helpersOf(role, spec, edits)) {
-        const f = `briefs/${role.id}${h.key ? `.${h.key}` : ""}.md`;
-        files[f] = briefOf(role, spec, edits, env, { folder: r.playbook.dir, run: folder, ...(h.each ? { each: h.each } : {}) });
-        briefs.push(f);
-      }
-    const view = card.view.roles.find((v) => v.id === role.id);
-    roles.push({
-      id: role.id,
-      label: view?.label ?? role.label,
-      main: role.id === MAIN_ROLE,
-      ...(role.kind ? { kind: role.kind } : {}),
-      count: count.n,
-      ...(count.items ? { items: count.items } : {}),
-      only: role.only,
-      chain,
-      use,
-      ...(res.reason ? { reason: res.reason } : {}),
-      ...(edits.roles?.[role.id]?.note?.trim() ? { note: edits.roles[role.id]!.note!.trim() } : {}),
-      sees: role.sees,
-      fresh: role.fresh,
-      briefs,
-      ...(view?.team ? { team: view.team } : {}),
-    });
-  }
+  const members: PlanMember[] = [];
+  const teams: PlanTeam[] = spec.teams.map((t: PlaybookTeam) => {
+    const tv = card.view.teams.find((x) => x.id === t.id)!;
+    const ids: string[] = [];
+    for (const m of t.members) {
+      const res = card.resolved[m.id];
+      if (!res || !roleOn(m, edits)) continue;
+      const count = roleCount(m, spec, edits);
+      const chain: PlanModel[] = res.chain.map((e) => ({ model: refOfChoice(e.choice), backend: e.choice.backend, ...(e.choice.effort ? { effort: e.choice.effort } : {}), from: SOURCE[e.source] ?? "chat", ...(e.why ? { why: e.why } : {}) }));
+      const use = res.use ? res.chain.findIndex((e) => e.choice.backend === res.use!.backend && e.choice.model === res.use!.model && !e.why) : -1;
+      const note = noteOf(edits.roles?.[m.id]?.note);
+      members.push({
+        id: m.id,
+        label: m.label,
+        team: t.id,
+        brief: filled(m.brief, spec, edits, env),
+        ...(m.notes ? { notes: m.notes } : {}),
+        ...(m.kind ? { kind: m.kind } : {}),
+        count: count.n,
+        ...(count.items ? { items: count.items } : {}),
+        only: m.only,
+        chain,
+        use,
+        ...(res.reason ? { reason: res.reason } : {}),
+        ...(note ? { note } : {}),
+        sees: m.sees,
+        fresh: m.fresh,
+      });
+      ids.push(m.id);
+    }
+    const note = noteOf(edits.teams?.[t.id]?.note);
+    return { id: t.id, label: t.label, goal: tv.goal, ...(note ? { note } : {}), steps: tv.steps, members: ids };
+  });
 
   const steps: PlanStep[] = flatSteps(spec.steps).map(({ step, cycle }) => {
     const v = card.view.steps.find((s) => s.id === step.id)!;
     return {
       id: step.id,
       label: step.label,
-      roles: step.roles,
-      runs: v.runs,
-      ...(v.team ? { team: v.team } : {}),
+      ...(v.goal ? { goal: v.goal } : {}),
+      teams: [...step.teams],
       stop: v.stopOn,
       asks: step.asks,
       ...(step.report ? { report: step.report } : {}),
       ...(step.phase ? { phase: step.phase } : {}),
       ...(cycle ? { cycle } : {}),
     };
-  });
-
-  const teams: PlanTeam[] = card.view.teams.map((t) => {
-    const file = `teams/${t.id}.json`;
-    const members = t.roles.flatMap((id) => {
-      const p = roles.find((x) => x.id === id);
-      if (!p) return [];
-      const m = p.chain[p.use];
-      const one = (brief: string, n: number) => ({
-        role: p.count > 1 ? `${p.id}-${n}` : p.id,
-        prompt: files[brief] ?? "",
-        ...(m ? { backend: m.backend, model: m.backend === "claude-code" ? m.model.replace(/^claude-code\//, "") : m.model, ...(m.effort ? { effort: m.effort } : {}) } : {}),
-        ...(p.kind ? { kind: p.kind } : {}),
-      });
-      return p.briefs.map((b, k) => one(b, k + 1));
-    });
-    files[file] = `${JSON.stringify({ name: `${r.playbook.id}-${t.id}`, objective: `${r.playbook.title}: ${t.label}`, members }, null, 2)}\n`;
-    return { id: t.id, label: t.label, roles: t.roles, file };
   });
 
   const group = spec.steps.find((s): s is Extract<PlaybookFlowItem, { kind: "cycle" }> => s.kind === "cycle");
@@ -527,8 +449,8 @@ export function freezePlan(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEn
       const v = valueOf(edits, input);
       return { id: input.id, label: input.label, value: isEmpty(v) ? null : (v as InputValue), text: isEmpty(v) ? "(not set)" : env.valueText(input, v) };
     }),
-    roles,
     teams,
+    members,
     steps,
     cycle: group && card.view.cycle ? { id: group.id, label: group.label, max: card.view.cycle.max, askEvery: card.view.cycle.askEvery, until: card.view.cycle.until ?? group.settings.until, ...(group.rule ? { rule: group.rule } : {}), ...(group.carry ? { carry: group.carry } : {}), steps: group.steps.map((s) => s.id) } : null,
     run: { chat: newChat ? "new" : "this", worktree: spec.run.worktree, ...(spec.run.mode ? { mode: spec.run.mode } : {}), ...(spec.run.minorModes ? { minorModes: [...spec.run.minorModes] } : {}), permissions: !!spec.run.permissions },
@@ -537,6 +459,5 @@ export function freezePlan(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEn
     view: card.view,
   };
   const { view: _view, ...onDisk } = plan;
-  files["plan.json"] = `${JSON.stringify(onDisk, null, 2)}\n`;
-  return { plan, files };
+  return { plan, files: { "plan.json": `${JSON.stringify(onDisk, null, 2)}\n` } };
 }

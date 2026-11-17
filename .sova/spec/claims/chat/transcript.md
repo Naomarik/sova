@@ -1210,11 +1210,12 @@ whether the person stays on the chat, moves to another chat, home or Back, reloa
 closes the tab. A reconnect is not this: once the tab's connection to the chat has opened, Send
 waits through a drop (§chat.composer/disabled-states).
 
-- **A new chat that asks first.** In the asking mode (§chat.context-approval/held-send) a watched
-  page's first message into a chat that still has Waiting items is refused by the server (code
-  `decide-first`, on the chat's socket and on `POST /api/sessions/prompt` alike), and the message comes
-  back as the draft, its setup card read again; Send then waits until nothing is left to decide. A
-  chat no one watches is never held (§chat.context-approval/unwatched).
+- **A new chat with New items.** A first message is never refused for a context file or skill
+  nobody has set: the chat starts with it off (§chat.context-approval/held-send). Before it goes in,
+  the server checks the chat's list against its folder's saved switches and rebuilds the chat first
+  when they differ; when that rebuild fails, or the switches can't be read, the message is refused
+  and comes back as the draft
+  (§chat.context-approval/at-once).
 - **Straight to the server.** The tab writes the message, and anything asked of that chat before
   it (a change of model, thinking level, Claude login, mode or sandbox, a rewind, regenerate,
   Remove of a queued message or `/compact`), on the connection that wakes or first opens the chat
@@ -1463,7 +1464,8 @@ main-pane rows.
     <details class="setup-context">                    <!-- closed by default -->
       <summary class="setup-group setup-sum" title="Everything pi loads into the prompt, plus the skills it offers.">
         …chevron… <span class="setup-sum-label">System context</span>
-        <span class="setup-sum-facts">40 KB · 687 lines · ≈10.2k tokens</span>  <!-- omitted at 0 B · 0 lines -->
+        <span>4 files, 2 skills on</span> <span>1 new, off</span> <span>1 changed</span>  <!-- the last two only when some -->
+        <span class="setup-sum-facts">≈8.1k tokens</span>                    <!-- omitted when nothing is on -->
       </summary>
       <!-- the loadout: these two groups, or one line in their place; then the Tools group -->
       <div class="setup-group">…Context (/setup-card-context)…</div>
@@ -1488,8 +1490,8 @@ main-pane rows.
 - **System context is folded.** Everything on the card but Repository, that is the loadout (the
   `System context` line, Context and Skills, or the one line in their place), the Tools group and
   the MCP Servers group, sits in one `<details class="setup-context">`, closed by default. Its `<summary>` is the
-  `System context` line with a chevron, and reads just "System context" when there is no sum to
-  show. Repository stays outside it, always shown. Opening or closing it is kept for that session
+  `System context` line with a chevron, and reads just "System context" when it has nothing to
+  count. Repository stays outside it, always shown. Opening or closing it is kept for that session
   while the page is open, so the redraw after a profile pick or a switch flip (the runtime reopens)
   keeps it as it was; nothing is saved, so a reload of the page shows it closed again.
 - **It lands whole.** It asks two things at once, the loadout (`GET /api/sessions/context`) and
@@ -1502,26 +1504,32 @@ main-pane rows.
   card has gone, or for a session it no longer shows, is dropped. Nothing on it polls or links: no
   Refresh button, no timer, no anchors (a file's name is a button that reads that one file when
   pressed, /setup-card-open-file), and a commit's age is worked out when the card draws and
-  doesn't tick. The loadout is redrawn in three cases only, the first two from
-  /setup-card-toggles: a flip of a row's switch draws the server's answer in place; when the
-  chat says the switch window has opened after the first read, the loadout is read again,
-  skipping the cache; and a profile pick that takes MCP Servers away or gives them back, or a
-  sandbox change, reads the MCP Servers group again. None of them draws over a newer answer. Either answer can be the server's cached read of that folder, up
+  doesn't tick. The loadout is redrawn in these cases only, the first three from
+  /setup-card-toggles: a flip of a context file or skill switch, or a group switch, shows at
+  once and the card is read again in place once its save is answered
+  (§chat.context-approval/at-once), and again when the folder's chats are rebuilt
+  (§chat.context-approval/live); a flip of an MCP server's switch draws the server's answer in
+  place; when the chat says the switch window has opened after the first read, the loadout is read
+  again, skipping the cache; and a profile pick that takes MCP Servers away or gives them back, or
+  a sandbox change, reads the MCP Servers group again. None of them draws over a newer answer. Either answer can be the server's cached read of that folder, up
   to 30s old for the loadout and 10s for the repository, and a repository read already running
   for the same session is joined rather than repeated.
 - **Order.** The loadout comes first and Repository last, every time. For a local folder pi's
   loader could read, the loadout is the `System context` line, then Context, then Skills. In
   every other case it is a single line (below). Each group after the first sits under a 1px
   `--color-border` rule.
-- **The one aggregate line.** `System context` leading, its figures trailing in the shape a section
-  total uses (`KB · lines · ≈tokens`). It adds up every Context row and every Skills row that is on and offered (a manual-only skill never is) (a row switched off,
-  /setup-card-toggles, is listed but not counted), which is exactly what the two groups under it
-  total, so it is the sum of their two totals. Its `title` is the one sentence saying so:
-  "Everything pi loads into the prompt, plus the skills it offers." It carries no heading, because
-  it is a line and not a section. Its figures are left out when they would read `0 B · 0 lines`,
-  that is when there are no files, only empty ones, or every row is off. It is not what the prompt costs before the first
-  message: it counts each offered skill's SKILL.md whole, and a skill loads only when it is used
-  (/setup-card-skills). The title's "plus the skills it offers" is what says so.
+- **The one aggregate line.** `System context` leading; then "{f} files, {s} skills on" (the
+  context files on, and the offered skills on, manual-only ones never); then, while new ones start
+  off and some row is New and off, "{n} new, off"; then, while some row is Changed and on, "{c}
+  changed" (§chat.context-approval/marks), each with its mark (a dot, a diamond), never colour alone;
+  then, right-aligned, its token figure alone (`≈8.1k tokens`; bytes and lines only when no row
+  carries an estimate). It adds up every Context row and every Skills row that is on and offered (a
+  row that is off, /setup-card-toggles, is listed but not counted), which is exactly what the two
+  groups under it total. A skill counts as its listing, its name and description
+  (/setup-card-skills), so the figure is what the prompt carries before the first message: the
+  context files whole and each offered skill's description. Its `title` is the one sentence saying
+  so: "Everything pi loads into the prompt, plus the skills it offers." It carries no heading,
+  because it is a line and not a section. The figure is left out when nothing is on.
 - **One line in place of Context and Skills.** A `.setup-note` in its own group, with no
   aggregate line:
   - A remote session: "Skills and context files are read on {target}, so they aren't listed
@@ -1542,7 +1550,7 @@ main-pane rows.
   its own inline-size container. Under 420px across, every row, the aggregate line and each
   group's total put their figures on their own line under the name, left-aligned, except a row
   with a switch (/setup-card-toggles): it stays one line, its name ellipsised, then ≈tokens, then
-  the switch at the right edge. The group padding tightens from `--space-4`/`--space-5` to `--space-3`/`--space-4`.
+  the switch at the right edge, its On or Off word hidden (a group switch keeps its word). The group padding tightens from `--space-4`/`--space-5` to `--space-3`/`--space-4`.
 - **Accessibility.** The card is a `section` with `aria-label="Session setup"`. Context, Skills
   and Repository are `h2`s (the session head's title is the `h1`). The aggregate line has no
   heading. Icons are `aria-hidden`. Rows aren't focusable, so what a row's `title` carries (a full
@@ -1579,12 +1587,14 @@ The files pi puts into the prompt, in the order it loads them.
 ```
 
 - **Heading and count.** `Context · {n}`, where n is the rows listed, SYSTEM.md and
-  APPEND_SYSTEM.md rows included. With none it reads `Context · 0`.
+  APPEND_SYSTEM.md rows included. With none it reads `Context · 0`. While the switches show
+  (/setup-card-toggles) the heading ends in the group's switch, "All context files", after its
+  total, with the line a group flip leaves under it and its Undo (§chat.context-approval/group).
 - **The total beside the label** (`.setup-total`) is the rows that are on added up, as size ·
   lines · ≈tokens (/setup-card-figures). It is left out when they add up to `0 B · 0 lines`.
-- **Off rows.** A row this session has switched off (/setup-card-toggles) stays listed and
-  counted in the heading's n, but it is dimmed (`.setup-row-off`: its name and figures at half
-  opacity) and no total counts it, because pi doesn't load it.
+- **Off rows.** A row that is off (/setup-card-toggles) stays listed and counted in the heading's
+  n, but it is dimmed (`.setup-row-off`: its name and figures at half opacity) and no total counts
+  it, because pi doesn't load it.
 - **Load order, and each row's role.** A `SYSTEM.md` that replaces the default prompt comes
   first, marked "replaces the system prompt", because it is the prompt the rest is added to. The
   context files follow in the order pi layers them (global, then ancestors, then the folder),
@@ -1619,29 +1629,50 @@ The skills pi offers this session: what it is **offered**, not what is loaded.
 <div class="setup-group">
   <div class="setup-head">
     <h2 class="text-eyebrow setup-label">Skills · 2</h2>
-    <span class="setup-total">9.3 KB · 212 lines · ≈2.3k tokens</span>   <!-- omitted at 0 B · 0 lines -->
+    <span class="setup-total">2 of 3 on · ≈160 tokens of descriptions</span>
+    …the group switch (§chat.context-approval/group)…
   </div>
-  <p class="setup-note">Offered to this session. A skill loads when it is used. Skills an extension adds aren't listed. Token counts are estimates: 4 characters per token.</p>
+  <p class="setup-note">Offered to this session. Only a skill's description is in the prompt until the skill is used. Token counts are estimates: 4 characters per token.</p>
   <ul class="setup-list">
     <li class="setup-row" title="/home/user/.pi/agent/skills/pdf/SKILL.md&#10;Read and fill in PDF forms.">
       <span class="setup-name"><span class="setup-path">pdf</span></span>
-      <span class="setup-facts">≈1.1k tokens</span>
+      <button class="setup-facts setup-size" aria-haspopup="dialog" aria-expanded="false">≈40 tokens</button>
+      …its switch (/setup-card-toggles)…
     </li>
-    <li class="setup-row" title="…">…</li>
   </ul>
+  <!-- manual-only skills, apart -->
+  <h3 class="text-eyebrow setup-label">Slash commands · 1</h3>
+  <p class="setup-note">Not in the prompt. They load only when you type the command.</p>
+  <ul class="setup-list">…`/skill:explorable` and its description…</ul>
 </div>
 ```
 
-- **Heading and count.** `Skills · {n}`, where n is the rows listed, off rows included. The total
-  beside the label follows Context's rule: it adds up only the rows that are on, and it is left
-  out at `0 B · 0 lines`.
-- **Offered, not loaded.** The rows that are on are the skills pi lists to the model, in its
-  order. A row this session has switched off (/setup-card-toggles) stays listed in its place,
-  dimmed like an off Context row, but it is not offered, so the model never sees it. A skill
-  loads when it is used, and the note's first two sentences say so. A row's token estimate is its whole
-  SKILL.md file, so they are not something the session carries before it uses that skill.
-- **Manual only.** A manual-only skill (§chat.skill-sources/manual-only) keeps its row and its switch,
-  says `Manual only` under its name, and isn't in the total.
+- **Heading and count.** `Skills · {n}`, where n is the skills listed under it, off rows included,
+  manual-only ones not. Beside the label, "{on} of {n} on · ≈{t} tokens of descriptions", the
+  tokens adding up only the rows that are on (a listing is no file, so it has no size or lines).
+  While the switches show (/setup-card-toggles) the heading ends in the group's switch, "All
+  skills", with the line a group flip leaves under it and its Undo (§chat.context-approval/group).
+- **Offered, not loaded.** The rows that are on are the skills pi lists to the model, in its order. A
+  row that is off (/setup-card-toggles) stays listed in its place, dimmed like an off Context row,
+  but it is not offered, so the model never sees it. Only a skill's name and description are in the
+  prompt until the skill is used, and the note says so.
+- **A row's size is its listing.** A row's `≈{n} tokens` is the estimate of what the prompt lists for
+  the skill, its name, description and location, the part every chat carries, as the Context tab
+  sizes an offered skill (§app.subagents-pane/context-tab). The group total and the `System context`
+  line add up these figures (/setup-card). A server too old to send a listing's estimate leaves the
+  row its whole SKILL.md's.
+- **The size's detail.** The figure is a button, underlined with dots, that opens the design
+  system's popover in the top layer, never a browser tooltip: it shows on hover or focus, a press
+  pins it, and a second press, Escape or a press outside closes it. It gives two lines,
+  **Description** "in every chat" `≈{n} tokens` and **SKILL.md** "when used" `≈{n} tokens`, the
+  whole file's estimate. The project's Skills card and a folder's dialog have the same popover. The
+  Context tab gives the same lines, with what that chat loaded, on the skill's sheet
+  (§app.subagents-pane/context-tab-skill-loads).
+- **Slash commands.** A manual-only skill (§chat.skill-sources/manual-only) is never offered, so it is
+  not a Skills row: it is listed apart, after the Skills rows, under `Slash commands · {n}` with the
+  note "Not in the prompt. They load only when you type the command.", each as `/skill:{name}` with
+  its description and its own switch (and New mark), with no figure. It is in no total, and the
+  Skills group switch doesn't cover it; the part has no group switch. With none, it isn't shown.
 - **What didn't load.** Under the list (or under the empty line), one quiet line names each skill that
   couldn't load or lost to a same-named one, and why: `Not loaded: bad-skill (no description) ·
   clojure (same name as ~/.agents/skills/clojure)`. A skill whose file couldn't be read as front matter
@@ -1656,9 +1687,9 @@ The skills pi offers this session: what it is **offered**, not what is loaded.
   server doesn't hold open, such as one a TUI owns) Sova asks pi's own loader for the folder
   without extensions, which can't see a skill path an extension adds. The list is then a lower
   bound, and the note says so: "Skills an extension adds aren't listed."
-- **The note.** "Offered to this session. A skill loads when it is used.", then the caveat when
-  Sova's loader built the list, then the token sentence (/setup-card-figures) when any row
-  carries an estimate.
+- **The note.** "Offered to this session. Only a skill's description is in the prompt until the
+  skill is used.", then the caveat when Sova's loader built the list, then the token sentence
+  (/setup-card-figures) when any row carries an estimate.
 - **Empty.** With no rows there is no note, no list and no total, only "No skills offered to this
   session." It keeps the caveat ("… Skills an extension adds aren't listed.") when Sova's loader
   built the list, since an empty list from that loader may be missing exactly the skills an
@@ -1755,7 +1786,8 @@ repository around the folder. Two of its figures:
   read is capped at three because this is a glance at where the folder stands, not a log viewer.
 - **Every loadout figure carries an estimated token count**, in the app's one token formatter
   (§chat/context-window: `812 · 8.4k · 237k · 1M`). A Context or Skills row shows only that
-  estimate (`≈530 tokens`), with no size and no lines, neither on screen nor in a tooltip; the
+  estimate (`≈530 tokens`; a skill's is its listing, and its popover adds its SKILL.md's,
+  /setup-card-skills), with no size and no lines, neither on screen nor in a tooltip; the
   section totals and the `System context` line keep `31 KB · 475 lines · ≈8.1k tokens`, the
   token figure last in both, so it reads as one column. The estimate is pi's own —
   `ceil(characters ÷ CHARS_PER_TOKEN)`, `pi-ai`'s `estimateTextTokens`, never a tokenizer (characters
@@ -1799,16 +1831,20 @@ card shows it; the session pane's Repository section doesn't.
 - At most one warning, stuck first. It is drawn in warn ink with the alert icon, and its words
   carry it alone.
 
-## §chat.transcript/setup-card-toggles — Setup card: switching context files and skills off
+## §chat.transcript/setup-card-toggles — Setup card: the folder's switches, and MCP servers for this chat
 
 On an ordinary session this server hosts, before its first message, every context file row and
-every skill row of the setup card (/setup-card-context, /setup-card-skills) carries an on/off
-switch. A switch that is off keeps that file out of this session's prompt, or that skill out of the
-skills it is offered, for this one session only.
+every skill row of the setup card (/setup-card-context, /setup-card-skills) carries its folder's
+on/off switch (§chat.context-approval/modes): a flip turns that file or skill on or off for the
+new chats of the session's project, or of its folder when it is no project, this session included.
+The MCP Servers group's switches are this session's own.
 
 ```html
 <li class="setup-row setup-row-off" title="/home/user/.pi/agent/AGENTS.md">
-  <span class="setup-name"><span class="setup-path">~/.pi/agent/AGENTS.md</span></span>
+  <span class="setup-name">
+    <span class="setup-path">~/.pi/agent/AGENTS.md</span>
+    <span class="setup-mark">…New, or Changed since you turned it on and Accept Change…</span>
+  </span>
   <span class="setup-facts">≈530 tokens</span>
   <label class="toggle toggle-switch setup-toggle">
     <input type="checkbox" aria-label="Load ~/.pi/agent/AGENTS.md" />   <!-- unchecked: off -->
@@ -1818,59 +1854,65 @@ skills it is offered, for this one session only.
 ```
 
 - **Which rows switch.** Every context file pi lists, the global `~/.pi/agent/AGENTS.md` (or
-  `CLAUDE.md`) included, and every skill. A SYSTEM.md that replaces the prompt and the
-  APPEND_SYSTEM.md sources get no switch: they are always loaded.
+  `CLAUDE.md`) included, and every skill, a manual-only one in its Slash commands part
+  (/setup-card-skills). A
+  SYSTEM.md that replaces the prompt and the APPEND_SYSTEM.md sources get no switch: they are always
+  loaded.
 - **When.** Exactly the Profile pick's window (§chat.profiles/picker, /applying): the switches show
   only while the session is before its first message, the server holds its chat, the session is
   local, ordinary (not the Overseer, a project overseer, baton, organization or worker session)
   and not open in a terminal. Otherwise the card is as before, with no switches, though a row
   this session keeps off still reads off (except while a terminal has it open, since the TUI
   loads every row).
-- **Where the switches start.** Each context file and skill row starts as its folder's decisions say
+- **The folder's switch.** Each context file and skill row shows its folder's decision
   (§chat/context-approval): the folder is the session's project (its folder, a folder inside it, or
   one of its worktrees, as §app/projects matches folders), or the session's own folder when it is no
-  project. A Disallowed row starts off, saying `Off for this project` under its name, and its switch
-  still turns it on for this one session (§chat.skill-sources/project-new-chats). In the default mode
-  every other row starts on; in the asking mode a Waiting row starts off too, with Approve and
-  Disallow (§chat.context-approval/held-send). Turning a row on with its switch never counts as
-  deciding it, and turning on a row its folder keeps off (Disallowed, or Waiting while asking) is the
-  operator's own page only (§chat.context-approval/who). A flip itself lives in the session alone.
+  project. Its mark sits under its name (§chat.context-approval/marks). A flip saves to the folder's
+  list (`PUT /api/folder-approvals`, §chat.context-approval/folders), shows at once and holds Send
+  with "Saving…" until the rebuilt chat's card is read (§chat.context-approval/at-once); turning a row
+  on is the operator's own page only (§chat.context-approval/who). There is no switch for this
+  session alone, and the card writes no per-session list of context files or skills. Under the lists
+  the card says where they are kept and opens them (§chat.context-approval/folders).
 - **MCP Servers.** The card's MCP Servers group, after Tools, has one row for each server the chat
   could list (§app.mcp/tool-list): its name, its token cost measured at its last Check, and a switch
-  that follows this section's window and flip. A server starts as its New Chats switch says, not
-  always on, and a flip holds for this chat alone. A server that can't be switched on here keeps its
-  row with no switch and says why: Waiting for You, no Check yet, or an address server under
-  sandbox On (§app.mcp/sandbox). A refused entry (§app.mcp/rows) has no row at all. The group is one line, with no rows, in a remote chat and on a
-  profile that removes MCP Servers, and only when this computer has a server or the folder declares
-  one. A folder that is no project says its `.mcp.json` won't run (§app.mcp/project-servers). With no
-  server on the computer and none declared there is no group. It adds nothing
-  to the `System context` figures.
-- **A flip applies at once.** The card sends the session's whole off set
-  (`POST /api/sessions/loadout {path, offContext, offSkills, offMcp, onMcp}`), and while it applies every switch
-  is disabled. The server writes a hidden `custom` entry `customType: "sova-loadout"`, data
-  `{v: 1, offContext: [absolute paths], offSkills: [SKILL.md paths], onSkills?: [SKILL.md paths],
-  onContext?: [absolute paths], asking?: true, onlyContext?: [absolute paths], onlySkills?: [SKILL.md
-  paths], offMcp: [server names], onMcp: [server names]}` (an entry from before skills were told apart by
-  place names them in `offSkills` by name), the last two only where a flip differs from the server's New Chats switch, newest
-  on the branch wins, then
-  rebuilds the session's runtime the way a profile pick does: open tabs get `reloaded` and
-  reconnect, keeping the draft. The answer is the card's new loadout, which it draws in place. A
-  refusal (409: "Context files, skills and MCP servers are fixed once a message is sent.", mid-turn, open in a
-  terminal, a foreign writer, a special session) changes nothing and is shown as a toast. A set
-  equal to the one the session already has writes nothing and rebuilds nothing.
-- **Before the first message.** The entry holds only this session's flips against its folder's
-  decisions: its `offSkills` and `offContext` the ones it switched off, its `onSkills` and `onContext`
-  the ones its folder keeps off that it switched on. The session is built from its folder's decisions in the mode
-  Sova is in, with its flips laid over them.
+  that follows this section's window and holds for this chat alone; the group says so, "This chat
+  only". A server starts as its New Chats switch says, not always on. A server that can't be
+  switched on here keeps its row with no switch and says why: Waiting for You, no Check yet, or an
+  address server under sandbox On (§app.mcp/sandbox). A refused entry (§app.mcp/rows) has no row at
+  all. The group is one line, with no rows, in a remote chat and on a profile that removes MCP
+  Servers, and only when this computer has a server or the folder declares one. A folder that is no
+  project says its `.mcp.json` won't run (§app.mcp/project-servers). With no server on the computer
+  and none declared there is no group. It adds nothing to the `System context` figures.
+- **An MCP flip applies at once.** The card sends the session's MCP set (`POST /api/sessions/loadout
+  {path, offMcp, onMcp}`), and while it applies every MCP switch is disabled. The route is for MCP
+  servers only: context file or skill lists in its body are passed over, and the context file and
+  skill flips an entry already holds are written back unchanged. A body that isn't an object, or bad
+  `offMcp`/`onMcp`, is refused, 400 "Expected {path, offMcp?: server names, onMcp?: server names}". The server writes a
+  hidden `custom` entry `customType: "sova-loadout"`, data `{v: 1, offContext: [absolute paths],
+  offSkills: [SKILL.md paths], onSkills?: [SKILL.md paths], onContext?: [absolute paths], asking?:
+  true, onlyContext?: [absolute paths], onlySkills?: [SKILL.md paths], offMcp: [server names], onMcp:
+  [server names]}` (an entry from before skills were told apart by place names them in `offSkills` by
+  name), the MCP lists only where a flip differs from the server's New Chats switch, newest on the
+  branch wins, then rebuilds the session's runtime the way a profile pick does: open tabs get
+  `reloaded` and reconnect, keeping the draft. The answer is the card's new loadout, which it draws
+  in place. A refusal (409: "Context files, skills and MCP servers are fixed once a message is
+  sent.", mid-turn, open in a terminal, a foreign writer, a special session) changes nothing and is
+  shown as a toast. A set equal to the one the session already has writes nothing and rebuilds
+  nothing.
+- **Before the first message.** The session is built from its folder's decisions in the mode Sova is
+  in. An unsent session that already holds context file or skill flips from before this switch was
+  the folder's (`offContext`, `offSkills`, `onContext`, `onSkills`) keeps them laid over its folder's
+  decisions; nothing writes new ones.
 - **Written at the first message too.** When the first message is sent, the server writes the entry
   once, before the message goes in, so the list is fixed for the session's life
-  (§chat.context-approval/fixed). A session started in the default mode gets what it has off then as
-  its `offContext` and `offSkills` (and the ones its folder keeps off that it keeps on as `onSkills`
-  and `onContext`); from then on only those lists count, and a session with nothing off and no entry gets none. A session started
-  in the asking mode always gets one, with `asking: true` and the exact lists of what it may load,
-  `onlyContext` and `onlySkills`: anything not on them stays off, even what appears later. A session
-  past its first message with no entry, or with one and no `asking` (one started before this
-  feature), keeps loading as its entry says and never takes up its folder's decisions.
+  (§chat.context-approval/fixed). A session started while new ones start on gets what it has off then
+  as its `offContext` and `offSkills` (and the ones its folder keeps off that it keeps on as `onSkills`
+  and `onContext`); from then on only those lists count, and a session with nothing off and no entry
+  gets none. A session started while new ones start off always gets one, with `asking: true` and the
+  exact lists of what it may load, `onlyContext` and `onlySkills`: anything not on them stays off,
+  even what appears later. A session past its first message with no entry, or with one and no
+  `asking` (one started before this feature), keeps loading as its entry says and never takes up its
+  folder's decisions.
 - **The entry.** It records exclusions only, never context: no file text, no skill text. It draws
   no transcript row, so writing it keeps the empty state and the session still counts as before
   its first message. It is never LLM context and the TUI ignores it.
@@ -1895,7 +1937,9 @@ skills it is offered, for this one session only.
   back on. The folder's cached read is shared as before; whether each row is off, and whether the
   switches show, is worked out for each session on every read.
 - **Accessibility.** Each switch is a checkbox labelled "Load {path}" (the path as the row shows
-  it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard.
+  it) for a file and "Offer {name}" for a skill, checked when on, reachable by keyboard; a group
+  switch is labelled "All context files" or "All skills" and reads `aria-checked="mixed"` in the
+  middle.
 
 ## §chat.transcript/setup-card-open-file — Setup card: reading a context file or skill
 

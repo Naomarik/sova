@@ -512,13 +512,16 @@
       "src/lib/chat-wait.test.ts",
       "src/lib/command-wait.test.ts",
       "src/lib/first-connect-send.browser.test.ts",
-      "server/first-connect-send.integration.test.ts"
+      "server/first-connect-send.integration.test.ts",
+      "server/chat-host.ts",
+      "server/first-message-recheck.test.ts",
+      "server/session-setup.ts"
     ],
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T10:12Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#321c1f46"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.transcript/setup-card": {
@@ -534,12 +537,14 @@
       "server/session-tools.ts",
       "server/session-tools.test.ts",
       "src/components/ChatView.tsx",
-      "src/lib/mcp.ts"
+      "src/lib/mcp.ts",
+      "src/lib/session-setup.ts",
+      "src/lib/session-setup.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T06:51Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.transcript/setup-card-context": {
@@ -549,12 +554,15 @@
     "code": [
       "server/session-setup.ts",
       "src/lib/session-setup.ts",
-      "src/lib/session-setup.test.ts"
+      "src/lib/session-setup.test.ts",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css",
+      "src/components/SessionSetup.tsx"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-23T12:32Z",
-      "source": "pi-session:33293739-4bbd-4563-a110-edb5562c0699#0da08ec0"
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.transcript/setup-card-figures": {
@@ -564,7 +572,12 @@
     "code": [
       "src/lib/session-setup.ts",
       "src/lib/session-setup.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+    }
   },
   "§chat.transcript/setup-card-git-folder": {
     "kind": "behavior",
@@ -648,13 +661,22 @@
       "server/harness/pi/resources.ts",
       "src/lib/session-setup.ts",
       "src/lib/session-setup.test.ts",
-      "src/components/SessionSetup.tsx"
-    ]
+      "src/components/SessionSetup.tsx",
+      "shared/protocol.ts",
+      "server/file-measure.ts",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+    }
   },
   "§chat.transcript/setup-card-toggles": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "server/session-loadout.ts",
       "server/session-setup.ts",
@@ -674,7 +696,9 @@
       "server/mcp/chat.ts",
       "src/lib/mcp.ts",
       "server/harness/pi/session.ts",
-      "server/harness/pi/deeper-context.ts"
+      "server/harness/pi/deeper-context.ts",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css"
     ],
     "requires": [
       "§chat.transcript/setup-card",
@@ -684,9 +708,9 @@
       "§app.mcp/tool-list"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T10:12Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#321c1f46"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.transcript/slim-rows": {

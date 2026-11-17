@@ -2,7 +2,7 @@
   "§chat.context-approval/at-once": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.context-approval/modes",
       "§chat.context-approval/who",
@@ -22,18 +22,26 @@
       "src/components/ApprovalPendingRow.tsx",
       "src/components/ChatView.tsx",
       "src/components/Thread.tsx",
-      "server/approval-jump-browser.integration.test.ts"
+      "server/approval-jump-browser.integration.test.ts",
+      "server/session-setup.ts",
+      "server/chat-host.ts",
+      "server/chat-handle-remote.ts",
+      "server/chat-runtime/host.ts",
+      "server/chat-runtime/methods.ts",
+      "shared/chat-runtime.ts",
+      "server/first-message-recheck.test.ts",
+      "server/chat-handle-remote.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T16:05Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.context-approval/context-card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.context-approval/list",
       "§chat.context-approval/modes",
@@ -52,18 +60,25 @@
       "server/project-settings-tool.ts",
       "shared/commands/projects.ts",
       "shared/project-settings.ts",
-      "shared/project-skills.ts"
+      "shared/project-skills.ts",
+      "server/approvals.ts",
+      "shared/approvals.ts",
+      "server/file-measure.ts",
+      "server/approvals.test.ts",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css",
+      "src/lib/approvals.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T16:05Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.context-approval/fingerprint": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.context-approval/list"
     ],
@@ -80,15 +95,15 @@
       "server/project-skills.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T12:58Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#da7a624a"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.context-approval/fixed": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.transcript/setup-card-toggles",
       "§chat.subfolder-instructions/loading",
@@ -107,12 +122,17 @@
       "server/harness/pi/session.ts",
       "server/project-skills-processes.integration.test.ts",
       "server/context-tab.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+    }
   },
   "§chat.context-approval/folders": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.context-approval/list",
       "§chat.context-approval/who"
@@ -126,18 +146,55 @@
       "server/approvals-routes.ts",
       "server/overseer.ts",
       "shared/commands/sessions.ts",
-      "shared/commands-ids.json"
+      "shared/commands-ids.json",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css",
+      "src/lib/approvals.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T16:05Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
+  },
+  "§chat.context-approval/group": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.context-approval/modes",
+      "§chat.context-approval/who",
+      "§chat.context-approval/at-once"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+    },
+    "code": [
+      "server/approvals.ts",
+      "server/approvals-routes.ts",
+      "server/project-settings.ts",
+      "shared/approvals.ts",
+      "shared/project-skills.ts",
+      "server/approvals.test.ts",
+      "server/approvals-routes.test.ts",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css",
+      "src/lib/approval-undo.ts",
+      "src/lib/approvals.ts",
+      "src/lib/approvals.test.ts",
+      "src/lib/api.ts",
+      "src/components/SessionSetup.tsx",
+      "src/components/ProjectSkillsCard.tsx",
+      "src/components/FolderApprovalsDialog.tsx",
+      "src/lib/approval-undo.test.ts"
+    ]
   },
   "§chat.context-approval/held-send": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.context-approval/modes",
       "§chat.composer/disabled-states",
@@ -176,15 +233,15 @@
       "server/project-skills-processes.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T16:05Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.context-approval/list": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§app/projects",
       "§chat.skill-sources/starting",
@@ -211,18 +268,22 @@
       "server/folder-walk.ts",
       "server/folder-walk.test.ts",
       "server/approvals-routes.ts",
-      "server/project-settings.ts"
+      "server/project-settings.ts",
+      "src/lib/approvals.ts",
+      "server/session-loadout.ts",
+      "server/session-loadout.test.ts",
+      "server/harness/pi/deeper-context.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-16T18:47Z",
-      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#80590cfa"
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.context-approval/live": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.context-approval/fixed"
     ],
@@ -233,18 +294,45 @@
       "server/chat-runtime/methods.ts",
       "shared/protocol.ts",
       "src/lib/approval-hold.ts",
-      "src/components/SessionSetup.tsx"
+      "src/components/SessionSetup.tsx",
+      "server/projects/skills-chats.test.ts",
+      "shared/folder-rule.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T12:19Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#da7a624a"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
+  },
+  "§chat.context-approval/marks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.context-approval/modes",
+      "§chat.context-approval/list",
+      "§chat.context-approval/who"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+    },
+    "code": [
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css",
+      "src/lib/approvals.ts",
+      "src/lib/approvals.test.ts",
+      "src/components/SessionSetup.tsx",
+      "src/lib/setup-approvals.ts",
+      "src/lib/session-setup.ts",
+      "src/components/ChatView.tsx"
+    ]
   },
   "§chat.context-approval/mid-chat": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.context-approval/fixed",
       "§chat.context-approval/who",
@@ -266,18 +354,19 @@
       "src/lib/api.ts",
       "shared/protocol.ts",
       "shared/wire-areas.json",
-      "shared/commands/sessions.ts"
+      "shared/commands/sessions.ts",
+      "src/lib/approvals.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T16:05Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.context-approval/modes": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.context-approval/setting",
       "§chat.transcript/setup-card-toggles"
@@ -292,13 +381,20 @@
       "server/projects/folder-rule.ts",
       "shared/folder-rule.ts",
       "server/session-loadout.ts",
-      "server/approvals.test.ts"
-    ]
+      "server/approvals.test.ts",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+    }
   },
   "§chat.context-approval/setting": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§app.settings-dialog/general",
       "§chat.context-approval/who",
@@ -317,12 +413,17 @@
       "server/app.ts",
       "server/project-settings.ts",
       "shared/settings-reference.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+    }
   },
   "§chat.context-approval/unwatched": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.context-approval/held-send"
     ],
@@ -336,15 +437,15 @@
       "server/chat-handle-remote.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T12:19Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#da7a624a"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.context-approval/who": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§app.access/your-click",
       "§chat.context-approval/modes"
@@ -359,22 +460,28 @@
       "server/mesh/proxy-caller.test.ts",
       "server/page-only.ts",
       "server/app.ts",
-      "server/session-setup.ts"
+      "server/session-setup.ts",
+      "src/lib/approvals.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T12:19Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#da7a624a"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat/context-approval": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [],
     "code": [
       "shared/approvals.ts",
       "server/approvals.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+    }
   }
 }

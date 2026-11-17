@@ -622,7 +622,7 @@ user row.
   switch), the project's name, the project's copy limit on this machine
   (§app.project-services/instances), which context files and skills its new chats start with (Context Files
   and Skills, each Approved, Disallowed or Waiting, §chat.context-approval/context-card,
-  §chat.skill-sources/project-defaults; the Sova-wide switch that says whether chats ask first,
+  §chat.skill-sources/project-defaults; the Sova-wide switch that says whether new ones start on,
   §chat.context-approval/setting, is listed but isn't the project's, and it can't propose it), and, in an organization's project, its main stakeholder
   (§app.organizations/stakeholder), whether it shows on the owner's page (§app.owner-page/controls)
   and whether its spec is frozen (§app.requirements/frozen-spec), and the files `.sova/project.json` (services), `.sova/profiles/<id>.json`,
@@ -741,11 +741,12 @@ user row.
 - **The Settings tab lists every setting.** Its **All settings** section lists each project setting,
   Sova-kept and in the project's files (the **Copy limit**, its value and "set on this machine" or
   "from the project's file", linking to the Running Copies tab; the **Context Files** row and, next to it, the
-  **Skills** row, each "No preference" while none is approved or disallowed (while asking, "{m}
-  waiting" if any wait), else "{n} disallowed · {m} waiting · {c} changed" (each part left out at 0,
-  the waiting part shown only while asking; "{k} approved" when all are), "kept on this computer; new
-  chats start with these", with **Show Context Files** or **Show Skills** scrolling to its card, §chat.context-approval/context-card, §chat.skill-sources/project-defaults; the
-  read-only **Context files and skills** row, "Allowed without asking (Sova-wide)" or "Ask first
+  **Skills** row, each "{on} of {n} on · {k} new · {c} changed" (n every item listed; on what new
+  chats load, a Changed item counted on; k the items nobody has set, c the Changed items; each of the
+  last two parts left out at 0, and both while new ones start on: "4 of 6 on · 2 new", "3 of 3 on ·
+  1 changed", "3 of 3 on"; the same words in `sova_settings get`), "kept on this
+  computer; new chats start with these", with **Show Context Files** or **Show Skills** scrolling to its card, §chat.context-approval/context-card, §chat.skill-sources/project-defaults; the
+  read-only **Context files and skills** row, "New ones start on (Sova-wide)" or "New ones start off
   (Sova-wide)", linking to Settings → General, §chat.context-approval/setting; services, profiles, playbooks and their schedules, modes,
   offers; the **Merge queue**, linking to Settings → Merge Queue on this project, §app.merge-queue/settings,
   which the project overseer's `sova_settings` refuses to change; a Create chat's card can,

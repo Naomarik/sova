@@ -528,6 +528,8 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   total, and the heading doesn't say "not counted". A note under the heading says so. Any skill, read
   or not, opens to its text.
 
+  A skill the chat loaded files of also says how much (§app.subagents-pane/context-tab-skill-loads).
+
   A last section, **Not offered yet · not counted**, lists the skills of folders below the chat's own
   that the model hasn't been offered (§chat.subfolder-skills/offering), and manual-only skills
   (§chat.skill-sources/manual-only), walked as the instruction files below the chat's folder are, under
@@ -573,6 +575,29 @@ sent. Each part is read as the chat's folder and the chat hold it now (`GET
   failed read: "Couldn't read this chat's context." and the reason.
 - **Where it is.** Every Session detail pane has it, an overseer's included; nothing is added to
   the overseer screens. A share page never shows it.
+
+## §app.subagents-pane/context-tab-skill-loads — Skills offered: what this chat loaded from each
+
+- **The figure.** A skill under Skills offered (§app.subagents-pane/context-tab) that this chat loaded
+  any of since the latest compaction adds, beside its Read or Partly read chip, "loaded ≈{n} tokens
+  from {m} files" ("1 file"). A skill of which only other files than its `SKILL.md` loaded is
+  chipped **Used**, with the same figure.
+- **What counts.** Its `SKILL.md` and every other file in the skill's folder the chat read: a read
+  (pi's or Claude Code's, or a shell command that prints a file as Partly read counts them) whose real
+  path is inside the folder of an offered or listed skill's `SKILL.md` is that skill's, the deepest
+  such folder when they nest. A skill whose `SKILL.md` is a lone file, or whose folder holds the
+  chat's own folder, takes no other file. `SKILL.md` counts by its own loads (running the skill loads
+  it whole); every other file by the lines its reads reached, paged reads adding up, sized against
+  the file as it is now (an image at pi's flat 1,200 tokens). Running a program the skill holds is
+  not a read, so its output is not the skill's.
+- **A note, never a sum.** The figure is never added to the row's size or to any total: what was
+  loaded is already under Conversation.
+- **The skill's sheet.** A row is one button that opens the skill's sheet, so the size's detail is on
+  the sheet, not in a popover: **Description** "in every chat" `≈{n} tokens`, **SKILL.md** "when
+  used" `≈{n} tokens`, and **Loaded** "in this chat", `≈{n} tokens` "from {m} files" or "not used";
+  then the files it loaded, each by its path inside the skill's folder, "{read} of {lines} lines · "
+  when only part of it loaded, and `≈{n} tokens`.
+- The Everyone view (§app.subagents-pane/context-tab-skills-read) is unchanged.
 
 ## §app.subagents-pane/context-tab-skills-read — Everyone: the skills this chat and its workers read
 

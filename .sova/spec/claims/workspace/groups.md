@@ -440,6 +440,7 @@ member at once.
 <footer class="composer group-composer" id="group-composer">
   <form class="composer-inner" aria-label="Message every member">
     <!-- dictation strip while recording or transcribing (§chat.voice/states) -->
+    <span class="composer-reason" id="group-composer-reason"></span>   <!-- the reason strip, only while there is a reason -->
     <div class="composer-row">
       <!-- the way back to each pane's own composer, then who this box writes to -->
       <button class="button button-icon button-ghost" type="button" aria-label="Back to One Member" title="Back to One Member">…close…</button>
@@ -459,12 +460,15 @@ member at once.
     </div>
     <div class="composer-foot">
       <span class="group-composer-targets">4 of 5 members · 1 mid-turn</span>
-      <span class="composer-reason" id="group-composer-reason"></span>
     </div>
   </form>
 </footer>
 ```
 
+- **Its reason is a strip above the box.** When the group composer can't send, its reason is the
+  same slim strip just above the message box as a pane composer's (§chat.composer/disabled-states),
+  never in the foot beside the members count, such as "No member can take a message right now.";
+  with no reason there is no strip.
 - **It is the workspace's one primary.** §design/ground-rules allows one accent button in view, so while the
   workspace is open no pane composer's Send is `.button-primary`, whichever composer is on screen:
   a pane's Send is `.button` (secondary) with the same label and the same behavior. The accent

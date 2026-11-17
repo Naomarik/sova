@@ -772,7 +772,9 @@
       "server/agent-loadouts.snapshot.json",
       "server/harness/pi/golden/special-model-view.json",
       "server/approvals.ts",
-      "server/create-settings-cards.test.ts"
+      "server/create-settings-cards.test.ts",
+      "server/projects/skills.ts",
+      "server/approvals.test.ts"
     ],
     "requires": [
       "§app.project-overseer/autonomy-levels",
@@ -786,9 +788,9 @@
       "§app.access/your-click"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T10:12Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#321c1f46"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§app.project-overseer/statechart-tools": {

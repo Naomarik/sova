@@ -1,112 +1,197 @@
-# §chat/context-approval — Context files and skills: allowed, or asked first
+# §chat/context-approval — Context files and skills: one switch per item
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-What a chat loads from the folders it works in, its context files and its skills, is decided per
-folder on this computer. By default everything loads but what you disallowed. With one Sova-wide
-switch turned off, nothing new loads until you approve it, and a new chat a person watches waits for
-your decision before its first message.
+What a chat loads from the folders it works in, its context files and its skills, is one switch per
+item, kept per folder on this computer: on, new chats there load it; off, they don't. Each group has
+one switch for all of its rows. One Sova-wide switch says what an item nobody has set starts as. A
+new or changed item is a mark on its row; nothing ever waits for a decision.
 
-## §chat.context-approval/setting — Allow context files and skills without asking
+## §chat.context-approval/setting — New context files and skills start on
 
 - **One switch, Sova-wide.** Settings → General has a section **Context files and skills · this
   computer**, after Summary line and before Server · this machine (§app.settings-dialog/general),
-  holding one switch, **Allow context files and skills without asking**, with the hint "On, new chats
-  load every context file and skill a folder offers except the ones you disallow. Off, anything you
-  haven't approved stays off and a new chat waits for you to decide before it sends. Kept on this
-  computer." It is **on** by default. A flip saves at once, apart from the dialog's Save Changes; a
-  save that fails puts the switch back and says "Couldn't change that. {message}".
+  holding one switch, **New context files and skills start on**, with the hint "On, a context file
+  or skill you haven't set loads in new chats. Off, it stays off, marked New, until you turn it on.
+  Kept on this computer." It is **on** by default. A flip saves at once, apart from the dialog's Save
+  Changes; a save that fails puts the switch back and says "Couldn't change that. {message}".
 - **Where it is kept.** On this computer only, in `<state root>/context-approval.json`
-  (`{allowWithoutAsking: true | false}`, written atomically). Only a missing file means the default,
-  on. A file that can't be read, isn't JSON or doesn't hold a true or false keeps asking on, and the
-  server logs a warning, once per distinct trouble, until the file is fixed or the switch is set again. `GET`/`PUT /api/settings/context-approval {allowWithoutAsking}` read and write it; a body without
-  a true or false is refused (400).
-- **Who may change it.** Turning it off (asking first) is open to every caller. Turning it back on is
-  the operator's own page only (/who); from anyone else it is refused (403) and nothing changes, with
-  words for the caller, such as "A script can't let context files and skills load without asking
-  again: turn it on in Settings → General. Nothing was changed." The project overseer's
-  `sova_settings` lists it but can't propose it (§app.project-overseer/settings).
+  (`{allowWithoutAsking: true | false}`, written atomically; on is `true`). Only a missing file means
+  the default, on. A file that can't be read, isn't JSON or doesn't hold a true or false counts as
+  off, and the server logs a warning, once per distinct trouble, until the file is fixed or the
+  switch is set again. `GET`/`PUT /api/settings/context-approval {allowWithoutAsking}` read and write
+  it; a body without a true or false is refused (400).
+- **Who may change it.** Turning it off is open to every caller. Turning it back on is the operator's
+  own page only (/who); from anyone else it is refused (403) and nothing changes, with words for the
+  caller, such as "A script can't let new context files and skills start on: turn it on in Settings
+  → General. Nothing was changed." (the Overseer: "Only you let new context files and skills start
+  on: the Overseer can't. Nothing was changed."; a chat: "A chat can't let new context files and
+  skills start on: only you turn it on, in Settings → General. Nothing was changed."). The project overseer's `sova_settings` lists it but can't propose
+  it (§app.project-overseer/settings).
 - **What a change reaches.** Every chat started after it. Each chat still before its first message is
   told and its setup card is read again (/live). A chat already under way keeps the mode it started
-  in. Turning asking on approves nothing by itself: every undecided context file and skill is
-  Waiting.
-- **On each project's All settings list.** A read-only row, **Context files and skills**, "Allowed
-  without asking (Sova-wide)" or "Ask first (Sova-wide)", "kept on this computer", links to Settings →
-  General (§app.project-overseer/settings).
+  in. Turning it off turns nothing on: every item nobody has set is off and marked New (/marks).
+- **On each project's All settings list.** A read-only row, **Context files and skills**, "New ones
+  start on (Sova-wide)" or "New ones start off (Sova-wide)", "kept on this computer", links to
+  Settings → General (§app.project-overseer/settings).
 
-## §chat.context-approval/modes — The default mode and the asking mode
+## §chat.context-approval/modes — One switch per item, in either mode
 
-- **The default mode** (the switch on). A Disallowed context file or skill stays off in new chats.
-  Everything else loads as before this feature, with nothing to decide. New chats show no notice and
-  no Approve, Approve All or "to approve" prompt, and Send is never held. A card row reads
-  **Allowed** or **Disallowed**: **Disallow** on an allowed one, and **Allow** on a disallowed one,
-  which only lifts the Disallow (back to no decision), so nothing is recorded as approved.
-- **The asking mode** (the switch off). An item with no decision is **Waiting**, and a Waiting item
-  stays off. A card row reads **Approved**, **Disallowed**, **Waiting** or **Changed** (/list): a
-  Waiting one has **Approve** and **Disallow**, an approved one **Disallow**, a disallowed one
-  **Approve**, a changed one **Re-approve** and **Disallow**. A new chat's setup card asks for the
-  decisions (/held-send).
-- **Both modes.** The per-chat switch on a new chat's setup card (§chat.transcript/setup-card-toggles)
-  still turns an item on or off for that one chat, and never counts as deciding it.
+- **The switch is the decision.** Each context file and skill is one row with one switch: on a new
+  chat's setup card (§chat.transcript/setup-card-toggles), the project's Context Files and Skills
+  cards (/context-card, §chat.skill-sources/project-defaults) and a folder's list dialog (/folders).
+  On means new chats in that folder load it; off means they don't. A flip shows at once and is saved
+  for the folder (/at-once), and reaches only chats not yet started (/live, /fixed). No row has a
+  state chip, and there is no Approve, Disallow, Allow, Re-approve, Approve All or Disallow All.
+  Each group also has one switch for all of its rows (/group).
+- **New ones start on** (the Sova-wide switch on). Off is Disallowed; every other item is on.
+  Turning one back on only lifts its Disallow (back to no decision), so nothing is recorded as
+  approved. No row is marked New or Changed.
+- **New ones start off** (the Sova-wide switch off). On is approved, with the item's fingerprint
+  (/list); off is Disallowed, or never set. An item never set is off and marked **New**; an approved
+  one whose content changed since stays on and is marked **Changed** (/marks). A fingerprint kept
+  from an earlier period of starting off stays in the list, so when new ones start off again such a
+  row reads Changed again.
+- **No switch for one chat.** A context file or skill has no switch of its own for one chat: a new
+  chat's rows are its folder's switches. To start one chat without an item, turn it off, send that
+  chat's first message and turn it back on: the chat keeps what it started with, and any other chat
+  started in that folder meanwhile starts without it too. MCP servers keep their own per-chat
+  switches (§chat.transcript/setup-card-toggles).
 
-## §chat.context-approval/at-once — A decision shows at once, and comes back if it isn't saved
+## §chat.context-approval/group — One switch per group, and Undo
 
-- **Everywhere you decide.** Approve, Re-approve, Allow, Disallow, Approve All and Disallow All show
-  the new state at the click, before the save answers: on a new chat's setup card and its notice
-  (/held-send), the project page's Context Files and Skills cards (/context-card,
-  §chat.skill-sources/project-defaults), a folder's list dialog (/folders) and a chat's "wasn't
-  loaded" line (/mid-chat). The save runs behind it; the server's answer, or the next read of the
-  list, replaces what was shown.
-- **Every row stays clickable.** No button waits for another save: while saves run, any row can be
-  decided, and a newer click on the same row is the one it keeps. A folder's saves go out one at a
-  time in click order, whichever of these places made them; other folders' saves don't wait. Approve
-  All and Disallow All cover what is still waiting at the click, never a row already decided and
-  still saving.
-- **A save that is refused or fails** puts back only its own rows (the notice's count too), and
-  shows that place's failure message; other rows keep what was clicked.
+- **The group switch.** A new chat's setup card has one switch for each kind, on its Context and its
+  Skills heading, labelled "All context files" and "All skills". The project's Context Files and
+  Skills cards and the two lists of a folder's dialog are split by where the items come from, **In
+  the project** (**In this folder**), **In folders inside it**, **Above the project** (**Above this
+  folder**), **Yours** and **Claude folder** (each shown only when it has rows), and each part's
+  heading says "{on} of {n} on" and carries its own switch, labelled "All {context files | skills}
+  {the part's name, lowercased}". Manual-only skills have no group switch
+  (§chat.transcript/setup-card-skills). A group switch is on when every row of its group is on, off
+  when every row is off, and in the middle (`aria-checked="mixed"`) when they differ, and says so
+  beside it: On, Off or Mixed. Each row's switch says On or Off. Pressed from off or the middle it turns
+  every row of its group on; pressed from on, every row off.
+- **One save.** A group flip is one save naming each item it changes. To on: every row that is off,
+  New ones included, is turned on (approved while new ones start off, its Disallow lifted while they
+  start on); a row already on is left out, so a Changed row stays Changed and its fingerprint is
+  never rewritten. The save says it is a group switch's (`group` in its body, the switch's id), and the server
+  holds to this too: in a group save, `approved` for an item already approved is left out, even when
+  it is the only item named. Outside a group save, `approved` for one item already approved is Accept
+  Change and records a new fingerprint. To off: every row that is on is Disallowed. Turning rows on is the operator's own
+  page only (/who).
+- **What it did, and Undo.** Right after a group flip, one line under that group's heading says
+  what it did, "Turned 6 skills off." or "Turned 2 context files on.", with **Undo**. It is in the
+  flow of the page, not a toast, and stays until the next change in that group or a newer press of
+  that same group switch. A press of another group in the same folder leaves it, so two groups can
+  each show their own Undo at once. Undo puts back only its own group's switches, every switch the
+  flip changed, back exactly as it was: the server writes back each item's record from before the
+  flip, fingerprint included, so a Changed row reads Changed again and a New row New again. An item
+  whose record changed after the flip keeps its newer state. Undo that turns a row back on is the
+  operator's own page only.
+- **The route.** A group save names its group switch's id, as `group: "<id>"` or as `groupId: "<id>"`
+  beside `group: true` (1 to 100 letters, digits and `:_./-`: the page sends `setup:context` and
+  `setup:skill` from a new chat's list, `card:context:<source>` and `card:skill:<source>` from the
+  cards and a folder's dialog); `group: true` alone is read as "context", "skills" or "both" by what the
+  save names. Any other value, a bad id, or a `groupId` without `group: true` is refused, 400 "group
+  must be the group switch's id (up to 100 letters, digits and :_./-) or absent." A group save that changed at least one record answers an `undo` token; one that changed
+  nothing answers none and leaves that group's token standing, and no other save takes or retires a
+  token, however many items it names. The server keeps one token per folder and group, in memory,
+  for a folder's 32 newest groups: the records from before that group's latest save. The same
+  save route with `{undo: <token>}` and no changes (`{cwd, undo}` for the folder route) writes each
+  item's earlier record back verbatim (its state, fingerprint and name; no record is unset) where the
+  item's record still equals what the save wrote, and answers the fresh view with `undone` (the items
+  put back) and `kept` (the items left, changed since); it answers no new token, and a token works
+  once. Who may is judged on what it would put back (/who), and only the items so judged are
+  written. A project's Undo writes one Settings
+  history line per item whose state it changes (one that only puts a fingerprint back writes none).
+  A token the server no longer holds (used, replaced by a newer save of the same group in that
+  folder, dropped as the folder's oldest past 32 groups, or forgotten at a restart) is refused, 409 `{error: "Undo is no longer available. Nothing was
+  changed.", code: "undo-gone"}`, which the page shows as a toast; a token that isn't a string, 400 "undo must be the token a group
+  save answered with." It is the set route, so it adds no command.
+
+## §chat.context-approval/marks — New and Changed are marks, never a hold
+
+- **New.** While new ones start off, an item nobody has set is off and its row says **New**, a dot and
+  the word, never colour alone. While new ones start on, no row is marked. A new chat's folded
+  `System context` line counts them, "{n} new, off", and the Changed ones that are on, "{c}
+  changed" (§chat.transcript/setup-card). There is no
+  notice and nothing to press: turning the row on is the approval.
+- **When New goes.** When the row is flipped; when its group switch turns it on or off; or when a
+  chat's first message is sent after its System context was open while the row showed New: those
+  rows are then saved as off (Disallowed, open to every caller, /who), and the mark goes. A first
+  message sent with the list never opened clears nothing. A save that fails leaves the marks. That
+  save turns no row on or off, so it rebuilds no chat (/live).
+- **Changed.** An item turned on whose content no longer matches its fingerprint (/list) stays on and
+  keeps loading. Its row says "Changed since you turned it on" with one button, **Accept Change**,
+  which records the new fingerprint (the operator's own page only, /who); the mark goes, with no
+  toast. It is the only button on any row. Turning the row off turns it off, and the mark goes with it. The group switch never
+  accepts a change (/group).
+- **Nothing waits.** A New or Changed item never holds Send or any chat (/held-send).
+
+## §chat.context-approval/at-once — A flip shows at once, and comes back if it isn't saved
+
+- **Everywhere you decide.** A row's switch, a group switch, Undo, Accept Change and a chat's Turn On
+  show the new state at the click, before the save answers: on a new chat's setup card, the project
+  page's Context Files and Skills cards (/context-card, §chat.skill-sources/project-defaults), a
+  folder's list dialog (/folders) and a chat's "wasn't loaded" line (/mid-chat). The save runs behind
+  it; the server's answer, or the next read of the list, replaces what was shown.
+- **Every row stays clickable.** No switch waits for another save: while saves run, any row can be
+  flipped, and a newer click on the same row is the one it keeps. A folder's saves go out one at a
+  time in click order, whichever of these places made them; other folders' saves don't wait. A group
+  switch covers the rows as they show at its click.
+- **A save that is refused or fails** puts back only its own rows (the group switch and the marks
+  with them), and shows that place's failure message; other rows keep what was clicked.
 - **A save with no answer** fails the same way 90 s after its click: its rows go back, with the
-  failure message ending "It didn't answer in 90 s.", and a Send it held comes back. The folder's
-  later saves still wait for its real answer, so none lands out of order; one that timed out before
-  it went out is never sent. When the real answer comes after all, the place shows what the server
-  did: a new chat's setup card and a project's card read the list again, and a chat's line shows its
-  decision.
-- **Send waits for what you decided here.** On a new chat's setup card, in either mode, while any
-  decision made there has a save the server hasn't answered yet, Send is held and the composer line
-  says "Saving…" (when nothing else waits, /held-send, §chat.composer/disabled-states). Once the
-  server accepts the save, Send no longer waits for it, also when the read of the card after it
-  fails. The card's per-chat switches wait longer: until a read of the card started after the answer
-  has come back, since a switch sends the on and off set the card shows. If that read fails, it is
-  tried once more 1.5 s later; if that fails too, the rows keep showing the decision (the notice's
-  count too) and the switches stay waiting until the card's next read (the chat's rebuild and its
-  reconnect read it again, /live). A message is never sent and then refused for an unsaved decision.
-- **It loads nothing early.** What a chat loads, and whether its Send is held for Waiting items,
-  follow only what the server saved (/held-send); who may decide is unchanged (/who).
-- **The new chat screen stays put.** A decision on a new chat's setup card changes only its row and
-  the notice's count, in place: the page keeps its scroll position and every section stays open or
-  closed as it was, also when the card is read again after the save (/live). While the chat restarts
-  with the new list and reconnects, the screen keeps its controls (the model picker and the setup
-  card's decisions) until the chat says them again, and the view isn't sent back to the top, so the
-  page doesn't move.
+  failure message ending "It didn't answer in 90 s.", and Send comes back. The folder's later saves
+  still wait for its real answer, so none lands out of order; one that timed out before it went out
+  is never sent. When the real answer comes after all, the place shows what the server did: a new
+  chat's setup card and a project's card read the list again, and a chat's line shows its decision.
+- **Send waits for the rebuilt chat.** On a new chat's setup card, after a flip made there, Send is
+  held and the composer's notice says "Saving…" (§chat.composer/disabled-states) until the server
+  has answered the save and a read of the card started after that answer has come back, so the chat
+  shown is the one rebuilt with the new switches (/live). If that read fails it is tried once more
+  1.5 s later; if that fails too, Send waits for the card's next read (the chat's rebuild and its
+  reconnect read it again). A save that fails brings Send back with its rows put back.
+- **The first message checks again.** Just before a new ordinary chat's first message goes in (from
+  the page or its socket, `POST /api/sessions/prompt`, a group send, a to-do's or idea's Start, or any
+  program), the server reads the folder's decisions again and lays them over the chat's own entry as
+  its build does; when that differs from the list the chat was built with, the chat is rebuilt in its
+  own process first (its panes reconnect), then the message goes in. When that rebuild fails, or the
+  folder's switches or the chat's own entry can't be read, the message is refused and never sent:
+  the page gets it back as its draft with "Sova couldn't apply your context file and skill switches
+  to this chat, so your message wasn't sent. Send it again to retry.", a server-side send (`POST
+  /api/sessions/prompt`, a group send, a Start) is refused with the same words, and the next message
+  checks again. Workers, special chats and started chats aren't checked. A quick first
+  send never goes out on an old list.
+- **It loads nothing early.** What a chat loads follows only what the server saved; who may turn an
+  item on is unchanged (/who).
+- **The new chat screen stays put.** A flip on a new chat's setup card changes only its row, its
+  group switch and the folded line's counts, in place: the page keeps its scroll position and every
+  section stays open or closed as it was, also when the card is read again after the save (/live).
+  While the chat restarts with the new list and reconnects, the screen keeps its controls (the model
+  picker and the setup card's switches) until the chat says them again, and the view isn't sent back
+  to the top, so the page doesn't move.
 
-## §chat.context-approval/who — Who may decide
+## §chat.context-approval/who — Who may turn an item on
 
-- **Open to every caller:** disallowing, and turning the Sova-wide switch off.
-- **The operator's own page only:** approving (Re-approve included), turning a disallowed item back
-  on (Approved or Waiting), turning the switch back on, a new chat's switch turning on a row its
-  folder keeps off (Disallowed, or Waiting while asking), and Approve on a chat's "wasn't loaded"
-  line (/mid-chat). The page is Sova's page on this computer, or the operator's page on another of
-  their computers, which counts only with its proven click (the click-proof header that page's
-  computer adds, §app.access/your-click); being a peer proves nothing on its own.
+- **Open to every caller:** turning an item off (a row, a group switch to off, the New marks a first
+  message settles, /marks), an Undo that only turns rows off, and turning the Sova-wide switch off.
+- **The operator's own page only:** turning an item on in either mode (a row's switch, a group switch
+  to on, an Undo that turns a row back on, lifting a Disallow), **Accept Change**, turning the
+  Sova-wide switch back on, and **Turn On** on a chat's "wasn't loaded" line (/mid-chat). The page is
+  Sova's page on this computer, or the operator's page on another of their computers, which counts
+  only with its proven click (the click-proof header that page's computer adds,
+  §app.access/your-click); being a peer proves nothing on its own.
 - **Refused (403, `yourClick: true`), and nothing changes,** with words for the caller: the Overseer
-  ("Only you approve context files and skills, or turn a disallowed one back on: the Overseer can't.
-  Nothing was changed."), a chat ("A chat can't approve context files or skills, or turn a disallowed
-  one back on: its project overseer proposes it through sova_settings, on a card you apply. Nothing
-  was changed."), a script ("A script can't approve context files or skills, or turn a disallowed one
-  back on: use the project's Context Files or Skills card, or the new chat's card. Nothing was
-  changed."), an extension, and another computer whose click can't be confirmed ("This computer
-  couldn't confirm your click with the one the list is on. Try again, or decide on that computer's
-  page. Nothing was changed.").
-- **The project overseer's way.** Its `sova_settings` proposes an approval as a grant on a Settings
-  change card the operator applies (§app.project-overseer/settings).
+  ("Only you turn on context files and skills: the Overseer can't. Nothing was changed."), a chat ("A
+  chat can't turn on context files or skills: its project overseer proposes it through
+  sova_settings, on a card you apply. Nothing was changed."), a script ("A script can't turn on
+  context files or skills: use the project's Context Files or Skills card, or the new chat's list.
+  Nothing was changed."), an extension ("An extension can't turn on context files or skills. Nothing
+  was changed."), and another computer whose click can't be confirmed ("This computer couldn't
+  confirm your click with the one the list is on. Try again, or turn it on in that computer's page.
+  Nothing was changed.").
+- **The project overseer's way.** Its `sova_settings` proposes turning an item on as a grant on a
+  Settings change card the operator applies (§app.project-overseer/settings).
 
 ## §chat.context-approval/list — The approval list: one per computer
 
@@ -118,7 +203,9 @@ your decision before its first message.
   the project's main folder and its worktrees share one decision for the same file; outside every
   checkout (the user's own files and skills, the Claude folder, files above the project) its absolute
   path. A file that is a link (a `SKILL.md` shared from elsewhere, a `CLAUDE.md` pointing at `AGENTS.md`)
-  is known where it sits, never by what it points at. A skill is known by its place, never by its name
+  is known where it sits, never by what it points at; an item inside a folder reached through a link
+  (a skill folder that is a link) is known by that folder's real place and its own name, and a chat's
+  list names it the same way whichever path the loader gives it. A skill is known by its place, never by its name
   alone: a project skill named like one of yours is a row of its own, and a skill that moves asks
   again. An approval records the item's fingerprint (sha256): a context file's content, a skill's whole
   folder (/fingerprint).
@@ -128,10 +215,10 @@ your decision before its first message.
 - **Your own files and skills.** The user's own context files and skills (pi's settings folder, the
   Claude folder, an `AGENTS.md` in the home folder) are decided per folder like the folder's own;
   nothing trusts them by itself.
-- **Changed since you approved.** When an approved item's content no longer matches its fingerprint,
-  it stays loaded and is marked **Changed since you approved** in a new chat's list (**Changed** on a
-  card), with **Re-approve** (which records the new fingerprint) and **Disallow**. It doesn't hold
-  Send. An approval with no fingerprint, or an item that can't be read now, reads as changed.
+- **Changed since you turned it on.** When an approved item's content no longer matches its
+  fingerprint, it stays loaded and its row is marked "Changed since you turned it on", with **Accept
+  Change** (which records the new fingerprint) (/marks). It doesn't hold Send. An approval with no
+  fingerprint, or an item that can't be read now, reads as changed.
 - **Which files.** Context files are the instruction files pi loads (`AGENTS.override.md`, `AGENTS.md`,
   `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`): pi's settings folder's, the chat's folder's and every folder's
   above it, and those inside it (§chat/subfolder-instructions). A project's prompt files
@@ -150,10 +237,14 @@ your decision before its first message.
   read of the list (the cards, a new chat's setup card) answers from the checkout's last read, and
   when that read began 10 s or more ago it starts one new read behind it. So a file or skill added or
   removed, at the root, below it, above it or in the user's own folders, shows from the first read
-  after a read that began after the change. A save (any Approve, Disallow or Waiting, from a card,
-  the setup card, a chat or the project overseer's proposal) and a setup read asked to be fresh read
-  the folder again first, so a save is always judged against the folder as it is. Fingerprints are
-  read at each scan; the list of checkouts is kept for 5 s.
+  after a read that began after the change. A save (any item turned on or off, from a card,
+  the setup card, a chat or the project overseer's proposal) checks only the items it names: each is
+  found in the folder's last scan, with no walk, and each item turned on is fingerprinted from its file
+  as it is now (one gone or unreadable is refused, 409 "{key} can't be approved: it couldn't be read.
+  Nothing was changed."); only a key the last scan lacks makes the save scan the folder again first.
+  The save's answer is drawn from that scan, so an edit made since the last read shows as Changed at
+  the next read. A setup read asked to be fresh reads the folder again first. Fingerprints
+  are read at each scan; the list of checkouts is kept for 5 s.
 - **Where it is kept.** In `<state root>/project-skills.json`, version 2 (`folders[<folder key>]`, each
   with `context` and `skills` by key, an approval with its fingerprint), written atomically. A decision
   on an item no longer found drops off, but only after a complete scan that began, and whose walks
@@ -161,21 +252,21 @@ your decision before its first message.
   a later one does it.
 - **Decisions from before.** A version 1 file still reads. Its Disallowed skills, kept by name, become
   the decision on the first skill a scan finds with that name. Its Approved ones are dropped: that
-  skill is Waiting again.
+  skill is unset again (off and New while new ones start off).
 - **When it can't be read.** A new chat's build takes nothing as decided, in the Sova-wide switch's
-  mode (asking, when even that can't be read): with asking on, everything stays off.
+  mode (new ones off, when even that can't be read): while new ones start off, everything stays off.
 
 ## §chat.context-approval/fingerprint — A skill's fingerprint covers its whole folder
 
 - **The whole folder.** A skill's fingerprint is taken over every regular file in its folder, not its
   `SKILL.md` alone, so an edited script or a file added beside it reads as **Changed since you
-  approved**. A link to a file counts by the content it points at.
+  turned it on** (/marks). A link to a file counts by the content it points at.
 - **A rescan reads nothing unchanged.** Each file's hash is kept in memory by its real path, size,
   modification and change times and inode, so rescanning a folder that hasn't changed reads no file.
 - **Not fully checked.** Past about 2000 files or 20 MB, and for a folder holding a link to a folder, a
   broken link or a file or folder Sova can't read, the folder is checked only by its files' names,
   sizes and dates. That row says "Not fully checked for changes: the folder is very large, or holds
-  links or files Sova can't read." under the skill's description on the Skills card, and under the waiting line in a new chat's list.
+  links or files Sova can't read." under the skill's description on the Skills card, and under its name in a new chat's list.
 
 ## §chat.context-approval/context-card — The Context Files card
 
@@ -185,17 +276,19 @@ your decision before its first message.
   `?host=`) shows neither.
 - **What it lists.** Every context file a chat in the project could load (/list), each row with the
   file's name, where it comes from (the project, a folder inside it, **Above the project**, your own),
-  its state as a chip, and the buttons its mode gives it (/modes). Its line reads "New chats load these
-  context files, except the ones you disallow. Open chats keep theirs.", or while asking "New chats
-  load the context files you approve. Open chats keep theirs." With none found: "No context files
-  found. A chat here would load none." A click shows its new state at once and saves (/at-once); a
-  save that fails puts the row back and is a toast, "Couldn't save {name}. {message}".
+  its size and one switch (/modes), with its New or Changed mark (/marks). Its heading carries the
+  group switch and its Undo line (/group). Its line reads "New chats load the context files you turn
+  on. Open chats keep theirs." With none found: "No context files found. A chat here would load
+  none." A flip shows at once and saves (/at-once); a save that fails puts the row back and is a
+  toast, "Couldn't save {name}. {message}".
 - **The routes.** `GET /api/projects/:pid/context-files` answers its rows, counts, the mode and whether
   the scan was complete. `PUT /api/projects/:pid/context-files {files: {<key>: "approved" | "disallowed"
-  | "waiting"}}` saves the files given and answers the fresh view: refused 400 for a bad body, 404 for
-  an unknown project or a key not found ("Nothing named "{key}" is found in {folder}."), and 403 as
-  /who says. Each save goes through the project's one write: one Settings history line per item whose
-  state changed (`field: "context.<key>"`), then the project's chats not yet started are rebuilt.
+  | "waiting"}}` saves the files given and answers the fresh view, with an `undo` token for a group
+  switch's save (`group`, /group); `{undo: <token>}` takes the save back. It is refused 400 for a bad body, 404
+  for an unknown project or a key not found ("Nothing named "{key}" is found in {folder}."), 409 for
+  an Undo no longer held, and 403 as /who says. Each save goes through the project's one write: one
+  Settings history line per item whose state changed (`field: "context.<key>"`), then the project's
+  chats not yet started are rebuilt (/live).
 - **Commands.** `project.context-files.get` (Show Project Context Files) and `project.context-files.set`
   (Set Project Context Files) (§app.project-commands/projects-sweep).
 - **The project overseer.** Its `sova_settings` lists each file's state by key and proposes
@@ -203,92 +296,76 @@ your decision before its first message.
 
 ## §chat.context-approval/folders — A folder that is no project, and the Overseer's
 
-- **From the chat.** A new chat's setup card ends its lists with where they are kept: "Kept for this
-  project on this computer." with **Open Project Settings** (the project's Settings tab), or "Kept for
-  this folder on this computer." with **Edit Folder List**, which opens the folder's list in a dialog:
-  its **Context Files** and **Skills**, the same rows and buttons as a project's cards, showing a
-  decision at once and putting it back if its save fails (/at-once). A decision there reaches the folder's chats not yet started as a project's does.
-- **The Overseer.** The global Overseer runs in a folder that is no project. With asking on, it
-  follows that folder's list (what waits stays off, and it never waits for you, /unwatched), and its
-  head has a button that says how many wait ("{n} to approve", else **Context Files and Skills**) and
-  opens the same dialog, named "The Overseer's folder". Without asking the button isn't shown.
+- **From the chat.** A new chat's setup card ends its lists with where they are kept and how new ones
+  start: "Kept for this project on this computer. New items start off." ("… start on.") with **Open
+  Project Settings** (the project's Settings tab), or "Kept for this folder on this computer. New
+  items start off." with **Edit Folder List**, which opens the folder's list in a dialog:
+  its **Context Files** and **Skills**, the same rows, switches, group switches and marks as a
+  project's cards, showing a flip at once and putting it back if its save fails (/at-once). A flip
+  there reaches the folder's chats not yet started as a project's does (/live).
+- **The Overseer.** The global Overseer runs in a folder that is no project. It follows that folder's
+  list (/unwatched), and its head has a button that opens the same dialog, named "The Overseer's
+  folder". While new ones start off it reads "{n} new, off" when some are, else **Context Files and
+  Skills**; while they start on the button isn't shown.
 - **The routes.** `GET /api/folder-approvals?cwd=<folder>` answers both lists of the folder a chat in
   `cwd` runs in (a project's folder answers for its project), and `PUT /api/folder-approvals {cwd,
-  files?, skills?}` saves, with the rules of /who. Only a project's folder or the folder of a chat
+  files?, skills?}` saves, with the rules of /who, answering an `undo` token for a group switch's
+  save (`group`, /group); `{cwd, undo}` takes that save back. Only a project's folder or the folder of a chat
   recorded on this computer is answered; any other is refused (404: "No project or chat of this
   computer is in that folder."). They are `session.folder-approvals.get` (Show Folder Context Files and
   Skills) and `session.folder-approvals.set` (Set Folder Context Files and Skills).
 
-## §chat.context-approval/held-send — A new chat waits for your decision (asking mode)
+## §chat.context-approval/held-send — Nothing waits for a decision
 
-- **The quick scan.** With asking on, a new chat's setup card lists everything the chat could load,
-  the items of folders inside it included (/list), so they are decided before the first message.
-- **The notice.** While any of them is Waiting, the setup card shows one notice counting context files
-  and skills together, "{n} to approve for this project." ("… for this folder." outside a project),
-  with **Review**, **Disallow All** and a primary **Approve All**, and each Waiting row says "Waiting
-  for your decision · off until you approve it" with its own **Approve** and **Disallow**. Each shows
-  its new state at once, the notice's count included, without moving the page (/at-once); a save that
-  fails puts it back and is a toast: "Couldn't save {what} for {folder}. {message}".
-- **Send is held.** You can type and the draft is kept, but Send is disabled, and one composer line
-  says "Approve or disallow {n context files and m skills} to send." with **Review**, which opens the
-  setup card's list (§chat.composer/disabled-states). Approve, Disallow, Approve All and Disallow All
-  all count as deciding; the per-chat switch alone does not. Send comes back as soon as nothing waits,
-  also when the decision is made in another tab or on the project page (/live).
-- **Saving.** When nothing waits but a decision made on this page has a save not yet answered, Send
-  stays held and the composer line says "Saving…" in place of the usual line (/at-once, which holds in the
-  default mode too). A save that fails brings its items and the usual line back. A message is never
-  sent and then refused for an unsaved decision.
-- **An early first send.** A first send that arrives before the chat has reported the list it was
-  built with is judged from its folder's list: while anything waits it is held, never let through as
-  if nothing waited.
-- **The server holds it too.** A watched page's first message (this computer's page, or the
-  operator's page on another computer relayed through it) into a chat that is before its first
-  message and still has Waiting items is refused, 409 `{error: "Approve or disallow {n} context files
-  and skills to send.", code: "decide-first", waiting}`, and the message comes back as the draft
-  (§chat.transcript/send-while-starting). The same holds on the chat's socket.
-- **A group send.** A page's send to a group (§workspace.groups/the-group-composer) holds only the copy
-  of a member that has items to decide, as that member's draft ("It is a new chat with context files
-  or skills to approve or disallow first: the message waits as its draft."); the other members get
-  theirs.
-- **A Start from the page.** A to-do's or an idea's Start from the page into a folder that asks first
-  makes the chat with its message held as the chat's draft, and says so: "{where} Its message waits in
-  the composer: decide {n} context files and skills to send it."
-- **When the check fails.** If counting the Waiting items fails, Send isn't held; the items stay off
-  all the same.
+- **Send is never held for an item.** A New item (/marks) stays off and holds nothing, in either mode:
+  a new chat's Send, its first message on `POST /api/sessions/prompt` and on the chat's socket, a
+  page's send to a group (§workspace.groups/the-group-composer) and a to-do's or an idea's Start from
+  the page all go through, and the chat starts with its New items off. No first message is refused
+  for an item nobody has set, and there is no `decide-first` refusal.
+- **No notice and no line.** A new chat's setup card has no notice counting what to approve, and
+  the composer has no "Approve or disallow…" line and no Review (§chat.composer/disabled-states).
+  The folded `System context` line says how many items are new and off (/marks).
+- **What does hold Send** is only a flip on that card whose save hasn't settled yet, "Saving…"
+  (/at-once).
 
-## §chat.context-approval/unwatched — Chats no one watches are never held
+## §chat.context-approval/unwatched — Chats no one watches start like any other
 
 The merge thread, reviewers, Create flows, the Overseer and project overseers, scheduled automations,
-a chat started on another computer by a program (a direct call between computers, not a relayed
-page), and messages sent by a script or the API go through. With asking on they start with their
-Waiting items off. A project overseer loads only the project's own context files its list lets a new
-chat load. The global Overseer follows its folder's list (§chat.context-approval/folders).
+a chat started on another computer by a program, and messages sent by a script or the API start as
+every chat does: with what is off for their folder off, New items included, and nothing to wait
+for. A project overseer loads only the project's own context files its list lets a new chat load.
+The global Overseer follows its folder's list (§chat.context-approval/folders).
 
-## §chat.context-approval/live — A decision reaches open new chats at once
+## §chat.context-approval/live — A flip reaches open new chats at once
 
-After any decision, and after the Sova-wide switch changes, each chat of the folder this server holds
-that is still before its first message is rebuilt with the new list, and every pane showing it reads
-its setup card again: its rows, its notice and its held Send follow at once, in every tab. A started
-chat is never touched.
+After any save that turns an item on or off, and after the Sova-wide switch changes, each chat of the
+folder this server holds that is still before its first message is rebuilt with the new list, and
+every pane showing it reads its setup card again: its rows, its group switches and its marks follow
+at once, in every tab. A save or Undo answers only after the refresh that covers it. A refresh waits
+120 ms before it reads, and a save made while one waits or runs joins the next, so a burst of saves
+rebuilds a waiting chat once after the last. A save that turns nothing on or off (Accept Change, the
+New marks a first message settles, /marks) rebuilds nothing: the panes are only told to read the
+card again. A started chat is never touched.
 
 ## §chat.context-approval/mid-chat — An item found after the first message
 
-- **Never shown to the agent.** In a chat that started with asking on, a context file or skill of a
-  folder inside it that isn't on its fixed list never loads and never stops the chat. A transcript
-  line, which is not sent to the model, says "{file} wasn't loaded: it isn't approved for this
-  folder." ("The skill {name} wasn't loaded: …"), once per item.
-- **Approve and Disallow on the line.** **Approve** (the operator's own page only, /who) saves the
-  approval in the folder's list and also adds the item to this chat's fixed list, so it loads at the
-  agent's next touch of that folder once the save is accepted; the line says "Approved. It loads at
-  the agent's next step here." **Disallow** saves for the folder; the line says "Disallowed. It stays
-  out." Each line shows at the click (/at-once); a save that fails puts the line back with its buttons
-  and is a toast, "Couldn't save {name}. {message}". `POST /api/sessions/approval {path, kind, item,
-  state}` is the route (`session.approval.set`, Approve or Disallow in a Chat).
+- **Never shown to the agent.** In a chat that started while new ones start off, a context file or
+  skill of a folder inside it that isn't on its fixed list never loads and never stops the chat. A
+  transcript line, which is not sent to the model, says "{file} wasn't loaded: it is off for this
+  project." ("… for this folder." in a folder that is no project, and as the transcript's own text
+  before the page knows the chat's folder; "The skill {name} wasn't loaded: …"), once per item.
+- **Turn On on the line.** The line has one button, **Turn On** (the operator's own page only, /who).
+  It saves the item on in the folder's list and also adds it to this chat's fixed list, so it loads
+  at the agent's next touch of that folder once the save is accepted; the line says "Turned on. It
+  loads at the agent's next step here." There is no Disallow: the item is already off. The line shows
+  at the click (/at-once); a save that fails puts the line back with its button and is a toast,
+  "Couldn't save {name}. {message}". `POST /api/sessions/approval {path, kind, item, state}` is the
+  route (`session.approval.set`).
 
 ## §chat.context-approval/fixed — Each chat's list, fixed at its first message
 
 - **The stamp.** At a chat's first message its list is written into its own record once
-  (§chat.transcript/setup-card-toggles). A chat that started with asking on gets a mark saying so and
+  (§chat.transcript/setup-card-toggles). A chat that started while new ones start off gets a mark saying so and
   its exact lists of what it may load, so anything that appears later stays off, also after a server
   restart or Reload Now, even when nothing was off. A chat started in the default mode keeps its off
   lists, disallowed context files included. A chat started before this feature, with no mark, keeps
@@ -296,7 +373,7 @@ chat is never touched.
 - **Everywhere it loads.** The list covers the context files and skills it starts with, the files
   and skills of folders inside it that it reaches while it works (§chat/subfolder-instructions,
   §chat.subfolder-skills/offering), a typed `/skill:name` and the composer's slash list. The one write
-  to a fixed list after the first message is an Approve on a "wasn't loaded" line (/mid-chat).
+  to a fixed list after the first message is a Turn On on a "wasn't loaded" line (/mid-chat).
 - **Workers.** A worker gets exactly its parent chat's fixed list and mode, context files included,
   set by Sova from the parent chat, never from the request.
 - **Claude Code chats too.** A Claude Code chat runs on pi's prompt, so the same list covers it.

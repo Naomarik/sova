@@ -92,8 +92,8 @@ places is a count that disagrees in one of them.
   it off; a missing or unreadable value is on.
 
 - **Context files and skills · this computer** — after Summary line and before Server · this
-  machine, under its own heading: one switch, **Allow context files and skills without asking**,
-  **on by default**, with its hint (§chat.context-approval/setting). It is this machine's, not this
+  machine, under its own heading: one switch, **New context files and skills start on**, **on by
+  default**, with its hint (§chat.context-approval/setting). It is this machine's, not this
   browser's: the server keeps it on this computer only. A flip saves at once and is not part of any
   form, so Save Changes neither stages nor writes it; a save that fails puts the switch back with a
   toast. Turning it off is open to any caller; turning it back on is the operator's own page only.

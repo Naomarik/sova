@@ -336,14 +336,16 @@ on its computer, and that chats don't ask before a tool runs.
 
 ## §site.docs/context-files-and-skills — Context files and skills (`/docs/context-files-and-skills/`)
 
-In Features, after MCP servers: what a chat loads from its folders, context files and skills; the
-default, where everything loads but what you disallow on the project's Context Files and Skills
-cards, and that only new chats change; a skill known by its place, not its name; the Sova-wide
-switch that asks first, with Waiting items off, a new chat's notice and held Send, Changed since you
-approved, and Re-approve; each chat's list fixed at its first message and shared with its workers,
-and the transcript line for an item found later; chats no one watches never wait; who may decide,
-only your own click approving; a folder that isn't a project and the Overseer's folder; and the
-Context tab's Everyone view of the skills a chat and its workers opened.
+In Features, after MCP servers: what a chat loads from its folders, context files and skills; one
+switch per item and one per group on a new chat's list, the project's Context Files and Skills cards
+and a folder's list, kept per project, and that only new chats change; Undo after a group flip; a
+skill known by its place, not its name, and sized by its description; the Sova-wide switch "New
+context files and skills start on", and while it is off an item you haven't set is off and marked
+New, with nothing waiting for you; Changed since you turned it on, and Accept Change; each chat's
+list fixed at its first message and shared with its workers, and the transcript line for an item
+found later, with Turn On; who may turn an item on, only your own click; a folder that isn't a
+project and the Overseer's folder; and the Context tab's figure of what a chat loaded from each
+skill, and its Everyone view of the skills a chat and its workers opened.
 
 ## §site.docs/themes — Themes (`/docs/themes/`)
 

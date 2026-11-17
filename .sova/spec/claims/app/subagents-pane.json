@@ -69,7 +69,7 @@
       "§chat/subfolder-instructions"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ContextTab.tsx",
       "src/components/ContextTab.css",
@@ -104,10 +104,35 @@
       "server/session-setup.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T16:08Z",
-      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
+  },
+  "§app.subagents-pane/context-tab-skill-loads": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.subagents-pane/context-tab",
+      "§chat.transcript/setup-card-skills"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+    },
+    "code": [
+      "server/skills.ts",
+      "server/skills.test.ts",
+      "server/context-tab.ts",
+      "server/context-tab.test.ts",
+      "shared/protocol.ts",
+      "src/components/ContextTab.tsx",
+      "src/components/ContextTab.css",
+      "src/lib/context-parts.ts",
+      "src/lib/context-parts.test.ts"
+    ]
   },
   "§app.subagents-pane/context-tab-skills-read": {
     "kind": "behavior",

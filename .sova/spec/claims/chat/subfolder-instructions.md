@@ -1,14 +1,17 @@
 # §chat/subfolder-instructions — Instruction files in subfolders load as the agent works
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-A chat starts with the instruction files of its folder and the folders above it
-(§chat.transcript/setup-card-context). A folder below it can keep its own instructions too: that
+A chat starts with the instruction files of its folder and, inside a git repository, of the folders
+above it up to the repository's top, never the home folder's or above (§chat/context-scope,
+§chat.transcript/setup-card-context). A folder below it can keep its own instructions too: that
 file loads the first time the agent reads, edits or creates a file in that folder, at the end of
 that action's result, as Claude Code does with a nested `CLAUDE.md`, `AGENTS.md` included. This
 follows the subfolder skills' rule (§chat.subfolder-skills/offering): only when the chat's own folder
 is in a git repository below the home folder or in a project added to Sova, never at the home folder
 or above it; elsewhere a read, edit or write below its folder loads no file and shows no "wasn't
-loaded" line. A file
+loaded" line. A folder reached through a link that leads outside the chat's folder loads nothing,
+and a file that is a link out of the project (§chat.context-scope/folders) never loads; a file
+linked inside the project is fine. A file
 follows the chat's fixed list (§chat.context-approval/fixed): one the chat has off, or its folder
 disallowed, never loads, and in a chat started while Sova asks first, only a file on its list does.
 
@@ -16,7 +19,14 @@ disallowed, never loads, and in a chat started while Sova asks first, only a fil
 
 - **Which folders.** The folders strictly below the chat's folder, down to the touched file's
   folder, outermost first. The chat's own folder isn't one of them: its file loaded at the start.
-  Nothing outside the chat's folder counts.
+  Nothing outside the chat's folder counts, by its real place too: a folder whose real place leaves
+  the chat's folder (a link to the home folder, or elsewhere) loads nothing, nor does any below it.
+- **Only the project's real files.** A file loads only when its real place is inside the project
+  (the repository's top folder, or the chat's folder outside a repository, §chat.context-scope/folders):
+  a file that is a link to elsewhere (the home folder, another project), or a link that leads
+  nowhere, never loads. A file linked inside the project (a `CLAUDE.md` pointing at the `AGENTS.md`
+  beside it) loads as its path says. The Context tab never lists a file that is a link out of the
+  project.
 - **Which file in a folder.** The first regular file found of `AGENTS.override.md`, `AGENTS.md`,
   `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD`, in that order, the order a chat's starting files follow.
 - **Skipped folders.** Any path with a `node_modules` folder or a folder whose name starts with `.`

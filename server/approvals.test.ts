@@ -125,8 +125,9 @@ describe("keys", () => {
     const p = { checkout: "/w/main", agentDir: "/h/.pi/agent", home: "/h", claudeDirs: ["/h/.claude"] };
     assert.equal(A.groupOf("context", "/w/main/AGENTS.md", p), "project");
     assert.equal(A.groupOf("context", "/w/main/sub/AGENTS.md", p), "subfolder");
-    assert.equal(A.groupOf("context", "/w/AGENTS.md", p), "above");
+    assert.equal(A.groupOf("context", "/w/AGENTS.md", p), "above", "a project kept in a folder inside its repository");
     assert.equal(A.groupOf("context", "/h/AGENTS.md", p), "user");
+    assert.equal(A.groupOf("context", "/h/AGENTS.md", { ...p, checkout: "/h" }), "user", "in the home folder's own list too");
     assert.equal(A.groupOf("context", "/h/.pi/agent/AGENTS.md", p), "user");
     assert.equal(A.groupOf("skill", "/w/main/.agents/skills/a/SKILL.md", p), "project");
     assert.equal(A.groupOf("skill", "/w/main/.claude/skills/a/SKILL.md", p), "claude");
@@ -164,9 +165,9 @@ describe("a folder's lists", () => {
     const files = Object.fromEntries(v.files.map((f) => [f.key, f.source.kind]));
     assert.equal(files["AGENTS.md"], "project");
     assert.equal(files["svc/AGENTS.md"], "subfolder");
-    assert.equal(files[join(w.above, "AGENTS.md")], "above");
-    assert.equal(files[join(home, "AGENTS.md")], "user");
     assert.equal(files[join(agent, "AGENTS.md")], "user");
+    // A folder above the repository's top, the home folder's included, never loads into a chat here: no row.
+    assert.deepEqual(Object.keys(files).sort(), ["AGENTS.md", join(agent, "AGENTS.md"), "svc/AGENTS.md"].sort());
     // The user's tidy is a row of its own beside the project's: told by place, not name.
     const tidy = v.skills.filter((s) => s.name === "tidy").map((s) => [s.key, s.source.kind]).sort();
     assert.deepEqual(tidy, [[".agents/skills/tidy/SKILL.md", "project"], [join(agent, "skills", "tidy", "SKILL.md"), "user"]]);
@@ -246,7 +247,8 @@ describe("a folder's lists", () => {
 
   test("a SKILL.md that is a link: its target's text is the skill's; a link to a folder or a dangling one marks the row partial", async () => {
     const w = world("linked-skill");
-    const shared = join(base, "shared-skill.md");
+    // Inside the repository: a project's skill is a real file in the project (one linked out of it isn't listed).
+    const shared = join(w.repo, "lib", "shared-skill.md");
     put(shared, "---\nname: shared\ndescription: Shared.\n---\nOne.\n");
     mkdirSync(join(w.repo, ".agents", "skills", "shared"), { recursive: true });
     symlinkSync(shared, join(w.repo, ".agents", "skills", "shared", "SKILL.md"));
@@ -505,12 +507,12 @@ describe("a folder's lists", () => {
     writeFileSync(join(w.repo, "AGENTS.md"), "# repo, changed since\n");
     const before = store.folderDecisions(f.key);
     // All off: the Changed approval, a waiting (New) one and a disallowed one left out.
-    const off = await A.writeFolderApprovals(f, { context: { "AGENTS.md": "disallowed", [join(w.above, "AGENTS.md")]: "disallowed" }, skills: { tidy: "disallowed" } }, w.deps, { group: true });
+    const off = await A.writeFolderApprovals(f, { context: { "AGENTS.md": "disallowed", [join(agent, "AGENTS.md")]: "disallowed" }, skills: { tidy: "disallowed" } }, w.deps, { group: true });
     assert.equal(off.changed.length, 3);
     // Turned on again by hand since: Undo leaves it.
     await A.writeFolderApprovals(f, { context: {}, skills: { tidy: "approved" } }, w.deps);
     const plan = A.undoPlan(f, off.undo!)!;
-    assert.deepEqual(plan.changes, { context: { "AGENTS.md": "approved", [join(w.above, "AGENTS.md")]: "waiting" }, skills: {} });
+    assert.deepEqual(plan.changes, { context: { "AGENTS.md": "approved", [join(agent, "AGENTS.md")]: "waiting" }, skills: {} });
     assert.equal(A.changesNeedPage(f.key, plan.changes), true, "putting an approval back is the page's");
     // Turned off again after Undo was judged: back to what the group save wrote, but never judged, so never restored.
     await A.writeFolderApprovals(f, { context: {}, skills: { tidy: "disallowed" } }, w.deps);
@@ -518,7 +520,7 @@ describe("a folder's lists", () => {
     assert.deepEqual([u.undone, u.kept], [2, 1]);
     const d = store.folderDecisions(f.key);
     assert.deepEqual(d.context["AGENTS.md"], before.context["AGENTS.md"], "verbatim: the old fingerprint, so it reads Changed again, never accepted");
-    assert.equal(d.context[join(w.above, "AGENTS.md")], undefined, "New again");
+    assert.equal(d.context[join(agent, "AGENTS.md")], undefined, "New again");
     assert.deepEqual(d.context["svc/AGENTS.md"], before.context["svc/AGENTS.md"]);
     assert.equal(d.skills[".agents/skills/tidy/SKILL.md"]?.state, "disallowed", "the hand's later change stands: Undo restores only what it judged");
     assert.equal((await A.folderApprovalsView(f, w.deps)).files.find((x) => x.key === "AGENTS.md")?.changed, true);

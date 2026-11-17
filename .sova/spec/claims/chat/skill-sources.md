@@ -19,6 +19,13 @@ there. Which skills a new chat may load is one switch per skill, kept per folder
   holding its own `SKILL.md`. That folder itself is never a place to search: what Claude keeps below
   `skills/.system`, or syncs from claude.ai below `skills/synced`, is not offered, including when a
   chat's folder sits under the home folder and the walk above reaches it.
+- **Only the project's real skills.** A skill found in the project's own folders (its `.pi/skills`,
+  `.agents/skills` and `.claude/skills`, from the chat's folder up to the repository's top, or the
+  chat's folder alone outside a repository) is offered, and listed, only when its real place is inside
+  the project (§chat.context-scope/folders): a skills folder, a skill's folder or its `SKILL.md` that
+  is a link to elsewhere, or sits in a folder reached through one, is not. A link that stays inside
+  the project is fine. pi's settings folder, `~/.agents/skills`, settings paths and the home Claude
+  folder are the user's own, not a project's: their skills load wherever their links lead.
 - **Who gets none.** A chat that loads no skills stays that way: the Overseer, a project overseer, a
   baton's gathering chat, the Project Assistant.
 - **Every list agrees.** A chat's own list and the setup card's list for a folder no chat holds

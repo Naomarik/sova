@@ -604,7 +604,8 @@ test("the setup card's Changed mark reads a skill's whole folder, as the folder'
   const script = join(root, ".agents", "skills", "keep-skill", "run.sh");
   const dangling = join(root, ".agents", "skills", "late-skill", "gone");
   const linked = join(root, ".agents", "skills", "link-skill");
-  const target = join(tmp, "elsewhere", "SKILL.md");
+  // Inside the project (no skills folder of its own): a project's skill is a real file in the project.
+  const target = join(root, "lib", "link-skill.md");
   const rows = async () => {
     clearSetupCache();
     const path = sessionFile();
@@ -640,6 +641,7 @@ test("the setup card's Changed mark reads a skill's whole folder, as the folder'
     assert.equal(res.status, 200, await res.clone().text());
     assert.equal(((await res.json()) as { key: string }).key, ".agents/skills/link-skill/SKILL.md");
   } finally {
+    rmSync(target, { force: true });
     rmSync(script, { force: true });
     rmSync(dangling, { force: true });
     rmSync(linked, { recursive: true, force: true });

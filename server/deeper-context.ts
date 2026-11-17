@@ -7,6 +7,7 @@ import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { HEntry } from "../shared/harness";
+import { projectFileKeeper } from "./context-scope";
 
 /** The names a folder's instruction file may have, in the order the first found wins (pi's own). */
 export const INSTRUCTION_NAMES = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"] as const;
@@ -147,8 +148,11 @@ export interface AttachOptions {
 
 /** The text blocks to append to a tool result, outermost first; none when nothing new loads. */
 export function blocksToAttach(cwd: string, o: AttachOptions): string[] {
-  const files = candidateDirs(cwd, resolveToolPath(cwd, o.path)).flatMap((dir) => instructionFileIn(dir) ?? []);
-  if (!files.length) return [];
+  const found = candidateDirs(cwd, resolveToolPath(cwd, o.path)).flatMap((dir) => instructionFileIn(dir) ?? []);
+  if (!found.length) return [];
+  // A project's files are real files in it: one linked out of the project never loads.
+  const real = projectFileKeeper(cwd, { home: homedir() });
+  const files = found.filter(real);
   const loaded = o.loaded();
   const self = o.selfRead ? resolveToolPath(cwd, o.selfRead.path) : undefined;
   const out: string[] = [];
@@ -185,6 +189,7 @@ export function listSubfolderInstructions(cwd: string, branch: readonly HEntry[]
   const root = resolve(cwd);
   const loaded = loadedInstructions(branch);
   const files: SubfolderInstruction[] = [];
+  const real = projectFileKeeper(cwd, { home: homedir() });
   const queue: string[] = [root];
   let seen = 0;
   let incomplete = false;
@@ -192,7 +197,7 @@ export function listSubfolderInstructions(cwd: string, branch: readonly HEntry[]
     const dir = queue.shift()!;
     if (dir !== root) {
       const f = instructionFileIn(dir);
-      if (f) {
+      if (f && real(f)) {
         let chars = 0;
         try {
           chars = readFileSync(f, "utf8").length;

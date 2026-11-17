@@ -66,6 +66,16 @@ test("the folders stop at one whose real place leaves the chat's folder: a link 
   assert.deepEqual(pathsOf(attach(cwd, "a/out-link/f.ts")), [], "so its file never loads");
 });
 
+test("a subfolder's file linked out of the project never loads nor is listed; one linked inside it does", () => {
+  const cwd = project({ "real.md": "inside rules", "in/x.ts": "", "out/x.ts": "" });
+  const outside = project({ "AGENTS.md": "elsewhere" });
+  symlinkSync(join(outside, "AGENTS.md"), join(cwd, "out/AGENTS.md"));
+  symlinkSync(join(cwd, "real.md"), join(cwd, "in/CLAUDE.md"));
+  assert.deepEqual(pathsOf(attach(cwd, "out/x.ts")), []);
+  assert.deepEqual(pathsOf(attach(cwd, "in/x.ts")), ["in/CLAUDE.md"]);
+  assert.deepEqual(listSubfolderInstructions(cwd, []).files.map((f) => f.path), ["in/CLAUDE.md"]);
+});
+
 test("a touch attaches each unloaded file on its way, outermost first, with relative paths; once loaded, nothing", () => {
   const cwd = project({ "AGENTS.md": "root", "api/AGENTS.md": "api rules", "api/v1/CLAUDE.md": "v1 rules", "api/v1/h.ts": "" });
   const blocks = attach(cwd, "api/v1/h.ts");

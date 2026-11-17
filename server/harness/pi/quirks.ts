@@ -632,6 +632,19 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi stops its context-file walk at the repository's top (or lets Sova name where it stops)",
   },
   {
+    id: "P45",
+    name: "project-skill-paths",
+    kind: "semantic",
+    relies: "Sova drops a project's skill whose real place leaves the project (a link out of it) in skillsOverride, before any override of its own: it relies on pi naming each skill (and each warning about a SKILL.md it couldn't load) by the path it walked, join(<skills folder as given or found>, <entry>), following a linked skill folder without resolving it, so a skill found in the project is told by its place in the project and its real place by realpath; and on skillsOverride getting every skill, the additional paths' included, at every reload.",
+    pi: ["DefaultResourceLoader", "ResourceLoaderOptions.skillsOverride", "ResourceLoaderOptions.additionalSkillPaths", "loadSkillsFromDir"],
+    where: [
+      { file: "server/harness/pi/resources.ts", symbol: "withContextScope" },
+      { file: "server/context-scope.ts", symbol: "projectFileKeeper" },
+    ],
+    canary: "P45 project-skill-paths: a skill pi finds through a linked skill folder (an ancestor .agents/skills up to the repository's top, an additional path) is listed and handed to skillsOverride by the path it walked, never its real one, and a dropped one's warning names that path",
+    retireWhen: "pi resolves skill paths to their real place, or lets a caller refuse a linked skill folder",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

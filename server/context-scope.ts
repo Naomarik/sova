@@ -4,7 +4,9 @@
 // An allowlist by folder: it only ever leaves files out, so a pi that finds more can't widen what loads.
 // Harness-neutral and from the disk alone (no git program), the same walk the subfolder rule takes
 // (server/skill-descent.ts). Applied in the pi adapter's funnel (server/harness/pi/resources.ts withContextScope).
-import { existsSync } from "node:fs";
+// A project's context files and skills are real files in the project: one whose real place lies outside the project's
+// top (a link out of it) never loads (projectFileKeeper); the agent folder, whose files are links, is no project.
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { real } from "./mcp/folder";
 
@@ -46,6 +48,61 @@ export interface ScopeFacts {
   agentDir: string;
 }
 
+/** `p` is `dir` or lies inside it. */
+const atOrInside = (dir: string, p: string): boolean => atOrAbove(dir, p);
+
+/** The top of the project a chat in `cwd` works in (a real path): its repository's top below home, else its own
+    folder; null for a chat at the home folder or above it, which works in no project. */
+export function projectTopOf(cwd: string, home: string): string | null {
+  const typed = resolve(cwd);
+  const actual = real(typed);
+  const homes = homesOf(home);
+  if (homeOrAbove(typed, homes) || homeOrAbove(actual, homes)) return null;
+  return gitTopBelowHome(actual, homes) ?? actual;
+}
+
+/**
+ * The test a project's context file or skill (an absolute path, as it was found) passes for a chat in `cwd`: an item
+ * found inside the project (by its real top, or by a folder of the chat's typed path that is that top) loads only when
+ * its own real place lies inside the project's top too, so a link out of the project (to home, to another folder) never
+ * loads, while one that stays inside (CLAUDE.md -> AGENTS.md) does. Anything found elsewhere, the agent folder's
+ * (whose files are links into the user's config) and every item of a chat with no project pass untouched. An item
+ * inside the project whose real place can't be told (a dangling link) doesn't load.
+ */
+export function projectFileKeeper(cwd: string, facts: { home: string; agentDir?: string }): (path: string) => boolean {
+  const top = projectTopOf(cwd, facts.home);
+  if (!top) return () => true;
+  const agent = facts.agentDir ? [resolve(facts.agentDir), real(resolve(facts.agentDir))] : [];
+  // The project's top as the chat's typed path names it (a link to the repository), besides its real path.
+  const tops = new Set([top]);
+  for (let d = resolve(cwd); ; d = dirname(d)) {
+    if (real(d) === top) tops.add(d);
+    if (dirname(d) === d) break;
+  }
+  return (path: string) => {
+    if (!isAbsolute(path)) return true;
+    const p = resolve(path);
+    if (agent.some((a) => atOrInside(a, p))) return true;
+    if (![...tops].some((t) => atOrInside(t, p))) return true;
+    let actual: string;
+    try {
+      actual = realpathSync(p);
+    } catch {
+      return !isLink(p); // nothing there loads nothing; a dangling link never loads
+    }
+    return atOrInside(top, actual);
+  };
+}
+
+/** A path that is a link (dangling or not). */
+function isLink(p: string): boolean {
+  try {
+    return lstatSync(p).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The folders (real paths) whose context file a chat in `cwd` may start with, besides the agent folder's: from its
  * folder up to its repository's top (gitTopBelowHome). Its own folder only outside any repository, and when it is the
@@ -66,13 +123,15 @@ export function contextFolders(cwd: string, home: string): Set<string> {
 }
 
 /** The test a chat in `cwd` keeps each of pi's context files by (absolute paths, as pi lists them): the agent
-    folder's own, and any whose folder, by its real path, is one of contextFolders. */
+    folder's own, and any whose folder, by its real path, is one of contextFolders and that is a real file of the
+    project (projectFileKeeper). */
 export function contextFileKeeper(cwd: string, facts: ScopeFacts): (path: string) => boolean {
   const folders = contextFolders(cwd, facts.home);
   const agent = new Set([resolve(facts.agentDir), real(resolve(facts.agentDir))]);
+  const inProject = projectFileKeeper(cwd, { home: facts.home });
   return (path: string) => {
     if (!isAbsolute(path)) return false;
     const dir = dirname(resolve(path));
-    return agent.has(dir) || folders.has(real(dir));
+    return agent.has(dir) || (folders.has(real(dir)) && inProject(path));
   };
 }

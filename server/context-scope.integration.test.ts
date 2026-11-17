@@ -9,7 +9,7 @@
 // A throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -61,6 +61,9 @@ writeFileSync(join(wt, "sub", "AGENTS.md"), "PX-SUB-RULES\n");
 MARK["PX-SUB-RULES"] = join(wt, "sub", "AGENTS.md");
 rules(join(home, "notes"), "NOTES-RULES");
 rules(join(home, "notes", "deep"), "NOTES-DEEP-RULES");
+// A project folder whose AGENTS.md is a link out of the repository (to the notes').
+mkdirSync(join(proj, "linked-out"), { recursive: true });
+symlinkSync(MARK["NOTES-RULES"]!, join(proj, "linked-out", "AGENTS.md"));
 
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const cm = await import("./chat-manager");
@@ -153,6 +156,8 @@ test("each chat starts with the agent folder's file and its own folder's up to i
     [join(proj, "sub"), ["PROJ-RULES", "PROJ-SUB-RULES"]],
     [join(wt, "sub"), ["PX-RULES", "PX-SUB-RULES"]],
     [join(home, "notes", "deep"), ["NOTES-DEEP-RULES"]],
+    // Only real files of the project: a link out of it never loads.
+    [join(proj, "linked-out"), ["PROJ-RULES"]],
   ];
   for (const [cwd, marks] of cases) {
     const path = sessionFile(cwd);

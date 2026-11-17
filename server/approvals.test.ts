@@ -247,7 +247,8 @@ describe("a folder's lists", () => {
 
   test("a SKILL.md that is a link: its target's text is the skill's; a link to a folder or a dangling one marks the row partial", async () => {
     const w = world("linked-skill");
-    const shared = join(base, "shared-skill.md");
+    // Inside the repository: a project's skill is a real file in the project (one linked out of it isn't listed).
+    const shared = join(w.repo, "lib", "shared-skill.md");
     put(shared, "---\nname: shared\ndescription: Shared.\n---\nOne.\n");
     mkdirSync(join(w.repo, ".agents", "skills", "shared"), { recursive: true });
     symlinkSync(shared, join(w.repo, ".agents", "skills", "shared", "SKILL.md"));

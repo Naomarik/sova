@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
-import { contextFileKeeper } from "./context-scope";
+import { contextFileKeeper, projectFileKeeper } from "./context-scope";
+import { folderResources } from "./harness/pi/resources";
 import { scratchRoot } from "./test-scratch";
 
 const base = scratchRoot("sova-context-scope-");
@@ -83,4 +84,67 @@ test("the agent folder's file is kept whatever the folder, and nothing else outs
   assert.equal(keep(join(agentDir, "CLAUDE.md")), true);
   assert.equal(keep(join(home, "AGENTS.md")), false, "the home folder's file never loads by climbing");
   assert.equal(keep("AGENTS.md"), false, "a relative path is no file of a folder");
+});
+
+// ---- a project's files are real files in it ---------------------------------------------------------------------
+
+/** A repository with links out of it and inside it, an outside folder, and an agent folder whose files are links. */
+function linked() {
+  const at = dir(`linked-${Math.random().toString(36).slice(2)}`);
+  const put = (rel: string, text = rel) => (mkdirSync(dirname(join(at, rel)), { recursive: true }), writeFileSync(join(at, rel), text), join(at, rel));
+  const skill = (rel: string, name: string) => put(`${rel}/SKILL.md`, `---\nname: ${name}\ndescription: The ${name} skill.\n---\nBody.\n`);
+  mkdirSync(join(at, "repo", ".git"), { recursive: true });
+  put("outside/AGENTS.md", "OUTSIDE");
+  skill("outside/skills/away", "away");
+  skill("outside/config/skills/mine", "mine");
+  put("outside/config/AGENTS.md", "MINE");
+  put("repo/real.md", "REAL");
+  skill("repo/lib/kept", "kept");
+  mkdirSync(join(at, "repo", "sub", ".agents", "skills"), { recursive: true });
+  symlinkSync(join(at, "outside", "AGENTS.md"), join(at, "repo", "AGENTS.md")); // out of the repository
+  symlinkSync(join(at, "repo", "real.md"), join(at, "repo", "sub", "CLAUDE.md")); // inside it
+  mkdirSync(join(at, "repo", ".agents", "skills"), { recursive: true });
+  symlinkSync(join(at, "outside", "skills", "away"), join(at, "repo", ".agents", "skills", "away"));
+  symlinkSync(join(at, "repo", "lib", "kept"), join(at, "repo", ".agents", "skills", "kept"));
+  // The agent folder: its file and skills are links into the user's config, and it is no project.
+  const agent = join(at, "agent");
+  mkdirSync(join(agent, "skills"), { recursive: true });
+  symlinkSync(join(at, "outside", "config", "AGENTS.md"), join(agent, "AGENTS.md"));
+  symlinkSync(join(at, "outside", "config", "skills", "mine"), join(agent, "skills", "mine"));
+  return { at, repo: join(at, "repo"), agent };
+}
+
+test("a project's context file or skill linked out of the project never loads; a link inside it does; the agent folder's links always do", () => {
+  const { at, repo, agent } = linked();
+  const sub = join(repo, "sub");
+  const keep = contextFileKeeper(sub, { home, agentDir: agent });
+  assert.equal(keep(join(repo, "AGENTS.md")), false, "AGENTS.md linked to a file outside the repository");
+  assert.equal(keep(join(sub, "CLAUDE.md")), true, "a link to a file inside it");
+  assert.equal(keep(join(agent, "AGENTS.md")), true, "the agent folder's file, itself a link");
+  const real = projectFileKeeper(sub, { home, agentDir: agent });
+  assert.equal(real(join(repo, ".agents/skills/away/SKILL.md")), false, "a skill folder linked outside");
+  assert.equal(real(join(repo, ".agents/skills/kept/SKILL.md")), true, "a skill folder linked inside");
+  assert.equal(real(join(agent, "skills/mine/SKILL.md")), true);
+  assert.equal(real(join(at, "outside/skills/away/SKILL.md")), true, "found outside the project: not the project's to judge");
+  symlinkSync(join(at, "nowhere"), join(repo, "dangling.md"));
+  assert.equal(real(join(repo, "dangling.md")), false, "a dangling link loads nothing");
+  // An agent folder inside the repository (a worktree's hermetic .agent) is still no project: its links load.
+  const inner = join(repo, ".agent");
+  mkdirSync(join(inner, "skills"), { recursive: true });
+  symlinkSync(join(at, "outside", "config", "AGENTS.md"), join(inner, "AGENTS.md"));
+  symlinkSync(join(at, "outside", "config", "skills", "mine"), join(inner, "skills", "mine"));
+  assert.equal(contextFileKeeper(sub, { home, agentDir: inner })(join(inner, "AGENTS.md")), true);
+  assert.equal(projectFileKeeper(sub, { home, agentDir: inner })(join(inner, "skills/mine/SKILL.md")), true);
+  assert.equal(projectFileKeeper(sub, { home })(join(inner, "skills/mine/SKILL.md")), false, "the same link, were it not the agent folder");
+  // A chat at home or above works in no project: nothing of it is judged.
+  assert.equal(projectFileKeeper(home, { home })(join(home, "anything", "SKILL.md")), true);
+});
+
+test("through the adapter's funnel: pi's own load of the folder drops the linked-out file and skill, and keeps the rest", async () => {
+  const { repo, agent } = linked();
+  const res = await folderResources(join(repo, "sub"), agent);
+  assert.deepEqual(res.context.map((f) => f.path), [join(agent, "AGENTS.md"), join(repo, "sub", "CLAUDE.md")]);
+  const skills = res.skills.map((s) => s.name).sort();
+  assert.ok(skills.includes("kept") && skills.includes("mine"), `in-repo link and the agent folder's: ${skills}`);
+  assert.ok(!skills.includes("away"), "a skill linked out of the repository is not offered");
 });

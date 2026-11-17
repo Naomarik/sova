@@ -672,16 +672,20 @@ export function ChatView(props: {
   const openCardInNewChat = async (playbook: Pick<PlaybookRunView["playbook"], "source" | "id">, text: string | undefined, held: HeldBy): Promise<boolean> => {
     const cwd = props.summary?.()?.cwd;
     const host = hostOf(props.path);
+    /** The new chat, once made: a failure after it says the chat is there. */
+    let made: { path: string } | null = null;
     try {
       if (!cwd) throw new Error("this chat's folder isn't known yet");
-      const made = await createSession(cwd, host);
+      made = await createSession(cwd, host);
       const run = await playbookRunsApi(host).open({ playbook: { source: playbook.source, id: playbook.id }, cwd, path: made.path, ...(text ? { text } : {}) });
       openCardOnArrival(made.path, run.id);
       announce(`${run.playbook.title} opened in a new chat: this chat already runs ${held.title}.`);
       location.hash = sessionHrefOn(host, made.path);
       return true;
     } catch (e) {
-      toast(`The playbook didn't open in a new chat: ${e instanceof Error ? e.message : String(e)}`);
+      const why = e instanceof Error ? e.message : String(e);
+      // An empty chat isn't listed, so one left behind is out of the way; the words still say it was made.
+      toast(made ? `A new chat was made, but the playbook didn't open in it: ${why}` : `The playbook didn't open in a new chat: ${why}`);
       return false;
     }
   };

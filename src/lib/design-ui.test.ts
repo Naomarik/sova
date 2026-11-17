@@ -4,6 +4,7 @@ import type { TranscriptItem } from "../../shared/protocol";
 import type { DesignRecord, DesignSetup } from "../../shared/design";
 import type { LiveTool } from "./live";
 import { designFold, liveDesignCalls, newestDesignRows, normalizeDesignCard } from "./design-rows";
+import { designModelName, effortLabel, leftOutLine, leftOutSentence, modelsSummary, setEffort } from "./design-ui";
 import { batchLine, briefTitle, lookbookTitle, canShuffle, designSections, pairsLine, setCombine, shufflePairs, tickedLine, toggleLayout, searchModels, sectionSummary, designFixLine, designCanOpen, designHoldEnds, designIsBusy, designMeta, designOpenFollowsLive, designNoteLine, designUnchangedLine, designStatusWord, designQueuedLine, designCanStop, designCanStartAgain, designsShown, designsRemoved, moveCoordinator, parentsLine, setupBlocked, setupCount, setupSummary, statusCounts, toggleDirection, toggleGroup, toggleModel } from "./design-ui";
 
 const caps = { batchDefault: 6, askAbove: 12, batchMax: 24, concurrent: 6 };
@@ -54,6 +55,61 @@ test("a closed section names its designing models on one line, or none", () => {
   assert.equal(sectionSummary([]), "None designing");
   assert.equal(sectionSummary(["glm-5.3", "glm-5.2"]), "glm-5.3, glm-5.2");
   assert.equal(sectionSummary(["a", "b", "c", "d", "e", "f", "g"]), "a, b, c, +4");
+});
+
+const L = ["off", "low", "medium", "high", "xhigh"];
+/** A row named by its id's last part, as the picker names a model ("opus"). */
+const n = (ref: string, design = true, coordinator = false) => ({ ...m(ref, design, coordinator), name: ref.split("/")[1]! });
+test("an effort is named in a summary only where it isn't Low, by its menu's word", () => {
+  const s = setup({ models: [n("claude-code/opus"), { ...n("claude-code/sonnet"), efforts: L, effort: "xhigh" }, { ...n("claude-code/haiku"), efforts: L }, { ...n("claude-code/fable", false), efforts: L, effort: "high" }] });
+  // opus: no levels offered (no menu): its name alone; haiku: Low by default; fable doesn't design.
+  // In the picker's order (unranked ids go alphabetically here).
+  // Claude models read by their catalog names, whatever alias the card holds.
+  assert.equal(designSections(s.models).find((x) => x.id === "claude")!.summary, "Haiku 4.5, Opus 5.5, Sonnet 5.5 · Extra High");
+  assert.deepEqual(["off", "low", "medium", "high", "xhigh", "max"].map(effortLabel), ["Off", "Low", "Medium", "High", "Extra High", "Max"]);
+});
+
+test("the closed Models row names every designer with its effort, the Creative Director and the count", () => {
+  const s = setup({ models: [{ ...n("claude-code/opus", false, true), efforts: L }, { ...n("claude-code/sonnet"), efforts: L, effort: "high" }, { ...n("ollama-cloud/glm"), efforts: L }, n("zai/glm-5.3")] });
+  // In the picker's order (Z.ai's section before Ollama Cloud's); glm-5.3 offers no levels, so it has no effort to name.
+  assert.deepEqual(modelsSummary(s), { designers: "Sonnet 5.5 High · glm-5.3 · glm Low", designerList: ["Sonnet 5.5 High", "glm-5.3", "glm Low"], coordinator: "Creative Director: Opus 5.5", count: "3 models" });
+  assert.deepEqual(modelsSummary(setup({ models: [n("claude-code/opus", false, true)] })), { designers: "None designing", designerList: [], coordinator: "Creative Director: Opus 5.5", count: "0 models" });
+  assert.equal(modelsSummary(setup({ models: [m("claude-code/opus", true)] })).count, "1 model");
+});
+
+test("a Claude model reads by its catalog name on the card, any other by the name the card holds", () => {
+  const card = setup({ models: [{ ...m("claude-code-cli/claude-opus-5-5", true, true), name: "claude-opus-5-5", efforts: L, effort: "high" }, { ...m("ollama-cloud/deepseek-v4.1-flash"), name: "deepseek-v4.1-flash" }] });
+  assert.deepEqual(card.models.map(designModelName), ["Opus 5.5", "deepseek-v4.1-flash"]);
+  assert.deepEqual(modelsSummary(card), { designers: "Opus 5.5 High · deepseek-v4.1-flash", designerList: ["Opus 5.5 High", "deepseek-v4.1-flash"], coordinator: "Creative Director: Opus 5.5", count: "2 models" });
+  assert.equal(designSections(card.models).find((x) => x.id === "claude")!.summary, "Opus 5.5 · High");
+  // Found by either: the name shown or the id it stands for.
+  assert.deepEqual(searchModels(card.models, "opus 5.5").map((x) => x.ref), ["claude-code-cli/claude-opus-5-5"]);
+  assert.deepEqual(searchModels(card.models, "claude-opus").map((x) => x.ref), ["claude-code-cli/claude-opus-5-5"]);
+});
+
+test("setting one model's effort changes that row only", () => {
+  const s = setup({ models: [{ ...m("claude-code/opus"), efforts: L }, { ...m("claude-code/sonnet"), efforts: L }] });
+  assert.deepEqual(setEffort(s, "claude-code/sonnet", "high").models.map((x) => x.effort), [undefined, "high"]);
+});
+
+test("a section the user hid is left out of the picker's sections, whatever is ticked in it", () => {
+  const s = setup();
+  assert.deepEqual(designSections(s.models, ["claude"]).map((x) => x.id), ["ollama-cloud"]);
+  assert.deepEqual(designSections(s.models, []).map((x) => x.id), ["claude", "ollama-cloud"]);
+});
+
+test("the quiet line names each provider left off and why, the models asked for from it, then the hidden count", () => {
+  const ollama = { section: "ollama", name: "Ollama on this computer" };
+  assert.equal(leftOutSentence({ ...ollama, why: "not-running" }), "Ollama on this computer isn't running, so it isn't listed.");
+  assert.equal(leftOutSentence({ section: "gpt", name: "OpenAI", why: "signed-out" }), "OpenAI's sign-in has expired, so it isn't listed.");
+  assert.equal(leftOutSentence({ section: "zai", name: "Z.ai", why: "bad-key", models: ["glm-5.3"] }), "Z.ai refused its key, so glm-5.3 isn't listed.");
+  assert.equal(leftOutSentence({ section: "deepseek", name: "DeepSeek", why: "no-key", models: ["a", "b"] }), "DeepSeek has no key, so a and b aren't listed.");
+  assert.equal(leftOutSentence({ ...ollama, why: "not-downloaded", models: ["qwen3"] }), "qwen3 isn't downloaded in Ollama on this computer, so it isn't listed.");
+  assert.deepEqual(leftOutLine({}), { text: "", hidden: "" });
+  assert.deepEqual(leftOutLine({ leftOut: [{ ...ollama, why: "not-running" }], hiddenSections: ["gpt", "zai"], hiddenAsked: ["gpt-5.5"] }), {
+    text: "Ollama on this computer isn't running, so it isn't listed. gpt-5.5 is in a provider you hid.",
+    hidden: "2 hidden",
+  });
 });
 
 test("the picker's order stays put while models are ticked", () => {

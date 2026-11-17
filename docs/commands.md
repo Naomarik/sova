@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 641 |
-| Routes a catalogue entry points at | 208 |
-| Catalogue entries | 279 |
+| Routes registered | 642 |
+| Routes a catalogue entry points at | 209 |
+| Catalogue entries | 280 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -310,6 +310,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `design.list` | List Designs | looks | `GET /api/design` | full |
 | `design.page` | Read Design Page | looks | `GET /api/design/:label/page` | full |
 | `design.setup.set` | Change Lookbook Setup | changes | `PATCH /api/design/runs/:run/setup` | full |
+| `design.setup.hide` | Hide a Lookbook Provider | changes | `POST /api/design/runs/:run/hidden` | full |
 | `design.start` | Start Lookbook Creative Director | changes | `POST /api/design/runs/:run/start` | full |
 | `design.message` | Message a Design | changes | `POST /api/design/:label/message` | full |
 | `design.refine` | Refine a Design | changes | `POST /api/design/:label/refine` | full |
@@ -894,6 +895,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/design/:label/stop` | full | `design.stop` |
 | `POST /api/design/coordinator/message` | full | `design.coordinator.message` |
 | `GET /api/design/history` | full | `design.history` |
+| `POST /api/design/runs/:run/hidden` | full | `design.setup.hide` |
 | `PATCH /api/design/runs/:run/setup` | full | `design.setup.set` |
 | `POST /api/design/runs/:run/start` | full | `design.start` |
 | `GET /api/diff/summary` | sessions | `session.diff.summary` |

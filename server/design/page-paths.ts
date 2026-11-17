@@ -36,3 +36,15 @@ export async function pagePathFor(sessionId: string, label: string, n: number, r
   }
   return { path: platform === "linux" ? join("/tmp", rel) : copy, exposed: true };
 }
+
+/** The folder a chat's own tools see as /tmp: its session tmp when its sandbox is on (Linux, where that tmp is mounted at
+    /tmp), else null (its /tmp is the server's). */
+export async function chatTmpDir(sessionId: string, platform: NodeJS.Platform = process.platform): Promise<string | null> {
+  if (!readerSandbox || platform !== "linux") return null;
+  try {
+    const box = await readerSandbox(sessionId);
+    return box.on && "policy" in box ? box.policy.tmpDir : null;
+  } catch {
+    return null;
+  }
+}

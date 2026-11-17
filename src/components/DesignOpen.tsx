@@ -1,8 +1,9 @@
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, onCleanup, onMount, Show, untrack } from "solid-js";
 import { Portal } from "solid-js/web";
 import { designDirectionLine, type DesignHistoryItem, type DesignRecord } from "../../shared/design";
 import type { TranscriptItem } from "../../shared/protocol";
 import { foldedCalls, historyRows, mergeHistory } from "../lib/lookbook-history";
+import { createChatFold, type ChatFold } from "../lib/design-chat-fold";
 import { versionLabel } from "../lib/design-frame";
 import type { DesignOpener } from "../lib/design-history";
 import { createPageSlots } from "../lib/design-page-slots";
@@ -67,27 +68,77 @@ function PageFrame(props: { d: DesignRecord; version: number; following: boolean
   );
 }
 
-function ChatPane(props: { sessionFile?: string; host: string | null; name: string; author: string; streaming: boolean; children: any; note?: string; rows?: (items: TranscriptItem[]) => TranscriptItem[] }) {
+/**
+ * The view's chat. Always mounted, so its typed words, its scroll place and its bar's line live as long
+ * as the view: on a phone it starts folded to a bar (the newest message on one line) that shows it.
+ */
+function ChatPane(props: { sessionFile?: string; host: string | null; name: string; author: string; streaming: boolean; children: any; note?: string; rows?: (items: TranscriptItem[]) => TranscriptItem[]; fold: ChatFold; empty: string }) {
+  const id = createUniqueId();
+  const line = createMemo(() => props.fold.line(props.author));
+  let bar!: HTMLButtonElement;
+  let hide!: HTMLButtonElement;
   return (
     <section class="design-open-chat" aria-label={`Chat with ${props.name}`}>
-      <h3 class="design-open-chat-title">Chat with {props.name}</h3>
-      <div class="design-open-transcript">
-        <Show
-          when={props.sessionFile}
-          keyed
-          fallback={
-            <div class="empty subagents-empty">
-              <p class="empty-body">Its session hasn't started yet. Your messages can wait until it does.</p>
-            </div>
-          }
-        >
-          {(file) => <WorkerTranscript source={{ kind: "pi", path: file }} host={props.host} name={props.name} author={props.author} streaming={props.streaming} onContext={() => {}} rows={props.rows} />}
+      {/* Showing the chat moves focus to Hide Chat, never into the message box (a phone's keyboard stays down). */}
+      <button
+        type="button"
+        class="design-open-bar"
+        ref={bar}
+        title="Show Chat"
+        aria-expanded={props.fold.folded() ? "false" : "true"}
+        aria-controls={id}
+        onClick={() => {
+          props.fold.setFolded(false);
+          hide.focus();
+        }}
+      >
+        <span class="visually-hidden">Show Chat: </span>
+        <Icon name="chat" class="design-open-bar-icon" />
+        <Show when={line()} fallback={<span class="design-open-bar-text text-muted">{props.empty}</span>}>
+          {(l) => (
+            <>
+              <b class="design-open-bar-who">{l().who}</b>
+              <span class="design-open-bar-text">{l().text}</span>
+            </>
+          )}
         </Show>
+        <Icon name="chevron-down" small class="design-open-bar-up" />
+      </button>
+      <div class="design-open-chat-body" id={id}>
+        <div class="design-open-chat-head">
+          <h3 class="design-open-chat-title">Chat with {props.name}</h3>
+          <button
+            type="button"
+            class="button button-sm button-ghost design-open-fold"
+            ref={hide}
+            aria-expanded={props.fold.folded() ? "false" : "true"}
+            aria-controls={id}
+            onClick={() => {
+              props.fold.setFolded(true);
+              bar.focus();
+            }}
+          >
+            Hide Chat
+          </button>
+        </div>
+        <div class="design-open-transcript">
+          <Show
+            when={props.sessionFile}
+            keyed
+            fallback={
+              <div class="empty subagents-empty">
+                <p class="empty-body">Its session hasn't started yet. Your messages can wait until it does.</p>
+              </div>
+            }
+          >
+            {(file) => <WorkerTranscript source={{ kind: "pi", path: file }} host={props.host} name={props.name} author={props.author} streaming={props.streaming} onContext={() => {}} rows={props.rows} onLatest={props.fold.onLatest} />}
+          </Show>
+        </div>
+        <Show when={props.note}>
+          <p class="field-hint design-open-note">{props.note}</p>
+        </Show>
+        <div class="composer design-open-composer">{props.children}</div>
       </div>
-      <Show when={props.note}>
-        <p class="field-hint design-open-note">{props.note}</p>
-      </Show>
-      <div class="composer design-open-composer">{props.children}</div>
     </section>
   );
 }
@@ -116,6 +167,8 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
   });
   const withPromptItems = (list: TranscriptItem[]) => mergeHistory(list, promptItems().rows, promptItems().folded);
   const [hideChat, setHideChat] = createSignal(false);
+  // Below 768px the chat folds to a bar instead, and every view starts folded: nothing is remembered.
+  const chat = createChatFold();
   // What the More menu's last click came to, when it didn't go through: said in the head's line.
   const [actError, setActError] = createSignal("");
   const [pick, setPick] = createSignal<number | null>(null);
@@ -129,14 +182,21 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
       onClose={() => props.onClose()}
     >
       <header class="design-open-head">
-        <h2 class="design-open-title">{title()}</h2>
-        <Show when={d()}>
-          {(x) => (
-            <>
+        {/* One flex row on a wide screen (this box adds nothing there); on a phone, the title over its line. */}
+        <div class="design-open-titles">
+          <h2 class="design-open-title">{title()}</h2>
+          <Show when={d()}>
+            {(x) => (
               <span class={`text-caption design-open-meta${actError() ? " field-error" : " text-muted"}`} role={actError() ? "alert" : undefined} title={actError() || designNoteLine(x()) || designMeta(x())}>
                 {actError() || designNoteLine(x()) || designMeta(x())}
                 <Show when={!actError() && x().parents.length && !designNoteLine(x())}> · {parentsLine(x().parents)}</Show>
               </span>
+            )}
+          </Show>
+        </div>
+        <Show when={d()}>
+          {(x) => (
+            <>
               <span class="design-open-chip">
                 <Chip tone={designStatusTone(x())} live={designIsBusy(x())}>
                   {designStatusWord(x())}
@@ -156,25 +216,25 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
           <Icon name="close" />
         </button>
       </header>
-      <div class="design-open-body" data-chat={hideChat() ? "hidden" : "shown"}>
+      <div class="design-open-body" data-chat={hideChat() ? "hidden" : "shown"} data-fold={chat.folded() ? "folded" : "shown"}>
         <Show when={d()}>
           {(x) => (
             <>
               <div class="design-open-page">
                 <PageFrame d={x()} version={version()} following={pick() === null} store={props.store} cacheKey={props.path} />
               </div>
-              <Show when={!hideChat()}>
-                <ChatPane
-                  sessionFile={x().sessionFile}
-                  host={hostOf()}
-                  name={x().label}
-                  author={x().label}
-                  streaming={x().status === "writing"}
-                  note={x().workerState === "stopped" ? `${x().label}'s session has shut down. A message starts it again.` : x().sessionEnded ? `${x().label}'s session has ended. A message starts a fresh one from its stored page.` : undefined}
-                >
-                  <DesignMessageBox label={`Message ${x().label}`} placeholder={`Message ${x().label}`} delivery={x().delivery} name={x().label} send={(text, key) => props.store.api.message(x().label, text, key)} onSent={() => props.store.refresh()} />
-                </ChatPane>
-              </Show>
+              <ChatPane
+                fold={chat}
+                empty={`Message ${x().label}`}
+                sessionFile={x().sessionFile}
+                host={hostOf()}
+                name={x().label}
+                author={x().label}
+                streaming={x().status === "writing"}
+                note={x().workerState === "stopped" ? `${x().label}'s session has shut down. A message starts it again.` : x().sessionEnded ? `${x().label}'s session has ended. A message starts a fresh one from its stored page.` : undefined}
+              >
+                <DesignMessageBox label={`Message ${x().label}`} placeholder={`Message ${x().label}`} delivery={x().delivery} name={x().label} send={(text, key) => props.store.api.message(x().label, text, key)} onSent={() => props.store.refresh()} />
+              </ChatPane>
             </>
           )}
         </Show>
@@ -185,11 +245,9 @@ export function DesignOpen(props: { target: DesignOpenTarget; store: DesignStore
                 <DesignCoordinatorPanel coordinator={c()} view={view()} store={props.store} bare />
                 <DesignTiles designs={designGrid(view())} store={props.store} cacheKey={props.path} class="design-open-grid" onOpen={(label) => props.onSwitch({ kind: "design", label })} />
               </div>
-              <Show when={!hideChat()}>
-                <ChatPane sessionFile={c().sessionFile} host={hostOf()} name="the Creative Director" author="Creative Director" streaming={c().status === "running"} note="It knows each design and can open its saved page." rows={withPromptItems}>
-                  <DesignMessageBox label="Message the Creative Director" placeholder="Message the Creative Director" delivery={c().delivery} name="the Creative Director" send={(text, key, images) => props.store.api.coordinatorMessage(text, key, images)} upload={props.store.api.uploadImage} onSent={() => props.store.refresh()} />
-                </ChatPane>
-              </Show>
+              <ChatPane fold={chat} empty="Message the Creative Director" sessionFile={c().sessionFile} host={hostOf()} name="the Creative Director" author="Creative Director" streaming={c().status === "running"} note="It knows each design and can open its saved page." rows={withPromptItems}>
+                <DesignMessageBox label="Message the Creative Director" placeholder="Message the Creative Director" delivery={c().delivery} name="the Creative Director" send={(text, key, images) => props.store.api.coordinatorMessage(text, key, images)} upload={props.store.api.uploadImage} onSent={() => props.store.refresh()} />
+              </ChatPane>
             </>
           )}
         </Show>

@@ -17,7 +17,7 @@ import { applySlice, clearLivePage, livePage } from "./live";
 import { noteDesignEvent } from "./coordinator";
 import { pageProblem } from "./lint";
 import { versionViews } from "./views";
-import { replyCost, resolveDesignModel } from "./setup";
+import { launchEffortField, replyCost, resolveDesignModel } from "./setup";
 import { listModels } from "../models";
 import { readModelPolicy } from "../model-policy";
 import { retiredModelRefs } from "../harness/pi/model-sync";
@@ -168,7 +168,8 @@ export function launchDesigns(parent: DesignParent, runId: string, input: { brie
       const model = models.get(item.model)!;
       const label = nextLabel(s);
       made.push(label);
-      s.designs.push({ label, runId, direction: item.style, ...(item.layout ? { layout: item.layout } : {}), model: model.ref, modelName: model.name, parents: [], status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, ...skillRootsOf(run), createdAt: now, updatedAt: now });
+      // At the effort its Setup row names: absent is low, null the model's own (one that offers no level).
+      s.designs.push({ label, runId, direction: item.style, ...(item.layout ? { layout: item.layout } : {}), model: model.ref, modelName: model.name, ...launchEffortField(model), parents: [], status: "queued", route: model.route, versions: [], workerState: "stopped", vision: model.vision, ...skillRootsOf(run), createdAt: now, updatedAt: now });
       (s.internal ??= {})[label] = { attempt: 0, brief, by: "first", parentPath: parent.path };
     }
     const r = s.runs.find((x) => x.id === runId)!;

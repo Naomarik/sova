@@ -17,7 +17,8 @@ import { mountDescribeRoutes } from "./describe-routes";
 import { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, DesignRefused, designCount, removeDesign, restoreDesign, retryDesign, stopDesign, type DesignParent } from "./batch";
 import { readHistory } from "./history";
 import { designView, livePage } from "./live";
-import { cleanSetup, estimateUsd } from "./setup";
+import { estimateUsd, launchEffortField } from "./setup";
+import { commitSetup, hideSection, SetupRefused } from "./setup-change";
 import { skillReadTokens } from "./skills";
 import { changeDesigns, designOf, readDesigns, readPage, readStill, runOf } from "./store";
 
@@ -65,27 +66,30 @@ export function mountDesignRoutes(app: Hono): void {
     if (!p) return c.json({ error: BAD_PATH }, 400);
     const sent = await body(c);
     if (typeof sent.brief !== "string" || !Array.isArray(sent.models) || !Array.isArray(sent.directions)) return c.json({ error: "Expected a whole Setup { brief, models, directions }." }, 400);
-    const runId = c.req.param("run");
-    const run = runOf(p.sessionId, runId);
-    if (!run) return c.json({ error: "No such design run." }, 404);
-    const briefOpen = run.phase === "brief";
-    if (run.phase !== "setup" && !briefOpen) return c.json({ error: "This run has started, so its Setup is closed." }, 409);
-    const next = cleanSetup(run.setup, sent, briefOpen);
-    if (typeof next === "string") return c.json({ error: next }, 400);
-    changeDesigns(p.sessionId, (s) => {
-      const r = s.runs.find((x) => x.id === runId);
-      if (r) {
-        r.setup = next;
-        r.updatedAt = new Date().toISOString();
-        if (briefOpen && r.brief) {
-          // On the card, so what Start starts from has moved; and so has what it should cost.
-          r.brief.rev++;
-          const estimate = estimateUsd(next, Date.now(), skillReadTokens(designerSkills(r)));
-          if (estimate === null) delete r.brief.estimateUsd;
-          else r.brief.estimateUsd = estimate;
-        }
-      }
-    });
+    // The whole card as the user sees it: the latest change wins.
+    try {
+      // baseSetupAt: the card the save was made from; absent (a script), the save applies as it is.
+      if (sent.baseSetupAt !== undefined && typeof sent.baseSetupAt !== "string") return c.json({ error: "baseSetupAt is the run's setupAt (else createdAt) the card was made from." }, 400);
+      commitSetup(p.sessionId, c.req.param("run"), () => ({ setup: sent }), typeof sent.baseSetupAt === "string" ? { base: sent.baseSetupAt } : {});
+    } catch (err) {
+      if (err instanceof SetupRefused) return c.json({ error: err.message, ...(err.stale ? { stale: true, run: err.stale, view: designView(p.sessionId) } : {}) }, err.status);
+      throw err;
+    }
+    return c.json(designView(p.sessionId));
+  });
+
+  // Hide or Show a provider's section on the card: remembered for every later card, the chat's included.
+  app.post("/api/design/runs/:run/hidden", async (c) => {
+    const p = parentOf(c);
+    if (!p) return c.json({ error: BAD_PATH }, 400);
+    const b = await body(c);
+    if (typeof b.section !== "string" || !b.section || b.section.length > 64 || typeof b.hidden !== "boolean") return c.json({ error: "Expected { section, hidden }." }, 400);
+    try {
+      hideSection(p.sessionId, c.req.param("run"), b.section, b.hidden);
+    } catch (err) {
+      if (err instanceof SetupRefused) return c.json({ error: err.message }, err.status);
+      throw err;
+    }
     return c.json(designView(p.sessionId));
   });
 
@@ -240,7 +244,7 @@ async function recordRun(p: DesignParent, runId: string): Promise<void> {
     runId,
     at: run.updatedAt,
     // What was chosen, never the whole model list.
-    setup: { brief: run.setup.brief, models: run.setup.models.filter((m) => m.design).map((m) => m.ref), coordinator: run.setup.models.find((m) => m.coordinator)?.ref ?? null, directions: run.setup.directions.filter((d) => d.on).map((d) => d.name), layouts: (run.setup.layouts ?? []).filter((d) => d.on).map((d) => d.name), combine: run.setup.combine ?? "pair", ...(run.setup.pairSeed ? { pairSeed: run.setup.pairSeed } : {}) },
+    setup: { brief: run.setup.brief, models: run.setup.models.filter((m) => m.design).map((m) => m.ref), efforts: Object.fromEntries(run.setup.models.filter((m) => m.design).flatMap((m) => { const e = launchEffortField(m).effort; return [[m.ref, e === undefined ? "low" : e]]; })), ...(run.leftOut?.length ? { leftOut: run.leftOut.map((l) => ({ section: l.section, why: l.why })) } : {}), ...(run.hiddenSections?.length ? { hiddenSections: run.hiddenSections } : {}), ...(run.imagesLeftOut?.length ? { imagesLeftOut: run.imagesLeftOut } : {}), coordinator: run.setup.models.find((m) => m.coordinator)?.ref ?? null, directions: run.setup.directions.filter((d) => d.on).map((d) => d.name), layouts: (run.setup.layouts ?? []).filter((d) => d.on).map((d) => d.name), combine: run.setup.combine ?? "pair", ...(run.setup.pairSeed ? { pairSeed: run.setup.pairSeed } : {}) },
   });
 }
 

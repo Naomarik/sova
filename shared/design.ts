@@ -165,6 +165,36 @@ export interface DesignModelChoice {
   route: DesignStreamRoute;
   /** One of the composer's favorites when the card was made: it leads its provider's section. */
   favorite?: boolean;
+  /** The thinking level its designs run at; absent: DESIGN_DEFAULT_EFFORT when it offers that. */
+  effort?: string;
+  /** The levels it offers, in order (its ModelInfo.thinkingLevels). Absent, empty or only "off": no effort to pick. */
+  efforts?: string[];
+}
+
+/** The effort a designing model's designs run at when the card names none. */
+export const DESIGN_DEFAULT_EFFORT = "low";
+
+/** Whether a model row has an effort to pick: some level besides "off". */
+export const designHasEfforts = (m: Pick<DesignModelChoice, "efforts">): boolean => (m.efforts ?? []).some((l) => l !== "off");
+
+/** The level a model row's designs run at: its effort, else low when it offers that, else null (the model's own). */
+export function designEffortOf(m: Pick<DesignModelChoice, "effort" | "efforts">): string | null {
+  if (m.effort) return m.effort;
+  return (m.efforts ?? []).includes(DESIGN_DEFAULT_EFFORT) ? DESIGN_DEFAULT_EFFORT : null;
+}
+
+/** Why a provider's section isn't on a Setup card: it can't run right now. */
+export type DesignLeftOutWhy = "signed-out" | "bad-key" | "no-key" | "not-running" | "not-downloaded";
+
+/** A provider's section left off a Setup card (or some of its models, for not-downloaded), with why. */
+export interface DesignLeftOut {
+  /** Its picker section's id (designSectionOf). */
+  section: string;
+  /** The section's name as the picker shows it. */
+  name: string;
+  why: DesignLeftOutWhy;
+  /** The names the main chat asked for that sit in it. */
+  models?: string[];
 }
 
 export interface DesignDirection {
@@ -253,6 +283,17 @@ export interface DesignRun {
   /** The images the user attached when asking for this Lookbook, by asset name: the run's own, as the ones they paste
       once it has begun are (whatever their age in the chat). Absent: none. */
   images?: string[];
+  /** Images taken off this run by name (they stay in the chat's Page Assets): never the run's own, whatever their age. */
+  imagesLeftOut?: string[];
+  /** Providers that couldn't run when the card's model list was built, and why: their models aren't on the card. */
+  leftOut?: DesignLeftOut[];
+  /** Picker sections the user hid (remembered for later cards): their rows stay in setup.models, unticked, undrawn. */
+  hiddenSections?: string[];
+  /** Names the main chat asked for that sit in a hidden section. */
+  hiddenAsked?: string[];
+  /** When the Setup last changed (the user's save, the chat's edit, Hide or Show): a save names the stamp of the card it
+      was made from (setupAt, else createdAt) and is refused when a newer change came first. Absent: never changed. */
+  setupAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -445,8 +486,8 @@ export interface DesignBrief {
 
 /** Whether an image the user supplied is this run's own: pasted since the run began, or attached when it was asked for
     (run.images). Start, the Creative Director and the card all read a run's images by this one rule. */
-export const runOwnImage = (a: { source: string; name: string; addedAt: string }, run: Pick<DesignRun, "createdAt" | "images">): boolean =>
-  a.source === "yours" && (a.addedAt >= run.createdAt || (run.images ?? []).includes(a.name));
+export const runOwnImage = (a: { source: string; name: string; addedAt: string }, run: Pick<DesignRun, "createdAt" | "images" | "imagesLeftOut">): boolean =>
+  a.source === "yours" && !(run.imagesLeftOut ?? []).includes(a.name) && (a.addedAt >= run.createdAt || (run.images ?? []).includes(a.name));
 
 /** The skills a run's designers use: those the brief names among the run's skills, or all of the run's when it names none. */
 export function designerSkills(run: Pick<DesignRun, "skills" | "brief">): DesignSkill[] {

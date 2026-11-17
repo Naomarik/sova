@@ -9,6 +9,7 @@ import { type PerfQuery, perfRouteFromHash } from "./perf";
 import { clockTime, duration, relativeTime, shortDate, stampTime, thousands } from "./format";
 import { isHostSession } from "./workers";
 import { currentIncluded, includedCreditPct } from "./ollama-usage";
+import { openAiSignInStopped, refreshDead, tokenTimedOut } from "../../shared/sign-in-standing";
 
 export const PROVIDER_NAME: Record<UsageProvider["id"], string> = {
   claude: "Claude",
@@ -133,7 +134,6 @@ const RENEWER: Record<NonNullable<UsageAuth["source"]>, string> = {
   "codex-cli": "the Codex CLI runs",
 };
 
-const refreshDead = (a: UsageAuth, now: number) => (a.refreshExpiresAt !== undefined ? a.refreshExpiresAt <= now : a.refreshExpired === true);
 
 /**
  * The access token passed its own expiry and nothing says the refresh token has: the CLI that owns
@@ -142,20 +142,11 @@ const refreshDead = (a: UsageAuth, now: number) => (a.refreshExpiresAt !== undef
  */
 function timedOut(p: UsageProvider, now: number): UsageLine | null {
   const a = p.auth;
-  if (a?.kind !== "oauth" || !a.source || a.expiresAt === undefined || a.expiresAt > now || refreshDead(a, now)) return null;
+  if (!a?.source || a.expiresAt === undefined || !tokenTimedOut(a, now)) return null;
   return { rest: `Sign-in token expired ${relativeTime(a.expiresAt, now)}. It renews the next time ${RENEWER[a.source]}; usage updates after that.` };
 }
 
-/**
- * The usage reading says pi's OpenAI sign-in stopped working: OpenAI refused it, or its renewal
- * expired (a token that only timed out renews the next time pi uses OpenAI, so it hasn't). A
- * reading of the Codex app's own sign-in says nothing about pi's.
- */
-export function openAiSignInStopped(p: UsageProvider | undefined, now = Date.now()): boolean {
-  if (!p || p.id !== "openai" || p.auth?.source === "codex-cli") return false;
-  if (p.auth?.kind === "oauth" && refreshDead(p.auth, now)) return true;
-  return p.state === "expired" && timedOut(p, now) === null;
-}
+export { openAiSignInStopped };
 
 /** One caption replacing the meters when a provider has nothing to show. Null = render meters. */
 export function providerProblem(p: UsageProvider, now = Date.now()): UsageLine | null {

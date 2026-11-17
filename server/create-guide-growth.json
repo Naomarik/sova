@@ -598,6 +598,7 @@
    "design.list": "scripts",
    "design.page": "scripts",
    "design.setup.set": "scripts",
+   "design.setup.hide": "scripts",
    "design.start": "scripts",
    "design.message": "scripts",
    "design.refine": "scripts",

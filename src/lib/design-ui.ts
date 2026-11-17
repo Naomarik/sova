@@ -1,9 +1,14 @@
 /** Pure derivations behind the Design card and the Gallery: no DOM, no Solid, so they are unit-tested. */
 import { designModelOrder, designSectionOf, type DesignSection } from "../../shared/design-models";
-import { designPlan, type DesignCaps, type DesignChatView, type DesignCombine, type DesignCoordinatorView, type DesignModelChoice, type DesignPlan, type DesignRecord, type DesignRun, type DesignSetup, type DesignStatus } from "../../shared/design";
+import { designEffortOf, designHasEfforts, DESIGN_DEFAULT_EFFORT, designPlan, type DesignCaps, type DesignLeftOut, type DesignChatView, type DesignCombine, type DesignCoordinatorView, type DesignModelChoice, type DesignPlan, type DesignRecord, type DesignRun, type DesignSetup, type DesignStatus } from "../../shared/design";
+import { claudeModelName } from "./format";
 
 export type DesignRunView = DesignRun;
 export type DesignCoordinatorInfo = DesignCoordinatorView;
+
+/** A model's name on the Lookbook's cards, as everywhere in Sova: a Claude model by its catalog name ("Opus 5.5"), any
+    other by the name the card holds (its id). */
+export const designModelName = (m: { ref: string; name: string }): string => claudeModelName(m.ref) ?? m.name;
 
 export const coordinatorOf = (view: DesignChatView | null): DesignCoordinatorInfo | null => view?.coordinator ?? null;
 
@@ -27,21 +32,91 @@ export function sectionSummary(designing: readonly string[]): string {
   return designing.length > 3 ? `${shown.join(", ")}, +${designing.length - 3}` : shown.join(", ");
 }
 
-/** The sections a setup's models fall into, in the picker's order. */
-export function designSections(models: readonly DesignModelChoice[]): DesignSectionState[] {
+/** An effort level as its menu and the summaries word it: "low" Low, "xhigh" Extra High. */
+export function effortLabel(level: string): string {
+  if (level === "xhigh") return "Extra High";
+  return level ? level[0]!.toUpperCase() + level.slice(1) : level;
+}
+
+/** The effort a designing row names in a summary, or null for the default (low) or a model with none to pick. */
+const namedEffort = (m: DesignModelChoice): string | null => {
+  if (!designHasEfforts(m)) return null;
+  const level = designEffortOf(m);
+  return level && level !== DESIGN_DEFAULT_EFFORT ? effortLabel(level) : null;
+};
+
+/** The sections a setup's models fall into, in the picker's order; `hidden` sections (the user's) are left out.
+    A section's summary names each designing model, with its effort when that isn't Low ("Opus 5.5 · High"). */
+export function designSections(models: readonly DesignModelChoice[], hidden: readonly string[] = []): DesignSectionState[] {
   const out = new Map<string, DesignSectionState & { designing: string[] }>();
   for (const m of orderedModels(models)) {
     const sec = designSectionOf(m.ref);
+    if (hidden.includes(sec.id)) continue;
     const held = out.get(sec.id) ?? { ...sec, refs: [], count: 0, on: 0, summary: "", designing: [] };
     held.refs.push(m.ref);
     held.count++;
     if (m.design) {
       held.on++;
-      held.designing.push(m.name);
+      const effort = namedEffort(m);
+      held.designing.push(effort ? `${designModelName(m)} · ${effort}` : designModelName(m));
     }
     out.set(sec.id, held);
   }
   return [...out.values()].map(({ designing, ...s }) => ({ ...s, summary: sectionSummary(designing) }));
+}
+
+/** The closed Models row: the designers by name, each with its effort ("Opus 5.5 High · glm-5.3 Low"; a model with no
+    effort to pick by name alone), the Creative Director, and the count. */
+export function modelsSummary(setup: Pick<DesignSetup, "models">): { designers: string; designerList: string[]; coordinator: string; count: string } {
+  const designers = orderedModels(setup.models)
+    .filter((m) => m.design)
+    .map((m) => {
+      const level = designHasEfforts(m) ? designEffortOf(m) : null;
+      return level ? `${designModelName(m)} ${effortLabel(level)}` : designModelName(m);
+    });
+  const coordinator = setup.models.find((m) => m.coordinator);
+  return {
+    designers: designers.join(" · ") || "None designing",
+    // One entry per designer with its effort, so a line breaks only between them, never inside a name.
+    designerList: designers,
+    coordinator: `Creative Director: ${coordinator ? designModelName(coordinator) : "none"}`,
+    count: plural(designers.length, "model"),
+  };
+}
+
+/** One model row's effort: the level it runs at now. */
+export function setEffort(setup: DesignSetup, ref: string, effort: string): DesignSetup {
+  return { ...setup, models: setup.models.map((m) => (m.ref === ref ? { ...m, effort } : m)) };
+}
+
+const andList = (names: readonly string[]): string =>
+  names.length <= 1 ? (names[0] ?? "") : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+
+/** The sentence naming one provider left off the card and why; the models the chat asked for from it, when any. */
+export function leftOutSentence(l: DesignLeftOut): string {
+  const asked = l.models?.length ? andList(l.models) : "";
+  const which = asked ? `, so ${asked} ${l.models!.length === 1 ? "isn't" : "aren't"} listed.` : ", so it isn't listed.";
+  switch (l.why) {
+    case "not-running":
+      return `${l.name} isn't running${which}`;
+    case "signed-out":
+      return `${l.name}'s sign-in has expired${which}`;
+    case "bad-key":
+      return `${l.name} refused its key${which}`;
+    case "no-key":
+      return `${l.name} has no key${which}`;
+    case "not-downloaded":
+      return asked ? `${asked} ${l.models!.length === 1 ? "isn't" : "aren't"} downloaded in ${l.name}, so ${l.models!.length === 1 ? "it isn't" : "they aren't"} listed.` : `${l.name}'s models that aren't downloaded aren't listed.`;
+  }
+}
+
+/** The quiet line under the providers: what was left off and why, then the hidden count ("2 hidden"), which a Show
+    beside it brings back. Empty parts are absent. */
+export function leftOutLine(run: Pick<DesignRun, "leftOut" | "hiddenSections" | "hiddenAsked">): { text: string; hidden: string } {
+  const parts = (run.leftOut ?? []).map(leftOutSentence);
+  if (run.hiddenAsked?.length) parts.push(`${andList(run.hiddenAsked)} ${run.hiddenAsked.length === 1 ? "is" : "are"} in a provider you hid.`);
+  const n = run.hiddenSections?.length ?? 0;
+  return { text: parts.join(" "), hidden: n ? `${n} hidden` : "" };
 }
 
 /** The models a search finds: every word of it in the name or the provider/id, in the picker's order. */
@@ -49,7 +124,7 @@ export function searchModels(models: readonly DesignModelChoice[], query: string
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   return orderedModels(models).filter((m) => {
-    const hay = `${m.name} ${m.ref} ${designSectionOf(m.ref).name}`.toLowerCase();
+    const hay = `${designModelName(m)} ${m.name} ${m.ref} ${designSectionOf(m.ref).name}`.toLowerCase();
     return words.every((w) => hay.includes(w));
   });
 }
@@ -130,7 +205,7 @@ export function pairsLine(setup: DesignSetup): { text: string; full: string } {
   const per = pairsByModel(setup);
   const seen = new Set<string>();
   const unique = per.flatMap((m) => m.pairs).filter((p) => !seen.has(p) && !!seen.add(p));
-  const names = new Map(setup.models.map((m) => [m.ref, m.name]));
+  const names = new Map(setup.models.map((m) => [m.ref, designModelName(m)]));
   const full = per.length > 1 ? per.map((m) => `${names.get(m.model) ?? m.model}: ${m.pairs.join(" · ")}`).join("\n") : unique.join(" · ");
   return { text: unique.join(" · "), full };
 }
@@ -257,7 +332,7 @@ function shortCount(n: number): string {
 /** The line under a card's title: model, tokens so far, what it has cost. */
 export function designMeta(d: DesignRecord, liveChars?: number): string {
   const tokens = d.usage?.output || (liveChars ? Math.round(liveChars / 3.6) : 0);
-  const parts = [d.modelName || d.model];
+  const parts = [claudeModelName(d.model) ?? (d.modelName || d.model)];
   if (tokens) parts.push(`${shortCount(tokens)} tokens`);
   // While a page is written its cost is an estimate; a model with no price shows none, never $0.
   if (d.live?.estimateUsd) parts.push(d.live.estimateUsd < 0.005 ? "under $0.01" : `about ${dollars(d.live.estimateUsd)}`);

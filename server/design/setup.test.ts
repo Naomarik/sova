@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { ModelInfo, ModelPolicy } from "../../shared/protocol";
-import { cleanSetup, estimateUsd, setupModels } from "./setup";
+import type { DesignModelChoice, DesignSetup } from "../../shared/design";
+import { cleanSetup, estimateUsd, resolveDesignModel, setupCardModels, setupModels } from "./setup";
+import { modelStanding, probeLocalOllama, type StandingReadings } from "./standing";
 
 const open: ModelPolicy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
 const info = (ref: string, favorite = false): ModelInfo => ({ ref, provider: ref.slice(0, ref.indexOf("/")), id: ref.slice(ref.indexOf("/") + 1), favorite, thinkingLevels: [] });
@@ -118,4 +120,120 @@ test("the estimate before Start counts what each design reads of the run's skill
   const reading = estimateUsd(setup, Date.now(), 20_000)!;
   assert.ok(reading > plain, `${reading} > ${plain}`);
   assert.equal(estimateUsd(setup, Date.now(), 0), plain);
+});
+
+// ---- effort ------------------------------------------------------------------------------------
+
+const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+const row = (ref: string, extra: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref.slice(ref.indexOf("/") + 1), design: true, coordinator: false, vision: true, route: "tool", efforts: LEVELS, ...extra });
+
+test("a new card's rows carry the levels each model offers, and no effort until one is picked (low)", () => {
+  const listed = [{ ...info("zai/glm-5.3"), thinkingLevels: LEVELS }, info("ollama/gemma3:270m")];
+  const rows = setupModels(listed, open, NONE, { models: ["zai/glm-5.3"] });
+  assert.deepEqual(rows.map((m) => [m.ref, m.efforts, m.effort]), [["zai/glm-5.3", LEVELS, undefined], ["ollama/gemma3:270m", [], undefined]]);
+});
+
+test("the card's save sets each row's effort only to a level it offers; null puts it back to low", () => {
+  const prev: DesignSetup = { brief: "b", models: [row("zai/a", { coordinator: true }), row("zai/b", { efforts: ["off"] })], directions: [{ name: "D", on: true }] };
+  const send = (effort: unknown, ref = "zai/a") => cleanSetup(prev, { brief: "b", models: [{ ref, design: true, coordinator: ref === "zai/a", effort }], directions: [] });
+  assert.equal((send("high") as DesignSetup).models[0]!.effort, "high");
+  assert.equal((send("low") as DesignSetup).models[0]!.effort, undefined, "low is the default, stored as none");
+  assert.equal(send("max"), "zai/a doesn't take the effort max; it takes minimal, low, medium, high, xhigh.");
+  assert.equal(send("high", "zai/b"), "zai/b has no effort to pick.");
+  const set = cleanSetup({ ...prev, models: [row("zai/a", { coordinator: true, effort: "high" })] }, { brief: "b", models: [{ ref: "zai/a", design: true, coordinator: true, effort: null }], directions: [] }) as DesignSetup;
+  assert.equal(set.models[0]!.effort, undefined);
+  const kept = cleanSetup({ ...prev, models: [row("zai/a", { coordinator: true, effort: "high" })] }, { brief: "b", models: [{ ref: "zai/a", design: true, coordinator: true }], directions: [] }) as DesignSetup;
+  assert.equal(kept.models[0]!.effort, "high", "a save that names no effort keeps the row's");
+  assert.equal((cleanSetup(prev, { brief: "b", models: [{ ref: "zai/a", design: true, coordinator: false, effort: "medium" }], directions: [] }, true) as DesignSetup).models[0]!.effort, "medium", "with the brief open too");
+});
+
+test("a design the Creative Director adds on a Setup model runs at that row's effort unless it names one", () => {
+  const listed = [{ ...info("zai/a"), thinkingLevels: LEVELS }, { ...info("zai/b"), thinkingLevels: ["off"] }, { ...info("openai/x"), thinkingLevels: LEVELS }];
+  const setup = { models: [row("zai/a", { effort: "high" }), row("zai/b", { efforts: ["off"] })] };
+  const at = (asked: string, effort?: string) => { const r = resolveDesignModel(listed, open, NONE, setup, asked, effort); return typeof r === "string" ? r : r.effort; };
+  assert.equal(at("zai/a"), "high");
+  assert.equal(at("zai/a", "medium"), "medium", "a level the user named wins");
+  assert.equal(at("zai/b"), null, "no level to pick: the model's own");
+  assert.equal(at("openai/x"), null, "not on the card: the model's own");
+  const low = resolveDesignModel(listed, open, NONE, { models: [row("zai/a")] }, "zai/a");
+  assert.ok(typeof low !== "string" && !("effort" in low), "low: recorded as none, as Setup's designs are");
+});
+
+test("the estimate before Start prices each design at its row's effort", () => {
+  const base = (effort?: string): DesignSetup => ({ brief: "b", models: [{ ...row("anthropic/claude-sonnet-4-5", { coordinator: true }), ...(effort ? { effort } : {}) }], directions: [{ name: "Minimalist", on: true }] });
+  const low = estimateUsd(base())!;
+  const high = estimateUsd(base("high"))!;
+  assert.ok(low > 0 && high > low, `${high} > ${low}`);
+  assert.equal(estimateUsd(base("low")), low);
+  const old = estimateUsd({ ...base(), models: [{ ref: "anthropic/claude-sonnet-4-5", name: "s", design: true, coordinator: true, vision: true, route: "tool" }] });
+  assert.equal(old, low, "a row from before efforts is priced at low");
+});
+
+// ---- which providers a card lists ----------------------------------------------------------------
+
+const usage = (providers: StandingReadings["usage"] extends infer U ? (U extends { providers: infer P } ? P : never) : never, extra: Record<string, unknown> = {}): StandingReadings["usage"] => ({ available: true, stale: false, providers, ...extra }) as StandingReadings["usage"];
+const reading = (id: string, state: string, auth?: Record<string, unknown>) => ({ id, state, windows: [], ...(auth ? { auth } : {}) }) as never;
+
+test("a provider is left out only when a reading says it can't run: one case per reason", () => {
+  const off = (ref: string, r: StandingReadings) => modelStanding(ref, r);
+  const ollamaUp: StandingReadings = { usage: null, ollama: { state: "running", names: ["gemma3:270m"] } };
+  assert.equal(off("ollama/gemma3:270m", ollamaUp), null);
+  assert.equal(off("ollama/qwen3:4b", ollamaUp), "not-downloaded");
+  assert.equal(off("ollama/gemma3:270m", { usage: null, ollama: { state: "not-running" } }), "not-running");
+  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "expired")]), ollama: null }), "signed-out");
+  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "nologin")]), ollama: null }), "signed-out");
+  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "ok", { kind: "oauth", refreshExpired: true })]), ollama: null }), "signed-out");
+  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "expired", { kind: "oauth", source: "pi", expiresAt: Date.now() - 60_000, refreshExpiresAt: Date.now() - 1 })]), ollama: null }), "signed-out", "its renewal ran out too");
+  assert.equal(off("zai/glm-5.3", { usage: usage([reading("zai", "badkey")]), ollama: null }), "bad-key");
+  assert.equal(off("deepseek/deepseek-v4-pro", { usage: usage([reading("deepseek", "nokey")]), ollama: null }), "no-key");
+  assert.equal(off("ollama-cloud/kimi-k3", { usage: usage([reading("ollama", "badkey")]), ollama: null }), "bad-key");
+  const login = (standing: string, signedIn = true) => ({ id: "default", enabled: true, signedIn, standing: { state: standing }, inUse: true, usage: reading("claude", "ok") });
+  assert.equal(off("claude-code-cli/claude-opus-5-5", { usage: usage([], { claudeLogins: [login("auth"), { ...login("ready", false), id: "l-1" }] }), ollama: null }), "signed-out");
+  assert.equal(off("claude-code-cli/claude-opus-5-5", { usage: usage([], { claudeLogins: [login("auth"), { ...login("ready"), id: "l-1" }] }), ollama: null }), null, "one login still works");
+});
+
+test("unknown never hides: a stale or missing reading, an unread state, can't tell, an expired token that renews", () => {
+  const off = (ref: string, r: StandingReadings) => modelStanding(ref, r);
+  assert.equal(off("zai/glm-5.3", { usage: usage([reading("zai", "badkey")], { stale: true }), ollama: null }), null);
+  assert.equal(off("zai/glm-5.3", { usage: { available: false, stale: false, providers: [] } as never, ollama: null }), null);
+  assert.equal(off("zai/glm-5.3", { usage: null, ollama: null }), null);
+  for (const state of ["ok", "na", "error"]) assert.equal(off("zai/glm-5.3", { usage: usage([reading("zai", state)]), ollama: null }), null, state);
+  const past = Date.now() - 60_000;
+  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "expired", { kind: "oauth", source: "pi", expiresAt: past })]), ollama: null }), null, "a token that only timed out renews by itself");
+  assert.equal(off("openai-codex/gpt-6-luna", { usage: usage([reading("openai", "expired", { kind: "oauth", source: "codex-cli", expiresAt: past, refreshExpired: true })]), ollama: null }), null, "the Codex app's own sign-in says nothing about pi's");
+  assert.equal(off("ollama/gemma3:270m", { usage: null, ollama: { state: "unknown" } }), null);
+  assert.equal(off("anthropic/claude-sonnet-4-5", { usage: usage([reading("claude", "nologin")]), ollama: null }), null, "no reading speaks for it");
+  assert.equal(off("claude-code-cli/claude-opus-5-5", { usage: usage([]), ollama: null }), null, "no logins listed");
+});
+
+test("the card leaves out a provider that can't run, naming what the chat asked for in it, and keeps hidden sections' rows unticked", () => {
+  const readings: StandingReadings = { usage: usage([reading("zai", "badkey")]), ollama: { state: "not-running" } };
+  const card = setupCardModels(LISTED, open, NONE, { models: ["glm-4.7", "gpt-6-luna", "deepseek-v4-pro"], modelGroups: ["ollama"] }, {}, { readings, hidden: ["deepseek"] });
+  assert.deepEqual(card.leftOut, [{ section: "ollama", name: "Ollama on this computer", why: "not-running", models: ["ollama"] }, { section: "zai", name: "Z.ai", why: "bad-key", models: ["glm-4.7"] }]);
+  assert.ok(!card.models.some((m) => m.ref.startsWith("zai/") || m.ref.startsWith("ollama/")));
+  assert.deepEqual(card.hiddenSections, ["deepseek"]);
+  assert.deepEqual(card.hiddenAsked, ["deepseek-v4-pro"]);
+  const deep = card.models.find((m) => m.ref === "deepseek/deepseek-v4-pro")!;
+  assert.equal(deep.design, false, "a hidden section's row stays, unticked");
+  assert.deepEqual(card.models.filter((m) => m.design).map((m) => m.ref), ["openai-codex/gpt-6-luna"]);
+  const cd = setupCardModels(LISTED, open, NONE, { coordinator: "deepseek-v4-pro" }, {}, { hidden: ["deepseek"] }).models.find((m) => m.coordinator)!;
+  assert.notEqual(cd.ref, "deepseek/deepseek-v4-pro", "the Creative Director never sits in a hidden section");
+  const all = [...new Set(LISTED.map((m) => m.provider))];
+  const none = setupCardModels(LISTED, open, NONE, {}, {}, { hidden: ["claude", "gpt", "zai", "deepseek", "ollama-cloud", "ollama", ...all] });
+  assert.deepEqual(none.hiddenSections, [], "hiding every section would leave nothing: all are shown");
+  const partial = setupCardModels([...LISTED, info("ollama/qwen3:4b")], open, NONE, { models: ["qwen3:4b"] }, {}, { readings: { usage: null, ollama: { state: "running", names: ["gemma3:270m"] } } });
+  assert.deepEqual(partial.leftOut, [{ section: "ollama", name: "Ollama on this computer", why: "not-downloaded", models: ["qwen3:4b"] }]);
+  assert.ok(partial.models.some((m) => m.ref === "ollama/gemma3:270m"), "the downloaded one stays");
+});
+
+test("local Ollama's probe: refused is not running, a slow or odd answer can't tell, a list is what it has", async () => {
+  const refused = Object.assign(new Error("connect"), { code: "ECONNREFUSED" });
+  assert.deepEqual(await probeLocalOllama("http://127.0.0.1:1", 50, (async () => { throw refused; }) as never), { state: "not-running" });
+  assert.deepEqual(await probeLocalOllama("http://127.0.0.1:1", 50, (async () => { throw new TypeError("fetch failed", { cause: refused }); }) as never), { state: "not-running" });
+  const slow = (async (_u: string, init: { signal: AbortSignal }) => new Promise((_r, fail) => init.signal.addEventListener("abort", () => fail(init.signal.reason)))) as never;
+  const t0 = Date.now();
+  assert.deepEqual(await probeLocalOllama("http://127.0.0.1:1", 50, slow), { state: "unknown" });
+  assert.ok(Date.now() - t0 < 1000, "it waits under a second");
+  assert.deepEqual(await probeLocalOllama("http://x", 50, (async () => ({ ok: false })) as never), { state: "unknown" });
+  assert.deepEqual(await probeLocalOllama("http://x", 50, (async () => ({ ok: true, json: async () => ({ models: [{ name: "gemma3:270m", model: "gemma3:270m" }] }) })) as never), { state: "running", names: ["gemma3:270m"] });
 });

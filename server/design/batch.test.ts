@@ -9,7 +9,7 @@ import { after, beforeEach, test } from "node:test";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-batch-"));
 const { DESIGN_CONCURRENT, DESIGN_FIX_TRIES } = await import("../../shared/design");
 const { setCoordinatorPorts } = await import("./coordinator");
-const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, newDesign, pageProblem, pump, reattachDesigns, removeDesign, restoreDesign, retryDesign, onDesignHandIn, onLiveFrame, setDesignModelSourceForTest, setDesignQuietMsForTest, stopDesign } = await import("./batch");
+const { assertLaunchAllowed, deleteDesign, deliverDesign, DesignLimitError, installDesignHost, launchDesigns, newDesign, pageProblem, pump, reattachDesigns, removeDesign, restoreDesign, retryDesign, onDesignHandIn, onLiveFrame, setDesignModelSourceForTest, setDesignQuietMsForTest, specFor, stopDesign } = await import("./batch");
 const history = await import("./history");
 const store = await import("./store");
 const { sessionDesignTools } = await import("./tools");
@@ -176,6 +176,20 @@ test("a launch gives each model and direction its own label and session, and onl
   await finish(fakes[0]!, "A");
   await ticks();
   assert.equal(fakes.length, DESIGN_CONCURRENT + 1, "one done lets one more start");
+});
+
+test("each design starts at its Setup row's effort: low when none is picked, the model's own when it offers none", async () => {
+  const run = newRun(["zai/a", "zai/b", "zai/c"], ["Minimalist"]);
+  store.changeDesigns(parent.sessionId, (s) => {
+    const rows = s.runs.find((r) => r.id === run)!.setup.models;
+    Object.assign(rows[0]!, { efforts: ["off", "low", "medium", "high"], effort: "high" });
+    Object.assign(rows[1]!, { efforts: ["off", "low", "medium", "high"] });
+    Object.assign(rows[2]!, { efforts: ["off"] });
+  });
+  const labels = launchDesigns(parent, run, { brief: "the brief" });
+  assert.deepEqual(labels.map((l) => stat(l).effort), ["high", undefined, null], "recorded: high, low (none), the model's own (null)");
+  // The session each would start runs at that level.
+  assert.deepEqual(labels.map((l) => specFor(parent, stat(l), dir, "none").thinking), ["high", "low", null]);
 });
 
 test("a design takes its run's skills on its own record: its first message lists them, its reader reads them, and it keeps no built-ins", async () => {
@@ -1132,10 +1146,15 @@ test("a design added after Start runs on any model the user may use, at the effo
   const ticked = await newDesign(parent, { parents: ["A"], instructions: "x", model: "zai/a" });
   await waitFor(() => !!stat(ticked).sessionId);
   assert.equal(spec(ticked).thinking, "low", "a Setup model runs as the Setup's designs do");
+  // A Setup row with an effort picked: a design added on it with none named runs at that effort.
+  store.changeDesigns(parent.sessionId, (s) => void Object.assign(s.runs.at(-1)!.setup.models.find((m) => m.ref === "zai/a")!, { efforts: ["off", "low", "medium", "high"], effort: "high" }));
+  const atRow = await newDesign(parent, { parents: ["A"], instructions: "x", model: "zai/a" });
+  await waitFor(() => !!stat(atRow).sessionId);
+  assert.equal(spec(atRow).thinking, "high", "the Setup row's effort");
   await assert.rejects(newDesign(parent, { parents: [], instructions: "x", model: "openai/astra", effort: "max" }), /doesn't take the effort max/);
   await assert.rejects(newDesign(parent, { parents: [], instructions: "x", model: "ollama-cloud/gone" }), /can only fail/);
   await assert.rejects(newDesign(parent, { parents: [], instructions: "x", model: "nowhere/x" }), /no model/);
   policy.subagentDisabledModels = ["openai/astra"];
   await assert.rejects(newDesign(parent, { parents: [], instructions: "x", model: "openai/astra" }), /barred for workers/);
-  assert.deepEqual(ofKind("new").map((i) => [i.label, i.parents, i.model, i.toolCallId]), [[fresh, [], "openai/astra", "call_n"], [named, ["A"], "openai/astra", undefined], [ticked, ["A"], "zai/a", undefined]]);
+  assert.deepEqual(ofKind("new").map((i) => [i.label, i.parents, i.model, i.toolCallId]), [[fresh, [], "openai/astra", "call_n"], [named, ["A"], "openai/astra", undefined], [ticked, ["A"], "zai/a", undefined], [atRow, ["A"], "zai/a", undefined]]);
 });

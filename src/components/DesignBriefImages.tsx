@@ -65,7 +65,8 @@ function AssetCard(props: { asset: DesignAsset; used: boolean; store: DesignStor
 export function DesignSetupImages(props: { run: DesignRunView; store: DesignStore }) {
   const catalogue = createAssetCatalogue(props.store);
   const assets = createMemo(() => assetsOfRun(catalogue(), props.run));
-  const count = () => Math.max(assets().length, props.run.images?.length ?? 0);
+  // The run's own images, less those taken off it; the catalogue may not have them yet.
+  const count = () => Math.max(assets().length, (props.run.images ?? []).filter((n) => !(props.run.imagesLeftOut ?? []).includes(n)).length);
   return (
     <Show when={count() > 0}>
       <section class="design-setup-images" aria-label="Images for this run">

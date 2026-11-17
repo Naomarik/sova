@@ -9,6 +9,8 @@ import type { DesignRun } from "../../shared/design";
 // assets of yours; the coordinator and the main chat hear their short names, never their bytes.
 const agentDir = mkdtempSync(join(tmpdir(), "sova-tell-images-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
+// Chats' shared folders live here, never in a real home.
+process.env.SOVA_SHARED_BASE = join(agentDir, "shared");
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 const { setCoordinatorPorts, startCoordinator } = await import("./coordinator");
 const { setOwnImageDepsForTest } = await import("./asset-routes");
@@ -134,4 +136,110 @@ test("start images the chat already had belong to the new run without being re-d
   assert.match(out, /The Setup card is on screen/);
   assert.match(out, /couldn't be added \(the darkroom didn't start\)[^"]*paste them into the Creative Director's box\. Don't start another card\./);
   assert.equal(viewOf(sid).runs.at(-1)!.images, undefined);
+});
+
+test("a picture path is refused by name, with why, and the places pictures are taken from; the chat's shared folder is one", async () => {
+  const { readAttachedImages, IMAGE_REFUSALS, imagePlacesLine } = await import("./own-images");
+  const { symlinkSync } = await import("node:fs");
+  const sid = "01a1c2a9-c0c7-7016-a44a-66741a821f70";
+  const shared = join(agentDir, "shared", sid);
+  mkdirSync(join(shared, "logos"), { recursive: true });
+  const ok = join(shared, "logos", "mark.png");
+  writeFileSync(ok, original);
+  writeFileSync(join(shared, "notes.png"), "only words, no picture");
+  writeFileSync(join(shared, "huge.png"), Buffer.concat([Buffer.from(original), Buffer.alloc(8 * 1024 * 1024)]));
+  const outside = join(agentDir, "outside.png");
+  writeFileSync(outside, original);
+  symlinkSync(outside, join(shared, "link.png"));
+  symlinkSync(join(agentDir), join(shared, "dirlink"));
+  const tmpName = `/tmp/sova-test-${process.pid}-missing.png`;
+  const paths = [ok, join(shared, "notes.png"), join(shared, "huge.png"), join(shared, "link.png"), join(shared, "dirlink", "outside.png"), join(shared, "gone.png"), `${shared}/../${sid}-x/escape.png`, "/etc/hostname", tmpName, "/tmp/notes.txt", outside];
+  const r = await readAttachedImages(paths, { shared });
+  assert.deepEqual(r.names, [ok], "the shared folder's picture, by its path as given");
+  assert.equal(r.images.length, 1);
+  assert.deepEqual(r.unreadable.map((u) => [u.what, u.reason]), [
+    [join(shared, "notes.png"), IMAGE_REFUSALS.notImage],
+    [join(shared, "huge.png"), IMAGE_REFUSALS.tooBig],
+    [join(shared, "link.png"), IMAGE_REFUSALS.outside],
+    [join(shared, "dirlink", "outside.png"), IMAGE_REFUSALS.outside],
+    [join(shared, "gone.png"), IMAGE_REFUSALS.missing],
+    [`${shared}/../${sid}-x/escape.png`, IMAGE_REFUSALS.place],
+    ["/etc/hostname", IMAGE_REFUSALS.place],
+    [tmpName, IMAGE_REFUSALS.missingTmp],
+    ["/tmp/notes.txt", IMAGE_REFUSALS.notImage],
+    [outside, IMAGE_REFUSALS.place],
+  ]);
+  const without = await readAttachedImages([ok]);
+  assert.deepEqual(without.unreadable.map((u) => u.reason), [IMAGE_REFUSALS.place], "only the calling chat's own folder: none given, none taken");
+  assert.match(imagePlacesLine(shared), new RegExp(`directly in /tmp; Sova's attachments folder \\(.*\\); and your shared folder \\(${shared}/`));
+});
+
+test("the chat's edit adds pictures from its shared folder to the run and takes one off it; a refusal ends with the places", async () => {
+  const sid = "01a1c2a9-c0c7-7016-a44a-66741a821f71";
+  const chat = { sessionId: sid, path: join(agentDir, "main-edit.jsonl") };
+  setOwnImageDepsForTest({
+    draw: (async (_c: unknown, images: readonly Uint8Array[]) => images.map(() => ({ width: 800, height: 600, full: { bytes: drawn.full, w: 800, h: 600 }, small: { bytes: drawn.small, w: 400, h: 300 }, describe: { bytes: drawn.describe, w: 400, h: 300 } }))) as never,
+    context: (async () => ({ sessionId: sid, sessionFile: chat.path, cwd: agentDir, agentDir, sandbox: { on: false } })) as never,
+  });
+  after(() => setOwnImageDepsForTest(null));
+  const run: DesignRun = { id: "re", setup: { brief: "A page", models: [{ ref: "zai/c", name: "c", design: true, coordinator: true, vision: true, route: "tool" }], directions: [{ name: "D", on: true }] }, phase: "setup", labels: [], createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "t" } as DesignRun;
+  changeDesigns(sid, (s) => { s.runs.push(run); s.parentPath = chat.path; });
+  const shared = join(agentDir, "shared", sid);
+  mkdirSync(shared, { recursive: true });
+  const logo = join(shared, "logo.png");
+  writeFileSync(logo, Buffer.concat([Buffer.from(original), Buffer.from("LOGO")]));
+  const lookbook = mainDesignTools(() => chat, () => agentDir).find((t) => t.name === "lookbook")!;
+  const text = async (params: Record<string, unknown>) => ((await lookbook.execute("e", params as never, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
+  const added = await text({ op: "edit", images: [logo, "/etc/hostname"] });
+  const { viewOf } = await import("./store");
+  const { runOwnImage } = await import("../../shared/design");
+  const asset = readAssets(sid).assets.find((a) => a.source === "yours")!;
+  assert.deepEqual(viewOf(sid).runs.at(-1)!.images, [asset.name]);
+  assert.match(added, new RegExp(`Images \\(1\\): ${asset.name}\\.`));
+  assert.match(added, /\/etc\/hostname wasn't added: It isn't in a place images are taken from\./);
+  assert.match(added, /Images are taken from: a file directly in \/tmp; .*your shared folder/);
+  const removed = await text({ op: "edit", removeImages: [asset.name, "img-99"] });
+  const after2 = viewOf(sid).runs.at(-1)!;
+  assert.deepEqual(after2.imagesLeftOut, [asset.name]);
+  assert.equal(runOwnImage(asset, after2), false, "off this run");
+  assert.ok(readAssets(sid).assets.some((a) => a.name === asset.name), "still in the chat's images");
+  assert.match(removed, /Images \(0\): none\./);
+  assert.match(removed, /img-99: there's no image by that name on this run\./);
+  // Added again: back on the run.
+  await text({ op: "edit", images: [logo] });
+  assert.equal(viewOf(sid).runs.at(-1)!.imagesLeftOut, undefined);
+  assert.equal(runOwnImage(asset, viewOf(sid).runs.at(-1)!), true);
+});
+
+test("a sandboxed chat's /tmp picture is read from its own tmp, by the same rules; one not there falls back to Sova's /tmp", async () => {
+  const { readAttachedImages, IMAGE_REFUSALS } = await import("./own-images");
+  const { chatTmpDir, installPageReaderSandbox } = await import("./page-paths");
+  const { symlinkSync } = await import("node:fs");
+  const chatTmp = join(agentDir, "chat-tmp");
+  mkdirSync(join(chatTmp, "shots"), { recursive: true });
+  writeFileSync(join(chatTmp, "shot.png"), original);
+  writeFileSync(join(chatTmp, "shots", "deep.png"), original);
+  writeFileSync(join(chatTmp, "words.png"), "no picture here");
+  symlinkSync(join(agentDir, "outside.png"), join(chatTmp, "out.png"));
+  const r = await readAttachedImages(["/tmp/shot.png", "/tmp/shots/deep.png", "/tmp/words.png", "/tmp/out.png", "/tmp/../etc/x.png"], { chatTmp });
+  assert.deepEqual(r.names, ["/tmp/shot.png", "/tmp/shots/deep.png"]);
+  assert.deepEqual(r.unreadable.map((u) => [u.what, u.reason]), [["/tmp/words.png", IMAGE_REFUSALS.notImage], ["/tmp/out.png", IMAGE_REFUSALS.outside], ["/tmp/../etc/x.png", IMAGE_REFUSALS.place]]);
+  const missing = `/tmp/sova-test-${process.pid}-nowhere.png`;
+  assert.deepEqual((await readAttachedImages([missing], { chatTmp })).unreadable.map((u) => u.reason), [IMAGE_REFUSALS.missing], "looked for in both: plainly missing");
+  // Which tmp is the chat's: its sandbox's, on Linux only; none without one.
+  installPageReaderSandbox(async (id) => (id === "boxed" ? ({ on: true, policy: { tmpDir: chatTmp } } as never) : ({ on: false } as never)));
+  after(() => installPageReaderSandbox(null));
+  assert.equal(await chatTmpDir("boxed", "linux"), chatTmp);
+  assert.equal(await chatTmpDir("boxed", "darwin"), null);
+  assert.equal(await chatTmpDir("open", "linux"), null);
+});
+
+test("a link in /tmp to a file beside it that isn't an image says so, not that it leads outside", async () => {
+  const { readAttachedImages, IMAGE_REFUSALS } = await import("./own-images");
+  const { symlinkSync, rmSync: rm } = await import("node:fs");
+  const name = `sova-test-${process.pid}`;
+  writeFileSync(`/tmp/${name}-notes.txt`, "words");
+  symlinkSync(`/tmp/${name}-notes.txt`, `/tmp/${name}-link.png`);
+  after(() => { rm(`/tmp/${name}-notes.txt`, { force: true }); rm(`/tmp/${name}-link.png`, { force: true }); });
+  assert.deepEqual((await readAttachedImages([`/tmp/${name}-link.png`])).unreadable.map((u) => u.reason), [IMAGE_REFUSALS.notImage]);
 });

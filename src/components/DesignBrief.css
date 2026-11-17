@@ -88,12 +88,16 @@
 .design-brief-q:first-child { border-top: 0; padding-top: 0; }
 
 
-.design-brief-foot { flex: none; box-sizing: border-box; flex-wrap: nowrap; display: grid; grid-template-columns: minmax(300px, 1fr) 214px minmax(240px, 300px); align-items: center; gap: var(--space-2) var(--space-3); height: 72px; }
+/* Start has one fixed place; the middle slot takes room only when it holds a button, so with no questions open the
+   plan line has that room too. */
+.design-brief-foot { flex: none; box-sizing: border-box; flex-wrap: nowrap; display: grid; grid-template-columns: minmax(300px, 1fr) fit-content(214px) 240px; align-items: center; gap: var(--space-2) var(--space-3); height: 72px; }
 .design-brief-line { position: relative; display: flex; flex-direction: column; min-width: 0; font-size: var(--fs-caption); }
 .design-brief-line-cancel { display: none; position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
 .design-brief-line > span { height: 18px; line-height: 18px; min-height: 1.45em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .design-brief-count { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
-.design-brief-count-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.design-brief-plan { display: flex; min-width: 0; }
+.design-brief-count-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.design-brief-estimate { flex: none; white-space: nowrap; }
 .design-brief-change-link { flex: none; padding: 0; border: 0; background: none; color: var(--color-accent); cursor: pointer; font: inherit; text-decoration: underline; min-height: 24px; }
 .design-brief-slot { min-width: 0; min-height: var(--control-md); display: flex; justify-content: flex-end; }
 .design-brief-slot .button { width: 100%; }
@@ -109,7 +113,8 @@
   /* Start keeps its one place in every state: the spend question's Cancel sits in the line above it. */
   .design-brief-slot { display: none; }
   .design-brief-line-cancel { display: inline-flex; }
-  .design-brief-line { padding-right: 96px; }
+  /* Room for the spend question's Cancel, only while it shows. */
+  .design-brief-line:has(> .design-brief-line-cancel) { padding-right: 96px; }
   .design-brief-answers-narrow { display: flex; order: 1; min-height: var(--control-md); }
   .design-brief-answers-narrow .button { width: 100%; }
   .design-brief-questions { order: 1; }

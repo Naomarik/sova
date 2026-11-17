@@ -38,7 +38,29 @@
 
 /* Setup */
 .design-setup { gap: var(--space-4); }
-.design-setup .textarea { min-height: 76px; }
+/* The request: its first 2 lines and Edit, in one box; the link rows and the skills line under it. The text opens the
+   editor too. */
+.design-request-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.design-request { display: flex; flex-direction: column; gap: var(--space-2); }
+.design-request-box { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-md); }
+.design-request-text { flex: 1 1 0; min-width: 0; margin: 0; cursor: pointer; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.design-request-edit { flex: none; }
+/* The editor: a window over the page on a desktop, a sheet from the bottom on a phone. Its box takes the room. */
+.design-request-dialog { position: fixed; inset: 0; margin: auto; box-sizing: border-box; width: min(640px, calc(100vw - var(--space-8))); height: min(720px, calc(100dvh - var(--space-8))); max-width: none; max-height: none; padding: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-xl); background: var(--color-surface); color: var(--color-ink); box-shadow: var(--shadow-3); overflow: clip; }
+.design-request-dialog[open] { display: flex; flex-direction: column; animation: enter-fade var(--dur-base) var(--ease-standard); }
+.design-request-dialog::backdrop { background: var(--scrim); }
+.design-request-dialog .modal-head, .design-request-dialog .modal-foot { flex: none; }
+.design-request-dialog-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); }
+.design-request-area { flex: 1 1 auto; min-height: 0; height: auto; resize: none; line-height: var(--lh-body); }
+.design-request-hint { margin: 0; }
+@media (max-width: 480px) {
+  .design-request-dialog { inset: auto 0 0 0; width: 100%; height: 88dvh; border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: 0; }
+  .design-request-dialog .sheet-grip { display: block; flex: none; width: 36px; height: 4px; margin: var(--space-3) auto 0; border-radius: var(--r-full); background: var(--color-border-strong); }
+  .design-request-dialog .sheet-grip + .modal-head { padding-top: var(--space-2); }
+}
+@media (min-width: 481px) {
+  .design-request-dialog .sheet-grip { display: none; }
+}
 /* The run's design skills: one read-only line on Setup and the brief; the folders are in its tooltip. */
 .design-skills-line { margin: 0; color: var(--color-ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .design-setup-label { margin: 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink); }
@@ -69,6 +91,19 @@
 /* The model picker. Every row is one fixed height and every changing word is cut to one line, so a tick
    changes words, never sizes; opening a section, or searching, only adds or takes away what is below. */
 .design-pick-bar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-3); height: var(--control-md); }
+/* Models: one closed row (the designers, the Creative Director under them, the count); open, its panel holds the
+   Creative Director menu and Find a model on a quiet band, then the providers, then one quiet line. */
+.design-section-head.design-models-head { height: auto; min-height: 56px; }
+.design-section-open.design-models-open { grid-template-columns: minmax(0, 1fr) max-content 16px; padding-block: var(--space-2); }
+.design-models-sum { display: flex; flex-direction: column; min-width: 0; }
+.design-models-names, .design-models-coord { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.design-models-panel { border-top: 1px solid var(--color-border); }
+.design-models-panel > .design-pick-bar { box-sizing: content-box; padding: var(--space-3); background: var(--color-bg); }
+.design-models-panel > .design-setup-coord-note { margin: 0; padding: var(--space-2) var(--space-3); border-top: 1px solid var(--color-border); }
+.design-models-panel > .design-section { border-top: 1px solid var(--color-border); }
+.design-models-quiet { margin: 0; padding: var(--space-2) var(--space-3); border-top: 1px solid var(--color-border); }
+.design-models-show { padding: 0; border: 0; background: none; color: var(--color-accent); font: inherit; cursor: pointer; text-decoration: underline; min-height: 0; }
+.design-models-show:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
 .design-pick-coord { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .design-pick-coord-label { flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); }
 .design-pick-coord-button { flex: 1 1 0; min-width: 0; justify-content: space-between; }
@@ -77,12 +112,17 @@
 .design-model-search { min-width: 0; margin: 0; gap: 0; }
 @container design-card (max-width: 480px) {
   .design-pick-bar { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--control-md) var(--control-md); height: calc(2 * var(--control-md) + var(--space-2)); gap: var(--space-2); }
+  /* A phone keeps the names and drops the count, and lets the names take 2 lines. */
+  .design-models-count { display: none; }
+  .design-section-open.design-models-open { grid-template-columns: minmax(0, 1fr) 16px; }
+  .design-section-name.design-models-names { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 }
 .design-sections { border: 1px solid var(--color-border); border-radius: var(--r-md); overflow: hidden; }
 .design-section + .design-section { border-top: 1px solid var(--color-border); }
 .design-section-head { display: flex; align-items: center; height: 48px; box-sizing: border-box; padding-right: var(--space-3); }
 .design-section-open { flex: 1 1 0; min-width: 0; height: 100%; display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr) 7ch 16px; align-items: center; gap: var(--space-3); padding: 0 var(--space-2) 0 var(--space-3); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.design-section-open:hover { background: var(--color-sunken); }
+.design-section-open:hover:not(:disabled) { background: var(--color-sunken); }
+.design-section-open:disabled { cursor: default; color: inherit; }
 .design-section-open:focus-visible { outline: var(--focus-width, 2px) solid var(--focus-color, var(--color-accent)); outline-offset: calc(-1 * var(--focus-width, 2px)); }
 .design-section-name { font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .design-section-ticked, .design-section-count { font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -96,18 +136,28 @@
   .design-section-open { grid-template-columns: minmax(0, 1fr) 7ch 16px; }
   .design-section-ticked { display: none; }
 }
-.design-model-grid { list-style: none; margin: 0; padding: 0 var(--space-3) var(--space-2); display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); column-gap: var(--space-4); }
-.design-section .design-model-grid { border-top: 1px solid var(--color-border); padding-top: var(--space-1); background: var(--color-bg); }
-.design-model-cell { min-width: 0; height: var(--tap-min); }
-.design-model-toggle { height: 100%; min-width: 0; gap: var(--space-3); }
+/* A provider's models: one full-width row each, in one column at every width: its switch, its name, and its effort
+   menu at the right edge, the menus in one aligned column, a divider between rows. */
+.design-provider-panel { border-top: 1px solid var(--color-border); background: var(--color-bg); }
+.design-model-list { list-style: none; margin: 0; padding: 0 var(--space-3); }
+.design-model-row { display: flex; align-items: center; gap: var(--space-3); min-height: 48px; min-width: 0; }
+.design-model-row + .design-model-row { border-top: 1px solid var(--color-border); }
+.design-model-toggle { flex: 1 1 0; align-self: stretch; min-width: 0; gap: var(--space-3); justify-content: flex-start; }
+.design-model-toggle > .toggle-box { order: -1; }
 .design-model-toggle > span:first-child { flex: 1 1 0; min-width: 0; }
+.design-model-effort { flex: none; display: flex; align-items: center; gap: var(--space-1); margin-left: auto; color: var(--color-ink-muted); }
+.design-model-effort[hidden] { display: none; }
+.design-effort-bolt { width: 16px; height: 16px; flex: none; }
+.design-effort-wrap { width: 112px; }
+.design-effort-select { height: var(--control-sm); padding: 0 var(--space-5) 0 var(--space-2); font-size: var(--fs-caption); }
+.design-effort-wrap .select-caret { right: var(--space-2); }
+.design-provider-foot { display: flex; justify-content: flex-end; padding: 0 var(--space-2) var(--space-2); }
 .design-model-name { display: block; font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .design-model-note { font-weight: var(--fw-regular); font-size: var(--fs-caption); }
-.design-model-found { border: 1px solid var(--color-border); border-radius: var(--r-md); }
-.design-model-found > div + div { border-top: 1px solid var(--color-border); }
-.design-section-label { margin: 0; padding: var(--space-2) var(--space-3) 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); }
-.design-model-none { margin: 0; padding: var(--space-3); }
+/* The bottom bar, one height whatever it says: the count and Start Creative Director on one centre line; a reason
+   under the count only when there is one, the two lines then centred together. */
 .design-setup-foot { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: var(--space-3); height: 72px; box-sizing: border-box; }
+.design-setup-start { flex: none; }
 /* The card's bottom bar: pinned to the bottom of the chat while the card is in view (DesignCardFoot), at
    the card's end otherwise. Opaque, and lifted by a shadow only while pinned over what scrolls behind it. */
 .design-card-foot { position: sticky; bottom: 0; z-index: 4; background: var(--color-surface); }
@@ -129,8 +179,8 @@
   .design-run-foot { flex-direction: column; align-items: stretch; gap: var(--space-2); }
   .design-run-chat { width: 100%; }
 }
-.design-setup-summary { display: flex; flex-direction: column; font-size: var(--fs-caption); min-width: 0; flex: 1 1 0; }
-.design-setup-summary > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.45em; }
+.design-setup-summary { display: flex; flex-direction: column; justify-content: center; font-size: var(--fs-caption); line-height: var(--lh-caption); min-width: 0; flex: 1 1 0; }
+.design-setup-summary > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .design-confirm-outline { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono, 1.5); height: 260px; overflow: auto; white-space: pre-wrap; margin: 0; padding: var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); color: var(--color-ink-2); }
 
@@ -222,8 +272,10 @@
 @container design-card (max-width: 480px) {
   .design-coordinator-head { gap: var(--space-1); }
   .design-coordinator-head .chip { letter-spacing: 0; }
-  .design-setup-foot { height: 96px; }
-  .design-setup-summary > span { white-space: normal; height: 36px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  /* A phone: the count over a full-width Start, with the reason's line kept whether or not it shows. */
+  .design-setup-foot { flex-direction: column; align-items: stretch; justify-content: center; gap: var(--space-2); height: auto; padding-block: var(--space-3); }
+  .design-setup-summary { flex: none; justify-content: flex-start; height: calc(2 * var(--fs-caption) * var(--lh-caption)); }
+  .design-setup-start { width: 100%; }
 }
 .design-coordinator-card { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-gutter: stable; scrollbar-width: thin; font-size: var(--fs-body); overflow-wrap: anywhere; }
 .design-coordinator-card > .text-muted { margin: 0; }
@@ -235,6 +287,7 @@
 .design-open[open] { display: flex; flex-direction: column; }
 .design-open::backdrop { background: var(--color-bg); }
 .design-open-head { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2) var(--space-3); min-height: 60px; box-sizing: border-box; padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--color-border); background: var(--color-surface); }
+.design-open-titles { display: contents; }
 .design-open-chip { flex: none; width: 92px; display: flex; justify-content: flex-start; }
 .design-open-title { margin: 0; font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); }
 .design-open-meta { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -249,24 +302,48 @@
 .design-open-frame { position: relative; flex: 1 1 auto; min-height: 0; background: var(--color-sunken); }
 .design-open-grid { align-content: start; }
 .design-open-chat { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--color-border); background: var(--color-surface); }
+/* The chat stays mounted while hidden (its typed words and scroll place with it): hiding only stops drawing it. */
+.design-open-body[data-chat="hidden"] .design-open-chat { display: none; }
+.design-open-chat-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.design-open-chat-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.design-open-bar, .design-open-fold { display: none; }
 .design-open-chat-title { flex: none; margin: 0; padding: var(--space-3) var(--space-4) var(--space-2); font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); }
 .design-open-note { flex: none; margin: 0; padding: var(--space-2) var(--space-4) 0; }
 .design-open-transcript { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .design-open-transcript .subagents-transcript { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 @media (max-width: 767px) {
-  .design-open-title { flex: 1 1 0; min-width: 0; }
-  .design-open-close { order: 1; }
-  .design-open-meta { order: 2; flex: 1 1 100%; }
-  .design-open-hide { margin-left: 0; }
-  .design-open-head:not(:has(.design-open-meta)) .design-open-close { order: 4; }
-  .design-open-head > * { order: 3; }
-  .design-open-head > .design-open-title { order: 0; }
-  .design-open-head > .design-open-close { order: 1; }
-  .design-open-head > .design-open-meta { order: 2; }
-  .design-open-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 55fr) minmax(0, 45fr); }
-  .design-open-body[data-chat="hidden"] { grid-template-rows: minmax(0, 1fr); }
+  /* One row: the title over its line, then status, version, More and Close (a narrow phone puts the
+     last three under the title). Hide Chat moves into the chat's own title row. */
+  .design-open-head { display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-flow: column; grid-auto-columns: auto; gap: 0 var(--space-2); min-height: 56px; padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4); }
+  .design-open-titles { display: grid; min-width: 0; }
+  .design-open-title, .design-open-meta { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .design-open-chip { width: auto; }
+  .design-open-hide { display: none; }
+  .design-open-body, .design-open-body[data-chat="hidden"] { grid-template-columns: 1fr; grid-template-rows: minmax(0, 55fr) minmax(0, 45fr); }
+  .design-open-body[data-chat="hidden"] .design-open-chat { display: flex; }
   .design-open-chat { border-left: 0; border-top: 1px solid var(--color-border); }
+  .design-open-chat-head { padding-right: var(--space-2); }
   .design-open-chat-title { padding-top: var(--space-2); }
+  .design-open-chat-head .design-open-fold { display: inline-flex; min-height: var(--tap-min); }
+  /* Folded: the design has the screen but for one bar, the newest message on one line. The chat under
+     it stays laid out, only not drawn, so nothing in it is lost or reachable. */
+  .design-open-body[data-fold="folded"] { grid-template-rows: minmax(0, 1fr) 57px; } /* the bar and the chat's top border */
+  .design-open-body[data-fold="folded"] .design-open-chat { overflow: hidden; }
+  .design-open-body[data-fold="folded"] .design-open-chat-body { visibility: hidden; }
+  .design-open-body[data-fold="folded"] .design-open-bar { position: relative; flex: none; display: flex; align-items: center; gap: var(--space-2); box-sizing: border-box; width: 100%; height: 56px; min-height: 56px; margin: 0; padding: var(--space-2) var(--space-4) 0; border: 0; border-radius: 0; background: none; color: var(--color-ink); font: inherit; font-size: var(--fs-body); text-align: left; cursor: pointer; }
+  .design-open-bar::before { content: ""; position: absolute; top: 6px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: var(--r-full); background: var(--color-border-strong); }
+  .design-open-bar:focus-visible { outline: var(--focus-width) solid var(--focus-color); outline-offset: calc(-1 * var(--focus-width)); }
+  .design-open-bar-icon { flex: none; color: var(--color-ink-muted); }
+  .design-open-bar-who { flex: none; font-weight: var(--fw-semibold); }
+  .design-open-bar-text { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-ink-2); }
+  .design-open-bar-text.text-muted { color: var(--color-ink-muted); }
+  .design-open-bar-up { flex: none; transform: rotate(180deg); color: var(--color-ink-muted); }
+}
+@media (max-width: 440px) {
+  .design-open-head:has(.design-open-chip) { grid-template-columns: minmax(0, 1fr) auto auto; grid-auto-flow: row; }
+  .design-open-head:has(.design-open-chip) .design-open-titles { grid-area: 1 / 1 / 2 / 3; }
+  .design-open-head:has(.design-open-chip) .design-open-close { grid-area: 1 / 3; }
+  .design-open-head:has(.design-open-chip) .design-open-chip { justify-self: start; }
 }
 
 /* The Gallery tab */

@@ -2,7 +2,7 @@
 // playbook's description, the run's draft and what this computer can run now. Pure: the environment (which
 // models can run, their names, your profile's routes, team defaults) comes in as `CardEnv`.
 import { choiceOfRef, CYCLE_MAX, fillSlots, isPageRef, refOfChoice, type InputValue, type PlaybookFlowItem, type PlaybookInput, type PlaybookMember, type PlaybookModel, type PlaybookSpec, type PlaybookStep, type PlaybookTeam } from "../../shared/playbook-format";
-import { playbookFlowSource } from "../../shared/playbook-flow";
+import { playbookFlowSource, type FlowProgress, type FlowSource } from "../../shared/playbook-flow";
 import type { ChainEntry, KindRoute, ResolvedRoleModel } from "../../shared/playbook-models";
 import { HELPER_LIMIT, mergeEdits, type PlaybookCardEdits, type PlaybookChoiceView, type PlaybookModelPick, type PlaybookModelSource, type PlaybookMemberView, type PlaybookModelView, type PlaybookRunView, type PlaybookStepView, type PlaybookTeamView } from "../../shared/playbook-run";
 import type { DelegateProfileId, WorkerChoice } from "../../shared/protocol";
@@ -218,10 +218,7 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv):
       }
     : null;
 
-  // The drawing follows the card: its cycle settings and its optional stops as they stand. The run's progress
-  // isn't known to the record in this release, so nothing is coloured.
-  const stops = Object.fromEntries(steps.filter(({ step }) => step.stop === "optional").map(({ step }) => [step.id, stopOn(step, edits)]));
-  const flow = playbookFlowSource(spec, { ...(cycle ? { cycle: { max: cycle.max, askEvery: cycle.askEvery, until: cycle.until } } : {}), stops });
+  const flow = cardFlow(spec, edits);
 
   // Every helper the plan starts, once each, plus each team's coordinator and monitor (never shown as rows).
   const on = teams.flatMap((t) => t.members.filter((m) => m.on));
@@ -246,6 +243,15 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv):
   };
   view.startBlocked = blocked(view, spec, edits, env);
   return { view, resolved };
+}
+
+/** The card's flow drawing: its cycle settings and optional stops as they stand. A started run's record knows only
+    that it started (not the step, nor whether it stopped or finished), and its drawing says so. */
+export function cardFlow(spec: PlaybookSpec, edits: PlaybookCardEdits, progress?: FlowProgress): FlowSource {
+  const group = spec.steps.find((s): s is Extract<PlaybookFlowItem, { kind: "cycle" }> => s.kind === "cycle");
+  const cycle = group ? { max: edits.cycle?.max ?? group.settings.max, askEvery: edits.cycle?.askEvery ?? group.settings.askEvery, until: edits.cycle?.until ?? group.settings.until } : null;
+  const stops = Object.fromEntries(flatSteps(spec.steps).filter(({ step }) => step.stop === "optional").map(({ step }) => [step.id, stopOn(step, edits)]));
+  return playbookFlowSource(spec, { ...(cycle ? { cycle } : {}), stops, ...(progress ? { progress } : {}) });
 }
 
 /** A cycle's stop rule in words: written out, or a page's first paragraph, plain. */

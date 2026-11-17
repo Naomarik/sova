@@ -24,7 +24,7 @@ import { projectOverseerOfPath } from "../project-overseer-store";
 import { answersKey, saveAnswers } from "./answers";
 import { liveEnv, loadPlaybook, SOVA_SCRIPT } from "./env";
 import { runBlock, runMessage, type ContentsSection } from "./message";
-import { effectiveEdits, freezePlan, runCard, runsInNewChat, type CardEnv } from "./plan";
+import { cardFlow, effectiveEdits, freezePlan, runCard, runsInNewChat, type CardEnv } from "./plan";
 import { changeRun, oneRunRefusal, runById, runHolding, type PlaybookRunRecord } from "./store";
 import { runView } from "./view";
 
@@ -263,7 +263,8 @@ export async function startRun(runId: string, revision: number, deps: StartDeps)
       x.state = "started";
       delete x.halfMade;
       x.started = started;
-      x.plan = { ...frozen.plan, view: { ...frozen.plan.view, state: "started", started, startBlocked: null } };
+      // The record's drawing says what it can't show: the run started, and which step it's on isn't tracked.
+      x.plan = { ...frozen.plan, view: { ...frozen.plan.view, state: "started", started, startBlocked: null, flow: cardFlow(spec, effectiveEdits(r), { state: "started" }) } };
     });
     // The marks on the chats' own files, best effort: the store is what the card reads.
     const mark = { v: 1 as const, runId: r.id, at, playbook: { source: r.playbook.source, id: r.playbook.id, title: r.playbook.title } };

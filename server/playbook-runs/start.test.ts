@@ -18,6 +18,8 @@ const { startRun, RunRefused } = await import("./start");
 const { PLAYBOOK_RUN, MODE } = await import("../harness/state-kinds");
 const PLAYBOOK_MODE_TYPE = MODE.type;
 const { firstValues } = await import("./answers");
+const { runView } = await import("./view");
+const { runCard } = await import("./plan");
 const { loadPlaybook, refOf } = await import("./env");
 
 after(() => dropScratchAgentDir());
@@ -248,6 +250,18 @@ describe("Start", () => {
       );
     assert.deepEqual([chats.sent.length, chats.made.length, chats.set.length], [0, 0, 0]);
     assert.deepEqual([store.runById(here.run.id)!.state, store.runById(elsewhere.run.id)!.state], ["draft", "draft"]);
+  });
+
+  test("a started run's flow drawing says what it can't show: that it started, and that which step it's on isn't tracked; a draft's says nothing of a run", async () => {
+    const chats = new Chats();
+    const { run } = await draft("trial");
+    const caption = "caption: Started · which step it's on isn't tracked yet";
+    const spec = (await loadPlaybook({ source: "user", id: "trial" }, scratchAgentDir))!.spec!;
+    assert.ok(!runCard(run, spec, fakeEnv()).view.flow!.body.includes("caption:"), "before Start: no run to speak of");
+    const view = await startRun(run.id, run.revision, { request: chats.request, contents: () => [], host: chats.host() });
+    assert.ok(view.flow!.body.includes(caption), view.flow!.body);
+    store.forgetPlaybookRuns();
+    assert.ok((await runView(store.runById(run.id)!)).flow!.body.includes(caption), "the record keeps it after a restart");
   });
 
   test("a chat that already has a message keeps its name", async () => {

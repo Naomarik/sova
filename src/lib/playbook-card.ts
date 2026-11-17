@@ -202,6 +202,23 @@ export function cycleStepsLine(numbers: readonly number[]): string {
   return `Steps ${listed(numbers)} repeat`;
 }
 
+/** Flow, folded: "Flow · 10 steps · steps 5, 6, and 7 repeat"; a playbook that declares states says so. */
+export function flowSummary(view: Pick<PlaybookRunView, "flow" | "steps" | "cycle">): string {
+  if (view.flow?.kind === "state") return "Flow · states and the moves between them";
+  const n = view.steps.length;
+  const numbers = (view.cycle?.steps ?? []).map((id) => view.steps.findIndex((s) => s.id === id) + 1).filter((i) => i > 0);
+  const repeats = numbers.length ? cycleStepsLine(numbers).replace(/^S/, "s") : null;
+  return ["Flow", `${n} ${n === 1 ? "step" : "steps"}`, repeats].filter(Boolean).join(" · ");
+}
+
+/** Under the drawing: what it is drawn from. Before Start it follows the card; after, it is the plan
+    as Start froze it, and the drawing's own caption says the run's step isn't tracked. */
+export function flowNote(state: PlaybookRunView["state"]): string {
+  return state === "draft"
+    ? "Drawn from this card: change a stop or the cycle's settings and the drawing follows."
+    : "The plan as it was at Start. Progress comes in the chat's messages.";
+}
+
 /** "Starts with 9 helpers, each team's coordinator and monitor included; a chat runs up to 24 at once."
     The coordinator and monitor have no rows of their own, so the line says they are counted; a team may
     add more, so the number is where the run starts, not its most. */

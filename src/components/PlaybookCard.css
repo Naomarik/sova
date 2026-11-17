@@ -290,7 +290,9 @@
 .pb-run-note-add { margin-inline-end: calc(-1 * var(--space-3)); }
 .pb-run-note-said { flex-basis: 100%; color: var(--color-ink-2); font-size: var(--fs-caption); overflow-wrap: anywhere; }
 
-.pb-more, .pb-steps, .pb-who { display: block; }
+.pb-more, .pb-steps, .pb-who, .pb-flow { display: block; }
+/* The flow's drawing keeps its own width and scrolls sideways inside the card when it is wider. */
+.pb-flow-drawing { min-width: 0; overflow-x: auto; }
 .pb-more-summary {
   list-style: none;
   display: flex;

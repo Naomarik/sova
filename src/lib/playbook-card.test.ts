@@ -23,6 +23,8 @@ import {
   withPlaybookRows,
   withoutPlaybookRows,
   cantRunCount,
+  flowNote,
+  flowSummary,
   helpersLine,
   memberTitle,
   memberWhy,
@@ -101,6 +103,18 @@ test("a member run several times says how many; the helpers line counts where th
   assert.equal(memberTitle(member({ count: 3 })), "Runner × 3");
   assert.equal(helpersLine({ total: 9, limit: 24 }), "Starts with 9 helpers, each team's coordinator and monitor included; a chat runs up to 24 at once.");
   assert.equal(helpersLine({ total: 1, limit: 24 }), "Starts with 1 helper, each team's coordinator and monitor included; a chat runs up to 24 at once.");
+});
+
+test("Flow, folded: its steps, the ones that repeat by number, or that the playbook is drawn as states; the note says what the drawing follows", () => {
+  const steps = [step({ id: "a" }), step({ id: "b" }), step({ id: "c" })];
+  const cycle = { steps: ["b", "c"], max: 5, maxCap: 10, askEvery: 1 };
+  assert.equal(flowSummary({ flow: { kind: "flow", body: "" }, steps, cycle }), "Flow · 3 steps · steps 2 and 3 repeat");
+  assert.equal(flowSummary({ flow: { kind: "flow", body: "" }, steps, cycle: { ...cycle, steps: ["b"] } }), "Flow · 3 steps · step 2 repeats");
+  assert.equal(flowSummary({ flow: { kind: "flow", body: "" }, steps, cycle: null }), "Flow · 3 steps");
+  assert.equal(flowSummary({ flow: { kind: "flow", body: "" }, steps: [step()], cycle: null }), "Flow · 1 step");
+  assert.equal(flowSummary({ flow: { kind: "state", body: "" }, steps, cycle }), "Flow · states and the moves between them");
+  assert.equal(flowNote("draft"), "Drawn from this card: change a stop or the cycle's settings and the drawing follows.");
+  for (const state of ["starting", "started"] as const) assert.equal(flowNote(state), "The plan as it was at Start. Progress comes in the chat's messages.");
 });
 
 test("stops count the always stops and the optional ones turned on", () => {

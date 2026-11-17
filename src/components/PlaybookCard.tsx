@@ -4,6 +4,8 @@ import {
   cantRunCount,
   cardEyebrow,
   chatCard,
+  flowNote,
+  flowSummary,
   chainRest,
   cycleLine,
   cycleStepsLine,
@@ -38,9 +40,11 @@ import {
 } from "../lib/playbook-card";
 import type { PlaybookRunsStore } from "../lib/playbook-runs";
 import { ApiError } from "../lib/api";
+import { visualFence } from "../lib/align";
 import { sessionHrefOn } from "../lib/mesh";
 import { providerName } from "../lib/cost-history";
 import { announce, toast } from "../lib/ui-state";
+import { Markdown } from "./Markdown";
 import { ModelPickButton } from "./ModelPickButton";
 import { NumberField, Select, TextArea, TextField, Toggle } from "./form";
 import { Chip, Icon } from "./ui";
@@ -435,6 +439,9 @@ export function PlaybookCard(props: {
   const cycleAsk = () => shown().cycle?.askEvery ?? run().cycle?.askEvery ?? 1;
   const cycleUntil = () => shown().cycle?.until ?? run().cycle?.until ?? "rule";
 
+  /** The flow's drawing is made the first time its section is opened, and kept. */
+  const [flowSeen, setFlowSeen] = createSignal(false);
+
   const changing = () => hasEdits(shown()) || !!sending;
   const startWhy = () =>
     run().state === "starting" ? "Starting…" : !editable() ? null : busy() ? "Wait for the card to finish." : run().startBlocked;
@@ -676,6 +683,24 @@ export function PlaybookCard(props: {
               )}
             </Show>
           </details>
+
+          {/* Flow: the playbook's steps drawn by Sova's own renderer, from the source the server derives. */}
+          <Show when={run().flow}>
+            {(flow) => (
+              <details class="pb-section pb-flow" onToggle={(e) => e.currentTarget.open && setFlowSeen(true)}>
+                <summary class="pb-more-summary pb-section-label">
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  {flowSummary(run())}
+                </summary>
+                <Show when={flowSeen()}>
+                  <div class="pb-flow-drawing">
+                    <Markdown text={visualFence({ kind: flow().kind, source: flow().body })} />
+                  </div>
+                </Show>
+                <p class="pb-note">{flowNote(run().state)}</p>
+              </details>
+            )}
+          </Show>
 
           {/* How it runs */}
           <section class="pb-section" aria-labelledby={id("how")}>

@@ -215,12 +215,7 @@
 /* The button's words start at the answer's edge. */
 .pb-answer-more { margin-inline-start: calc(-1 * var(--space-3)); }
 .pb-row[data-empty] .pb-row-origin { color: var(--status-warn); font-weight: var(--fw-medium); }
-.pb-row-standing .pb-row-label { font-weight: var(--fw-regular); color: var(--color-ink-2); padding-left: var(--space-3); }
-.pb-role[data-off] .pb-model { color: var(--color-ink-muted); }
-.pb-role[data-blocked] .pb-model { color: var(--status-warn); }
-.pb-role { grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr) max-content; }
-.pb-row-why { flex-basis: 100%; color: var(--color-ink-muted); font-size: var(--fs-caption); }
-.pb-role-actions { display: flex; align-items: center; gap: var(--space-2); justify-content: flex-end; }
+.pb-row-why { color: var(--color-ink-muted); font-size: var(--fs-caption); }
 .pb-model { font-variant-numeric: tabular-nums; }
 
 .pb-text, .pb-list { width: 100%; }
@@ -255,29 +250,47 @@
 .pb-model-remove:hover { background: var(--color-sunken); color: var(--color-ink); }
 .pb-model-remove:focus-visible { outline: var(--focus-ring); outline-offset: calc(-1 * var(--focus-width)); }
 
-.pb-prompt {
-  grid-column: 1 / -1;
+/* ---- Who runs: one block per team, headed by its goal; its required members are rows inside. ---- */
+.pb-teams { display: flex; flex-direction: column; gap: var(--space-2); }
+.pb-team {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
   padding: var(--space-2) var(--space-3);
-  background: var(--color-sunken);
-  border-radius: var(--r-sm);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
 }
-.pb-prompt-text {
-  margin: 0;
-  max-height: 16rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  font-family: var(--font-mono);
-  font-size: var(--fs-mono);
-  line-height: var(--lh-mono);
+.pb-team-head { display: flex; flex-direction: column; padding-bottom: var(--space-2); }
+.pb-team-eyebrow {
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  font-weight: var(--fw-semibold);
 }
+.pb-team-goal { font-weight: var(--fw-medium); color: var(--color-ink); }
+/* A member: its name · its model, why, its brief and your note · on or off. */
+.pb-member { grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr) max-content; }
+.pb-member[data-off] .pb-model, .pb-member[data-off] .pb-member-brief { color: var(--color-ink-muted); }
+.pb-member[data-blocked] .pb-model { color: var(--status-warn); font-weight: var(--fw-medium); }
+.pb-member-brief { flex-basis: 100%; color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.pb-member-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.pb-team-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding-top: var(--space-2);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.pb-team-adds { flex: 1 1 14rem; min-width: 0; color: var(--color-ink-muted); font-size: var(--fs-caption); }
+/* A note for this run: Add Note, then its one-line field; after Start, a line of the record. */
+.pb-run-note { flex: 1 1 100%; min-width: 0; margin: 0; }
+.pb-run-note .input { min-height: var(--control-sm); }
+.pb-run-note-add { margin-inline-end: calc(-1 * var(--space-3)); }
+.pb-run-note-said { flex-basis: 100%; color: var(--color-ink-2); font-size: var(--fs-caption); overflow-wrap: anywhere; }
 
-.pb-team { display: flex; flex-direction: column; }
-.pb-team-head { margin: var(--space-2) 0 0; color: var(--color-ink-2); }
-
-.pb-more, .pb-steps { display: block; }
+.pb-more, .pb-steps, .pb-who { display: block; }
 .pb-more-summary {
   list-style: none;
   display: flex;
@@ -305,6 +318,7 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
 .pb-step[data-cycle] { box-shadow: inset 2px 0 0 var(--color-border-strong); }
 .pb-step-n { color: var(--color-ink-muted); text-align: right; }
 .pb-step-text { display: flex; flex-direction: column; min-width: 0; }
+.pb-step-goal { color: var(--color-ink-2); font-size: var(--fs-caption); }
 .pb-step-runs { color: var(--color-ink-muted); font-size: var(--fs-caption); }
 .pb-cycle { padding: var(--space-2) 0 0 calc(2rem + var(--space-3)); }
 .pb-cycle-line { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
@@ -336,6 +350,11 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
   .pb-row-label { grid-column: 1 / -1; }
   .pb-row-value { grid-column: 1 / -1; }
   .pb-row-origin { text-align: start; }
+  /* A member: its name with its switches beside it, then everything about it under both. */
+  .pb-member { grid-template-columns: minmax(0, 1fr) max-content; align-items: center; }
+  .pb-member > .pb-row-label { grid-column: 1; }
+  .pb-member > .pb-member-actions { grid-column: 2; grid-row: 1; }
+  .pb-member > .pb-row-value { grid-row: 2; }
   .pb-step { grid-template-columns: 1.5rem minmax(0, 1fr); }
   .pb-step-stop { grid-column: 2; }
   .pb-cycle { padding-left: 0; }

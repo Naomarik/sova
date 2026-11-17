@@ -9,8 +9,8 @@ import {
   type PlaybookChoiceOrigin,
   type PlaybookChoiceView,
   type PlaybookCycleView,
+  type PlaybookMemberView,
   type PlaybookModelPick,
-  type PlaybookRoleView,
   type PlaybookRunView,
   type PlaybookStepView,
   type PlaybookTeamView,
@@ -109,46 +109,74 @@ export function pickLine(p: PlaybookModelPick | null | undefined, provider = tru
   return [modelLabel(p.model) ?? p.model, prov, p.effort].filter(Boolean).join(" · ");
 }
 
-/** The role's resolved model line, or why it has none. */
-export function roleModelLine(role: PlaybookRoleView): string {
-  const r = role.resolved;
+/** A required member's resolved model line, or why it has none. */
+export function memberModelLine(member: Pick<PlaybookMemberView, "resolved" | "only">): string {
+  const r = member.resolved;
   if (r) return [r.modelLabel || modelLabel(r.model) || r.model, providerName(r.provider), r.effort].filter(Boolean).join(" · ");
-  return role.only ? "None of its models can run" : "No model";
+  return member.only ? "None of its models can run" : "No model";
 }
 
-/** Why this model, for the right-hand column: the resolver's reason when it isn't the first pick. */
-export function roleWhy(role: PlaybookRoleView): string {
-  const r = role.resolved;
-  const only = role.only ? "Only these models" : null;
+/** Why this model, beside it: the resolver's reason when it isn't the first pick. */
+export function memberWhy(member: Pick<PlaybookMemberView, "resolved" | "only">): string {
+  const r = member.resolved;
+  const only = member.only ? "Only these models" : null;
   if (!r) return only ?? "";
   const why = r.reason ?? (r.source === "card" ? "Your pick for this run" : r.source === "list" ? "First choice" : r.source === "profile" ? "Your profile" : "This chat's model");
   return [why, only].filter(Boolean).join(" · ");
 }
 
-/** "Runner × 3" with its "per" words when it has them: "Runner × 3, one per test model". */
-export function roleTitle(role: PlaybookRoleView): string {
-  return role.count > 1 ? `${role.label} × ${role.count}` : role.label;
+/** "Runner × 3": a member that runs several times says how many. */
+export function memberTitle(member: Pick<PlaybookMemberView, "label" | "count">): string {
+  return member.count > 1 ? `${member.label} × ${member.count}` : member.label;
 }
 
-/** The rest of a role's list after its resolved pick, for the hover title ("Then: Fable 5.2 · high"). */
-export function chainRest(role: PlaybookRoleView): string | null {
-  const r = role.resolved;
-  const rest = role.chain.filter((p) => !r || p.model !== r.model);
+/** The rest of a member's list after its resolved pick, for the hover title ("Then: Fable 5.2 · high"). */
+export function chainRest(member: Pick<PlaybookMemberView, "resolved" | "chain">): string | null {
+  const r = member.resolved;
+  const rest = member.chain.filter((p) => !r || p.model !== r.model);
   return rest.length ? `Then: ${rest.map((p) => pickLine(p, false)).join(", ")}` : null;
 }
 
-/** A step says plainly who runs it (al_2 f19): the main chat, a team with its coordinator and
-    monitor, or separate helpers by name. */
-export function stepRunsLine(step: PlaybookStepView, roles: readonly PlaybookRoleView[], teams: readonly PlaybookTeamView[]): string {
-  if (step.runs === "team") {
-    const team = teams.find((t) => t.id === step.team);
-    return `A team${team ? `, ${team.label},` : ""} with its coordinator and monitor`;
-  }
-  if (step.runs === "helpers") {
-    const names = step.roles.map((id) => roles.find((r) => r.id === id)).filter((r): r is PlaybookRoleView => !!r && !r.main && r.on);
-    return names.length ? `Separate helpers: ${names.map(roleTitle).join(", ")}` : "Separate helpers";
-  }
-  return "The main chat";
+/** "3", "3 and 4", "3, 4, and 5". */
+const listed = (items: readonly (string | number)[]): string =>
+  items.length <= 2 ? items.join(" and ") : `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
+
+/**
+ * Who runs, folded: "Who runs · 2 teams · 5 required members". The counts are the server's (a member
+ * run three times counts once, one turned off doesn't count); a team may have a goal and no required
+ * member. Members that are on with no model that can run are said here too, since they keep Start off
+ * and the section is folded.
+ */
+export function whoSummary(who: PlaybookRunView["who"], cantRun = 0): string {
+  if (who.teams === 0) return "Who runs · the main chat alone";
+  const teams = `${who.teams} ${who.teams === 1 ? "team" : "teams"}`;
+  const members = who.members === 0 ? "no required members" : `${who.members} required ${who.members === 1 ? "member" : "members"}`;
+  return `Who runs · ${teams} · ${members}${cantRun > 0 ? ` · ${cantRun} can't run` : ""}`;
+}
+
+/** The members that keep Start off: on, and none of their models can run. */
+export function cantRunCount(teams: readonly Pick<PlaybookTeamView, "members">[]): number {
+  return teams.reduce((n, t) => n + t.members.filter((m) => m.on && !m.runnable).length, 0);
+}
+
+/** Over a team's goal: its short name and the steps it works in, by their numbers on the card
+    ("Grading team · steps 4, 7, and 8"); a team no step names says only its name. */
+export function teamEyebrow(team: Pick<PlaybookTeamView, "label" | "steps">, steps: readonly Pick<PlaybookStepView, "id">[]): string {
+  const numbers = team.steps.map((id) => steps.findIndex((s) => s.id === id) + 1).filter((n) => n > 0);
+  const where = numbers.length === 0 ? null : `${numbers.length === 1 ? "step" : "steps"} ${listed(numbers)}`;
+  return [`${team.label} team`, where].filter(Boolean).join(" · ");
+}
+
+/** Under a team's members: it isn't limited to them. A team with none says so first. */
+export function teamAddsLine(team: Pick<PlaybookTeamView, "members">): string {
+  return team.members.length === 0 ? "No required members: the team adds whoever it needs." : "The team adds anyone else it needs.";
+}
+
+/** A step says who works in it: the main chat alone, or its teams by name ("Run and Grading teams"). */
+export function stepRunsLine(step: Pick<PlaybookStepView, "teams">, teams: readonly Pick<PlaybookTeamView, "id" | "label">[]): string {
+  const names = step.teams.map((id) => teams.find((t) => t.id === id)?.label).filter((l): l is string => !!l);
+  if (names.length === 0) return "The main chat";
+  return `${listed(names)} ${names.length === 1 ? "team" : "teams"}`;
 }
 
 /** How many times the run stops for you, as the steps stand now. */
@@ -171,13 +199,14 @@ export function cycleLine(c: PlaybookCycleView): string {
 /** "Step 3 repeats" or "Steps 3, 4 and 5 repeat": the cycle's steps by their numbers on the card. */
 export function cycleStepsLine(numbers: readonly number[]): string {
   if (numbers.length === 1) return `Step ${numbers[0]} repeats`;
-  const list = numbers.length === 2 ? numbers.join(" and ") : `${numbers.slice(0, -1).join(", ")}, and ${numbers[numbers.length - 1]}`;
-  return `Steps ${list} repeat`;
+  return `Steps ${listed(numbers)} repeat`;
 }
 
-/** "9 helpers at once, of 24." The coordinator and monitor of each team count. */
+/** "Starts with 9 helpers, each team's coordinator and monitor included; a chat runs up to 24 at once."
+    The coordinator and monitor have no rows of their own, so the line says they are counted; a team may
+    add more, so the number is where the run starts, not its most. */
 export function helpersLine(h: PlaybookRunView["helpers"]): string {
-  return `${h.total} ${h.total === 1 ? "helper" : "helpers"} at once, of ${h.limit}.`;
+  return `Starts with ${h.total} ${h.total === 1 ? "helper" : "helpers"}, each team's coordinator and monitor included; a chat runs up to ${h.limit} at once.`;
 }
 
 /** "14:06" today, else "Mar 4, 14:06": a 24-hour clock, as logs and records read. */
@@ -195,7 +224,8 @@ export function foldedLine(view: PlaybookRunView, here?: string, clock: (iso: st
     return `Revision ${st.revision}, started ${clock(st.at)} ${where}`;
   }
   if (view.state === "starting") return "Starting…";
-  return view.startBlocked ?? `${view.roles.filter((r) => r.on).length} roles · ${stepsSummary(view.steps).replace(/^Steps · /, "").replace(/^(\d+)/, "$1 steps")}`;
+  const teams = view.who.teams === 0 ? "The main chat alone" : `${view.who.teams} ${view.who.teams === 1 ? "team" : "teams"}`;
+  return view.startBlocked ?? `${teams} · ${stepsSummary(view.steps).replace(/^Steps · /, "").replace(/^(\d+)/, "$1 steps")}`;
 }
 
 /** The strip's line under the run's name: how its conducting chat stands, when the page reads that
@@ -234,8 +264,8 @@ export function fromPick(p: ModelPick): PlaybookModelPick {
   return { model: p.model, ...(p.thinking ? { effort: p.thinking } : {}) };
 }
 
-/** Two batches of card edits not yet saved, as one: the later wins key by key, a role's fields one by
-    one. Unlike the store's merge, a cleared pick stays as null: it is an edit still to send. */
+/** Two batches of card edits not yet saved, as one: the later wins key by key, a member's and a team's
+    fields one by one. Unlike the store's merge, a cleared pick stays as null: it is an edit still to send. */
 export function stackEdits(a: PlaybookCardEdits, b: PlaybookCardEdits): PlaybookCardEdits {
   const out: PlaybookCardEdits = { ...a };
   if (b.choices) out.choices = { ...a.choices, ...b.choices };
@@ -246,6 +276,11 @@ export function stackEdits(a: PlaybookCardEdits, b: PlaybookCardEdits): Playbook
     for (const [id, r] of Object.entries(b.roles)) roles[id] = { ...roles[id], ...r };
     out.roles = roles;
   }
+  if (b.teams) {
+    const teams = { ...a.teams };
+    for (const [id, t] of Object.entries(b.teams)) teams[id] = { ...teams[id], ...t };
+    out.teams = teams;
+  }
   return out;
 }
 
@@ -255,7 +290,8 @@ export function hasEdits(e: PlaybookCardEdits): boolean {
     (e.choices && Object.keys(e.choices).length) ||
     (e.stops && Object.keys(e.stops).length) ||
     (e.cycle && Object.keys(e.cycle).length) ||
-    (e.roles && Object.keys(e.roles).length)
+    (e.roles && Object.keys(e.roles).length) ||
+    (e.teams && Object.keys(e.teams).length)
   );
 }
 

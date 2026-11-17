@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { PlaybookRoleView, PlaybookRunView, PlaybookStepView, PlaybookTeamView } from "../../shared/playbook-run";
+import type { PlaybookMemberView, PlaybookRunView, PlaybookStepView, PlaybookTeamView } from "../../shared/playbook-run";
 import type { PlaybookInfo, SlashCommand } from "../../shared/protocol";
 import {
   cardChip,
@@ -22,7 +22,13 @@ import {
   type RunChatNow,
   withPlaybookRows,
   withoutPlaybookRows,
-  roleWhy,
+  cantRunCount,
+  helpersLine,
+  memberTitle,
+  memberWhy,
+  teamAddsLine,
+  teamEyebrow,
+  whoSummary,
   splitChoices,
   isFreeText,
   answerFoldLabel,
@@ -33,10 +39,10 @@ import {
   stopCount,
 } from "./playbook-card";
 
-const role = (extra: Partial<PlaybookRoleView> = {}): PlaybookRoleView => ({
+const member = (extra: Partial<PlaybookMemberView> = {}): PlaybookMemberView => ({
   id: "runner",
   label: "Runner",
-  main: false,
+  brief: "Runs the round's cases on one test model",
   count: 1,
   optional: false,
   on: true,
@@ -47,18 +53,54 @@ const role = (extra: Partial<PlaybookRoleView> = {}): PlaybookRoleView => ({
   resolved: { model: "zai/glm-5.3", modelLabel: "glm-5.3", provider: "zai", effort: "low", source: "list" },
   runnable: true,
   note: "",
-  prompt: "",
   ...extra,
 });
-const step = (extra: Partial<PlaybookStepView> = {}): PlaybookStepView => ({ id: "s", title: "S", stop: "never", stopOn: false, runs: "main", roles: [], ...extra });
-const team: PlaybookTeamView = { id: "research", label: "Research", roles: ["a"], coordinator: { modelLabel: "Opus 5.5" }, monitor: { modelLabel: "Haiku 5.5" } };
+const step = (extra: Partial<PlaybookStepView> = {}): PlaybookStepView => ({ id: "s", title: "S", stop: "never", stopOn: false, teams: [], ...extra });
+const team = (extra: Partial<PlaybookTeamView> = {}): PlaybookTeamView => ({ id: "run", label: "Run", goal: "Run every case on every test model", steps: [], note: "", members: [member()], ...extra });
 
-test("every step says who runs it: the main chat, a team with its coordinator and monitor, or separate helpers by name", () => {
-  const roles = [role({ id: "main", label: "Main chat", main: true }), role({ id: "runner", count: 3 }), role({ id: "grader", label: "Grader" }), role({ id: "judge", label: "Judge", optional: true, on: false })];
-  assert.equal(stepRunsLine(step({ runs: "main" }), roles, [team]), "The main chat");
-  assert.equal(stepRunsLine(step({ runs: "team", team: "research" }), roles, [team]), "A team, Research, with its coordinator and monitor");
-  // A role turned off for this run isn't named.
-  assert.equal(stepRunsLine(step({ runs: "helpers", roles: ["runner", "grader", "judge"] }), roles, [team]), "Separate helpers: Runner × 3, Grader");
+test("a step says who works in it: the main chat alone, one team, or its teams by name; a team the card doesn't have isn't named", () => {
+  const teams = [team(), team({ id: "grade", label: "Grading" }), team({ id: "fix", label: "Fix" })];
+  assert.equal(stepRunsLine(step(), teams), "The main chat");
+  assert.equal(stepRunsLine(step({ teams: ["run"] }), teams), "Run team");
+  assert.equal(stepRunsLine(step({ teams: ["run", "grade"] }), teams), "Run and Grading teams");
+  assert.equal(stepRunsLine(step({ teams: ["fix", "run", "grade"] }), teams), "Fix, Run, and Grading teams");
+  assert.equal(stepRunsLine(step({ teams: ["gone", "grade"] }), teams), "Grading team");
+  assert.equal(stepRunsLine(step({ teams: ["gone"] }), teams), "The main chat");
+});
+
+test("Who runs, folded: the teams and the required members as the server counted them, each singular at 1, no members said in words, no team the main chat alone; members that can't run are said", () => {
+  assert.equal(whoSummary({ teams: 6, members: 8 }), "Who runs · 6 teams · 8 required members");
+  assert.equal(whoSummary({ teams: 1, members: 1 }), "Who runs · 1 team · 1 required member");
+  assert.equal(whoSummary({ teams: 2, members: 0 }), "Who runs · 2 teams · no required members");
+  assert.equal(whoSummary({ teams: 1, members: 0 }), "Who runs · 1 team · no required members");
+  assert.equal(whoSummary({ teams: 0, members: 0 }), "Who runs · the main chat alone");
+  assert.equal(whoSummary({ teams: 2, members: 3 }, 1), "Who runs · 2 teams · 3 required members · 1 can't run");
+  assert.equal(whoSummary({ teams: 2, members: 3 }, 0), "Who runs · 2 teams · 3 required members");
+});
+
+test("a member keeps Start off when it is on and none of its models can run; one turned off, or a team with no member, doesn't", () => {
+  const blocked = member({ id: "g", only: true, resolved: null, runnable: false });
+  assert.equal(cantRunCount([team(), team({ members: [] })]), 0);
+  assert.equal(cantRunCount([team({ members: [member(), blocked] }), team({ members: [blocked] })]), 2);
+  assert.equal(cantRunCount([team({ members: [{ ...blocked, optional: true, on: false }] })]), 0);
+});
+
+test("a team's block: its name and the steps it works in by their numbers over its goal; under its members, that it adds anyone else, and a team with none says so", () => {
+  const steps = [step({ id: "a" }), step({ id: "b" }), step({ id: "c" }), step({ id: "d" })];
+  assert.equal(teamEyebrow(team({ steps: ["b"] }), steps), "Run team · step 2");
+  assert.equal(teamEyebrow(team({ steps: ["a", "c"] }), steps), "Run team · steps 1 and 3");
+  assert.equal(teamEyebrow(team({ steps: ["a", "c", "d"] }), steps), "Run team · steps 1, 3, and 4");
+  assert.equal(teamEyebrow(team({ steps: [] }), steps), "Run team");
+  assert.equal(teamEyebrow(team({ steps: ["gone"] }), steps), "Run team");
+  assert.equal(teamAddsLine(team()), "The team adds anyone else it needs.");
+  assert.equal(teamAddsLine(team({ members: [] })), "No required members: the team adds whoever it needs.");
+});
+
+test("a member run several times says how many; the helpers line counts where the run starts and says the coordinators and monitors are in it", () => {
+  assert.equal(memberTitle(member()), "Runner");
+  assert.equal(memberTitle(member({ count: 3 })), "Runner × 3");
+  assert.equal(helpersLine({ total: 9, limit: 24 }), "Starts with 9 helpers, each team's coordinator and monitor included; a chat runs up to 24 at once.");
+  assert.equal(helpersLine({ total: 1, limit: 24 }), "Starts with 1 helper, each team's coordinator and monitor included; a chat runs up to 24 at once.");
 });
 
 test("stops count the always stops and the optional ones turned on", () => {
@@ -80,16 +122,18 @@ test("the cycle's steps by number: one repeats, several repeat", () => {
   assert.equal(cycleStepsLine([3, 4, 5]), "Steps 3, 4, and 5 repeat");
 });
 
-test("a role's why: the resolver's reason when it gave one, else where the model came from; only-roles say so", () => {
-  assert.equal(roleWhy(role()), "First choice");
-  assert.equal(roleWhy(role({ resolved: { model: "x/y", modelLabel: "y", provider: "x", source: "profile", reason: "Opus 5.5 is turned off, so your profile's model" } })), "Opus 5.5 is turned off, so your profile's model");
-  assert.equal(roleWhy(role({ only: true })), "First choice · Only these models");
-  assert.equal(roleWhy(role({ only: true, resolved: null, runnable: false })), "Only these models");
+test("a member's why: the resolver's reason when it gave one, else where the model came from; only-these members say so", () => {
+  assert.equal(memberWhy(member()), "First choice");
+  assert.equal(memberWhy(member({ resolved: { model: "x/y", modelLabel: "y", provider: "x", source: "profile", reason: "Opus 5.5 is turned off, so your profile's model" } })), "Opus 5.5 is turned off, so your profile's model");
+  assert.equal(memberWhy(member({ only: true })), "First choice · Only these models");
+  assert.equal(memberWhy(member({ only: true, resolved: null, runnable: false })), "Only these models");
 });
 
-test("edits not yet saved stack: the later wins key by key, and a cleared pick stays an edit", () => {
-  const a = stackEdits({ choices: { n: 1 }, roles: { r: { note: "x", pick: { model: "a/b" } } } }, { choices: { m: 2 }, roles: { r: { pick: null } } });
-  assert.deepEqual(a, { choices: { n: 1, m: 2 }, roles: { r: { note: "x", pick: null } } });
+test("edits not yet saved stack: the later wins key by key, a member's and a team's fields one by one, and a cleared pick stays an edit", () => {
+  const a = stackEdits({ choices: { n: 1 }, roles: { r: { note: "x", pick: { model: "a/b" } } }, teams: { t: { note: "first" } } }, { choices: { m: 2 }, roles: { r: { pick: null } }, teams: { t: { note: "second" }, u: { note: "" } } });
+  assert.deepEqual(a, { choices: { n: 1, m: 2 }, roles: { r: { note: "x", pick: null } }, teams: { t: { note: "second" }, u: { note: "" } } });
+  assert.equal(hasEdits({ teams: { t: { note: "" } } }), true);
+  assert.equal(hasEdits({ teams: {} }), false);
   assert.equal(hasEdits({}), false);
   assert.equal(hasEdits({ choices: {} }), false);
   assert.equal(hasEdits(a), true);
@@ -171,6 +215,14 @@ test("a started card's folded line says its revision, when and where it runs", (
   assert.equal(foldedLine({ ...v, started: { ...v.started!, chat: { id: "c", path: "/a.jsonl", title: "Card check run" } } }, "/b.jsonl", clock), "Revision 3, started 00:27 in Card check run");
 });
 
+test("a draft's folded line: what keeps Start off, else its teams (one, several, or the main chat alone), its steps and its stops", () => {
+  const draft = (who: PlaybookRunView["who"], startBlocked: string | null = null) => ({ state: "draft", startBlocked, who, steps: [{ stop: "always" }, { stop: "never" }, { stop: "never" }] }) as unknown as PlaybookRunView;
+  assert.equal(foldedLine(draft({ teams: 6, members: 8 })), "6 teams · 3 steps · stops for you once");
+  assert.equal(foldedLine(draft({ teams: 1, members: 0 })), "1 team · 3 steps · stops for you once");
+  assert.equal(foldedLine(draft({ teams: 0, members: 0 })), "The main chat alone · 3 steps · stops for you once");
+  assert.equal(foldedLine(draft({ teams: 6, members: 8 }, "Pick the test models.")), "Pick the test models.");
+});
+
 test("a strip's second line is how the conducting chat stands when the page reads it, else the run's own folded line", () => {
   const clock = () => "00:27";
   const started = { state: "started", startBlocked: "This run has started.", started: { at: "2026-11-17T00:27:00Z", revision: 3, chat: { id: "c", path: "/a.jsonl" }, newChat: false, folder: "/f" } } as unknown as PlaybookRunView;
@@ -186,10 +238,10 @@ test("a strip's second line is how the conducting chat stands when the page read
   assert.equal(stripLine(started, runStatus(started, null), "/b.jsonl", clock), "Revision 3, started 00:27 in another chat");
   // Before Start the chat's state is never the strip's line, whatever the chat is doing: what Start
   // needs, else the plan's size.
-  const draft = { state: "draft", startBlocked: null, roles: [{ on: true }, { on: false }], steps: [{ stop: "always" }, { stop: "none" }] } as unknown as PlaybookRunView;
+  const draft = { state: "draft", startBlocked: null, who: { teams: 1, members: 2 }, steps: [{ stop: "always" }, { stop: "none" }] } as unknown as PlaybookRunView;
   const blocked = { ...draft, startBlocked: "Pick a test model." } as PlaybookRunView;
   for (const chat of [null, now({ working: true, helpersWorking: 2 })]) {
-    assert.equal(stripLine(draft, runStatus(draft, chat), "/a.jsonl", clock), "1 roles · 2 steps · stops for you once");
+    assert.equal(stripLine(draft, runStatus(draft, chat), "/a.jsonl", clock), "1 team · 2 steps · stops for you once");
     assert.equal(stripLine(blocked, runStatus(blocked, chat), "/a.jsonl", clock), "Pick a test model.");
     assert.equal(stripLine({ ...draft, state: "starting" } as PlaybookRunView, runStatus({ ...draft, state: "starting" } as PlaybookRunView, chat), "/a.jsonl", clock), "Starting…");
   }

@@ -1,6 +1,7 @@
-import { createContext, createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, onCleanup, onMount, Show, Switch, type Accessor, type JSX } from "solid-js";
-import type { PlaybookCardEdits, PlaybookChoiceView, PlaybookModelPick, PlaybookRoleView, PlaybookRunView, PlaybookStepView } from "../../shared/playbook-run";
+import { createContext, createEffect, createMemo, createSignal, createUniqueId, For, Index, Match, onCleanup, onMount, Show, Switch, untrack, type Accessor, type JSX } from "solid-js";
+import type { PlaybookCardEdits, PlaybookChoiceView, PlaybookMemberView, PlaybookModelPick, PlaybookRunView, PlaybookStepView, PlaybookTeamView } from "../../shared/playbook-run";
 import {
+  cantRunCount,
   cardEyebrow,
   chatCard,
   chainRest,
@@ -17,9 +18,9 @@ import {
   stackEdits,
   ORIGIN_LABEL,
   pickLine,
-  roleModelLine,
-  roleTitle,
-  roleWhy,
+  memberModelLine,
+  memberTitle,
+  memberWhy,
   RUN_ANSWERS,
   controlLabel,
   runStatus,
@@ -29,6 +30,9 @@ import {
   stepRunsLine,
   stepsSummary,
   stripLine,
+  teamAddsLine,
+  teamEyebrow,
+  whoSummary,
   toPick,
   revealStep,
 } from "../lib/playbook-card";
@@ -421,9 +425,11 @@ export function PlaybookCard(props: {
     const e = shown().choices;
     return e && c.id in e ? e[c.id] : c.value;
   };
-  const roleEdit = (r: PlaybookRoleView) => shown().roles?.[r.id];
-  const roleOn = (r: PlaybookRoleView) => roleEdit(r)?.on ?? r.on;
-  const roleNote = (r: PlaybookRoleView) => roleEdit(r)?.note ?? r.note;
+  // A member's edits go under `roles`, keyed by its id (the wire's name for them).
+  const memberEdit = (m: PlaybookMemberView) => shown().roles?.[m.id];
+  const memberOn = (m: PlaybookMemberView) => memberEdit(m)?.on ?? m.on;
+  const memberNote = (m: PlaybookMemberView) => memberEdit(m)?.note ?? m.note;
+  const teamNote = (t: PlaybookTeamView) => shown().teams?.[t.id]?.note ?? t.note;
   const stopOn = (s: PlaybookStepView) => shown().stops?.[s.id] ?? s.stopOn;
   const cycleMax = () => shown().cycle?.max ?? run().cycle?.max ?? 1;
   const cycleAsk = () => shown().cycle?.askEvery ?? run().cycle?.askEvery ?? 1;
@@ -566,46 +572,44 @@ export function PlaybookCard(props: {
             </section>
           </Show>
 
-          {/* Who runs */}
-          <section class="pb-section" aria-labelledby={id("cast")}>
-            <h4 class="pb-section-label" id={id("cast")}>
-              Who runs
-            </h4>
-            <Index each={run().roles}>
-              {(r) => (
-                <RoleRow
-                  part={r()}
-                  on={roleOn(r())}
-                  note={roleNote(r())}
-                  pick={roleEdit(r())?.pick}
-                  editable={editable()}
-                  onPick={(pick) => queue({ roles: { [r().id]: { pick } } })}
-                  onOn={(on) => queue({ roles: { [r().id]: { on } } })}
-                  onNote={(note) => queue({ roles: { [r().id]: { note } } }, TYPE_SAVE_MS)}
-                />
-              )}
-            </Index>
-            <For each={run().teams}>
-              {(t) => (
-                <div class="pb-team">
-                  <p class="pb-team-head">
-                    Team <strong>{t.label}</strong>: {t.roles.map((rid) => run().roles.find((r) => r.id === rid)).filter(Boolean).map((r) => roleTitle(r!)).join(", ")}
-                  </p>
-                  <div class="pb-row pb-row-standing">
-                    <span class="pb-row-label">Coordinator</span>
-                    <span class="pb-row-value">{[t.coordinator.modelLabel, t.coordinator.effort].filter(Boolean).join(" · ")}</span>
-                    <span class="pb-row-origin">Team defaults</span>
-                  </div>
-                  <div class="pb-row pb-row-standing">
-                    <span class="pb-row-label">Monitor</span>
-                    <span class="pb-row-value">{[t.monitor.modelLabel, t.monitor.effort].filter(Boolean).join(" · ")}</span>
-                    <span class="pb-row-origin">Team defaults</span>
-                  </div>
-                </div>
-              )}
-            </For>
-            <p class="pb-note">{helpersLine(run().helpers)}</p>
-          </section>
+          {/* Who runs: folded, unless a member that keeps Start off is in it. */}
+          <details class="pb-section pb-who" open={untrack(() => cantRunCount(run().teams) > 0)}>
+            <summary class="pb-more-summary pb-section-label">
+              <Icon name="chevron-right" small class="icon-twist" />
+              {whoSummary(run().who, cantRunCount(run().teams))}
+            </summary>
+            <Show when={run().teams.length > 0} fallback={<p class="pb-note">No helpers: this chat does every step itself.</p>}>
+              <div class="pb-teams">
+                <Index each={run().teams}>
+                  {(t) => (
+                    <TeamBlock
+                      team={t()}
+                      eyebrow={teamEyebrow(t(), run().steps)}
+                      note={teamNote(t())}
+                      editable={editable()}
+                      onNote={(note) => queue({ teams: { [t().id]: { note } } }, TYPE_SAVE_MS)}
+                    >
+                      <Index each={t().members}>
+                        {(m) => (
+                          <MemberRow
+                            part={m()}
+                            on={memberOn(m())}
+                            note={memberNote(m())}
+                            pick={memberEdit(m())?.pick}
+                            editable={editable()}
+                            onPick={(pick) => queue({ roles: { [m().id]: { pick } } })}
+                            onOn={(on) => queue({ roles: { [m().id]: { on } } })}
+                            onNote={(note) => queue({ roles: { [m().id]: { note } } }, TYPE_SAVE_MS)}
+                          />
+                        )}
+                      </Index>
+                    </TeamBlock>
+                  )}
+                </Index>
+              </div>
+              <p class="pb-note">{helpersLine(run().helpers)}</p>
+            </Show>
+          </details>
 
           {/* Steps */}
           <details class="pb-section pb-steps" open>
@@ -620,7 +624,8 @@ export function PlaybookCard(props: {
                     <span class="pb-step-n text-num">{i + 1}</span>
                     <span class="pb-step-text">
                       <span class="pb-step-title">{s().title}</span>
-                      <span class="pb-step-runs">{stepRunsLine(s(), run().roles, run().teams)}</span>
+                      <Show when={s().goal}>{(g) => <span class="pb-step-goal">{g()}</span>}</Show>
+                      <span class="pb-step-runs">{stepRunsLine(s(), run().teams)}</span>
                     </span>
                     <span class="pb-step-stop">
                       <Show when={s().stop === "always"}>
@@ -802,6 +807,9 @@ function ChoiceRow(props: { choice: PlaybookChoiceView; value: unknown; editable
   // is the form kit's, its label read aloud (the row's own label shows it).
   const control = (): JSX.Element => (
     <Switch fallback={<TextField class="pb-text" hideLabel label={c().label} value={typeof props.value === "string" ? props.value : ""} onInput={(v) => props.onChange(v, TYPE_SAVE_MS)} />}>
+      <Match when={c().type === "text" && c().multiline}>
+        <TextArea class="pb-text" hideLabel label={c().label} rows={2} value={typeof props.value === "string" ? props.value : ""} onInput={(v) => props.onChange(v, TYPE_SAVE_MS)} />
+      </Match>
       <Match when={c().type === "toggle"}>
         <Toggle class="pb-toggle" label={props.value ? "On" : "Off"} ariaLabel={c().label} checked={!!props.value} onChange={(on) => props.onChange(on)} />
       </Match>
@@ -973,10 +981,71 @@ function ModelsControl(props: { id: string; label: string; value: PlaybookModelP
   );
 }
 
-/** One role in Who runs: its model and why, on or off when it's optional, View Prompt and its note. */
-function RoleRow(props: {
-  /** The role (not named `role`: that is an ARIA attribute's name). */
-  part: PlaybookRoleView;
+/** A one-line note for this run, on a member or a team: Add Note opens its field (a card with many
+    members would otherwise be a column of empty boxes); a note already there shows its field. */
+function runNote(note: () => string) {
+  const id = `pbn-${createUniqueId()}`;
+  const [open, setOpen] = createSignal(untrack(() => !!note()));
+  // A note that arrives (another tab wrote it) shows; one you emptied keeps its field while you type.
+  createEffect(() => {
+    if (note()) setOpen(true);
+  });
+  const reveal = () => {
+    setOpen(true);
+    queueMicrotask(() => document.getElementById(id)?.focus());
+  };
+  return { id, open, reveal };
+}
+const NoteAdd = (props: { label: string; spoken: string; onClick(): void }) => (
+  <button type="button" class="button button-sm button-ghost pb-run-note-add" aria-label={props.spoken} onClick={() => props.onClick()}>
+    <Icon name="plus" small />
+    {props.label}
+  </button>
+);
+const NoteField = (props: { id: string; label: string; record: string; note: string; onNote(note: string): void }) => (
+  <TextField class="pb-run-note" id={props.id} hideLabel label={props.label} value={props.note} placeholder={`${props.record}, for this run only`} onInput={(v) => props.onNote(v)} />
+);
+/** After Start the note is a line of the record. */
+const NoteSaid = (props: { record: string; note: string }) => (
+  <Show when={props.note}>
+    {(n) => (
+      <span class="pb-run-note-said">
+        {props.record}: {n()}
+      </span>
+    )}
+  </Show>
+);
+
+/** One team in Who runs: its name and steps over its goal, its required members, the line saying it
+    isn't limited to them, and your note for the team. */
+function TeamBlock(props: { team: PlaybookTeamView; eyebrow: string; note: string; editable: boolean; onNote(note: string): void; children: JSX.Element }) {
+  const tid = `pbt-${createUniqueId()}`;
+  const t = () => props.team;
+  const note = runNote(() => props.note);
+  return (
+    <div class="pb-team" role="group" aria-labelledby={tid}>
+      <div class="pb-team-head" id={tid}>
+        <span class="pb-team-eyebrow">{props.eyebrow}</span>
+        <span class="pb-team-goal">{t().goal}</span>
+      </div>
+      {props.children}
+      <div class="pb-team-foot">
+        <span class="pb-team-adds">{teamAddsLine(t())}</span>
+        <Show when={props.editable} fallback={<NoteSaid record="Your note for the team" note={props.note} />}>
+          <Show when={note.open()} fallback={<NoteAdd label="Add Team Note" spoken={`Add a note for the ${t().label} team`} onClick={note.reveal} />}>
+            <NoteField id={note.id} label={`Note for the ${t().label} team`} record="Your note for the team" note={props.note} onNote={props.onNote} />
+          </Show>
+        </Show>
+      </div>
+    </div>
+  );
+}
+
+/** One required member of a team: how many, its model and why, its one-line brief, your note for it,
+    and on or off when the playbook lets you turn it off. */
+function MemberRow(props: {
+  /** The member (not named `role`: that is an ARIA attribute's name). */
+  part: PlaybookMemberView;
   on: boolean;
   note: string;
   pick: PlaybookModelPick | null | undefined;
@@ -986,21 +1055,24 @@ function RoleRow(props: {
   onNote(note: string): void;
 }) {
   const rid = `pbr-${createUniqueId()}`;
-  const [promptOpen, setPromptOpen] = createSignal(false);
   const r = () => props.part;
   /** What the row shows as its model: your pick while it saves, else the resolved one. */
-  const modelText = () => (props.pick ? pickLine(props.pick) : roleModelLine(r()));
+  const modelText = () => (props.pick ? pickLine(props.pick) : memberModelLine(r()));
   const off = () => r().optional && !props.on;
+  const note = runNote(() => props.note);
   return (
-    <div class="pb-row pb-role" data-off={off() ? "" : undefined} data-blocked={!r().runnable ? "" : undefined}>
+    <div class="pb-row pb-member" data-off={off() ? "" : undefined} data-blocked={!off() && !r().runnable ? "" : undefined}>
       <span class="pb-row-label">
-        {roleTitle(r())}
+        {memberTitle(r())}
         <Show when={r().per}>{(per) => <span class="pb-row-help">One for each of {per()}</span>}</Show>
       </span>
       <span class="pb-row-value">
-        <span class="pb-model" title={chainRest(r()) ?? undefined}>
-          {off() ? "Off for this run" : modelText()}
-        </span>
+        {/* An only-these member you can edit says its model in its list, once; one with no model that can run keeps the words. */}
+        <Show when={off() || !props.editable || !r().only || !r().resolved}>
+          <span class="pb-model" title={chainRest(r()) ?? undefined}>
+            {off() ? "Off for this run" : modelText()}
+          </span>
+        </Show>
         <Show when={props.editable && !off()}>
           <Show
             when={r().only}
@@ -1035,24 +1107,24 @@ function RoleRow(props: {
             </Select>
           </Show>
         </Show>
-        <Show when={!off() && roleWhy(r())}>{(why) => <span class="pb-row-why">{why()}</span>}</Show>
+        <Show when={!off() && memberWhy(r())}>{(why) => <span class="pb-row-why">{why()}</span>}</Show>
+        <span class="pb-member-brief">{r().brief}</span>
+        <Show when={!off()}>
+          <Show when={props.editable} fallback={<NoteSaid record="Your note" note={props.note} />}>
+            <Show when={note.open()}>
+              <NoteField id={note.id} label={`Note for ${r().label}`} record="Your note" note={props.note} onNote={props.onNote} />
+            </Show>
+          </Show>
+        </Show>
       </span>
-      <span class="pb-role-actions">
+      <span class="pb-member-actions">
+        <Show when={props.editable && !off() && !note.open()}>
+          <NoteAdd label="Add Note" spoken={`Add a note for ${r().label}`} onClick={note.reveal} />
+        </Show>
         <Show when={r().optional && props.editable}>
           <Toggle class="pb-toggle" label="Runs" ariaLabel={`${r().label} runs`} checked={props.on} onChange={(on) => props.onOn(on)} />
         </Show>
-        <button type="button" class="button button-sm button-ghost" aria-expanded={promptOpen()} aria-controls={`${rid}-prompt`} onClick={() => setPromptOpen(!promptOpen())}>
-          {promptOpen() ? "Hide Prompt" : "View Prompt"}
-        </button>
       </span>
-      <Show when={promptOpen()}>
-        <div class="pb-prompt" id={`${rid}-prompt`}>
-          <pre class="pb-prompt-text">{r().prompt || "No prompt of its own: it gets Sova's standard conductor instructions."}</pre>
-          <Show when={props.editable} fallback={<Show when={props.note}>{(n) => <p class="pb-note">Note for this run: {n()}</p>}</Show>}>
-            <TextArea class="pb-role-note" label="Note for this run" rows={2} value={props.note} placeholder="Added after its prompt, for this run only" onInput={(v) => props.onNote(v)} />
-          </Show>
-        </div>
-      </Show>
     </div>
   );
 }

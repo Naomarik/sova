@@ -560,7 +560,7 @@ export function playbookRunsApi(host: string | null) {
   const post = <T>(url: string, body: unknown, method = "POST") => request<T>(hostUrl(host, url), { method, body: JSON.stringify(body) });
   const one = (id: string) => `/api/playbook-runs/${encodeURIComponent(id)}`;
   return {
-    list: (path: string) => request<{ runs: PlaybookRunView[] }>(hostUrl(host, `/api/playbook-runs?path=${encodeURIComponent(path)}`), { cache: "no-store" }),
+    list: (path: string) => request<{ runs: PlaybookRunView[]; holding?: { id: string; title: string } | null }>(hostUrl(host, `/api/playbook-runs?path=${encodeURIComponent(path)}`), { cache: "no-store" }),
     /** One run by its id: a started run put away still answers, as its record (`closed`). */
     get: (id: string) => request<PlaybookRunView>(hostUrl(host, one(id)), { cache: "no-store" }),
     open: (body: PlaybookRunOpenBody) => post<PlaybookRunView>("/api/playbook-runs", body),

@@ -19,7 +19,7 @@ import { scheduleLine } from "../lib/schedules";
 import { ScheduleCard } from "./ScheduleCard";
 import { Banner, Icon, trapFocus } from "./ui";
 import { hostOf } from "../lib/mesh";
-import { playbookCardError, playbookHasCard } from "../lib/playbook-card";
+import { heldListNote, playbookCardError, playbookHasCard } from "../lib/playbook-card";
 
 /** Same rule as everywhere else: a skeleton only after the fetch has actually been slow. */
 const SKELETON_MS = 300;
@@ -59,6 +59,9 @@ export function PlaybooksDialog(props: {
   /** Why this chat runs no playbook cards (a baton chat, an overseer), or null: a playbook with a
       description then can't be sent as bare text here either, since it would skip its cast and stops. */
   cardsOff?: string | null;
+  /** The playbook a run of which holds this chat, by its title; null: none. A chat runs one playbook,
+      so a playbook with a card then opens in a new chat, and the list says so. */
+  held?: string | null;
 }) {
   const [catalog, setCatalog] = createSignal<PlaybookCatalog | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -257,6 +260,7 @@ export function PlaybooksDialog(props: {
           when={chosen()}
           fallback={
             <div class="modal-body">
+              <Show when={props.held}>{(title) => <Banner tone="info" size="compact" title={heldListNote(title()).title} body={heldListNote(title()).body} />}</Show>
               <Show when={error()}>
                 {(message) => (
                   <Banner

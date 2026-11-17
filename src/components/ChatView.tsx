@@ -44,7 +44,7 @@ import { BatonStrip } from "./BatonStrip";
 import { PairedLines } from "./PairedLines";
 import { createLimits } from "../lib/mode-menu";
 import { sandboxOffMissing, sandboxStateOf, type SandboxState } from "../lib/sandbox";
-import { ApiError, fetchPlaybooks, approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { ApiError, createSession, fetchPlaybooks, playbookRunsApi, approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { memoryRowWords, memoryTurnWords } from "../lib/memory-ui";
@@ -153,10 +153,10 @@ import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
-import { PlaybookBar, PlaybookFloat, PlaybookRunsContext, showPlaybookCard, type PlaybookChatNow } from "./PlaybookCard";
+import { openCardOnArrival, PlaybookFloat, PlaybookRunsContext, showPlaybookCard, type PlaybookChatNow } from "./PlaybookCard";
 import { isPlaybookRunEvent, playbookRunEvent, usePlaybookRuns } from "../lib/playbook-runs";
 import { boardState } from "../lib/agents-board";
-import { NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows } from "../lib/playbook-card";
+import { chatHolding, heldRows, NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows, type HeldBy } from "../lib/playbook-card";
 import { socketReconnects } from "../lib/socket";
 import type { PlaybookRunView } from "../../shared/playbook-run";
 import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
@@ -665,18 +665,44 @@ export function ChatView(props: {
     createEffect(on(cwdNow, readRows));
     createEffect(on(socketReconnects, readRows, { defer: true }));
   }
+  /** The run that holds this chat, if one does: a chat runs one playbook at most. */
+  const heldBy = createMemo(() => (playbookRuns && playbooksHere() ? chatHolding(playbookRuns.runs(), playbookRuns.holding()) : null));
+  /** A playbook picked in a chat a run holds: a new chat in this folder, with that playbook's card
+      open in it. False: it couldn't, said in a toast. */
+  const openCardInNewChat = async (playbook: Pick<PlaybookRunView["playbook"], "source" | "id">, text: string | undefined, held: HeldBy): Promise<boolean> => {
+    const cwd = props.summary?.()?.cwd;
+    const host = hostOf(props.path);
+    try {
+      if (!cwd) throw new Error("this chat's folder isn't known yet");
+      const made = await createSession(cwd, host);
+      const run = await playbookRunsApi(host).open({ playbook: { source: playbook.source, id: playbook.id }, cwd, path: made.path, ...(text ? { text } : {}) });
+      openCardOnArrival(made.path, run.id);
+      announce(`${run.playbook.title} opened in a new chat: this chat already runs ${held.title}.`);
+      location.hash = sessionHrefOn(host, made.path);
+      return true;
+    } catch (e) {
+      toast(`The playbook didn't open in a new chat: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
+  };
   /** Opens (or finds) this chat's card for a playbook with a description, with the words typed after
-      its name, and brings it into view open. False: it couldn't, said in a toast. */
+      its name, and brings it into view open; in a chat a run holds, in a new chat instead. False: it
+      couldn't, said in a toast. */
   const openPlaybookCard = async (playbook: Pick<PlaybookRunView["playbook"], "source" | "id">, text?: string): Promise<boolean> => {
     if (!playbookRuns || !playbooksHere()) return false;
+    const held = heldBy();
+    if (held) return openCardInNewChat(playbook, text, held);
     try {
       const run = await playbookRuns.open(playbook, text);
       showPlaybookCard(run.id, playbookRuns);
       announce(`${run.playbook.title}: its card is open over the conversation.`);
       return true;
     } catch (e) {
-      // A refusal that says why (a description that can't be read) is said as is.
-      toast(e instanceof ApiError && e.status === 400 ? e.message : `The playbook's card didn't open: ${e instanceof Error ? e.message : String(e)}`);
+      // A refusal that says why (a description that can't be read, a chat a run already holds) is
+      // said as is; the second also means this page's list is behind, so it is read again.
+      const said = e instanceof ApiError && (e.status === 400 || e.status === 409);
+      if (e instanceof ApiError && e.status === 409) playbookRuns.refresh();
+      toast(said ? e.message : `The playbook's card didn't open: ${e instanceof Error ? e.message : String(e)}`);
       return false;
     }
   };
@@ -697,8 +723,6 @@ export function ChatView(props: {
       };
     }),
   };
-  /** The chat's playbook controls, the message box's last row. */
-  const playbookBar = () => <Show when={playbooksHere() && playbookRuns}>{(store) => <PlaybookBar store={store()} chat={playbookChat} />}</Show>;
   /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
   const reloadCode = () => void chatSend({ type: "reload_code" });
   props.onCode?.({ view: () => (hostGate() ? null : code()), quiet: () => ({ running: live.running, workersWorking: workersWorking(), commandRunning: shellRuns().some((r) => r.state === "running") }), reload: reloadCode });
@@ -2875,21 +2899,15 @@ export function ChatView(props: {
       <ShellDock bar={shellBar} />
       <Show
         when={!hostGate()}
-        fallback={
-          <>
-            <HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />
-            <div class="pb-bar-alone">{playbookBar()}</div>
-          </>
-        }
+        fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}
       >
       <Composer
-        below={playbookBar}
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
         readOnly={batonGate()}
         unarchive={archivedPane() && !batonGate() ? { run: () => void unarchive(), busy: unarchiving() } : null}
-        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : playbooksHere() ? withPlaybookRows(commands(), pageRows()) : withoutPlaybookRows(commands())}
+        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : playbooksHere() ? heldRows(withPlaybookRows(commands(), pageRows()), heldBy()) : withoutPlaybookRows(commands())}
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}
@@ -2996,6 +3014,7 @@ export function ChatView(props: {
           onSend={(text) => send(text, false, [])}
           onOpenCard={playbooksHere() ? (p) => openPlaybookCard({ source: p.source, id: p.id }) : undefined}
           cardsOff={playbooksHere() ? null : NO_PLAYBOOKS_HERE}
+          held={heldBy()?.title ?? null}
           onClose={(sent) => {
             setShowPlaybooks(false);
             // After a send the next thing is the conversation; otherwise back to the "+" button

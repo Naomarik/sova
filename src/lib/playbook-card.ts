@@ -72,7 +72,7 @@ export interface RunStatus {
 const helpersWorkingWords = (n: number): string => `${n} ${n === 1 ? "helper" : "helpers"} working`;
 
 /**
- * A run's state, dot and word, on its control and its card. A draft: ready, or what blocks Start.
+ * A run's state, dot and word, on its strip and its card. A draft: ready, or what blocks Start.
  * A started run: how its conducting chat stands (`now`); with no reading of that chat (the card is
  * in another chat), only that it started. A question the chat is blocked on wins over work, as in
  * the session list; a chat with nothing going on waits for your answer unless its last turn said
@@ -96,9 +96,9 @@ export const RUN_ANSWERS = [
   { label: "Stop Here", text: "Stop here" },
 ] as const;
 
-/** What the control under the message box is called aloud: "A/B cycle: Needs you. Open its card." */
-export function controlLabel(title: string, status: Pick<RunStatus, "label">, open: boolean): string {
-  return `${title}: ${status.label}. ${open ? "Minimize its card." : "Open its card."}`;
+/** What a run's strip above the message box is called aloud: "A/B cycle: Needs you. Open its card." */
+export function controlLabel(title: string, status: Pick<RunStatus, "label">): string {
+  return `${title}: ${status.label}. Open its card.`;
 }
 
 /** A model pick as the card says it: "GLM 5.3 · zai · low" (name, provider, effort). */
@@ -187,7 +187,7 @@ export function shortClock(iso: string, now = new Date()): string {
   return d.toDateString() === now.toDateString() ? time : `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${time}`;
 }
 
-/** The folded card's one line after its title: where it is, or what it needs. */
+/** A closed card's one line: what it needs, the plan's size, or when and where it started. */
 export function foldedLine(view: PlaybookRunView, here?: string, clock: (iso: string) => string = shortClock): string {
   const st = view.started;
   if (view.state === "started" && st) {
@@ -196,6 +196,12 @@ export function foldedLine(view: PlaybookRunView, here?: string, clock: (iso: st
   }
   if (view.state === "starting") return "Starting…";
   return view.startBlocked ?? `${view.roles.filter((r) => r.on).length} roles · ${stepsSummary(view.steps).replace(/^Steps · /, "").replace(/^(\d+)/, "$1 steps")}`;
+}
+
+/** The strip's line under the run's name: how its conducting chat stands, when the page reads that
+    chat; else the folded line (what Start needs, the plan's size, or when and where it started). */
+export function stripLine(view: PlaybookRunView, status: Pick<RunStatus, "detail">, here?: string, clock: (iso: string) => string = shortClock): string {
+  return (view.state === "started" && status.detail) || foldedLine(view, here, clock);
 }
 
 /** Choices asked every run or once show on the card; optional ones go under More Options. */
@@ -324,6 +330,46 @@ export function withPlaybookRows(commands: readonly SlashCommand[], rows: readon
 export const NO_PLAYBOOKS_HERE = "This chat runs no playbooks.";
 export function playbooksRunHere(chat: { overseer?: boolean; projectOverseer?: boolean; baton?: boolean }): boolean {
   return !chat.overseer && !chat.projectOverseer && !chat.baton;
+}
+
+/** The run that holds a chat: a chat runs one playbook at most (al_2 q13). */
+export interface HeldBy {
+  id: string;
+  title: string;
+}
+
+/** The one run a chat's strip shows: the run it started or conducts, else its draft (the newest
+    opened, first in the chat's list). A chat made before the rule may still hold several. */
+export function chatCard<R extends Pick<PlaybookRunView, "state">>(runs: readonly R[]): R | null {
+  return runs.find((r) => r.state !== "draft") ?? runs[0] ?? null;
+}
+
+/** The run that holds this chat, if one does: the server's word (it also knows a run whose card was
+    put away), else a started or starting run among the chat's cards. Drafts hold nothing. */
+export function chatHolding(runs: readonly Pick<PlaybookRunView, "id" | "state" | "playbook">[], holding?: HeldBy | null): HeldBy | null {
+  if (holding) return holding;
+  const run = runs.find((r) => r.state !== "draft");
+  return run ? { id: run.id, title: run.playbook.title } : null;
+}
+
+/** A chat's cards after one was opened: its other drafts gave way to it. Started runs stay. */
+export function withoutOtherDrafts<R extends Pick<PlaybookRunView, "id" | "state">>(runs: readonly R[], opened: string): R[] {
+  return runs.filter((r) => r.id === opened || r.state !== "draft");
+}
+
+/** What a playbook's "/" row says in a chat a run holds, instead of its description. */
+export const heldRowNote = (title: string): string => `This chat already runs ${title}. Opens in a new chat.`;
+/** The Playbooks list's notice in such a chat. */
+export const heldListNote = (title: string): { title: string; body: string } => ({
+  title: `This chat already runs ${title}.`,
+  body: "A chat runs one playbook. A playbook with a card opens in a new chat.",
+});
+
+/** The chat's "/" rows in a chat a run holds: each playbook's row says so and that it opens in a new
+    chat; every other row, and the order, are untouched. */
+export function heldRows(commands: readonly SlashCommand[], held: HeldBy | null): SlashCommand[] {
+  if (!held) return [...commands];
+  return commands.map((c) => (c.playbook ? { ...c, description: heldRowNote(held.title) } : c));
 }
 
 /** What one pane's cards do with an Open Card (or another way in) for a run: open it among its own

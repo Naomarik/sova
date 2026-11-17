@@ -1,6 +1,7 @@
 import { createEffect, createRoot, createSignal, on, onCleanup, type Accessor } from "solid-js";
 import { PLAYBOOK_RUN_EVENT, type PlaybookCardEdits, type PlaybookRunView } from "../../shared/playbook-run";
 import { ApiError, playbookRunsApi } from "./api";
+import { withoutOtherDrafts, type HeldBy } from "./playbook-card";
 import { socketReconnects } from "./socket";
 
 /**
@@ -11,9 +12,12 @@ import { socketReconnects } from "./socket";
 export interface PlaybookRunsStore {
   runs: Accessor<PlaybookRunView[]>;
   error: Accessor<string | null>;
+  /** The run that holds this chat, as the server last said (a put-away one included); null: none. */
+  holding: Accessor<HeldBy | null>;
   /** A newer view of one run (an answer or an event). An older revision never replaces a newer one. */
   put(run: PlaybookRunView): void;
-  /** Opens (or finds) this chat's draft for a playbook; the words typed after its command go with it. */
+  /** Opens (or finds) this chat's draft for a playbook; the words typed after its command go with it.
+      The chat's other drafts give way to it: a chat shows one card. */
   open(playbook: Pick<PlaybookRunView["playbook"], "source" | "id">, text?: string): Promise<PlaybookRunView>;
   edit(id: string, revision: number, edits: PlaybookCardEdits): Promise<PlaybookRunView>;
   start(id: string, revision: number): Promise<PlaybookRunView>;
@@ -52,6 +56,7 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
     const api = playbookRunsApi(host);
     const [runs, setRuns] = createSignal<PlaybookRunView[]>([]);
     const [error, setError] = createSignal<string | null>(null);
+    const [holding, setHolding] = createSignal<HeldBy | null>(null);
     const put = (run: PlaybookRunView) =>
       setRuns((list) => {
         // A closed draft's news: its card goes away.
@@ -78,6 +83,7 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
         const got = await api.list(path);
         if (mine !== reads) return;
         setRuns((list) => got.runs.map((r) => newer(list.find((x) => x.id === r.id), r)).sort(order));
+        setHolding(got.holding ?? null);
         setError(null);
       } catch (e) {
         if (mine === reads) setError(e instanceof Error ? e.message : "Playbook runs couldn't be loaded.");
@@ -89,10 +95,12 @@ function make(path: string, cwd: () => string | null, host: string | null): Entr
     const store: PlaybookRunsStore = {
       runs,
       error,
+      holding,
       put,
       open: async (playbook, text) => {
         const run = await api.open({ playbook: { source: playbook.source, id: playbook.id }, cwd: cwd() ?? "", path, ...(text ? { text } : {}) });
         put(run);
+        setRuns((list) => withoutOtherDrafts(list, run.id));
         return run;
       },
       edit: (id, revision, edits) => api.edit(id, revision, edits).then((r) => (put(r), r), keepRun),

@@ -7,7 +7,7 @@ import "./PlaybookCard.css";
 
 /** The message Start gave the main chat, as the conversation's mark of when the run started: one
     row, the `.toolcard` shell a schedule's fire uses (WakeCard.tsx). The run's state is on its
-    control under the message box; Open Card opens that card, and the whole text the chat was sent
+    strip above the message box; Open Card opens that card, and the whole text the chat was sent
     is one click away, exactly as sent. */
 export function PlaybookRunMessage(props: { run: RunMessageInfo; text: string; time?: string }) {
   /** This pane's runs, when a chat view shows the row: Open Card opens the card here. */

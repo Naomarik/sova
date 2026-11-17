@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PlaybookRoleView, PlaybookRunView, PlaybookStepView, PlaybookTeamView } from "../../shared/playbook-run";
-import type { PlaybookInfo } from "../../shared/protocol";
+import type { PlaybookInfo, SlashCommand } from "../../shared/protocol";
 import {
   cardChip,
+  chatCard,
+  chatHolding,
+  heldListNote,
+  heldRows,
+  withoutOtherDrafts,
   cycleLine,
   cycleStepsLine,
   foldedLine,
@@ -22,6 +27,7 @@ import {
   stackEdits,
   stepRunsLine,
   stepsSummary,
+  stripLine,
   stopCount,
 } from "./playbook-card";
 
@@ -136,8 +142,7 @@ test("a run with no reading of its chat says only what the run itself knows: its
     assert.equal(runStatus(v({ state: "starting" }), now).label, "Starting");
   }
   assert.deepEqual(runStatus(v({ state: "started" }), null), { label: "Started", tone: "accent" });
-  assert.equal(controlLabel("A/B cycle", { label: "Needs you" }, false), "A/B cycle: Needs you. Open its card.");
-  assert.equal(controlLabel("A/B cycle", { label: "Running" }, true), "A/B cycle: Running. Minimize its card.");
+  assert.equal(controlLabel("A/B cycle", { label: "Needs you" }), "A/B cycle: Needs you. Open its card.");
 });
 
 test("a typed playbook command is the whole message's start, by a name that has a card", () => {
@@ -155,6 +160,84 @@ test("a started card's folded line says its revision, when and where it runs", (
   assert.equal(foldedLine(v, "/a.jsonl", clock), "Revision 3, started 00:27 in this chat");
   assert.equal(foldedLine(v, "/b.jsonl", clock), "Revision 3, started 00:27 in another chat");
   assert.equal(foldedLine({ ...v, started: { ...v.started!, chat: { id: "c", path: "/a.jsonl", title: "Card check run" } } }, "/b.jsonl", clock), "Revision 3, started 00:27 in Card check run");
+});
+
+test("a strip's second line is how the conducting chat stands when the page reads it, else the run's own folded line", () => {
+  const clock = () => "00:27";
+  const started = { state: "started", startBlocked: "This run has started.", started: { at: "2026-11-17T00:27:00Z", revision: 3, chat: { id: "c", path: "/a.jsonl" }, newChat: false, folder: "/f" } } as unknown as PlaybookRunView;
+  const now = (extra: Partial<RunChatNow> = {}): RunChatNow => ({ working: false, helpersWorking: 0, needsYou: null, done: false, ...extra });
+  // Every reading of the conducting chat has a sentence, and the strip says exactly that sentence.
+  for (const chat of [now({ working: true }), now({ helpersWorking: 2 }), now({ needsYou: "A question waits." }), now({ done: true }), now()]) {
+    const status = runStatus(started, chat);
+    assert.ok(status.detail, JSON.stringify(chat));
+    assert.equal(stripLine(started, status, "/a.jsonl", clock), status.detail, JSON.stringify(chat));
+  }
+  // No reading of that chat (the strip is in the chat that only started it): the run's own line.
+  assert.equal(stripLine(started, runStatus(started, null), "/b.jsonl", clock), foldedLine(started, "/b.jsonl", clock));
+  assert.equal(stripLine(started, runStatus(started, null), "/b.jsonl", clock), "Revision 3, started 00:27 in another chat");
+  // Before Start the chat's state is never the strip's line, whatever the chat is doing: what Start
+  // needs, else the plan's size.
+  const draft = { state: "draft", startBlocked: null, roles: [{ on: true }, { on: false }], steps: [{ stop: "always" }, { stop: "none" }] } as unknown as PlaybookRunView;
+  const blocked = { ...draft, startBlocked: "Pick a test model." } as PlaybookRunView;
+  for (const chat of [null, now({ working: true, helpersWorking: 2 })]) {
+    assert.equal(stripLine(draft, runStatus(draft, chat), "/a.jsonl", clock), "1 roles · 2 steps · stops for you once");
+    assert.equal(stripLine(blocked, runStatus(blocked, chat), "/a.jsonl", clock), "Pick a test model.");
+    assert.equal(stripLine({ ...draft, state: "starting" } as PlaybookRunView, runStatus({ ...draft, state: "starting" } as PlaybookRunView, chat), "/a.jsonl", clock), "Starting…");
+  }
+  // A detail that isn't this run's (a draft handed a started run's reading) is never shown.
+  assert.equal(stripLine(blocked, { detail: "This chat is working." }, "/a.jsonl", clock), "Pick a test model.");
+});
+
+test("a chat shows one card: the run it started or conducts wherever it sits in the list, else its newest draft", () => {
+  const r = (id: string, state: string) => ({ id, state }) as PlaybookRunView;
+  const started = [r("s", "started"), r("g", "starting")];
+  const drafts = [r("d1", "draft"), r("d2", "draft")];
+  assert.equal(chatCard([]), null);
+  assert.equal(chatCard(drafts)?.id, "d1");
+  // Whatever stands around it and in whatever order, the run that isn't a draft is the card.
+  for (const run of started) {
+    for (const list of [[run], [run, ...drafts], [...drafts, run], [drafts[0]!, run, drafts[1]!]]) assert.equal(chatCard(list)?.id, run.id, list.map((x) => x.id).join());
+  }
+});
+
+test("a chat is held by a started or starting run, the server's word first; drafts hold nothing", () => {
+  const r = (id: string, state: string, title = id) => ({ id, state, playbook: { title } }) as unknown as PlaybookRunView;
+  const drafts = [r("d1", "draft"), r("d2", "draft")];
+  assert.equal(chatHolding([], null), null);
+  assert.equal(chatHolding(drafts, undefined), null);
+  for (const state of ["started", "starting"]) assert.deepEqual(chatHolding([...drafts, r("s", state, "A/B cycle")]), { id: "s", title: "A/B cycle" }, state);
+  // A run whose card was put away isn't among the chat's cards: only the server knows it.
+  const away = { id: "pr_away", title: "Upgrade pi" };
+  assert.deepEqual(chatHolding(drafts, away), away);
+  assert.deepEqual(chatHolding([r("s", "started")], away), away);
+});
+
+test("opening a card makes the chat's other drafts give way; started runs and the opened card stay", () => {
+  const r = (id: string, state: string) => ({ id, state }) as PlaybookRunView;
+  const list = [r("d1", "draft"), r("d2", "draft"), r("s", "started"), r("g", "starting")];
+  assert.deepEqual(withoutOtherDrafts(list, "d2").map((x) => x.id), ["d2", "s", "g"]);
+  assert.deepEqual(withoutOtherDrafts(list, "s").map((x) => x.id), ["s", "g"]);
+  assert.deepEqual(withoutOtherDrafts(list, "new").map((x) => x.id), ["s", "g"]);
+});
+
+test("in a chat a run holds, every playbook's / row says so and that it opens in a new chat; no other row changes", () => {
+  const rows: SlashCommand[] = [
+    { name: "compact", description: "Compact the session", source: "builtin" },
+    { name: "ab-cycle", description: "A/B cycle", source: "builtin", playbook: { source: "sova", id: "ab-cycle" } },
+    { name: "mine", description: "My own command", source: "extension" } as SlashCommand,
+    { name: "pi-upgrade", description: "Upgrade pi", source: "builtin", playbook: { source: "project", id: "pi-upgrade" } },
+  ];
+  assert.deepEqual(heldRows(rows, null), rows);
+  const held = heldRows(rows, { id: "pr_x", title: "A/B cycle" });
+  assert.deepEqual(held.map((c) => c.name), rows.map((c) => c.name));
+  for (const [i, c] of held.entries()) {
+    if (rows[i]!.playbook) {
+      assert.equal(c.description, "This chat already runs A/B cycle. Opens in a new chat.");
+      // Still the row that opens that playbook: only its words changed.
+      assert.deepEqual(c.playbook, rows[i]!.playbook);
+    } else assert.deepEqual(c, rows[i]);
+  }
+  assert.deepEqual(heldListNote("A/B cycle"), { title: "This chat already runs A/B cycle.", body: "A chat runs one playbook. A playbook with a card opens in a new chat." });
 });
 
 test("the page's / rows: playbooks with a description (or a broken one), the project's shelf first; the chat's own names win", () => {

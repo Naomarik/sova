@@ -1,99 +1,134 @@
-/* A playbook run in a chat (al_2 a16, revised): a small control under the message box, and its card
-   floating over the end of the conversation when opened. Neither has a band of its own. */
+/* A playbook run in a chat (Lookbook design A): a strip floating over the end of the conversation,
+   just above the message box, and its card opening upward from the strip's place. Neither has a
+   band or a background beyond its own box. */
 
-/* ---- The controls, the message box's last row. Same column as .composer-inner. ---- */
-.pb-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  max-width: calc(var(--measure) + var(--space-9));
-  margin: var(--space-2) auto 0;
-}
-/* Alone (no message box: another computer's chat that can't be sent to): the same row on the page. */
-.pb-bar-alone { flex: none; padding: var(--space-2) var(--space-4) calc(var(--space-2) + env(safe-area-inset-bottom, 0px)); }
-.pb-bar-alone:empty { display: none; }
-.pb-pill {
-  position: relative;
-  flex: 0 1 auto;
-  min-width: 0;
-  min-height: var(--control-sm);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-2);
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-md);
-  background: none;
-  color: var(--color-ink-2);
-  font: inherit;
-  font-size: var(--fs-caption);
-  cursor: pointer;
-}
-/* A 44px target on a 36px control. */
-.pb-pill::after { content: ""; position: absolute; inset: calc((var(--control-sm) - var(--tap-min)) / 2) 0; }
-.pb-pill:hover, .pb-pill[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); border-color: var(--color-border-strong); }
-.pb-pill:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.pb-pill > .icon { flex: none; color: var(--color-ink-muted); }
-.pb-pill > .chip { flex: none; }
-.pb-pill-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); color: var(--color-ink); }
-/* The chevron points up at the card it opens, and down once it is open. */
-.pb-pill .icon-twist { transform: rotate(-90deg); transition: transform var(--dur-fast) var(--ease-standard); }
-.pb-pill[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
-/* A narrow message box: one row that scrolls sideways, never a second line under the box. */
-@container composer (max-width: 479px) {
-  .pb-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-block: calc((var(--tap-min) - var(--control-sm)) / 2); margin-top: 0; }
-  .pb-pill { flex: none; max-width: 100%; }
-}
-
-/* ---- The open card. Its anchor sits between the thread and the message box and has no height,
-   so the card rises over the conversation and never moves it. ---- */
-.pb-float {
-  position: relative;
-  flex: none;
-  height: 0;
-  z-index: 5;
-  container: pb-float / inline-size;
-}
-.pb-card {
+/* ---- The anchor sits between the conversation and the message box and has no height; the layer
+   is the message box's column (.composer-inner), so strip, card and message box share their edges. ---- */
+.pb-float { position: relative; flex: none; height: 0; z-index: 5; }
+.pb-layer {
   position: absolute;
   bottom: var(--space-2);
   left: max(var(--space-4), calc((100% - (var(--measure) + var(--space-9))) / 2));
-  width: min(720px, calc(100% - 2 * var(--space-4)));
-  max-height: min(calc(var(--pb-room, 60vh) - var(--space-4)), 640px);
+  width: min(var(--measure) + var(--space-9), 100% - 2 * var(--space-4));
+  container: pb-layer / inline-size;
+}
+/* Focus shows the conversation alone: no message box, so nothing floats above one. */
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .pb-float { display: none; }
+
+/* ---- The strip: the chat's one run, closed (a chat runs one playbook at most). ---- */
+.pb-strips {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.pb-strips:empty { display: none; }
+/* Under an open card the strips keep their box (the conversation doesn't move) and leave the page. */
+.pb-strips[data-covered] { visibility: hidden; }
+.pb-strip {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: calc(var(--tap-min) + var(--space-3));
+  padding: var(--space-1) var(--space-3);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.pb-strip:hover { background: var(--color-sunken); }
+.pb-strip-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+/* The whole strip is the opener's target; the answers beside it sit above that. */
+.pb-strip-open::after { content: ""; position: absolute; inset: 0; border-radius: calc(var(--r-lg) - var(--stroke-thin)); }
+.pb-strip-open:focus { outline: none; }
+.pb-strip-open:focus-visible::after { outline: var(--focus-ring); outline-offset: calc(-1 * var(--focus-width)); }
+.pb-strip-open > .icon { flex: none; color: var(--color-ink-muted); }
+.pb-strip-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.pb-strip-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.pb-strip-head > .chip { flex: none; }
+.pb-strip-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-medium);
+  color: var(--color-ink);
+}
+.pb-strip-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.pb-strip-answers { position: relative; z-index: 1; flex: none; display: flex; gap: var(--space-2); }
+/* The chevron points up, at where the card opens. It takes no press of its own: the strip's does. */
+.pb-strip-chevron { flex: none; pointer-events: none; color: var(--color-ink-muted); transform: rotate(-90deg); transition: color var(--dur-fast) var(--ease-standard); }
+.pb-strip:hover .pb-strip-chevron { color: var(--color-ink); }
+/* A narrow column: the strip only opens the card, whose own buttons are in the thumb's reach. */
+@container pb-layer (max-width: 519px) {
+  .pb-strip-answers { display: none; }
+}
+
+/* The conversation's end leaves the strips their room, so its last row is never under them, and
+   the chat's floating controls sit above them (--pb-lift, set by PlaybookFloat: the strips' height
+   and the gap over them). A Lookbook card's pinned bar stops above them too. */
+.transcript-wrap[data-pb-strip] .transcript-inner::after { content: ""; display: block; height: var(--pb-lift); }
+.transcript-wrap[data-pb-strip] > :is(.jump-latest, .chat-wait-note, .focus-toggle) { translate: 0 calc(-1 * var(--pb-lift)); }
+.transcript-wrap[data-pb-strip][data-design-pinned] > :is(.jump-latest, .chat-wait-note, .focus-toggle) { translate: 0 calc(-1 * (var(--pb-lift) + var(--design-pinned-h, 0px))); }
+.transcript-wrap[data-pb-strip] .design-card-foot { bottom: var(--pb-lift); }
+
+/* ---- The open card: it rises from the strips' place, at their width, over the conversation's
+   end, and never moves it. ---- */
+.pb-card {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  max-height: min(calc(var(--pb-room, 60vh) - var(--space-6)), 640px);
   display: flex;
   flex-direction: column;
   background: var(--color-surface);
   box-shadow: var(--shadow-2);
   overflow: hidden;
   container: pb-card / inline-size;
+  animation: pb-rise var(--dur-base) var(--ease-standard);
 }
+@keyframes pb-rise { from { opacity: 0; transform: translateY(var(--space-2)); } }
 .pb-card[hidden] { display: none; }
 .pb-card:focus { outline: none; }
 .pb-card:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-/* Phone width: a sheet from the message box's top edge, the full width. */
-@container pb-float (max-width: 560px) {
-  .pb-card {
-    left: 0;
-    bottom: 0;
-    width: 100%;
-    max-height: calc(var(--pb-room, 60vh) - var(--space-3));
-    border-radius: var(--r-xl) var(--r-xl) 0 0;
-    border-bottom: 0;
-  }
-}
 
+/* The head: the eyebrow over the name and its state, Minimize at the end of both lines. */
 .pb-head {
   flex: none;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content;
+  grid-template-areas: "eyebrow eyebrow min" "title chip min";
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  column-gap: var(--space-2);
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
   border-bottom: var(--stroke-thin) solid var(--color-border);
 }
-.pb-head-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-.pb-head > .chip { flex: none; }
-.pb-min { flex: none; }
+.pb-head > .chip { grid-area: chip; justify-self: start; }
+.pb-min { grid-area: min; }
 .pb-eyebrow {
+  grid-area: eyebrow;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -105,6 +140,7 @@
   font-weight: var(--fw-semibold);
 }
 .pb-title {
+  grid-area: title;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -124,9 +160,18 @@
   padding: var(--space-3) var(--space-4);
 }
 .pb-body > * { flex: none; }
-.pb-summary, .pb-record, .pb-how { margin: 0; }
-.pb-record { color: var(--color-ink-2); }
-.pb-now { margin: 0; font-weight: var(--fw-medium); }
+.pb-summary, .pb-how { margin: 0; }
+/* A started run: how its chat stands now, and under it when and where it started. */
+.pb-now {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-md);
+  background: var(--color-sunken);
+}
+.pb-now-line { margin: 0; font-weight: var(--fw-medium); }
+.pb-record { margin: 0; color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
 
 .pb-section { display: flex; flex-direction: column; }
 .pb-section-label {
@@ -143,15 +188,15 @@
 .pb-row {
   display: grid;
   grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr) minmax(0, max-content) max-content;
-  align-items: center;
+  /* By the first line: a long value never leaves its label hanging beside its middle. */
+  align-items: first baseline;
   gap: var(--space-1) var(--space-3);
-  padding: var(--space-1) 0;
-  min-height: var(--tap-min);
+  padding: var(--space-2) 0;
   border-top: var(--stroke-thin) solid var(--color-border);
 }
 .pb-row-label { font-weight: var(--fw-medium); display: flex; flex-direction: column; }
 .pb-row-value { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
-.pb-row-origin { color: var(--color-ink-muted); font-size: var(--fs-caption); }
+.pb-row-origin { color: var(--color-ink-muted); font-size: var(--fs-caption); text-align: end; }
 .pb-row-help { color: var(--color-ink-muted); font-size: var(--fs-caption); font-weight: var(--fw-regular); }
 .pb-row[data-empty] .pb-row-origin { color: var(--status-warn); font-weight: var(--fw-medium); }
 .pb-row-standing .pb-row-label { font-weight: var(--fw-regular); color: var(--color-ink-2); padding-left: var(--space-3); }
@@ -259,7 +304,10 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
 }
+/* On the foot's own fill a quiet button's hover is the card's surface. */
+.pb-foot .button-ghost:hover:not(:disabled) { background: var(--color-surface); }
 .pb-foot-hint { flex: 1 1 12rem; min-width: 0; color: var(--color-ink-muted); font-size: var(--fs-caption); }
 .pb-close { margin-left: auto; }
 
@@ -271,6 +319,7 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
   .pb-row { grid-template-columns: minmax(0, 1fr) max-content; }
   .pb-row-label { grid-column: 1 / -1; }
   .pb-row-value { grid-column: 1 / -1; }
+  .pb-row-origin { text-align: start; }
   .pb-step { grid-template-columns: 1.5rem minmax(0, 1fr); }
   .pb-step-stop { grid-column: 2; }
   .pb-cycle { padding-left: 0; }

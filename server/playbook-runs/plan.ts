@@ -128,9 +128,9 @@ export function resolveRole(role: PlaybookMember, edits: PlaybookCardEdits, env:
 
 // ── the view ───────────────────────────────────────────────────────────────────────────────────
 
-function choiceView(input: PlaybookInput, r: Pick<PlaybookRunRecord, "initial" | "edits">, edits: PlaybookCardEdits): PlaybookChoiceView {
+function choiceView(input: PlaybookInput, r: Pick<PlaybookRunRecord, "initial" | "edits" | "chatSet">, edits: PlaybookCardEdits): PlaybookChoiceView {
   const value = valueOf(edits, input);
-  const origin = r.edits.choices && input.id in r.edits.choices ? "you" : (r.initial.origins[input.id] ?? "default");
+  const origin = r.edits.choices && input.id in r.edits.choices ? (r.chatSet?.includes(input.id) ? "chat" : "you") : (r.initial.origins[input.id] ?? "default");
   return {
     id: input.id,
     label: input.label,

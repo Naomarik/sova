@@ -115,7 +115,7 @@ describe("a playbook that requires an alignment first", () => {
     assert.deepEqual(drawn.choices.map((c) => [c.id, c.value, c.origin]), [["failure", "It drops the last line.", "alignment"], ["measures", ["lines read", "tokens used"], "alignment"], ["level", "lo", "default"]]);
     assert.equal(drawn.startBlocked, null);
     assert.ok(drawn.anchor!.at > v.anchor!.at && drawn.anchor!.after === undefined, "drawn where the chat is now, not where /name was typed");
-    assert.equal(await playbookCardNote(s.id), null);
+    assert.ok((await playbookCardNote(s.id))!.includes("has every choice worked out with you filled now"));
   });
 
   test("a dropped alignment draws the card with those choices empty, for the chat to work out", async () => {

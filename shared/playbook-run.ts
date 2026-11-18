@@ -6,7 +6,7 @@
  */
 
 /** Where a choice's value came from, as the card labels it. */
-export type PlaybookChoiceOrigin = "default" | "last" | "standing" | "message" | "looked-up" | "alignment" | "you";
+export type PlaybookChoiceOrigin = "default" | "last" | "standing" | "message" | "looked-up" | "alignment" | "chat" | "you";
 
 export const PLAYBOOK_CHOICE_ORIGIN_WORDS: Record<PlaybookChoiceOrigin, string> = {
   default: "Default",
@@ -15,6 +15,7 @@ export const PLAYBOOK_CHOICE_ORIGIN_WORDS: Record<PlaybookChoiceOrigin, string> 
   message: "From your message",
   "looked-up": "Looked up",
   alignment: "From your alignment",
+  chat: "From the chat",
   /** A value set on the card says nothing of where it came from (a chat-worked one reads "From the chat" on the page). */
   you: "",
 };

@@ -166,7 +166,11 @@ describe("a playbook card", () => {
     assert.equal(store.runById(v.id)!.revision, v.revision);
     const choices = await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { topic: "from the chat" } } }));
     assert.equal(choices.status, 200);
-    assert.equal(((await choices.json()) as PlaybookRunView).revision, v.revision + 1);
+    const byChat = (await choices.json()) as PlaybookRunView;
+    assert.equal(byChat.revision, v.revision + 1);
+    assert.equal(byChat.choices.find((x) => x.id === "topic")!.origin, "chat", "an ordinary choice the chat set reads From the chat");
+    const mine = (await (await asPage(`/api/playbook-runs/${v.id}`, patch({ revision: byChat.revision, edits: { choices: { topic: "mine" } } }))).json()) as PlaybookRunView;
+    assert.equal(mine.choices.find((x) => x.id === "topic")!.origin, "you", "the person's own value says nothing");
   });
 
   test("the chat's cards list it, its news reaches the chat, and a closed draft leaves the list", async () => {
@@ -366,6 +370,7 @@ describe("a choice worked out with the chat", () => {
     assert.equal(filled.status, 200);
     const after = (await filled.json()) as PlaybookRunView;
     assert.equal(after.choices.find((x) => x.id === "failure")!.value, "The read tool loses the last line.");
+    assert.deepEqual(after.choices.map((x) => [x.id, x.origin]), [["failure", "chat"], ["level", "you"]], "the chat's value reads From the chat; the person's own says nothing");
     assert.equal(after.startBlocked, null);
   });
 
@@ -381,7 +386,9 @@ describe("a choice worked out with the chat", () => {
     assert.ok(note.includes(`run playbook.run.edit --run ${v.id} --json '{"revision": <its revision>, "edits": {"choices": {"<choice id>": <value>}}}'`), note);
     assert.ok(!note.includes("[level]"), "only the choices the chat works out");
     await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { failure: "x" } } }));
-    assert.equal(await playbookCardNote(c.id), null, "filled: nothing waits on the chat");
+    assert.equal(await playbookCardNote(c.id), `The card of the playbook "Chatty" (run ${v.id}) has every choice worked out with you filled now; the person checks the rest and presses Start.`, "filled: said once, so the earlier note doesn't stand");
+    await asPage(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
+    assert.equal(await playbookCardNote(c.id), null, "closed: nothing");
   });
 
   test("a card stands at the newest point it was opened or filled by the chat; the page's own edit doesn't move it; a card replacing it takes its own", async () => {

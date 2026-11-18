@@ -264,6 +264,11 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     changeRun(r.id, (x) => {
       x.edits = mergeEdits(x.edits, edits);
       x.revision++;
+      // Who set each choice last: a chat's value reads From the chat, the person's own says nothing.
+      const set = new Set(x.chatSet ?? []);
+      for (const id of Object.keys(edits.choices ?? {})) notPage(c) ? set.add(id) : set.delete(id);
+      if (set.size) x.chatSet = [...set];
+      else delete x.chatSet;
       if (moves) x.anchor = { at: new Date().toISOString() };
       delete x.startError;
     });

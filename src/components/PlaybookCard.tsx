@@ -57,6 +57,7 @@ import { providerName } from "../lib/cost-history";
 import { announce, toast } from "../lib/ui-state";
 import { jumpToEntry } from "../lib/jump";
 import { watchPinnedBar } from "../lib/pinned-bar";
+import { cardLander, type CardLander, type LandingHost } from "../lib/card-lander";
 import { Markdown } from "./Markdown";
 import { ModelPickButton } from "./ModelPickButton";
 import { FromChat } from "./PlaybookFromChat";
@@ -105,6 +106,32 @@ const INLINE_ATTR = "data-pb-inline";
 const INLINE_GAP = 8;
 /** How long a chat that opens on its card keeps landing on it while what stands above settles. */
 const LAND_SETTLE_MS = 3000;
+/** What the reader does to a chat's view that makes it theirs: a wheel, a touch, a press, a key. */
+const READER_INPUT = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+/** Each chat view's lander, by its transcript's box, from the chat's opening to its closing. */
+const landers = new WeakMap<HTMLElement, CardLander>();
+/** The page's side of a chat's lander: the reader's input on the view, the conversation's content changing size, a timer. */
+function landingHost(wrap: HTMLElement): LandingHost {
+  return {
+    onInput(cb) {
+      for (const type of READER_INPUT) wrap.addEventListener(type, cb, { passive: true });
+      return () => {
+        for (const type of READER_INPUT) wrap.removeEventListener(type, cb);
+      };
+    },
+    onSettle(cb) {
+      const inner = wrap.querySelector<HTMLElement>(".transcript-inner");
+      if (!inner || typeof ResizeObserver === "undefined") return () => {};
+      const ro = new ResizeObserver(cb);
+      ro.observe(inner);
+      return () => ro.disconnect();
+    },
+    later(ms, cb) {
+      const t = setTimeout(cb, ms);
+      return () => clearTimeout(t);
+    },
+  };
+}
 /** Scrolls the conversation to a card standing in it: from its top when it is taller than the view,
     else wholly into view (lib/playbook-card `cardLanding`). */
 function landOnCard(el: HTMLElement): void {
@@ -335,6 +362,16 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
   });
   onMount(() => {
     const wrap = anchor.previousElementSibling as HTMLElement | null;
+    if (wrap) {
+      // From the chat's opening: a card drawn later lands the view on it only if the reader hasn't
+      // taken the view meanwhile.
+      const lander = cardLander(landingHost(wrap), LAND_SETTLE_MS);
+      landers.set(wrap, lander);
+      onCleanup(() => {
+        lander.close();
+        landers.delete(wrap);
+      });
+    }
     if (!wrap || typeof ResizeObserver === "undefined") return;
     // The card may cover the conversation and no more (never the chat's header): the anchor has no
     // height of its own, so the room is the conversation's own height, measured as it changes (the
@@ -603,25 +640,23 @@ export function PlaybookCard(props: {
   });
   onMount(() => {
     if (!props.inline || !props.land) return;
-    // The chat's opening lines above the card are still being read in as it opens (what the chat
-    // loads, its repository), and each pushes the card down: the view lands again as they settle,
-    // until the reader takes the view themselves.
-    const view = card.closest<HTMLElement>(".transcript");
-    const above = card.closest<HTMLElement>(".transcript-inner");
-    const land = () => card.isConnected && landOnCard(card);
-    const frame = requestAnimationFrame(land);
-    const settling = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(land);
-    if (above) settling?.observe(above);
-    const theirs = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
-    const stop = () => {
-      settling?.disconnect();
-      clearTimeout(timeout);
-      cancelAnimationFrame(frame);
-      for (const type of theirs) view?.removeEventListener(type, stop);
+    // The view goes to the card as it is drawn and while the opening lines above it settle, unless
+    // the reader has taken the view since the chat opened (lib/card-lander; the chat's lander is
+    // made by PlaybookFloat, which is there from the chat's opening).
+    const wrap = card.closest<HTMLElement>(".transcript-wrap");
+    if (!wrap) return;
+    let stop: (() => void) | undefined;
+    let gone = false;
+    const begin = () => {
+      if (!gone) stop = landers.get(wrap)?.drawn(() => card.isConnected && landOnCard(card));
     };
-    for (const type of theirs) view?.addEventListener(type, stop, { passive: true });
-    const timeout = setTimeout(stop, LAND_SETTLE_MS);
-    onCleanup(stop);
+    // A card drawn in the same pass as the chat's view is mounted before the lander is made.
+    if (landers.has(wrap)) begin();
+    else requestAnimationFrame(begin);
+    onCleanup(() => {
+      gone = true;
+      stop?.();
+    });
   });
   const errorLine = () => saveError() ?? run().startError ?? run().error ?? null;
   const setupHint = () => footHint(startWhy() ?? done() ?? (changing() ? "Saving your changes…" : `Revision ${run().revision}. Start runs exactly this card.`), errorLine());

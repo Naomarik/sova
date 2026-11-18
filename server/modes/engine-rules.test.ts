@@ -9,7 +9,8 @@ import { renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 
-const { agentDir, fakePi, flush } = await import("./tests/engine-host.fixture");
+const { agentDir, fakePi, flush, inSova } = await import("./tests/engine-host.fixture");
+const { REPLY_SHAPE_INSTRUCTIONS } = await import("../../pi-config/extensions/mode/prompt.ts");
 type Entry = import("./tests/engine-host.fixture").Entry;
 const { MODE_STATE_EVENT } = await import("../../pi-config/extensions/mode/state.ts");
 
@@ -171,7 +172,7 @@ test("typed: /mode completions include the minor modes; /align on|off is the min
   assert.ok(!p.activeTools().includes("align"), "/align off removes the tool");
 });
 
-test("prompt: a host with sections gets the block in the mode section and nothing else; normal deletes it; a host with none gets the whole prompt appended", async () => {
+test("prompt: a host with sections gets the block in the mode section and nothing else; normal keeps the reply shape alone; a host with none gets the whole prompt appended", async () => {
   const p = fakePi([]);
   await p.start();
   await p.mode("delegate");
@@ -180,15 +181,49 @@ test("prompt: a host with sections gets the block in the mode section and nothin
   assert.equal(await p.fire("before_agent_start", host()), undefined, "a sections host gets no systemPrompt return");
   assert.match(sections.mode ?? "", /# Mode: delegate/);
   assert.deepEqual(Object.keys(sections), ["preamble", "mode"], "no other section is touched");
+  assert.ok(sections.mode!.endsWith(`\n\n${REPLY_SHAPE_INSTRUCTIONS}`), "the reply shape last, after the delegate block");
   await p.mode("normal");
   await p.fire("before_agent_start", host());
-  assert.deepEqual(sections, { preamble: "base" }, "normal mode deletes the section");
+  assert.deepEqual(sections, { preamble: "base", mode: REPLY_SHAPE_INSTRUCTIONS }, "normal mode with nothing on keeps the reply shape alone");
 
   const q = fakePi([]);
   await q.start();
-  assert.equal(await q.turn(), undefined, "normal mode appends nothing");
+  assert.equal(await q.turn(), `base\n\n${REPLY_SHAPE_INSTRUCTIONS}`, "normal mode appends the reply shape alone");
   await q.mode("delegate");
   assert.match((await q.turn()) ?? "", /^base\n\n# Mode: delegate/, "a host with no sections gets the appended prompt");
+});
+
+test("reply shape (§chat.mode-menu/reply-shape): a main chat's mode section carries it exactly once in every mode; a worker's never", async () => {
+  const count = (text: string | undefined) => (text ?? "").split(REPLY_SHAPE_INSTRUCTIONS).length - 1;
+  const p = fakePi([]);
+  await p.start();
+  for (const mode of ["normal", "delegate", "create"]) {
+    await inSova(async () => p.mode(mode));
+    for (const minors of [[], ["align"], ["spec"], ["align", "spec"]]) {
+      for (const minor of ["align", "spec"]) await inSova(async () => p.mode(`${minor} ${minors.includes(minor) ? "on" : "off"}`));
+      await p.compact(); // a new head, so the section holds the minors now on
+      const section = await p.prompt();
+      assert.equal(count(section), 1, `${mode}+${minors.join(",")}: once`);
+      assert.equal(/# Mode: delegate/.test(section!), mode !== "normal", `${mode}: its major block is there`);
+      assert.equal(/# Minor mode: align/.test(section!), minors.includes("align"), `${mode}+${minors.join(",")}: align's block follows the toggle`);
+      assert.ok(section!.endsWith(REPLY_SHAPE_INSTRUCTIONS), `${mode}+${minors.join(",")}: last`);
+    }
+  }
+  const w = fakePi([], { worker: true });
+  await w.start();
+  await w.mode("spec on");
+  const worker = await w.prompt();
+  assert.match(worker ?? "", /# Minor mode: spec/, "the worker's modes reach it");
+  assert.equal(count(worker), 0, "a worker never carries the reply shape");
+  assert.doesNotMatch(worker ?? "", /# Replies/);
+  // The merge queue's own chats: Sova launches them with the flag, and their section is their mode blocks alone.
+  const queue = fakePi([], { flags: { "reply-shape-off": true as never } });
+  await queue.start();
+  assert.equal(await queue.prompt(), undefined, "Normal with nothing on: no section at all");
+  await inSova(async () => queue.mode("delegate"));
+  const queueSection = await queue.prompt();
+  assert.match(queueSection ?? "", /# Mode: delegate/);
+  assert.equal(count(queueSection), 0, "its blocks, never the reply shape");
 });
 
 // ── Re-read at each turn boundary ───────────────────────────────────────────────────────────────
@@ -201,7 +236,7 @@ test("Delegate routing: an edit reaches an already-Delegate session at its next 
   writeSetting("mode-delegate.json", { ...ROUTING, profiles: { ...ROUTING.profiles, routine: { primary: { backend: "pi", model: "zai/glm-5.3", effort: "high" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "low" } } } });
   assert.match((await p.turn()) ?? "", /- Routine implementation .* → backend "pi", model "zai\/glm-5.3", effort "high"; fallback backend "claude-code", model "claude-opus-5-5", effort "low"\./, "re-read at the turn boundary");
   await p.mode("normal");
-  assert.equal(await p.turn(), undefined, "normal mode is unaffected by the routing");
+  assert.equal(await p.turn(), `base\n\n${REPLY_SHAPE_INSTRUCTIONS}`, "normal mode is unaffected by the routing: the reply shape alone");
 });
 
 test("Delegate routing: the subagent policy is re-read per turn; a denied primary goes to its fallback, disclosed; a denied backend asks", async () => {

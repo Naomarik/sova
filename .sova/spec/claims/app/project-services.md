@@ -879,6 +879,21 @@ are not affected: their verbs follow the ordinary rules. When slot 0 adopts a un
 only on your own page, or a page on another of your computers with its proof, whatever the `confirm`
 (§app.access/your-click): anything else answers `forbidden`, in the refusal of §design.copy-deck/your-click.
 
+## §app.project-services/test-copy-packages — A test copy of Sova runs its branch's packages
+
+On Sova's own project (§app.project-services/self-host), a test copy (a branch's running copy from
+`create` or `up`, §app.project-services/create) runs the packages its branch lists. Its setup copies
+the main checkout's installed packages, then makes them match the branch's package list. That step
+runs again whenever the branch changes its packages or how they install (`package.json`,
+`pnpm-lock.yaml`, `pnpm-workspace.yaml`) or either script that copies and matches them
+(`scripts/copy-tree.mjs`, `scripts/copy-node-modules.mjs`), so a refreshed copy is never left on
+master's packages. The main checkout's own installed packages are never changed by it. When this
+computer lacks a package the branch needs, the test copy's setup downloads it. A landing copy (the
+merge queue's, whose steps all run with `SOVA_VERB=merge`, §app.merge-queue/run) skips that match:
+the Land's own offline install stays the one place a Land installs packages, and a package this
+computer never downloaded still stops the Land, asking you to install it once
+(§app.merge-queue/blame).
+
 ## §app.project-services/adopt — Slot 0 adopts a unit Sova did not start
 
 A `cmd` checkout service may say `adopt: {unit, ports}`: in slot 0 (the main checkout) it is not

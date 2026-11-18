@@ -34,6 +34,7 @@ const pa = await import("./project-assistant");
 const store = await import("./project-assistant-store");
 const tools = await import("./project-assistant-tools");
 const { OFFERS_NOTE } = await import("./project-assistant-loadout");
+const { REPLY_SHAPE_INSTRUCTIONS } = await import("../pi-config/extensions/mode/prompt.ts");
 const poStore = await import("./project-overseer-store");
 const { ownerAttention } = await import("./owner-attention");
 const { createShareApp } = await import("./share/routes");
@@ -107,6 +108,9 @@ describe("the Project Assistant", () => {
     assert.match(prompt, /Archery website/);
     for (const m of Object.values(MARK)) assert.ok(!prompt.includes(m), `the prompt never carries ${m}`);
     assert.ok(!prompt.includes("Mamluk Arabia"), "nor the org's name");
+    // It speaks to a non-technical owner under its own contract: never the reply shape the operator's chats have
+    // (§chat.mode-menu/reply-shape), and it runs no modes to bring it.
+    assert.ok(!prompt.includes(JSON.stringify(REPLY_SHAPE_INSTRUCTIONS).slice(1, -1)) && !prompt.includes("# Replies"), "no reply shape in its prompt");
 
     const reqs = store.orgRequests(org.id);
     assert.deepEqual(reqs.map((x) => [x.kind, x.title, x.status]), [["outage", "The site doesn't open", "with-team"]]);

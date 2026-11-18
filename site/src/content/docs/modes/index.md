@@ -31,6 +31,21 @@ ever on until you turn it on. See [Project modes](/docs/modes/project-modes/).
 Both kinds are **per chat**. Each chat keeps its own modes, saved in that chat's session file, so
 they survive a reload or a server restart. Switching one chat never moves another chat.
 
+## How replies read
+
+Whatever its modes, every chat you talk to (the Overseer and a project's overseer included) opens
+each reply with a short, scannable summary: the answer, what changed, what needs you, and any
+warnings or things the agent didn't check. A quick question gets its answer in a line or two and
+nothing more: no list of details, no line on where it looked. Anything bigger gets the full report
+after the summary: the findings with their evidence, as a list or table when there are several,
+ending with a line on where it looked. Nothing
+in a reply is folded away. Where a mode sets its own shape, that shape wins: a reply that opens an
+[alignment](/docs/modes/align/) is a sentence or two naming the card. Workers report to the chat
+that started them, so their reports keep their own shape, and so do the chats that talk to the people
+you work with (a project's assistant and a hand-off), which keep their plain, non-technical answers.
+Sova's own working chats (the merge thread, its reviewers and the release thread) talk to Sova rather
+than to you, so they keep their own format too; a playbook's run chat follows the playbook's report where it sets one.
+
 ## Switch in the web app
 
 The mode switch sits at the right end of the composer foot, after the model. It shows the chat's

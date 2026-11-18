@@ -8,8 +8,11 @@ read them.
 ## What it declares, and why each part is there
 
 **Services** (kept, never changed by a pipeline change): three `setup` steps (`mise-trust`;
-`node-modules`, which copies the main checkout's `node_modules` with `scripts/copy-tree.mjs`, keyed on
-`pnpm-lock.yaml`; `agent-dir`, the copy's own hermetic `.agent`), and one service, `server`
+`node-modules`, `scripts/copy-node-modules.mjs`: one step that copies the main checkout's `node_modules`
+with `scripts/copy-tree.mjs`, then runs `pnpm install --frozen-lockfile` in the copy so a test copy
+runs its branch's packages (downloading what the shared store lacks), keyed on `pnpm-lock.yaml`,
+`pnpm-workspace.yaml`, `package.json` and both scripts; in the merge queue's landing copy
+(`SOVA_VERB=merge`) it skips that install, leaving `merge.install` the one place a Land installs; `agent-dir`, the copy's own hermetic `.agent`), and one service, `server`
 (`pnpm run dev:hermetic`, port base 4810 stride 10, ready on `/api/health`). Its slot 0 **adopts**
 `sova-runtime.service`: the live server, which Sova only reads; `up`, `down`, `reset` and `teardown`
 of slot 0 are refused, and you never restart it. `test` is `node scripts/run-tests.mjs` with the

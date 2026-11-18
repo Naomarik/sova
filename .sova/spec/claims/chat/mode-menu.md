@@ -5,7 +5,8 @@ The mode menu is the control in a chat's composer foot that switches that chat's
 modes, switches its profile's Models part, and makes its profile the default for new chats.
 
 Owns: the trigger and the menu, how a switch reaches one chat, the mode prompt holding across turn
-starters and minor toggles, which minor modes reach workers, who runs a chat's modes, your personal
+starters and minor toggles, which minor modes reach workers, the reply shape every chat's prompt
+carries, who runs a chat's modes, your personal
 modes and the mode commands typed in a chat. Not here: the profiles and their
 routing (§chat/subagent-profiles, §app/settings-dialog), what align does (§chat/alignment), and the
 Overseer's Quick Actions in this slot (§app.overseer/quick-actions).
@@ -498,6 +499,54 @@ worker prompt on the extension bus (`mode:worker`), the way the sandbox publishe
 (§chat.sandbox/workers), and the subagents extension appends that text at spawn without
 interpreting it. A parent with no modes publishes nothing, and its workers get nothing.
 
+## §chat.mode-menu/reply-shape — Every chat's reply: a short summary, then the full report
+
+Every chat a person talks to carries one paragraph on how its replies are shaped: every main chat,
+whatever its major mode (Normal, Delegate or Create) and whichever minor modes are on, none
+included, on any provider (Claude Code too), a chat running a playbook (§chat/playbooks) and an
+automation's session (§chat/schedules) among them, and the Overseer (§app/overseer), each at the end of
+its mode section; and each Project Overseer (§app/project-overseer), which runs no modes, in its own prompt, right
+after its rules and before the organization's sections and the operator's extra instructions. It asks for:
+
+- **A short scannable summary first**: the answer, what changed, what needs the user, and any
+  warnings or things the agent did not check. Those always sit in the summary.
+- **A quick question ends there**: its answer in a line or two and nothing more, with no details
+  list and no line on where the agent looked.
+- **Anything bigger gets the full report after the summary**: the findings with their evidence,
+  as a list or a table when there are several, and one closing line on where the agent looked.
+
+Nothing in a reply is folded or set apart to be skipped: the paragraph sets no word count and no
+number of lines, and asks for no `### Working notes` section (§chat.markdown/working-notes). It
+was measured against the previous wording on DeepSeek V4.1 Flash before it was adopted. Its words, as the prompt carries them:
+
+```text
+# Replies
+
+Open every reply with a short, scannable summary: the answer, what changed, what needs the user, and any warnings or things you did not check. A quick question gets its answer in a line or two and nothing more: no details list, no where-you-looked line. For anything bigger, follow the summary with the full report: the findings with their evidence, as a list or table when there are several, and one closing line on where you looked. When another instruction sets a reply's shape, such as the sentence or two that names a new alignment, follow it instead.
+```
+
+- **Never workers or hidden helpers.** No worker gets it, a team member included
+  (§chat.mode-menu/workers), so their reports to the agent that started them are unchanged; nor
+  does a hidden helper chat (a summarizer, a title writer, the merge thread's internal helpers).
+- **Another instruction that sets a reply's shape wins.** With align on, a reply that records an
+  alignment is a sentence or two naming the card (§chat.alignment/reply); where the Overseer's or a
+  Project Overseer's own reply contract sets a different shape (the Overseer's "Short." and its
+  grouped attention list refine it), that contract holds; so does a playbook's own report shape in
+  a chat running it. Every other reply takes this shape.
+- **Never the Project Assistant or a baton session.** The rule is one rule in one form for the
+  user's own chats. Chats that speak to people who are not technical keep their own plain-language
+  contracts: the Project Assistant (§app/project-assistant), which talks to a project's owner, and a
+  baton session (§app/baton), which talks to outsiders one decision at a time. Neither gets the
+  paragraph, since its full report with evidence would push technical detail at them.
+- **Never the merge thread, a merge review or a release's chat.** The merge thread
+  (§chat.merge-queue/thread) is Sova's machine-facing landing chat, with its own tuned playbook
+  format, and its questions reach the user through the merge card; a release's chat (§app/release)
+  is machine-facing the same way; a merge review's chat (§app.merge-queue/review) reports to the
+  queue. Sova starts each with the reply shape off, so its mode section holds only its mode
+  blocks, and none at all with no mode on. None gets the paragraph.
+- **The same in every mode.** Turning a mode on or off, or switching the major mode, never changes
+  or drops the paragraph.
+
 ## §chat.mode-menu/project-modes — A project's own minor modes
 
 A project can ship minor modes of its own in `.sova/minor-modes/<id>/`. A chat working in that
@@ -899,7 +948,9 @@ Sova's copy of it never loads in a Sova chat or its workers.
   (§chat.worktrees/worktree-config) runs Sova's modes, whether or not the pi folder still links an
   older Sova's `mode` extension, and whether the pi folder's settings switch it off: in Sova, the mode menu turns modes on and off, never pi's settings. A session whose
   loadout loads no extensions (a hidden or special session) has no modes, as before.
-- **Exactly once.** The mode section appears exactly once in the prompt of a chat with a mode on,
+- **Exactly once.** The mode section appears exactly once in every main chat's prompt and the
+  Overseer's, with or without a mode on (it carries the reply shape, §chat.mode-menu/reply-shape;
+  the merge thread, a merge review and a release's chat have one only with a mode on),
   and in the prompt of each worker its modes reach.
 - **The warm-up too.** A chat process and the server each open one throwaway session at their start
   to make Claude Code's models available. It runs Sova's modes as well, so no copy of the pi mode

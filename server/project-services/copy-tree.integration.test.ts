@@ -65,3 +65,36 @@ test("scripts/copy-tree.mjs leaves the destination as it was when the copy fails
   assert.equal(existsSync(join(dst, "no-such-src")), false);
   assert.deepEqual(readdirSync(tmp).filter((f) => f.startsWith("dst4.")), [], "no temporary sibling left behind");
 });
+
+// Sova's own setup step `node-modules`, with the real pnpm on a tiny project whose one package is a local folder
+// (nothing downloaded): the main checkout installed pkg 1.0.0, the copy's lockfile names 2.0.0.
+const nmScript = join(import.meta.dirname, "..", "..", "scripts", "copy-node-modules.mjs");
+
+test("scripts/copy-node-modules.mjs: the copy's packages end at its own lockfile's versions, the main checkout's unchanged; a landing copy keeps the copy", () => {
+  const pkg = (dir: string, version: string) => {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "pkg", version }));
+  };
+  const project = (dir: string, v: 1 | 2) => {
+    pkg(join(dir, "vendor", "pkg-1"), "1.0.0");
+    pkg(join(dir, "vendor", "pkg-2"), "2.0.0");
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ name: `p${v}`, private: true, dependencies: { pkg: `file:./vendor/pkg-${v}` } }));
+  };
+  const pnpm = (cwd: string, args: string[]) => execFileSync("pnpm", args, { cwd, stdio: "pipe" });
+  const versionIn = (nm: string) => JSON.parse(readFileSync(join(nm, "pkg", "package.json"), "utf8")).version;
+  const main = join(tmp, "nm-main");
+  project(main, 1);
+  pnpm(main, ["install", "--offline"]);
+  // The main checkout's own stray link back into itself.
+  symlinkSync(join(main, "node_modules"), join(main, "node_modules", "node_modules"));
+  for (const [verb, want] of [["up", "2.0.0"], ["merge", "1.0.0"]] as const) {
+    const copy = join(tmp, `nm-copy-${verb}`);
+    project(copy, 2);
+    pnpm(copy, ["install", "--lockfile-only", "--offline"]);
+    execFileSync(process.execPath, [nmScript, join(main, "node_modules"), "node_modules"], { cwd: copy, stdio: "pipe", env: { ...process.env, SOVA_VERB: verb } });
+    assert.equal(versionIn(join(copy, "node_modules")), want, `SOVA_VERB=${verb}`);
+    assert.equal(existsSync(join(copy, "node_modules", "node_modules")), false, "the copy drops the link into the main checkout");
+    assert.equal(versionIn(join(main, "node_modules")), "1.0.0");
+    assert.equal(readlinkSync(join(main, "node_modules", "node_modules")), join(main, "node_modules"));
+  }
+});

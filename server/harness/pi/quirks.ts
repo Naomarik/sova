@@ -502,9 +502,9 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P36",
     name: "mcp-http-transport",
     kind: "semantic",
-    relies: "A chat's address server reaches pi-mcp's `StreamableHttpTransport` directly: it takes headers as given, expands nothing, emits a JSON reply before `send` resolves, and rejects a request on a dropped session with `McpSessionExpiredError`. pi builds an auth provider only for a config with a `url` and no Authorization header, and hands it to `createTransport` as its third argument; its `clientSecret` goes through pi's expansion at each refresh, where `$$` and `$!` are literal.",
+    relies: "A chat's address server reaches pi-mcp's `StreamableHttpTransport` directly: it takes headers as given, expands nothing, emits a JSON reply before `send` resolves, and rejects a request on a dropped session with `McpSessionExpiredError`. pi builds an auth provider only for a config with a `url` and no Authorization header, and hands it to `createTransport` as its third argument; its `clientSecret` goes through pi's expansion at each refresh, where `$$` and `$!` are literal. pi's client hands each message a signal that aborts once it no longer waits for the reply; passed on, pi-mcp dispatches nothing after it and rejects with McpAbortError, read by class as a request that never went out.",
     pi: ["StreamableHttpTransport", "McpSessionExpiredError", "McpAuthRequiredError", "McpOAuthAuthorizationRequiredError", "McpAbortError", "McpTransportSendOptions", "McpTransportFactory", "McpExtensionOptions.createTransport"],
-    where: [{ file: "server/harness/pi/mcp-http.ts", symbol: "AddressServer" }, { file: "server/harness/pi/mcp.ts", symbol: "mcpConfigOf" }, { file: "server/harness/pi/mcp.ts", symbol: "piLiteral" }],
+    where: [{ file: "server/harness/pi/mcp-http.ts", symbol: "AddressServer" }, { file: "server/harness/pi/mcp.ts", symbol: "SnapshotTransport.send" }, { file: "server/harness/pi/mcp.ts", symbol: "mcpConfigOf" }, { file: "server/harness/pi/mcp.ts", symbol: "piLiteral" }],
     canary: "P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given, reports a dropped session, and never sends a request given up on while it waited for a token",
     retireWhen: "pi lets a host hand a server its own token source and literal values",
   },
@@ -663,6 +663,20 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     ],
     canary: "P47 no-idle-warming: pi warms on after a run settles by default, and with the getter answering streaming for idle it stops at the settle, off stays off, and settings.json holds no cacheWarming",
     retireWhen: "pi takes a cache-warming mode per session, or Sova decides idle warming with a rule of its own (never for a worker)",
+  },
+  {
+    id: "P48",
+    name: "auth-lock-path",
+    kind: "semantic",
+    relies:
+      "pi writes auth.json under proper-lockfile's `<file>.lock` directory, and which file is pi's own rule: through 1.5.0 (and the terminal's 0.87) the path as given (realpath: false), from 1.5.1 the file it resolves to (proper-lockfile's default realpath, #11655). Login sync writes the same file under the same lock, so it takes the given path's lock and, where auth.json is a link to another file, that file's too, with pi's own proper-lockfile and stale/update times that never steal pi's lock or lose ours.",
+    pi: ["FileAuthStorageBackend.acquireLockSyncWithRetry", "FileAuthStorageBackend.acquireLockAsync", "AuthStorage.modify", "proper-lockfile realpath"],
+    where: [
+      { file: "server/sync/logins-stores.ts", symbol: "PiAuthStore.lockSpecs" },
+      { file: "server/sync/logins-stores.ts", symbol: "lockDirOf" },
+    ],
+    canary: "P48 auth-lock-path: pi locks auth.json on the file it resolves to, so on a linked auth.json its own write waits for the target's lock and not for the link's",
+    retireWhen: "pi exports a credential write under its own lock; the given path's lock goes once no pi through 1.5.0 writes here (every chat reloaded, the terminal on 1.5.1 or later)",
   },
   {
     id: "T1",

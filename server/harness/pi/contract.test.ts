@@ -10,6 +10,7 @@
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
@@ -1445,6 +1446,47 @@ describe("pi contract", () => {
       assert.equal(settingsManager.getCacheWarmingMode(), mode, `cacheWarming ${setting ?? "unset"}`);
       assert.deepEqual(await afterOneTurn(`set-${setting ?? "unset"}`, settingsManager), { state: "inactive", reason, calls: 1, usage: 0 }, `cacheWarming ${setting ?? "unset"}: nothing is scheduled once the run settled, and only the reply was requested`);
       assert.equal(readFileSync(settingsFile, "utf8"), before, "settings.json is untouched");
+    }
+  });
+
+  test("P48 auth-lock-path: pi locks auth.json on the file it resolves to, so on a linked auth.json its own write waits for the target's lock and not for the link's", async () => {
+    // pi's own store class and its own proper-lockfile (neither exported by the package).
+    const { AuthStorage } = await import(pathToFileURL(join(pi.dir, "dist", "core", "auth-storage.js")).href);
+    const lockfile = createRequire(join(pi.dir, "package.json"))("proper-lockfile") as { lock(file: string, o: object): Promise<() => Promise<void>> };
+    let refusals = 0;
+    const lock = lockfile.lock.bind(lockfile);
+    lockfile.lock = async (file, o) => lock(file, o).catch((error: { code?: string }) => {
+      if (error.code === "ELOCKED") refusals++;
+      throw error;
+    });
+    const t = join(dir, "p48");
+    mkdirSync(join(t, "store"), { recursive: true });
+    mkdirSync(join(t, "agent"), { recursive: true });
+    const target = join(t, "store", "shared-auth.json");
+    const link = join(t, "agent", "auth.json");
+    writeFileSync(target, "{}", { mode: 0o600 });
+    symlinkSync(target, link);
+    const storage = AuthStorage.create(link);
+    const key = (k: string) => ({ type: "api_key", key: k });
+    try {
+      // The link's own lock, as pi through 1.5.0 took it: pi 1.5.1+ doesn't wait for it.
+      let release = await lock(link, { realpath: false, stale: 30_000 });
+      await storage.modify("zai", async () => key("one"));
+      assert.deepEqual(JSON.parse(readFileSync(target, "utf8")).zai, key("one"), "written through the link while the link's lock was held");
+      await release();
+      // The target's lock: pi waits for it.
+      release = await lock(target, { realpath: false, stale: 30_000 });
+      const before = refusals;
+      let done = false;
+      const write = storage.modify("zai", async () => key("two")).then(() => (done = true));
+      await until(() => refusals > before, "pi refused the target's lock (fixed?: pi locks auth.json by the path as given again: PiAuthStore.lockSpecs' second lock may go)");
+      assert.equal(done, false, "pi's write waits");
+      assert.deepEqual(JSON.parse(readFileSync(target, "utf8")).zai, key("one"));
+      await release();
+      await write;
+      assert.deepEqual(JSON.parse(readFileSync(target, "utf8")).zai, key("two"));
+    } finally {
+      lockfile.lock = lock;
     }
   });
 

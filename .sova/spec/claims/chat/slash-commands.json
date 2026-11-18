@@ -177,8 +177,18 @@
   },
   "§chat.slash-commands/markup": {
     "kind": "behavior",
-    "authority": "migrated",
-    "evidence": "unreviewed"
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T20:52Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "src/components/SlashMenu.tsx",
+      "src/lib/slash.ts",
+      "src/lib/slash.test.ts"
+    ]
   },
   "§chat.slash-commands/tokens": {
     "kind": "note",
@@ -220,8 +230,15 @@
     "evidence": "unreviewed",
     "code": [
       "src/lib/slash.ts",
-      "src/components/Composer.tsx"
-    ]
+      "src/components/Composer.tsx",
+      "src/components/ChatView.tsx",
+      "src/lib/playbook-card.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T20:52Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    }
   },
   "§chat/slash-commands": {
     "kind": "surface",

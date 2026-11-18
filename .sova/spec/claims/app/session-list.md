@@ -457,16 +457,16 @@ label a person reads says "sessions pane".
 - **Draft rows.** An empty husk — a session whose file holds no user message and no command run
   from shell mode anywhere (§chat.shell-mode/card: a chat holding only commands is listed, as `Untitled`,
   and the empty-husk cleanup keeps it) — is never
-  listed, with two exceptions: **a husk with a stored draft is** (§chat.composer/behavior, Drafts),
-  and so is a husk that carries a profile (§chat.profiles/singleton), as an ordinary `Untitled` row. The server sends it
+  listed, except: **a husk with a stored draft is** (§chat.composer/behavior, Drafts), or showing a
+  playbook's card, previewed `Playbook: {title}` (§chat.playbooks/run-card), and so is a husk that
+  carries a profile (§chat.profiles/singleton), as an ordinary `Untitled` row. The server sends it
   with `SessionSummary.draftPreview`, the draft's first non-empty line cut to about 80 characters.
   A draft holding only images counts too, and its preview is the count: `1 image`, `2 images`.
   The row keeps its `Untitled` title in `--color-ink-muted`. Line 2 leads with the `pencil` icon,
-  then the preview, in place of a "now" line (a husk has no outline, so there is no topic count
-  beside it). The icon is decorative; the word "draft" is in the text, so the row's accessible
-  name and the preview's `title` both say it's a draft: `Draft: {preview}`. That is what keeps a new session you started typing in from vanishing
-  on reload. Send the draft and it becomes an ordinary row; clear it and the husk drops out of the
-  list again.
+  then the preview, in place of a "now" line (a husk has no outline, so no topic
+  count). The icon is decorative; the row's accessible name and the preview's `title` both
+  say `Draft: {preview}`. That keeps a new chat you typed in from vanishing on reload. Send the
+  draft and it becomes an ordinary row; clear it (or close the card) and the husk drops out again.
 
   ```html
   <li class="session-row-shell">

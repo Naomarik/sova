@@ -1,4 +1,82 @@
 {
+  "§chat.playbooks/ab-cycle": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/description-file"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "playbooks/ab-cycle/PLAYBOOK.md",
+      "playbooks/ab-cycle/phases/baseline.md",
+      "playbooks/ab-cycle/phases/bench.md",
+      "playbooks/ab-cycle/phases/confirm.md",
+      "playbooks/ab-cycle/phases/decide.md",
+      "playbooks/ab-cycle/phases/diagnose.md",
+      "playbooks/ab-cycle/phases/fix.md",
+      "playbooks/ab-cycle/phases/measure.md",
+      "playbooks/ab-cycle/phases/review.md",
+      "playbooks/ab-cycle/phases/run.md",
+      "playbooks/ab-cycle/phases/score.md",
+      "playbooks/ab-cycle/phases/stop-rule.md",
+      "playbooks/ab-cycle/playbook.json",
+      "playbooks/ab-cycle/references/arms.md",
+      "playbooks/ab-cycle/references/cost.md",
+      "playbooks/ab-cycle/references/ledger.md",
+      "playbooks/ab-cycle/references/noise.md",
+      "playbooks/ab-cycle/references/roles/bench.md",
+      "playbooks/ab-cycle/references/roles/builder.md",
+      "playbooks/ab-cycle/references/roles/consultant.md",
+      "playbooks/ab-cycle/references/roles/grader.md",
+      "playbooks/ab-cycle/references/roles/questions.md",
+      "playbooks/ab-cycle/references/roles/reviewer.md",
+      "playbooks/ab-cycle/references/roles/runner.md",
+      "playbooks/ab-cycle/scripts/chart.mjs",
+      "playbooks/ab-cycle/scripts/collage.mjs",
+      "playbooks/ab-cycle/scripts/lib.mjs",
+      "playbooks/ab-cycle/scripts/runner.mjs",
+      "playbooks/ab-cycle/scripts/score.mjs",
+      "playbooks/ab-cycle/scripts/shoot.mjs"
+    ]
+  },
+  "§chat.playbooks/align-first": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/description-file",
+      "§chat.playbooks/run-card",
+      "§chat/alignment"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T04:04Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "shared/playbook-format.ts",
+      "shared/playbook-format.test.ts",
+      "playbooks/ab-cycle/playbook.json",
+      "pi-config/extensions/mode/create/playbooks/card.md",
+      "pi-config/extensions/mode/create/playbooks/choices.md",
+      "server/playbook-runs/align-first.ts",
+      "server/playbook-runs/align-first.test.ts",
+      "server/playbook-runs/routes.ts",
+      "server/playbook-runs/plan.ts",
+      "server/playbook-runs/store.ts",
+      "server/playbook-runs/note.ts",
+      "server/playbook-runs/start.ts",
+      "shared/playbook-run.ts",
+      "shared/wake.ts",
+      "shared/wire-areas.json",
+      "server/chat-manager.ts"
+    ]
+  },
   "§chat.playbooks/brandmaker-install-needs-no-registration": {
     "kind": "behavior",
     "authority": "accepted",
@@ -28,10 +106,92 @@
       "§chat.playbooks/what-gets-sent"
     ]
   },
+  "§chat.playbooks/card-setters": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "server/playbook-runs/routes.ts",
+      "server/playbook-runs/routes.test.ts",
+      "shared/commands/other.ts",
+      "shared/commands-ids.json",
+      "server/mesh/access.ts",
+      "server/playbook-runs/note.ts",
+      "server/playbook-runs/plan.ts",
+      "server/playbook-runs/store.ts",
+      "shared/playbook-run.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "src/components/PlaybookCard.tsx",
+      "src/components/PlaybookFromChat.tsx",
+      "src/lib/playbook-card.ts",
+      "src/lib/playbook-from-chat-dom.test.ts"
+    ],
+    "requires": [
+      "§chat.playbooks/run-card",
+      "§app.access/your-click"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T05:21Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    }
+  },
   "§chat.playbooks/classes": {
     "kind": "note",
     "authority": "accepted",
     "evidence": "verified"
+  },
+  "§chat.playbooks/contents-page": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat/create-mode",
+      "§app/commands"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "pi-config/extensions/mode/create/guide.test.ts",
+      "pi-config/extensions/mode/create/guide.ts",
+      "pi-config/extensions/mode/create/playbooks.md",
+      "pi-config/extensions/mode/create/playbooks/card.md",
+      "pi-config/extensions/mode/create/playbooks/cast.md",
+      "pi-config/extensions/mode/create/playbooks/choices.md",
+      "pi-config/extensions/mode/create/playbooks/commands.md",
+      "pi-config/extensions/mode/create/playbooks/repeats.md",
+      "pi-config/extensions/mode/create/playbooks/saving.md",
+      "pi-config/extensions/mode/create/playbooks/steps.md",
+      "pi-config/extensions/mode/create/playbooks/what.md",
+      "server/playbook-runs/message.ts",
+      "server/playbook-runs/contents.ts",
+      "server/playbook-runs/plan.test.ts"
+    ]
+  },
+  "§chat.playbooks/description-file": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/bundles"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "shared/playbook-format.ts",
+      "shared/playbook-format.test.ts",
+      "server/playbooks.ts",
+      "server/playbooks.test.ts",
+      "shared/protocol.ts",
+      "shared/automations.ts",
+      "src/components/PlaybooksDialog.tsx"
+    ]
   },
   "§chat.playbooks/entry-point": {
     "kind": "behavior",
@@ -51,6 +211,93 @@
       "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
     }
   },
+  "§chat.playbooks/flow": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/description-file",
+      "§chat.playbooks/run-card"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-17T19:04Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "shared/playbook-flow.ts",
+      "shared/playbook-flow.test.ts",
+      "server/playbook-runs/plan.ts",
+      "server/playbook-runs/plan.test.ts",
+      "shared/playbook-run.ts",
+      "server/playbook-runs/start.ts",
+      "server/playbook-runs/start.test.ts",
+      "src/components/PlaybookCard.tsx",
+      "src/lib/playbook-card.ts",
+      "src/lib/playbook-card.test.ts"
+    ]
+  },
+  "§chat.playbooks/later": {
+    "kind": "note",
+    "authority": "accepted",
+    "requires": [
+      "§chat.playbooks/run-card",
+      "§chat/schedules"
+    ]
+  },
+  "§chat.playbooks/model-order": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/description-file"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "shared/playbook-models.ts",
+      "shared/playbook-models.test.ts",
+      "server/playbook-runs/env.ts"
+    ]
+  },
+  "§chat.playbooks/pi-upgrade": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/description-file"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      ".sova/playbooks/pi-upgrade/PLAYBOOK.md",
+      ".sova/playbooks/pi-upgrade/phases/after-landing.md",
+      ".sova/playbooks/pi-upgrade/phases/check.md",
+      ".sova/playbooks/pi-upgrade/phases/find.md",
+      ".sova/playbooks/pi-upgrade/phases/plan.md",
+      ".sova/playbooks/pi-upgrade/phases/report.md",
+      ".sova/playbooks/pi-upgrade/phases/research.md",
+      ".sova/playbooks/pi-upgrade/phases/upgrade.md",
+      ".sova/playbooks/pi-upgrade/playbook.json",
+      ".sova/playbooks/pi-upgrade/references/commands.md",
+      ".sova/playbooks/pi-upgrade/references/roles/boundary-keeper.md",
+      ".sova/playbooks/pi-upgrade/references/roles/changelog-reader.md",
+      ".sova/playbooks/pi-upgrade/references/roles/dep-mapper.md",
+      ".sova/playbooks/pi-upgrade/references/roles/implementer.md",
+      ".sova/playbooks/pi-upgrade/references/roles/judge.md",
+      ".sova/playbooks/pi-upgrade/references/roles/scratch-tester.md",
+      ".sova/playbooks/pi-upgrade/references/roles/verifier.md",
+      ".sova/playbooks/pi-upgrade/references/standing-concerns.md",
+      ".sova/playbooks/pi-upgrade/references/stop-and-ask.md",
+      ".sova/playbooks/pi-upgrade/references/worked-example-1.0.3-to-1.5.0.md"
+    ]
+  },
   "§chat.playbooks/rules": {
     "kind": "behavior",
     "authority": "accepted",
@@ -60,6 +307,172 @@
       "src/lib/playbooks.ts",
       "src/components/PlaybooksDialog.tsx",
       "src/components/ChatView.tsx"
+    ]
+  },
+  "§chat.playbooks/run-card": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/description-file",
+      "§chat.playbooks/model-order"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "server/playbook-runs/routes.ts",
+      "server/playbook-runs/routes.test.ts",
+      "server/playbook-runs/plan.ts",
+      "server/playbook-runs/plan.test.ts",
+      "server/playbook-runs/answers.ts",
+      "server/playbook-runs/env.ts",
+      "server/playbook-runs/view.ts",
+      "server/playbook-runs/news.ts",
+      "server/ws.ts",
+      "shared/harness-wire.ts",
+      "shared/playbook-run.ts",
+      "shared/commands/other.ts",
+      "shared/commands-ids.json",
+      "docs/commands.md",
+      "server/commands-fuzz.test.ts",
+      "server/commands-inventory/scan.ts",
+      "server/commands-inventory/baseline.json",
+      "server/create-guide-growth.json",
+      "server/mesh/access.ts",
+      "server/sessions-index.ts",
+      "server/playbook-runs/store.ts",
+      "src/components/PlaybookCard.tsx",
+      "src/components/PlaybookCard.css",
+      "src/lib/playbook-card.ts",
+      "src/lib/playbook-card.test.ts",
+      "src/lib/playbook-runs.ts",
+      "src/lib/api.ts",
+      "src/components/ChatView.tsx",
+      "src/components/PlaybookRunMessage.tsx",
+      "src/components/Composer.tsx",
+      "src/lib/playbook-card-css.test.ts",
+      "src/lib/playbook-choice-row-dom.test.ts",
+      "server/playbook-runs/note.ts",
+      "shared/chat-runtime-wire.ts",
+      "server/chat-runtime/host.ts",
+      "server/chat-handle.ts",
+      "server/chat-manager.ts",
+      "src/components/PlaybookInlineCard.tsx",
+      "src/components/BuiltinKinds.tsx",
+      "src/lib/playbook-card-rows.ts",
+      "src/lib/pinned-bar.ts",
+      "src/lib/transcript-kinds.ts",
+      "src/lib/playbook-inline-card-dom.test.ts",
+      "src/lib/playbook-inline-css.test.ts",
+      "src/lib/card-lander.ts",
+      "src/lib/card-lander.test.ts",
+      "src/lib/jump-cover.ts",
+      "src/lib/jump-cover.test.ts"
+    ]
+  },
+  "§chat.playbooks/run-record": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "server/playbook-runs/routes.ts",
+      "server/playbook-runs/routes.test.ts",
+      "server/playbook-runs/view.ts",
+      "server/playbook-runs/news.ts",
+      "shared/playbook-run.ts",
+      "src/components/PlaybookCard.tsx",
+      "src/components/PlaybookCard.css",
+      "src/lib/playbook-card.ts",
+      "src/lib/playbook-card.test.ts",
+      "src/lib/playbook-runs.ts",
+      "src/lib/api.ts",
+      "src/components/ChatView.tsx",
+      "src/components/PlaybookRunMessage.tsx",
+      "src/components/Composer.tsx",
+      "server/playbook-runs/legacy-view.ts",
+      "server/playbook-runs/legacy-view.test.ts",
+      "src/components/PlaybookInlineCard.tsx",
+      "src/lib/playbook-inline-card-dom.test.ts",
+      "src/lib/playbook-inline-css.test.ts",
+      "src/lib/jump-cover.ts",
+      "src/lib/jump-cover.test.ts"
+    ],
+    "requires": [
+      "§chat.playbooks/run-card",
+      "§chat.playbooks/start"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-17T17:56Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    }
+  },
+  "§chat.playbooks/run-strip": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/PlaybookCard.tsx",
+      "src/components/PlaybookCard.css",
+      "src/lib/playbook-card.ts",
+      "src/lib/playbook-card.test.ts",
+      "src/lib/playbook-runs.ts",
+      "src/lib/api.ts",
+      "src/components/ChatView.tsx",
+      "src/components/PlaybookRunMessage.tsx",
+      "src/components/Composer.tsx",
+      "src/lib/playbook-card-css.test.ts"
+    ],
+    "requires": [
+      "§chat.playbooks/run-card",
+      "§chat.playbooks/run-record"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T04:03Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    }
+  },
+  "§chat.playbooks/start": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/run-card",
+      "§app.access/your-click"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "server/playbook-runs/start.ts",
+      "server/playbook-runs/start.test.ts",
+      "server/playbook-runs/plan.ts",
+      "server/playbook-runs/plan.test.ts",
+      "server/playbook-runs/store.ts",
+      "server/playbook-runs/message.ts",
+      "server/playbook-runs/routes.ts",
+      "server/playbook-runs/routes.test.ts",
+      "server/page-only.ts",
+      "server/harness/state-kinds.ts",
+      "server/harness/state-kinds.test.ts",
+      "server/playbook-host.ts",
+      "shared/playbook-run.ts",
+      "src/lib/transcript-kinds.ts",
+      "src/components/PlaybookRunMessage.tsx",
+      "src/components/BuiltinKinds.tsx",
+      "src/components/LiveKinds.tsx",
+      "src/lib/transcript-kinds.test.ts",
+      "src/lib/playbook-card.ts",
+      "src/lib/playbook-card.test.ts",
+      "src/lib/playbook-runs.ts",
+      "src/lib/playbook-runs.browser.test.ts",
+      "src/components/PlaybookCard.tsx"
     ]
   },
   "§chat.playbooks/states": {
@@ -77,8 +490,14 @@
     "code": [
       "src/components/PlaybooksDialog.tsx",
       "src/components/ChatView.tsx",
-      "src/components/ScheduleCard.tsx"
-    ]
+      "src/components/ScheduleCard.tsx",
+      "src/app.css"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    }
   },
   "§chat.playbooks/the-project-listing": {
     "kind": "behavior",
@@ -96,6 +515,62 @@
     "kind": "note",
     "authority": "accepted",
     "evidence": "reviewed"
+  },
+  "§chat.playbooks/unlisted": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/where-playbooks-come-from",
+      "§app/project-setup"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "server/playbooks.ts",
+      "server/playbooks.test.ts",
+      "server/projects/onboard.ts",
+      "server/release-playbooks.test.ts",
+      "playbooks/merge-queue/playbook.json",
+      "playbooks/release/playbook.json",
+      "playbooks/release-maker/playbook.json",
+      "playbooks/project-deploy/playbook.json",
+      "playbooks/project-setup/playbook.json",
+      ".sova/playbooks/merge-queue/playbook.json",
+      ".sova/playbooks/release/playbook.json",
+      ".sova/playbooks/review/playbook.json",
+      ".sova/playbooks/request/playbook.json",
+      "server/projects/setup-lifecycle.test.ts"
+    ]
+  },
+  "§chat.playbooks/ways-in": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/run-card",
+      "§chat/slash-commands"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    },
+    "code": [
+      "server/playbook-runs/commands.ts",
+      "server/chat-manager.ts",
+      "shared/protocol.ts",
+      "src/components/ChatView.tsx",
+      "src/lib/playbook-card.ts",
+      "src/lib/playbook-card.test.ts",
+      "src/components/Composer.tsx",
+      "src/components/PlaybooksDialog.tsx",
+      "src/lib/playbook-runs.ts",
+      "src/lib/api.ts"
+    ]
   },
   "§chat.playbooks/what-gets-sent": {
     "kind": "behavior",
@@ -133,7 +608,12 @@
     ],
     "requires": [
       "§app/project-setup"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+    }
   },
   "§chat/playbooks": {
     "kind": "surface",

@@ -136,7 +136,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Rewind armed | note "This message and every reply after it leave the branch. The session file keeps them." · buttons `Rewind Here` · `Cancel` |
 | Regenerate armed | note "The message that started this reply, and everything after it, leave the branch. The session file keeps them." — "this REPLY", never "this turn": the server rewinds to the nearest user message, and a MID-TURN STEER is one, and the leaf moves to that message's PARENT: in `u1 → a1 → tool → s1 → a2`, regenerating a2 drops s1 and a2 while u1/a1/the tool call stay, and regenerating a1 drops a1, the tool call, s1 and a2 · buttons `Regenerate Here` · `Cancel` |
 | Regenerate landed | SR "Regenerating from your message." (the rewound message's own copy stays §chat/timeline's) |
-| Blocked, mutating actions (`title`) | Stop the current turn first. · Wait for the compaction to finish. · This session is open in a terminal, so Sova won't write to it. · Only a chat open in Sova can rewind. / …can regenerate. · A rewind is already in progress. / A regenerate is already in progress. · a message still on its way out (server refusal `queued`, which happens with isStreaming FALSE — the client cannot pre-check it): the server's own sentence, "A message is still on its way out. Wait for it to send, or press Stop, then rewind." / "…then regenerate." · a reply to a wake nudge: "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again." (permanent — it outranks every state that clears on its own, and the server refuses it too with `regenerate_refused` reason "wake") · a reply to a tour's sign-in notice: "That reply answered a tour's sign-in notice, not a message you sent, so there's nothing to send again." (permanent the same way; the server refuses it too, reason "wake", naming the notice) · the composer's own reason while the chat can't write (Switching model…, Reconnecting. Your draft is kept., This session is archived. Unarchive it to send.) |
+| Blocked, mutating actions (`title`) | Stop the current turn first. · Wait for the compaction to finish. · This session is open in a terminal, so Sova won't write to it. · Only a chat open in Sova can rewind. / …can regenerate. · A rewind is already in progress. / A regenerate is already in progress. · a message still on its way out (server refusal `queued`, which happens with isStreaming FALSE — the client cannot pre-check it): the server's own sentence, "A message is still on its way out. Wait for it to send, or press Stop, then rewind." / "…then regenerate." · a reply to a wake nudge: "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again." (permanent — it outranks every state that clears on its own, and the server refuses it too with `regenerate_refused` reason "wake") · a reply to a tour's sign-in notice: "That reply answered a tour's sign-in notice, not a message you sent, so there's nothing to send again." (permanent the same way; the server refuses it too, reason "wake", naming the notice) · "That reply answered a playbook's request to open its alignment, not a message you sent, so there is nothing to send again." (permanent the same way) · the composer's own reason while the chat can't write (Switching model…, Reconnecting. Your draft is kept., This session is archived. Unarchive it to send.) |
 | Blocked Share (`title`) | Sova is still reading this session's details. Share enables itself once they load. |
 | Queued message head | `Sending…` (nothing holds it yet, or the server has handed it to the agent as a follow-up (a worker's report, a wake-up, a playbook's step, the Overseer's turn-end message) or as a steer that starts a turn of its own: no Remove in any of these, not even a disabled one) · `Queued` (the server says it holds it, or it is a steer, what you type while the agent works, handed into the running turn and not taken yet, its images being described included: Remove until the agent takes it), each a dot AND the word · the author is `You`, `Overseer` (eye icon) for a message the Overseer sent (`sova_send`), or `Sent by Sova` for a message the session queued for itself (a group send, a remote status probe) |
 | Remove blocked (`title`) | Already sent. It can't be removed now. · Removing… · Only a chat open in Sova can remove a queued message. |
@@ -280,7 +280,71 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Step 2 body | {description} (the title is in the modal head, not repeated) · textarea label: Anything to add · hint: {promptHint} verbatim, or no hint |
 | Buttons, step 2 | `Back` · `Send Playbook` (the label never changes; there is no in-flight label) |
 | Send blocked | the composer's reason for that state, with its icon, beside `Back` (§design.copy-deck/composer, §design.copy-deck/connection) · model turned off: {ref} is turned off in Settings → Models. Pick another model, then send this again. |
+| Row, description unreadable | {exact file and fault}, with the attention icon, in warn |
+| Step 2, a playbook with a description in a chat that runs none | `Send Playbook` off, reason: This chat runs no playbooks. |
+| Step 2, description unreadable | warn banner: Its playbook.json can't be read, so it can't run. {fault} · `Send Playbook` off, reason: Fix its playbook.json first. |
 | The sent turn (verbatim, §chat/playbooks) | Playbook: {title} — {absolute dir} / Every relative path in this playbook is relative to that directory; read its files as the playbook directs. / blank line / {body} · with your text: then a line `---`, a blank line, {your text, trimmed} |
+
+## §design.copy-deck/playbook-card — The playbook card (§chat.playbooks/run-card)
+
+| Where | Copy |
+|---|---|
+| Strip | `aria-label` Playbook · the strip: {title}: {state}. Open its card. · second line: in the conducting chat: the sentence under the card's head · otherwise: Revision {n}, started {HH:MM} in this chat · in {chat title} · in another chat · its tooltip: that line in full |
+| State | Ready to start · Can't start yet · Starting · Started · Running · Needs you · Idle |
+| Card head | Minimize (title: Minimize the card (Esc)) |
+| Under the head, started run | This chat is working. · This chat is working, with {n} helper(s) working. · {n} helper(s) working; this chat picks up when they report. · Needs you: the session list's own reason · This chat's turn ended and no helper is working. The run goes on when you answer. |
+| At a wait, on the strip and in the card's foot | Continue · Stop Here · on the strip, each button's title: Sends "Continue" as your message to this chat. / Sends "Stop here" as your message to this chat. (or Send's blocked reason) (they send "Continue" / "Stop here") · Sends that word as your message to this chat. Or answer in the message box. · or Send's own blocked reason |
+| From another chat | Open the Chat · The run is in {chat title} / another chat; its state shows there. |
+| Putting it away | Close Card, title: Puts this run's control away. The run goes on, and Open Card on its row in the conversation still shows this record. · Close Card puts its control away. The run goes on. · on a put-away record: You put this card away. The run was not changed. |
+| Eyebrow | Playbook · Sova · Playbook · Yours · Playbook · This project · then, when it changed: · changed since your last run |
+| Record | inline, in the conducting chat: The card as you set it up: revision {n}. · put away: The card as you set it up: revision {n}. You put its strip away; the run was not changed. · inline, in a chat that started it elsewhere: Started {time} as revision {n} in {chat link}. This is the card as you started it. · head button: Show Card / Hide Card · floating: Started {HH:MM} as revision {n} in this chat. Progress comes in the chat's messages. · in {chat title} or a new chat, the title linking to it · 24-hour clock |
+| Sections | Your choices · More options · {n} · Who runs · Steps · {n} · How it runs |
+| Choice origin | Default · Same as last time · Your standing answer · From your message · Looked up · From the chat · From your alignment · empty and required: Needed · a choice you set: no label · a choice the chat fills, empty: Waiting for the chat to fill this in. (Needed beside it when required) · filled by the chat: its words, From the chat |
+| Choice controls | Pick one · On / Off · One per line · Add Model (Add a model to {choice}) · Remove {model} from {choice} · record: None · On / Off · a long answer: Show All / Show Less (spoken: Show All: {choice} / Show Less: {choice}) |
+| Cycle | Step 3 repeats · Steps 3, 4, and 5 repeat · Steps {a, b} repeat as a cycle: up to [n] cycles, at most {cap}; asks you after every [n] cycle(s). (Most cycles, Cycles before it asks you) · Keep going until: the stop rule is met / all cycles have run · The stop rule: {rule} · record: Up to {n} cycles; asks you after each cycle. · Stops early when {rule} · Runs every cycle, whatever the stop rule says. |
+| How it runs | the server's sentence (Runs in a new chat, in a new worktree.) · May also run these Sova commands: {labels}. |
+| Buttons | Start (Starting…) · Save as My Defaults (Saving…) · Repeat…, off, with a Coming tag, title: Repeats come in a later release. · Close Card |
+| Foot hint | the reason Start is off · Starting… · Wait for the card to finish. · Saved as your defaults for this playbook. · Saving your changes… · Revision {n}. Start runs exactly this card. · The card changed in another tab; your change was added on top. |
+| Errors | Your change wasn't saved: {why} · the server's error · toast: The playbook's card didn't open: {why} · `/` row of a broken playbook, toast: The playbook's description can't be read: {exact file and fault} |
+| Announcements | {title} started. · Saved as your defaults. · opened: {title}: its setup card is in the conversation. · aligning first: {title} starts with an alignment: its setup card comes once you decide it. · Open Card on a started run: {title}: its card is open over the conversation. · Sent "{word}" to this chat. |
+
+## §design.copy-deck/playbook-who-runs — Who runs, on the playbook card (§chat.playbooks/run-card)
+
+| Where | Copy |
+|---|---|
+| Folded line | Who runs · {n} teams · {m} required members (1 team · 1 required member · no required members) · plus · {k} can't run · no teams: Who runs · the main chat alone, body: No helpers: this chat does every step itself. |
+| Team block | eyebrow: {label} team · step {n} / · steps {a} and {b} / · steps {a}, {b}, and {c} (named by no step: {label} team) · heading: its goal |
+| Member row | {label} · {label} × {n} · One for each of {choice} · {model} · {provider} · {effort} · Off for this run · None of its models can run · No model · why: the resolver's reason ({model} is turned off in Settings → Models, so {next} · {model} isn't one of this member's models (only these models) · None of this playbook's models can run, so your profile's model, {model}), else (a model you picked: nothing) First choice · Your profile · This chat's model, plus · Only these models · hover: Then: {model · effort}, … · its brief on its own line |
+| Member controls | Change (Change the model for {member}) · only-these list: Model for {member}, only these, an option that can't run ending ({why}) or (can't run) · Runs ({member} runs) · Add Note (Add a note for {member}) → Note for {member}, placeholder Your note, for this run only · record: Your note: {note} |
+| Under the members | The team adds anyone else it needs. · none: No required members: the team adds whoever it needs. · Add Team Note (Add a note for the {label} team) → Note for the {label} team, placeholder Your note for the team, for this run only · record: Your note for the team: {note} |
+| A run from before teams | folded: Who runs · {n} groups · {m} roles · started before teams (1 group · 1 role · no roles; no groups: Who runs · the main chat alone) · Started before teams had goals: these are the helpers it ran with, grouped as that run grouped them. · block eyebrow: its steps only (Step 3 · Steps 1 and 3 · none) · Other helpers |
+| Under the blocks | Starts with {n} helpers, each team's coordinator and monitor included; a chat runs up to {limit} at once. (1 helper) |
+| Steps | who works in it: The main chat · Its own team (its one team has the step's own title) · {label} team · {a} and {b} teams · {a}, {b}, and {c} teams · its goal on its own line under its title · stops: Stops for you · Stop for me here |
+
+## §design.copy-deck/playbook-run — A playbook's run (§chat.playbooks/start, §chat.playbooks/ways-in)
+
+| Where | Copy |
+|---|---|
+| Conversation row | Playbook {title} started · revision {n} · Show What Was Sent · {time} · Open Card · record gone, toast: That run's card isn't here any more. |
+| Start off for a choice the chat fills | Work out {label} with the chat first. |
+| Start, while a required alignment is open | Waiting for the alignment to be decided in the chat. |
+| Sova's note when /name opens a playbook that requires an alignment | row: Playbook alignment · "{title}" starts with an alignment; its card waits for your decisions. · message: [playbook_align {id}] The playbook "{title}" starts with an alignment. / Reason: "{title}" starts with an alignment; its card waits for your decisions. / Open the alignment now with the align tool, with these questions in this order, each question's topic exactly its id; recommend an answer to each from what the person asked. · one line per question: {qid}: {ask} · The person's words with the playbook: {text} · Once the person has decided every question, Sova fills the card from the decisions and shows it; don't fill its choices yourself and don't start anything. If the alignment is dropped, the card shows with those choices for you to work out with the person. |
+| The page editing a choice the chat fills, refused | {label} is worked out with the chat: ask it there. Nothing was changed. |
+| A chat that already runs a playbook | refusal (toast on open, the card's error line on Start): This chat already runs the playbook {title}, and a chat runs one playbook. Start this one in a new chat. · its `/` rows, in place of the description: This chat already runs {title}. Opens in a new chat. · Playbooks dialog notice: **This chat already runs {title}.** A chat runs one playbook. A playbook with a card opens in a new chat. · announcement: {picked title} opened in a new chat: this chat already runs {title}. · toast, no chat made: The playbook didn't open in a new chat: {why} · a chat made: A new chat was made, but the playbook didn't open in it: {why} |
+| A value the chat set | From the chat, beside a member's model, beside Runs on an optional member, after a member's or team's note, beside an optional stop's Stop for me here, under the cycle line and beside Keep going until (record: after Stops early when …); gone once you change it |
+| Refused to a chat or a script | closing: Only the person closes a playbook card, on the card in Sova's page. Nothing was closed. · another chat or a script setting more than choices: Only the person, or the chat showing this card, changes its models, members, notes, stops and cycle settings. A script or another chat may fill in its choices. Nothing was changed. · an off-list model for an only-these member: {label} runs only on the models its playbook lists. |
+| A new chat a run starts in | {title} (playbook) |
+
+## §design.copy-deck/playbook-flow — The playbook's flow (§chat.playbooks/flow)
+
+| Where | Copy |
+|---|---|
+| Section title, folded | Flow · {n} steps · steps {a}, {b}, and {c} repeat · Flow · {n} steps · step {a} repeats · no cycle: Flow · {n} steps · Flow · 1 step · states: Flow · states and the moves between them |
+| Under the drawing | before Start: Drawn from this card: change a stop or the cycle's settings and the drawing follows. · after Start: The plan as it was at Start. Progress comes in the chat's messages. |
+| A step | {title} · its teams, or Main chat · stops for you · optional stop: on / off |
+| The cycle | again: at most {n} · asks you after each / every {k} / at the end · or until its stop rule |
+| A state machine | each move: {event} · with a limit: {event} (at most {n}×) · a quiet end: ends quietly |
+| Caption of a started run | Started · which step it's on isn't tracked yet |
 
 ## §design.copy-deck/images — Images
 
@@ -412,6 +476,8 @@ the person clicks.
 | A card owner's trust | Only the user trusts a project's or an extension's cards. Ask them to press Trust {name}'s Cards on the card. Nothing was trusted. |
 | Adding or changing an extension | Only the user changes extensions. Ask them to do it in Settings → Extensions. Nothing was changed. |
 | The same, from an extension's page | An extension's page can't change extensions. Open Settings → Extensions in Sova itself. Nothing was changed. |
+| A playbook run's Start | Only the user starts a playbook run. Ask them to press Start on its card in Sova's page. Nothing was started. |
+| A playbook's defaults | Only the user saves a playbook's defaults. Ask them to press Save as My Defaults on its card in Sova's page. Nothing was saved. |
 | Through a mesh peer, any of the others | Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed. |
 
 ## §design.copy-deck/create-mode — Create (§chat/create-mode)
@@ -477,7 +543,7 @@ the person clicks.
 | Menu head | Commands · {n} |
 | Listbox `aria-label` | Commands |
 | Row name | /{name} |
-| Source chip | ext · prompt · skill |
+| Source chip | ext · prompt · skill · playbook |
 | Empty | 0 commands match “/{query}”. Enter sends it as a message. · touch mode (§chat.composer/behavior): 0 commands match “/{query}”. |
 | Foot (≥768) | `Enter` or `Tab` to insert · `Esc` to close |
 | Announce | {n} commands available. · empty: 0 commands match. |

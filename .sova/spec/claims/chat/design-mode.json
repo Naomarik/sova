@@ -216,7 +216,8 @@
       "server/design/setup-change.ts",
       "server/design/tools.ts",
       "src/lib/design-setup-view.ts",
-      "src/lib/design-setup-view.browser.test.ts"
+      "src/lib/design-setup-view.browser.test.ts",
+      "src/lib/pinned-bar.ts"
     ],
     "requires": [
       "§app.tours/one-card",

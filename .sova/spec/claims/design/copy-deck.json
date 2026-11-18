@@ -303,10 +303,56 @@
     "authority": "accepted",
     "evidence": "reviewed"
   },
+  "§design.copy-deck/playbook-card": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/PlaybookCard.tsx",
+      "src/lib/playbook-card.ts",
+      "src/components/PlaybookRunMessage.tsx",
+      "server/playbook-runs/start.ts",
+      "src/components/Composer.tsx"
+    ]
+  },
+  "§design.copy-deck/playbook-flow": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "shared/playbook-flow.ts",
+      "src/components/PlaybookCard.tsx"
+    ]
+  },
+  "§design.copy-deck/playbook-run": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/PlaybookRunMessage.tsx",
+      "src/components/PlaybookCard.tsx",
+      "src/components/PlaybooksDialog.tsx",
+      "src/components/Composer.tsx",
+      "server/playbook-runs/routes.ts",
+      "server/playbook-runs/start.ts"
+    ]
+  },
+  "§design.copy-deck/playbook-who-runs": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/PlaybookCard.tsx",
+      "src/lib/playbook-card.ts"
+    ]
+  },
   "§design.copy-deck/playbooks": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "reviewed"
+    "evidence": "reviewed",
+    "code": [
+      "src/components/PlaybooksDialog.tsx"
+    ]
   },
   "§design.copy-deck/profiles": {
     "kind": "note",

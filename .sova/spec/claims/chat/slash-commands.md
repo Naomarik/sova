@@ -27,7 +27,8 @@ without a command list or while the composer is disabled.
 
   A token dismissed with `Esc` doesn't reopen until its text changes.
 - **When it never opens.**
-  - No `commands` message has arrived yet, or the list is empty.
+  - There is nothing to offer: no `commands` message has arrived yet and no playbook has a row
+    (§chat.playbooks/ways-in), or the list is empty.
   - The composer is disabled (read-only, connecting, reconnecting, or a model switch is pending).
     If it becomes disabled while the menu is open, close it.
   - The box is in shell mode (§chat.shell-mode/box).
@@ -89,8 +90,8 @@ The textarea gains these attributes, and keeps them only while the menu is open:
     `.command-option-desc` or placeholder text. The location stays in the right column under
     the chip, so line 2 is just the right-aligned location. With no location either, the row is
     a single line and still 44px tall. The description tier of filtering skips it.
-- **Source chip.** A neutral `.chip` with no dot and no color: `ext` (extension), `prompt`, or
-  `skill`. It's a category, not a status, so it carries no hue and no dot.
+- **Source chip.** A neutral `.chip` with no dot and no color: `ext` (extension), `prompt`,
+  `skill`, or `playbook` (a playbook's row, §chat.playbooks/ways-in). It's a category, not a status, so it carries no hue and no dot.
 - **Id.** Option ids are `cmd-` plus the name, with anything outside `[a-z0-9-]` replaced by
   `-`. Add a suffix if two names collide.
 - **Head.** "Commands · {n}" is the visible count. It's `aria-hidden` because the announcement

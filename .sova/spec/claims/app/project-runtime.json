@@ -338,7 +338,10 @@
       "statecharts/EVENTS.md",
       "server/overseer-tools.ts",
       "server/projects/playbook-review.ts",
-      "server/projects/folded-playbooks.test.ts"
+      "server/projects/folded-playbooks.test.ts",
+      "playbooks/project-setup/playbook.json",
+      "playbooks/project-deploy/playbook.json",
+      "playbooks/release-maker/playbook.json"
     ],
     "requires": [
       "§app.project-runtime/onboard",

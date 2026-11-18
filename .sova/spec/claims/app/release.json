@@ -144,7 +144,8 @@
       "server/release-playbooks.test.ts",
       "server/project-services/release-maker.integration.test.ts",
       "src/components/ReleasesTab.tsx",
-      "playbooks/project-setup/references/questions.md"
+      "playbooks/project-setup/references/questions.md",
+      "playbooks/release-maker/playbook.json"
     ],
     "agreed": {
       "by": "user",

@@ -230,13 +230,13 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
 </details>
 ```
 
-- **Name.** Always "Wake nudge {id}" (`shared/wake.ts` `wakeTitle`), never the raw tag.
-- **A schedule's fire** (§chat.schedules/fire) is a wake too: tagged `[schedule s1] …`, it draws the
-  same card named "Scheduled run s1", with `· {late} late` from its "Late by … (Sova was not
-  running)." line, and is treated as a wake everywhere below.
-- **An extension job's end** (§app.overseer/extension-commands) is a wake too: tagged
-  `[ext_job x1] …`, it draws the same card named "Extension job x1", its `Reason:` line in the arg
-  slot, and is treated as a wake everywhere below.
+- **Name.** Always "Wake nudge {id}", never the raw tag.
+- **Wakes too**, each drawing the same card and treated as a wake everywhere below: a schedule's
+  fire (§chat.schedules/fire), `[schedule s1] …`, named "Scheduled run s1", with `· {late} late`
+  from its "Late by … (Sova was not running)." line; an extension job's end
+  (§app.overseer/extension-commands), `[ext_job x1] …`, and a playbook's alignment request
+  (§chat.playbooks/align-first), `[playbook_align pr_…] …`, named "Extension job x1" and
+  "Playbook alignment", their `Reason:` line in the arg slot.
 - **A background job's end** (§app.background-jobs/end-card) is a wake too: tagged `[job j1] …`, it
   draws the same card named "Background job j1", with what ran in the arg slot, `ended {HH:MM}` for
   when the job ended, read from its `Ended at` line (a card with none shows when it arrived), `· {late} late` from its "Late by … (Sova was not running)." line, and is treated as a
@@ -473,9 +473,9 @@ extensions add under a reply comes after it, outside the strip, and never change
   batch (§chat.topics/row) is the same, with its own reason: "That reply answered notes other
   sessions pushed to a topic, not a message you sent, so there's nothing to send again.", and so
   is a reply to a linked session's message: "That reply answered a linked session's message, not
-  one you sent, so there's nothing to send again." A reply that answered a tour's sign-in notice
-  (a "Tour sign-in" wake row, §app.tours/sites) is the same, with its own reason: "That reply
-  answered a tour's sign-in notice, not a message you sent, so there's nothing to send again."
+  one you sent, so there's nothing to send again." So is a reply that answered a tour's sign-in notice
+  (a "Tour sign-in" wake row, §app.tours/sites) or a playbook's alignment request
+  (§chat.playbooks/align-first), each with its own reason (§design.copy-deck/main-pane).
 - **Both confirm inline, in place.** The first press arms: the strip becomes the sentence plus
   `Rewind Here` / `Regenerate Here` and `Cancel`. Focus follows into the confirm and back to the
   button that armed it on Cancel or Esc. The sentence says what survives as well as what goes:

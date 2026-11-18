@@ -18,9 +18,11 @@ The dialog fetches once each time it opens.
 | **Yours** | `user` | `~/.pi/agent/sova/playbooks/` | Your own. An id that matches a shipped one **replaces** it: the shipped entry is dropped and yours carries `replacesSova: true`. The interface deliberately **does not render** that flag: the row already sits under the Yours heading, so a marker would only repeat it. The field exists in the data, asserted in `server/playbooks.test.ts` |
 | **This project** | `project` | `<project root>/.sova/playbooks/`, then `<project root>/.sova/marketing/playbooks/` | The session's project (§chat.profiles/projects): a worktree or subfolder reads its main checkout's. An id in both folders is listed once, from `.sova/playbooks/`. It never replaces anything. It is always its own group, even when an id matches one above |
 
-Three shipped folders are never listed, in the catalog or anywhere else a playbook is offered:
-`project-setup`, which only the Setup chat's own start sends, and `release-maker` and
-`project-deploy`, its release and deploy halves, which run only inside it (§app/project-setup).
+A playbook only Sova's own chats run is not listed: in the catalog, the Playbooks dialog and the
+`/` rows it is hidden (§chat.playbooks/unlisted). That covers `project-setup`, which only the Setup
+chat's own start sends, `release-maker` and `project-deploy`, its release and deploy halves, which
+run only inside it (§app/project-setup), and the recipes of the merge queue, the release, review
+and request.
 
 **The grammar is the same in all three folders.** A playbook is a directory `<id>/` whose
 **entry file** is either `PLAYBOOK.md` or `SKILL.md`, plus whatever other files its entry tells
@@ -184,13 +186,12 @@ modal**, and only one renders at a time: step 2 never stacks on step 1. The moda
   line**, and the full text is in the row's `title`. A playbook with no description shows only
   its title. A playbook with a schedule has one more line under that, its schedule and state, and
   its step 2 a schedule card above the text box (§chat.schedules/where-shown). Activating a row goes
-  to step 2.
+  to step 2, or to the card of one with a description (§chat.playbooks/ways-in).
 - **Keyboard** follows the flyout's roving-tabindex pattern (§chat/composer "Keyboard"): exactly one row is in
   the Tab order, `↑`/`↓` move across all groups and wrap, and `Home`/`End` jump to the ends. The
-  modal takes focus on open, and when the catalog arrives focus moves to the **first row**. The
-  same happens after `Retry`: its button disappears with the banner, and focus would otherwise
-  fall to `<body>`. `Tab` goes from the row to `Close`.
-- `Esc`, `Close` or a click on the scrim closes the modal. Focus returns to the composer's
+  modal takes focus on open, and when the catalog arrives focus moves to the **first row**, as
+  after `Retry` (its button goes with the banner). `Tab` goes from the row to `Close`.
+- `Esc`, `Close` or a scrim click closes the modal. Focus returns to the composer's
   `plus` trigger.
 
 ### Step 2 · The playbook
@@ -201,8 +202,8 @@ modal**, and only one renders at a time: step 2 never stacks on step 1. The moda
 - Focus lands in the textarea. **`Enter` inserts a newline. `Ctrl+Enter` / `⌘+Enter` sends**,
   the same as `Send Playbook`. **An empty textarea can send**: the playbook alone is a complete
   turn.
-- `Back` or `Esc` returns to step 1 with focus on the row you came from. The catalog is not
-  fetched again. What you typed stays **with that playbook** (below). Picking a different one
+- `Back` or `Esc` returns to step 1 with focus on the row you came from. It doesn't refetch the
+  catalog. What you typed stays **with that playbook** (below). Picking a different one
   shows that playbook's own text, which is empty if you never wrote any.
 - **`Send Playbook`** hands the text (below) to the chat's send. If the socket accepts it, the
   dialog closes and **focus goes to the composer's textarea** (`composer-input`, through
@@ -284,6 +285,412 @@ ack, and the same restore on refusal as any other message.
 | The composer becomes blocked while the modal is open (socket drop, reconnecting, archiving, saving, model switch) | The modal **stays open** with your text and your playbook. On step 2, `Send Playbook` is `aria-disabled`, and the composer's own reason (icon and words) shows beside `Back` as its description. A forced click sends nothing. It re-enables by itself when the reason clears |
 | The chat's model is turned off in Settings → Models | Treated as blocked, with the reason "{ref} is turned off in Settings → Models. Pick another model, then send this again." |
 | A TUI takes the session, or another program writes to it | `SessionView` swaps `ChatView` for `WatchView`, and **the dialog is removed with it**. The **open playbook's** text (the one on step 2, or `last` on step 1) is moved to the **top of that session's composer draft** (`onOrphan`), above any existing draft with a blank line between, and its entry is removed from the dialog's copy so it exists in one place only. Text kept for other playbooks stays in the dialog's per-session copy |
+
+## §chat.playbooks/description-file — A playbook may describe its cast, choices and steps
+
+Beside its entry file a playbook may carry `playbook.json`, a description of four things: your
+choices, the cast (its teams, their goals and the members they must have), the steps, and how it
+runs. A playbook
+without one works exactly as before: picking it sends its recipe as your turn.
+
+- **Read strictly.** Every key must be one Sova knows, with the right type. A file with an unknown
+  key, a wrong type or a broken reference is refused with the exact path and fault ("roles.grader.models[1].effort: must be one of …"),
+  and that playbook can't run: it opens no card and isn't sent as plain text either. Its row in
+  the Playbooks dialog shows the exact fault, and picking it shows the fault in a warning with
+  Send Playbook off until the file is fixed. One bad description never hides the other playbooks.
+- **What it holds.**
+  - `version`, and `listed` (§chat.playbooks/unlisted).
+  - `run`: where it runs (this chat or a new one), whether it gets a new worktree, its mode and
+    minor modes, the powers it asks for, and what it needs.
+  - `inputs`: your choices. Each is a text, a number, a switch, a pick from options, several picks,
+    a list or a set of models; asked every run, asked once and remembered as your standing answer,
+    or optional (under More Options); required or not; and some asked again at each cycle. A
+    text or list choice may say `"ask": "chat"`: it is worked out with the main chat in the
+    conversation and filled in by it, with an optional default as its starting point; on any
+    other type that is a fault.
+  - `align`: optional, the questions (1 to 8, one line each) of an alignment the playbook
+    requires before its card (§chat.playbooks/align-first); each may name the chat-worked choice
+    its decision fills (one that names none only settles context for the chat, and its decision
+    fills nothing), and a choice is filled by one question at most.
+  - `facts`: things the chat may look up before the card is final (the latest pi release).
+  - `teams`: every helper belongs to a team with a one-line `goal`; a lone helper is a team of
+    one. A team lists only the members it must have (none is fine) and adds anyone else it needs;
+    its coordinator and monitor run on your own team settings. Each required member has a
+    one-line `brief` (why it is picked for the team), and may name a `notes` page in the folder
+    with its working detail; its kind of work, its models in preferred order (each a model and
+    an effort), whether it may use only those models, how many run (a fixed count or one per item
+    of a choice), whether you may turn it off, what it is shown, and whether it starts fresh. A
+    member has no prompt of its own: the team's coordinator writes its instructions. Goals and
+    briefs may name a choice or a fact as `{{id}}`, filled in at Start.
+  - The main chat isn't declared: it is the chat you chose, on its own model. A team or member
+    named `main` is a fault, and so is the old `roles` key.
+  - `steps`: in order; each may be a stop point, always or only when you turn it on, may say what
+    it reports, and names the teams that work in it (none: the main chat alone); every team is
+    named by some step. One group of steps may repeat as a cycle, with a cap, how many cycles run
+    before it asks you, a stop rule in plain words, and what one cycle carries to the next. When
+    to ask, when to repeat and how many times are settings on the card, not fixed in the prompt.
+  - `machine`: instead of `steps`, a playbook may declare states and the named moves between them.
+    It is read and checked (never both `steps` and `machine`); in this release the main chat
+    follows it as it follows steps.
+  - `commands`: the Sova commands the playbook's run uses, by their ids in Sova's list; an id
+    Sova doesn't know is a fault. The card shows the ones that change things.
+- **The entry file is the main chat's prompt;** without one the main chat gets Sova's standard
+  instructions for conducting a run. Reference material lives in the folder (`references/`). A
+  page the description names that isn't there, or a file that isn't JSON, is a fault shown as
+  `<path>: <fault>`, and the playbook stays listed.
+- **A model without an effort** runs at medium.
+
+## §chat.playbooks/model-order — Which model each role gets
+
+A role gets the first model that can run, in this order: your pick on the card, then the
+playbook's list for that role in its order, then your profile's model for that kind of work, then
+the chat's own model. A model Settings → Models turns off is skipped.
+
+- **Nothing is swapped silently.** The card names each role's model with its provider ("GLM 5.3 ·
+  ZAI") and effort, and whenever it isn't the first choice, the reason: "Opus 5.5 is turned off
+  in Settings → Models, so Fable 5.2", or "None of this playbook's models can run, so your
+  profile's model".
+- **"Only these models".** A role marked so (a blind grader, a test model where the provider is the
+  point) never falls to your profile's or the chat's model, and your pick on the card is one of
+  its listed models. When none of its models can run, Start is off and the card says why.
+- **The whole list goes with the run.** The plan keeps each role's whole ordered list, not just the
+  first pick, so the main chat can move to the next one when a model is refused during a run, and
+  say so.
+- This release does not check sign-ins or usage before Start, and the card doesn't claim to: a
+  role may run somewhere other than this computer (a sandbox, a test copy of Sova).
+- **Efforts.** An effort the model doesn't offer moves to the nearest one it does.
+
+## §chat.playbooks/unlisted — Recipes only Sova's chats run are not listed
+
+A playbook whose description says `listed: false` is left out of the Playbooks dialog and the `/`
+rows. It is still found where Sova itself looks for it: the Setup chat still starts from
+`project-setup`, and the merge queue, release, review and request chats still read their own
+recipes. Since the dialog doesn't list it, it isn't offered for scheduling there either.
+
+## §chat.playbooks/run-card — The playbook card
+
+A playbook with a description has a card, and a chat has at most one. Before Start it is a
+setup card inline in the conversation, standing in the transcript the way an alignment card does
+(§chat.alignment/card): at the point it was opened, or last filled in by the chat, moving to the
+newest point when you reopen it or the chat sets a value on it; it scrolls with the conversation, no strip
+floats for it, and Start is pressed there. A new chat showing a card stays in the session list
+until the card is closed, so a reload finds it again. After Start the setup card stays where it
+is, never moving again, as the read-only record of what was agreed, and the run moves to a strip above the message box
+(§chat.playbooks/run-strip).
+
+- **Only when you ask.** A setup card appears only by a `/{name}`, a pick in the Playbooks
+  dialog, or reopening it; never by itself. Opening it, or a chat holding only it, takes the view
+  to it (a tall card from its top, else whole in view) with focus on it, however late the card is
+  drawn, clear of a run's strip and held there for up to 10 seconds while the chat's opening
+  lines load, but never once you have scrolled, touched, pressed or typed in the chat since it
+  opened (the same for a run's record); in a new chat with no message yet it stands under the chat's opening
+  lines. A read-only watch draws no setup card.
+- **Its buttons stay in reach.** While the card is in view, its Start row stays pinned to the
+  bottom of the conversation, with a shadow only while pinned, as a Lookbook card's bar does
+  (§chat.design-mode/card); the connecting note and Focus sit above it.
+- **Jump to Latest never covers a playbook's card** in the conversation, a setup card or a run's
+  record, folded or open: it isn't shown while it would lie over one, and shows as usual
+  otherwise.
+
+- **Before Start it shows:**
+  - **Your choices,** each with where its value came from: Default, Same as last time, Your
+    standing answer, From your message, From the chat, or From your alignment; an empty required
+    choice says Needed. A choice the
+    playbook marks as worked out with the chat (the failure to fix, say) is read-only on the
+    card, its default shown as a starting point: you settle it with the main chat as you talk,
+    and the chat fills it in through the card's commands. Empty, it says it is waiting for the
+    chat; filled, it shows the chat's words. While a card is a draft the chat has a note in its own
+    context (never shown in the thread): which of these choices are still empty, what it may set
+    on the card (§chat.playbooks/card-setters) and the commands that set it.
+    Short choices (a pick, a number, a switch, models) stay editable on the card. A
+    text choice that may run to several lines gets a two-line box. A
+    choice's help sits on its own line under the value. On a started run's record, a text or list
+    answer longer than two lines shows its first two with Show All, and Show Less folds it again;
+    only the display folds, never what the run got.
+  - **Who runs,** folded by default to "Who runs · {n} teams · {m} required members" (or "the
+    main chat alone"); it starts open when, as the card is drawn, a member that is on has no model
+    that can run (the folded line adds "· {k} can't run"): one block
+    per team, headed by its goal, listing only its required members, each with how many, its model
+    with provider and effort, the reason when it isn't the first choice, and its one-line brief;
+    a line says the team adds anyone else it needs. The main chat and each team's coordinator and
+    monitor aren't shown (they run on the chat's and your own settings); the coordinator and
+    monitor still count toward the limit of 24 helpers, two for every team, one with no required
+    members included.
+  - **The steps,** each with the team that works on it, their stop points and the cycle's settings, and **how it runs** (this
+    chat or a new one, a new worktree, the powers it asks for, the commands it lists).
+  - **Flow,** folded by default: a drawing of the playbook's flow (§chat.playbooks/flow).
+- **What you can change:** each choice, each required member's model and effort, optional
+  members on or off, optional stops on or off, the cycle's settings, and for this run an
+  optional one-line note under each required member's brief and one for each team as a whole. A member's brief is changed only in the playbook itself. Each change is saved as you
+  make it; a change made while the card changed in another tab is added on top of that one, and
+  the card says so.
+- **Buttons:** Start, Save as My Defaults (your current choices, picks and member notes become the
+  next card's starting values for this playbook in this project; a team's note is for this run
+  only), Repeat…, shown but not yet available, and
+  Close Card.
+- **Start is off, with the reason,** while a required choice is empty (one the chat fills
+  included), an "only these" role has
+  no model that can run, the plan needs more helpers than a chat can run at once, or something the
+  playbook says it needs is missing. Save as My Defaults is off, with the reason, while the playbook
+  can't be read or is gone. A fault already shown in the card's error line (a description that
+  can't be read, a refused Start) isn't repeated beside Start.
+- **Who else may set it:** the chat, commands and other computers (§chat.playbooks/card-setters).
+- **After Start** it is the run's record (§chat.playbooks/run-record).
+
+## §chat.playbooks/card-setters — Who may set a card besides you
+
+- **The chat can set the whole card,** so what you said when you asked for the run lands on it
+  and you needn't set it again by hand: through the card's commands the chat that shows the card
+  (or conducts its run) may set every value you can (each choice; each member's model and effort, within what the
+  page allows, an "only these" member only from its own list; optional members on or off; team
+  and member notes; optional stops; the cycle's settings), checked by the same rules as the
+  page. Each value it sets reads From the chat until you change it, and the card moves to the
+  newest point. That is the chat itself, its commands included; any other caller (a script, or a
+  chat the run isn't tied to) may set only the choices. Start, Save as My Defaults and Close Card
+  stay your own clicks, so you always see the final card.
+- **In Sova's commands** (§app.commands/catalogue): `playbook.run.open`, `.list`, `.get` and
+  `.edit` open a card, list a chat's cards, read one and set its values. Closing a card, like
+  Start and Save as My Defaults, is your own click on the card in Sova's page: no command, and a
+  chat or a script is refused.
+- **From another of your computers** a card can be opened, read and set with full access;
+  its Start and Save as My Defaults work only on the page of the computer the chat runs on, and a
+  click relayed from another computer is refused.
+
+## §chat.playbooks/flow — The playbook's flow, drawn
+
+The card's Flow section, folded by default, draws the playbook's flow from its description each
+time, so it can't drift from what runs; nothing about the drawing is stored in `playbook.json`.
+
+- **From steps:** the steps in order with the teams in each (the main chat where there is none),
+  the cycle as a framed loop with its cap, when it asks you and its stop rule, and each stop point
+  marked as always or optional. It follows the card: an optional stop shows as you set it, and
+  the cycle with your settings.
+- **From a state machine:** when the playbook declares one, its states and the moves between
+  them.
+- **After Start** the drawing is frozen with the run's record. Showing where a run is (steps
+  done in the success colour, the current one in the accent) needs a record of its steps, which
+  this release doesn't keep: a started run's drawing says the run has started and that its
+  current step isn't tracked.
+
+## §chat.playbooks/align-first — Aligning before a playbook runs
+
+An alignment (§chat/alignment) may come before the setup card, so the run is the one you meant.
+It reuses Sova's alignments as they are, by either of two paths.
+
+- **The chat may align first.** When the chat's align minor mode is on and your request to run a
+  playbook leaves room for doubt (`/{name}` with words that could mean more than one thing), the
+  main chat may open an ordinary alignment first; once you confirm it, the chat puts your decisions
+  on the card through its commands: the choices it works out and anything else they settle
+  (§chat.playbooks/run-card). Nothing forces it: a
+  clear request, or align off, goes straight to the card.
+- **A playbook may require it.** A playbook whose description declares an alignment
+  (§chat.playbooks/description-file) always opens it first on `/{name}`, whatever the align mode
+  (Sova turns align on for the chat if it is off, and it stays on afterwards): Sova sends the main chat a note of its own
+  (drawn as a "Playbook alignment" row, never your message and never the chat's name) asking it
+  to open an alignment with the playbook's questions and your words, and the
+  setup card isn't drawn yet (Start would read that it waits for the alignment). Once you have
+  decided every question, each decision fills the choice it is for, marked From your alignment (a
+  list choice takes one item per line or per "; "), and the setup card appears at the chat's
+  newest point; whatever else the decisions settle, the chat sets on the card. If you drop the alignment, the card appears with those choices empty, for you
+  and the chat to work out, and Start says why. A chat Sova can't write to (open in a terminal,
+  archived) gets the card at once, with those choices left to the chat.
+- **Without either,** a playbook opens straight to its card, exactly as before.
+
+## §chat.playbooks/run-strip — The started run's strip
+
+Once a run has started, it shows as a compact strip floating over the end of the conversation,
+just above the message box, at the message box's width: the playbook's name and its state (a dot
+and a word), and under them one line (how the conducting chat stands, else its revision, start
+time and chat). The strip has its own surface, border and shadow, with no band or full-width
+background behind it, and doesn't scroll with the conversation, so it is in reach wherever the
+conversation is scrolled. A card not yet started has no strip (§chat.playbooks/run-card).
+
+- **Room for it.** The conversation's end leaves room for the strip, so at the end the last
+  message (an alignment card there included) is never under a closed strip; scrolled up, the
+  conversation passes behind it; the gap between the strip and the message box is the page's own
+  colour, so nothing shows through under the strip. Jump to Latest, the connecting note and Focus
+  sit above it.
+- **Answering from the strip.** When the run waits for you, exactly when the open card offers
+  Continue and Stop Here, the closed strip offers them too, under the same rule. Where the
+  message box is narrower than 520px the strip only opens the card. Focus view hides the strip
+  with the message box.
+- **Opening it.** Pressing the strip opens the full card upward from the strip's place, at the
+  same width, in place of the strip until it is minimized; it never moves or resizes the
+  conversation. Its head (name, state, Minimize) and its buttons stay in place while its middle
+  scrolls. Minimize or Esc minimizes it again. At phone width it is the same floating card.
+- **Only when you ask.** The full card opens only by your click on the strip or Open Card on the
+  run's entry in the conversation; never by itself. With two panes on the same run, Open Card
+  opens it in the pane you clicked in. A read-only watch of the chat shows the entry without
+  Open Card.
+
+## §chat.playbooks/run-record — The card after Start
+
+- **After Start** the setup card stays inline in the conversation as the run's read-only record:
+  the frozen choices and each member's model, with no buttons of the run (those are on the strip's
+  card). It folds to its head at Start, and is folded when the chat is opened again; Show Card
+  opens it in place (Hide Card folds it). At Start a view that had left the conversation's end
+  follows it again. In the chat that conducts the run it has no state and says only that it is
+  the card as you set it up (the conversation's start row says it started); in a chat that only
+  started the run elsewhere it reads Started, with when and where. Its state chip sits beside a long
+  name on a wide card and under it on a narrow one, never under Show Card.
+  In the chat that conducts the run, the strip says how that chat stands, in the words the
+  session list uses: Running, with how many helpers are working; Needs you, with the reason;
+  or Idle; in this release it never says Done (a turn's end isn't the run's end). In a chat that
+  only started it, it says Started and offers Open the Chat. When
+  the conducting chat is waiting on you or idle, the card offers Continue and Stop Here, which send
+  that word as your message to the conducting chat, by your click; whatever stops Send stops them
+  too, with the same reason. Which step the run is on, its scores and its changes from the plan
+  aren't shown in this release: progress comes in the chat's messages.
+- **This release's limits.** Sova can't yet tell a playbook's stop from a turn that simply ended,
+  or a stop from the run's end. A run waiting at one of its stops reads Needs you only when
+  Decisions is on (the session list's own reading); without it only a failed turn reads Needs
+  you, and a run at a stop reads Idle. A run you parked or that finished still says the run goes
+  on when you answer and offers Continue and Stop Here.
+- **Putting a card away.** Close Card on a started run takes its strip away from above the message
+  box; it doesn't stop or change the run, and Open Card on its entry in the conversation still
+  shows the run's record, marked closed, with no Continue or Stop Here. It isn't offered while the run is still starting. Closing
+  a card that was never started discards it. Marks in the conversation for a run that stopped for
+  you or finished aren't in this release.
+- **Runs from before teams.** A run started before teams had goals still opens as its record.
+  Its Who runs folds to "Who runs · {n} groups · {m} roles · started before teams", says so when
+  opened, then shows the helpers it ran with, grouped as that run grouped them
+  (each group's steps above it), the roles that ran as members (models and notes, no
+  brief lines), any others under Other helpers. Those plans listed every helper, so no block says
+  the team adds anyone else. It has no Flow drawing.
+
+## §chat.playbooks/start — Start runs exactly the card you saw
+
+Start works only by your own click on the card (§app.access/your-click), never from a chat, a
+tool or a script, and it runs exactly the version of the card you were looking at; a card that
+changed since it was drawn is refused and drawn again.
+
+- **A run is its own thing.** Each card is a run with an id of its own, not tied to a chat, so a
+  card can exist before any chat does. Start freezes it into the run's plan. A playbook that asks
+  for powers of its own runs in a new chat set up for it; otherwise it runs in this chat. When the run goes to
+  another chat, the first chat's card says it started the run there and can't be started again,
+  including after a reload.
+- **Pressed on the setup card** in the conversation. Once the run starts the setup card freezes
+  in place as its record and the run's strip appears above the message box
+  (§chat.playbooks/run-strip). A choice the chat fills must be filled first.
+- **Pressed once.** From the press until the server answers, the card says Starting, and the
+  strip appears once the run is starting; a refused Start returns them to Ready to start or Can't start yet. A second Start
+  while the first is under way starts nothing more.
+  A Start in a chat that holds a run, whether it conducts one (even with its card put away)
+  or still shows the card that started one in a new chat (until you close it), is refused with nothing changed: one playbook per chat
+  (§chat.playbooks/ways-in).
+- **A failed Start leaves the chat as it was,** and the card can be started again. A chat that
+  can't take the message (a terminal has it open, it's archived, it's an Overseer's or a baton's
+  chat) is refused before anything changes. Start never changes the chat's model or effort.
+  When the send itself is refused (the model has no sign-in), the mode the playbook switched to
+  is put back; a chat that followed the default mode then keeps that mode pinned.
+- **What Start writes.** In the run's folder, in the conducting chat's shared folder: the plan,
+  with each team's goal and your note for the team, and each required member's brief, notes page,
+  your note for it, its whole model list and its "only these" mark; your choices fill the goals'
+  and briefs' `{{id}}`s. No role prompt is filled in: each team's coordinator writes the
+  instructions.
+- **What the main chat gets.** One message carrying the playbook and the run: your choices, each
+  team's goal and note with its required members (brief, notes page, your note, model list,
+  "only these" mark), which teams work in which step, the steps and their stops, and the playbook contents page (§chat.playbooks/contents-page). The
+  main chat conducts the run from it, on its own model: it creates each team when the team's first
+  step begins and writes each member's instructions from the goal, brief and notes page. In the conducting
+  chat's thread that message is one row marking the start, "Playbook {title} started · revision
+  {n} · {time}", whose Show What Was Sent opens the exact text, both while it streams and once
+  settled, and whose Open Card opens the run's card.
+- **The chat's name.** A chat a run starts in that has no message and no name yet is named
+  "{title} (playbook)"; a chat that already has a message keeps its name.
+
+## §chat.playbooks/ways-in — Ways to open a playbook's card
+
+- **Type `/` and its name** in the message box: each listed playbook with a description is a row
+  in the `/` menu, and picking it opens its setup card in the conversation at that point, or
+  first an alignment: always for a playbook that requires one, and at the chat's judgement for
+  an ambiguous request with align on (§chat.playbooks/align-first). Words
+  typed after the name go with the card. A
+  command of the chat's own with the same name wins once the chat has had its first message;
+  before that its own skills and prompts aren't known yet, so `/{name}` opens the playbook's card.
+- **Pick it in the Playbooks dialog:** a playbook with a description opens its setup card in
+  the conversation instead of the text step.
+- **One playbook per chat.** Opening another playbook in a chat whose card isn't started
+  replaces that card, with no warning: its choices and edits are gone (your saved defaults
+  and last answers stay); opening the same playbook again shows its card as it was. A chat that holds
+  a run (it conducts it, even with its card put away, or its card started the run in a new chat
+  and is still shown there; Close Card on that card frees the chat) opens no other card, and a Start of another card there is refused
+  with nothing changed. There, the `/` rows and the Playbooks dialog say the chat already runs a
+  playbook, and picking one opens its card in a new chat in the same folder, with the words typed
+  after the name, and takes you there; this chat isn't changed.
+- A playbook whose description can't be read has its `/` row too; picking it says what is wrong
+  (§chat.playbooks/description-file).
+- **Ordinary chats only.** In a baton chat, the Overseer or a project's Overseer no card docks,
+  the `/` menu has no playbook rows, and a typed `/{name}` goes as typed. In the Playbooks dialog
+  there, a playbook with a description has Send Playbook off ("This chat runs no playbooks.", the
+  words Start refuses with); a recipe without one sends as before.
+
+## §chat.playbooks/contents-page — The playbook contents page
+
+Making and running playbooks share one short contents page, a table of contents with a section
+opened only when needed: what a playbook is, the cast and models, choices, steps and flows, the
+card, repeats, Sova's commands, and how to save one. Create mode carries it as its `playbooks`
+topic; a running playbook's main chat gets the same page, so it knows how its own playbook is
+built.
+
+- **Sova's commands.** One entry says what Sova itself can do from a script (list chats, read a
+  chat, start or stop one, run a project's services and tests, read the merge queue), and how to
+  find one and run it with `sova list` and `sova describe`, rather than copying the list.
+  Actions only your own click may do (Land, Start on a card, approvals, restarting Sova) stay
+  refused to a playbook, as to every chat.
+
+## §chat.playbooks/ab-cycle — The A/B cycle playbook
+
+Sova ships an A/B cycle playbook: measure a change to something a chat reads (a tool's
+description, a mode's text, the agent's instructions) against a baseline, improve it in cycles,
+and show the result.
+
+- **One way to record every round.** Its folder carries one runner, one scorer and one chart
+  script shared by every campaign, brief templates, a cost table against known prices, a noise and
+  copy-effect check, and the ways an arm is made (a worktree with its own test copy of Sova, a
+  prompt variant file, or a re-score of saved replies). Run output stays in the worktree's
+  ignored cache; experiment commits never land.
+- **Rounds.** Master is the fixed baseline, "Round 0", in every chart; each cycle's winner is the
+  next cycle's base. Every cycle shows its chart.
+- **A screenshot collage.** Its report shows screenshots as one collage: each arm's result side
+  by side per cycle, and the card at key moments. Its collage script builds that image.
+- **It requires an alignment first** (§chat.playbooks/align-first) on what fails today, what
+  counts as fixed, and how it's measured; their decisions fill those choices, which the card
+  shows read-only. Its run still stops to agree what is measured before the baseline.
+- **Choices** include what is under test, the test models, how many cycles run before it asks
+  you and the cap. Its runs never swap a test model for another, and its grader uses only the models listed for it.
+
+## §chat.playbooks/pi-upgrade — The pi upgrade playbook
+
+Sova's own project carries a pi upgrade playbook for moving Sova to a newer pi release.
+
+- **Research first, changing nothing.** A team goes through every changelog entry between the
+  pinned and the chosen release and through Sova's code, comparing what Sova uses today with
+  what the release changes.
+- **A readable report** with separate sections for wins, tradeoffs and risks, one row per
+  changelog entry in each: what Sova uses today, what it gains, what it costs, and how that was
+  checked. The rest is summarised per release, and every entry's row is in the run's changelog
+  file, which the report names. Then a plan ready to carry out.
+- **It always stops and asks** whether to go ahead, on every run, before it changes anything.
+  Only on your yes does it upgrade, refactoring where it sees fit so pi stays at the edge, then
+  check that the upgrade went smoothly with no regressions.
+- Its judge (planning) and its implementer (main implementation) list Fable 5.2 at high effort
+  first; the main chat runs on the model you chose for the chat.
+
+## §chat.playbooks/later — Decided, not built yet
+
+Decided with the design and not in this release:
+
+- **Repeats from the card.** Repeat… asks when and where; your click approves the whole card as it
+  will run unattended, and a change to the playbook pauses it as "Changed since you approved it".
+  Any playbook, Sova's, yours or a project's, can repeat, with more kinds of schedule.
+- **The run's flow.** Steps, cycles and a declared state machine run as a flow Sova keeps: it
+  shows where the run is, offers the stop buttons, and refuses a move the playbook doesn't allow;
+  asking you, repeating and the number of rounds are settings of that flow.
+- **The commands gate.** Commands that only look are free; a command that changes things and
+  isn't listed in the playbook is refused for its run.
+- **Improvements after a run.** The run proposes changes to its playbook on a card; nothing
+  changes without your click.
 
 ## §chat.playbooks/states — States
 

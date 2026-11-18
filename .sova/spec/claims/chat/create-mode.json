@@ -82,12 +82,15 @@
     "code": [
       "pi-config/extensions/mode/create/overview.md",
       "pi-config/extensions/mode/prompt.ts",
-      "pi-config/extensions/mode/create/guide.ts"
+      "pi-config/extensions/mode/create/guide.ts",
+      "pi-config/extensions/mode/create/playbooks.md",
+      "pi-config/extensions/mode/create/guide.test.ts",
+      "server/create-guide-growth.json"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "at": "2026-11-16T19:29Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
     }
   },
   "§chat.create-mode/delegate-parity": {
@@ -140,12 +143,23 @@
       "pi-config/extensions/mode/create/shared.md",
       "pi-config/extensions/mode/create/skills.md",
       "pi-config/extensions/mode/create/workers.md",
-      "pi-config/extensions/mode/create/releases.md"
+      "pi-config/extensions/mode/create/releases.md",
+      "pi-config/extensions/mode/create/playbooks.md",
+      "pi-config/extensions/mode/create/playbooks/card.md",
+      "pi-config/extensions/mode/create/playbooks/cast.md",
+      "pi-config/extensions/mode/create/playbooks/choices.md",
+      "pi-config/extensions/mode/create/playbooks/commands.md",
+      "pi-config/extensions/mode/create/playbooks/repeats.md",
+      "pi-config/extensions/mode/create/playbooks/saving.md",
+      "pi-config/extensions/mode/create/playbooks/steps.md",
+      "pi-config/extensions/mode/create/playbooks/what.md",
+      "pi-config/extensions/mode/create/guide.ts",
+      "pi-config/extensions/mode/create/guide.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T00:57Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+      "at": "2026-11-16T19:30Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
     }
   },
   "§chat.create-mode/growth-rule": {

@@ -240,15 +240,14 @@ Every caller keeps working with no new step for the person:
 
 ## §app.access/your-click — What only your own click passes
 
-Eighteen approvals are listed here. Seventeen pass only on what Sova takes for the person's own click
-in its page on this machine; the eighteenth, choosing where links open, is a narrower door that a
+Nineteen approvals are listed here. Eighteen pass only on what Sova takes for the person's own click
+in its page on this machine; the nineteenth, choosing where links open, is a narrower door that a
 script holding the operator token passes too (**Where links open**, below). Both hold but for what
 the Overseer keeps and a schedule on another computer (§app.access/other-roads). Each one lets
 something act later without asking, so the ordinary roads of a chat, a script (but at that narrower
 door) or another computer are refused. This stops a chat following its instructions,
 not a program on this computer posing as your browser (§app.access/click-limits). This holds in
-every chat, not only Create, and it ships before Create does. The same act sent by another road is
-refused too (§app.access/other-roads).
+every chat.
 
 | Approval | Request | Where you click |
 |---|---|---|
@@ -269,6 +268,7 @@ refused too (§app.access/other-roads).
 | A design run's brief | `POST /api/design/runs/:run/brief/start`, and `/brief/edit`, `/brief/answers`, `/brief/conflict`, `/brief/link`, `/brief/image` and `/brief/not-this-screen` | **Start**, **Edit**, **Go With Recommendations** or **Send Answers**, **Keep My Prompt** or **Rewrite It**, a link's use, an image's Use tick, and **Not This Screen**, on the Lookbook's brief (§chat.design-mode/brief-start, §chat.design-mode/brief-layers, §chat.design-mode/brief-questions, §chat.design-mode/link-modes, §chat.design-mode/brief-images) |
 | Answering a Lookbook Creative Director's question | `POST /api/design/coordinator/answer`, and a message to it that carries images (`POST /api/design/coordinator/message`) | The question on the Creative Director's card: starting or stopping a copy, opening a site, a sign-in or more than 12 designs in a turn; and images pasted into its box (§chat.design-mode/project-reach, §chat.design-mode/sites, §chat.design-mode/own-images) |
 | A chat's design images | `POST /api/design/assets/own`, `POST /api/design/assets/signed-in-consent`, `PATCH /api/design/images/:name`, `POST /api/design/images/:name/describe` | Bringing your own image in, the yes to capturing a signed-in page, an image's kind or note, and **Describe Again**, on the Lookbook card (§chat.design-mode/own-images, §chat.design-mode/link-sign-in, §chat.design-mode/brief-images) |
+| A playbook run's Start, and its defaults | `POST /api/playbook-runs/:run/start`, `/defaults` | **Start**, **Save as My Defaults** on its card (§chat.playbooks/start) |
 | Landing a branch, answering the merge queue, and taking a branch off it | every merge verb on the user's route but the reads and `merge.try` (`merge.add`, `merge.answer`, `merge.cancel`, pause, resume, Start Fresh, clear, setup, and the merge thread's `merge.restart`, `merge.test` and `merge.names`…: `POST /api/project-services/merge.*` and the queue's own routes), the Overseer's coding-worktree Merge (`POST /api/projects/:pid/overseer/worktrees/merge`) and Merge Branch on a proposed run (`POST /api/projects/:pid/runtime/merge`) | **Land**, a decision's answers (Accept, Land Anyway, Try Again, Land) and **Remove from Queue** or **Cancel**, on the branch's card, its Worktrees rows, the Merge Queue tab or the landing bar; or the person's own words in the branch's chat ("land it", §chat.worktrees/land-own-word, and an answer sent from its message box, §chat.merge-queue/decision); **Merge Branch** on the project page's coding worktree rows and on a proposed run |
 
 - **Who is refused.** A request with the Overseer's sender mark, a chat's key, the token in a header
@@ -310,7 +310,7 @@ refused too (§app.access/other-roads).
   (§app.access/other-roads); the token in a header (a script, a terminal, a chat's shell), any
   caller key, blank included, a card's command and an in-process call are refused. The refusal names
   the card or row to click. A card's commands (a view's code, or a button press that runs a
-  command): reads still work. This ships before the queue sends a branch back by itself. The limit:
+  command): reads still work. The limit:
   a chat with its sandbox off can still pass as the person (§app.access/click-limits).
 
 ## §app.access/other-roads — The same act by another road, and what passes elsewhere

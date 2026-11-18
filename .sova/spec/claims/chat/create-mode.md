@@ -63,7 +63,7 @@ Sova.
 ## §chat.create-mode/contents — The table of contents
 
 The mode's block carries one short line per topic, the way vis lists its drawing kinds
-(§chat.markdown/visuals): 20 topics in 6 groups, in this order and these words.
+(§chat.markdown/visuals): 21 topics in 6 groups, in this order and these words.
 
 - **Make it yours.**
   - `appearance`: colours, type and how this browser shows Sova
@@ -85,6 +85,7 @@ The mode's block carries one short line per topic, the way vis lists its drawing
   - `project`: how your project runs, tests, shares and ships
   - `landing`: what must pass before a branch reaches your project, and how it lands
   - `releases`: numbered versions of your project, and how they're made and published
+  - `playbooks`: repeatable jobs with a cast, your choices and steps, and how to make one
   - `automation`: recipes you run by hand, or that run by themselves
   - `cards`: buttons, cards and drawings that are your project's own
   - `overseers`: how the Overseers and the Project Assistant watch, act and hold back
@@ -109,6 +110,8 @@ Before it acts on a topic, a Create chat opens that topic's entry with its looku
 - **Only what has landed.** Create offers only what is on Sova's main line in the copy the chat runs.
   Work on a branch joins with its own entry when it lands, in the branch that lands it.
 - **A topic that isn't listed** is refused, and the answer lists the topics.
+- **The `playbooks` topic opens on its contents page** (§chat.playbooks/contents-page); each of its
+  sections opens on its own, with `create_guide {topic, section}`.
 
 ## §chat.create-mode/where-offered — Where it is offered
 

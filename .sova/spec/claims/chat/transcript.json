@@ -307,9 +307,9 @@
       "src/lib/confirm-step.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T21:32Z",
-      "source": "pi-session:731adbb4-6c80-4cc0-9fa2-0c5c7c6d88dc#baa7a28c"
+      "by": "user",
+      "at": "2026-11-18T05:25Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
     }
   },
   "§chat.transcript/open-questions": {
@@ -823,12 +823,13 @@
       "server/tail-hello.ts",
       "server/watch.ts",
       "server/harness/pi/reader.ts",
-      "server/transcript-shell.test.ts"
+      "server/transcript-shell.test.ts",
+      "server/playbook-runs/align-first.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-17T18:25Z",
-      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
+      "by": "claude-opus-5-5",
+      "at": "2026-11-18T09:21Z",
+      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#f6240ff1"
     }
   },
   "§chat.transcript/turn-end-keeps-reader": {

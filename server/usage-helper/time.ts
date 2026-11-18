@@ -90,6 +90,17 @@ export class Spans {
   }
 }
 
+/** [start, end) spans sorted and merged where they overlap or touch. */
+export function mergeSpans(spans: [number, number][]): [number, number][] {
+  const out: [number, number][] = [];
+  for (const [a, b] of [...spans].sort((x, y) => x[0] - y[0])) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+    else if (b > a) out.push([a, b]);
+  }
+  return out;
+}
+
 /** Per zone: a 15-minute slot's local day (every zone's offset is a multiple of 15 minutes). */
 const zoneDays = new Map<string, { fmt: Intl.DateTimeFormat; slots: Map<number, string> }>();
 function slotDay(tz: string): (slot: number) => string {
@@ -327,8 +338,19 @@ export class TimeQueries {
       r.away += this.away(yours, a, b, counted, rec.endMs);
       noteAgent(rec.sid, counted / 1000, b);
     }
+    // Tool runs: a turn's calls run in parallel, so each session's windows are merged first (its worker waits
+    // apart): three 1-minute calls at once are 1 minute of the agent's time.
+    const toolWindows = new Map<string, { sid: string; wait: boolean; kind?: string; spans: [number, number][] }>();
     for (const run of d.tools.records()) {
       if (run.end <= lo || run.start >= hi) continue;
+      const k = `${run.sid}\u001f${run.wait ? 1 : 0}`;
+      let g = toolWindows.get(k);
+      if (!g) toolWindows.set(k, (g = { sid: run.sid, wait: run.wait, spans: [] }));
+      g.kind ??= run.kind;
+      g.spans.push([run.start, run.end]);
+    }
+    const merged = [...toolWindows.values()].flatMap((g) => mergeSpans(g.spans).map(([start, end]) => ({ sid: g.sid, wait: g.wait, kind: g.kind, start, end })));
+    for (const run of merged) {
       const p = place(run.sid, run.kind);
       let counted = 0;
       byDay(day, run.start, run.end, (ld, ms) => {

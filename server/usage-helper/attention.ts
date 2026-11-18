@@ -150,6 +150,22 @@ export class AttentionStore {
     for (const sid of this.files.keys()) this.write(sid, settled);
   }
 
+  /** The session is about to be deleted: its file is read now and every bucket not yet kept is kept, so its
+      latest hours stay even if this reader is down when the file goes. Unknown or unreadable: nothing. */
+  keep(sid: string): void {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(sid)) return;
+    this.readRollup();
+    const file = path.join(this.opts.dir, `${sid}.jsonl`);
+    try {
+      const st = fs.statSync(file);
+      this.files.set(sid, { size: st.size, mtimeMs: st.mtimeMs, runs: replayAttention(fs.readFileSync(file, "utf8")).runs.map(({ s, e, r }) => ({ s, e, r })) });
+    } catch {
+      return;
+    }
+    this.seq++;
+    this.write(sid, Infinity);
+  }
+
   /** Writes the session's buckets after its newest kept one that end by `until`. */
   private write(sid: string, until: number): void {
     const f = this.files.get(sid);

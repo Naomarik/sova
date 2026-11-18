@@ -146,6 +146,12 @@ export function createService(opts: ServiceOptions): Service {
         const fold = foldInputOf(req.fold);
         return time.time({ range, project: typeof req.project === "string" && req.project ? req.project : null, tz, fold: fold ? folds(fold) : noFold, labels: req.labels === true });
       }
+      // The server is deleting a session: its hours are kept now (attention.ts keep).
+      case "time-keep": {
+        if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");
+        attention.keep(req.sid);
+        return { ok: true };
+      }
       case "prices":
         return prices.info();
       case "refresh":

@@ -48,7 +48,7 @@ import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-
 import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
 import { removeSessionLabels } from "./message-labels";
-import { removeSessionTimeSpent } from "./time-spent";
+import { keepSessionTimeSpent, removeSessionTimeSpent } from "./time-spent";
 import { removeSessionTours } from "./tours/lifecycle";
 import { removeDesignFiles } from "./design/store";
 import { byActivity } from "../src/lib/summary-diff";
@@ -2157,6 +2157,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         dropSessionTitles([s.id]);
         dropSessionTags([s.id]);
         removeSessionAttachments(s.id);
+        await keepSessionTimeSpent(s.id);
         removeSessionTimeSpent(s.id);
         removeSessionLabels(s.id);
         dropGroupAssignments([s.id]);
@@ -2347,6 +2348,7 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       dropSessionTitles([id]);
       dropSessionTags([id]);
       removeSessionAttachments(id);
+      await keepSessionTimeSpent(id);
       removeSessionTimeSpent(id);
       removeSessionLabels(id);
       sessionArchived(id);

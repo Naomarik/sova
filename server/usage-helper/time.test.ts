@@ -118,6 +118,26 @@ test("a deleted session's hours stay: rollup outside the snapshots, read again a
   assert.equal(restarted.you.typing, 300);
 });
 
+test("time-keep: a session's hours are kept before its delete, so a helper down when the file goes loses none", async () => {
+  const w = world();
+  const clock = w.clockStore();
+  clock.report("doomed", { pageId: "p", inputAgeMs: 0, slices: [slice("typing", 90)] }, NOW - 600_000);
+  let s = w.start();
+  assert.deepEqual(await s.answer({ op: "time-keep", sid: "doomed" }), { ok: true });
+  await assert.rejects(s.answer({ op: "time-keep" }), BadRequest);
+  // The helper is down from here: the file goes, and a new helper starts with no snapshots.
+  clock.remove("doomed");
+  rmSync(join(w.state, "usage-ledger"), { recursive: true, force: true });
+  s = w.start();
+  const t = await ask(s);
+  assert.equal(t.totals.you, 90);
+  assert.deepEqual(t.sessions, []);
+  // Seen vanishing as well: still counted once.
+  const again = w.start();
+  await again.answer({ op: "time-keep", sid: "doomed" });
+  assert.equal((await ask(again)).totals.you, 90);
+});
+
 test("settled buckets are kept while the session lives, once, and never doubled with its runs", () => {
   const w = world();
   const clock = w.clockStore();
@@ -165,6 +185,21 @@ test("a 30 s tool run then a stop is 30 s of Running Tools; no tool records read
   assert.equal(t.agents.what.tools, 30);
   assert.equal(t.totals.agents, 40);
   assert.equal(t.since.tools, NOW - 110_000);
+});
+
+test("parallel tool calls in one session count once; in two sessions each counts; parallel waits too", async () => {
+  const w = world();
+  w.tool({ sid: "a", start: NOW - 120_000, end: NOW - 60_000 });
+  w.tool({ sid: "a", start: NOW - 110_000, end: NOW - 70_000 });
+  w.tool({ sid: "a", start: NOW - 90_000, end: NOW - 50_000 });
+  w.tool({ sid: "b", start: NOW - 120_000, end: NOW - 60_000 });
+  w.tool({ sid: "a", start: NOW - 30 * 60_000, end: NOW - 20 * 60_000, kind: "worker-wait" });
+  w.tool({ sid: "a", start: NOW - 30 * 60_000, end: NOW - 20 * 60_000, kind: "worker-wait" });
+  const t = await ask(w.start());
+  assert.equal(t.agents.what.tools, 70 + 60, "a: one 70 s stretch; b: its own 60 s");
+  assert.equal(t.totals.agents, 130);
+  assert.equal(t.totals.away, 130);
+  assert.equal(t.totals.workerWait, 600, "two waits at once: 10 min, not 20");
 });
 
 test("While You Were Away: agent seconds outside every moment you were at any session", async () => {

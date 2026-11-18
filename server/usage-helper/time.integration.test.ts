@@ -14,7 +14,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.SOVA_PRICES_FETCH = "off";
 mkdirSync(join(agentDir, "sova"), { recursive: true });
 
-const { TimeSpentStore } = await import("../time-spent");
+const { TimeSpentStore, keepSessionTimeSpent } = await import("../time-spent");
 const { startSharedUsageHelper, stopSharedUsageHelper } = await import("./client");
 const { buildApp } = await import("../app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
@@ -82,4 +82,21 @@ test("GET /api/usage/time: your time, agent time and tool time from the real hel
   });
   assert.equal(restarted.totals.you, 180, "the day's You figure is unchanged");
   assert.equal(restarted.days.at(-1)!.you, t.days.at(-1)!.you);
+
+  // A delete while the helper is about to go down: the server asked it to keep the hours first.
+  clock.report("late", { pageId: "r", inputAgeMs: 0, slices: [{ row: "typing", sec: 45, ageMs: 0, docs: [] }] }, Date.now());
+  await keepSessionTimeSpent("late");
+  await stopSharedUsageHelper();
+  clock.remove("late");
+  startSharedUsageHelper({ log: () => {} });
+  const kept = await until(async () => {
+    const r = await get();
+    return r.status === 200 ? r.body : null;
+  });
+  assert.equal(kept.totals.you, 225, "the late session's 45 s were kept before its file went");
+  assert.equal(kept.sessions.length, 1);
+  await stopSharedUsageHelper();
+  const t0 = Date.now();
+  await keepSessionTimeSpent("whatever");
+  assert.ok(Date.now() - t0 < 1_000, "no helper: the delete isn't held");
 });

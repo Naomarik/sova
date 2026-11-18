@@ -69,7 +69,6 @@ Paths in "Where" are under `server/`.
 | P32 mcp-status-text | error-text | `readStatus` (harness/pi/mcp-check.ts), `recordOf` (harness/pi/mcp-check.ts) | `createMcpExtension`, `ToolDefinition.label` | pi exports a status read and the tool's raw name |
 | P33 mcp-auth-keys | private-read | `forgetSignIn` (mcp/forget-sign-in.ts) | `McpOAuthCredentialStore.remove` | pi exports its credential store |
 | P34 mcp-registered-list | ordering | `mcpExtension` (harness/pi/mcp.ts) | `ExtensionAPI.registerMcpServer`, `ExtensionAPI.unregisterMcpServer`, `createMcpExtension` | pi lets a host hand it a chat's list at each prompt |
-| P35 mcp-tool-name | semantic | `piToolNames` (mcp/tool-names.ts) | `createMcpToolDefinition` | pi records the raw names in every result, or exports its naming |
 | P36 mcp-http-transport | semantic | `AddressServer` (harness/pi/mcp-http.ts), `mcpConfigOf` (harness/pi/mcp.ts), `piLiteral` (harness/pi/mcp.ts) | `StreamableHttpTransport`, `McpSessionExpiredError`, `McpAuthRequiredError`, `McpOAuthAuthorizationRequiredError`, `McpTransportFactory`, `McpExtensionOptions.createTransport` | pi lets a host hand a server its own token source and literal values |
 | P37 openai-codex-login | semantic | `piInteraction` (harness/pi/sign-in.ts), `piProviderSignIn` (harness/pi/sign-in.ts), `OpenAiLoginService.answer` (openai-login.ts) | `ModelRuntime.login`, `AuthInteraction.prompt`, `AuthInteraction.notify`, openai-codex `login` | pi takes the login method as an option and reports a refused method as its own error |
 | P38 api-key-login | semantic | `piProviderKeys` (harness/pi/sign-in.ts), `storedKeyOf` (harness/pi/sign-in.ts) | `ModelRuntime.login`, `ModelRuntime.logout`, `ModelRuntime.getProviders`, `readStoredCredential`, pi-ai `envApiKeyAuth` | pi exports a store-a-key call (AuthStorage or a ModelRuntime method that persists) |
@@ -272,12 +271,6 @@ Canary: `P33 mcp-auth-keys: pi's oauth store keys a server by its namespace and 
 A chat's list reaches pi as registered servers, not as config: a handler ahead of pi's `session_start` registers them, and a list that changed before the first message swaps through `unregisterMcpServer`/`registerMcpServer`, which pi applies in its `mcp_servers_change` handler. Both have to land in the first request (§app.mcp/tool-list).
 
 Canary: `P34 mcp-registered-list: a server registered ahead of pi's session_start connects, and one swapped in before the first prompt is declared in it`.
-
-### P35 mcp-tool-name
-
-A saved tool row reads its server and tool from the result's details, and a call that failed before the server has none, so the chat's kept list answers by pi's own naming rule (`piToolNames`): the name sanitized, and shortened with a hash of server and tool past 64 characters or when taken.
-
-Canary: `P35 mcp-tool-name: a plain, a sanitized and a shortened tool register under the names piToolNames gives`.
 
 ### P36 mcp-http-transport
 

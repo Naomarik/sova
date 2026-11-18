@@ -178,7 +178,3 @@ logged. Reasons: `ok`, `ok-ordinal-only`, `not-fullscreen`, `anchor-not-in-conte
 ```bash
 node test.mjs
 ```
-
-`transcript.test.mjs` (run by `test.mjs`) drives the real extension against a started
-`TuiAltScreen` behind pi's renderer proxy, pi's chat viewport, and pi's real message
-components at several terminal widths.

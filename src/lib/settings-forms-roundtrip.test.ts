@@ -27,6 +27,10 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
 const { testApp } = await import("../../server/mesh/app-test-fixtures");
 const app = await testApp();
+// GET /api/updates asks what install this is; the real probe spawns `systemctl --user show`, which a
+// sandboxed shell refuses. A check-only install is all the Updates form needs.
+const { setInstallForTest } = await import("../../server/updates/routes");
+setInstallForTest({ kind: "check-only", whyNot: "test", checkout: null, unit: null, launcher: null, installPort: null, noExtensions: false, noAppEntry: false });
 const { AUTH_COOKIE, initAuthToken, setAuthPort, sovaToken } = await import("../../server/auth");
 /** The port this listener would be bound to: no socket is opened (as server/auth-gate.test.ts). */
 const port = 47_914;
@@ -49,6 +53,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   return app.fetch(new Request(`http://${self}${url}`, { ...init, headers }), { incoming });
 }) as typeof fetch;
 after(() => {
+  setInstallForTest(null);
   globalThis.fetch = realFetch;
   rmSync(agentDir, { recursive: true, force: true });
 });

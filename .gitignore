@@ -50,5 +50,4 @@ scripts/mesh-dialout/local.env
 *.m4v
 *.avi
 site/public/video/
-
 .tmp/

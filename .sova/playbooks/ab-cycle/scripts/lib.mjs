@@ -5,9 +5,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** The playbook folder, and Sova's folder it ships in (override: $SOVA_ROOT). */
+/** The playbook folder, and Sova's folder it lives in (.sova/playbooks/ab-cycle) (override: $SOVA_ROOT). */
 export const FOLDER = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const SOVA_ROOT = process.env.SOVA_ROOT ? resolve(process.env.SOVA_ROOT) : resolve(FOLDER, "..", "..");
+export const SOVA_ROOT = process.env.SOVA_ROOT ? resolve(process.env.SOVA_ROOT) : resolve(FOLDER, "..", "..", "..");
 
 /** `--key value` and `--flag` after the positionals. */
 export function args(argv = process.argv.slice(2)) {

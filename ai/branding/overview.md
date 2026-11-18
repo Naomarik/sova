@@ -4,12 +4,10 @@ Working notes for how Sova presents itself: what it is, how it talks, which name
 what a reader can safely claim about it. Nothing here loads automatically and nothing in the app
 reads it. It is for a person or an agent writing about Sova on purpose.
 
-**The brand's machine-readable half is now `.sova/marketing/brand.json`**, rendered into
-[`.sova/marketing/BRAND.md`](../../.sova/marketing/BRAND.md) by the Marketing playbook's generator
-(`playbooks/marketing/`). That is what the marketing playbooks read, and where `brand.json` and a
-page here disagree, `brand.json` is the one that is maintained. The pages below keep what a
-rendered brand book cannot hold: the reasoning, the decision record, the rejected candidates, the
-tables of where things live, and the before/after examples.
+These pages are the maintained copy of Sova's brand facts: the one line and paragraph, the
+audience and "what it is not" ([identity.md](identity.md)), the voice pillars and words to use
+and avoid ([voice.md](voice.md)), plus the reasoning, the decision record, the rejected
+candidates, the tables of where things live, and the before/after examples.
 
 **Sova** is the name: Sessions, Orchestration, Viewing & Agents. The wordmark is set lowercase,
 `sova`, matching the app's own brand element; running prose capitalizes it. The mark is Astra's
@@ -23,8 +21,8 @@ The visual system is not here. It lives in the design skill at
 
 | Read | When |
 |---|---|
-| [identity.md](identity.md) | You need to say what Sova is, for whom, in one paragraph or one line — the recorded reasoning behind the fields now in `brand.json`. |
-| [voice.md](voice.md) | You are writing prose about it: a README section, a release note, a page — the reasoning and the before/after examples behind the voice rules in `brand.json`. |
+| [identity.md](identity.md) | You need to say what Sova is, for whom, in one paragraph or one line — and the reasoning behind those words. |
+| [voice.md](voice.md) | You are writing prose about it: a README section, a release note, a page — the voice rules, their reasoning, and before/after examples. |
 | [truth-sources.md](truth-sources.md) | You are about to claim a feature exists. Read this first. |
 | [naming.md](naming.md) | The name and the mark, decided. |
 | [playbooks/readme-update.md](playbooks/readme-update.md) | Editing `README.md` after a change. |

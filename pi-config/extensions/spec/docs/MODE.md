@@ -128,5 +128,4 @@ conflict that `merge-manifest --write` finishes.
 | A turn ends when the model stops | §tools.spec/no-turn-end-check |
 | Workers get the minor modes | §chat.mode-menu/workers |
 | The merge note | §chat.worktrees/merge-card |
-| The spec review playbook | §tools.spec/review-playbook |
 | The tools themselves | the H2s under §tools/spec |

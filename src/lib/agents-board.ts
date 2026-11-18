@@ -474,14 +474,6 @@ export const rowHasDetail = (d: RowDetail): boolean => !!(d.reason || d.question
 // ---------------------------------------------------------------------------
 // Titles, teams
 
-/** The gist as a title: one line, within the title limit; null when there's none or it IS the title. */
-export function gistTitle(s: Pick<SessionSummary, "title" | "outlineGist" | "outlineNow">): string | null {
-  const line = summaryLineOf(s as SessionSummary).replace(/\s+/g, " ").trim();
-  if (!line) return null;
-  const cut = line.length > SESSION_TITLE_MAX ? `${line.slice(0, SESSION_TITLE_MAX - 1).trimEnd()}…` : line;
-  return cut === s.title ? null : cut;
-}
-
 /**
  * The team a `#/agents/<key>` link names: its exact key, or, for a bare team id from an older
  * link, the newest team with that id. Null when no live session has it.

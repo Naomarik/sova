@@ -2,7 +2,8 @@
 // request, and the one sentence it ends with.
 
 import type { SessionSummary } from "../../shared/protocol";
-import { setSessionArchived, setSessionTitle } from "./api";
+import { regenerateSessionTitle, setSessionArchived, setSessionTitle } from "./api";
+import { regenerateTitle } from "./auto-title";
 import { archivedDropToast, unarchivedToast } from "./drag-archive";
 import { quoted } from "./session-groups";
 import { announce, toast } from "./ui-state";
@@ -26,6 +27,13 @@ export async function renameSession(s: Pick<SessionSummary, "path" | "title" | "
     return false;
   }
 }
+
+/**
+ * Regenerate Title, from a session menu or the open session's head: one AI rename, its keyed toast
+ * with Undo (lib/auto-title), then `refresh` so the row shows the outcome.
+ */
+export const regenerateSessionTitleNow = (s: Pick<SessionSummary, "path" | "title" | "titleBy" | "originalTitle">, refresh: () => void) =>
+  regenerateTitle(s, { post: regenerateSessionTitle, rename: setSessionTitle, toast, announce, refresh });
 
 /** Archive or unarchive one session; says what happened, and resolves whether it landed. */
 export async function archiveSession(path: string, archived: boolean, project?: string | null): Promise<boolean> {

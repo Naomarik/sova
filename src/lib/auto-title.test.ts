@@ -11,13 +11,18 @@ import {
   nameSessions,
   namingIn,
   regenerateOutcome,
+  regenerateTitle,
+  type RegenerateDeps,
   regeneratingTitle,
   setNaming,
   setRegeneratingTitle,
   shortenCountLine,
   shortenDoneLine,
   shorteningLabel,
+  undoTitleOf,
 } from "./auto-title";
+import type { AutoTitleResponse } from "../../shared/protocol";
+import type { ToastOptions } from "./toast";
 
 const row = (path: string, over: Partial<SessionSummary> = {}): SessionSummary =>
   ({ id: path, path, cwd: "/", title: "first message", createdAt: "", lastActiveAt: "", model: null, live: null, busy: false, origin: "web", archived: false, ...over }) as SessionSummary;
@@ -96,6 +101,77 @@ test("regenerating is per open session, and survives a remount", () => {
   assert.equal(regeneratingTitle("/b"), false);
   setRegeneratingTitle("/a", false);
   assert.equal(regeneratingTitle("/a"), false);
+});
+
+test("Undo writes back what the row had: nothing stored clears it, an Overseer title stays the Overseer's, any other comes back as typed", () => {
+  assert.deepEqual(undoTitleOf(row("a")), { title: null });
+  assert.deepEqual(undoTitleOf(row("a", { title: "Mine", titleBy: "user", originalTitle: "first message" })), { title: "Mine" });
+  assert.deepEqual(undoTitleOf(row("a", { title: "first message", titleBy: "user" })), { title: "first message" }); // stored, equal to the derived one
+  assert.deepEqual(undoTitleOf(row("a", { title: "Ops", titleBy: "overseer", originalTitle: "first message" })), { title: "Ops", source: "overseer" });
+  assert.deepEqual(undoTitleOf(row("a", { title: "Auto", titleBy: "auto", originalTitle: "first message" })), { title: "Auto" });
+  assert.deepEqual(undoTitleOf(row("a", { title: "Old", originalTitle: "first message" })), { title: "Old" }); // an older server's override
+});
+
+/** A regenerate's world: the post answers when the test says, and every toast, sentence, rename and refresh is kept. */
+function fakeRegenerate(answer: () => Promise<AutoTitleResponse>) {
+  const toasts: { text: string; options?: ToastOptions }[] = [];
+  const said: string[] = [];
+  const renames: unknown[][] = [];
+  let refreshes = 0;
+  const deps: RegenerateDeps = {
+    post: () => answer(),
+    rename: async (...args) => void renames.push(args),
+    toast: (text, options) => void toasts.push(options ? { text, options } : { text }),
+    announce: (t) => void said.push(t),
+    refresh: () => void refreshes++,
+  };
+  return { deps, toasts, said, renames, refreshes: () => refreshes };
+}
+
+test("regenerate: one keyed toast runs, then names the new title with Undo; a second press meanwhile starts nothing", async () => {
+  let release!: (r: AutoTitleResponse) => void;
+  let posts = 0;
+  const f = fakeRegenerate(() => (posts++, new Promise((r) => (release = r))));
+  const s = row("/r1", { title: "first message" });
+  const first = regenerateTitle(s, f.deps);
+  assert.equal(regeneratingTitle("/r1"), true);
+  assert.deepEqual([...f.toasts], [{ text: "Regenerating title…", options: { key: "regenerate-title:/r1" } }]);
+  assert.equal(await regenerateTitle(s, f.deps), null, "the second press is refused while the first runs");
+  assert.equal(posts, 1);
+  release({ results: [{ path: "/r1", outcome: "named", title: "Push subscription bug" }] });
+  assert.equal(await first, "Push subscription bug");
+  assert.equal(regeneratingTitle("/r1"), false);
+  assert.equal(f.refreshes(), 1);
+  const done = f.toasts.at(-1)!;
+  assert.equal(done.text, "Renamed to “Push subscription bug”.");
+  assert.equal(done.options?.key, "regenerate-title:/r1", "it replaces the running toast");
+  assert.equal(done.options?.action?.label, "Undo");
+  assert.deepEqual(f.said, ["Regenerating title…", "Renamed to “Push subscription bug”."]);
+  await done.options!.action!.run();
+  assert.deepEqual(f.renames, [["/r1", null, undefined]], "a row with no stored title goes back to none");
+  assert.equal(f.toasts.at(-1)!.text, "Title back to “first message”.");
+  assert.equal(f.refreshes(), 2);
+});
+
+test("regenerate: Undo of an Overseer title writes it back as the Overseer's", async () => {
+  const f = fakeRegenerate(async () => ({ results: [{ path: "/r2", outcome: "named", title: "New" }] }));
+  await regenerateTitle(row("/r2", { title: "Ops", titleBy: "overseer", originalTitle: "first message" }), f.deps);
+  await f.toasts.at(-1)!.options!.action!.run();
+  assert.deepEqual(f.renames, [["/r2", "Ops", "overseer"]]);
+});
+
+test("regenerate: a title that stays replaces the running toast with why, offers no Undo, and frees the session", async () => {
+  for (const answer of [async () => ({ results: [{ path: "/r3", outcome: "skipped" as const, reason: "no-model" as const }] }), () => Promise.reject(new Error("The Sova server isn't reachable"))]) {
+    const f = fakeRegenerate(answer);
+    assert.equal(await regenerateTitle(row("/r3"), f.deps), null);
+    const last = f.toasts.at(-1)!;
+    assert.match(last.text, /^Couldn't regenerate the title\. /);
+    assert.deepEqual(last.options, { key: "regenerate-title:/r3" });
+    assert.equal(f.said.at(-1), last.text);
+    assert.equal(regeneratingTitle("/r3"), false);
+    assert.equal(f.refreshes(), 1);
+    assert.deepEqual(f.renames, []);
+  }
 });
 
 test("Shorten long titles' lines: the count before, the busy label, and what was done after", () => {

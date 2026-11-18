@@ -84,6 +84,7 @@ describe("menuGroups", () => {
     assert.equal(menuName("  Move   to Group… "), "move to group");
     assert.equal(isSovaName("Copy Paths"), false, "a longer label is its own");
     assert.equal(isSovaName("Archive Issue"), false);
+    for (const retired of ["Open Session", "Use Gist as Title"]) assert.equal(isSovaName(retired), true, `${retired} stays reserved after leaving the menu`);
   });
 
   test("the tooltip names the extension", () => {

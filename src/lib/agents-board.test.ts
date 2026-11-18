@@ -8,7 +8,6 @@ import {
   boardState,
   boardTotals,
   filterCounts,
-  gistTitle,
   hasUnmerged,
   inDefaultScope,
   matchesSearch,
@@ -321,15 +320,6 @@ test("worktrees: merged either way, unmerged in words when not, and plain words 
   assert.equal(treeName(tree("/t", { branch: undefined })), "detached");
   assert.equal(treeName({ path: "/w/.worktrees/sova-x/", source: "session", exists: false }), "sova-x");
   assert.equal(worktreePathsKey(boardRows([sess("a"), sess("b")], undefined, noBusy)), "/s/a.jsonl,/s/b.jsonl");
-});
-
-test("gist as title: one line within the limit, and nothing when it already is the title", () => {
-  assert.equal(gistTitle({ title: "x", outlineGist: "  Theme\n tokens " }), "Theme tokens");
-  assert.equal(gistTitle({ title: "Theme tokens", outlineGist: "Theme tokens" }), null);
-  assert.equal(gistTitle({ title: "x" }), null);
-  const long = gistTitle({ title: "x", outlineGist: "a".repeat(200) })!;
-  assert.equal(long.length, 80);
-  assert.ok(long.endsWith("…"));
 });
 
 test("a team link finds its team by key or bare id", () => {

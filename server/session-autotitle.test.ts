@@ -547,7 +547,7 @@ describe("naming a session", () => {
 describe("regenerate and shorten", () => {
   const long = "A title the Overseer wrote that is far too long";
 
-  test("regenerate replaces any title of the session, a typed one included, and the current title never reaches the model", async () => {
+  test("regenerate replaces any title of the session, a typed one included, and the model is told the title it replaces", async () => {
     for (const [by, title] of [["user", "Typed by hand title"], ["overseer", long], ["auto", "Old auto title"]] as const) {
       const s = session([user("the push subscription drops on reload"), outline("Fixing push subscriptions that drop on reload", [])]);
       if (by === "auto") writeAutoTitle(s.id, title);
@@ -555,13 +555,28 @@ describe("regenerate and shorten", () => {
       const f = fakeRuntime(() => '{"title": "Push subscription bug"}');
       assert.deepEqual(await at.nameSession(s.path, "regenerate", deps(f.runtime)), { outcome: "named", title: "Push subscription bug" }, by);
       assert.equal(readSessionTitleRecords()[s.id]?.by, "auto");
-      assert.ok(!JSON.stringify(f.calls[0]!.context).includes(title), "the current title never reaches the model");
+      assert.ok(JSON.stringify(f.calls[0]!.context).includes(`CURRENT TITLE (being replaced; give a different one): ${title}`), "the replaced title reaches the model");
     }
     // A legacy (bare string) title too, and a session with no summary line.
     const bare = session([user("rename me from scratch please")]);
     writeFileSync(titlesFile, JSON.stringify({ version: 2, titles: { ...JSON.parse(readFileSync(titlesFile, "utf8")).titles, [bare.id]: "An older bare string title" } }));
     const f = fakeRuntime(() => '{"title": "Scratch rename"}');
     assert.deepEqual(await at.nameSession(bare.path, "regenerate", deps(f.runtime)), { outcome: "named", title: "Scratch rename" });
+  });
+
+  test("only regenerate names the replaced title; shorten and the button keep the plain prompt", async () => {
+    const input = { userMessages: ["fix the cache"], summaryLine: "Cache fixes", topics: [] };
+    assert.equal(at.buildTitlePrompt({ ...input, replacingTitle: "Old name" }), `${at.buildTitlePrompt(input)}\n\nCURRENT TITLE (being replaced; give a different one): Old name`);
+    const s = session([user("the push subscription drops on reload"), outline("Fixing push subscriptions that drop on reload", [])]);
+    setSessionTitle(s.id, long, "overseer");
+    const f = fakeRuntime(() => '{"title": "Push subscription bug"}');
+    assert.equal((await at.nameSession(s.path, "shorten", deps(f.runtime))).outcome, "named");
+    assert.ok(!JSON.stringify(f.calls[0]!.context).includes("CURRENT TITLE"));
+    assert.ok(!JSON.stringify(f.calls[0]!.context).includes(long));
+    const fresh = session([user("name this one please"), outline("Naming a fresh one", [])]);
+    const b = fakeRuntime(() => '{"title": "Fresh naming"}');
+    assert.equal((await at.nameSession(fresh.path, "button", deps(b.runtime))).outcome, "named");
+    assert.ok(!JSON.stringify(b.calls[0]!.context).includes("CURRENT TITLE"));
   });
 
   test("regenerate race: a rename (or clear) while the model was out wins, and the answer is dropped", async () => {

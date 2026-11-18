@@ -1338,6 +1338,20 @@ describe("pi contract", () => {
     assert.equal(seen.a, direct, "the extensions' instance is the one a plain import gets");
     assert.notEqual(seen.c, seen.a, "the control: one that can't load natively is translated, with its own copy");
     delete (globalThis as any).__sovaP26;
+    // A native import gets pi-ai's real entry, not the view pi's loader aliases it to, and from pi-ai 1.5.0
+    // the two differ: no Type on the real one, and a StringEnum that is a plain object, into which TypeBox's
+    // Type.Optional() writes its marker as a key the model's provider would receive.
+    const view = await import(pathToFileURL(join(pi.dir, "dist/core/extensions/pi-ai-extension-view.js")).href);
+    const plain = '{"type":"string","enum":["a","b"]}';
+    assert.equal(JSON.stringify(Type.Optional(view.StringEnum(["a", "b"]))), plain, "the loader's view: a TypeBox schema, and Optional adds no key");
+    assert.equal(typeof view.Type?.Object, "function", "and it carries Type");
+    assert.equal(
+      JSON.stringify(Type.Optional((pi.ai as any).StringEnum(["a", "b"]))),
+      '{"type":"string","enum":["a","b"],"~optional":true}',
+      "fixed?: pi-ai's own StringEnum is a TypeBox schema again, or TypeBox no longer writes its marker: subagents/string-enum.ts and create-guide-tool's Type.Unsafe wrap may go",
+    );
+    assert.equal(JSON.stringify(Type.Optional(Type.Unsafe((pi.ai as any).StringEnum(["a", "b"])))), plain, "what the wrap gives: the schema as pi 1.0.3 had it");
+    assert.equal((pi.ai as any).Type, undefined, "fixed?: pi-ai's entry re-exports Type again");
   });
 
   test("P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its HTML export, its CLI and its entry", () => {

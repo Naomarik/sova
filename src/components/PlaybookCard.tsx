@@ -47,6 +47,7 @@ import {
   footHint,
   ownRecordLine,
   revealStep,
+  setByChat,
 } from "../lib/playbook-card";
 import type { PlaybookRunsStore } from "../lib/playbook-runs";
 import { ApiError } from "../lib/api";
@@ -58,6 +59,7 @@ import { jumpToEntry } from "../lib/jump";
 import { watchPinnedBar } from "../lib/pinned-bar";
 import { Markdown } from "./Markdown";
 import { ModelPickButton } from "./ModelPickButton";
+import { FromChat } from "./PlaybookFromChat";
 import { NumberField, Select, TextArea, TextField, Toggle } from "./form";
 import { Chip, Icon } from "./ui";
 import "./PlaybookCard.css";
@@ -505,6 +507,9 @@ export function PlaybookCard(props: {
   const cycleMax = () => shown().cycle?.max ?? run().cycle?.max ?? 1;
   const cycleAsk = () => shown().cycle?.askEvery ?? run().cycle?.askEvery ?? 1;
   const cycleUntil = () => shown().cycle?.until ?? run().cycle?.until ?? "rule";
+  /** The chat set this value last, and no change of yours to it is still saving: it reads From the chat. */
+  const byChat = (path: string, yours: unknown) => yours === undefined && setByChat(run(), path);
+  const cycleByChat = () => byChat("cycle.max", shown().cycle?.max) || byChat("cycle.askEvery", shown().cycle?.askEvery);
 
   /** The flow's drawing is made the first time its section is opened, and kept. */
   const [flowSeen, setFlowSeen] = createSignal(false);
@@ -737,6 +742,7 @@ export function PlaybookCard(props: {
                       eyebrow={teamEyebrow(t(), run().steps, !!run().legacy)}
                       adds={teamAddsLine(t(), !!run().legacy)}
                       note={teamNote(t())}
+                      noteByChat={byChat(`teams.${t().id}.note`, shown().teams?.[t().id]?.note)}
                       editable={editable()}
                       onNote={(note) => queue({ teams: { [t().id]: { note } } }, TYPE_SAVE_MS)}
                     >
@@ -747,6 +753,11 @@ export function PlaybookCard(props: {
                             on={memberOn(m())}
                             note={memberNote(m())}
                             pick={memberEdit(m())?.pick}
+                            byChat={{
+                              pick: byChat(`roles.${m().id}.pick`, memberEdit(m())?.pick),
+                              on: byChat(`roles.${m().id}.on`, memberEdit(m())?.on),
+                              note: byChat(`roles.${m().id}.note`, memberEdit(m())?.note),
+                            }}
                             editable={editable()}
                             onPick={(pick) => queue({ roles: { [m().id]: { pick } } })}
                             onOn={(on) => queue({ roles: { [m().id]: { on } } })}
@@ -784,6 +795,7 @@ export function PlaybookCard(props: {
                       </Show>
                       <Show when={s().stop === "optional"}>
                         <Toggle class="pb-toggle" label="Stop for me here" checked={stopOn(s())} disabled={!editable()} onChange={(on) => queue({ stops: { [s().id]: on } })} />
+                        <FromChat when={byChat(`stops.${s().id}`, shown().stops?.[s().id])} />
                       </Show>
                     </span>
                   </li>
@@ -804,9 +816,18 @@ export function PlaybookCard(props: {
                       <span>{cycleAsk() === 1 ? "cycle." : "cycles."}</span>
                     </div>
                   </Show>
+                  <FromChat when={cycleByChat()} />
                   <Show when={c().rule}>
                     {(rule) => (
-                      <Show when={editable()} fallback={<p class="pb-note">{cycleUntil() === "rule" ? `Stops early when ${rule()}` : "Runs every cycle, whatever the stop rule says."}</p>}>
+                      <Show
+                        when={editable()}
+                        fallback={
+                          <p class="pb-note">
+                            {cycleUntil() === "rule" ? `Stops early when ${rule()}` : "Runs every cycle, whatever the stop rule says."}{" "}
+                            <FromChat when={byChat("cycle.until", shown().cycle?.until)} />
+                          </p>
+                        }
+                      >
                         <div class="pb-cycle-line">
                           <Select
                             class="pb-until"
@@ -818,6 +839,7 @@ export function PlaybookCard(props: {
                             ]}
                             onChange={(v) => queue({ cycle: { until: v as "rule" | "max" } })}
                           />
+                          <FromChat when={byChat("cycle.until", shown().cycle?.until)} />
                         </div>
                         <p class="pb-note">The stop rule: {rule()}</p>
                       </Show>
@@ -1208,7 +1230,7 @@ const NoteSaid = (props: { record: string; note: string }) => (
 
 /** One team in Who runs: its name and steps over its goal, its required members, the line saying it
     isn't limited to them, and your note for the team. */
-function TeamBlock(props: { team: PlaybookTeamView; eyebrow: string; adds: string | null; note: string; editable: boolean; onNote(note: string): void; children: JSX.Element }) {
+function TeamBlock(props: { team: PlaybookTeamView; eyebrow: string; adds: string | null; note: string; /** The chat set the team's note. */ noteByChat: boolean; editable: boolean; onNote(note: string): void; children: JSX.Element }) {
   const tid = `pbt-${createUniqueId()}`;
   const t = () => props.team;
   const note = runNote(() => props.note);
@@ -1232,6 +1254,7 @@ function TeamBlock(props: { team: PlaybookTeamView; eyebrow: string; adds: strin
               <NoteField id={note.id} label={`Note for the ${t().label} team`} record="Your note for the team" note={props.note} onNote={props.onNote} />
             </Show>
           </Show>
+          <FromChat when={props.noteByChat && !!props.note} />
         </div>
       </Show>
     </div>
@@ -1246,6 +1269,8 @@ function MemberRow(props: {
   on: boolean;
   note: string;
   pick: PlaybookModelPick | null | undefined;
+  /** Which of its values the chat set last: each reads From the chat. */
+  byChat: { pick: boolean; on: boolean; note: boolean };
   editable: boolean;
   onPick(pick: PlaybookModelPick | null): void;
   onOn(on: boolean): void;
@@ -1305,6 +1330,7 @@ function MemberRow(props: {
           </Show>
         </Show>
         <Show when={!off() && memberWhy(r())}>{(why) => <span class="pb-row-why">{why()}</span>}</Show>
+        <FromChat when={!off() && props.byChat.pick} />
         <Show when={r().brief}>
           <span class="pb-member-brief">{r().brief}</span>
         </Show>
@@ -1314,6 +1340,7 @@ function MemberRow(props: {
               <NoteField id={note.id} label={`Note for ${r().label}`} record="Your note" note={props.note} onNote={props.onNote} />
             </Show>
           </Show>
+          <FromChat when={props.byChat.note && !!props.note} />
         </Show>
       </span>
       <span class="pb-member-actions">
@@ -1323,6 +1350,7 @@ function MemberRow(props: {
         <Show when={r().optional && props.editable}>
           <Toggle class="pb-toggle" label="Runs" ariaLabel={`${r().label} runs`} checked={props.on} onChange={(on) => props.onOn(on)} />
         </Show>
+        <FromChat when={r().optional && props.byChat.on} />
       </span>
     </div>
   );

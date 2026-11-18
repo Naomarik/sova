@@ -34,10 +34,11 @@ they survive a reload or a server restart. Switching one chat never moves anothe
 ## How replies read
 
 Whatever its modes, every chat you talk to (the Overseer and a project's overseer included) opens
-each reply with a short summary you can scan in a few seconds: the answer, what changed, what needs
-you, and any warnings or things the agent didn't check. The full report follows, sized to the
-question: a quick question gets nothing more, and an investigation gets its findings with their
-evidence, as a list or table when there are several, ending with a line on where it looked. Nothing
+each reply with a short, scannable summary: the answer, what changed, what needs you, and any
+warnings or things the agent didn't check. A quick question gets its answer in a line or two and
+nothing more: no list of details, no line on where it looked. Anything bigger gets the full report
+after the summary: the findings with their evidence, as a list or table when there are several,
+ending with a line on where it looked. Nothing
 in a reply is folded away. Where a mode sets its own shape, that shape wins: a reply that opens an
 [alignment](/docs/modes/align/) is a sentence or two naming the card. Workers report to the chat
 that started them, so their reports keep their own shape, and so do the chats that talk to the people

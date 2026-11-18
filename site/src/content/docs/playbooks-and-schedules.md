@@ -13,9 +13,7 @@ Open the composer's menu and pick **Playbooks**. The dialog lists the ones that 
 
 A playbook can bring its own helper files, the way a skill does. A playbook written as a pi or Claude Code skill works as one too. Sova never runs a playbook's scripts itself: the agent runs them, under the session's own sandbox and permissions.
 
-### Context audit
-
-Sova ships **Context audit** (`/context-audit`) to every project. It reads everything the project can load into its agents: instruction files and the guides they point to, skills, prompt commands, playbooks and project modes. Its card can narrow that to some folders or skills. It looks for rules that contradict each other, links that lead nowhere, pages nothing points to, passages repeated in several files, and skills whose main page is too long. It always stops at its report, which is shown only in the chat, contradictions first. It fixes only what you pick, on its own branch, and never lands it: you review the branch and land it as usual. Your own files (the ones you keep for every project) are read only if you switch them on, and are reported, never changed.
+Sova ships **Context audit** (`/context-audit`) to every project: it reads everything the project can load into its agents (instruction files and the guides they point to, skills, prompt commands, playbooks and modes), stops at a report shown only in the chat, contradictions first, then fixes only what you pick, on its own branch, and never lands it.
 
 ## Schedules
 

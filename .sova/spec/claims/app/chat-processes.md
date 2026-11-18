@@ -249,6 +249,15 @@ process the install's state root records, through its records and driver (never 
 name), each as an operator stop, and every background job of that state root
 (§app.background-jobs/stopping).
 
+## §app.chat-processes/cache-warming — A chat keeps its prompt cache warm only while a reply streams
+
+Every chat Sova runs, workers included, keeps its prompt cache warm only while a reply streams, as
+pi did through 1.5.0. Once a run settles, nothing more is sent to keep the cache warm, even where pi
+would (its default from 1.5.1, or `cacheWarming: "idle"` in the agent dir's settings, warms on for up
+to 30 minutes after a run): a chat nobody may come back to, such as a finished worker, spends nothing
+on it. Warming turned off in the settings stays off. Sova never writes the setting, so the pi
+terminal, which reads the same `settings.json`, keeps pi's own default.
+
 ## §app.chat-processes/code-pickup — Picking up new code
 
 Each chat's process runs its own unchangeable copy of the code its server started with, its code
@@ -361,7 +370,9 @@ translating fallback: every package they import (pi-coding-agent, pi-ai, pi-tui,
 from the extensions in the chat's copy of the code to the very copy pi itself runs. So the
 extensions share one instance of each file they have in common, and a chat's first open on a new
 copy of the code (after a release, or after a reboot emptied the translation cache) is as quick as
-a later one. Sova's own dependencies name pi-ai, pi-tui and typebox at exactly the versions its
+a later one. Loaded so, an extension's tools reach the model's provider with the schemas pi's own
+loader would give them: no schema library's marker (a `"~optional"` key) in any tool's parameters.
+Sova's own dependencies name pi-ai, pi-tui and typebox at exactly the versions its
 pi-coding-agent depends on, so they move with every pi upgrade; a check fails when any of the four,
 resolved from the copy's extensions, is another copy than pi's own (another version included), another
 fails when an extension can't be imported without the fallback, and another when an extension loads

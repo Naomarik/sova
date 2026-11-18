@@ -344,9 +344,10 @@ toggle leaves it alone
 (§chat.mode-menu/minor-toggle-keeps-prompt).
 
 Why this needs saying: pi builds a user turn's prompt in `before_agent_start`, where the chat's
-modes write their block into that turn's prompt sections. A turn an extension's message starts
-(`sendMessage(…, {triggerTurn: true})`) skips that hook, and pi's own refresh before the turn's
-second request rebuilds the prompt from the session's **base** prompt options, which know nothing
+modes write their block into that turn's prompt sections. Before pi 1.2.0 a turn an extension's
+message starts (`sendMessage(…, {triggerTurn: true})`) skipped that hook (from 1.2.0 it runs it
+too), and pi's own refresh before the turn's
+second request rebuilt the prompt from the session's **base** prompt options, which knew nothing
 of extension sections. Left alone, that patched the section out mid-turn (`mode: null` in the
 transcript) and back in at the next user prompt — two prompt versions about 3.5K tokens apart —
 and the claude-code bridge, which restarts its CLI on any prompt change
@@ -355,7 +356,8 @@ one team session, 22 restarts of up to 220K tokens each.
 
 The rule is kept by Sova's modes (§chat.mode-menu/sova-runs-modes), not the bridge (the bridge cannot change a running CLI's
 prompt, and must not guess which prompt changes are benign): it also keeps its block in pi's base
-options, so a turn built without `before_agent_start` reads the same prompt. Those options are
+options, so a prompt built without `before_agent_start` (a run the queue's wake starts, a run's
+later requests, a rebuild between runs) reads the same prompt. Those options are
 reachable only through a command context (`ctx.getSystemPromptOptions`): every `/mode` and
 `/align` call adopts the getter. Every time Sova opens a chat (`bind()`, a first open and every
 reopen, including after a server restart) it runs Sova's own mode sync, called directly; it switches nothing, writes no entry, shows no notice and leaves
@@ -401,8 +403,9 @@ its block still reaches the model as a note, never by rewriting the prompt.
 
 Instead the switch reaches the model as a **hidden note**, one path for every provider: a
 `mode-note` custom message (`display: false`, so neither the TUI nor Sova's transcript shows it)
-at the switch's next run — beside the user's prompt, or, in a run an extension's message starts (a
-worker's report), steered in ahead of its first request. A run already under way keeps its mode to
+at the switch's next run, taken at that run's start step — beside the user's prompt, or, in a run
+an extension's message starts (a worker's report), in that run's first request, after the
+extension's message. A run already under way keeps its mode to
 its end (§chat.mode-menu/how-a-switch-reaches-the-chat). Switches made between two runs are told
 once, as their net change.
 

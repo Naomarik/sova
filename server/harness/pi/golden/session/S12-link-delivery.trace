@@ -50,3 +50,4 @@ A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elid
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
 got model calls 2
+sdk abort []

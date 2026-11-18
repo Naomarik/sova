@@ -124,12 +124,16 @@ type Block = (ThinkingContent | TextContent | (ToolCall & { partialJson: string 
 type Diagnostic = NonNullable<AssistantMessage["diagnostics"]>[number];
 
 /**
- * pi's stock preamble, verbatim: the `preamble` section `buildSystemPromptSections`
+ * pi's stock preambles, verbatim: the `preamble` section `buildSystemPromptSections`
  * (pi-coding-agent `core/system-prompt`) writes when the session has no custom prompt.
- * stream.test.ts pins it to the installed pi.
+ * pi 1.5.0 reworded it; the older text stays because this extension also runs on a pi
+ * from before (a terminal not yet upgraded, a chat still on older code).
+ * stream.test.ts pins the installed pi's preamble to one of them.
  */
-export const PI_STOCK_PREAMBLE =
-	"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+export const PI_STOCK_PREAMBLES: readonly string[] = [
+	"You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
+	"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+];
 
 /**
  * Drop pi's stock preamble when it is the whole opening paragraph of `text`: all of
@@ -140,8 +144,11 @@ export const PI_STOCK_PREAMBLE =
  * as it does for every prompt it builds.
  */
 export function dropPiPreamble(text: string): string {
-	if (text === PI_STOCK_PREAMBLE) return "";
-	return text.startsWith(`${PI_STOCK_PREAMBLE}\n\n`) ? text.slice(PI_STOCK_PREAMBLE.length + 2) : text;
+	for (const stock of PI_STOCK_PREAMBLES) {
+		if (text === stock) return "";
+		if (text.startsWith(`${stock}\n\n`)) return text.slice(stock.length + 2);
+	}
+	return text;
 }
 
 /**

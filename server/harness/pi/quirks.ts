@@ -60,7 +60,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "open-writes-nothing",
     kind: "monkey-patch",
     relies:
-      "Building a session on a branch with no messages (or no thinking entry) appends model_change/thinking_level_change through the session manager's own appendModelChange/appendThinkingLevelChange properties, so replacing them before construction defers those writes; Sova queues them until the first write and drops the one that restates the recorded model.",
+      "Building a session on a branch with no messages (or no thinking entry) appends model_change/thinking_level_change through the session manager's own appendModelChange/appendThinkingLevelChange properties, so replacing them before construction defers those writes; Sova queues them until the first write and drops the one that restates the recorded model. pi 1.5.1 (#11451) also appends through them at a run's start; the methods are restored once a chat's runtime is built, so that is pi's own write after Sova's.",
     pi: ["createAgentSession", "SessionManager.appendModelChange", "SessionManager.appendThinkingLevelChange"],
     where: [
       { file: OPEN, symbol: "openPiSession" },
@@ -172,21 +172,21 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "queue-one-bit",
     kind: "semantic",
     relies:
-      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, so an image-only steer stays in it after delivery; clearQueue() returns and clears both kinds; continue() drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P26) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. peekQueuedMessages() exists and is unused.",
+      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, steering first, so it lags the drain and a delivered message takes the entry of a still-queued one with its text (an image-only steer's empty text included: from pi 1.5.1 it leaves the mirror at delivery; through 1.5.0 it stayed for the session's life); clearQueue() returns and clears both kinds; continue() drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P28) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. peekQueuedMessages() exists and is unused.",
     pi: ["Agent.hasQueuedMessages", "Agent.continue", "Agent.peekQueuedMessages", "AgentSession.getSteeringMessages", "AgentSession.getFollowUpMessages", "AgentSession.clearQueue"],
     where: [
       { file: SESSION, symbol: "PiHarnessSession.queue" },
       { file: "server/queue.ts", symbol: "SdkQueueView" },
       { file: "server/queue.ts", symbol: "WebQueue.sdkTookHanded" },
     ],
-    canary: "P9 queue-one-bit: an image-only steer stays in the mirror after delivery while the agent's queue is empty; clearQueue() returns both kinds; continue() takes steering first",
+    canary: "P9 queue-one-bit: the mirror is spliced by text at message_start, so a delivered image-only steer leaves it and a twin's delivery takes a still-queued message's entry, while hasQueuedMessages() is the real queue; clearQueue() returns both kinds; continue() takes steering first",
     retireWhen: "Sova adopts peekQueuedMessages(), or pi's mirror tracks delivery by identity",
   },
   {
     id: "P10",
     name: "leaf-is-last-line",
     kind: "semantic",
-    relies: "navigateTree({summarize:false}) writes nothing and moves only the in-memory leaf, and SessionManager.open takes the file's last line as the leaf; a rewind therefore appends a marker so the move survives a reopen.",
+    relies: "navigateTree({summarize:false}) writes nothing and moves only the in-memory leaf, and SessionManager.open takes the file's last line as the leaf; a rewind therefore appends a marker so the move survives a reopen. pi 1.5.1 refuses navigateTree while a prompt is in its preflight; rewindSession returns that as an internal refusal.",
     pi: ["AgentSession.navigateTree", "SessionManager.open", "SessionManager.getLeafId"],
     where: [
       { file: OPS, symbol: "rewindSession" },
@@ -334,7 +334,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "declared-tools",
     kind: "private-read",
     relies:
-      "agent.state.tools is the set the next request declares, with the descriptions a prepareLoadout hook gave them (getAllTools() keeps the registry's); the private _hiddenDeclarations names the declarations requests leave out; a tool's sourceInfo.path is `builtin:<name>` for pi's own, `<inline:<name>>` for an extension factory, else the extension's file.",
+      "agent.state.tools is the set the next request declares, in pi's own order (the tools that stay active keep their place and a newly active one is appended, whatever order setActiveToolsByName is handed: pi 1.5.0), with the descriptions a prepareLoadout hook gave them (getAllTools() keeps the registry's); the private _hiddenDeclarations names the declarations requests leave out; a tool's sourceInfo.path is `builtin:<name>` for pi's own, `<inline:<name>>` for an extension factory, else the extension's file.",
     pi: ["Agent.state.tools", "AgentSession._hiddenDeclarations", "AgentSession._applyToolLoadout", "AgentSession.getAllTools", "SourceInfo.path"],
     where: [{ file: SESSION, symbol: "PiHarnessSession.declaredTools" }, { file: SESSION, symbol: "toolSource" }],
     canary: "P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source",
@@ -387,8 +387,8 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "native-extension-load",
     kind: "semantic",
     relies:
-      "Under Bun pi's extension loader leaves jiti's tryNative at its default (on under Bun): it imports each extension natively first, ignoring its aliases, and translates it only when that throws. So an extension whose bare imports resolve from its real path is a plain module that shares one instance of a common file with other extensions and with Sova's own imports; one that can't is translated, with private copies.",
-    pi: ["loadExtensions", "getAliases", "jiti tryNative"],
+      "Under Bun pi's extension loader leaves jiti's tryNative at its default (on under Bun): it imports each extension natively first, ignoring its aliases, and translates it only when that throws. So an extension whose bare imports resolve from its real path is a plain module that shares one instance of a common file with other extensions and with Sova's own imports; one that can't is translated, with private copies. A native import also gets pi-ai's real entry, never the view pi's loader aliases it to: from pi-ai 1.5.0 that entry has no Type and its StringEnum is a plain object, so Type.Optional() of one writes \"~optional\" into the tool's schema; pi-config's optional string enums go through Type.Unsafe.",
+    pi: ["loadExtensions", "getAliases", "jiti tryNative", "pi-ai StringEnum", "pi-ai-extension-view.js"],
     where: [{ file: "server/harness/pi/own-code.ts", symbol: "extensionDepDrift" }],
     canary: "P26 native-extension-load: under Bun pi's loader imports an extension natively first: two whose imports resolve share one instance of a common file with a direct import; one whose don't is translated, with its own",
     retireWhen: "pi resolves an extension's pi imports to its own copies without translating, whatever node_modules holds",
@@ -399,13 +399,13 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "headless-standins",
     kind: "monkey-patch",
     relies:
-      "A chat process answers each module STANDIN_FILTER matches (pi-tui's screen, terminal and components, marked, pi's modes/interactive/ but its theme, pi's syntax highlighter) with inert stand-ins of the same export names. pi-tui keeps its text, key and colour helpers in modules apart from its drawing ones; pi's theme takes only the highlighter from them; outside its terminal mode pi takes a drawing module only in terminal renderers, its CLI and its entry's re-exports, none of which a Sova chat calls.",
+      "A chat process answers each module STANDIN_FILTER matches (pi-tui's screen, terminal and components, marked, pi's modes/interactive/ but its theme, pi's syntax highlighter) with inert stand-ins of the same export names. pi-tui keeps its text, key and colour helpers in modules apart from its drawing ones; pi's theme takes only the highlighter from them; outside its terminal mode pi takes a drawing module only in terminal renderers, its HTML export's tool renderer (AgentSession.exportToHtml alone builds it), its CLI and its entry's re-exports, none of which a Sova chat calls.",
     pi: ["@earendil-works/pi-tui dist/", "dist/modes/interactive/", "dist/utils/syntax-highlight.js"],
     where: [
       { file: "server/harness/pi/headless.ts", symbol: "installHeadless" },
       { file: "server/harness/pi/headless.ts", symbol: "standInSource" },
     ],
-    canary: "P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry",
+    canary: "P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its HTML export, its CLI and its entry",
     retireWhen: "pi ships an entry point without its terminal drawing code",
   },
   {
@@ -413,7 +413,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "steer-all",
     kind: "monkey-patch",
     relies:
-      "pi builds the agent's steering mode from settingsManager.getSteeringMode() (createAgentSession) and reads it again on AgentSession.reload() (syncQueueModesFromSettings, after settingsManager.reload()), so replacing that getter on a runtime's own settings object makes every queued steer land in one step (PendingMessageQueue in \"all\" mode), survives a reload, and writes nothing to settings.json; follow-ups keep pi's one-at-a-time.",
+      "pi builds the agent's steering mode from settingsManager.getSteeringMode() (createAgentSession) and reads it again on AgentSession.reload() (syncQueueModesFromSettings, after settingsManager.reload()), so replacing that getter on a runtime's own settings object makes every queued steer land in one step (PendingMessageQueue in \"all\" mode), survives a reload, and writes nothing to settings.json; follow-ups keep pi's one-at-a-time. pi 1.5.1 refuses reload() while streaming or compacting; Sova calls it only in the canary, idle.",
     pi: ["SettingsManager.getSteeringMode", "AgentSession.reload", "AgentSession.syncQueueModesFromSettings", "createAgentSession", "PendingMessageQueue.peek"],
     where: [
       { file: "server/harness/pi/queue-modes.ts", symbol: "steerAllAtOnce" },
@@ -499,23 +499,13 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi lets a host hand it a chat's list at each prompt",
   },
   {
-    id: "P35",
-    name: "mcp-tool-name",
-    kind: "semantic",
-    relies: "pi names a tool `mcp__<server>__<tool>` with anything outside [A-Za-z0-9_] as `_`, and past 64 characters or when taken, cuts it to fit `_` and the first 8 hex of sha256(`<server>\\0<tool>`). A saved row reads its server and tool from the chat's list by that rule: a failed call has no details.",
-    pi: ["createMcpToolDefinition"],
-    where: [{ file: "server/mcp/tool-names.ts", symbol: "piToolNames" }],
-    canary: "P35 mcp-tool-name: a plain, a sanitized and a shortened tool register under the names piToolNames gives",
-    retireWhen: "pi records the raw names in every result, or exports its naming",
-  },
-  {
     id: "P36",
     name: "mcp-http-transport",
     kind: "semantic",
-    relies: "A chat's address server reaches pi-mcp's `StreamableHttpTransport` directly: it takes headers as given, expands nothing, emits a JSON reply before `send` resolves, and rejects a request on a dropped session with `McpSessionExpiredError`. pi builds an auth provider only for a config with a `url` and no Authorization header, and hands it to `createTransport` as its third argument; its `clientSecret` goes through pi's expansion at each refresh, where `$$` and `$!` are literal.",
-    pi: ["StreamableHttpTransport", "McpSessionExpiredError", "McpAuthRequiredError", "McpOAuthAuthorizationRequiredError", "McpTransportFactory", "McpExtensionOptions.createTransport"],
-    where: [{ file: "server/harness/pi/mcp-http.ts", symbol: "AddressServer" }, { file: "server/harness/pi/mcp.ts", symbol: "mcpConfigOf" }, { file: "server/harness/pi/mcp.ts", symbol: "piLiteral" }],
-    canary: "P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session",
+    relies: "A chat's address server reaches pi-mcp's `StreamableHttpTransport` directly: it takes headers as given, expands nothing, emits a JSON reply before `send` resolves, and rejects a request on a dropped session with `McpSessionExpiredError`. pi builds an auth provider only for a config with a `url` and no Authorization header, and hands it to `createTransport` as its third argument; its `clientSecret` goes through pi's expansion at each refresh, where `$$` and `$!` are literal. pi's client hands each message a signal that aborts once it no longer waits for the reply; passed on, pi-mcp dispatches nothing after it and rejects with McpAbortError, read by class as a request that never went out.",
+    pi: ["StreamableHttpTransport", "McpSessionExpiredError", "McpAuthRequiredError", "McpOAuthAuthorizationRequiredError", "McpAbortError", "McpTransportSendOptions", "McpTransportFactory", "McpExtensionOptions.createTransport"],
+    where: [{ file: "server/harness/pi/mcp-http.ts", symbol: "AddressServer" }, { file: "server/harness/pi/mcp.ts", symbol: "SnapshotTransport.send" }, { file: "server/harness/pi/mcp.ts", symbol: "mcpConfigOf" }, { file: "server/harness/pi/mcp.ts", symbol: "piLiteral" }],
+    canary: "P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given, reports a dropped session, and never sends a request given up on while it waited for a token",
     retireWhen: "pi lets a host hand a server its own token source and literal values",
   },
   {
@@ -549,7 +539,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P39",
     name: "base-prompt-sections",
     kind: "semantic",
-    relies: "A command context's getSystemPromptOptions() hands out the session's live base prompt options, whose `sections` object builds the prompt a turn no before_agent_start built (an extension's message) and a run's later requests; a tool change replaces that object. So the mode engine keeps the getter (adopted from the chat's command context at every bind) and writes its `mode` section there again at every run start and switch.",
+    relies: "A command context's getSystemPromptOptions() hands out the session's live base prompt options, whose `sections` object builds the prompt wherever no before_agent_start built it (a run the queue's wake starts with agent.continue() and its later requests, and every read or rebuild between runs; from pi 1.2.0 a run an extension's message starts gets a before_agent_start of its own); a tool change replaces that object. So the mode engine keeps the getter (adopted from the chat's command context at every bind) and writes its `mode` section there again at every run start and switch.",
     pi: ["ExtensionCommandContext.getSystemPromptOptions", "BuildSystemPromptOptions.sections", "AgentSession._baseSystemPromptOptions"],
     where: [
       { file: "server/harness/pi/modes.ts", symbol: "modeCtx" },
@@ -649,15 +639,45 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "own-code-pi-rules",
     kind: "semantic",
     relies:
-      "On the server's own agent dir Sova adds each shipped extension the agent dir lacks as pi would discover it linked there, with rules pi keeps module-private in package-manager.js, so own-code copies them: a directory's entries by resolveExtensionEntries (its package.json pi.extensions that exist, else index.ts, else index.js), and each entry on or off by isEnabledByOverrides (a `!` glob, matched by minimatch against the path relative to the agent dir, its file name or the whole path, turns it off; an exact `+` path back on; an exact `-` path off over both). The globs are matched with the minimatch pi itself depends on, taken from pi's own dependencies.",
-    pi: ["resolveExtensionEntries", "isEnabledByOverrides", "DefaultPackageManager.resolve", "minimatch"],
+      "On the server's own agent dir Sova adds each shipped extension the agent dir lacks as pi would discover it linked there, with rules pi keeps module-private in package-manager.js, so own-code copies them: a directory's entries by resolveExtensionEntries (its package.json pi.extensions that exist, else index.ts, else index.js), and each entry on or off by isEnabledByOverrides (a `!` glob, matched by minimatch against the path relative to the agent dir, its file name or the whole path, turns it off; an exact `+` path back on; an exact `-` path off over both), each pattern's path read as pi's normalizePath reads it (`~`, `~/…` and a file:// URL; pi 1.2.0). The globs are matched with the minimatch pi itself depends on, taken from pi's own dependencies.",
+    pi: ["resolveExtensionEntries", "isEnabledByOverrides", "normalizePath", "DefaultPackageManager.resolve", "minimatch"],
     where: [
       { file: "server/harness/pi/own-code.ts", symbol: "extensionEntries" },
       { file: "server/harness/pi/own-code.ts", symbol: "enabledByOverrides" },
+      { file: "server/harness/pi/own-code.ts", symbol: "piPatternPath" },
       { file: "server/harness/pi/own-code.ts", symbol: "piMinimatch" },
     ],
     canary: "P46 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns",
     retireWhen: "pi exports its extension-entry and override rules, or resolves an extension it was not given as if it were linked",
+  },
+  {
+    id: "P47",
+    name: "no-idle-warming",
+    kind: "monkey-patch",
+    relies:
+      "pi's CacheWarmer asks settingsManager.getCacheWarmingMode() at each decision (createAgentSession hands it the getter), and in \"streaming\" mode it stops when the run settles, while \"idle\" (pi's default from 1.5.1) keeps re-sending the request's prefix for up to 30 minutes. Replacing that getter on a runtime's own settings object to answer \"streaming\" for \"idle\" keeps a Sova chat on warming only while a reply streams, leaves \"off\" off, and writes nothing to settings.json, which the terminal pi reads.",
+    pi: ["SettingsManager.getCacheWarmingMode", "CacheWarmer.onAgentSettled", "AgentSession.cacheWarmingStatus", "createAgentSession", "SETTINGS_DEFAULTS.cacheWarming"],
+    where: [
+      { file: "server/harness/pi/cache-warming.ts", symbol: "warmOnlyWhileStreaming" },
+      { file: OPEN, symbol: "servicesForCwd" },
+    ],
+    canary: "P47 no-idle-warming: pi warms on after a run settles by default, and with the getter answering streaming for idle it stops at the settle, off stays off, and settings.json holds no cacheWarming",
+    retireWhen: "pi takes a cache-warming mode per session, or Sova decides idle warming with a rule of its own (never for a worker)",
+  },
+  {
+    id: "P48",
+    name: "auth-lock-path",
+    kind: "semantic",
+    relies:
+      "pi writes auth.json under proper-lockfile's `<file>.lock` directory, and which file is pi's own rule: through 1.5.0 (and the terminal's 0.87) the path as given (realpath: false), from 1.5.1 the file it resolves to (proper-lockfile's default realpath, #11655). Login sync writes the same file under the same lock, so it takes the given path's lock and, where auth.json is a link to another file, that file's too, with pi's own proper-lockfile and stale/update times that never steal pi's lock or lose ours. pi writes through the link (writeFileSync on the path), so sync replaces the file the link points at, never the link.",
+    pi: ["FileAuthStorageBackend.acquireLockSyncWithRetry", "FileAuthStorageBackend.acquireLockAsync", "AuthStorage.modify", "proper-lockfile realpath"],
+    where: [
+      { file: "server/sync/logins-stores.ts", symbol: "PiAuthStore.lockSpecs" },
+      { file: "server/sync/logins-stores.ts", symbol: "lockDirOf" },
+      { file: "server/sync/logins-stores.ts", symbol: "PiAuthStore.writeTarget" },
+    ],
+    canary: "P48 auth-lock-path: pi locks auth.json on the file it resolves to, so on a linked auth.json its own write waits for the target's lock and not for the link's",
+    retireWhen: "pi exports a credential write under its own lock; the given path's lock goes once no pi through 1.5.0 writes here (every chat reloaded, the terminal on 1.5.1 or later)",
   },
   {
     id: "T1",

@@ -9,6 +9,7 @@ import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+	type AssistantMessage,
 	type AssistantMessageEvent,
 	type Api,
 	calculateCost,
@@ -17,9 +18,9 @@ import {
 	normalizeContext,
 	type SimpleStreamOptions,
 	type Tool,
-	Type,
 } from "@earendil-works/pi-ai";
-import { dropPiPreamble, MEASUREMENT_INVALID_DIAGNOSTIC, PI_STOCK_PREAMBLE, streamClaudeCode, resolveClaudeEffort } from "./stream.ts";
+import { Type } from "typebox";
+import { dropPiPreamble, MEASUREMENT_INVALID_DIAGNOSTIC, PI_STOCK_PREAMBLES, streamClaudeCode, resolveClaudeEffort } from "./stream.ts";
 import { cliHasTool, parseClaudeFrame, parseToolInput, type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest } from "./types.ts";
 import { providerModels, toProviderModel } from "./index.ts";
 
@@ -119,12 +120,19 @@ test("a text turn maps to start, text events, and done/stop", async () => {
 	assert.equal(state.closed, true);
 });
 
+/** A usage with its cost as pi-ai computed it: 1.5 marks that `totalFromProvider: false`, an older pi-ai leaves the key out, and both mean an estimate. */
+function estimated(usage: AssistantMessage["usage"]) {
+	const { totalFromProvider, ...cost } = usage.cost as typeof usage.cost & { totalFromProvider?: boolean };
+	assert.ok(!totalFromProvider, "never a provider-billed total");
+	return { ...usage, cost };
+}
+
 test("usage comes from the stream and costs nothing", async () => {
 	const { bridge } = fakeBridge(load("text-turn.ndjson"));
 	const events = await collect(streamClaudeCode(bridge, model(), context()));
 	const terminal = last(events);
 	const message = finalMessage(terminal);
-	assert.deepEqual(message.usage, {
+	assert.deepEqual(estimated(message.usage), {
 		input: 120,
 		output: 7,
 		cacheRead: 40,
@@ -175,7 +183,7 @@ test("result usage is the fallback when the message carried none", async () => {
 	const { bridge } = fakeBridge(load("result-only-usage-turn.ndjson"));
 	const message = finalMessage(last(await collect(streamClaudeCode(bridge, model(), context()))));
 	assert.equal(message.stopReason, "stop");
-	assert.deepEqual(message.usage, {
+	assert.deepEqual(estimated(message.usage), {
 		input: 11,
 		output: 5,
 		cacheRead: 7,
@@ -807,12 +815,14 @@ const BATON_PREAMBLE = [
 ].join("\n");
 
 test("pi's stock prompt loses exactly its preamble; the tagged sections pass through byte-for-byte", async () => {
-	const sent = await sentPrompt(sectioned({
-		preamble: PI_STOCK_PREAMBLE,
-		tools: "<tools>\n- read: …\n</tools>",
-		cwd: "<cwd>\n/x\n</cwd>",
-	}));
-	assert.equal(sent, "<tools>\n- read: …\n</tools>\n\n<cwd>\n/x\n</cwd>");
+	for (const preamble of PI_STOCK_PREAMBLES) {
+		const sent = await sentPrompt(sectioned({
+			preamble,
+			tools: "<tools>\n- read: …\n</tools>",
+			cwd: "<cwd>\n/x\n</cwd>",
+		}));
+		assert.equal(sent, "<tools>\n- read: …\n</tools>\n\n<cwd>\n/x\n</cwd>");
+	}
 });
 
 test("a baton-style custom preamble arrives whole, cwd section first or last", async () => {
@@ -823,7 +833,7 @@ test("a baton-style custom preamble arrives whole, cwd section first or last", a
 
 test("the stock preamble is cut wherever its section sits", async () => {
 	const cwd = "<cwd>\n/x\n</cwd>";
-	assert.equal(await sentPrompt(sectioned({ cwd, preamble: PI_STOCK_PREAMBLE, mode: "<mode>\nm\n</mode>" })), `${cwd}\n\n<mode>\nm\n</mode>`);
+	for (const preamble of PI_STOCK_PREAMBLES) assert.equal(await sentPrompt(sectioned({ cwd, preamble, mode: "<mode>\nm\n</mode>" })), `${cwd}\n\n<mode>\nm\n</mode>`);
 });
 
 test("a custom SYSTEM.md preamble arrives whole", async () => {
@@ -844,19 +854,22 @@ test("a flat prompt with tag lines deep inside arrives whole", async () => {
 
 test("a flat prompt that opens with pi's stock preamble paragraph loses only that paragraph", async () => {
 	const rest = "<tools>\n- read\n</tools>";
-	assert.equal(await sentPrompt(normalizeContext({ systemPrompt: `${PI_STOCK_PREAMBLE}\n\n${rest}`, messages: [] })), rest);
+	for (const preamble of PI_STOCK_PREAMBLES) assert.equal(await sentPrompt(normalizeContext({ systemPrompt: `${preamble}\n\n${rest}`, messages: [] })), rest);
 });
 
-test("dropPiPreamble cuts only the exact stock text as a whole opening paragraph", () => {
-	assert.equal(dropPiPreamble(PI_STOCK_PREAMBLE), "");
-	assert.equal(dropPiPreamble(`${PI_STOCK_PREAMBLE}\n\nmore`), "more");
-	assert.equal(dropPiPreamble(`${PI_STOCK_PREAMBLE} Also be terse.`), `${PI_STOCK_PREAMBLE} Also be terse.`, "a longer first paragraph is custom");
-	assert.equal(dropPiPreamble(`${PI_STOCK_PREAMBLE}\nmore`), `${PI_STOCK_PREAMBLE}\nmore`, "not a whole paragraph");
-	assert.equal(dropPiPreamble(`intro\n\n${PI_STOCK_PREAMBLE}`), `intro\n\n${PI_STOCK_PREAMBLE}`, "only at the start");
+test("dropPiPreamble cuts only the exact stock text as a whole opening paragraph, pi 1.5's wording and the one before it", () => {
+	assert.equal(PI_STOCK_PREAMBLES.length, 2);
+	for (const stock of PI_STOCK_PREAMBLES) {
+		assert.equal(dropPiPreamble(stock), "");
+		assert.equal(dropPiPreamble(`${stock}\n\nmore`), "more");
+		assert.equal(dropPiPreamble(`${stock} Also be terse.`), `${stock} Also be terse.`, "a longer first paragraph is custom");
+		assert.equal(dropPiPreamble(`${stock}\nmore`), `${stock}\nmore`, "not a whole paragraph");
+		assert.equal(dropPiPreamble(`intro\n\n${stock}`), `intro\n\n${stock}`, "only at the start");
+	}
 	assert.equal(dropPiPreamble(""), "");
 });
 
-test("drift alarm: PI_STOCK_PREAMBLE is the installed pi's own preamble, and the cut matches its buildSystemPrompt", async () => {
+test("drift alarm: the installed pi's own preamble is one of PI_STOCK_PREAMBLES, and the cut matches its buildSystemPrompt", async () => {
 	// Not exported from the package root; the alarm must fail, never skip, if pi moves it.
 	const root = import.meta.resolve("@earendil-works/pi-coding-agent");
 	const mod = (await import(new URL("./core/system-prompt.js", root).href)) as {
@@ -864,7 +877,8 @@ test("drift alarm: PI_STOCK_PREAMBLE is the installed pi's own preamble, and the
 		buildSystemPrompt: (input: Record<string, unknown>) => string;
 	};
 	const input = { selectedTools: ["read", "bash"], toolSnippets: { read: "Read files", bash: "Run commands" }, cwd: "/x" };
-	assert.equal(mod.buildSystemPromptSections(input).preamble, PI_STOCK_PREAMBLE);
+	const installed = mod.buildSystemPromptSections(input).preamble;
+	assert.ok(PI_STOCK_PREAMBLES.includes(installed), `pi's preamble is now: ${installed}`);
 	assert.equal(mod.buildSystemPromptSections({ ...input, customPrompt: "Mine." }).preamble, "Mine.");
 	const original = mod.buildSystemPrompt(input);
 	assert.equal(await sentPrompt(sectioned(mod.buildSystemPromptSections(input))), original.slice(original.indexOf("<tools>")));

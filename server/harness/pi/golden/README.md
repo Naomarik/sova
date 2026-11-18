@@ -31,7 +31,7 @@ faux/record.ts                      the faux recorder (scripts/harness-golden/fa
 | `pnpm test -- server/harness/pi/golden/golden.test.ts` | compare (also part of every `pnpm test`) |
 | `node scripts/harness-golden.mjs compare [--set synthetic,faux,cc] [--real]` | the same, for some sets |
 | `node scripts/harness-golden.mjs record` | re-record: write missing expected files and rewrite differing ones |
-| `node scripts/harness-golden/faux-record.mjs [--check]` | regenerate the faux fixtures (`--check`: record twice, compare) |
+| `node scripts/harness-golden/faux-record.mjs [--check]` | regenerate the faux fixtures (`--check`: record twice, compare); see "Faux fixtures": not at a pi bump |
 | `bun server/harness/pi/golden/fixtures/make-synthetic.ts [--check]` | regenerate the synthetic fixtures |
 | `node scripts/harness-golden.mjs census` | counts of entry types, roles and customTypes in the local sessions |
 | `node scripts/harness-golden.mjs sample [--out <dir>]` | copy a feature sample of local sessions into the real corpus |
@@ -94,8 +94,21 @@ auto-retry and the `context_edit` it writes), `abort` (aborted at the first text
 `image-resize` (a 2560×1600 PNG, so pi writes its resize note). A real AgentSession on the pinned pi with
 pi-ai's faux provider, in a fixed temp agent dir on a fake clock: two runs are byte-identical
 (`--check`). Entry ids, the session id and the run's paths are renumbered into same-length placeholders;
-pi's package dir in the system prompt reads `/golden-pi`. `events.json` is every event in order, the only
-genuine pi event streams in the repo (milestone 3 reuses them).
+pi's package dir in the system prompt reads `/golden-pi`; how long a tool or a reply took (`durationMs`,
+pi 1.1.0, a real clock) is written as 0. `events.json` is every event in order, the only genuine pi
+event streams in the repo (milestone 3 reuses them).
+
+**The committed faux set is pinned at pi 1.0.3 on purpose; a pi bump never re-records it.** It is what
+Sova must keep doing whatever pi it runs: read sessions pi 1.0.3 wrote, and send wire 1 as pi 1.0.3
+shaped it. Its `events.json` are the inputs of `expected/faux/*/frames.json`, the wire-1 frames, which
+are a contract and never re-recorded ("change the server, not the file"); recorded on a later pi they
+would carry that pi's prompt text, usage numbers and newer fields. So after a pi bump `faux-record.mjs
+--check` is run (two recordings on the new pi must still be identical), and `faux-record.mjs` without
+`--check` and `harness-golden.mjs record` are not. Only a change to the wire-1 contract itself justifies
+re-recording the set. That the reader also reads what the new pi writes is proven by the live recordings
+(`session/`, `state/`): they are re-taken at each bump from sessions that pi wrote, and their traces hold
+the rows the neutral reader made of them (the hello after a compaction in `S7-compact-manual`, after a
+rewind in `S5-rewind`).
 
 ## Probes
 

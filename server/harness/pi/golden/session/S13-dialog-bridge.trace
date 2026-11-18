@@ -78,3 +78,4 @@ step detach A, B
 write {"id":"00000012","type":"message","role":"toolResult"}
 write {"id":"00000013","type":"message","role":"assistant"}
 got pending dialogs 0
+sdk abort []

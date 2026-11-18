@@ -18,14 +18,14 @@ You are the scratch tester. Find out what actually happens to Sova on <new>, com
 
 Never: git worktree add; anything in the live checkout or its node_modules; restarting sova-runtime.service; the spec replay suite (pi-config/extensions/spec/tests/replay); a server on the real ~/.pi. Run nothing from <W>/x or <W>/tarballs.
 
-1. Two identical copies, one local commit each so tests that read their own repository behave as in a worktree:
+1. Two identical copies, each a git clone of the main checkout detached at one commit, so tests that read their own repository have its history and every tracked file (a clone's .git is a directory, not a worktree's .git file):
      main="$(git -C <repo> worktree list --porcelain | sed -n '1s/^worktree //p')"
+     commit="$(git -C "$main" rev-parse HEAD)"
      for d in base scratch; do
-       mkdir -p <W>/$d && git -C "$main" archive HEAD | tar -x -C <W>/$d
+       git clone -q "$main" <W>/$d && git -C <W>/$d checkout -q --detach "$commit"
        mise trust <W>/$d
-       (cd <W>/$d && git init -q && git add -A && git -c user.name=scratch -c user.email=scratch@example.invalid commit -qm base)
      done
-   Record the commit you archived.
+   Record the commit you cloned.
 
 2. Baseline first, at <old>, in <W>/base. `pnpm install --frozen-lockfile`, then each of these with its output to <W>/logs/base-<name>.log:
      pnpm run typecheck

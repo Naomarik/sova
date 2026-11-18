@@ -449,7 +449,8 @@
       "server/mesh/proxy-wire.integration.test.ts",
       "server/app.ts",
       "server/share-wire.integration.test.ts",
-      "server/share-ws-hop.integration.test.ts"
+      "server/share-ws-hop.integration.test.ts",
+      "server/harness/pi/contract.test.ts"
     ],
     "requires": [
       "§chat.transcript/slim-rows"

@@ -161,6 +161,14 @@ function where(a: string, b: string): string {
   return `at char ${i}: frozen ${ctx(a)} vs now ${ctx(b)}`;
 }
 
+// A schema library's own marker is no JSON Schema: the model's provider would receive it. TypeBox's
+// Type.Optional() writes "~optional" into a schema that isn't TypeBox's (pi-ai 1.5's StringEnum under a
+// native import), so a tool parameter built that way shows here.
+test("no tool's schema carries a schema library's marker (a \"~…\" key)", () => {
+  assert.deepEqual(JSON.stringify(build()).match(/"~[A-Za-z]+":/g) ?? [], []);
+  assert.deepEqual(JSON.stringify({ "~optional": true }).match(/"~[A-Za-z]+":/g), ['"~optional":'], "the control: the check sees one");
+});
+
 test("agent loadouts match the snapshot word for word", () => {
   const now = build();
   if (process.env.SOVA_LOADOUT_UPDATE === "1") {

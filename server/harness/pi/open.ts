@@ -18,6 +18,7 @@ import { instrumentModelRuntime } from "../../../pi-config/extensions/llm-inflig
 import { markDegraded } from "../../../pi-config/extensions/llm-inflight/tracker.ts";
 import { applyModelLevels, type ComposedModel, modelFetchEnabled, onLevelsUpdated, refreshStale } from "../../../pi-config/extensions/model-levels/core.ts";
 import { installWorkerNice, lowerToolCommands } from "../../process-priority";
+import { warmOnlyWhileStreaming } from "./cache-warming";
 import { steerAllAtOnce } from "./queue-modes";
 import { agentRoot } from "../../state-root";
 import { withContextScope } from "./resources";
@@ -205,6 +206,8 @@ async function servicesForCwd(cwd: string, modelRuntime: ModelRuntime, flags: ()
   lowerToolCommands(services.settingsManager);
   // Steers sent while the chat is busy land together, at the agent's next step (P28 steer-all).
   steerAllAtOnce(services.settingsManager);
+  // The prompt cache is kept warm while a reply streams, never once the chat is idle (P47 no-idle-warming).
+  warmOnlyWhileStreaming(services.settingsManager);
   return services;
 }
 

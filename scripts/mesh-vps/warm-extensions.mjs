@@ -18,10 +18,14 @@ if (!agent) {
 const pi = realpathSync(join(process.cwd(), "node_modules/@earendil-works/pi-coding-agent"));
 const piRequire = createRequire(join(pi, "package.json"));
 const { createJiti } = piRequire("jiti");
-// pi's own alias map (its extension loader's getAliases, built Node mode): extensions import pi's packages by name
+// pi's own alias map (its extension loader's getAliases, dist/core/extensions/loader.js, built Node mode, as of pi
+// 1.5.2): extensions import pi's packages by name. A copy: pi keeps the function private, so re-read it at each pi
+// bump. From pi 1.5.0 the pi-ai root and /compat are pi's extension view (compat plus TypeBox's Type, which pi-ai
+// itself no longer exports); /models came with 1.4.0.
 const core = join(pi, "../pi-agent-core/dist/index.js");
 const tui = join(pi, "../pi-tui/dist/index.js");
-const aiCompat = join(pi, "../pi-ai/dist/compat.js");
+const aiCompat = join(pi, "dist/core/extensions/pi-ai-extension-view.js");
+const aiModels = join(pi, "../pi-ai/dist/models.js");
 const aiOauth = join(pi, "../pi-ai/dist/oauth.js");
 const aiAll = join(pi, "../pi-ai/dist/providers/all.js");
 const [tb, tbCompile, tbValue] = ["typebox", "typebox/compile", "typebox/value"].map((s) => piRequire.resolve(s));
@@ -33,6 +37,7 @@ for (const scope of ["@earendil-works", "@mariozechner"]) {
     [`${scope}/pi-tui`]: tui,
     [`${scope}/pi-ai/providers/all`]: aiAll,
     [`${scope}/pi-ai/compat`]: aiCompat,
+    [`${scope}/pi-ai/models`]: aiModels,
     [`${scope}/pi-ai/oauth`]: aiOauth,
     [`${scope}/pi-ai`]: aiCompat,
   });

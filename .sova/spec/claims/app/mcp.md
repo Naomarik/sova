@@ -288,6 +288,9 @@ model it works the same: on Claude Code the tools reach the model as every other
 - **A failed request.** On an address server it ends the session, as an exit ends a command
   server's process: the calls waiting on it fail, the chat gets the note and the row a line, and
   the next call opens a fresh session.
+- **A call given up on.** A call the chat stopped waiting for (cancelled, or timed out) while its
+  server was still starting, or while an address server renewed its sign-in, is never sent late,
+  and is no failure of the server.
 - **A lost session.** A 404 for a session the server has dropped reopens one and sends the call
   again, so nothing fails.
 - **A copy that stops.** A call arriving while a copy stops waits for the next copy. A call already

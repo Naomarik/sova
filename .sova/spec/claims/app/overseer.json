@@ -327,7 +327,8 @@
       "src/app.css",
       "src/design/align-viewer.css",
       "src/lib/overseer-card-rows.test.ts",
-      "server/overseer-sender.ts"
+      "server/overseer-sender.ts",
+      "server/overseer-runtime.test.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -1263,7 +1264,8 @@
       "server/harness/pi/golden/session/S11-overseer.jsonl",
       "server/harness/pi/golden/state/G7-overseer-cleared.jsonl",
       "server/harness/pi/golden/state/G7-overseer-first.jsonl",
-      "server/attention.ts"
+      "server/attention.ts",
+      "server/overseer-runtime.test.ts"
     ],
     "requires": [
       "§app.overseer/confirm",
@@ -1274,8 +1276,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T02:49Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "at": "2026-11-18T15:20Z",
+      "source": "pi-session:01a1eee3-521d-72bd-a0fb-7f5a567de2eb#c8245611"
     }
   },
   "§app.overseer/seen": {

@@ -320,8 +320,8 @@ they are listed, and a recommendation that names an option by its label reads
   only, that the agent marked as a change request (a `change_request` op, or
   any align call naming an op other than `get`, refused or not; never guessed
   from the prompt's or the reply's words; under Eager any run is judged, by the
-  Eagerness in effect when it settles), whose final reply without its `### Working notes` part
-  reads like a plan asking the user to decide (`planSignal`: an old
+  Eagerness in effect when it settles), whose whole final reply (its opening summary and its last paragraph; a
+  `### Working notes` heading in it is ordinary text) reads like a plan asking the user to decide (`planSignal`: an old
   `## Alignment: <title>` block; a closing question that asks for a decision or a
   go-ahead, never a merge, push or restart confirmation, and not options offered
   back to a user who asked a question; or questions listed under a label such as

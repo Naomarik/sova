@@ -122,37 +122,38 @@
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/mode/align-settings.test.ts",
       "server/modes/tests/fixtures/align-flag-off-master.json",
-      "pi-config/extensions/mode/align-settings.ts"
+      "pi-config/extensions/mode/align-settings.ts",
+      "server/modes/engine-hooks.test.ts"
     ],
     "requires": [
       "§chat.alignment/state",
       "§chat/mode-menu"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T14:16Z",
-      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
+      "by": "naomarik",
+      "at": "2026-11-18T17:36Z",
+      "source": "pi-session:1dc90f4d-dc21-4c34-a8a7-51e9f129c066#2e53346c"
     }
   },
   "§chat.alignment/reply": {
     "kind": "behavior",
     "code": [
       "pi-config/extensions/mode/minor.ts",
-      "pi-config/extensions/mode/align.ts",
-      "pi-config/extensions/mode/align.test.ts",
       "pi-config/extensions/mode/modes.test.ts",
       "pi-config/extensions/mode/README.md",
       "server/modes/tests/fixtures/align-flag-off-master.json"
     ],
     "requires": [
       "§chat.alignment/model",
+      "§chat.alignment/card",
+      "§chat.mode-menu/reply-shape",
       "§chat.markdown/working-notes"
     ],
     "authority": "accepted",
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-27T23:54Z",
-      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      "at": "2026-11-18T17:16Z",
+      "source": "pi-session:1dc90f4d-dc21-4c34-a8a7-51e9f129c066#2e53346c"
     },
     "evidence": "verified"
   },

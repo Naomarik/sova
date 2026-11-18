@@ -287,6 +287,26 @@ test("pi: a regular auth.json under a linked folder is one lock, taken once", as
   await release();
 });
 
+test("pi: a link re-pointed after the locks were taken abandons the write; neither file is written", async () => {
+  const dir = scratch();
+  const first = join(dir, "first-auth.json");
+  const second = join(dir, "second-auth.json");
+  writeFileSync(first, JSON.stringify({ zai: keyEntry("sk-first") }), { mode: 0o600 });
+  writeFileSync(second, JSON.stringify({ zai: keyEntry("sk-second") }), { mode: 0o600 });
+  const link = join(dir, "auth.json");
+  symlinkSync(first, link);
+  await assert.rejects(
+    new PiAuthStore(link, { lockDeadlineMs: 200 }).transact(() => {
+      rmSync(link);
+      symlinkSync(second, link); // second's lock is not one we hold
+      return { result: 0, changes: new Map([["zai", keyEntry("sk-new")]]) };
+    }),
+    LockBusyError,
+  );
+  assert.deepEqual(JSON.parse(readFileSync(first, "utf8")), { zai: keyEntry("sk-first") });
+  assert.deepEqual(JSON.parse(readFileSync(second, "utf8")), { zai: keyEntry("sk-second") });
+});
+
 test("pi observes our rename-based write at its next read (no restart)", async () => {
   const dir = scratch();
   const path = join(dir, "auth.json");

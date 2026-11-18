@@ -24,6 +24,9 @@ const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats } = await import("../chat-manager");
 const { closeChat } = await import("../chat-handle");
 const { createChat, threadMemoryOn, THREAD_PROFILE } = await import("./thread");
+const { piSession } = await import("../harness/pi/testing/handle");
+const { REPLY_SHAPE_INSTRUCTIONS } = await import("../../pi-config/extensions/mode/prompt.ts");
+const { RELEASE_THREAD_PROFILE } = await import("../../shared/fixed-names");
 after(async () => {
   await disposeAllChats();
 });
@@ -113,4 +116,26 @@ test("a queue chat never takes another profile: applyProfile is refused (409) an
     }
     assert.deepEqual((await modesOf(made.path)).mode, "normal", "its modes unchanged");
   }
+});
+
+// The reply shape (§chat.mode-menu/reply-shape) is for the chats the user reads and talks to. The merge queue's own
+// chats and the release thread are machine-facing (the thread's questions reach the user on the merge card), so Sova
+// launches them without it; a playbook run's chat (an ordinary chat, or one on the run's own profile) has it.
+const shapes = async (path: string) => piSession(await acquireChat(path)).systemPrompt.split(REPLY_SHAPE_INSTRUCTIONS).length - 1;
+
+test("reply shape: the merge thread's, the reviewer's and the release thread's prompts never carry it; a playbook run's chat carries it once", async () => {
+  for (const profile of [THREAD_PROFILE, "merge-reviewer", RELEASE_THREAD_PROFILE]) {
+    const made = await createChat(request, cwd, profile, "", `queue chat · ${profile}`);
+    assert.ok(made.ok, JSON.stringify(made));
+    if (!made.ok) return;
+    assert.equal(await shapes(made.path), 0, `${profile}: no reply shape`);
+  }
+  // A playbook's run in a new chat: made as playbook-runs/start.ts newChat makes it, then on the run's own profile.
+  const res = await post("/api/sessions", { cwd });
+  const { path } = (await res.json()) as { path: string };
+  assert.equal(await shapes(path), 1, "a run's new chat, before its profile");
+  const { applyProfile } = await import("../session-profile-routes");
+  const applied = await applyProfile(path, { remove: [], grant: [] }, "start");
+  assert.ok(applied.ok, JSON.stringify(applied));
+  assert.equal(await shapes(path), 1, "on the run's own profile");
 });

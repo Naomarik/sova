@@ -350,6 +350,50 @@
       "§chat.mode-menu/how-a-switch-reaches-the-chat"
     ]
   },
+  "§chat.mode-menu/reply-shape": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/workers",
+      "§chat.alignment/reply",
+      "§chat.markdown/working-notes",
+      "§app/overseer",
+      "§app/project-overseer",
+      "§app/project-assistant",
+      "§app/baton",
+      "§chat/playbooks",
+      "§chat/schedules",
+      "§chat.merge-queue/thread",
+      "§app.merge-queue/review",
+      "§app/release"
+    ],
+    "authority": "accepted",
+    "code": [
+      "pi-config/extensions/mode/prompt.ts",
+      "server/modes/engine.ts",
+      "server/project-overseer.ts",
+      "pi-config/extensions/mode/minor.ts",
+      "pi-config/extensions/mode/README.md",
+      "pi-config/extensions/mode/modes.test.ts",
+      "server/modes/engine-rules.test.ts",
+      "server/modes/tests/engine-host.fixture.ts",
+      "server/project-overseer.test.ts",
+      "pi-config/extensions/mode/align-settings.test.ts",
+      "server/modes/tests/fixtures/align-flag-off-master.json",
+      "server/overseer-runtime.test.ts",
+      "server/baton-abilities.test.ts",
+      "server/project-assistant.integration.test.ts",
+      "server/chat-manager.ts",
+      "server/harness/pi/open.ts",
+      "server/harness/pi/modes.ts",
+      "server/merge-queue/thread-modes.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T17:16Z",
+      "source": "pi-session:1dc90f4d-dc21-4c34-a8a7-51e9f129c066#2e53346c"
+    },
+    "evidence": "verified"
+  },
   "§chat.mode-menu/sova-runs-modes": {
     "kind": "behavior",
     "requires": [
@@ -360,9 +404,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "user",
-      "at": "2026-11-13T20:59Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
+      "by": "naomarik",
+      "at": "2026-11-18T17:36Z",
+      "source": "pi-session:1dc90f4d-dc21-4c34-a8a7-51e9f129c066#2e53346c"
     },
     "code": [
       "server/web-settings.ts",

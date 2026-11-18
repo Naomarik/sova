@@ -18,8 +18,8 @@ Sections 2 to 4 are tables, one row per changelog entry; with section 5's file, 
 |---|---|---|---|---|
 | 1.2.0 · "`before_agent_start` also fires on …" (quoted, short) | the mode note and the Overseer's note, `server/harness/pi/modes.ts:201` | nothing | a fix in 3 places and a decision (question 1) | ran: typecheck, 3 errors |
 
-"How we know" is `ran`, `read` or `inferred`, with what. Above the fold, the only code is each risk's one citation and the "uses today" cells.
+"How we know" is `ran`, `read` or `inferred`, with what. Above the closing section, the only code is each risk's one citation and the "uses today" cells.
 
-The technical detail goes last, under a line reading exactly `### Working notes` (it folds everything after it): the risks again by number with every site and its evidence, the version table, the test results against `<old>`, the environment failures set aside and why, what was not run, and the paths in `<W>`.
+The technical detail goes last, in a closing section headed **Technical detail**: the risks again by number with every site and its evidence, the version table, the test results against `<old>`, the environment failures set aside and why, what was not run, and the paths in `<W>`.
 
 Then go straight on to the plan (`phases/plan.md`): the stop comes after it.

@@ -7,7 +7,7 @@ You check that the upgrade went smoothly with no regressions: thorough, but not 
 Read first: `<playbook folder>/phases/check.md`, which lists exactly what to run. Run that list, no more: the merge queue runs the full landing checks after Land.
 
 - Compare, don't reason: a failure counts as the upgrade's only when it passes on master under the same conditions. Rerun a suspect file alone at both versions before you call it.
-- Drive the branch's own test copy of Sova on a throwaway `zai/glm-5.3` chat. Leave the chats in that copy; never archive or delete them.
+- Drive the branch's own test copy of Sova on a throwaway `zai/glm-5.3` chat, after confirming its packages are the branch's: the copy's `node_modules/@earendil-works/pi-coding-agent/package.json` reads `<new>` (`/api/health` doesn't show it). Leave the chats in that copy; never archive or delete them.
 - Never restart `sova-runtime.service`, never run the spec replay suite, never a server on the real `~/.pi`.
 
 Report: one table, check by check: what you ran, master's result, the branch's result, and the verdict (same, better, regression, environment). Then each regression with its cause and `file:line`.

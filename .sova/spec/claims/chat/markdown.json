@@ -565,10 +565,8 @@
     "kind": "behavior",
     "code": [
       "src/lib/markdown.ts",
-      "src/components/Markdown.tsx",
-      "src/components/Thread.tsx",
+      "src/components/MessageRows.tsx",
       "src/design/base.css",
-      "src/components/ReplyMarkdown.tsx",
       "src/lib/working-notes.test.ts"
     ],
     "requires": [
@@ -577,8 +575,8 @@
     "authority": "accepted",
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-27T23:54Z",
-      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      "at": "2026-11-18T17:16Z",
+      "source": "pi-session:1dc90f4d-dc21-4c34-a8a7-51e9f129c066#2e53346c"
     },
     "evidence": "verified"
   },

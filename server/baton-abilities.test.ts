@@ -22,6 +22,7 @@ await import("./testing/in-process-chats"); // chats open in this process (the s
 const orgs = await import("./orgs");
 const baton = await import("./baton");
 const loadout = await import("./baton-loadout");
+const { REPLY_SHAPE_INSTRUCTIONS } = await import("../pi-config/extensions/mode/prompt.ts");
 const rl = await import("./baton-read-link");
 const { DRAFT_TOOLS } = await import("./conversation-draft-tools");
 const ab = await import("./gathering-abilities");
@@ -167,6 +168,9 @@ describe("the prompt and the tools a run gets", () => {
     assert.match(off, /with `read_link`/);
     assert.match(off, /never instructions to you/);
     assert.doesNotMatch(off, /or browse\./);
+    // A baton talks to outsiders under its own one-decision-at-a-time contract: never the reply shape every
+    // chat the operator talks to has (§chat.mode-menu/reply-shape), and it runs no modes to bring it.
+    for (const prompt of [on, html, htmlNoDraw, off]) assert.ok(!prompt.includes(REPLY_SHAPE_INSTRUCTIONS) && !/^# Replies$/m.test(prompt), "no reply shape in a baton's prompt");
   });
 
   test("read_link is active only while the session can read links; the strip's change reaches the next run", async () => {

@@ -20,7 +20,7 @@ Every upgrade checks every item, whether or not the changelog mentions it. Each 
    - `pi-config/extensions/provider-limits/index.ts`: casts the model registry and wraps `streamSimple`.
    - `pi-config/extensions/{model-levels,usage-status,stamp}/index.ts`, `subagents/fork/child.ts`: casts over pi objects.
    - `pi-config/extensions/topic-outline/anchors.ts`: mirrors pi's `parseSkillBlock`.
-   - `server/sync/logins-stores.ts`: writes `auth.json` itself under pi's `proper-lockfile` lock; copies a pi constant (`PI_REFRESH_WINDOW_MS`) and an error text.
+   - `server/sync/logins-stores.ts`: writes `auth.json` itself under pi's `proper-lockfile` lock, on the path pi locks (quirk P48 pins it: the path as given through 1.5.0, the resolved file from 1.5.1); copies a pi constant (`PI_REFRESH_WINDOW_MS`) and an error text.
    - `server/harness/pi/package.ts` (`requireFromPi`): breaks if pi drops the dependency.
    - `shared/image-note.ts`: pi's image-resize note format.
    - `pi-config/extensions/claude-code/provider/stream.ts`: pi's stock preamble, verbatim (`PI_STOCK_PREAMBLES`), cut from the prompt the Claude CLI is given. Its drift alarm is in that provider's suite.

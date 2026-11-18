@@ -1636,6 +1636,12 @@ const RUN_CONFIRM = /\b(?:merge|merging|push|release|restart|deploy|commit|rebas
 /** A leftover alignment block in the old markdown shape: its `## Alignment: <title>` anchor, colon and all. */
 const MARKDOWN_ALIGNMENT = /^\s*#{1,4}\s+alignment:\s*\S/im;
 const LIST_ITEM = /^\s*(?:\d+[.)]|[-*•])\s+\S/;
+/** A paragraph that is one line and asks nothing: a report's closing note of where it looked. */
+const isClosingNote = (paragraph: string): boolean => !paragraph.includes("\n") && !paragraph.includes("?");
+/** A paragraph that is only a label: one heading or bold line, asking nothing. */
+const isLabelLine = (paragraph: string): boolean =>
+	isClosingNote(paragraph) && /^(?:#{1,6}\s+\S.*|\*\*[^*]+\*\*:?|__[^_]+__:?)$/.test(paragraph);
+
 /** What the nudge knows about the run beyond its reply. */
 export interface PlanContext {
 	/** The user's prompt that started the run was itself a question: options offered back answer it. */
@@ -1684,11 +1690,13 @@ function questionList(body: string): boolean {
  * the tool — or null when it doesn't:
  * - an old markdown alignment block (`## Alignment: <title>`; a heading or bold line that merely
  *   mentions alignment is not one);
- * - a last paragraph that ends in a question putting a decision to the user: labelled ("open
+ * - a last paragraph (above a closing one-line note that asks nothing, such as where the agent
+ *   looked) that ends in a question putting a decision to the user: labelled ("open
  *   questions"), a go-ahead ("should I go ahead", "take my recommendations") or a choice ("which do
  *   you prefer", unless the user's own prompt asked a question and the options answer it) — never a
  *   merge, push or restart confirmation;
- * - a first paragraph (the reply's summary, which a full report may follow) with such a question;
+ * - a first paragraph (the reply's summary, which a full report may follow; the one after a lone
+ *   label line such as "**Summary**") with such a question;
  * - a list of two or more items with such words anywhere, closed by a go-ahead ask ("Go?", or one
  *   of the above);
  * - or, wherever it sits, a labelled list of questions (questionList).
@@ -1702,14 +1710,18 @@ export function planSignal(reply: string, context: PlanContext = {}): "markdown-
 	const body = reply.replace(FENCED, " ").replace(SPEC_TRAILER, "").trim();
 	if (MARKDOWN_ALIGNMENT.test(body)) return "markdown-alignment";
 	const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-	const last = paragraphs[paragraphs.length - 1] ?? "";
+	// A closing one-line note that asks nothing ("Looked in: server/export.ts.") is not the reply's end.
+	const closing = paragraphs.length > 1 && isClosingNote(paragraphs[paragraphs.length - 1]!) ? 1 : 0;
+	const last = paragraphs[paragraphs.length - 1 - closing] ?? "";
 	if (/\?\s*[*_)\]"'`]*\s*$/.test(last)) {
 		if (decisionAsk(last, context)) return "asks-decision";
 		const items = body.split("\n").filter((l) => LIST_ITEM.test(l)).length;
 		const anyDecisionWords = LABEL_ASK.test(body) || APPROVAL_ASK.test(body) || CHOICE_ASK.test(body);
 		if (items >= 2 && anyDecisionWords && BARE_GO.test(last) && !questionsOf(last).some((q) => RUN_CONFIRM.test(q))) return "list-then-decision";
 	}
-	if (paragraphs.length > 1 && decisionAsk(paragraphs[0]!, context)) return "asks-decision";
+	// The summary: the first paragraph, or the one after a lone label line ("**Summary**", "## Summary").
+	const summary = paragraphs.length > 1 && isLabelLine(paragraphs[0]!) ? paragraphs[1]! : paragraphs[0];
+	if (summary !== undefined && decisionAsk(summary, context)) return "asks-decision";
 	return questionList(body) ? "question-list" : null;
 }
 

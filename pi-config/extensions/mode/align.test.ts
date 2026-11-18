@@ -796,6 +796,12 @@ test("planSignal: the whole reply is judged; a findings report with no ask never
 	assert.equal(planSignal(report.replace("nothing changed yet.", "which do you prefer for the fix, JSONL or CSV?")), "asks-decision", "a choice in the summary");
 	assert.equal(planSignal(report.replace("nothing changed yet.", "which do you prefer for the fix, JSONL or CSV?"), { userAsked: true }), null, "unless it answers the user's own question");
 	assert.equal(planSignal(report.replace("nothing changed yet.", "the fix is on `feat/x`. Want me to merge it?")), null, "a merge confirmation in the summary");
+	// The report's closing note of where it looked is not the reply's end; a lone label line is not its summary.
+	assert.equal(planSignal("The export drops forked rows; nothing changed.\n\n## Plan\n- walk the tree\n- add a test\n\nShould I go ahead?\n\nLooked in: server/export.ts."), "asks-decision", "an ask above the closing note");
+	assert.equal(planSignal("Two ways to fix it.\n\n## Options\n- A: walk the tree\n- B: copy the rows\n\nWhich do you prefer?\n\nLooked in: server/export.ts."), "asks-decision", "a choice above the closing note");
+	assert.equal(planSignal("**Summary**\n\n- The export drops forked rows.\n- Fix: walk the whole tree. Should I go ahead?\n\n## Findings\n- a\n\nLooked in: x."), "asks-decision", "an ask in the summary under a label");
+	assert.equal(planSignal("**Summary**\n\n- The export drops forked rows.\n- Nothing changed.\n\n## Findings\n- a\n\nLooked in: x."), null, "the same report asking nothing");
+	assert.equal(planSignal("Tests pass.\n\n- a\n- b\n\nShould I proceed with the merge?\n\nLooked in: the test log."), null, "a merge confirmation above the closing note");
 	// An old reply's heading sits below its ask: judged whole, the ask is the summary's.
 	assert.equal(planSignal("Plan:\n- a\n- b\n\nShould I go ahead?\n\n### Working notes\nRead the code. Nothing else."), null, "the plan's ask is neither the first nor the last paragraph");
 	assert.equal(planSignal("Should I go ahead with the plan below?\n\n### Working notes\nRead the code. Nothing else."), "asks-decision", "an ask in its first paragraph");

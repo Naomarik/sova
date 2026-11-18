@@ -31,6 +31,17 @@ ever on until you turn it on. See [Project modes](/docs/modes/project-modes/).
 Both kinds are **per chat**. Each chat keeps its own modes, saved in that chat's session file, so
 they survive a reload or a server restart. Switching one chat never moves another chat.
 
+## How replies read
+
+Whatever its modes, every chat you talk to (the Overseer and a project's overseer included) opens
+each reply with a short summary you can scan in a few seconds: the answer, what changed, what needs
+you, and any warnings or things the agent didn't check. The full report follows, sized to the
+question: a quick question gets nothing more, and an investigation gets its findings with their
+evidence, as a list or table when there are several, ending with a line on where it looked. Nothing
+in a reply is folded away. Where a mode sets its own shape, that shape wins: a reply that opens an
+[alignment](/docs/modes/align/) is a sentence or two naming the card. Workers report to the chat
+that started them, so their reports keep their own shape.
+
 ## Switch in the web app
 
 The mode switch sits at the right end of the composer foot, after the model. It shows the chat's

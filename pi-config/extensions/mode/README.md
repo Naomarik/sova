@@ -102,11 +102,10 @@ writer**).
   and trade-offs), then stops and waits for the user's answers; nothing is
   built before it is confirmed. Explicit commands, pointed-at one-liners, a
   user's "skip alignment" and a follow-up that plainly confirms (only an answer
-  to an existing card, or the go-ahead for a command to run) are exempt. Every reply opens
-  with a short part the user reads (the answer, what changed, what they must
-  decide, warnings and what went unchecked; about 80 words), and any working
-  detail goes after a line reading exactly `### Working notes`, which Sova
-  shows as a closed fold. Text in `minor.ts`; see **Alignments**.
+  to an existing card, or the go-ahead for a command to run) are exempt. A reply
+  that opens an alignment is a sentence or two naming it; every other reply
+  follows the reply shape every main chat gets (**Behaviour**). Text in
+  `minor.ts`; see **Alignments**.
 - **spec** — every behavior change is spec'd: the agent finds its roots in the
   project's `.sova/spec/` documentation with `map` and `where`, looks at their
   contents with `toc`, runs `impact --near` on what it will change, and `read`s
@@ -359,10 +358,22 @@ While in delegate, the engine appends orchestration instructions to the system
 prompt on every turn (`before_agent_start`), so toggling takes effect on the
 next prompt without `/reload`.
 
+**The reply shape.** Every main chat's mode section ends with
+`REPLY_SHAPE_INSTRUCTIONS` (`prompt.ts`, a `# Replies` block), whatever its
+modes, Normal with nothing on included: open with a short scannable summary
+(the answer, what changed, what needs the user, warnings and what went
+unchecked), then the full report sized to the question, nothing folded; an
+instruction that sets a reply's own shape (align's sentence or two naming a new
+alignment, the Overseer's answer groups) wins. The engine adds it
+(`withReplyShape` in `modeBlock`), so `composePrompt` stays the mode blocks
+alone; a worker's section (`composeWorkerPrompt`) never has it. The project
+overseer runs no modes, so it rides that chat's own prompt.
+
 How those instructions reach the model depends on the host. On pi >= 0.86 the
 handler writes the blocks into `systemPromptOptions.sections.mode`, which pi
 diffs against the section the model already has, and switching back to normal
-deletes the section so the instructions stop applying. On older hosts without
+with nothing on leaves the reply shape alone in it, so the other instructions
+stop applying (a worker with no mode of its own has no section at all). On older hosts without
 sections (pi < 0.86) there are no sections, and the blocks stay a whole-prompt
 append as before.
 

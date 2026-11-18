@@ -43,7 +43,7 @@ import {
   type MinorMode,
 } from "../../pi-config/extensions/mode/minor.ts";
 import { ALIGN_SETTINGS_FILE, alignSettingsReader, resolveAlign, type AlignEagerness, type AlignStyle } from "../../pi-config/extensions/mode/align-settings.ts";
-import { applyModeSection, buildAlignEagernessNote, buildAlignStyleNote, buildModeNote, buildProjectModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, workerProjectModes } from "../../pi-config/extensions/mode/prompt.ts";
+import { applyModeSection, buildAlignEagernessNote, buildAlignStyleNote, buildModeNote, buildProjectModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, withReplyShape, workerProjectModes } from "../../pi-config/extensions/mode/prompt.ts";
 import { discoverProjectModes, readProjectMode } from "../../pi-config/extensions/mode/project-discovery.ts";
 import { PROJECT_MODE_PREFIX, PROJECT_MODES_DIR, projectModeArg, projectToolName, type ProjectModeListing, type ProjectModeProblem, type ProjectModeRef, type ProjectModeSnapshot } from "../../pi-config/extensions/mode/project-format.ts";
 import { isApproved } from "../../pi-config/extensions/mode/project-tools-approval.ts";
@@ -375,17 +375,19 @@ export class ModeEngine {
     return this.copiesOf(projectModesOf(this.active));
   }
 
-  /** The `mode` section now (index.ts modeBlock). */
+  /** The `mode` section now (index.ts modeBlock): a worker's modes, or a main chat's blocks then the reply shape, which it has whatever its modes. */
   modeBlock(): string | undefined {
     return this.workerRole
       ? composeWorkerPrompt({ minorModes: this.headMinors() })
-      : composePrompt(
-          this.active,
-          this.routes,
-          this.writerRoute,
-          this.headMinors(),
-          this.alignOptions(this.headStyle ?? this.alignNow().style, this.headEagerness ?? this.alignNow().eagerness),
-          this.copiesOf(this.headProjects()).map((copy) => copy.text),
+      : withReplyShape(
+          composePrompt(
+            this.active,
+            this.routes,
+            this.writerRoute,
+            this.headMinors(),
+            this.alignOptions(this.headStyle ?? this.alignNow().style, this.headEagerness ?? this.alignNow().eagerness),
+            this.copiesOf(this.headProjects()).map((copy) => copy.text),
+          ),
         );
   }
 

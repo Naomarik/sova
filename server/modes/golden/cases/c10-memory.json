@@ -109,7 +109,8 @@
        "tools": "@4638ec08e2a6ed45",
        "rules": "@9514ae33e1ebc3e7",
        "docs": "@0f5fabf6c3c47c4c",
-       "cwd": "<cwd>\n<ws:plain>\n</cwd>"
+       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+       "mode": "@63ad43a1080c5574"
       },
       "toolsAdded": "@fbdbd677128a5a1b"
      },
@@ -174,7 +175,8 @@
       "tools": "@4638ec08e2a6ed45",
       "rules": "@9514ae33e1ebc3e7",
       "docs": "@0f5fabf6c3c47c4c",
-      "cwd": "<cwd>\n<ws:plain>\n</cwd>"
+      "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+      "mode": "@63ad43a1080c5574"
      },
      "toolsAdded": "@6d9e847308718802"
     }

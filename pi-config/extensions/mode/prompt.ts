@@ -146,6 +146,23 @@ export function composePrompt(
 }
 
 /**
+ * How every reply a person reads is shaped (§chat.mode-menu/reply-shape): a short scannable summary first,
+ * then the full report sized to the question, nothing folded. Every chat a person talks to carries it,
+ * whatever its modes, never a worker or team member: Sova's mode engine appends it to a main chat's mode
+ * section (withReplyShape), and the project overseer, which runs no modes, to its own prompt. It defers to
+ * any instruction that sets a reply's own shape (align's sentence or two naming a new alignment, the
+ * Overseer's answer groups).
+ */
+export const REPLY_SHAPE_INSTRUCTIONS = `# Replies
+
+Open every reply with a short summary the user can scan in a few seconds: the answer, what changed, what needs them, and any warnings, failures or things you did not check. Then give the full report, sized to the question: a quick question needs nothing more; an investigation gives its findings with their evidence (files, commands, output), as a list or table when there are several. End the report with one line saying where you looked. Never fold or hide part of a reply. When another instruction sets a reply's shape, such as the sentence or two that names a new alignment, follow it instead.`;
+
+/** A main chat's mode section: its mode blocks (composePrompt), if any, then the reply shape, last. */
+export function withReplyShape(blocks: string | undefined): string {
+	return blocks === undefined ? REPLY_SHAPE_INSTRUCTIONS : `${blocks}\n\n${REPLY_SHAPE_INSTRUCTIONS}`;
+}
+
+/**
  * The hidden note's part for project modes switched since the model was last told (§chat.mode-menu/project-modes),
  * from `told` to `now` (refs: id and saved copy). A mode turned on gets its copy's whole block unless that very
  * copy is already in context (in the head, or carried by a note since the last compaction: `known.guides`, by

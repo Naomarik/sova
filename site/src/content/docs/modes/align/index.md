@@ -28,9 +28,9 @@ Either way, nothing is built until you confirm an alignment (unless you said to 
 and a "go", "yes" or "fix it" to anything the agent sketched in chat opens a card first rather than
 starting the build.
 
-While align is on, every reply opens with a short part for you: the answer, what changed, what you
-must decide, and any warnings or things it didn't check. The agent's working detail, when there
-is any, comes after it under **Working notes**, which the chat shows folded closed.
+A reply that opens an alignment is a sentence or two naming the card and what the agent needs from
+you; the card holds the rest. Every other reply has the shape every chat's replies have, align on or
+off: a short summary first, then the full report (see [How replies read](/docs/modes/#how-replies-read)).
 
 You never edit an alignment yourself. You answer in chat, and the agent records your answer.
 

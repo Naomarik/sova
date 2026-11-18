@@ -19,8 +19,10 @@ import {
 	DEFAULT_ROUTES,
 	DELEGATE_ALIGN_BRIDGE,
 	MODE_SECTION,
+	REPLY_SHAPE_INSTRUCTIONS,
 	SPEC_WORKER_NOTE,
 	statusLabel,
+	withReplyShape,
 } from "./prompt.ts";
 import { routeAll, routeWriter, type Discovery } from "./routing.ts";
 import { specDefaults, type SpecSettings } from "./spec.ts";
@@ -262,10 +264,11 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(align, /\{"op": "change_request"\} before anything else in that run/);
 	assert.match(align, /unless the user told you to skip alignment or the request is exempt/);
 	assert.doesNotMatch(align, /only after the user has said|Want me to plan a fix/, "the branch's middle rule is gone");
-	// Every reply's two parts (§chat.alignment/reply): the fold's exact heading.
-	assert.match(align, /a line that reads exactly `### Working notes`/);
-	assert.match(align, /about 80 words, five short lines at most \(a target, not a limit\)/);
-	assert.match(align, /warnings, failures, risks and what went unchecked always go here/);
+	// A reply that opens an alignment (§chat.alignment/reply) keeps align's own shape; every other reply's shape
+	// left the block for the one every main chat gets (§chat.mode-menu/reply-shape): no fold, no word count.
+	assert.match(align, /Your reply is a sentence or two naming the alignment \(its id\) and what you need from the user/);
+	assert.doesNotMatch(align, /Working notes|Every reply|80 words|five short lines|closed fold/);
+	assert.ok(!align.includes(REPLY_SHAPE_INSTRUCTIONS) && !align.includes("# Replies"), "the align block never carries the reply shape itself");
 	// The bridge follows the same trigger, in the shared words.
 	assert.match(DELEGATE_ALIGN_BRIDGE, /for change requests only\. A change request is a prompt the align instructions \(the align minor mode's block\) say opens an alignment/);
 	assert.match(DELEGATE_ALIGN_BRIDGE, /Any other prompt is answered \(or delegated\) as the delegate block says, with no planning worker for an alignment/);
@@ -1049,6 +1052,35 @@ test("composeWorkerPrompt: the spec block byte for byte, then the worker note; n
 	assert.equal(composeWorkerPrompt({ minorModes: ["align"] }), undefined, "align alone reaches no worker");
 	assert.equal(composeWorkerPrompt({ minorModes: ["vis"] }), undefined, "vis alone reaches no worker");
 	assert.equal(composeWorkerPrompt({ minorModes: [] }), undefined);
+});
+
+test("reply shape: every main chat's mode section ends with it, exactly once, in every mode and mix of minor modes; no worker's ever has it", () => {
+	// Its words: a summary first, then the report sized to the question; no fold, word or line count, or fold heading.
+	assert.match(REPLY_SHAPE_INSTRUCTIONS, /^# Replies\n\nOpen every reply with a short summary/);
+	assert.match(REPLY_SHAPE_INSTRUCTIONS, /warnings, failures or things you did not check/);
+	assert.match(REPLY_SHAPE_INSTRUCTIONS, /Then give the full report, sized to the question: a quick question needs nothing more/);
+	assert.match(REPLY_SHAPE_INSTRUCTIONS, /as a list or table when there are several/);
+	assert.match(REPLY_SHAPE_INSTRUCTIONS, /When another instruction sets a reply's shape, such as the sentence or two that names a new alignment, follow it instead\./);
+	assert.doesNotMatch(REPLY_SHAPE_INSTRUCTIONS, /Working notes|\d+ words|lines at most|two parts/);
+	const count = (text: string | undefined) => (text ?? "").split(REPLY_SHAPE_INSTRUCTIONS).length - 1;
+	const minorSets: MinorMode[][] = [[], ["align"], ["spec"], ["vis"], ["align", "spec", "vis"]];
+	let seen = 0;
+	for (const mode of ["normal", "delegate", "create"] as const) {
+		for (const minorModes of minorSets) {
+			const state = { mode, strict: false, minorModes };
+			const blocks = composePrompt(state, ALL_OK);
+			const main = withReplyShape(blocks);
+			const label = `${mode}+${minorModes.join(",")}`;
+			assert.equal(count(blocks), 0, `${label}: composePrompt is the mode blocks alone`);
+			assert.equal(count(main), 1, `${label}: the main chat's section carries it once`);
+			assert.ok(main.endsWith(`\n\n${REPLY_SHAPE_INSTRUCTIONS}`) || main === REPLY_SHAPE_INSTRUCTIONS, `${label}: last, after every mode block`);
+			assert.equal(main, blocks === undefined ? REPLY_SHAPE_INSTRUCTIONS : `${blocks}\n\n${REPLY_SHAPE_INSTRUCTIONS}`, `${label}: every block unchanged before it`);
+			assert.equal(count(composeWorkerPrompt(state)), 0, `${label}: a worker's modes never carry it`);
+			seen++;
+		}
+	}
+	assert.equal(seen, 15);
+	assert.equal(withReplyShape(undefined), REPLY_SHAPE_INSTRUCTIONS, "Normal with no mode on: the section is the reply shape alone");
 });
 
 test("SPEC_WORKER_NOTE: the landing makes drafts official, the brief is the go-ahead, and updated foreign § go in the final report", () => {

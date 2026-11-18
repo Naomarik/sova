@@ -62,7 +62,8 @@
        "tools": "@4638ec08e2a6ed45",
        "rules": "@9514ae33e1ebc3e7",
        "docs": "@0f5fabf6c3c47c4c",
-       "cwd": "<cwd>\n<ws:plain>\n</cwd>"
+       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+       "mode": "@63ad43a1080c5574"
       },
       "toolsAdded": "@fbddec40b8fdf282"
      },
@@ -111,7 +112,8 @@
       "tools": "@4638ec08e2a6ed45",
       "rules": "@9514ae33e1ebc3e7",
       "docs": "@0f5fabf6c3c47c4c",
-      "cwd": "<cwd>\n<ws:plain>\n</cwd>"
+      "cwd": "<cwd>\n<ws:plain>\n</cwd>",
+      "mode": "@63ad43a1080c5574"
      },
      "toolsAdded": "@9a85350e7590c36c"
     }
@@ -573,7 +575,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "mode": "@558b6ed7d55bf734"
+       "mode": "@7cc43715026f7f98"
       }
      },
      {
@@ -617,7 +619,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "mode": "@558b6ed7d55bf734"
+      "mode": "@7cc43715026f7f98"
      }
     }
    }
@@ -713,7 +715,7 @@
       "sections": {
        "tools": "@14069dc67c42c871",
        "rules": "@898a2a6e09208de2",
-       "mode": "@7c8719d2e6540e12"
+       "mode": "@4f3553104a524520"
       },
       "toolsAdded": [
        {
@@ -759,7 +761,7 @@
       "content": [
        {
         "type": "text",
-        "text": "@0be17424cf9ac08e"
+        "text": "@7ac04b3240c18d82"
        }
       ]
      }
@@ -798,7 +800,7 @@
      "sections": {
       "tools": "@14069dc67c42c871",
       "rules": "@898a2a6e09208de2",
-      "mode": "@7c8719d2e6540e12"
+      "mode": "@4f3553104a524520"
      },
      "toolsAdded": [
       {
@@ -834,7 +836,7 @@
    {
     "type": "custom_message",
     "customType": "mode-note",
-    "content": "@0be17424cf9ac08e",
+    "content": "@7ac04b3240c18d82",
     "display": false,
     "details": {
      "v": 1,
@@ -940,7 +942,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "mode": null
+       "mode": "@63ad43a1080c5574"
       }
      },
      {
@@ -985,7 +987,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "mode": null
+      "mode": "@63ad43a1080c5574"
      }
     }
    }

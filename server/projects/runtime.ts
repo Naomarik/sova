@@ -14,7 +14,7 @@ import { landThroughQueue, mergeCodingWorktree, startOnboardSession, type Starte
 import { projectRootOf } from "../project-root";
 import { realGit } from "../project-services/engine";
 import { readWorktree } from "../project-worktrees";
-import { ONBOARD_PLAYBOOK_ID, onboardFacts, onboardInvalid, onboardRunMode, onboardStart } from "./onboard";
+import { ONBOARD_PLAYBOOK_ID, onboardRefusal, onboardRunMode, onboardStart } from "./onboard";
 import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, proposesOf, runLive } from "./playbook-review";
 import { runtimeFeed, type FeedRow } from "./runtime-feed";
 import { ALREADY_RUNNING, verbsChatPathOfRun, verbsCurrentOf } from "./verbs-chat";
@@ -369,12 +369,24 @@ export function openOnboardRun(builds: readonly SessionInfo[], projectId: string
 }
 
 /** Why Set Up with a Chat / Change Setup… can't start or open the project's Project verbs chat, or undefined: the
-    start's own refusals (archived, the folder elsewhere or missing, no Git, the playbook missing), read before any
-    press so the line and a press say the same sentence. */
+    start's own refusals (archived, the folder elsewhere or missing, no Git, the playbook missing, no model), read
+    before any press from the same rule (onboard.ts onboardRefusal) so the line and a press say the same sentence. */
 export async function onboardWhyOf(projectId: string): Promise<string | undefined> {
   const p = readProject(projectId);
   if (projectArchived(projectId)) return `${p.name || p.id} is archived. Unarchive it first.`;
-  return onboardInvalid(await onboardFacts(projectId, ONBOARD_PLAYBOOK_ID)) ?? undefined;
+  // An open chat is opened by the press, whatever a new start would need (verbs-chat.ts openVerbsChat).
+  if (await verbsChatOpen(projectId)) return undefined;
+  return (await onboardRefusal(projectId)) ?? undefined;
+}
+
+/** The project's Project verbs chat is open, as a press finds it (the live ways; false before the routes exist). */
+async function verbsChatOpen(projectId: string): Promise<boolean> {
+  try {
+    const [{ verbsDeps }, { currentChat }] = await Promise.all([import("./runtime-routes"), import("./verbs-chat")]);
+    return !!(await currentChat(projectId, verbsDeps()));
+  } catch {
+    return false;
+  }
 }
 
 /** Who the next turn of a project's Project verbs chat is from (an overseer's start delivered to it), by project. */

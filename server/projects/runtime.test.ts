@@ -102,10 +102,17 @@ test("a new project is born with its registry: unregistered while main declares 
   const host = hostOf(engineOf(pid)!);
   assert.ok(host.configuration(runtimeSid(pid)), "runtime/<p> exists");
   assert.equal(host.data(runtimeSid(pid))?.orgId, undefined, "no organization in it");
-  const v = await read();
-  assert.equal(v.standing, "unregistered");
-  assert.equal(v.playbookState, "idle");
-  assert.equal(v.can.onboard, true);
+  // A host whose model picker lists the playbook's first model: nothing refuses a start.
+  const { setOfferedRefsForTest, onboardModels } = await import("./onboard");
+  setOfferedRefsForTest(async () => [onboardModels()[0]!]);
+  try {
+    const v = await read();
+    assert.equal(v.standing, "unregistered");
+    assert.equal(v.playbookState, "idle");
+    assert.equal(v.can.onboard, true);
+  } finally {
+    setOfferedRefsForTest(null);
+  }
 });
 
 test("a definition on main conforms by itself, and a pass registers it with its memory", async () => {
@@ -153,6 +160,21 @@ test("an invalid definition on main is failed with the parser's error", async ()
   assert.equal(v.standing, "failed");
   assert.equal(v.def?.state, "invalid");
   assert.ok(v.feed[0]!.line.startsWith("The definition on main is invalid: "), v.feed[0]!.line);
+});
+
+test("no model on this host: the line says the press's own sentence before any press", async () => {
+  const { setOfferedRefsForTest, noOnboardModel } = await import("./onboard");
+  setOfferedRefsForTest(async () => []);
+  try {
+    const v = await read();
+    assert.equal(v.can.onboard, false);
+    assert.equal(v.can.onboardWhy, noOnboardModel());
+    const r = await app.request(`/api/projects/${pid}/verbs/onboard`, json("POST", {}));
+    assert.equal(r.status, 409);
+    assert.equal(((await r.json()) as { error: string }).error, v.can.onboardWhy, "the press says the same");
+  } finally {
+    setOfferedRefsForTest(null);
+  }
 });
 
 test("Set Up with a Chat is refused for an archived project, and the line says why before any press", async () => {

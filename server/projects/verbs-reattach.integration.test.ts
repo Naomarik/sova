@@ -75,6 +75,9 @@ seedBuildEffectsForTest(sessionId, { path: sessionPath, worktreePath: wt, made: 
 const bsid = buildSid(pid, sessionId);
 
 const { verbsDeps } = await import("./runtime-routes");
+// A host whose model picker lists the playbook's first model, so no-model refuses nothing here.
+const { setOfferedRefsForTest, onboardModels } = await import("./onboard");
+setOfferedRefsForTest(async () => [onboardModels()[0]!]);
 const deps = {
   ...verbsDeps(),
   startRun: async () => {
@@ -95,7 +98,12 @@ test("the first press starts the standing chat; its turn ends with no change", a
 });
 
 test("a press opens it again, starting nothing; the head's read names it", async () => {
+  // No model on the host refuses only a new start: the open chat is still offered and opened.
+  setOfferedRefsForTest(async () => []);
+  const line = await read();
+  assert.deepEqual([line.can.onboard, line.can.onboardWhy], [true, undefined]);
   const r = await app.request(`/api/projects/${pid}/verbs/onboard`, json("POST", {}));
+  setOfferedRefsForTest(async () => [onboardModels()[0]!]);
   assert.equal(r.status, 200, await r.clone().text());
   assert.deepEqual(await r.json(), { sessionId, path: sessionPath, reopened: true, worktree: { path: wt, branch } });
   const head = (await (await app.request(`/api/projects/${pid}/verbs/chat`)).json()) as VerbsChatStatus;

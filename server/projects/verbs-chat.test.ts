@@ -199,6 +199,19 @@ describe("Start Fresh", () => {
     assert.equal(V.verbsRecordOf(a.id).current?.run, first.sessionId);
   });
 
+  test("a replacement that can't start is refused first: the open chat stays, nothing archived", async () => {
+    const a = await project();
+    const s = stand(a.root);
+    const first = await V.openVerbsChat(a.id, {}, s.deps);
+    commitIn(first.worktree!.path, { ".sova/project.json": "{}\n" });
+    const refusing = { ...s.deps, prompt: async () => ({ prompt: "", title: "", model: "", thinking: "", invalid: "x" }) };
+    await assert.rejects(V.freshVerbsChat(a.id, {}, refusing), (e: Error) => e.message === "x");
+    assert.deepEqual(s.calls.archived, [], "nothing archived");
+    assert.deepEqual([s.calls.chats.length, s.calls.runs.length], [0, 1], "nothing started");
+    assert.equal(V.verbsCurrentOf(a.id)?.sessionId, first.sessionId, "the old chat is still the project's");
+    assert.deepEqual(V.verbsRecordOf(a.id).history, []);
+  });
+
   test("with no open chat it says so", async () => {
     const a = await project();
     await assert.rejects(V.freshVerbsChat(a.id, {}, stand(a.root).deps), (e: Error) => e.message === V.NO_VERBS_CHAT);

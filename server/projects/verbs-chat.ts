@@ -254,6 +254,10 @@ export async function freshVerbsChat(projectId: string, input: { model?: string;
   if (!cur) throw new OrgError(NO_VERBS_CHAT, 409);
   if ((await deps.live(cur.path)).working) throw new OrgError(VERBS_STILL_WORKING, 409);
   if (cur.worktree && existsSync(cur.worktree) && (await deps.dirty(cur.worktree))) throw new OrgError(VERBS_DIRTY, 409);
+  // The replacement must be able to start (the press's own refusal: the host's, no model) before the open chat goes:
+  // a refused start leaves it open, never no chat at all.
+  const can = await deps.prompt(projectId, input);
+  if (can.invalid) throw new OrgError(can.invalid, 409);
   const a = await deps.archive(cur.path);
   if (!a.ok) throw new OrgError(`The Project verbs chat couldn't be archived: ${a.error}`, 409);
   const rec = verbsRecordOf(projectId);

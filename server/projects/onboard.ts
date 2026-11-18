@@ -120,13 +120,32 @@ export async function onboardFacts(projectId: string, playbookId = ONBOARD_PLAYB
   };
 }
 
+let offeredForTest: (() => Promise<string[] | null>) | null = null;
+/** Tests: what this host's model picker lists (null: the real list again). */
+export function setOfferedRefsForTest(f: (() => Promise<string[] | null>) | null): void {
+  offeredForTest = f;
+}
+
 /** The refs this host's model picker lists (credentials configured); null when they can't be read. */
 async function offeredRefs(): Promise<string[] | null> {
+  if (offeredForTest) return offeredForTest();
   try {
     return (await listModels()).map((m) => m.ref);
   } catch {
     return null;
   }
+}
+
+/** Why a start with these facts and this model choice is refused, or null: the host's refusal, else no model. The one
+    rule a press and the setup line's reason read (onboardRefusal). Pure. */
+export const startRefusal = (facts: OnboardFacts, choice: ModelChoice | null): string | null => onboardInvalid(facts) ?? (choice ? null : noOnboardModel());
+
+/** Why a start of the playbook on `projectId` would be refused now, or null: the same sentence a press answers
+    (onboardStart), read before any press for the setup line. */
+export async function onboardRefusal(projectId: string, input: { model?: string | null; thinking?: string | null; playbook?: string | null } = {}): Promise<string | null> {
+  const id = resolvePlaybookId(input.playbook?.trim() || ONBOARD_PLAYBOOK_ID);
+  const facts = await onboardFacts(projectId, id);
+  return startRefusal(facts, onboardModel(input, input.model?.trim() ? null : await offeredRefs()));
 }
 
 /** The run's first prompt, title and model from the facts, or why it can't start. Pure. */
@@ -135,7 +154,7 @@ export function onboardStartFrom(facts: OnboardFacts, input: { why?: string | nu
   const label = facts.playbook?.title || "Project verbs";
   const who = { playbookId: facts.playbookId ?? ONBOARD_PLAYBOOK_ID, label, proposes: facts.playbook?.proposes ?? "definition" };
   const title = input.title?.trim() || onboardTitle(facts.name, label);
-  const invalid = onboardInvalid(facts) ?? (choice ? null : noOnboardModel());
+  const invalid = startRefusal(facts, choice);
   if (invalid || !facts.playbook || !choice) return { prompt: "", title, model: choice?.model ?? "", thinking: choice?.thinking ?? ONBOARD_THINKING, ...who, invalid: invalid ?? "" };
   // The host's own context (the Setup chat's project, current setup and earlier chats) follows the playbook's turn.
   const turn = playbookTurnText(facts.playbook, input.context?.trim() ? "" : (input.why ?? ""));

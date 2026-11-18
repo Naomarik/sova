@@ -19,6 +19,6 @@ Use `chat` for anything the person would explain rather than type in a box: what
 
 `facts` (`[{"id", "label", "help"}]`) are things a run looks up and shows beside the choices, never asked: the version pinned now, the latest release.
 
-Every playbook also lets the person, without declaring anything: change each required member's model and effort, turn optional members and optional stops on or off, set the cycle settings, and add a note for one member for this run. Goals, briefs and notes change in the playbook, for every later run.
+Every playbook also lets the person, or the chat on their word, without declaring anything: change each required member's model and effort, turn optional members and optional stops on or off, set the cycle settings, and add a note for one member for this run. Goals, briefs and notes change in the playbook, for every later run.
 
 Ask only what changes the run. A value that's the same every time is written into the playbook (its recipe, a phase page or a member's notes), not asked.

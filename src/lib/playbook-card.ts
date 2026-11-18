@@ -24,6 +24,22 @@ import { modelLabel } from "./format";
 /** Where a choice's value came from, as the card's right-hand column says it (al_2 a6). */
 export const ORIGIN_LABEL: Record<PlaybookChoiceOrigin, string> = PLAYBOOK_CHOICE_ORIGIN_WORDS;
 
+/** A choice worked out with the main chat in the conversation: the chat fills it, the card only shows it. */
+export const isChatChoice = (c: Pick<PlaybookChoiceView, "ask">): boolean => c.ask === "chat";
+
+/** What a chat-filled choice says while the chat hasn't filled it. */
+export const CHAT_WAITING = "Waiting for the chat to fill this in.";
+
+/** A choice's right-hand line: "Needed" while a required one is empty, else where its value came
+    from. A value you set yourself says nothing: the card is yours, so "Your pick" told you nothing.
+    A chat-filled choice can't be edited on the card, so an edit to it is the chat's: "From the chat".
+    Its default, last value or an alignment's answer keeps that origin's words. */
+export function choiceOriginLine(c: Pick<PlaybookChoiceView, "origin" | "required" | "value" | "ask">): string {
+  if (isEmpty(c.value)) return c.required ? "Needed" : "";
+  if (c.origin === "you") return isChatChoice(c) ? "From the chat" : "";
+  return ORIGIN_LABEL[c.origin] ?? "";
+}
+
 const SOURCE_WORD: Record<PlaybookRunView["playbook"]["source"], string> = {
   sova: "Sova",
   user: "Yours",
@@ -126,7 +142,8 @@ export function memberWhy(member: Pick<PlaybookMemberView, "resolved" | "only">)
   const r = member.resolved;
   const only = member.only ? "Only these models" : null;
   if (!r) return only ?? "";
-  const why = r.reason ?? (r.source === "card" ? "Your pick for this run" : r.source === "list" ? "First choice" : r.source === "profile" ? "Your profile" : "This chat's model");
+  // A model you picked on the card says nothing of where it came from (no "Your pick").
+  const why = r.reason ?? (r.source === "card" ? null : r.source === "list" ? "First choice" : r.source === "profile" ? "Your profile" : "This chat's model");
   return [why, only].filter(Boolean).join(" · ");
 }
 

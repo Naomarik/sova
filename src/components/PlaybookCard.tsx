@@ -19,7 +19,9 @@ import {
   listValue,
   stackEdits,
   LEGACY_WHO_NOTE,
-  ORIGIN_LABEL,
+  CHAT_WAITING,
+  choiceOriginLine,
+  isChatChoice,
   pickLine,
   memberModelLine,
   memberTitle,
@@ -828,7 +830,7 @@ function NumberBox(props: { label: string; value: number; min: number; max: numb
 }
 
 /** One of your choices: its label, its control (or its value, after Start) and where the value came from. */
-function ChoiceRow(props: { choice: PlaybookChoiceView; value: unknown; editable: boolean; onChange(value: unknown, delay?: number): void }) {
+export function ChoiceRow(props: { choice: PlaybookChoiceView; value: unknown; editable: boolean; onChange(value: unknown, delay?: number): void }) {
   const cid = `pbc-${createUniqueId()}`;
   const c = () => props.choice;
   const empty = () => c().required && isEmpty(props.value);
@@ -906,18 +908,26 @@ function ChoiceRow(props: { choice: PlaybookChoiceView; value: unknown; editable
       </Match>
     </Switch>
   );
+  /** Worked out with the main chat: never a control here, the chat fills it. */
+  const chat = () => isChatChoice(c());
+  const withControl = () => props.editable && !chat();
   return (
-    <div class="pb-row" data-empty={empty() ? "" : undefined}>
-      {/* Shown, not read: each control carries its own name. */}
-      <span class="pb-row-label" aria-hidden={props.editable ? "true" : undefined}>
+    <div class="pb-row" data-empty={empty() ? "" : undefined} data-chat={chat() ? (isEmpty(props.value) ? "waiting" : "filled") : undefined}>
+      {/* Shown, not read: each control carries its own name. A row with no control is read as is. */}
+      <span class="pb-row-label" aria-hidden={withControl() ? "true" : undefined}>
         {c().label}
       </span>
       <span class="pb-row-value">
         <Show
-          when={props.editable}
+          when={withControl()}
           fallback={
-            <Show when={isFreeText(c()) && !isEmpty(props.value)} fallback={<span>{valueText(c(), props.value)}</span>}>
-              <LongAnswer text={valueText(c(), props.value)} label={c().label} />
+            <Show
+              when={!isEmpty(props.value)}
+              fallback={<span class={chat() ? "pb-chat-waiting" : undefined}>{chat() ? CHAT_WAITING : valueText(c(), props.value)}</span>}
+            >
+              <Show when={isFreeText(c())} fallback={<span>{valueText(c(), props.value)}</span>}>
+                <LongAnswer text={chat() && c().type === "list" ? listValue(props.value).join("\n") : valueText(c(), props.value)} label={c().label} />
+              </Show>
             </Show>
           }
         >
@@ -925,7 +935,7 @@ function ChoiceRow(props: { choice: PlaybookChoiceView; value: unknown; editable
         </Show>
         <Show when={c().help}>{(h) => <span class="pb-row-help">{h()}</span>}</Show>
       </span>
-      <span class="pb-row-origin">{empty() ? "Needed" : ORIGIN_LABEL[c().origin]}</span>
+      <span class="pb-row-origin">{choiceOriginLine(c())}</span>
     </div>
   );
 }

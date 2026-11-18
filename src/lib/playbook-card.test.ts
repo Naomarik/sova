@@ -18,6 +18,8 @@ import {
   playbooksRunHere,
   revealStep,
   runStatus,
+  choiceOriginLine,
+  isChatChoice,
   chatNowOf,
   controlLabel,
   type RunChatNow,
@@ -389,4 +391,35 @@ test("Open Card goes to the pane that was clicked: the other pane never takes a 
   // A way in that names no pane: the chat with the card opens it; else one reads the record after the others had their look.
   assert.equal(revealStep({ id: "pr_1" }, paneA, true), "open");
   assert.equal(revealStep({ id: "pr_1" }, paneA, false), "later");
+});
+
+test("a choice's origin line never says Your pick: a value you set says nothing, the others keep their words", () => {
+  const c = (origin: string, required = false, value: unknown = "v", ask = "always") => ({ id: "x", label: "X", type: "text", value, origin, required, ask }) as never;
+  assert.equal(choiceOriginLine(c("you")), "");
+  assert.equal(choiceOriginLine(c("default")), "Default");
+  assert.equal(choiceOriginLine(c("last")), "Same as last time");
+  assert.equal(choiceOriginLine(c("standing")), "Your standing answer");
+  assert.equal(choiceOriginLine(c("message")), "From your message");
+  assert.equal(choiceOriginLine(c("you", true, "")), "Needed");
+  // An optional empty choice says nothing.
+  assert.equal(choiceOriginLine(c("default", false, "")), "");
+});
+
+test("a chat-filled choice: Needed while empty and required, From the chat once the chat filled it, its default as Default", () => {
+  const c = (value: unknown, origin = "you", required = true) => ({ id: "f", label: "The failure to fix", type: "text", value, origin, required, ask: "chat" }) as never;
+  assert.equal(isChatChoice(c("")), true);
+  assert.equal(isChatChoice({ ask: "always" }), false);
+  assert.equal(choiceOriginLine(c(null)), "Needed");
+  assert.equal(choiceOriginLine(c(null, "default", false)), "");
+  assert.equal(choiceOriginLine(c("Cheap models pick the wrong chart.")), "From the chat");
+  assert.equal(choiceOriginLine(c(["a", "b"])), "From the chat");
+  // A default shown read-only as its starting value, or an earlier run's, keeps its own words.
+  assert.equal(choiceOriginLine(c("A starting line.", "default")), "Default");
+  assert.equal(choiceOriginLine(c("Last time's words.", "last")), "Same as last time");
+});
+
+test("a member on a model you picked says no Your pick, only its other notes", () => {
+  const m = (only: boolean) => ({ only, resolved: { model: "zai/glm-5.3", modelLabel: "GLM 5.3", provider: "zai", source: "card" } }) as never;
+  assert.equal(memberWhy(m(false)), "");
+  assert.equal(memberWhy(m(true)), "Only these models");
 });

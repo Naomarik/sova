@@ -298,6 +298,7 @@ abstract class FileStore implements CredentialStore {
       if (!changed) return result;
       const target = this.writeTarget(specs);
       if (locks.compromised()) throw new LockBusyError(`lock on ${this.path} was compromised; write abandoned`);
+      // The store's own path, not `target`: only a store that refuses a link deletes (Claude's), so the two are one.
       if (this.deleteWhenEmpty && Object.keys(next).length === 0) unlinkSync(this.path);
       else writeFileAtomic(target, this.serialize(next));
       return result;

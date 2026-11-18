@@ -288,22 +288,28 @@ export function timeSpentStore(): TimeSpentStore {
 }
 
 /** How long a delete waits for the usage helper to keep the session's hours: never more. */
-const KEEP_WAIT_MS = 1_500;
+export const KEEP_WAIT_MS = 1_500;
 
 /**
  * A session is about to be deleted: the usage helper keeps its hours (by day, folder and activity) before
  * its record goes, so they stay in the Agents page's Time Spent totals even if the helper is down when the
  * file vanishes. Best effort: never fails and never holds the delete past KEEP_WAIT_MS; the helper not
- * running answers at once.
+ * running answers at once. A batch of deletes shares one deadline (`until`): together they wait at most
+ * KEEP_WAIT_MS. False when the helper didn't answer in time.
  */
-export async function keepSessionTimeSpent(session: string): Promise<void> {
-  if (!safeId(session)) return;
+export async function keepSessionTimeSpent(session: string, until = Date.now() + KEEP_WAIT_MS): Promise<boolean> {
+  if (!safeId(session)) return true;
+  const wait = Math.min(KEEP_WAIT_MS, until - Date.now());
   try {
     const { askUsage } = await import("./usage-helper/client");
     let timer: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([askUsage("time-keep", { sid: session }), new Promise((r) => (timer = setTimeout(r, KEEP_WAIT_MS)))]);
+    const answered = await Promise.race([askUsage("time-keep", { sid: session }).then(() => true), new Promise<boolean>((r) => (timer = setTimeout(() => r(false), Math.max(0, wait))))]);
     clearTimeout(timer);
-  } catch { /* the helper's sweep still sees the file go */ }
+    return answered;
+  } catch {
+    // The helper's sweep still sees the file go.
+    return true;
+  }
 }
 
 /** A deleted session's record goes with it. Never in the way of the delete itself: the transcript is already gone. */

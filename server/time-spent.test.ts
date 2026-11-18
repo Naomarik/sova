@@ -501,6 +501,32 @@ describe("kept until the session is deleted", () => {
     assert.equal(existsSync(path), false);
     assert.equal(existsSync(recordOf("del-age")), false);
   });
+  test("Clean Up asks the usage helper to keep each session's hours before its record goes, and a hung helper holds it 1.5 s at most in all", async () => {
+    const { setUsageAsker } = await import("./usage-helper/client");
+    const ids = ["keep-a", "keep-b", "keep-c", "keep-d"];
+    const paths = [];
+    for (const id of ids) {
+      const path = recorded(id);
+      await report(path);
+      setArchived(id, true);
+      paths.push(path);
+    }
+    const asked: { sid: unknown; recordThere: boolean }[] = [];
+    // A helper that never answers.
+    setUsageAsker((op, params) => {
+      if (op === "time-keep") asked.push({ sid: params.sid, recordThere: existsSync(recordOf(String(params.sid))) });
+      return new Promise(() => {});
+    });
+    try {
+      const t0 = Date.now();
+      assert.equal((await cleanupSessions({ mode: "paths", paths, dryRun: false })).deletedCount, 4);
+      assert.ok(Date.now() - t0 < 2_500, `held ${Date.now() - t0} ms`);
+    } finally {
+      setUsageAsker(null);
+    }
+    assert.deepEqual(asked, ids.map((sid) => ({ sid, recordThere: true })), "each asked while its record was still there");
+    for (const id of ids) assert.equal(existsSync(recordOf(id)), false);
+  });
   test("an empty husk deleted by archiving removes it", async () => {
     const path = recorded("del-husk", []);
     await report(path);

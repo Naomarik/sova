@@ -27,6 +27,7 @@ import type { CodeControl } from "../lib/code-state";
 import type { ChatProfileInfo } from "../../shared/protocol";
 import { InsightStrip } from "./InsightStrip";
 import { createProjectOverseerControl, ProjectOverseerHead } from "./ProjectOverseerHead";
+import { createVerbsChatControl, VerbsChatFresh, VerbsChatNote } from "./VerbsChatFresh";
 import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { trackSessionView } from "../lib/time-spent";
@@ -170,6 +171,11 @@ export function SessionView(props: {
   const po = !props.paneId && !props.head ? s().projectOverseer : undefined;
   const poEarlier = !!po && !!(s().project?.finished ?? s().org?.finished);
   const poControl = po ? createProjectOverseerControl({ projectId: po.projectId, path, summary: s, onRefresh: () => props.onRefresh() }) : null;
+  /** A project's coding session may be its standing Project verbs chat, whose head has Start Fresh… (§app.project-runtime/onboard).
+      Decided at mount, read on open and as its turn starts and ends; this host's sessions only. */
+  const verbsProject = !props.paneId && !props.head && !po && !hostOf(path) && s().project?.kind === "coding" ? s().project!.projectId : undefined;
+  const verbsControl = verbsProject ? createVerbsChatControl({ projectId: verbsProject, path, busy: () => !!s().busy }) : null;
+  const verbsWhyId = `verbs-fresh-why-${sessionIdOfPath(path)}`;
 
   /** The model the chat switched to, this view's own: a workspace's panes each run their own. */
   const [chatModel, setChatModel] = createSignal<string | null>(null);
@@ -314,6 +320,8 @@ export function SessionView(props: {
       <Show when={s().queueChat?.role === "thread" && !hostOf(path)}>
         <MergeRunLogsChip session={s().id} />
       </Show>
+      {/* The project's Project verbs chat alone: Start Fresh…, where the Overseer's Clear sits in its own head. */}
+      <Show when={verbsControl && verbsProject}>{(pid) => <VerbsChatFresh projectId={pid()} control={verbsControl!} describedBy={verbsWhyId} />}</Show>
       <CodeState control={codeControl()} />
       {/* The remote identity is always present; the connection chip reports liveness separately. */}
       <RemoteChip path={path} summary={s()} />
@@ -416,6 +424,7 @@ export function SessionView(props: {
           </div>
         </header>
       </Show>
+      <Show when={verbsControl}>{(c) => <VerbsChatNote control={c()} id={verbsWhyId} />}</Show>
       <InsightStrip
         path={path}
         sessionId={s().id}

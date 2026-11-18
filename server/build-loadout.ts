@@ -561,6 +561,9 @@ export function buildOfSession(sessionId: string): { engine: string; projectId: 
 export async function syncBuildTurn(projectId: string, sid: string, path: string | null): Promise<void> {
   const host = projectHost(projectId);
   const d = host.data(sid);
+  // A Project verbs chat that carries on an earlier run's branch (Start Fresh with commits) is that run's session now.
+  const carry = d ? (await import("./projects/verbs-chat")).verbsChatPathOfRun(str(d.sessionId)) : null;
+  if (carry) path = carry;
   if (!d || !path) return;
   const working = isSessionBusy(path);
   const workers = workingSubagents(path);
@@ -574,16 +577,23 @@ export async function syncBuildTurn(projectId: string, sid: string, path: string
 }
 
 /** The build a hosted session file is, with its engine (fresh ones first, then the index). */
-function buildOfPath(path: string): { engine: string; projectId: string; sid: string } | null {
+async function buildOfPath(path: string): Promise<{ engine: string; projectId: string; sid: string } | null> {
   const want = canonicalPath(path);
   for (const [id, p] of [...fresh, ...indexedSessionPaths()]) if (canonicalPath(p) === want) return buildOfSession(id);
-  return null;
+  return carriedBuildOf(path);
+}
+
+/** The run a Project verbs chat carries on (Start Fresh with commits, server/projects/verbs-chat.ts): its turns are that
+    run's build's turns. Null for any other session file. */
+async function carriedBuildOf(path: string): Promise<{ engine: string; projectId: string; sid: string } | null> {
+  const run = (await import("./projects/verbs-chat")).verbsRunOfPath(path);
+  return run ? buildOfSession(run) : null;
 }
 
 /** A build's turn started (agent_start, F21): its statechart says working from now, so the Pipeline shows it and the
     at-once cap counts it while the turn runs. */
 export async function noteBuildStarted(path: string): Promise<void> {
-  const hit = buildOfPath(path);
+  const hit = await buildOfPath(path);
   if (!hit) return;
   const host = hostOf(hit.engine);
   if (host.data(hit.sid)?.turn !== "working") await host.act(hit.sid, "turn/started", {}, SYSTEM);
@@ -704,6 +714,13 @@ export async function noteBuildSettled(path: string, failed: boolean): Promise<v
     await turnEnded(host, hit.sid, { failed, questions: await openQuestionsAt(p) });
     return;
   }
+  const carried = await carriedBuildOf(path);
+  if (!carried) return;
+  const host = hostOf(carried.engine);
+  const sessionId = str(host.data(carried.sid)?.sessionId);
+  if (host.data(carried.sid)?.turn !== "working") await host.act(carried.sid, "turn/started", {}, SYSTEM);
+  await probeAtTurnEnd(carried.projectId, carried.sid, sessionId);
+  await turnEnded(host, carried.sid, { failed, questions: await openQuestionsAt(path) });
 }
 
 /** The statechart's data each `git/probe` payload key lands in (build.cljc: the tree and branch regions, `probe-ops`). */

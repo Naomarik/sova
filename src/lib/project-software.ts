@@ -78,8 +78,25 @@ export function setupStatus(v: ProjectRuntimeView): { word: string; tone?: ChipT
   }
 }
 
-/** Run Playbook, or Run Again once something is registered. */
-export const playbookLabel = (v: ProjectRuntimeView): string => (v.registered ? "Run Again" : "Run Playbook");
+/** Set Up with a Chat while never set up, Change Setup… once something was registered (the other tabs' words). */
+export const playbookLabel = (v: Pick<ProjectRuntimeView, "registered">): string => (v.registered ? "Change Setup…" : "Set Up with a Chat");
+
+/** Start Fresh on the Project verbs chat (§app.project-runtime/onboard): the server's own sentences. */
+export const VERBS_WORKING_WHY = "The Project verbs chat is working: wait for its turn to end (or stop it), then Start Fresh.";
+export const VERBS_DIRTY_WHY = "The Project verbs chat's worktree has edits not committed: commit or discard them in that chat, then Start Fresh.";
+
+/** Start Fresh's confirm: with commits beyond the target its proposal stays and the new chat carries on there. Pure. */
+export function freshConfirmWords(ahead: number, branch?: string): string {
+  return ahead > 0
+    ? `This chat is archived and a new one starts now; what it learned goes with it. Its proposal on ${branch ?? "its branch"} stays open, and the new chat carries on in that branch.`
+    : "This chat is archived and a new one starts now, on a new branch; what it learned goes with it.";
+}
+
+/** What running copies are, above the line while the project was never set up; null once anything was registered. */
+export function notSetUpWords(v: Pick<ProjectRuntimeView, "registered">): { title: string; body: string } | null {
+  if (v.registered) return null;
+  return { title: "Running copies aren't set up yet", body: "A chat reads the project, writes how it runs and how its tests run, and proposes it on a branch for you to merge." };
+}
 
 /** The playbook's run in a few words, for the link under the services. */
 export function runWord(v: ProjectRuntimeView): string | null {
@@ -139,6 +156,15 @@ export function reviewProofWord(r: RuntimeRunReview): string {
   if (!p.pass) return `Conformance failed at ${p.failed?.check ?? "run"}: ${p.failed?.detail ?? ""}`;
   return `Conformance passed (suite v${p.suite})`;
 }
+
+/** The proposed test command and its smoke selection, in words. */
+export function testsWord(r: Pick<RuntimeRunReview, "test">): string {
+  if (!r.test) return "No test command";
+  return `Tests: ${r.test.run.join(" ")}${r.test.smoke.length ? ` · smoke: ${r.test.smoke.join(" ")}` : ""}`;
+}
+
+/** The proposed setup steps in the order they run, in words. */
+export const setupStepsWord = (r: Pick<RuntimeRunReview, "setup">): string => (r.setup?.length ? `Setup steps: ${r.setup.join(", ")}` : "No setup steps");
 
 /** Why the branch proposes nothing to merge, or null when it has a valid definition. */
 export function reviewDefProblem(r: RuntimeRunReview): string | null {

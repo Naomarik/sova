@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import { elapsedWord, failedLine, liveWord, memoryWord, openWord, playbookLabel, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, serviceFacts, setupStatus, shareWord, STANDING_CHIP } from "./project-software";
+import { elapsedWord, failedLine, freshConfirmWords, liveWord, memoryWord, notSetUpWords, openWord, playbookLabel, provenTail, reviewDefProblem, reviewProofWord, runStrip, runWord, serviceFacts, setupStatus, setupStepsWord, shareWord, STANDING_CHIP, testsWord } from "./project-software";
 
 const base: ProjectRuntimeView = {
   projectId: "prj_1",
@@ -58,8 +58,16 @@ test("the proof line, the failure, and the actions", () => {
   assert.equal(failedLine(base), null);
   assert.equal(failedLine({ ...base, standing: "failed", proof: { ...base.proof!, pass: false, failed: { check: "ready", detail: "web never listened" } } }), "Failed at ready: web never listened");
   assert.equal(failedLine({ ...base, standing: "failed", def: { state: "invalid", error: "services.web.cmd is required" } }), "The definition on main is invalid: services.web.cmd is required");
-  assert.equal(playbookLabel(base), "Run Again", "once registered");
-  assert.equal(playbookLabel({ ...base, registered: null }), "Run Playbook");
+  // The other tabs' words (§app.project-runtime/software-card): set up before, or never.
+  assert.equal(playbookLabel(base), "Change Setup…", "once registered");
+  assert.equal(playbookLabel({ ...base, registered: null }), "Set Up with a Chat");
+  assert.equal(notSetUpWords(base), null, "set up before: no explanation");
+  assert.deepEqual(notSetUpWords({ ...base, registered: null }), { title: "Running copies aren't set up yet", body: "A chat reads the project, writes how it runs and how its tests run, and proposes it on a branch for you to merge." });
+});
+
+test("Start Fresh's confirm names what stays: the proposal and its branch while it holds commits (§app.project-runtime/onboard)", () => {
+  assert.equal(freshConfirmWords(2, "sova/project-verbs-1"), "This chat is archived and a new one starts now; what it learned goes with it. Its proposal on sova/project-verbs-1 stays open, and the new chat carries on in that branch.");
+  assert.equal(freshConfirmWords(0, "sova/project-verbs-1"), "This chat is archived and a new one starts now, on a new branch; what it learned goes with it.");
 });
 
 test("the playbook's run in words", () => {
@@ -100,6 +108,13 @@ test("a proposed run's review in words, from the branch's definition and its con
   assert.equal(reviewProofWord(r), "No conformance of this definition yet");
   assert.equal(reviewProofWord({ ...r, proof: { hash: "sha256:ab", suite: 4, pass: true, at: "" } }), "Conformance passed (suite v4)");
   assert.equal(reviewProofWord({ ...r, proof: { hash: "sha256:ab", suite: 4, pass: false, at: "", failed: { check: "ready", detail: "web never listened" } } }), "Conformance failed at ready: web never listened");
+  // The two lines a refinement most often changes: the tests and the setup steps.
+  assert.equal(testsWord({ test: null }), "No test command");
+  assert.equal(testsWord({ test: { run: [".sova/bin/test", "--fast"], smoke: ["unit/a", "unit/b"] } }), "Tests: .sova/bin/test --fast · smoke: unit/a unit/b");
+  assert.equal(testsWord({ test: { run: ["bb", "test"], smoke: [] } }), "Tests: bb test");
+  assert.equal(testsWord({}), "No test command", "an older host sends none");
+  assert.equal(setupStepsWord({ setup: ["local-config", "assets"] }), "Setup steps: local-config, assets");
+  assert.equal(setupStepsWord({ setup: [] }), "No setup steps");
   assert.equal(reviewDefProblem(r), null);
   assert.equal(reviewDefProblem({ ...r, def: { state: "absent" } }), "Its branch has no .sova/project.json.");
   assert.equal(reviewDefProblem({ ...r, def: { state: "invalid", error: "$.services: required" } }), "The definition on its branch is invalid: $.services: required");

@@ -14,9 +14,10 @@ import { landThroughQueue, mergeCodingWorktree, startOnboardSession, type Starte
 import { projectRootOf } from "../project-root";
 import { realGit } from "../project-services/engine";
 import { readWorktree } from "../project-worktrees";
-import { onboardRunMode, onboardStart } from "./onboard";
+import { ONBOARD_PLAYBOOK_ID, onboardFacts, onboardInvalid, onboardRunMode, onboardStart } from "./onboard";
 import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, proposesOf, runLive } from "./playbook-review";
 import { runtimeFeed, type FeedRow } from "./runtime-feed";
+import { ALREADY_RUNNING, verbsChatPathOfRun, verbsCurrentOf } from "./verbs-chat";
 import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchived, readProject, runtimeSid } from "./spaces";
 
 /**
@@ -200,6 +201,8 @@ onOrgChange((engine, change) => {
         setupSoon(pid);
         continue;
       }
+      // The standing Project verbs chat's run, ended: a turn starting in it (or its new commits) brings it back.
+      if (sid.startsWith("build/")) void reattachVerbsRun(pid, sid);
       projects.add(pid);
     }
   }
@@ -295,7 +298,7 @@ function joinLive(software: Record<string, unknown>[], instances: InstanceSummar
   return { services, orphans };
 }
 
-export const ALREADY_RUNNING = (title: string) => `The Project verbs playbook is already running: "${title}".`;
+export { ALREADY_RUNNING } from "./verbs-chat";
 
 function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlaybook | null {
   const pb = obj(d.playbook);
@@ -307,13 +310,15 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const proposes = proposesOf(pb.proposes);
   const deploy = proposes === "deploy" ? obj(bf.deploy) : proposes === "release" ? obj(bf.release) : proposes === "pipeline" ? obj(bf.pipeline) : null;
   const build = obj(host.data(str(pb.sid)));
+  // A Project verbs chat carrying on this run's branch (Start Fresh with commits) is the session the run is read from.
+  const carry = verbsChatPathOfRun(str(pb.sessionId));
   return {
     sessionId: str(pb.sessionId),
     playbookId: str(pb.playbookId) || "project-verbs",
     label: str(pb.label) || DEFAULT_PLAYBOOK_LABEL,
     proposes,
     ...(d.playbookState === "waiting" && typeof pb.questions === "number" && pb.questions > 0 ? { questions: pb.questions } : {}),
-    ...(path ? { path } : {}),
+    ...(carry ? { path: carry } : path ? { path } : {}),
     ...(str(pb.title) ? { title: str(pb.title) } : str(host.data(str(pb.sid))?.title) ? { title: str(host.data(str(pb.sid))?.title) } : {}),
     ...(str(pb.why) ? { why: str(pb.why) } : {}),
     startedBy: pb.startedBy === "overseer" ? "overseer" : "operator",
@@ -363,8 +368,65 @@ export function openOnboardRun(builds: readonly SessionInfo[], projectId: string
   return null;
 }
 
-/** The refusal while an earlier run's chat is still open after it ended with no change: how to unblock it. */
-export const STILL_OPEN = (title: string) => `The last setup run, "${title}", ended with no change but its chat is still open: open that chat to carry on, or archive it to start over.`;
+/** Why Set Up with a Chat / Change Setup… can't start or open the project's Project verbs chat, or undefined: the
+    start's own refusals (archived, the folder elsewhere or missing, no Git, the playbook missing), read before any
+    press so the line and a press say the same sentence. */
+export async function onboardWhyOf(projectId: string): Promise<string | undefined> {
+  const p = readProject(projectId);
+  if (projectArchived(projectId)) return `${p.name || p.id} is archived. Unarchive it first.`;
+  return onboardInvalid(await onboardFacts(projectId, ONBOARD_PLAYBOOK_ID)) ?? undefined;
+}
+
+/** Who the next turn of a project's Project verbs chat is from (an overseer's start delivered to it), by project. */
+const expected = new Map<string, { run: string; startedBy: "operator" | "overseer"; why?: string }>();
+
+/** An overseer's start was delivered to the open chat: its turn, once it starts, is the run again with its why. */
+export function expectVerbsTurn(projectId: string, run: string, by: { startedBy: "operator" | "overseer"; why?: string }): void {
+  expected.set(projectId, { run, ...by });
+}
+
+const reattaching = new Set<string>();
+
+/**
+ * The standing Project verbs chat's run ended (no change, or its branch merged) and the chat goes on
+ * (§app.project-runtime/onboard): a turn starting in it, or new commits on its branch, bring the registry's playbook
+ * region back to that run (`playbook/started` again for the same build; the engine's link/moved at once reads where
+ * the build is). Never while its branch is still merged into the target, which would end the run again at once: then
+ * its new commits bring it back. Only the project's current chat's run, and only when the region is idle.
+ */
+export async function reattachVerbsRun(projectId: string, buildSid: string): Promise<boolean> {
+  const at = runtimeOf(projectId);
+  if (!at || reattaching.has(projectId)) return false;
+  const d = obj(at.host.data(at.sid));
+  const pb = obj(d.playbook);
+  if (str(d.playbookState) !== "idle" || str(pb.sid) !== buildSid || !["no-change", "merged"].includes(str(pb.result))) return false;
+  const cur = verbsCurrentOf(projectId);
+  if (!cur || cur.run !== str(pb.sessionId)) return false;
+  const b = obj(at.host.data(buildSid));
+  const branch = str(b.branchState);
+  if (branch === "merged" || !(b.turn === "working" || branch === "unmerged" || branch === "new-since-merge")) return false;
+  const by: { startedBy: "operator" | "overseer"; why?: string } = expected.get(projectId)?.run === cur.run ? expected.get(projectId)! : { startedBy: "operator" };
+  expected.delete(projectId);
+  reattaching.add(projectId);
+  try {
+    const payload = {
+      sid: buildSid,
+      sessionId: str(pb.sessionId),
+      startedBy: by.startedBy,
+      playbookId: str(pb.playbookId) || ONBOARD_PLAYBOOK_ID,
+      label: str(pb.label) || DEFAULT_PLAYBOOK_LABEL,
+      proposes: proposesOf(pb.proposes),
+      ...(str(pb.title) ? { title: str(pb.title) } : {}),
+      ...(by.why ? { why: by.why } : {}),
+    };
+    return (await at.host.act(at.sid, "playbook/started", payload, SYSTEM)).taken;
+  } catch (err) {
+    console.warn(`[runtime] ${projectId}: the Project verbs run was not followed again: ${err instanceof Error ? err.message : String(err)}`);
+    return false;
+  } finally {
+    reattaching.delete(projectId);
+  }
+}
 
 /** The live title of a running playbook (the "already running" refusal), or null. */
 function liveRun(host: OrgHostApi, d: Record<string, unknown>): string | null {
@@ -395,9 +457,8 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
   const { services, orphans } = joinLive(Array.isArray(d.software) ? (d.software as Record<string, unknown>[]) : [], instances, proof);
   const def = obj(d.def);
   const reg = obj(d.registered);
-  const open = openOnboardRun(at.host.sessions("build"), projectId, isArchived);
-  const running = liveRun(at.host, d) ?? (open && !open.ended ? open.title : null);
-  const onboardWhy = running ? ALREADY_RUNNING(running) : open?.ended ? STILL_OPEN(open.title) : projectArchived(projectId) ? `${readProject(projectId).name} is archived. Unarchive it first.` : undefined;
+  // Why the button can't start or open the Project verbs chat, read before any press from the start's own refusals.
+  const onboardWhy = await onboardWhyOf(projectId);
   const rows = at.host.log.rows({ session: at.sid }) as unknown as FeedRow[];
   return {
     projectId,
@@ -489,9 +550,9 @@ export async function onboardStamp(projectId: string, input: OnboardInput) {
   const builds = engine && isOrgHostOpen(engine) ? hostOf(engine).sessions("build") : [];
   const open = openOnboardRun(builds, projectId, isArchived);
   const running = (at ? liveRun(at.host, d) : null) ?? (open && !open.ended ? open.title : null);
-  const ended = !running && open?.ended ? open.title : null;
   const standing = at ? ((["unregistered", "conforming", "registered", "stale", "failed"] as const).find((s) => (at.host.configuration(at.sid) ?? []).includes(s)) ?? null) : null;
-  const invalid = start.invalid || (running ? ALREADY_RUNNING(running) : ended ? STILL_OPEN(ended) : "");
+  // A run that ended with no change, its chat still open, holds nothing: the start goes to that chat (verbs-chat.ts).
+  const invalid = start.invalid || (running ? ALREADY_RUNNING(running) : "");
   // The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks).
   const who = { playbookId: start.playbookId, label: start.label, proposes: start.proposes };
   return { start, extra: { ...who, ...(input.why?.trim() ? { why: input.why.trim() } : {}), ...(invalid ? { invalid, invalidStatus: 409 } : {}), ...(standing ? { runtimeStanding: standing } : {}) } };

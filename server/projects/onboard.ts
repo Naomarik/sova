@@ -7,6 +7,7 @@ import { listModels } from "../models";
 import { FOLDED_SETUP_PLAYBOOKS, listPlaybooks } from "../playbooks";
 import { OrgError } from "../org-error";
 import { readProject } from "./spaces";
+import { gitRootOf, NOT_GIT } from "../project-worktrees";
 import { latestClaude } from "../../pi-config/extensions/claude-code/catalog.ts";
 
 /**
@@ -67,13 +68,19 @@ export interface OnboardFacts {
   /** The verb playbook asked for (default project-verbs). */
   playbookId?: string;
   playbook: Pick<PlaybookInfo, "title" | "dir" | "body" | "proposes"> | null;
+  /** project-verbs only: why its folder can't hold a branch (server/project-worktrees.ts gitRootOf's tail); absent: it can. */
+  noGit?: string;
 }
+
+/** The no-Git refusal of the Project verbs playbook: running copies are set up on a branch. Pure. */
+export const noGitWhy = (name: string, tail: string): string => `Running copies are set up on a branch: ${tail === NOT_GIT ? `${name}'s folder isn't a Git repository.` : tail}`;
 
 /** The host's refusal sentence, or null when the playbook can start. Pure. */
 export function onboardInvalid(f: OnboardFacts): string | null {
   if (f.remote) return `${f.name}'s folder is on ${f.remote}: the playbook runs only on a local folder.`;
   if (!f.rootExists) return `${f.name}'s folder ${f.root} is missing on this host.`;
   const id = f.playbookId ?? ONBOARD_PLAYBOOK_ID;
+  if (id === ONBOARD_PLAYBOOK_ID && f.noGit) return noGitWhy(f.name, f.noGit);
   if (!f.playbook) return `No playbook "${id}" is listed for ${f.name}.`;
   if (!f.playbook.proposes) return `${id} is not a verb playbook: its PLAYBOOK.md says no proposes:.`;
   return null;
@@ -100,7 +107,10 @@ export async function onboardFacts(projectId: string, playbookId = ONBOARD_PLAYB
   const remote = defaultRemoteOf(p.root);
   const local = !remote && !!p.root;
   const catalog = local && existsSync(p.root) ? await listPlaybooks(p.root, { includeUnlisted: true }) : null;
+  // Only the Project verbs playbook needs a branch to work on (never the Setup chat, deploy or release).
+  const repo = playbookId === ONBOARD_PLAYBOOK_ID && local && existsSync(p.root) ? await gitRootOf(p.root) : null;
   return {
+    ...(repo && "reason" in repo ? { noGit: repo.reason } : {}),
     name: p.name || p.id,
     root: p.root,
     remote: remote ? remote.target : null,

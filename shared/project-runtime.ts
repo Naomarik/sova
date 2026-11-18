@@ -100,6 +100,38 @@ export interface RuntimeRunLive {
   questions?: number;
 }
 
+/** The project's standing Project verbs chat (§app.project-runtime/onboard), as its head reads it (`GET
+    /api/projects/:pid/verbs/chat`): the chat Start Fresh replaces. */
+export interface VerbsChatView {
+  sessionId: string;
+  path: string;
+  title: string;
+  startedAt: string;
+  branch?: string;
+  /** Its turn runs now: Start Fresh waits for it. */
+  working: boolean;
+  /** Commits its branch holds beyond the project's target: Start Fresh keeps them and carries on there. */
+  ahead: number;
+  /** Its worktree has edits not committed: Start Fresh is refused. */
+  dirty: boolean;
+}
+
+export interface VerbsChatStatus {
+  chat: VerbsChatView | null;
+  /** The earlier Project verbs chats, newest last. */
+  history: { sessionId: string; path: string; startedAt: string; endedAt: string; why: "fresh" | "ended"; branch?: string }[];
+}
+
+/** What a press or Start Fresh answers: the chat to open. */
+export interface VerbsChatOpened {
+  sessionId: string;
+  path: string;
+  /** The open chat was opened, nothing started. */
+  reopened: boolean;
+  worktree?: { path: string; branch: string };
+  notPrompted?: string;
+}
+
 /** The definition on a proposed run's branch at its tip, and the newest conformance of its hash. */
 export interface RuntimeRunReview {
   def: { state: "absent" | "invalid" | "present"; hash?: string; error?: string };
@@ -115,6 +147,10 @@ export interface RuntimeRunReview {
   release?: ReleaseSetupReview;
   /** A pipeline run's (the Setup chat's) merge section at the tip; null when it declares none. */
   merge?: MergeSetupReview | null;
+  /** The test command and its smoke selection; null: none declared. Absent from an older host. */
+  test?: { run: string[]; smoke: string[] } | null;
+  /** The setup steps' ids in the order they run. Absent from an older host. */
+  setup?: string[];
 }
 
 /** The merge section a Setup chat's branch proposes, as its tab shows it. */
@@ -163,7 +199,7 @@ export interface ProjectRuntimeView {
   /** What the operator may do now, as the statecharts would take it. */
   can: {
     onboard: boolean;
-    /** Why Run Playbook is not offered (a run is live, archived, the host's refusal). */
+    /** Why Set Up with a Chat / Change Setup… is not offered: archived, the folder elsewhere or missing, no Git. */
     onboardWhy?: string;
   };
   /** The registry's feed, newest first. */

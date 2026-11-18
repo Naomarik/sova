@@ -115,6 +115,9 @@ export function reviewOf(def: ProjectDef | null, fact: RuntimeRunReview["def"], 
     share: def.share ? { endpoints: [...def.share.endpoints], allow: def.share.allow !== false } : null,
     open: def.open ? { endpoint: def.open.endpoint, path: def.open.path } : null,
     proof,
+    // The two things a refinement most often changes (§app.project-runtime/run-report).
+    test: def.test ? { run: [...def.test.run], smoke: [...def.test.smoke] } : null,
+    setup: def.setup.map((s) => s.id),
   };
 }
 

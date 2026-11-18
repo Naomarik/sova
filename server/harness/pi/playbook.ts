@@ -12,6 +12,7 @@ import { agentRoot } from "../../state-root";
 import { linkSandbox, sandboxOf } from "../../link-sandbox";
 import type { PiExtensionAPI } from "./extension-types";
 import { extensionEntries } from "./state";
+import { runPrompt } from "./run-start";
 import { toolCtx, toPiTool } from "./tools";
 
 export interface PlaybookHost extends Omit<PlaybookToolDeps, "readDenial"> {
@@ -52,7 +53,7 @@ export function playbookExtension(host: PlaybookHost) {
         }
       };
       pi.on("session_start", async (_e, ctx) => sync(hasDelivery(toolCtx(ctx))));
-      pi.on("before_agent_start", async (e, ctx) => sync(parseBlockTags(e.prompt ?? "").length > 0 || hasDelivery(toolCtx(ctx))));
+      pi.on("before_agent_start", async (e, ctx) => sync(parseBlockTags(runPrompt(e) ?? "").length > 0 || hasDelivery(toolCtx(ctx))));
       pi.on("session_compact", async (_e, ctx) => {
         try {
           if (ctx.isIdle()) return; // between runs: the next fire sends the entry whole anyway

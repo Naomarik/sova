@@ -4,6 +4,7 @@
 // chat-manager's serverToolSpec), so the prompt and the tool list read exactly as in the server.
 import type { HookCtx, ToolSpec } from "../shared/harness";
 import type { PiExtensionAPI } from "./harness/pi/extension-types";
+import { runPrompt } from "./harness/pi/run-start";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
 import { visOnBranch } from "./vis-check";
 import { registerNoteHooks } from "./project-services/note";
@@ -55,7 +56,7 @@ export function offeredToolExtension<E extends { factory: (pi: PiExtensionAPI) =
       yes = false;
       await sync(toolCtx(ctx));
     });
-    pi.on("before_agent_start", async (event, ctx) => void (await sync(toolCtx(ctx), event.prompt)));
+    pi.on("before_agent_start", async (event, ctx) => void (await sync(toolCtx(ctx), runPrompt(event))));
     pi.on("turn_end", async (_event, ctx) => void (await sync(toolCtx(ctx))));
   } };
 }

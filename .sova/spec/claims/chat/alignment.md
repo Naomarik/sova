@@ -169,7 +169,7 @@ any more, and they count toward no badge, row or digest.
 - **Instructions.** The align prompt block tells the agent when an alignment opens, in the chat's
   Eagerness's own words (§chat.alignment/when, §chat.alignment/eagerness), and what holds on both
   choices (nothing built before a confirmed alignment; a go-ahead to a sketch opens one; the
-  narrowed exemptions), how every reply opens and where its working detail goes
+  narrowed exemptions), that a reply recording one is a sentence or two
   (§chat.alignment/reply), to mark a run as a change request with the tool's change-request mark
   (§chat.alignment/tool) before anything else in that run, to investigate before it records,
   to record every alignment with the tool
@@ -242,11 +242,10 @@ any more, and they count toward no badge, row or digest.
   not). The nudge never guesses it from the user's prompt or the reply's words: under Careful a run
   that answered a question, explained, researched or brainstormed and made no such call is never
   nudged, whatever its reply says. The reply judged is the run's last
-  assistant message, even one with no text, **without its working notes**: the fold
-  (§chat.alignment/reply) and everything after it are dropped before it is read, so a decision
-  question just above the fold is the reply's last paragraph. "Reads like a plan": an old markdown alignment block
+  assistant message, even one with no text, **whole**; findings that
+  ask the user no decision never read like a plan. "Reads like a plan": an old markdown alignment block
   (its `## Alignment: <title>` heading; a heading or bold line that merely mentions alignment is
-  not one); a last paragraph with a question that puts a decision to the user — labelled ("open
+  not one); a summary paragraph (all before the first heading, past a lone label; else the first paragraph) or the last (above a closing note asking nothing) with a question that puts a decision to the user — labelled ("open
   questions"), a go-ahead ("should I go ahead", "take my recommendations") or a choice ("which do
   you prefer", except when the run's user prompt was itself a question the options answer), never a
   merge, push, restart or similar confirmation; a list of two or more items with such words, closed
@@ -299,25 +298,19 @@ reply, under Careful only a run marked as a change request. The delegate bridge'
 and the align tool's own description state the trigger in the same words as each other and as the
 align block, true under both choices (§chat.alignment/eagerness).
 
-## §chat.alignment/reply — How a reply opens, and where its working goes
+## §chat.alignment/reply — A reply that records an alignment
 
-While align is on, the align block tells the agent to write **every reply** in two parts:
+While align is on, the align block tells the agent that a reply recording an alignment is **a
+sentence or two** naming the alignment (its id) and what the agent needs from the user. It never
+restates the card's questions, options or recommendations: the user reads the card, where every
+open question's context and options' trade-offs stay open (§chat.alignment/card).
 
-- **The part the user reads**, first: the answer, what changed, what the user must decide, and any
-  warnings or things the agent did not check. Its target is about 80 words, five short lines at
-  most; it is a target, not a limit. Warnings, failures, risks and what went unchecked always go
-  here, never in the fold.
-- **The working notes**, after it, only when there is working detail (what was read, commands run,
-  reasoning, file-by-file notes): under one line that reads exactly `### Working notes`, a level-3
-  heading, with everything after it to the end of the reply. Nothing the user must read or decide
-  follows it. A reply with nothing beyond the top part has no such line.
-
-The chat renders that heading as a fold, closed (§chat.markdown/working-notes). The settle nudge
-reads the reply without it (§chat.alignment/model). An alignment card never folds this way: every
-open question's context and options' trade-offs stay open on the card (§chat.alignment/card).
-The rule rides the align block, so it holds in every chat with align on (on by default for new
-chats) and in no other; workers never get the align block, so their reports to the agent are
-unchanged.
+Every other reply, align on or off, takes the shape every main chat's prompt asks for: a short
+scannable summary first, then, for anything bigger than a quick question, the full report
+(§chat.mode-menu/reply-shape). The align block no
+longer shapes those replies itself: it sets no word count, no two parts and no `### Working notes`
+fold, and nothing in a reply folds (§chat.markdown/working-notes). Workers never get the align
+block or the reply shape, so their reports to the agent are unchanged.
 
 ## §chat.alignment/card — The card in the transcript
 
@@ -630,7 +623,7 @@ this file does.
 The Eagerness decides how readily an alignment opens. It changes only two things: what the align
 block tells the agent about which prompts open an alignment (§chat.alignment/when), and whether the
 settle nudge needs the change-request mark (§chat.alignment/model). It never changes the tool, the
-ops, the cards, the reply's two parts, the change-request mark's instruction, the planning worker
+ops, the cards, how a reply is shaped, the change-request mark's instruction, the planning worker
 hand-off or what a review records. There are two, listed in this order everywhere: **Eager** and
 **Careful**. A user who has saved none (a new user, a new device, a missing or unreadable file,
 §chat.alignment/settings-file) gets **Eager**. There is no third choice.

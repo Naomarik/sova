@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { scratchRoot } from "../../server/test-scratch.ts";
-import { changedExtensions, context, expandArgs, opt, suiteOf, touchesSpecReplay, touchesStatecharts } from "./lib.mjs";
+import { changedExtensions, changedPlaybooks, context, expandArgs, opt, suiteOf, touchesSpecReplay, touchesStatecharts } from "./lib.mjs";
 
 const README = `# pi-config
 
@@ -33,6 +33,7 @@ describe("merge-checks lib", () => {
 
   test("which changes trigger which checks", () => {
     expect(changedExtensions(["pi-config/extensions/spec/a.ts", "pi-config/extensions/mode/b.ts", "pi-config/README.md", "server/x.ts", "pi-config/extensions/spec/c.ts"])).toEqual(["mode", "spec"]);
+    expect(changedPlaybooks(["playbooks/ab-cycle/scripts/a.mjs", "playbooks/ab-cycle/tests/b.test.mjs", "playbooks/other/PLAYBOOK.md", "playbooks/README.md", "system-playbooks/release/PLAYBOOK.md", ".sova/playbooks/x/PLAYBOOK.md", "server/playbooks.ts"])).toEqual(["ab-cycle", "other"]);
     expect(touchesSpecReplay("pi-config/extensions/spec/core/x.mjs")).toBe(true);
     expect(touchesSpecReplay("pi-config/extensions/mode/spec-guard.ts")).toBe(true);
     expect(touchesSpecReplay("pi-config/extensions/spec/tools.ts")).toBe(false);

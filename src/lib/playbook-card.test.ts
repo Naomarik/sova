@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { placeOutsideCards } from "./transcript-placement";
 import type { PlaybookMemberView, PlaybookRunView, PlaybookStepView, PlaybookTeamView } from "../../shared/playbook-run";
 import type { PlaybookInfo, SlashCommand } from "../../shared/protocol";
 import {
   cardChip,
   chatCard,
+  chatStrip,
+  inlineCards,
+  cardPlace,
+  cardRowId,
+  cardRowRun,
+  lastEntryId,
+  cardOpenedWords,
+  recordNote,
+  recordFoldLabel,
   chatHolding,
   heldListNote,
   heldRows,
@@ -422,4 +432,87 @@ test("a member on a model you picked says no Your pick, only its other notes", (
   const m = (only: boolean) => ({ only, resolved: { model: "zai/glm-5.3", modelLabel: "GLM 5.3", provider: "zai", source: "card" } }) as never;
   assert.equal(memberWhy(m(false)), "");
   assert.equal(memberWhy(m(true)), "Only these models");
+});
+
+// ---- The card in the conversation (§chat.playbooks/run-card, run-strip, run-record) ----
+
+test("the strip is a started run's alone: a card still being set up has none, whatever stands around it", () => {
+  const r = (id: string, state: string) => ({ id, state }) as PlaybookRunView;
+  const drafts = [r("d1", "draft"), r("d2", "draft")];
+  assert.equal(chatStrip([]), null);
+  assert.equal(chatStrip(drafts), null);
+  for (const run of [r("s", "started"), r("g", "starting")]) {
+    for (const list of [[run], [run, ...drafts], [...drafts, run]]) assert.equal(chatStrip(list)?.id, run.id, list.map((x) => x.id).join());
+  }
+});
+
+test("the conversation draws the chat's one card, and a put-away run's record once; a draft still aligning draws nothing", () => {
+  const r = (id: string, state: string, extra: object = {}) => ({ id, state, ...extra }) as PlaybookRunView;
+  const ids = (list: { id: string }[]) => list.map((x) => x.id).join();
+  assert.equal(ids(inlineCards([])), "");
+  assert.equal(ids(inlineCards([r("d1", "draft"), r("d2", "draft")])), "d1");
+  // After Start the same card stays, as the record.
+  for (const state of ["starting", "started"]) assert.equal(ids(inlineCards([r("d1", "draft"), r("s", state)])), "s", state);
+  // The run was put away: it left the chat's cards, its record is still drawn; never twice.
+  const away = r("s", "started", { closed: true });
+  assert.equal(ids(inlineCards([], away)), "s");
+  assert.equal(ids(inlineCards([r("s", "started")], away)), "s");
+  assert.equal(ids(inlineCards([], null)), "");
+  // Its playbook's alignment isn't settled: no card yet; once it is (or the run started), the card.
+  assert.equal(ids(inlineCards([r("d", "draft", { aligning: true })])), "");
+  assert.equal(ids(inlineCards([r("d", "draft", { aligning: false })])), "d");
+  assert.equal(ids(inlineCards([r("d", "started", { aligning: true })])), "d");
+});
+
+test("a card's row id names its run and is told from every other row's", () => {
+  assert.equal(cardRowId("pr_abc"), "playbook-card:pr_abc");
+  assert.equal(cardRowRun(cardRowId("pr_abc")), "pr_abc");
+  for (const id of ["e1", "e1:2", "card:c1", "playbook-card:", "playbook-cardx:pr_abc", ""]) assert.equal(cardRowRun(id), null, id);
+});
+
+test("a card opened now stands after the conversation's last entry: the entry's id, never a block's or a page-made row's", () => {
+  assert.equal(lastEntryId(null), undefined);
+  assert.equal(lastEntryId([]), undefined);
+  assert.equal(lastEntryId([{ id: "e1" }, { id: "e2" }]), "e2");
+  assert.equal(lastEntryId([{ id: "e1" }, { id: "e2:0" }, { id: "e2:1" }]), "e2");
+  // Rows the page made (an outside card's, a playbook card's) name no entry the server knows.
+  assert.equal(lastEntryId([{ id: "e1:3" }, { id: "card:c9" }, { id: cardRowId("pr_x") }]), "e1");
+  assert.equal(lastEntryId([{ id: cardRowId("pr_x") }]), undefined);
+});
+
+test("where a card stands: after its anchor's entry, else by its time; a run from before anchors by when it started; a draft with neither at the end", () => {
+  const items = [
+    { id: "e1", at: "2026-11-18T10:00:00.000Z" },
+    { id: "e2:0", at: "2026-11-18T10:01:00.000Z" },
+    { id: "e2:1", at: "2026-11-18T10:01:00.000Z" },
+    { id: "e3", at: "2026-11-18T10:05:00.000Z" },
+  ];
+  const row = (c: { id: string }) => ({ id: cardRowId(c.id) });
+  const placed = (run: object) => placeOutsideCards<{ id: string; at?: string }, ReturnType<typeof cardPlace>>(items, [cardPlace({ id: "pr_x", ...run } as PlaybookRunView)], row).map((r) => r.id).join(" ");
+  const CARD = cardRowId("pr_x");
+  // After the last row of the entry it was opened after, whatever its time says.
+  assert.equal(placed({ anchor: { after: "e2", at: "2026-11-18T10:09:00.000Z" } }), `e1 e2:0 e2:1 ${CARD} e3`);
+  assert.equal(placed({ anchor: { after: "e3", at: "2026-11-18T10:06:00.000Z" } }), `e1 e2:0 e2:1 e3 ${CARD}`);
+  // The entry isn't among the rows (a chat's own open names none; a compaction): by its time.
+  assert.equal(placed({ anchor: { after: "gone", at: "2026-11-18T10:02:00.000Z" } }), `e1 e2:0 e2:1 ${CARD} e3`);
+  assert.equal(placed({ anchor: { at: "2026-11-18T10:00:30.000Z" } }), `e1 ${CARD} e2:0 e2:1 e3`);
+  assert.equal(placed({ anchor: { at: "2026-11-18T09:00:00.000Z" } }), `${CARD} e1 e2:0 e2:1 e3`);
+  // The anchor wins over the start: the record stays where Start was pressed, not where the run's message landed.
+  assert.equal(placed({ anchor: { after: "e1", at: "2026-11-18T10:00:10.000Z" }, started: { at: "2026-11-18T10:04:00.000Z" } }), `e1 ${CARD} e2:0 e2:1 e3`);
+  // A run from before anchors were kept: by when it started. A draft with neither: at the end.
+  assert.equal(placed({ started: { at: "2026-11-18T10:04:00.000Z" } }), `e1 e2:0 e2:1 ${CARD} e3`);
+  assert.equal(placed({}), `e1 e2:0 e2:1 e3 ${CARD}`);
+});
+
+test("what a way in says aloud, and the record's last sentence", () => {
+  const opened = (state: string, aligning?: true) => cardOpenedWords({ state, aligning, playbook: { title: "A/B cycle" } } as PlaybookRunView);
+  assert.equal(opened("draft"), "A/B cycle: its setup card is in the conversation.");
+  assert.equal(opened("draft", true), "A/B cycle starts with an alignment: its setup card comes once you decide it.");
+  for (const state of ["starting", "started"]) for (const aligning of [undefined, true] as const) assert.equal(opened(state, aligning), "A/B cycle: its card is open over the conversation.");
+  assert.equal(recordNote(false, false), "Progress comes in the chat's messages.");
+  assert.equal(recordNote(false, true), "Progress comes in the chat's messages.");
+  assert.equal(recordNote(true, false), "This is the card as you started it.");
+  assert.equal(recordNote(true, true), "This is the card as you started it. You put its strip away; the run was not changed.");
+  assert.equal(recordFoldLabel(true), "Show Card");
+  assert.equal(recordFoldLabel(false), "Hide Card");
 });

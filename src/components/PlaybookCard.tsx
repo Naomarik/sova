@@ -3,7 +3,8 @@ import type { PlaybookCardEdits, PlaybookChoiceView, PlaybookMemberView, Playboo
 import {
   cantRunCount,
   cardEyebrow,
-  chatCard,
+  cardRowId,
+  chatStrip,
   flowNote,
   flowSummary,
   chainRest,
@@ -39,6 +40,8 @@ import {
   teamEyebrow,
   whoSummary,
   toPick,
+  recordNote,
+  recordFoldLabel,
   revealStep,
 } from "../lib/playbook-card";
 import type { PlaybookRunsStore } from "../lib/playbook-runs";
@@ -47,6 +50,8 @@ import { visualFence } from "../lib/align";
 import { sessionHrefOn } from "../lib/mesh";
 import { providerName } from "../lib/cost-history";
 import { announce, toast } from "../lib/ui-state";
+import { jumpToEntry } from "../lib/jump";
+import { watchPinnedBar } from "../lib/pinned-bar";
 import { Markdown } from "./Markdown";
 import { ModelPickButton } from "./ModelPickButton";
 import { NumberField, Select, TextArea, TextField, Toggle } from "./form";
@@ -60,8 +65,9 @@ const TYPE_SAVE_MS = 400;
     with the pane it was asked from when it knows one. */
 const [revealed, setRevealed] = createSignal<{ id: string; store?: PlaybookRunsStore | null } | null>(null, { equals: false });
 
-/** Opens a run's card over the conversation: in the pane whose store is given (the one clicked), else
-    in whichever chat shows that run. */
+/** Shows a run's card: a setup card where it stands in the conversation, a started run's over the
+    conversation; in the pane whose store is given (the one clicked), else in whichever chat shows
+    that run. */
 export function showPlaybookCard(id: string, store?: PlaybookRunsStore | null): void {
   setRevealed({ id, store });
 }
@@ -76,6 +82,21 @@ export function openCardOnArrival(path: string, id: string): void {
 /** The chat's playbook runs, for its conversation's rows (Open Card on a run's entry): so a click
     opens the card in that pane, never in another pane showing the same run. */
 export const PlaybookRunsContext = createContext<PlaybookRunsStore | null>(null);
+
+/** What a card standing in a chat's conversation needs of that chat (PlaybookInlineCard). */
+export interface PlaybookInlineHost {
+  store: PlaybookRunsStore;
+  host: string | null;
+  chat: PlaybookChatNow;
+  /** The run a row is the card of: among the chat's cards, or its put-away record. */
+  run(id: string): PlaybookRunView | undefined;
+}
+export const PlaybookInlineContext = createContext<PlaybookInlineHost | null>(null);
+
+/** The setup card's (or record's) element in the conversation, found by its run. */
+const INLINE_ATTR = "data-pb-inline";
+/** Room kept above a setup card brought to the top of the view. */
+const INLINE_GAP = 8;
 
 /** One chat's cards: which is open (one at a time) and which have been opened, so each keeps what
     was typed, an open prompt and its place while it is minimized. */
@@ -193,8 +214,8 @@ function RunStrip(props: { run: PlaybookRunView; chat: PlaybookChatNow; answer?:
 const STRIP_GAP = 8;
 
 /**
- * The chat's playbook run, floating over the end of the conversation just above the message box
- * (Lookbook design A): the run as one strip, and its card opening upward from the strip's place, at the
+ * The chat's started playbook run, floating over the end of the conversation just above the message
+ * box (Lookbook design A): the run as one strip, and its card opening upward from the strip's place, at the
  * message box's width. Mounted between the thread and the message box as an anchor of no height, so
  * nothing here moves or resizes the conversation, and it is in reach wherever the conversation is
  * scrolled. The conversation's end leaves room for the strips, so its last row is never under them.
@@ -205,11 +226,33 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
   const float = floatOf(props.store);
   let anchor!: HTMLDivElement;
   let strips!: HTMLDivElement;
-  // A chat runs one playbook at most, so one strip: the run it started or conducts, else its draft.
+  // A chat runs one playbook at most, so one strip: the run it started or conducts. A card still
+  // being set up has none: it stands in the conversation (PlaybookInlineCard).
   // Keyed by run id, never by the view object: a new view of a run updates its strip in place.
-  const ids = createMemo(() => [chatCard(props.store.runs())?.id].filter((id): id is string => !!id), undefined, sameIds);
+  const ids = createMemo(() => [chatStrip(props.store.runs())?.id].filter((id): id is string => !!id), undefined, sameIds);
   const runOf = (id: string) => props.store.runs().find((r) => r.id === id);
-  const mounted = createMemo(() => float.mounted().filter((id) => !!runOf(id)), undefined, sameIds);
+  const isDraft = (id: string) => runOf(id)?.state === "draft";
+  const mounted = createMemo(() => float.mounted().filter((id) => !!runOf(id) && !isDraft(id)), undefined, sameIds);
+  /** Brings a setup card into view where it stands in the conversation, and puts focus on it. A
+      card just opened is drawn a moment after its run arrives, so this waits for its row. */
+  const showInline = (id: string, tries = 20) => {
+    // The jump lands on the card's row (building the rows down to it when it stands above the ones
+    // built so far) and stops the view following the conversation's end, as a scroll up would.
+    const jumped = jumpToEntry(cardRowId(id), props.chat.path);
+    const el = anchor.parentElement?.querySelector<HTMLElement>(`[${INLINE_ATTR}="${CSS.escape(id)}"]`);
+    if (!el) {
+      if (tries > 0) requestAnimationFrame(() => isDraft(id) && showInline(id, tries - 1));
+      return;
+    }
+    // A card taller than the view reads from its top (its buttons stay pinned at the view's end);
+    // a shorter one is whole in view where the jump put it.
+    const view = el.closest<HTMLElement>(".transcript");
+    const box = el.getBoundingClientRect();
+    const port = view?.getBoundingClientRect();
+    if (view && port && box.height > port.height - 2 * INLINE_GAP) view.scrollTop += box.top - port.top - INLINE_GAP;
+    else if (!jumped) el.scrollIntoView({ block: "nearest", behavior: "instant" });
+    el.focus({ preventScroll: true });
+  };
   const focusCard = (id: string) => requestAnimationFrame(() => anchor.querySelector<HTMLElement>(`#${CSS.escape(cardDomId(id))}`)?.focus({ preventScroll: true }));
   const open = (id: string) => {
     float.show(id);
@@ -227,7 +270,8 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
     const want = arrivals.get(props.chat.path);
     if (!want || !runOf(want)) return;
     arrivals.delete(props.chat.path);
-    open(want);
+    if (isDraft(want)) showInline(want);
+    else open(want);
   });
   /** A started run that was put away, opened from its row in the conversation: its record, with no
       strip of its own. */
@@ -241,7 +285,11 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
     if (step === "open") {
       setRevealed(null);
       setRecord(null);
-      open(r.id);
+      // A setup card is in the conversation: nothing opens over it.
+      if (isDraft(r.id)) {
+        float.show(null);
+        showInline(r.id);
+      } else open(r.id);
       return;
     }
     const readRecord = () => {
@@ -268,10 +316,10 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
   createEffect(() => {
     if (float.open()) setRecord(null);
   });
-  // A card that went away (a closed draft) leaves nothing open.
+  // A card that went away leaves nothing open.
   createEffect(() => {
     const id = float.open();
-    if (id && !runOf(id)) float.show(null);
+    if (id && (!runOf(id) || isDraft(id))) float.show(null);
   });
   onMount(() => {
     const wrap = anchor.previousElementSibling as HTMLElement | null;
@@ -354,8 +402,10 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
  * One playbook's card. Before Start it is the run's plan, editable: your choices, who runs on which
  * model, the steps and their stops, the cycle settings and a note per role. Every edit saves the
  * draft as a new revision; Start runs exactly the revision the card shows. After Start the same card
- * is the run's record, read-only, with how its chat stands now. Its head and its buttons stay put;
- * the middle scrolls.
+ * is the run's record, read-only. It is drawn two ways: `inline`, standing in the conversation (the
+ * setup card, then the record of what was agreed, with no buttons once started), and floating over
+ * the conversation from the run's strip, with how its chat stands now and the stop's answers; there
+ * its head and its buttons stay put and the middle scrolls.
  */
 export function PlaybookCard(props: {
   run: PlaybookRunView;
@@ -363,7 +413,9 @@ export function PlaybookCard(props: {
   host: string | null;
   /** The chat showing it. */
   here?: string;
-  /** Open over the conversation; false while minimized (it stays mounted). */
+  /** Standing in the conversation, where it was opened; else floating over it from the strip. */
+  inline?: boolean;
+  /** Open over the conversation; false while minimized (it stays mounted). An inline card is always shown. */
   shown: boolean;
   status: RunStatus;
   answer?: PlaybookAnswer;
@@ -507,22 +559,31 @@ export function PlaybookCard(props: {
     return "Close Card puts its control away. The run goes on.";
   };
   const elsewhere = () => (run().state === "started" && run().started && run().started!.chat.path !== props.here ? run().started! : null);
+  /** The record in the conversation folds to its head and when it started. One drawn already started
+      (the chat opened again) starts folded; one that froze under your eyes at Start stays as it was. */
+  const foldable = () => !!props.inline && run().state === "started";
+  const [folded, setFolded] = createSignal(untrack(foldable));
   const choices = createMemo(() => splitChoices(run().choices));
 
   return (
     <section
       class="card pb-card"
-      id={cardDomId(run().id)}
-      role="dialog"
-      aria-modal="false"
+      classList={{ "pb-inline": !!props.inline }}
+      // One run may show twice in a chat, its record in the conversation and its card over it: the
+      // floating one is the strip's popup, and owns the id the strip controls.
+      id={props.inline ? undefined : cardDomId(run().id)}
+      role={props.inline ? undefined : "dialog"}
+      aria-modal={props.inline ? undefined : "false"}
       aria-labelledby={id("title")}
       tabindex={-1}
-      hidden={!props.shown}
+      hidden={!props.inline && !props.shown}
       data-run={run().id}
       data-state={run().state}
+      data-pb-inline={props.inline ? run().id : undefined}
+      data-folded={foldable() && folded() ? "" : undefined}
       onKeyDown={(e) => {
         // Esc minimizes, unless something inside the card (a picker, a menu) already took it.
-        if (e.key !== "Escape" || e.defaultPrevented) return;
+        if (props.inline || e.key !== "Escape" || e.defaultPrevented) return;
         e.preventDefault();
         props.onMinimize();
       }}
@@ -535,10 +596,18 @@ export function PlaybookCard(props: {
         <Chip tone={props.status.tone} live={props.status.live}>
           {props.status.label}
         </Chip>
-        <button type="button" class="button button-sm button-ghost pb-min" title="Minimize the card (Esc)" onClick={() => props.onMinimize()}>
-          <Icon name="chevron-down" small />
-          Minimize
-        </button>
+        <Show when={!props.inline}>
+          <button type="button" class="button button-sm button-ghost pb-min" title="Minimize the card (Esc)" onClick={() => props.onMinimize()}>
+            <Icon name="chevron-down" small />
+            Minimize
+          </button>
+        </Show>
+        <Show when={foldable()}>
+          <button type="button" class="button button-sm button-ghost pb-min pb-fold" aria-expanded={!folded()} aria-controls={id("body")} onClick={() => setFolded(!folded())}>
+            <Icon name="chevron-right" small class="icon-twist" />
+            {recordFoldLabel(folded())}
+          </button>
+        </Show>
       </header>
 
         <div class="pb-body" id={id("body")}>
@@ -560,7 +629,7 @@ export function PlaybookCard(props: {
                     ) : (
                       " in this chat."
                     )}{" "}
-                    Progress comes in the chat's messages.
+                    {recordNote(!!props.inline, !!run().closed)}
                   </p>
                 )}
               </Show>
@@ -629,8 +698,8 @@ export function PlaybookCard(props: {
             </Show>
           </details>
 
-          {/* Steps */}
-          <details class="pb-section pb-steps" open>
+          {/* Steps: open while the card is set up; a record read again later starts folded. */}
+          <details class="pb-section pb-steps" open={untrack(() => !props.inline || run().state === "draft")}>
             <summary class="pb-more-summary pb-section-label">
               <Icon name="chevron-right" small class="icon-twist" />
               {stepsSummary(run().steps.map((s) => ({ ...s, stopOn: stopOn(s) })))}
@@ -735,10 +804,21 @@ export function PlaybookCard(props: {
       </Show>
 
       <Show when={run().state !== "started"}>
-        <footer class="pb-foot">
+        <footer
+          class="pb-foot"
+          ref={(foot) => {
+            // In the conversation the buttons stay pinned to the view's end while the card is in view
+            // (a setup card is often taller than the screen), and the chat's floating controls lift above them.
+            if (!props.inline) return;
+            onMount(() => {
+              const card = foot.closest<HTMLElement>(".pb-card");
+              if (card) onCleanup(watchPinnedBar(foot, card));
+            });
+          }}
+        >
           <button
             type="button"
-            class="button button-sm button-primary"
+            class="button button-sm button-primary pb-start"
             aria-disabled={startWhy() ? "true" : undefined}
             aria-describedby={id("why")}
             title={startWhy() ?? undefined}
@@ -763,8 +843,9 @@ export function PlaybookCard(props: {
       </Show>
 
       {/* A started run: when it waits for you, the two answers its conductor was told to wait for;
-          from another chat, the way to the chat that runs it; and Close Card, which puts it away. */}
-      <Show when={run().state === "started"}>
+          from another chat, the way to the chat that runs it; and Close Card, which puts it away.
+          The record in the conversation has none of them: the run is answered from its strip. */}
+      <Show when={run().state === "started" && !props.inline}>
         <footer class="pb-foot">
           <Show when={!run().closed && props.status.answer && props.answer}>
             {(a) => (

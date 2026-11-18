@@ -442,10 +442,77 @@ export interface HeldBy {
   title: string;
 }
 
-/** The one run a chat's strip shows: the run it started or conducts, else its draft (the newest
-    opened, first in the chat's list). A chat made before the rule may still hold several. */
+/** The chat's one card: the run it started or conducts, else its draft (the newest opened, first in
+    the chat's list). A chat made before the rule may still hold several. */
 export function chatCard<R extends Pick<PlaybookRunView, "state">>(runs: readonly R[]): R | null {
   return runs.find((r) => r.state !== "draft") ?? runs[0] ?? null;
+}
+
+/** The run a chat's strip above the message box shows: its card once Start was taken (starting or
+    started), never a card still being set up: that one stands in the conversation alone. */
+export function chatStrip<R extends Pick<PlaybookRunView, "state">>(runs: readonly R[]): R | null {
+  return runs.find((r) => r.state !== "draft") ?? null;
+}
+
+/** A draft whose playbook opens with an alignment that isn't settled yet: its card isn't drawn. */
+export const isAligning = (run: Pick<PlaybookRunView, "aligning">): boolean => !!run.aligning;
+
+/**
+ * The cards a chat's conversation draws inline, each once: its card (a draft being set up, or the
+ * record of the run it became), and the record of a run whose strip was put away (`putAway`, read by
+ * its id: it left the chat's cards). A draft still aligning draws nothing yet.
+ */
+export function inlineCards<R extends Pick<PlaybookRunView, "id" | "state" | "aligning">>(runs: readonly R[], putAway?: R | null): R[] {
+  const card = chatCard(runs);
+  const out = card && !(card.state === "draft" && isAligning(card)) ? [card] : [];
+  if (putAway && !out.some((r) => r.id === putAway.id)) out.push(putAway);
+  return out;
+}
+
+/** The id of the row the page makes for a run's card in the conversation: the server sends no such row. */
+const CARD_ROW = "playbook-card:";
+export const cardRowId = (runId: string): string => `${CARD_ROW}${runId}`;
+/** The run a row is the card of, when it is one of those rows. */
+export const cardRowRun = (rowId: string): string | null => (rowId.startsWith(CARD_ROW) ? rowId.slice(CARD_ROW.length) || null : null);
+
+/**
+ * Where a run's card stands in the conversation, in the terms `placeOutsideCards` places by
+ * (lib/transcript-placement): after the entry the page showed last when it was opened (or the chat
+ * last filled a choice), else by that moment's time; a run from before anchors were kept, by when it
+ * started; a draft with neither, at the end.
+ */
+export function cardPlace(run: Pick<PlaybookRunView, "id" | "anchor" | "started">): { id: string; at: string; after?: string } {
+  const at = run.anchor?.at ?? run.started?.at ?? "";
+  return { id: run.id, at, ...(run.anchor?.after ? { after: run.anchor.after } : {}) };
+}
+
+/** The entry a card opened now stands after: the conversation's last row's (a row's id is its
+    entry's, or `entry:part`); none in an empty chat. Rows the page made itself name no entry. */
+export function lastEntryId(items: readonly { id: string }[] | null | undefined): string | undefined {
+  for (let i = (items?.length ?? 0) - 1; i >= 0; i--) {
+    const id = items![i]!.id;
+    if (cardRowRun(id) === null && !id.startsWith("card:")) return id.split(":")[0] || undefined;
+  }
+  return undefined;
+}
+
+/** The sentence after when and where a run started: on the record standing in the conversation,
+    that it is the card as started (and, put away, that the run wasn't changed); on the card over
+    the conversation, where progress shows. */
+export function recordNote(inline: boolean, closed: boolean): string {
+  if (!inline) return "Progress comes in the chat's messages.";
+  return closed ? "This is the card as you started it. You put its strip away; the run was not changed." : "This is the card as you started it.";
+}
+
+/** The button that folds the record in the conversation to its head, and opens it again. */
+export const recordFoldLabel = (folded: boolean): string => (folded ? "Show Card" : "Hide Card");
+
+/** What a way in says aloud once the card is there: a setup card is in the conversation, a started
+    run's card opens over it; a playbook that aligns first has no card yet. */
+export function cardOpenedWords(run: Pick<PlaybookRunView, "state" | "aligning"> & { playbook: Pick<PlaybookRunView["playbook"], "title"> }): string {
+  const title = run.playbook.title;
+  if (run.state !== "draft") return `${title}: its card is open over the conversation.`;
+  return isAligning(run) ? `${title} starts with an alignment: its setup card comes once you decide it.` : `${title}: its setup card is in the conversation.`;
 }
 
 /** The run that holds this chat, if one does: the server's word (it also knows a run whose card was

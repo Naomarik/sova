@@ -153,10 +153,12 @@ import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
-import { openCardOnArrival, PlaybookFloat, PlaybookRunsContext, showPlaybookCard, type PlaybookChatNow } from "./PlaybookCard";
+import { openCardOnArrival, PlaybookFloat, PlaybookInlineContext, PlaybookRunsContext, showPlaybookCard, type PlaybookChatNow, type PlaybookInlineHost } from "./PlaybookCard";
+import { PlaybookInlineCard } from "./PlaybookInlineCard";
+import { createPlaybookCardRows } from "../lib/playbook-card-rows";
 import { isPlaybookRunEvent, playbookRunEvent, usePlaybookRuns } from "../lib/playbook-runs";
 import { boardState } from "../lib/agents-board";
-import { chatHolding, chatNowOf, heldRows, NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows, type HeldBy } from "../lib/playbook-card";
+import { cardOpenedWords, chatHolding, chatNowOf, heldRows, inlineCards, isAligning, lastEntryId, NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows, type HeldBy } from "../lib/playbook-card";
 import { socketReconnects } from "../lib/socket";
 import type { PlaybookRunView } from "../../shared/playbook-run";
 import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
@@ -697,9 +699,11 @@ export function ChatView(props: {
     const held = heldBy();
     if (held) return openCardInNewChat(playbook, text, held);
     try {
-      const run = await playbookRuns.open(playbook, text);
-      showPlaybookCard(run.id, playbookRuns);
-      announce(`${run.playbook.title}: its card is open over the conversation.`);
+      // The card stands after what the conversation ends with now.
+      const run = await playbookRuns.open(playbook, text, lastEntryId(items()));
+      // A playbook that aligns first has no card to show yet: the chat opens its alignment.
+      if (!isAligning(run)) showPlaybookCard(run.id, playbookRuns);
+      announce(cardOpenedWords(run));
       return true;
     } catch (e) {
       // A refusal that says why (a description that can't be read, a chat a run already holds) is
@@ -2547,6 +2551,18 @@ export function ChatView(props: {
   };
   /** A baton session's names, from its strip (§app/baton). */
   const [batonNames, setBatonNames] = createSignal<Record<string, string> | undefined>(undefined);
+  /** The chat's playbook card where it stands in the conversation: the setup card before Start, the
+      run's record after it (a put-away run's included). None where this chat offers no cards. */
+  const playbookCards = createMemo(() => (playbookRuns && playbooksHere() ? inlineCards(playbookRuns.runs(), playbookRuns.putAway()) : []));
+  /** The thread's rows with the card's row among them. A new chat has no rows to stand among: its
+      card is drawn under the opening lines instead (below). */
+  const threadRows = createPlaybookCardRows(threadItems, () => (emptyScreen() ? [] : playbookCards()));
+  const playbookInline: PlaybookInlineHost | null = playbookRuns && {
+    store: playbookRuns,
+    host: hostOf(props.path),
+    chat: playbookChat,
+    run: (id) => playbookCards().find((r) => r.id === id),
+  };
   return (
     <>
       <Show when={props.summary?.()?.baton}>
@@ -2748,6 +2764,7 @@ export function ChatView(props: {
             <AlignAnswerContext.Provider value={alignAnswer}>
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
               <PlaybookRunsContext.Provider value={playbookRuns}>
+              <PlaybookInlineContext.Provider value={playbookInline}>
               <DesignSessionContext.Provider value={{ path: () => props.path, host: () => hostOf(props.path) }}>
               <TourSessionContext.Provider value={{
                 sessionId: () => props.summary?.()?.id,
@@ -2763,7 +2780,7 @@ export function ChatView(props: {
               <OfferContext.Provider value={offers}>
               <CardContext.Provider value={raisedCards}>
               <HistoryItems
-                items={threadItems() ?? list()}
+                items={threadRows() ?? list()}
                 author={props.author}
                 names={batonNames()}
                 streaming={live.running}
@@ -2802,6 +2819,7 @@ export function ChatView(props: {
               </SettingsCardContext.Provider>
               </TourSessionContext.Provider>
               </DesignSessionContext.Provider>
+              </PlaybookInlineContext.Provider>
               </PlaybookRunsContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>
@@ -2841,6 +2859,7 @@ export function ChatView(props: {
                 <Show
                   when={props.overseer}
                   fallback={
+                    <>
                     <div class="empty">
                       <p class="empty-title">
                         New session in <code>{props.cwdLabel}</code>.
@@ -2866,6 +2885,12 @@ export function ChatView(props: {
                       <p class="empty-body">Your first message becomes its title.</p>
                       <EmptyWorktrees path={props.path} />
                     </div>
+                    {/* A playbook's card opened in a chat with no message yet: under the opening lines,
+                        where the conversation will start (it is a row of the thread from then on). */}
+                    <PlaybookInlineContext.Provider value={playbookInline}>
+                      <For each={playbookCards().map((r) => r.id)}>{(id) => <PlaybookInlineCard run={id} />}</For>
+                    </PlaybookInlineContext.Provider>
+                    </>
                   }
                 >
                   {(o) => o().empty()}

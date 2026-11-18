@@ -1,6 +1,8 @@
-/* A playbook run in a chat (Lookbook design A): a strip floating over the end of the conversation,
-   just above the message box, and its card opening upward from the strip's place. Neither has a
-   band or a background beyond its own box. */
+/* A playbook's card in a chat. Before Start it is a setup card standing in the conversation, like
+   an alignment card (.pb-inline), and stays there after Start as the run's record. A started run
+   (Lookbook design A) is a strip floating over the end of the conversation, just above the message
+   box, its card opening upward from the strip's place. None has a band or a background beyond its
+   own box. */
 
 /* ---- The anchor sits between the conversation and the message box and has no height; the layer
    is the message box's column (.composer-inner), so strip, card and message box share their edges. ---- */
@@ -384,3 +386,30 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
 /* A choice worked out with the main chat: no control, its value as the chat filled it, or a muted
    line while it waits for the chat. */
 .pb-chat-waiting { color: var(--color-ink-muted); }
+
+/* ---- The card in the conversation: the setup card before Start, the run's record after it. A row
+   of the thread, as wide as an alignment card: it scrolls with the conversation and has no scroll
+   of its own, so nothing of the floating card's place, height or rise applies. ---- */
+.pb-card.pb-inline {
+  position: static;
+  width: auto;
+  max-width: var(--measure);
+  max-height: none;
+  box-shadow: var(--shadow-1);
+  animation: none;
+}
+.pb-inline > .pb-head:not(:has(> .pb-min)) { padding-inline-end: var(--space-4); }
+.pb-inline .pb-title { font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); white-space: normal; overflow-wrap: anywhere; }
+.pb-inline > .pb-body { flex: none; overflow: visible; overscroll-behavior: auto; }
+/* The setup card's buttons: pinned to the end of the view while the card is in view (lib/pinned-bar),
+   at the card's end otherwise. Opaque, and lifted by a shadow only while pinned over what scrolls
+   behind them. */
+.pb-inline > .pb-foot { position: sticky; bottom: 0; z-index: 4; }
+.pb-inline > .pb-foot[data-pinned] { box-shadow: var(--shadow-2); }
+/* The record: what was agreed, read-only. Flat, so the run's strip is the one raised thing. */
+.pb-inline[data-state="started"] { box-shadow: none; }
+.pb-inline[data-state="started"] > .pb-head { border-bottom: 0; padding-bottom: 0; }
+/* Folded: its head and when it started; Show Card opens the rest in place. */
+.pb-inline[data-folded] > .pb-body > :not(.pb-now) { display: none; }
+.pb-fold[aria-expanded="true"] > .icon-twist { transform: rotate(90deg); }
+.pb-fold > .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }

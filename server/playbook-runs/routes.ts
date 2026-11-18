@@ -19,7 +19,7 @@ import { projectKeyOf, realHost, RunRefused, startRun } from "./start";
 import { changeRun, createRun, draftsOf, oneRunRefusal, openDraftOf, runById, runHolding, runsOfChat } from "./store";
 import { runView } from "./view";
 import { abandonAlignment, beginAlignment, settleChat, type AlignFirstHost } from "./align-first";
-import { onAgentSettled } from "../chat-manager";
+import { onAgentSettled } from "../chat-handle";
 
 const SOURCES = ["sova", "user", "project"] as const;
 const MAX_TEXT = 20_000;

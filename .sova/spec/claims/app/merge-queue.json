@@ -124,7 +124,7 @@
   "§app.merge-queue/branch-summary": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.merge-queue/served",
       "§app.merge-queue/view",
@@ -166,8 +166,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-08T19:56Z",
-      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#5cf517d3"
+      "at": "2026-11-16T21:47Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#e8259d6a"
     }
   },
   "§app.merge-queue/broken-check": {
@@ -267,8 +267,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-13T03:00Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#71ebdfba"
+      "at": "2026-11-13T20:59Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
     },
     "code": [
       "server/merge-queue/checks.ts",
@@ -293,7 +293,10 @@
       "shared/merge-queue.ts",
       "server/merge-queue/testing/repo.ts",
       "server/test-cache-guard.test.ts",
-      "server/spec-runner.ts"
+      "server/spec-runner.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue.test.ts",
+      "shared/project-contract.ts"
     ]
   },
   "§app.merge-queue/conflicts": {
@@ -1378,7 +1381,7 @@
   "§app.merge-queue/view": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.organizations/project-page",
       "§app.project-services/merge-verbs",
@@ -1395,8 +1398,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-10T12:11Z",
-      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
+      "at": "2026-11-16T21:48Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#e8259d6a"
     },
     "code": [
       "server/merge-queue/view.ts",

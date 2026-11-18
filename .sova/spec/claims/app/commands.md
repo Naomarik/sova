@@ -26,8 +26,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   word for word: archiving a session open in a terminal still answers "This session is open in a
   TUI, so it stays on top while live. Nothing was archived." A value that travels in the path is
   never `.` or `..` (nor a `%2e` spelling of one): those would take the request off the entry's own
-  route, so the request is never made, wherever the entry runs (`sova run` exits 3, the palette
-  says why, a peer's run is refused as off the command's route).
+  route, so the request is never made, wherever the entry runs (`sova run` exits 3, a peer's run is refused as off the command's route).
 - **The entries**, every id in `shared/commands-ids.json`'s `ids`, in the order they were added:
   `session.list`, `session.get`, `session.read`, `session.create`, `session.title.set`,
   `session.title.reset`, `session.tags.set`, `session.archive`, `session.unarchive`,
@@ -95,7 +94,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   Assistant's default model (§app.project-assistant/models). The `session.offers.*` entries read
   a session's offer cards, show one from another chat, click a button, and set or clear Not Now;
   `project.offers.list` is the project page's Offers list (§chat/offers). The `design.*` entries list
-  a chat's designs, read a page, change a run's Setup, Start Creative Director, message, refine, retry,
+  a chat's designs, read a page, change a run's Setup, hide or show a provider on its Setup card, Start Creative Director, message, refine, retry,
   stop, remove, restore or delete a design, message the Creative Director, and read what the designs
   were told, the Lookbook-wide ones named for the Lookbook
   (§chat.design-mode/commands); a Lookbook brief's

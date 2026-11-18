@@ -894,7 +894,7 @@ Sova's copy of it never loads in a Sova chat or its workers.
 - **Whatever the pi folder holds.** Every ordinary chat, the Overseer, every helper (pi and Claude
   Code), every team member and a worker on its worktree's own agent dir
   (§chat.worktrees/worktree-config) runs Sova's modes, whether or not the pi folder still links an
-  older Sova's `mode` extension, and whether `/extensions` has it off: in Sova, the mode menu turns modes on and off, never `/extensions`. A session whose
+  older Sova's `mode` extension, and whether the pi folder's settings switch it off: in Sova, the mode menu turns modes on and off, never pi's settings. A session whose
   loadout loads no extensions (a hidden or special session) has no modes, as before.
 - **Exactly once.** The mode section appears exactly once in the prompt of a chat with a mode on,
   and in the prompt of each worker its modes reach.

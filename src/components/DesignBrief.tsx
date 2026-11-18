@@ -532,7 +532,7 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
               <p class="text-caption text-muted design-sect-sub">{setupSummary(setupCount(setup.draft()))}</p>
             </div>
             <div class="design-sect-main design-setup">
-              <DesignSetupPickers setup={setup} />
+              <DesignSetupPickers setup={setup} run={props.run} store={props.store} openKey={`${props.run.id}:brief`} modelsOpen />
               <div class="design-brief-change-foot">
                 <button type="button" class="button button-primary" onClick={() => setChanging(false)}>
                   Done
@@ -620,7 +620,11 @@ export function DesignBriefStep(props: { run: DesignRunView; store: DesignStore;
             fallback={
               <>
                 <span class="design-brief-count">
-                  <span class="design-brief-count-text">{setupSummary(setupCount(setup.draft()))}{brief().estimateUsd ? ` · about $${brief().estimateUsd!.toFixed(2)}` : ""}</span>
+                  {/* The estimate never gives way: only the count before it is cut when the line runs short; the whole line is its tooltip. */}
+                  <span class="design-brief-plan" title={`${setupSummary(setupCount(setup.draft()))}${brief().estimateUsd ? ` · about $${brief().estimateUsd!.toFixed(2)}` : ""}`}>
+                    <span class="design-brief-count-text">{setupSummary(setupCount(setup.draft()))}{brief().estimateUsd ? " ·" : ""}</span>
+                    <Show when={brief().estimateUsd}>{(usd) => <span class="design-brief-estimate">{`\u00a0about $${usd().toFixed(2)}`}</span>}</Show>
+                  </span>
                   <button type="button" class="design-brief-change-link" aria-expanded={changing()} onClick={() => setChanging(!changing())}>
                     Change
                   </button>

@@ -95,6 +95,14 @@ export const PUSH_HELD_NAMES = "push held: private names not set up yet";
 /** How long the merge thread's hold (merge.hold) lasts unless it is set again or cleared. */
 export const HOLD_MS = 5 * 60_000;
 
+/**
+ * Branches Sova cuts for its own work, never yours to land, by their exact shape: a conformance run's two scratch copies
+ * (`sova/conform-<6 hex>-a|b`, project-services/conform.ts), a settings save's branch (`sova/settings-<YYYYMMDD-HHMM>`,
+ * strategy-run.ts) and an abandoned release's revert (`sova/release-revert-<release>`). A New Coding Session's branch
+ * (`sova/<slug>-<6 hex>`, project-worktrees.ts) matches none of them and is listed like any other.
+ */
+export const sovaOwnBranch = (branch: string): boolean => /^sova\/(?:conform-[0-9a-f]{6}-[ab]|settings-\d{8}-\d{4}|release-revert-rl_[0-9a-z]+)$/.test(branch);
+
 /** A ruling's text (a question, a diagnosis, an approach), trimmed and clipped. */
 const clip = (t?: string): string => (t ?? "").trim().slice(0, RULING_TEXT_MAX);
 /** How long one answer to "why isn't the newest commit Ready to land" is kept (view() runs often). */
@@ -1113,7 +1121,7 @@ export class ProjectQueue {
     for (let i = 0; i < asked.length; i += 4) await Promise.all(asked.slice(i, i + 4).map((w) => this.leftOf(w.branch!, w.head!, w.path, head)));
     for (const w of trees) {
       if (!w.branch || !w.head || w.path === this.root || w.branch === this.q.target || w.branch === "master" || w.branch === "main" || !existsSync(w.path)) continue;
-      if (w.branch.startsWith("sova/")) continue;
+      if (sovaOwnBranch(w.branch)) continue;
       // The queue's own scratch copies are never work to land, whatever branch one is on.
       if (await this.queueOwned(w.path, made)) continue;
       // The one answer (§chat.worktrees/nothing-left): nothing left is on no list, drafts alone keep the row, and a branch
@@ -1585,9 +1593,16 @@ export class ProjectQueue {
       const d = await this.declared();
       const declared = Array.isArray(d.def?.merge?.checks) ? d.def!.merge!.checks : [];
       const extra = (d.def?.merge as { optional?: { id: string; label: string }[] } | undefined)?.optional ?? [];
-      for (const id of checks) {
+      const found = checks.map((id) => {
         const c = declared.find((x) => x.id === id) ?? extra.find((x) => x.id === id) ?? (id === "test" && d.def?.test ? { id: "test", label: "Tests" } : null);
         if (!c) throw new MergeFailure("invalid-request", `no check "${id}" in the project's merge section`);
+        // A check the project marks needsSelect is never picked without a selection: it would run what it works out for
+        // itself, or skip, and not what the pick meant.
+        if ((c as { needsSelect?: true }).needsSelect && !select?.length) throw new MergeFailure("invalid-request", `"${id}" (${c.label}) runs with a selection: send the pick's select (its groups, files or walkthroughs)`);
+        return c;
+      });
+      for (const c of found) {
+        const id = c.id;
         e.picks = e.picks.filter((p) => !(p.id === id && JSON.stringify(p.select ?? []) === JSON.stringify(select ?? [])));
         e.picks.push({ id, label: c.label, source: "picked", why: why.trim().slice(0, 200), ...(select?.length ? { select } : {}) });
       }

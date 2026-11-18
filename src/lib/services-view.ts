@@ -82,12 +82,12 @@ export const entryHref = (host: string, e: Pick<EntryView, "port" | "path">): st
 /** Open's title: what it opens. */
 export const entryTitle = (name: string, e: Pick<EntryView, "endpoint" | "path">): string => `Open ${name}'s app (${e.endpoint}, ${e.path}) in a new tab`;
 
-/** The verbs a copy's row offers, in order. */
-export type RowVerb = "up" | "down" | "apply" | "reset" | "teardown";
-export const VERB_LABEL: Record<RowVerb, string> = { up: "Start", down: "Stop", apply: "Apply", reset: "Reset", teardown: "Teardown" };
-export const VERB_RUNNING: Record<RowVerb, string> = { up: "Starting…", down: "Stopping…", apply: "Applying…", reset: "Resetting…", teardown: "Tearing down…" };
+/** The verbs a copy's row offers, in order. Apply and Reset are not the page's: a chat runs them with its own tools. */
+export type RowVerb = "up" | "down" | "teardown";
+export const VERB_LABEL: Record<RowVerb, string> = { up: "Start", down: "Stop", teardown: "Teardown" };
+export const VERB_RUNNING: Record<RowVerb, string> = { up: "Starting…", down: "Stopping…", teardown: "Tearing down…" };
 /** Asked first: the first click arms the button, the second runs it confirmed. */
-export const ASKS_FIRST: ReadonlySet<RowVerb> = new Set(["reset", "teardown"]);
+export const ASKS_FIRST: ReadonlySet<RowVerb> = new Set(["teardown"]);
 export const confirmLabel = (v: RowVerb): string => `Confirm ${VERB_LABEL[v]}`;
 
 /** The toast after a verb that did what it was asked. */
@@ -97,10 +97,6 @@ export function doneLine(verb: RowVerb, name: string): string {
       return `Started ${name}.`;
     case "down":
       return `Stopped ${name}.`;
-    case "apply":
-      return `Applied ${name}.`;
-    case "reset":
-      return `Reset ${name}.`;
     case "teardown":
       return `Tore down ${name}. Its slot is free.`;
   }
@@ -159,14 +155,13 @@ export function endpointNotRunning(c: Pick<CopyView, "services">, endpoint: stri
 
 /**
  * The verbs a copy's row offers, by its state: Start while stopped, absent or degraded; Stop while running
- * or degraded; Apply and Reset always; Teardown never on main (slot 0). An adopted main offers Apply alone.
+ * or degraded; Teardown never on main (slot 0). An adopted main offers none: it runs as a unit of its own.
  */
 export function rowVerbs(c: Pick<CopyView, "slot" | "state" | "adopted">): RowVerb[] {
-  if (c.adopted) return ["apply"];
+  if (c.adopted) return [];
   const out: RowVerb[] = [];
   if (c.state === "stopped" || c.state === "absent" || c.state === "degraded") out.push("up");
   if (c.state === "running" || c.state === "degraded") out.push("down");
-  out.push("apply", "reset");
   if (c.slot !== 0) out.push("teardown");
   return out;
 }
@@ -178,15 +173,15 @@ export const archivedVerbs = (verbs: readonly RowVerb[]): RowVerb[] => verbs.fil
 export const ARCHIVED_COPIES_LINE = "Archived: its copies can be stopped or torn down, not started. Unarchive it to start one.";
 
 /** The verbs that undo work (asked first, and drawn apart from the rest). */
-export const DESTRUCTIVE: ReadonlySet<RowVerb> = new Set(["reset", "teardown"]);
+export const DESTRUCTIVE: ReadonlySet<RowVerb> = new Set(["teardown"]);
 
 /**
- * A row's verbs by weight, never by which appear: the one its state calls for (Start, else Stop, else
- * Apply), the others quieter, and the destructive ones in a group of their own. While the row offers
- * Open (`opens`), Open takes the one plain weight and every verb but the destructive ones is quiet.
+ * A row's verbs by weight, never by which appear: the one its state calls for (Start, else Stop), the other
+ * quieter, and the destructive one in a group of its own. While the row offers Open (`opens`), Open takes the one
+ * plain weight and every verb but the destructive one is quiet.
  */
 export function verbGroups(verbs: readonly RowVerb[], opens = false): { primary: RowVerb | null; quiet: RowVerb[]; destructive: RowVerb[] } {
-  const primary = opens ? null : ((["up", "down", "apply"] as const).find((v) => verbs.includes(v)) ?? null);
+  const primary = opens ? null : ((["up", "down"] as const).find((v) => verbs.includes(v)) ?? null);
   return {
     primary,
     quiet: verbs.filter((v) => v !== primary && !DESTRUCTIVE.has(v)),
@@ -213,7 +208,7 @@ export function copyChip(state: InstanceState, starting: boolean, gaveUp = false
 export const gaveUp = (services: readonly Pick<ServiceView, "gaveUp">[]): boolean => services.some((s) => s.gaveUp);
 
 /** The line under an adopted main's row. */
-export const adoptedLine = (unit: string): string => `Runs as ${unit}; Apply schedules a guarded restart.`;
+export const adoptedLine = (unit: string): string => `Runs as ${unit}.`;
 
 // ---- the copy limit (§app.project-services/services-ui) ---------------------------------------------------
 
@@ -244,7 +239,7 @@ export function limitInputProblem(text: string): string | null {
 export function costLine(l: Pick<CopyLimitView, "value" | "estimate" | "host">): { text: string; warn: boolean } {
   const host = l.host ? ` This machine: ${gbWord(l.host.totalBytes)}, ${gbWord(l.host.availableBytes)} available now.` : "";
   const e = l.estimate;
-  if (!e) return { text: `Not measured yet: Run Again on the Software card measures it.${host}`, warn: false };
+  if (!e) return { text: `Not measured yet: the services playbook measures it.${host}`, warn: false };
   const total = e.steadyBytes * l.value;
   const copies = l.value === 1 ? "1 copy needs" : `${l.value} copies need`;
   const head =

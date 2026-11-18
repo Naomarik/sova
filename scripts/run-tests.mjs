@@ -83,9 +83,12 @@
 // XDG_RUNTIME_DIR for the integration tier only; never a credential. A new switch a test reads goes
 // in that list or never reaches it. PATH is built, never inherited: the stand-in claude, the real
 // node's directory and mise's tool paths (shims refuse an untrusted config in a throwaway HOME), then
-// the system's directories (SYSTEM_PATH). Then SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), and SOVA_GIT_MAINTENANCE=off (a server a
+// the system's directories (SYSTEM_PATH). Then SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), SOVA_GIT_MAINTENANCE=off (a server a
 // test starts registers no repository with git's scheduled maintenance and starts no systemd
-// timer; server/git-maintenance.ts's own tests drive it with their own deps). bun test itself sets TZ=UTC and
+// timer; server/git-maintenance.ts's own tests drive it with their own deps), SOVA_AGENT_CPU=off (it sets no
+// CPU weight or ceiling on systemd's sova.slice; server/agent-cpu.test.ts drives that with a stand-in systemctl), and SOVA_QUICK_TUNNEL=off
+// (a missing Public links setting reads as off, never a Cloudflare Free tunnel; a tunnel test opts in). SOVA_CLOUDFLARED=off
+// (no installed cloudflared is found on PATH; a tunnel test names its fake). bun test itself sets TZ=UTC and
 // NODE_ENV=test. Both runtimes: a stand-in `claude` (scripts/fake-claude.mjs) leads every test
 // process's PATH, so no test runs the installed Claude CLI, or a paid model through it; a test that
 // needs another `claude` sets its own PATH.
@@ -151,6 +154,7 @@ const GLOBS = [
   "server/design/*.test.ts",
   "server/playbook-runs/*.test.ts",
   "server/share/*.test.ts",
+  "server/share/tunnel/*.test.ts",
   "server/chat-runtime/*.test.ts",
   "server/projects/*.test.ts",
   "server/mesh/*.test.ts",
@@ -335,6 +339,9 @@ const groupNames = opts["--groups"] ? splitNames([opts["--groups"]]) : [];
 const pickedNames = opts["--picked-groups"] ? splitNames(opts["--picked-groups"]) : [];
 const badGroup = [...groupNames, ...pickedNames].find((n) => n !== "all" && !GROUPS.some((g) => g.name === n));
 if (badGroup) console.error(`run-tests: no test group ${badGroup} (groups: ${GROUPS.map((g) => g.name).join(", ")}, all)`);
+// --base chooses what a bare --picked-groups compares the branch with; named groups run whatever changed, so a base
+// beside them would be dropped unread: refused, never ignored.
+if (opts["--base"] && pickedNames.length) usageExit(`run-tests: --base goes with a bare --picked-groups (the groups the branch's changes trigger), not with named groups\n${USAGE}`);
 if ((runtime !== "node" && runtime !== "bun") || (opts["--integration"] && opts["--all"]) || picks.length > 1 || (opts["--base"] && !opts["--changed"] && !opts["--landing"] && !opts["--picked-groups"]) || badGroup || (opts["--groups"] && !groupNames.length)) usageExit(USAGE);
 // The slow groups are integration files: --landing, --groups and --picked-groups mean that tier unless one is named.
 if ((opts["--landing"] || opts["--groups"] || opts["--picked-groups"]) && !opts["--all"]) opts["--integration"] = true;
@@ -536,23 +543,22 @@ function branchGroupsOnly(files, base) {
   try {
     changed = changedSince(ROOT, base);
   } catch (err) {
-    usageExit(`run-tests: --picked-groups: no merge base with ${base} (${String(err.stderr ?? err.message).trim().split("\n")[0]})`);
+    console.error(`run-tests: --picked-groups: no merge base with ${base} (${String(err.stderr ?? err.message).trim().split("\n")[0]})`);
+    process.exit(2);
   }
   const landing = selectFiles(files, changed, { mode: "landing" });
   const since = `${changed.length} file${changed.length === 1 ? "" : "s"} changed since the merge base with ${base}`;
   const pick = selectFiles(files, [], { mode: "groups", only: landing.ran });
   // A triggered group with no file in this tree has nothing to run either.
-  if (!pick.files.length) {
-    say(`run-tests: --picked-groups, none named: skipped: ${NO_GROUP_APPLIES} (${since}).`);
-    for (const s of landing.skipped) say(`run-tests: skipped group ${s.name} (${s.title}): ${s.why === "never" ? "never at landing" : "no change to its triggers"}.`);
-    picked = { ...pick, ran: [], skipped: landing.skipped };
-    noGroupApplies = true;
-    return [];
+  const none = !pick.files.length;
+  if (none) say(`run-tests: --picked-groups, none named: skipped: ${NO_GROUP_APPLIES} (${since}).`);
+  else {
+    say(`run-tests: --picked-groups, none named: the slow groups a landing runs for this branch's changes (${since}): ${pick.files.length} of ${files.length} test files (${pick.ran.map(titleOf).join(", ")}).`);
+    for (const name of landing.ran) say(`run-tests: running group ${name} (${titleOf(name)}): its triggers changed (${shortList(landing.hits[name])}).`);
   }
-  say(`run-tests: --picked-groups, none named: the slow groups a landing runs for this branch's changes (${since}): ${pick.files.length} of ${files.length} test files (${pick.ran.map(titleOf).join(", ")}).`);
-  for (const name of landing.ran) say(`run-tests: running group ${name} (${titleOf(name)}): its triggers changed (${shortList(landing.hits[name])}).`);
   for (const s of landing.skipped) say(`run-tests: skipped group ${s.name} (${s.title}): ${s.why === "never" ? "never at landing" : "no change to its triggers"}.`);
-  picked = { ...pick, skipped: landing.skipped };
+  picked = none ? { ...pick, ran: [], skipped: landing.skipped } : { ...pick, skipped: landing.skipped };
+  noGroupApplies = none;
   return pick.files;
 }
 
@@ -777,6 +783,14 @@ function hermeticEnv(tier) {
     PATH: testPath([fakeClaudeDir(root), path.dirname(process.execPath), misePaths], path.delimiter),
     SOVA_PRICES_FETCH: "off",
     SOVA_GIT_MAINTENANCE: "off",
+    // A server a test starts leaves systemd's sova.slice alone (server/agent-cpu.ts): no CPU weight or ceiling on the real one.
+    SOVA_AGENT_CPU: "off",
+    // No Cloudflare Free tunnel by default (server/public-links.ts): a missing setting reads as off, as before
+    // the Free default; a test that drives a tunnel turns it on for itself.
+    SOVA_QUICK_TUNNEL: "off",
+    // No installed cloudflared is ever run (server/share/tunnel/binary.ts): PATH is skipped; a tunnel test names
+    // its fake, and a test that wants "none" gets it on every machine.
+    SOVA_CLOUDFLARED: process.env.SOVA_CLOUDFLARED || "off",
     // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
     SOVA_CHAT_CODE: "live",

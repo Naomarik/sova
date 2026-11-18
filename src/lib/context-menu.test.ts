@@ -7,6 +7,7 @@ import {
   createKeyMenuMark,
   createMenuHold,
   createOpenOnRelease,
+  createOutsidePress,
   EDGE_GAP,
   holdOwns,
   KEY_MENU_MS,
@@ -219,4 +220,84 @@ test("createMenuHold: a finger's or pen's press kept still past HOLD_MS and let 
   m.hold.up(m.p(100, 100, "mouse"));
   assert.deepEqual(m.opened, []);
   assert.equal(m.buzzed(), 0);
+});
+
+test("createOutsidePress: a press that starts outside the open menu closes it at once; only a plain tap or click is spent on it", () => {
+  const make = () => {
+    let t = 0;
+    const rule = createOutsidePress({ now: () => t });
+    return { rule, advance: (ms: number) => (t += ms) };
+  };
+  const out = (kind = "touch", button = 0) => ({ open: true, inside: false, kind, button });
+  // Inside the menu, or with the menu closed: nothing closes, nothing is spent.
+  for (const p of [{ ...out(), inside: true }, { ...out(), open: false }, { ...out("mouse"), inside: true }]) {
+    const { rule } = make();
+    assert.equal(rule.down(p), "none");
+    rule.up();
+    assert.equal(rule.mouseDown(), false);
+    assert.equal(rule.takeClick(), false);
+  }
+  // A tap or click outside: closed at the press; a finger's or pen's mousedown is stopped, a mouse's
+  // is not; the click that follows is taken once, the next one passes.
+  for (const kind of ["touch", "pen", "mouse"]) {
+    const { rule, advance } = make();
+    assert.equal(rule.down(out(kind)), "close", kind);
+    rule.up();
+    assert.equal(rule.mouseDown(), kind !== "mouse", kind);
+    advance(50);
+    assert.equal(rule.takeClick(), true, kind);
+    assert.equal(rule.takeClick(), false, `${kind}: once`);
+    assert.equal(rule.mouseDown(), false, `${kind}: spent`);
+  }
+  // A scroll (pointercancel): closed at the press, and nothing of it is spent afterwards.
+  {
+    const { rule } = make();
+    assert.equal(rule.down(out()), "close");
+    rule.cancel();
+    rule.up();
+    assert.equal(rule.mouseDown(), false);
+    assert.equal(rule.takeClick(), false);
+  }
+  // No click before the release: a click arriving while the press is still down is not the tap's.
+  {
+    const { rule } = make();
+    rule.down(out("mouse"));
+    assert.equal(rule.takeClick(), false);
+  }
+  // A long hold outside closes at the press; its echo within HOLD_SUPPRESS_MS of the release is taken,
+  // however long it was held; a click later than that passes.
+  {
+    const { rule, advance } = make();
+    rule.down(out());
+    advance(3000);
+    rule.up();
+    advance(HOLD_SUPPRESS_MS);
+    assert.equal(rule.takeClick(), true);
+  }
+  {
+    const { rule, advance } = make();
+    rule.down(out());
+    rule.up();
+    advance(HOLD_SUPPRESS_MS + 1);
+    assert.equal(rule.takeClick(), false);
+  }
+  // A second press disarms the first: with the menu now closed, its tap works normally.
+  {
+    const { rule } = make();
+    rule.down(out());
+    rule.up();
+    assert.equal(rule.down({ ...out(), open: false }), "none");
+    rule.up();
+    assert.equal(rule.mouseDown(), false);
+    assert.equal(rule.takeClick(), false);
+  }
+  // A right or middle press outside closes without arming: its own contextmenu or auxclick goes on,
+  // and the click after it is not spent.
+  for (const button of [1, 2]) {
+    const { rule } = make();
+    assert.equal(rule.down(out("mouse", button)), "close");
+    rule.up();
+    assert.equal(rule.mouseDown(), false);
+    assert.equal(rule.takeClick(), false);
+  }
 });

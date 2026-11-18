@@ -1,4 +1,4 @@
-// The Branches tab's view of a project's status (§app.project-services/services-ui): copies by slot with
+// The Running Copies tab's view of a project's status (§app.project-services/services-ui): copies by slot with
 // their checkout services, the shared services once each, HTTP readiness ports, and what runs now.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";

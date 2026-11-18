@@ -8,6 +8,7 @@ import type { ExtensionInspect, ExtensionsInstalled } from "../../shared/extensi
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
 import type { ProjectSkillsView } from "../../shared/project-skills";
 import type { ApprovalState, ContextApprovalSetting, ContextFilesView, FolderApprovalsView } from "../../shared/approvals";
+import type { AgentCpuSet, AgentCpuState } from "../../shared/agent-cpu";
 import type { ProfileSaveRequest, ProfilesListing, ProfileWriteAnswer } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -150,7 +151,6 @@ import type {
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../../shared/team-defaults";
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
-import type { CommandEntry } from "../../shared/commands-catalog";
 import type { BackgroundJob } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { TIME_SPENT_READ_ROUTE, type TimeSpentRecord } from "../../shared/time-spent";
@@ -1592,7 +1592,7 @@ export const getUsageSessions = (sids: string[]) =>
 export const refreshPrices = () => request<PricesInfo>("/api/usage/prices/refresh", jsonInit("POST", {}));
 
 // ---- a project's software registry (§app/project-runtime) -------------------------------------------
-/** The project's copies on this host, for its Branches tab (§app.project-services/services-ui). */
+/** The project's copies on this host, for its Running Copies tab (§app.project-services/services-ui). */
 export const getProjectServices = (projectId: string) => request<ProjectServicesView>(`${projectPath(projectId)}/services`);
 /** Set this machine's copy limit for the project (null: back to the project's file's): the operator's own page only. */
 export const setCopyLimit = (projectId: string, cap: number | null) =>
@@ -1771,35 +1771,6 @@ export const mintPreview = (body: PreviewMint) => request<PreviewMinted>("/api/p
 export const turnOffPreview = (id: string) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/off`, jsonInit("POST", {}));
 export const extendPreview = (id: string, days: number) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/extend`, jsonInit("POST", { days }));
 
-/** The running server's command list (GET /api/commands): the command palette reads it at each opening. */
-export const fetchServedCommands = () => request<{ version: number; commands: CommandEntry[] }>("/api/commands", { cache: "no-store" });
-
-/**
- * One catalogue entry's request, as built by `buildRequest` (the same request `sova run` makes),
- * with the route's answer as a value: a refusal is what the palette shows, not a throw. Status 0:
- * the server didn't answer.
- */
-export async function runCommandRequest(method: string, url: string, body?: Record<string, unknown>, host: string | null = null): Promise<{ status: number; body: unknown }> {
-  const json = body === undefined ? undefined : JSON.stringify(body);
-  let res: Response;
-  try {
-    // `host`: the peer holding the session the command names by id (palette commandHost); else routed as any request.
-    res = await fetch(host ? hostUrl(host, url) : routeUrl(url, json), withJsonType({ method, body: json, cache: "no-store" }));
-  } catch {
-    return { status: 0, body: { error: "The Sova server isn't reachable." } };
-  }
-  const text = await res.text().catch(() => "");
-  let parsed: unknown = text;
-  try {
-    parsed = text ? JSON.parse(text) : null;
-  } catch {
-    // Not JSON: the text itself.
-  }
-  if (res.status === 401) onUnauthorized(parsed);
-  else if (res.ok) onAuthorized();
-  return { status: res.status, body: parsed };
-}
-
 // ---- session offers: a session's offer cards and the project page's list (§chat/offers) --------
 
 export const getSessionOffers = (path: string) => request<SessionOffersAnswer>(`/api/session-offers?path=${encodeURIComponent(path)}`, { cache: "no-store" });
@@ -1900,22 +1871,33 @@ export const getMcpServers = () => request<McpServers>("/api/mcp/servers");
 /** A project's skill defaults for new chats, kept on this computer. */
 export const getProjectSkills = (projectId: string) => request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, { cache: "no-store" });
 /** Approve or disallow skills (only the names given); answers the fresh view. */
-export const setProjectSkills = (projectId: string, skills: Record<string, ApprovalState>) =>
-  request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, jsonInit("PUT", { skills }));
+/** A group switch's press on the wire: `group` is the group's id (the server keeps one Undo per folder and id). */
+const groupBody = (group: string | undefined): { group?: string } => (group ? { group } : {});
+export const setProjectSkills = (projectId: string, skills: Record<string, ApprovalState>, opts: { group?: string } = {}) =>
+  request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, jsonInit("PUT", { skills, ...groupBody(opts.group) }));
 /** A project's context files for new chats, kept on this computer (shared/approvals.ts). */
 export const getProjectContextFiles = (projectId: string) => request<ContextFilesView>(`${projectPath(projectId)}/context-files`, { cache: "no-store" });
-export const setProjectContextFiles = (projectId: string, files: Record<string, ApprovalState>) =>
-  request<ContextFilesView>(`${projectPath(projectId)}/context-files`, jsonInit("PUT", { files }));
+export const setProjectContextFiles = (projectId: string, files: Record<string, ApprovalState>, opts: { group?: string } = {}) =>
+  request<ContextFilesView>(`${projectPath(projectId)}/context-files`, jsonInit("PUT", { files, ...groupBody(opts.group) }));
 /** Any folder's list, a project's or not: what the new chat's card decides through. */
 export const getFolderApprovals = (cwd: string) => request<FolderApprovalsView>(`/api/folder-approvals?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" });
-export const setFolderApprovals = (cwd: string, change: { files?: Record<string, ApprovalState>; skills?: Record<string, ApprovalState> }) =>
-  request<FolderApprovalsView>("/api/folder-approvals", jsonInit("PUT", { cwd, ...change }));
-/** Settings → General: "Allow context files and skills without asking", this computer's. */
-/** A mid-chat line's Approve or Disallow: into the folder's list, and Approve loads it in this chat too (the page's only). */
+/** `group`: a group switch's press, by its group's id (lib/approval-undo): the only save that skips rows already
+    on and answers an Undo token, kept by the server per folder and group. */
+export const setFolderApprovals = (cwd: string, change: { files?: Record<string, ApprovalState>; skills?: Record<string, ApprovalState>; group?: string }) =>
+  request<FolderApprovalsView>("/api/folder-approvals", jsonInit("PUT", { cwd, ...(change.files ? { files: change.files } : {}), ...(change.skills ? { skills: change.skills } : {}), ...groupBody(change.group) }));
+/** Undo of a group switch's save (the answer's `undo` token): every record that save wrote back as it was. */
+export const undoFolderApprovals = (cwd: string, undo: string) => request<FolderApprovalsView>("/api/folder-approvals", jsonInit("PUT", { cwd, undo }));
+export const undoProjectContextFiles = (projectId: string, undo: string) => request<ContextFilesView>(`${projectPath(projectId)}/context-files`, jsonInit("PUT", { undo }));
+export const undoProjectSkills = (projectId: string, undo: string) => request<ProjectSkillsView>(`${projectPath(projectId)}/skills`, jsonInit("PUT", { undo }));
+/** Settings → General: "New context files and skills start on", this computer's. */
+/** A mid-chat line's Turn On: into the folder's list, and it loads in this chat too (the page's only). */
 export const decideInChat = (path: string, kind: "context" | "skill", item: string, state: "approved" | "disallowed") =>
   request<unknown>("/api/sessions/approval", jsonInit("POST", { path, kind, item, state }));
 export const getContextApproval = () => request<ContextApprovalSetting>("/api/settings/context-approval", { cache: "no-store" });
 export const setContextApproval = (allowWithoutAsking: boolean) => request<ContextApprovalSetting>("/api/settings/context-approval", jsonInit("PUT", { allowWithoutAsking }));
+/** Settings → General's Agents' CPU (server/agent-cpu.ts): the optional ceiling on every agent's CPU together. */
+export const getAgentCpu = () => request<AgentCpuState>("/api/settings/agent-cpu", { cache: "no-store" });
+export const setAgentCpu = (maxCores: number | null) => request<AgentCpuState>("/api/settings/agent-cpu", jsonInit("PUT", { maxCores } satisfies AgentCpuSet));
 export const getProjectMcp = (projectId: string) => request<McpProjectServers>(`/api/projects/${encodeURIComponent(projectId)}/mcp`);
 /** Add and Check: answers once the Check has finished; a failed Check is a row in state failed. */
 export const addMcpServer = (server: McpNewServer) => request<McpServerRow>("/api/mcp/servers", jsonInit("POST", server));

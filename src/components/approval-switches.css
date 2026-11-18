@@ -1,0 +1,106 @@
+/* Context files and skills: one switch per row, one per group (ApprovalSwitches.tsx). The switch's
+   word ("On", "Off", "Mixed") sits before it, muted; the accent stays on a checked switch alone. */
+
+.approval-switch { flex: none; gap: var(--space-2); min-height: var(--tap-min); justify-content: flex-end; }
+.approval-switch-word { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); min-width: 3.5em; text-align: end; }
+
+/* A group's heading row: the sunken band its rows hang from. */
+.approval-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-5);
+  background: var(--color-sunken);
+  border-block: 1px solid var(--color-border);
+}
+.approval-group-title { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 var(--space-3); }
+.approval-group-label { margin: 0; }
+.approval-group-facts { font-family: var(--font-mono); font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
+
+/* The line a group press leaves, in flow under the heading, with Undo. */
+.approval-undo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-5);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+  border-bottom: 1px dashed var(--color-border-strong);
+}
+.approval-undo > .icon { flex: none; color: var(--color-ink-muted); }
+.approval-undo-button { flex: none; }
+
+/* A row's marks. New is a chip (a dot and the word); Changed a line under the name with its button. */
+.approval-new { flex: none; }
+.approval-changed { flex: 0 0 100%; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-1); }
+.approval-changed-text { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--status-warn); }
+.approval-changed-mark { font-size: 10px; }
+.approval-note { flex: 0 0 100%; display: inline-flex; align-items: flex-start; gap: var(--space-2); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.approval-note > .icon { flex: none; margin-top: 1px; }
+
+/* A skill's figure: a button that reads as a figure with a dotted underline, its detail a popover. */
+.approval-size {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.25em;
+  cursor: pointer;
+}
+.approval-size:hover, .approval-size[aria-expanded="true"] { color: var(--color-ink); }
+.approval-size:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+
+.approval-size-pop {
+  position: fixed;
+  inset: auto;
+  top: var(--size-top, 0);
+  left: var(--size-left, 0);
+  margin: 0;
+  width: max-content;
+  max-width: min(320px, calc(100vw - var(--space-4)));
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.approval-size-pop:not(:popover-open) { display: none; }
+.approval-size-title { margin: 0; font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-medium); color: var(--color-ink); overflow-wrap: anywhere; }
+.approval-size-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-5); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.approval-size-k, .approval-size-v { display: flex; flex-direction: column; }
+.approval-size-k { color: var(--color-ink-2); }
+.approval-size-v { align-items: flex-end; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); white-space: nowrap; }
+.approval-size-k small, .approval-size-v small { font-family: var(--font-body); font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
+
+/* A project's (or a folder's) card: groups by where each item comes from, each under its band. */
+.approval-card-group { gap: 0; margin-top: var(--space-3); }
+.approval-card-group .approval-group-head { padding: 0 var(--space-4); }
+.approval-card-group .approval-undo { padding-inline: var(--space-4); }
+.approval-card-group .project-skills-rows { margin: 0; }
+.approval-card-row { flex-wrap: nowrap; padding-block: var(--space-1); }
+.approval-card-row .list-main { flex: 1 1 auto; }
+.approval-card-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.approval-card-size { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); white-space: nowrap; }
+.approval-row-off .list-title, .approval-row-off .approval-card-desc, .approval-row-off .approval-card-size { opacity: .55; }
+.approval-card-slash-head { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); padding: var(--space-3) var(--space-4) var(--space-1); }
+.approval-card-slash-head .orgs-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
+@container (max-width: 479px) {
+  .approval-group-head { padding: 0 var(--space-4); }
+  .approval-undo { padding: var(--space-1) var(--space-4); }
+}
+@media (max-width: 479px) {
+  .approval-group-head { padding: 0 var(--space-4); }
+  .approval-undo { padding: var(--space-1) var(--space-4); }
+}

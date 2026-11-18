@@ -36,7 +36,7 @@
   "§app.organizations/archive": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/orgs.ts",
       "shared/orgs.ts",
@@ -59,7 +59,8 @@
       "src/orgs.css",
       "src/projects.css",
       "server/session-feed.ts",
-      "server/session-feed.test.ts"
+      "server/session-feed.test.ts",
+      "src/components/ProjectSessionsTab.tsx"
     ],
     "requires": [
       "§app.organizations/projects",
@@ -105,6 +106,28 @@
       "by": "user",
       "at": "2026-11-12T20:06Z",
       "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#15085bbd"
+    },
+    "evidence": "verified"
+  },
+  "§app.organizations/backlog-tab": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.organizations/project-page",
+      "§app.project-overseer/ideas-and-todos",
+      "§app.organizations/files-card"
+    ],
+    "code": [
+      "src/components/ProjectPage.tsx",
+      "src/components/ProjectOverseerPanel.tsx",
+      "src/projects.css",
+      "src/lib/projects-route.ts",
+      "src/lib/projects-route.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T16:31Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
     },
     "evidence": "verified"
   },
@@ -175,8 +198,14 @@
       "src/components/ProjectPage.tsx",
       "src/lib/api.ts",
       "shared/project-files.ts",
-      "src/projects.css"
-    ]
+      "src/projects.css",
+      "src/components/ProjectOrgPart.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-16T16:31Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
+    }
   },
   "§app.organizations/history-and-revert": {
     "kind": "behavior",
@@ -260,7 +289,7 @@
   "§app.organizations/org-page": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/OrgsView.tsx",
       "src/lib/org-tabs.ts",
@@ -290,7 +319,8 @@
       "server/org-reload.test.ts",
       "server/orgs.ts",
       "server/org-routes.test.ts",
-      "src/components/OrgWhatsAppCard.tsx"
+      "src/components/OrgWhatsAppCard.tsx",
+      "src/projects.css"
     ],
     "requires": [
       "§app.organizations/org-cards",
@@ -480,12 +510,14 @@
       "src/components/ReleasesTab.tsx",
       "src/components/ProjectIcon.tsx",
       "src/components/ProjectIconCard.tsx",
-      "src/components/InsightsPage.tsx"
+      "src/components/InsightsPage.tsx",
+      "src/App.tsx",
+      "src/orgs.css"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-08T21:00Z",
-      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#5cf517d3"
+      "at": "2026-11-16T16:31Z",
+      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
     }
   },
   "§app.organizations/projects": {

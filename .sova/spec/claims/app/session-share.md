@@ -211,8 +211,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   "Follows live"), and its recipients, each with
   a presence word when a page is open ("Viewing now", "Open in a tab") and "Opened {n}× · last
   {time}" or "Not opened yet". A stopped share says "Stopped". Each share has **Manage**; the
-  section has **Share Session** (a link to the share page, §app.session-share/share-page) and a
-  link to `#/shares`. None: "Not shared with anyone."
+  section has **Share Session** (a link to the share page, §app.session-share/share-page; hidden
+  while sharing is off, §mesh.public/sharing-off) and a link to `#/shares`. None: "Not shared with anyone."
 - **The Share sheet** is a dialog that becomes a sheet at folded width, and only manages a share:
   shares are created on the share page, whose create form holds:
   the public title (the session's title, editable, at most 120 characters, with a hint that the
@@ -233,6 +233,10 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   session changed. Preview it again." beside the preview and reads it again, to be reviewed again.
 - **Create Links** (`Create Link` for one) mints them and shows each new link with its label and
   **Copy Link**; the `linkWarning`, when there is one, shows with **Open Settings** (§app.baton/links).
+- The sheet and the create form show **Where links open** on one line with **Change**
+  (§mesh.public/where-links-open), the Turn On or Download prompt while needed (§mesh/tunnel), and,
+  in an open sheet, the banner of this share's links that broke when an address changed
+  (§mesh.public/broken-links).
 - **Managing a share** opens the sheet on it: its slice line (or "The whole session.") with
   **Change Slice** (the share page on this share; the sheet closes; not on a stopped share), the title (Save Title), the
   Follow live switch,
@@ -269,6 +273,14 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   §mesh.public/preview-card; the people a preview was sent to on WhatsApp are on its **Sent to**
   line, and a person's own copy whose original isn't listed says "sent to {name}" before its
   expiry). Standalone reviewed-tour links (`/t/`) are included too, identifying their pinned edition and expiry; their Visits disclosure shows only what the existing opt-in Log visitors switch recorded (§mesh.public/visitor-log). With the mesh on, each row names its host.
+- Above the lists: **Where links open** on one line with **Change** (§mesh.public/where-links-open),
+  the Turn On or Download prompt while one is needed (§mesh/tunnel), an unreadable setting's warning
+  (§mesh.public/free-default), and the warn banner of links that broke when an address changed, each
+  with Copy New Link or Share again (§mesh.public/broken-links). A Copy Link here tells the server
+  the link left (§mesh.public/broken-links). While sharing is off on this computer
+  (§mesh.public/sharing-off) the line reads "Sharing is off." with **Open Settings**, and the rows
+  of its links (and every organization link row) show no Copy Link or Copy {name}'s Link; Delete,
+  Stop Sharing and Manage stay.
 - A session share row: its public title (a link to the session), its slice line or mode line (as
   the Sharing section), its recipients
   with presence and opened lines (each live one whose link is kept with **Copy Link**), and **Manage** (the Share sheet on it) and **Stop Sharing**

@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P42 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P46 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -16,7 +16,7 @@ import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadPi } from "./testing/load-pi.ts";
 import { STANDIN_FILTER } from "./headless.ts";
-import { packageFrom, patchResolve } from "./own-code.ts";
+import { enabledByOverrides, extensionEntries, packageFrom, patchResolve } from "./own-code.ts";
 import { hearRequests } from "./session.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
 import { PiHarnessSession } from "./session.ts";
@@ -752,6 +752,110 @@ describe("pi contract", () => {
     assert.deepEqual(pi.agent.loadSkillsFromDir({ dir: join(at, "c"), source: "project" }).skills.map((s: { name: string }) => s.name), ["solo"]);
   });
 
+  test("P43 settings-files: pi's settings are <agentDir>/settings.json and <cwd>/<CONFIG_DIR_NAME>/settings.json read through SettingsStorage.withLock, and a folder's loader reload reads them and writes none", async () => {
+    const at = join(dir, `p43-${Math.random().toString(36).slice(2)}`);
+    const cwd = join(at, "cwd");
+    const agentDir = join(at, "agent");
+    mkdirSync(join(cwd, pi.agent.CONFIG_DIR_NAME), { recursive: true });
+    mkdirSync(join(at, "gs", "g"), { recursive: true });
+    mkdirSync(join(at, "ps", "p"), { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(at, "gs", "g", "SKILL.md"), "---\nname: g\ndescription: g\n---\nbody\n");
+    writeFileSync(join(at, "ps", "p", "SKILL.md"), "---\nname: p\ndescription: p\n---\nbody\n");
+    const global = { skills: [join(at, "gs")] };
+    const project = { skills: [join(at, "ps")] };
+    writeFileSync(join(agentDir, "settings.json"), JSON.stringify(global));
+    writeFileSync(join(cwd, pi.agent.CONFIG_DIR_NAME, "settings.json"), JSON.stringify(project));
+    const own = SettingsManager.create(cwd, agentDir);
+    assert.deepEqual([own.getGlobalSettings().skills, own.getProjectSettings().skills], [global.skills, project.skills], "pi's files are where Sova reads them");
+    const reads: string[] = [];
+    let writes = 0;
+    const text = { global: JSON.stringify(global), project: JSON.stringify(project) } as Record<string, string>;
+    const settingsManager = SettingsManager.fromStorage({
+      withLock(scope: string, fn: (current: string | undefined) => string | undefined) {
+        reads.push(scope);
+        if (fn(text[scope]) !== undefined) writes++;
+      },
+    });
+    const loader = new DefaultResourceLoader({ cwd, agentDir, settingsManager, noExtensions: true } as never);
+    await loader.reload();
+    assert.deepEqual(loader.getSkills().skills.map((s: { name: string }) => s.name).sort(), ["g", "p"], "the loader takes both scopes from the storage");
+    assert.ok(reads.includes("global") && reads.includes("project"), "each scope is read through withLock");
+    assert.equal(writes, 0, "a reload writes no settings");
+  });
+
+  test("P44 context-file-walk: pi lists the agent dir's file first, then each folder's first context file from the typed cwd up to the root as join(folder, name), hands the override the whole list at every reload, and shadows a nested worktree's main-checkout file", async () => {
+    const at = join(dir, `p44-${Math.random().toString(36).slice(2)}`);
+    const put = (rel: string, text = rel) => {
+      mkdirSync(dirname(join(at, rel)), { recursive: true });
+      writeFileSync(join(at, rel), text);
+    };
+    put("agent/AGENTS.md");
+    put("AGENTS.md");
+    put("repo/CLAUDE.md");
+    put("repo/AGENTS.MD");
+    put("repo/sub/CLAUDE.md");
+    put("repo/sub/AGENTS.override.md");
+    symlinkSync(join(at, "repo"), join(at, "link"));
+    const listed = async (cwd: string) => {
+      const seen: string[][] = [];
+      const loader = new DefaultResourceLoader({ cwd, agentDir: join(at, "agent"), noExtensions: true, noSkills: true, agentsFilesOverride: (base: { agentsFiles: { path: string }[] }) => (seen.push(base.agentsFiles.map((f) => f.path)), base) } as never);
+      await loader.reload();
+      await loader.reload();
+      const paths = loader.getAgentsFiles().agentsFiles.map((f: { path: string }) => f.path);
+      assert.equal(seen.length, 2, "the override runs at every reload");
+      assert.deepEqual(seen[1], paths, "the override gets the whole list");
+      return paths.filter((p: string) => p.startsWith(at + "/"));
+    };
+    assert.deepEqual(
+      await listed(join(at, "repo", "sub")),
+      [join(at, "agent", "AGENTS.md"), join(at, "AGENTS.md"), join(at, "repo", "AGENTS.MD"), join(at, "repo", "sub", "AGENTS.override.md")],
+      "the agent dir's first, then every folder up to the root, outermost first, each its first name",
+    );
+    assert.deepEqual(
+      await listed(join(at, "link", "sub")),
+      [join(at, "agent", "AGENTS.md"), join(at, "AGENTS.md"), join(at, "link", "AGENTS.MD"), join(at, "link", "sub", "AGENTS.override.md")],
+      "a linked cwd is walked as typed, never by its real path",
+    );
+    // A nested linked worktree, as git writes it: its .git file names a git dir whose commondir is the main checkout's.
+    put("main/.git/HEAD", "ref: refs/heads/main\n");
+    put("main/.git/worktrees/wt/HEAD", "ref: refs/heads/wt\n");
+    put("main/.git/worktrees/wt/commondir", "../..\n");
+    put("main/wt/.git", `gitdir: ${join(at, "main", ".git", "worktrees", "wt")}\n`);
+    put("main/AGENTS.md");
+    assert.ok((await listed(join(at, "main", "wt"))).includes(join(at, "main", "AGENTS.md")), "a worktree with no file of its own inherits the main checkout's");
+    put("main/wt/AGENTS.md");
+    assert.deepEqual(await listed(join(at, "main", "wt")), [join(at, "agent", "AGENTS.md"), join(at, "AGENTS.md"), join(at, "main", "wt", "AGENTS.md")], "its own file shadows the main checkout's");
+  });
+
+  test("P45 project-skill-paths: a skill pi finds through a linked skill folder (an ancestor .agents/skills up to the repository's top, an additional path) is listed and handed to skillsOverride by the path it walked, never its real one, and a dropped one's warning names that path", async () => {
+    const at = join(dir, `p45-${Math.random().toString(36).slice(2)}`);
+    const skill = (rel: string, name: string, description = `The ${name} skill.`) => {
+      mkdirSync(join(at, rel), { recursive: true });
+      writeFileSync(join(at, rel, "SKILL.md"), `---\nname: ${name}\ndescription: ${description}\n---\nbody\n`);
+    };
+    skill("outside/away", "away");
+    skill("outside/bad", "bad", "bad: colon");
+    skill("outside/extra/far", "far");
+    mkdirSync(join(at, "repo", ".git"), { recursive: true });
+    mkdirSync(join(at, "repo", ".agents", "skills"), { recursive: true });
+    mkdirSync(join(at, "repo", "sub", ".claude"), { recursive: true });
+    mkdirSync(join(at, "agent"), { recursive: true });
+    symlinkSync(join(at, "outside", "away"), join(at, "repo", ".agents", "skills", "away"));
+    symlinkSync(join(at, "outside", "bad"), join(at, "repo", ".agents", "skills", "bad"));
+    symlinkSync(join(at, "outside", "extra"), join(at, "repo", "sub", ".claude", "skills"));
+    let seen: { skills: { name: string; filePath: string }[]; diagnostics: { type: string; path?: string }[] } | undefined;
+    let calls = 0;
+    const loader = new DefaultResourceLoader({ cwd: join(at, "repo", "sub"), agentDir: join(at, "agent"), noExtensions: true, additionalSkillPaths: [join(at, "repo", "sub", ".claude", "skills")], skillsOverride: (base: never) => ((seen = base), calls++, base) } as never);
+    await loader.reload();
+    await loader.reload();
+    assert.equal(calls, 2, "the override runs at every reload");
+    const byName = Object.fromEntries(seen!.skills.map((s) => [s.name, s.filePath]));
+    assert.equal(byName.away, join(at, "repo", ".agents", "skills", "away", "SKILL.md"), "an ancestor .agents/skills skill through a link, by the walked path");
+    assert.equal(byName.far, join(at, "repo", "sub", ".claude", "skills", "far", "SKILL.md"), "an additional path's skill through a link, by the walked path");
+    assert.ok(seen!.diagnostics.some((d) => d.type === "warning" && d.path === join(at, "repo", ".agents", "skills", "bad", "SKILL.md")), "a dropped one's warning names the walked path");
+  });
+
   test("P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it", async () => {
     let get: (() => any) | undefined;
     const ext = (api: any) =>
@@ -1002,6 +1106,56 @@ describe("pi contract", () => {
       for (const k of ["pkg-a", "plain", "proj"]) assert.equal(after.get(k), before.get(k), k);
     } finally {
       unpatch();
+    }
+  });
+
+  test("P46 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns", async () => {
+    const { DefaultPackageManager } = pi.agent;
+    const t = join(dir, "p43");
+    const agentDir = join(t, "agent");
+    const ext = join(agentDir, "extensions");
+    const put = (rel: string, text = "export default () => {};\n") => (mkdirSync(dirname(join(ext, rel)), { recursive: true }), writeFileSync(join(ext, rel), text));
+    // Each shape resolveExtensionEntries tells apart: index.ts; index.js only; both (index.ts wins); a manifest (one entry missing, one
+    // without ./) beside an index it shadows; a manifest whose entries are all missing (the index wins); nothing.
+    put("dirts/index.ts");
+    put("dirjs/index.js");
+    put("both/index.ts");
+    put("both/index.js");
+    for (const f of ["a.ts", "b.ts", "index.ts"]) put(`pkg/${f}`);
+    put("pkg/package.json", JSON.stringify({ pi: { extensions: ["./a.ts", "./missing.ts", "b.ts"] } }));
+    put("pkgnone/index.ts");
+    put("pkgnone/package.json", JSON.stringify({ pi: { extensions: ["./missing.ts"] } }));
+    put("loose.ts");
+    mkdirSync(join(ext, "empty"), { recursive: true });
+    const dirs = ["dirts", "dirjs", "both", "pkg", "pkgnone", "empty"];
+    const resolveWith = async (patterns: string[]) => {
+      writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: patterns }));
+      const pm = new DefaultPackageManager({ cwd: t, agentDir, settingsManager: SettingsManager.create(t, agentDir) });
+      return (await pm.resolve()).extensions as { path: string; enabled: boolean }[];
+    };
+    const under = (r: { path: string }, name: string) => r.path === join(ext, name) || r.path.startsWith(join(ext, name) + "/");
+    const plain = await resolveWith([]);
+    for (const name of dirs) {
+      const piSays = plain.filter((r) => under(r, name)).map((r) => r.path);
+      assert.deepEqual(extensionEntries(join(ext, name)) ?? [], piSays, `${name}: pi's resolveExtensionEntries rule changed (own-code.ts extensionEntries copies it)`);
+    }
+    assert.ok(plain.some((r) => r.path === join(ext, "loose.ts")), "the control: a loose file is an extension");
+    // Each kind of pattern, each place pi matches it (relative, file name, whole path; minimatch's *, **, ?, braces,
+    // classes; a leading ./), and the precedence !, then +, then -.
+    const abs = (rel: string) => join(ext, rel);
+    const table: string[][] = [
+      [], ["!extensions/dirts/index.ts"], ["!extensions/loose.ts"], ["!extensions/*"], ["!extensions/**"], ["!**/index.ts"], ["!extensions/dir?s/index.ts"],
+      ["!index.ts"], ["!loose.ts"], ["!*.ts"], ["!extensions/{dirts,dirjs}/index.*"], ["!extensions/[d]irts/index.ts"], ["!./extensions/loose.ts"],
+      ["!extensions/dirts"], [`!${abs("dirts/index.ts")}`], ["!extensions/pkg/a.ts"],
+      ["!extensions/**", "+extensions/dirts/index.ts"], ["!extensions/**", "+./extensions/loose.ts"], ["!**", `+${abs("pkg/b.ts")}`], ["!extensions/**", "+extensions/dirts"],
+      ["-extensions/dirts/index.ts"], ["-./extensions/loose.ts"], [`-${abs("loose.ts")}`], ["-extensions/dirts"], ["-extensions/pkg/index.ts"], ["-extensions/*"],
+      ["!extensions/**", "+extensions/dirts/index.ts", "-extensions/dirts/index.ts"], ["+extensions/loose.ts", "-extensions/loose.ts"],
+    ];
+    for (const patterns of table) {
+      const got = (await resolveWith(patterns)).filter((r) => r.path.startsWith(ext + "/"));
+      assert.ok(got.length >= 7, `the control: every entry resolves under ${JSON.stringify(patterns)}`);
+      for (const r of got)
+        assert.equal(enabledByOverrides(r.path, patterns, agentDir), r.enabled, `${relative(ext, r.path)} under ${JSON.stringify(patterns)}: pi's isEnabledByOverrides rule changed (own-code.ts enabledByOverrides copies it)`);
     }
   });
 

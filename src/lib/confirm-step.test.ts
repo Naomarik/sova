@@ -16,11 +16,6 @@ test("one arming runs once: a second activation re-arms instead of running again
   assert.deepEqual(again, { armed: true, run: false });
 });
 
-test("a blocked row never arms and never runs", () => {
-  assert.deepEqual(confirmActivate(false, true), { armed: false, run: false });
-  assert.deepEqual(confirmActivate(true, true), { armed: false, run: false });
-});
-
 test("opening or closing the menu disarms, so an old arming can't run on one click", () => {
   assert.deepEqual(confirmReset(), { armed: false, run: false });
   assert.deepEqual(confirmActivate(confirmReset().armed), { armed: true, run: false });

@@ -52,9 +52,9 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T15:11Z",
-      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      "by": "user",
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     },
     "code": [
       "src/components/Composer.tsx",
@@ -70,7 +70,12 @@
       "src/components/Composer.tsx",
       "src/components/ChatView.tsx",
       "src/lib/slash.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T20:59Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
+    }
   },
   "§chat.slash-commands/compact-handoff": {
     "kind": "behavior",
@@ -162,13 +167,12 @@
     "evidence": "reviewed",
     "code": [
       "src/components/Composer.tsx",
-      "src/lib/input-mode.ts",
-      "src/components/CommandPalette.tsx"
+      "src/lib/input-mode.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T15:11Z",
-      "source": "pi-session:613b2094-a178-4b88-86c9-c8c2460a3bad#049c9fe2"
+      "by": "user",
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§chat.slash-commands/markup": {

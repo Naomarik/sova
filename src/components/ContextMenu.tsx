@@ -17,6 +17,13 @@
  * The panel is ActionMenu's shell (`popover="auto"`, `.model-menu.action-menu`, so a bottom sheet
  * below 768px), placed at a point instead of under a trigger. `popover="auto"` keeps one menu open
  * at a time (a ⋯ menu's included), and one open-on-release waiter serves every menu.
+ *
+ * Closing is not left to the browser's light dismiss, which runs only on a release in place (a
+ * swipe ends in pointercancel and never closes it) and lets the tap through to what was under it.
+ * The panel listens on the window, capture first: a press that starts outside closes it at its
+ * pointerdown, and a plain tap or click outside is spent on that (its click swallowed, a finger's
+ * mousedown stopped so nothing takes focus), while a scroll, drag or hold goes on. The press that
+ * opened a menu can't close it: a menu opens on a task after its release.
  */
 import { createEffect, createSignal, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
@@ -26,6 +33,7 @@ import {
   createKeyMenuMark,
   createMenuHold,
   createOpenOnRelease,
+  createOutsidePress,
   pointMenuRoom,
   pointMenuSpot,
   pressHeld,
@@ -229,6 +237,39 @@ export function createContextMenu<K>() {
     );
     addEventListener("resize", place);
     onCleanup(() => removeEventListener("resize", place));
+
+    // A press that starts outside closes the menu at once; a plain tap or click there is spent on it.
+    const outside = createOutsidePress();
+    /** Where focus goes once the closing tap's click is swallowed (the ask is gone by then). */
+    let closedFrom: HTMLElement | null = null;
+    const onOutsideDown = (e: PointerEvent) => {
+      const inside = e.target instanceof Node && menu.contains(e.target);
+      if (outside.down({ open: isOpen(), inside, kind: e.pointerType, button: e.button }) !== "close") return;
+      closedFrom = ask()?.returnTo ?? null;
+      setScreen(null);
+      close();
+    };
+    const onOutsideUp = () => outside.up();
+    const onOutsideCancel = () => outside.cancel();
+    const onOutsideMouseDown = (e: MouseEvent) => outside.mouseDown() && e.preventDefault();
+    const onOutsideClick = (e: MouseEvent) => {
+      if (!outside.takeClick()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const back = closedFrom;
+      closedFrom = null;
+      if (back?.isConnected) back.focus({ preventScroll: true });
+    };
+    const listenOutside = (on: boolean) => {
+      const f = on ? addEventListener : removeEventListener;
+      f("pointerdown", onOutsideDown as EventListener, true);
+      f("pointerup", onOutsideUp, true);
+      f("pointercancel", onOutsideCancel, true);
+      f("mousedown", onOutsideMouseDown as EventListener, true);
+      f("click", onOutsideClick as EventListener, true);
+    };
+    listenOutside(true);
+    onCleanup(() => listenOutside(false));
 
     /** Close, then act: focus goes back to where the menu was opened from unless the act moves it itself. */
     const run = (act: () => void) => {

@@ -126,6 +126,23 @@
     "authority": "migrated",
     "evidence": "unreviewed"
   },
+  "§design.copy-deck/lookbook-setup": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/DesignSetupControls.tsx",
+      "src/components/DesignCard.tsx",
+      "src/lib/design-ui.ts",
+      "src/components/DesignOpen.tsx",
+      "src/lib/design-chat-bar.ts"
+    ],
+    "about": [
+      "§chat.design-mode/setup-card",
+      "§chat.design-mode/model-picker",
+      "§chat.design-mode/chat-placement"
+    ]
+  },
   "§design.copy-deck/main-pane": {
     "kind": "note",
     "authority": "accepted",
@@ -275,7 +292,7 @@
   "§design.copy-deck/overseer-orgs": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ProjectPage.tsx",
       "src/lib/archive-copies.ts"
@@ -334,7 +351,7 @@
   "§design.copy-deck/project-overseer-head": {
     "kind": "note",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ProjectOverseerHead.tsx",
       "src/lib/project-overseer-view.ts",
@@ -359,6 +376,11 @@
       "§app.project-overseer/autonomy-levels",
       "§app.organizations/project-page"
     ]
+  },
+  "§design.copy-deck/project-sessions": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed"
   },
   "§design.copy-deck/project-setup": {
     "kind": "note",
@@ -593,6 +615,21 @@
     "authority": "accepted",
     "evidence": "reviewed"
   },
+  "§design.copy-deck/where-links-open": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/share/tunnel/account-token.ts",
+      "server/share/front.ts",
+      "src/lib/opens-at.ts",
+      "src/lib/opens-at.test.ts",
+      "src/components/OpensAt.tsx",
+      "src/lib/public-links.ts",
+      "src/lib/public-links.test.ts",
+      "shared/public-links.ts"
+    ]
+  },
   "§design.copy-deck/workspace": {
     "kind": "note",
     "authority": "accepted",
@@ -619,7 +656,9 @@
       "server/design/routes.ts",
       "server/design/coordinator-routes.ts",
       "server/design/asset-routes.ts",
-      "server/design/describe-routes.ts"
+      "server/design/describe-routes.ts",
+      "server/page-only.ts",
+      "server/project-services/self-host.ts"
     ]
   },
   "§design/copy-deck": {

@@ -1668,6 +1668,12 @@ export interface SessionSetupSkill extends SessionSetupFile {
   description?: string;
   /** Only `/skill:name` runs it: the model is never offered it. */
   manualOnly?: true;
+  /** ≈ tokens of its listing, the name, description and location pi offers the model (pi
+      formatSkillsForPrompt): what a chat carries before it uses the skill. A row's figure and the
+      Skills and System context totals use it; `bytes`, `lines` and `tokens` stay its whole SKILL.md,
+      which loads only when the skill is used. Absent on a manual-only skill (never listed: its figure
+      is `tokens`, and no total counts it) and from an older server (the reader falls back to `tokens`). */
+  listingTokens?: number;
   /** The project's state for this skill (shared/project-skills), sent only when the chat belongs to a
       project. Before the first message `off` is already the effective value: the project's default,
       then the chat's own flip. */
@@ -1769,6 +1775,30 @@ export interface SessionContextPart {
   /** Skills only, when the agent loaded part of its SKILL.md: how many of its lines (a union of every
       read since the latest compaction), and `lines`, the file's length now. Absent when it read none or
       all; `lines` is absent too when the file couldn't be measured. */
+  linesRead?: number;
+  lines?: number;
+  /** Skills only: ≈ tokens this chat loaded from the skill's folder since the latest compaction: its
+      SKILL.md and any other file under that folder the agent read, each sized by the lines its reads
+      reached (`loadedFiles`). A note on the row, never added to a total: what it loaded is in the
+      conversation already. Output of a script the skill runs is not counted. Absent when it loaded none
+      or the server is older. */
+  loadedTokens?: number;
+  /** Skills only, not manual-only ones: ≈ tokens of its whole SKILL.md as it is now (what using it loads),
+      beside `tokens`, its listing. Absent when the file can't be measured, or from an older server. */
+  fileTokens?: number;
+  /** Skills only: the files `loadedTokens` adds up, in the order first read. */
+  loadedFiles?: SessionContextLoadedFile[];
+}
+
+/** One file of a skill's folder a chat loaded (SessionContextPart.loadedFiles). */
+export interface SessionContextLoadedFile {
+  /** Absolute. */
+  path: string;
+  /** Its path inside the skill's folder (`SKILL.md`, `references/api.md`). */
+  label: string;
+  /** ≈ tokens of the lines loaded, against the file as it is now. */
+  tokens: number;
+  /** When only part of it was loaded: how many of its lines, of `lines`. */
   linesRead?: number;
   lines?: number;
 }
@@ -2038,9 +2068,6 @@ export type BatchRefusalCode =
   | "config"
   | "busy"
   | "missing"
-  /** A new chat that asks first still has context files or skills to decide (the operator's page only): never a
-      refusal, a member `held` with the message as its draft. */
-  | "decide-first"
   | "internal";
 
 /** One member the batch could not take, named four ways: `id` joins against `GroupMember.id` and
@@ -2062,9 +2089,6 @@ export interface BatchRefusal {
 export interface BatchPromptResult {
   sent: string[]; // session ids, in the order they were accepted
   failed: BatchRefusal[];
-  /** Members held from the operator's page: a new chat that asks first with context files or skills still to decide.
-      Each kept the message as its composer draft, and its Send waits for the decisions (code "decide-first"). */
-  held?: BatchRefusal[];
 }
 
 /** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor
@@ -3102,10 +3126,6 @@ export type ChatServerMessage =
       message: string;
       code?: "busy" | "recent" | "reloaded" | "config" | "refused" | "internal";
       clientId?: string;
-      /** With code "refused": a new chat's first message held while context files or skills wait for a
-          decision (§chat.context-approval/held-send): the draft comes back, and `waiting` says how many. */
-      decide?: "first";
-      waiting?: number;
       /** A One at a time profile's first message was refused: the session that holds it (§chat.profiles/singleton). */
       profileRunning?: { id: string; path: string; title: string };
       /** The provider of the model whose turn failed, when the error IS the turn's failure (never a worker's or a guessed one); absent otherwise. */
@@ -3136,7 +3156,7 @@ export type WatchContext = ContextInfo | "compacted" | null;
     this one; 0 = the list is whole. Sent only to a client that asked with `?tail=1`, in one step
     with its hello or snapshot, so nothing else comes between the chunks. */
 /**
- * What the complete-list readers (the inputs count, Undo last turn)
+ * What the complete-list readers (the inputs count)
  * need of the rows before a list's first row, which the client doesn't hold: sent with a
  * `?tail=rest` hello or snapshot, and with every TranscriptRows response, always about the rows
  * before that message's first row. Counted by the client's own rules (shared/row-counts.ts), so the
@@ -4141,8 +4161,8 @@ export type AttentionKind =
   | "card-waiting"        // act tier, never pushed or briefed: the session shows an open transcript card waiting on an answer (§chat.transcript-cards/answering), one per card, idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
-  | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
-  | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
+  | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project's Deploy tab)
+  | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project's Deploy tab)
   | "release-ready"       // act tier, never pushed: a project's open release passed every gate and waits for Publish (shared/release.ts; no session: `path` "", `href` the project's Releases tab)
   | "release-request"     // act tier, never pushed: an overseer or the Project Assistant asks the operator to release (release.request; no session: `path` "", `href` the Releases tab)
   | "release-quiet"       // act tier, never pushed: the release chat sent no report for the project's quietMin while the queue is frozen (Open Chat, Abandon Release; `href` the Releases tab)
@@ -4161,7 +4181,7 @@ export type AttentionKind =
   | "owner-request"      // act tier, never pushed: an org owner's open request from the Project Assistant (§app.project-assistant/requests; no session: `path` "", `href` the org's People tab)
   | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
   | "owner-link-request" // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
-  | "owner-version-request" // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Branches tab)
+  | "owner-version-request" // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Running Copies tab)
   | "owner-request-closed" // act tier, never pushed: the owner closed a request the team was working on, until the operator's Got It (§app.project-assistant/closing)
   | "owner-feature-ended"; // act tier, never pushed: a feature request chat ended because its owner stopped being the owner (its request still with the team; `href` the Requests tab)
 
@@ -5426,6 +5446,10 @@ export type SessionFeedMessage =
   /** Sova's Claude model list changed (server/claude-models-sync.ts). No payload: the client re-reads
       GET /api/claude/catalog and its model list. Additive: a client that predates it ignores it. */
   | { type: "claude_models_changed" }
+  /** The public links setting, a Cloudflare tunnel's state, Turn On or the Account token changed
+      (server/share/tunnel/wiring.ts). No payload: the client re-reads GET /api/public-links. Never
+      on connect. Additive: a client that predates it ignores it. */
+  | import("./public-links").PublicLinksFeed
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */

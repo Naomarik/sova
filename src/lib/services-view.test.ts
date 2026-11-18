@@ -65,13 +65,14 @@ test("Share waits while the endpoint's service isn't ready, saying so", () => {
   assert.match(endpointNotRunning(svc("ready"), "api.http")!, /isn't running api/);
 });
 
-test("a row offers what its state allows: Start when stopped or degraded, Stop when running or degraded, never Teardown on main", () => {
-  assert.deepEqual(rowVerbs({ slot: 1, state: "stopped" }), ["up", "apply", "reset", "teardown"]);
-  assert.deepEqual(rowVerbs({ slot: 1, state: "running" }), ["down", "apply", "reset", "teardown"]);
-  assert.deepEqual(rowVerbs({ slot: 1, state: "degraded" }), ["up", "down", "apply", "reset", "teardown"]);
-  assert.deepEqual(rowVerbs({ slot: 0, state: "running" }), ["down", "apply", "reset"]);
-  assert.deepEqual(rowVerbs({ slot: 0, state: "running", adopted: "sova-runtime.service" }), ["apply"]);
-  assert.equal(adoptedLine("sova-runtime.service"), "Runs as sova-runtime.service; Apply schedules a guarded restart.");
+test("a row offers what its state allows: Start when stopped or degraded, Stop when running or degraded, never Teardown on main, and never Apply or Reset", () => {
+  assert.deepEqual(rowVerbs({ slot: 1, state: "stopped" }), ["up", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 1, state: "running" }), ["down", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 1, state: "degraded" }), ["up", "down", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 0, state: "running" }), ["down"]);
+  // An adopted main runs as a unit of its own: the row offers no verb, and says where it is restarted.
+  assert.deepEqual(rowVerbs({ slot: 0, state: "running", adopted: "sova-runtime.service" }), []);
+  assert.equal(adoptedLine("sova-runtime.service"), "Runs as sova-runtime.service.");
 });
 
 test("Share only on a running copy, never an adopted main; Starting reads in place of Degraded while a service starts", () => {
@@ -99,13 +100,15 @@ test("a row's verbs are grouped by weight, and every verb it offers lands in exa
         const g = verbGroups(verbs);
         const all = [...(g.primary ? [g.primary] : []), ...g.quiet, ...g.destructive];
         assert.deepEqual([...all].sort(), [...verbs].sort(), `${slot} ${state} ${adopted}`);
-        assert.ok(g.destructive.every((v) => v === "reset" || v === "teardown"));
-        assert.ok(!g.quiet.some((v) => v === "reset" || v === "teardown"));
+        assert.ok(g.destructive.every((v) => v === "teardown"));
+        assert.ok(!g.quiet.some((v) => v === "teardown"));
+        // The page offers only Start, Stop and Teardown: Apply and Reset are a chat's, through its own tools.
+        assert.ok(verbs.every((v) => v === "up" || v === "down" || v === "teardown"), `${slot} ${state} ${adopted}`);
       }
   assert.equal(verbGroups(rowVerbs({ slot: 1, state: "stopped" })).primary, "up");
   assert.equal(verbGroups(rowVerbs({ slot: 1, state: "degraded" })).primary, "up");
   assert.equal(verbGroups(rowVerbs({ slot: 1, state: "running" })).primary, "down");
-  assert.equal(verbGroups(rowVerbs({ slot: 0, state: "running", adopted: "x.service" })).primary, "apply");
+  assert.equal(verbGroups(rowVerbs({ slot: 0, state: "running", adopted: "x.service" })).primary, null);
 });
 
 test("a port reads as its number for the generic name, else name:number", () => {
@@ -130,9 +133,9 @@ test("Open follows the entry's own service, never the copy's state: ready offers
 
 test("with Open on the row, Open is the one plain weight: the state's verb joins the ghost group, the destructive ones stay apart", () => {
   const running = rowVerbs({ slot: 2, state: "degraded" });
-  assert.deepEqual(verbGroups(running, true), { primary: null, quiet: ["up", "down", "apply"], destructive: ["reset", "teardown"] });
+  assert.deepEqual(verbGroups(running, true), { primary: null, quiet: ["up", "down"], destructive: ["teardown"] });
   // Without Open the row is as it was: the state's verb plain.
-  assert.deepEqual(verbGroups(running), { primary: "up", quiet: ["down", "apply"], destructive: ["reset", "teardown"] });
+  assert.deepEqual(verbGroups(running), { primary: "up", quiet: ["down"], destructive: ["teardown"] });
   assert.deepEqual(verbGroups(running, false), verbGroups(running));
 });
 
@@ -155,7 +158,7 @@ test("the copy limit in words: the opening line, its source, the hint, the input
     costLine({ value: 1, host, estimate: { steadyBytes: 1.5e9, peakBytes: 1.5e9, source: "older", at: "2026-10-10T10:00:00Z" } }).text,
     "Measured Oct 10 on an older definition: each copy took about 1.5 GB (up to 1.5 GB at peak), so 1 copy needs about 1.5 GB. This machine: 121 GB, 30 GB available now.",
   );
-  assert.deepEqual(costLine({ value: 4, host, estimate: null }), { text: "Not measured yet: Run Again on the Software card measures it. This machine: 121 GB, 30 GB available now.", warn: false });
+  assert.deepEqual(costLine({ value: 4, host, estimate: null }), { text: "Not measured yet: the services playbook measures it. This machine: 121 GB, 30 GB available now.", warn: false });
   assert.equal(gbWord(800e6), "0.8 GB");
   assert.equal(gbWord(40e6), "40 MB");
 });

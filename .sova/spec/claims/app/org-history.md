@@ -67,7 +67,7 @@ org page's History tab; the overseers read it through bounded, cited reads.
 - Each value is as the runtime knew it when the event was recorded: a model, a session or a
   worker is named only when the runtime supplied it. One it didn't know is `unknown`, never filled
   in with the operator or anyone else.
-- **Initiation doesn't spread.** An operator's Run Now initiates a look; what the overseer then
+- **Initiation doesn't spread.** An operator's Look Now initiates a look; what the overseer then
   chooses in that unattended run is decided by the overseer, and reads as unattended, not as the
   operator's approval. An act in a turn the operator started is attended only as Sova evaluated it
   for that act (§app.project-overseer/autonomy-levels).
@@ -211,7 +211,7 @@ org page's History tab; the overseers read it through bounded, cited reads.
 ## §app.org-history/capture — What is captured, from when
 
 - **The first release captures the org's own workflows and its delivery milestones**: an
-  operator's Run Now; a gap filed, planned or dropped; a gathering started, handed off, offered or
+  operator's Look Now (headline "Look Now pressed"); a gap filed, planned or dropped; a gathering started, handed off, offered or
   closed; a decision recorded, with its disposition and options, and an overseer's deliberate
   decision (§app.org-history/negatives); a conflict opened or settled; a hold created, released or
   cancelled; a managed act refused; a promotion, and its result as Sova observed it (the commit it made,
@@ -418,9 +418,8 @@ org page's History tab; the overseers read it through bounded, cited reads.
   cancelled, failed and unknown rows show like any other. **Show Details**, on a row the server says has
   some, lists the lower-level events grouped under it: the events whose causal parent it is and that share its
   recorded source transaction, never events grouped by time or title. **Show More** loads the next page, and the bar says how many aren't loaded yet.
-- **Projects.** A placed project's Overview has a **History** card (second column, before
-  Activity: "What happened in this project, who decided it, and the reason recorded.") whose
-  **Open History** opens this tab filtered to
+- **Projects.** A placed project's page has **Open History** in its head's **⋯** menu
+  (§app.organizations/project-page), which opens this tab filtered to
   that project. Filtering keeps the events that project owns or affects; a linked event of another
   project is never listed as the project's own, only as its boundary card, labelled "Outside
   project filter"; a boundary card whose actors the reader may not see reads "Who: withheld". Clearing the filter

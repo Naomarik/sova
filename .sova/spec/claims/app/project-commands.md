@@ -4,7 +4,7 @@
 Sova's command catalogue (`shared/commands-catalog.ts`, assembled from one file per area under
 `shared/commands/`) lists each user-visible action as plain data pointing at the route that already
 does it, so `node scripts/sova.mjs list|describe|run` reaches it. This claim covers the project
-actions beyond the project verbs and the Branches tab's view.
+actions beyond the project verbs and the Running Copies tab's view.
 
 ## §app.project-commands/projects-sweep — The project actions in the catalogue
 

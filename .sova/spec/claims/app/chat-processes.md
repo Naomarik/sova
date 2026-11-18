@@ -320,11 +320,12 @@ Sova's own extensions load from the chat's copy: every extension Sova ships (eac
 `extensions/` holds for it: a link into this Sova's checkout or one of its copies, a link into any
 other copy of Sova (an older install, a developer checkout), or no link at all. One with no link
 loads among the agent dir's own extensions where its name sorts, as a link of that name would,
-unless the agent dir's settings turn it off by name or the project has its own extension of that
+unless the agent dir's settings turn it off, by pi's own rule for a link of that name, or the project has its own extension of that
 name. So a chat, its
 workers and the start-up warm-up never run another Sova's code because of a leftover link, and the
-pi terminal, which follows the links, is not changed by it. An extension switched off with
-/extensions stays off, matched by its name, wherever its link led; Sova's modes are the one
+pi terminal, which follows the links, is not changed by it. An extension switched off in the agent
+dir's settings (its `settings.json` `extensions` patterns, as `pi config` writes them) stays off,
+exactly as pi decides it for a link of that name, wherever its link led; Sova's modes are the one
 exception and always run (§chat.mode-menu/sova-runs-modes). A Sova extension added to the checkout
 after the chat's copy was made is left out of that chat until it reloads onto newer code; the chat
 process logs it. Likewise an extension the agent dir links from another copy of Sova that this

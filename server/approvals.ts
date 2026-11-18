@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
@@ -8,7 +9,8 @@ import { defaultClaudeDir } from "../pi-config/extensions/claude-code/accounts.t
 import { checkoutOf, fileSha256, groupOf, itemKey, type ApprovalLookup, type FolderRef } from "./approvals-lookup";
 import { askingFirst } from "./context-approval-setting";
 import { skillFolderFingerprint, type Fingerprint } from "./skill-fingerprint";
-import { listSubfolderInstructions } from "./deeper-context";
+import { keptRead, subfolderWalk, walkMark } from "./folder-walk";
+import { measureFile, skillListingTokens } from "./file-measure";
 import { folderResources } from "./harness/pi/resources";
 import { piSkillsIn } from "./harness/pi/skill-sources";
 import { real } from "./mcp/folder";
@@ -18,7 +20,6 @@ import { folderMatcher } from "./project-folder";
 import { dirFolderKey, folderDecisions, isItemKey, isSkillName, projectFolderKey, readApprovalStore, updateApprovalStore, type Decision, type ItemKind } from "./project-skills-store";
 import { listProjects, readProject } from "./projects/spaces";
 import { agentRoot } from "./state-root";
-import { listSubfolderSkills } from "./subfolder-skills";
 
 export * from "./approvals-lookup";
 export { allowWithoutAsking, askingFirst, setAllowWithoutAsking } from "./context-approval-setting";
@@ -26,7 +27,7 @@ export { allowWithoutAsking, askingFirst, setAllowWithoutAsking } from "./contex
 /**
  * The approval list's folder layer (shared/approvals.ts has the keys and rules): which folder a chat's
  * cwd belongs to, the bounded scan of everything a chat there could load (context files and skills,
- * the user's own and those above the project included), the views the cards draw, and the one write.
+ * the user's own and those above the project within its repository included), the views the cards draw, and the one write.
  * A decision on an item no longer found drops off, but only after a complete scan.
  */
 
@@ -98,6 +99,11 @@ export interface ScanDeps {
   checkouts?: (root: string) => Promise<{ dirs: string[]; complete: boolean }>;
   /** The subfolder walks' cap (default the deeper-context walk's). */
   cap?: number;
+  /** Read pi's lists and walk the subfolders again now rather than answer from the checkout's last ones
+      (server/folder-walk.ts): a save's scan, so it is judged against the folder as it is. */
+  fresh?: boolean;
+  /** The clock the kept walks are aged by (tests). */
+  now?: () => number;
 }
 
 /** The root and each git worktree of it, by real path; incomplete when git couldn't answer. */
@@ -141,6 +147,12 @@ export interface ScanItem {
   sha256: string;
   /** A skill folder too large to fingerprint fully: its fingerprint is of the listing. */
   partial?: true;
+  /** ≈ tokens a new chat carries for it: a context file's whole text, a skill's listing (name and description). */
+  tokens?: number;
+  /** A skill's whole SKILL.md, ≈ tokens: what using it loads. */
+  fileTokens?: number;
+  /** A skill only `/skill:name` runs (disable-model-invocation): never listed to the model, so its size is its whole file. */
+  manualOnly?: true;
 }
 
 export interface FolderScan {
@@ -185,22 +197,26 @@ const homeShort = (dir: string) => {
 
 /**
  * Everything a chat in the folder could load at its start or meet in its folders: for each checkout (the root
- * first), pi's own context files (pi's settings folder's, then the checkout's and every folder above it) and
+ * first), pi's own context files (pi's settings folder's, then the checkout's and those above it up to its repository's
+ * top: server/context-scope.ts) and
  * skills, and the subfolder walk's instruction files and skills, each walk bounded as the deeper-context walk is.
- * One row per key, the first found. No subfolder walk for a folder whose chats don't look below it (server/skill-descent.ts:
+ * One row per key, the first found. pi's lists and the subfolder walks are kept per checkout and read again in the
+ * background (server/folder-walk.ts has the freshness rule; `deps.fresh` reads them now). No subfolder walk for a folder whose chats don't look below it (server/skill-descent.ts:
  * a plain folder, the home folder or above); a project's walks, a chat anywhere inside it may, unless its root is the
  * home folder or above it.
  */
 export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps = {}): Promise<FolderScan> {
   const folder = typeof where === "string" ? folderForCwd(where) : where;
   const main = folder.root;
+  // When what this scan read was found: its start, or the oldest kept read it took.
+  let readFrom = walkMark();
   const listed = await checkoutsFor(main, deps);
   let complete = listed.complete;
   const checkouts = listed.dirs.includes(main) ? listed.dirs : [main, ...listed.dirs];
   const lookup = { checkouts };
   const out = new Map<string, ScanItem>();
   const descends = skillDescentAllowed(main, { home: homedir(), inProject: folder.kind === "project" });
-  const add = (kind: ScanItem["kind"], abs: string, checkout: string, extra: { name?: string; description?: string; dir?: string } = {}) => {
+  const add = (kind: ScanItem["kind"], abs: string, checkout: string, extra: { name?: string; description?: string; dir?: string; manualOnly?: boolean } = {}) => {
     const path = placePath(abs);
     const key = itemKey(lookup, path);
     const id = `${kind}\0${key}`;
@@ -213,45 +229,72 @@ export async function folderQuickScan(where: string | FolderRef, deps: ScanDeps 
     else if (group === "above") folderName = homeShort(dirname(path));
     const description = extra.description?.trim();
     const fp = itemFingerprint(kind, path);
-    out.set(id, { kind, key, path, name: extra.name ?? basename(path), group, ...(folderName ? { folder: folderName } : {}), ...(description ? { description } : {}), sha256: fp.sha256, ...(fp.partial ? { partial: true as const } : {}) });
+    const whole = measureFile(path)?.tokens;
+    const name = extra.name ?? basename(path);
+    // A skill carries its listing until used; a manual-only one is never listed, so it costs its whole file.
+    const sizes =
+      kind === "skill" && extra.manualOnly ? { manualOnly: true as const, ...(whole !== undefined ? { tokens: whole, fileTokens: whole } : {}) }
+      : kind === "skill" ? { tokens: skillListingTokens(name, description, path), ...(whole !== undefined ? { fileTokens: whole } : {}) }
+      : whole !== undefined ? { tokens: whole } : {};
+    out.set(id, { kind, key, path, name, group, ...(folderName ? { folder: folderName } : {}), ...(description ? { description } : {}), sha256: fp.sha256, ...(fp.partial ? { partial: true as const } : {}), ...sizes });
   };
   for (const checkout of checkouts) {
     const top = checkout === main ? main : checkout;
     try {
-      const res = await (deps.loader ?? folderResources)(top, agentRoot());
+      const agentDir = agentRoot();
+      const kept = await keptRead(`pi\0${agentDir}\0${top}`, () => (deps.loader ?? folderResources)(top, agentDir), { serial: true, ...(deps.fresh ? { fresh: true } : {}), ...(deps.now ? { now: deps.now } : {}) });
+      readFrom = Math.min(readFrom, kept.seq);
+      const res = kept.value;
       for (const c of res.context) add("context", c.path, checkout);
-      for (const s of res.skills) add("skill", s.filePath, checkout, { name: s.name, description: s.description });
+      for (const s of res.skills) add("skill", s.filePath, checkout, { name: s.name, description: s.description, manualOnly: s.manualOnly });
       // A skill another of the same name shadows is a row of its own: told by its place, never by its name.
       for (const p of res.skillProblems ?? []) if (p.reason === "same-name") add("skill", p.path, checkout, { name: p.name });
     } catch {
       complete = false;
     }
     if (!descends) continue;
-    const opts = deps.cap !== undefined ? { cap: deps.cap } : {};
-    const files = listSubfolderInstructions(top, [], opts);
-    if (files.incomplete) complete = false;
-    for (const f of files.files) add("context", f.abs, checkout, { dir: join(top, f.dir) });
-    const sub = listSubfolderSkills(top, piSkillsIn, opts);
-    if (sub.incomplete) complete = false;
-    for (const s of sub.skills) add("skill", s.filePath, checkout, { name: s.name, description: s.description, dir: join(top, s.dir) });
+    const walk = await subfolderWalk(top, { read: piSkillsIn, ...(deps.cap !== undefined ? { cap: deps.cap } : {}), ...(deps.fresh ? { fresh: true } : {}), ...(deps.now ? { now: deps.now } : {}) });
+    readFrom = Math.min(readFrom, walk.seq);
+    if (walk.incomplete) complete = false;
+    for (const f of walk.files) add("context", f.abs, checkout, { dir: join(top, f.dir) });
+    for (const s of walk.skills) add("skill", s.filePath, checkout, { name: s.name, description: s.description, dir: join(top, s.dir), manualOnly: s.manualOnly });
   }
   const scan: FolderScan = { folder, checkouts, items: [...out.values()], complete };
-  settleAfterScan(scan);
+  settleAfterScan(scan, readFrom);
+  keptScans.set(folder.key, scan);
   return scan;
 }
+
+/** Each folder's latest scan, what a save resolves its keys against (scanForSave): no walk, no pi read. */
+const keptScans = new Map<string, FolderScan>();
+
+/** The folder's latest scan (a save's answer is drawn from it), or a scan now when there is none yet. */
+export async function keptScanFor(folder: FolderRef, deps: ScanDeps = {}): Promise<FolderScan> {
+  return keptScans.get(folder.key) ?? folderQuickScan(folder, deps);
+}
+
+/** Tests: forget every kept scan. */
+export function forgetKeptScansForTest(): void {
+  keptScans.clear();
+}
+
+/** Each folder's latest decision write, by walkMark: a scan that read anything found before it drops nothing. */
+const decidedAt = new Map<string, number>();
 
 /**
  * What a scan settles in the store: version 1's name-keyed Disallowed skills go to the first skill found of that
  * name, and, after a complete scan, decisions on items no longer
- * found drop off (with the names no skill has). Writes only when something changes.
+ * found drop off (with the names no skill has). Writes only when something changes. A scan that read a walk (or
+ * began) before the folder's latest decision write drops no decision: what it lacks may be what was just decided.
  */
-function settleAfterScan(scan: FolderScan): void {
+function settleAfterScan(scan: FolderScan, readFrom: number): void {
   const d = folderDecisions(scan.folder.key);
   const found = { context: new Set<string>(), skills: new Set<string>() };
   for (const i of scan.items) found[i.kind === "context" ? "context" : "skills"].add(i.key);
   const legacy = Object.entries(d.legacySkills ?? {});
-  const goneContext = scan.complete ? Object.keys(d.context).filter((k) => !found.context.has(k)) : [];
-  const goneSkills = scan.complete ? Object.keys(d.skills).filter((k) => !found.skills.has(k)) : [];
+  const drops = scan.complete && readFrom > (decidedAt.get(scan.folder.key) ?? 0);
+  const goneContext = drops ? Object.keys(d.context).filter((k) => !found.context.has(k)) : [];
+  const goneSkills = drops ? Object.keys(d.skills).filter((k) => !found.skills.has(k)) : [];
   if (!legacy.length && !goneContext.length && !goneSkills.length) return;
   updateApprovalStore((s) => {
     const f = s.folders[scan.folder.key];
@@ -290,7 +333,7 @@ function rowOf(i: ScanItem, d: Decision | undefined, counts: ApprovalCounts): Ap
   const changed = state === "approved" && d?.sha256 !== i.sha256;
   counts[state]++;
   if (changed) counts.changed++;
-  return { key: i.key, path: i.path, name: i.name, source: i.folder ? { kind: i.group, folder: i.folder } : { kind: i.group }, state, ...(changed ? { changed: true as const } : {}), ...(i.partial ? { fingerprintPartial: true as const } : {}) };
+  return { key: i.key, path: i.path, name: i.name, source: i.folder ? { kind: i.group, folder: i.folder } : { kind: i.group }, state, ...(changed ? { changed: true as const } : {}), ...(i.partial ? { fingerprintPartial: true as const } : {}), ...(i.tokens !== undefined ? { tokens: i.tokens } : {}), ...(i.fileTokens !== undefined ? { fileTokens: i.fileTokens } : {}), ...(i.manualOnly ? { manualOnly: true as const } : {}) };
 }
 
 const byPlace = (a: ApprovalRow, b: ApprovalRow) => {
@@ -381,45 +424,198 @@ export interface ApprovalWrite {
   scan: FolderScan;
   /** By kind and key, what each was before and is now, for those that changed (a Re-approve counts). */
   changed: { kind: ItemKind; key: string; name: string; from: ApprovalState; to: ApprovalState }[];
+  /** A group save's (WriteOptions.group, something changed) Undo token: the latest per folder (undoFolderApprovals). */
+  undo?: string;
+}
+
+/** Whether a key named in `changes` (or a skill by its name) is one of the scan's items. */
+function scanHas(scan: FolderScan, changes: ApprovalChanges): boolean {
+  for (const kind of ["context", "skills"] as const) {
+    const items = scan.items.filter((i) => (i.kind === "context") === (kind === "context"));
+    for (const k of Object.keys(changes[kind])) if (!items.some((i) => i.key === k || (kind === "skills" && i.name === k))) return false;
+  }
+  return true;
 }
 
 /**
- * The one write: resolve the changes against a fresh scan, save them at once (an approval with the item's
- * fingerprint now, a skill with its name), then tell the folder's chats not yet started. The caller has
- * already checked who may make them (changesNeedPage).
+ * The scan a save is resolved and judged against: the folder's kept one (its latest scan, no walk and no pi read)
+ * when it holds every key the save names, else one fresh scan (a key it lacks may be an item that just appeared).
+ * What an approval stores is read again at the write (itemFingerprint), never taken from the scan.
  */
-export async function writeFolderApprovals(folder: FolderRef, raw: ApprovalChanges, deps: ScanDeps = {}, opts: { scan?: FolderScan } = {}): Promise<ApprovalWrite> {
-  const scan = opts.scan ?? (await folderQuickScan(folder, deps));
-  const changes = resolveChanges(scan, raw);
-  // An approval is of the content it was given for: an item this scan didn't find, or couldn't read, can't be approved.
+export async function scanForSave(folder: FolderRef, changes: ApprovalChanges, deps: ScanDeps = {}): Promise<FolderScan> {
+  const kept = await keptScanFor(folder, deps);
+  return scanHas(kept, changes) ? kept : folderQuickScan(folder, { ...deps, fresh: true });
+}
+
+/** On for a new chat: approved always, waiting only without asking first, disallowed never. */
+const onFor = (state: ApprovalState, asking: boolean) => state === "approved" || (state === "waiting" && !asking);
+
+const sameDecision = (a: Decision | undefined, b: Decision | undefined) => (!a && !b) || (!!a && !!b && a.state === b.state && a.sha256 === b.sha256 && a.name === b.name);
+
+/** One key's records around a group save: what it was, and what the save wrote (undefined: no record, waiting). */
+export interface UndoItem {
+  kind: ItemKind;
+  key: string;
+  name: string;
+  before?: Decision;
+  wrote?: Decision;
+}
+/** The latest save of each group switch of each folder (by `<folder key>\0<group id>`), with its token: kept in memory
+    only, so a restart forgets it. A newer save of the same group takes its place; another group's never does. */
+const undoSaves = new Map<string, { token: string; items: UndoItem[] }>();
+const undoSlot = (folder: FolderRef, group: string) => `${folder.key}\0${group}`;
+/** How many groups' Undo a folder keeps (the oldest goes first). */
+export const UNDO_SLOTS = 32;
+/** The slot and save a token names in a folder, or null when it is no group's latest there. */
+function savedFor(folder: FolderRef, token: string): { slot: string; token: string; items: UndoItem[] } | null {
+  const prefix = `${folder.key}\0`;
+  for (const [slot, saved] of undoSaves) if (slot.startsWith(prefix) && saved.token === token) return { slot, ...saved };
+  return null;
+}
+
+export const UNDO_GONE = "Undo is no longer available. Nothing was changed.";
+
+/** What an Undo would restore: for each key of that save whose record is still what it wrote, its record before
+    (verbatim), and the states that means, for changesNeedPage. Null for a token that isn't its group's latest save. */
+export interface UndoPlan {
+  token: string;
+  changes: ApprovalChanges;
+  items: UndoItem[];
+  kept: number;
+}
+export function undoPlan(folder: FolderRef, token: string): UndoPlan | null {
+  const saved = savedFor(folder, token);
+  if (!saved) return null;
+  const d = folderDecisions(folder.key);
+  const changes: ApprovalChanges = { context: {}, skills: {} };
+  const items: UndoItem[] = [];
+  for (const i of saved.items) {
+    if (!sameDecision(d[i.kind][i.key], i.wrote)) continue;
+    items.push(i);
+    changes[i.kind][i.key] = i.before?.state ?? "waiting";
+  }
+  return { token, changes, items, kept: saved.items.length - items.length };
+}
+
+/**
+ * Undo a group save: each key whose record is still what that save wrote gets its record from before it back,
+ * exactly (an approval with the fingerprint it had, so a change made since is never accepted by it); the others
+ * are left as they are. The caller has judged the plan's changes (changesNeedPage). A 409 for a token that isn't its
+ * group's latest save in the folder (a newer save of that group, a restart, used already).
+ */
+export async function undoFolderApprovals(folder: FolderRef, token: string, judged?: UndoPlan): Promise<{ changed: ApprovalWrite["changed"]; undone: number; kept: number }> {
+  // The plan its caller judged (who may: changesNeedPage), so nothing it didn't judge is restored; still its group's latest.
+  const saved = savedFor(folder, token);
+  const plan = saved ? (judged?.token === token ? judged : undoPlan(folder, token)) : null;
+  if (!saved || !plan) throw new OrgError(UNDO_GONE, 409, "undo-gone");
+  undoSaves.delete(saved.slot);
+  const asking = askingFirst();
+  const changed: ApprovalWrite["changed"] = [];
+  let undone = 0;
+  let flips = false;
+  decidedAt.set(folder.key, walkMark());
+  updateApprovalStore((s) => {
+    const f = (s.folders[folder.key] ??= { context: {}, skills: {} });
+    for (const i of plan.items) {
+      // Judged on the plan: anything written since leaves the key as it is.
+      if (!sameDecision(f[i.kind][i.key], i.wrote)) continue;
+      if (i.before) f[i.kind][i.key] = { ...i.before };
+      else delete f[i.kind][i.key];
+      undone++;
+      const from: ApprovalState = i.wrote?.state ?? "waiting";
+      const to: ApprovalState = i.before?.state ?? "waiting";
+      if (from !== to || i.wrote?.sha256 !== i.before?.sha256) changed.push({ kind: i.kind, key: i.key, name: i.name, from, to });
+      if (onFor(from, asking) !== onFor(to, asking)) flips = true;
+    }
+  });
+  await tellNewChats(folder.key, flips);
+  return { changed, undone, kept: plan.kept + (plan.items.length - undone) };
+}
+
+/** After a write: the folder's chats not yet started are rebuilt when an item's on/off changed, else only told. */
+async function tellNewChats(folderKey: string, rebuild: boolean): Promise<void> {
+  try {
+    await (await import("./projects/skills-chats")).notifySetupChanged(folderKey, { rebuild });
+  } catch (err) {
+    console.warn(`[approvals] telling ${folderKey}'s new chats failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+export interface WriteOptions {
+  /** The scan to resolve against (the route's, already judged); default scanForSave. */
+  scan?: FolderScan;
+  /** A group switch's save (its caller says so: `group: "<group id>"`, or `true` for the group its lists name): an
+      item already approved is left as it is, so a Changed one's fingerprint is never rewritten unseen; and when it
+      changed anything it answers an Undo token, that group's latest in the folder. */
+  group?: boolean | string;
+}
+
+/**
+ * The one write, item by item: resolve the changes against the folder's kept scan (scanForSave: a fresh scan only
+ * for a key it lacks), fingerprint the items turned on now, save them at once (an approval with that fingerprint,
+ * a skill with its name), then tell the folder's chats not yet started: rebuilt when an item's on/off changed,
+ * else only told to read again. The caller has already checked who may make them (changesNeedPage).
+ */
+export async function writeFolderApprovals(folder: FolderRef, raw: ApprovalChanges, deps: ScanDeps = {}, opts: WriteOptions = {}): Promise<ApprovalWrite> {
+  const scan = opts.scan ?? (await scanForSave(folder, raw, deps));
+  const resolved = resolveChanges(scan, raw);
+  const before = folderDecisions(folder.key);
+  const changes: ApprovalChanges = { context: {}, skills: {} };
+  for (const kind of ["context", "skills"] as const)
+    for (const [key, to] of Object.entries(resolved[kind])) if (!(opts.group && to === "approved" && before[kind][key]?.state === "approved")) changes[kind][key] = to;
+  const itemOf = (kind: ItemKind, key: string) => scan.items.find((i) => (i.kind === "context") === (kind === "context") && i.key === key);
+  // An approval is of the content it is given for, read now: an item the scan didn't find, or that can't be read, can't be approved.
+  const prints = new Map<string, string>();
   for (const kind of ["context", "skills"] as const) {
     for (const [key, to] of Object.entries(changes[kind])) {
       if (to !== "approved") continue;
-      const item = scan.items.find((i) => (i.kind === "context") === (kind === "context") && i.key === key);
-      if (!item?.sha256) throw new OrgError(`${key} can't be approved: ${item ? "it couldn't be read" : "it wasn't found"}. Nothing was changed.`, 409);
+      const item = itemOf(kind, key);
+      const sha = item ? itemFingerprint(item.kind, item.path).sha256 : "";
+      if (!sha) throw new OrgError(`${key} can't be approved: ${item ? "it couldn't be read" : "it wasn't found"}. Nothing was changed.`, 409);
+      prints.set(`${kind}\0${key}`, sha);
     }
   }
-  const before = folderDecisions(folder.key);
+  const asking = askingFirst();
   const changed: ApprovalWrite["changed"] = [];
+  const undo: UndoItem[] = [];
+  let flips = false;
+  decidedAt.set(folder.key, walkMark());
   updateApprovalStore((s) => {
     const f = (s.folders[folder.key] ??= { context: {}, skills: {} });
     for (const kind of ["context", "skills"] as const) {
       for (const [key, to] of Object.entries(changes[kind])) {
-        const item = scan.items.find((i) => (i.kind === "context") === (kind === "context") && i.key === key);
-        const prev = before[kind][key];
+        const item = itemOf(kind, key);
+        const prev = f[kind][key] ? { ...f[kind][key] } : undefined;
         const from: ApprovalState = prev?.state ?? "waiting";
         const name = item?.name ?? prev?.name ?? basename(key);
+        const sha = prints.get(`${kind}\0${key}`);
         if (to === "waiting") delete f[kind][key];
-        else f[kind][key] = { state: to, ...(to === "approved" ? { sha256: item!.sha256 } : {}), ...(kind === "skills" && isSkillName(name) ? { name } : {}) };
-        const reapproved = to === "approved" && from === "approved" && prev?.sha256 !== item?.sha256;
+        else f[kind][key] = { state: to, ...(sha ? { sha256: sha } : {}), ...(kind === "skills" && isSkillName(name) ? { name } : {}) };
+        const wrote = f[kind][key] ? { ...f[kind][key] } : undefined;
+        if (sameDecision(prev, wrote)) continue;
+        undo.push({ kind, key, name, ...(prev ? { before: prev } : {}), ...(wrote ? { wrote } : {}) });
+        const reapproved = to === "approved" && from === "approved" && prev?.sha256 !== sha;
         if (from !== to || reapproved) changed.push({ kind, key, name, from, to });
+        if (onFor(from, asking) !== onFor(to, asking)) flips = true;
       }
     }
   });
-  try {
-    await (await import("./projects/skills-chats")).notifySetupChanged(folder.key);
-  } catch (err) {
-    console.warn(`[approvals] telling ${folder.key}'s new chats failed: ${err instanceof Error ? err.message : String(err)}`);
+  // What the save's answer is drawn from: the scan, with the fingerprints just read for what it approved.
+  const after: FolderScan = prints.size ? { ...scan, items: scan.items.map((i) => { const sha = prints.get(`${i.kind === "context" ? "context" : "skills"}\0${i.key}`); return sha ? { ...i, sha256: sha } : i; }) } : scan;
+  if (prints.size && keptScans.get(folder.key) === scan) keptScans.set(folder.key, after);
+  let token: string | undefined;
+  if (opts.group && undo.length) {
+    token = randomUUID();
+    const named = (["context", "skills"] as const).filter((k) => Object.keys(resolved[k]).length);
+    const group = typeof opts.group === "string" ? opts.group : named.length === 1 ? named[0]! : "both";
+    const slot = undoSlot(folder, group);
+    undoSaves.delete(slot); // a newer save of the group goes to the end: the newest are kept
+    undoSaves.set(slot, { token, items: undo });
+    // A group id is the caller's word, and a turn-off is anyone's: a folder keeps its UNDO_SLOTS newest groups.
+    const prefix = `${folder.key}\0`;
+    const mine = [...undoSaves.keys()].filter((k) => k.startsWith(prefix));
+    for (const k of mine.slice(0, Math.max(0, mine.length - UNDO_SLOTS))) undoSaves.delete(k);
   }
-  return { scan, changed };
+  await tellNewChats(folder.key, flips);
+  return { scan: after, changed, ...(token ? { undo: token } : {}) };
 }

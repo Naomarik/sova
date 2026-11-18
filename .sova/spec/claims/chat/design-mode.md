@@ -102,6 +102,19 @@ The brief a design session gets:
 The guide tells the main chat how a read hands over a page's saved file, never the page, and how to
 look at one view (§chat.design-mode/main-chat, §chat.design-mode/version-reads).
 
+The guide and the `lookbook` tool's own description also tell the main chat:
+
+- **Change the card itself.** When you ask for a change after the Setup card is up, the chat makes
+  it with `lookbook {op:"edit"}`, changing only what you asked for, instead of sending you to the
+  card; after Start Creative Director only the designers, efforts, styles, layouts and how they
+  combine, the rest passed on with `tell` (§chat.design-mode/setup-card). It says in its reply what
+  it changed.
+- **Where pictures may come from.** The three places a picture may be handed over from, and the
+  reasons one is refused, so it puts a screenshot in the right place before it tries
+  (§chat.design-mode/own-images).
+- **Efforts.** That each designer may get an effort, Low unless named
+  (§chat.design-mode/model-picker).
+
 ## §chat.design-mode/setup-card — Setup comes first, on a card
 
 A run starts on the Lookbook card's Setup state (**Lookbook · Setup**), never in the main chat's
@@ -112,7 +125,8 @@ chat filled in, which keeps the main chat's context clean."
 
 - **The main chat fills in what it was asked.** `lookbook {op:"start", brief?, models?, modelGroups?,
   directions?, layouts?, coordinator?}` (styles in `directions`, layouts you named in `layouts`, none
-  unless you named some) creates the card and returns at once with the card's id and nothing
+  unless you named some), with an effort for any designer you named one for (§chat.design-mode/model-picker),
+  creates the card and returns at once with the card's id and nothing
   else. A group such as `ollama-cloud` or `claude` is resolved by the server into one section of the
   model picker, and a model named by its bare id ticks exactly one model
   (§chat.design-mode/model-picker), so the main chat never reads a model list.
@@ -124,6 +138,52 @@ chat filled in, which keeps the main chat's context clean."
   used (§chat.design-mode/link-modes). The card shows the skills you named for the run, with nothing
   to set (§chat.design-mode/skills). The name Brief belongs only to the brief
   (§chat.design-mode/brief).
+- **The request shows two lines and opens an editor.** As the user decided, the card shows the first
+  two lines of What Do You Want to Design with an **Edit** button beside it, never a box that
+  scrolls inside the card. Pressing the text or Edit opens an editor holding the whole request: a
+  dialog on a desktop and a sheet rising from the bottom on a phone (a window 480 pixels wide or
+  less), with **Cancel** and **Save**. Nothing on the card changes until Save; Cancel, Escape and a
+  tap outside it drop what was typed and nothing else, and Save with the text unchanged sends
+  nothing. The link rows and the Design skills line stay on the card under the preview; the hint on
+  using a link is in the editor.
+- **Images show on the card.** An **Images · {n}** row of small pictures shows whenever the run
+  has images, whether they came with the card or the main chat added them later
+  (§chat.design-mode/own-images), and none shows while it has none. You only look at them on Setup:
+  the row has no control.
+- **The main chat can change the open card.** As the user decided, while a run is on Setup and you ask the
+  main chat for a change ("drop the Ollama ones and put Opus on High"), it changes the card
+  itself with `lookbook {op:"edit"}`, naming only what changes: the text, images to add or take off
+  (§chat.design-mode/own-images), designers to add or take off, by model or by group as at start,
+  each designer's effort, the Creative Director, styles, layouts, Pair Up or Every Mix, and skills
+  (§chat.design-mode/skills). Everything it doesn't name stays as it was. It changes the chat's
+  newest run on Setup unless it names another, never opens a second card, never presses Start
+  Creative Director, and changes only what you asked for. Its answer is short: what the card now
+  holds (the count line, the designers with their efforts, the images by name) and each part it
+  couldn't apply with why (a model the card doesn't offer, an effort a model doesn't take, a picture
+  refused, §chat.design-mode/own-images); it never gets the full model list. The card moves down to
+  the chat's change as any update moves it (§chat.design-mode/card), and shows no line about the
+  change: the chat says what it changed in its reply.
+- **The latest change wins the whole card.** As the user decided, your clicks and the chat's
+  changes each save the whole card as it then stands, with no merging: your click saves the card as
+  you see it, and a chat change that comes after it wins. A chat change that lands while your click
+  is still waiting to be saved wins too: the waiting save is dropped and the card shows the chat's
+  version. Each save names the version of the card it was made on, and Sova refuses one made on an
+  older version than it holds; the card then shows the version Sova holds, so a click never brings
+  back a card the chat has since changed. Text you are typing is never replaced
+  under your cursor: while the request's editor is open, neither a save nor the chat's change
+  touches its text, and its text and cursor stay when the card is drawn again (moving down under a
+  chat change). Save sends the whole card as it then stands, with your text; Cancel leaves the card
+  as it now is.
+- **One path for every change.** A click of yours, a Save in the request's editor and a chat's
+  change all go through the same step, so each one alike recounts the plan, works out the estimate
+  again (§chat.design-mode/launch-limits) and reads the text's links again for their rows
+  (§chat.design-mode/link-modes); while the brief is open, it also renews the brief's plan line and
+  estimate (§chat.design-mode/brief).
+- **After Start Creative Director.** As the user decided, until Start on the brief the main chat may
+  still change the designers, their efforts, the styles, the layouts and Pair Up or Every Mix, which
+  is what Change on the brief lets you change (§chat.design-mode/brief). Text, images and skills then
+  go to the Creative Director in your words with `tell`, as before (§chat.design-mode/main-chat).
+  Once Start has launched the designs, nothing on the card changes.
 - **Clicks stay on the card.** No edit goes back into the transcript or wakes the main chat: each
   click is saved in the chat's design store (§chat.design-mode/storage), with nothing written to the
   chat's session per click, and a reload shows it as left. Start Creative Director records what was chosen
@@ -133,25 +193,53 @@ chat filled in, which keeps the main chat's context clean."
   (§chat.design-mode/coordinator). It is a click on the card, never a main-chat turn. It
   starts only the Creative Director's preparing: no design is written until Start on the brief
   (§chat.design-mode/brief-start). The limits on a run are §chat.design-mode/launch-limits.
+- **The bottom bar lines up.** The count line and Start Creative Director share one centre line. A
+  reason Start can't go yet ("Pick at least 1 model to design.") shows under the count only when
+  there is one, and the bar keeps the same height with or without it. On a phone the count sits
+  above a full-width Start Creative Director, with the reason's room kept.
 
 ## §chat.design-mode/model-picker — The model picker and its Creative Director dropdown
 
-The Setup card has one picker for every choice of model: a Creative Director dropdown and a search box on
-one row, then one section per provider. The Creative Director's model is chosen in the same picker and
+The Setup card has one picker for every choice of model: a Creative Director dropdown and a search box
+(**Find a model**) on one row, then one section per provider. The Creative Director's model is chosen in the same picker and
 stays separate from designing; as the user decided, "I can deselect that model as a designer and
 still choose it explicitly as coordinator". One Creative Director dropdown holds that choice, instead of a
 checkbox on every row.
 
+- **Models starts as one closed row.** As the user decided, the whole picker starts closed, as one
+  **Models** row: the designers by name, each with its effort ("Opus 5.5 High · glm-5.3 Low"; a
+  model with no efforts to pick by name alone), the Creative Director on a second line, and the
+  count ("3 models"); a line breaks only between designers, never inside a name. On a phone the row
+  keeps the names, on up to three lines, and drops the count. Opened, it holds the Creative Director dropdown and Find a
+  model, then the providers' sections. Behind the brief's Change (§chat.design-mode/brief) it starts
+  open. Models are named as everywhere else in Sova: Claude models by name (Opus 5.5), others by
+  their id.
 - **One section per provider, all closed at first.** Each provider has its own section, and Ollama
   on this computer and Ollama Cloud are two separate sections. Every section starts closed, however
   many of its models the main chat ticked. Closed, a section is one row of fixed height: the
-  provider's name, how many of its models are designing ("7 of 7"), the designing models on one line
-  ("glm-5.3, glm-5.2, +5", or "None designing"), an **All** checkbox that switches Design on or off
-  for every model in that section, and an arrow that opens it. Open, its models show directly below
-  its row, in two columns where the card is wide enough and one on a phone; closing it takes them
-  away again.
-- **One control on each model's row.** A row holds the model, named as everywhere else, its "text
-  only" mark where it applies, and its Design switch (any number of models may design).
+  provider's name, how many of its models are designing ("7 of 7"), the designing models on one line,
+  each with its effort when that isn't Low ("Opus 5.5 · High, glm-5.3, +5", or "None designing"), an
+  **All** checkbox that switches Design on or off for every model in that section, and an arrow
+  that opens it. Open, its models show directly below its row, one model to a row at every width,
+  then its **Hide {provider}** button (below); closing it takes them away again.
+- **Open stays open.** The Models row and each section stay open or closed as you left them while
+  the card is up, also when the card moves down the chat or is drawn again
+  (§chat.design-mode/card).
+- **One row per model.** As the user decided, each model is one full-width row: its Design switch
+  on the left (any number of models may design), its name, named as everywhere else, with its
+  "text only" mark where it applies, and, while it designs, its effort menu at the right edge, the
+  menus of all rows in one aligned column, with a divider between rows. A name is never cut short: a
+  long one wraps onto a second line, so two models never read alike. A row that doesn't design keeps
+  the menu's place empty, so ticking it never changes how its name wraps or the row's height; on a
+  phone the menu is narrower, leaving the names more room.
+- **Each designer has an effort.** As the user decided, every designing model has its own effort, **Low**
+  unless you or the main chat chose another; a model that takes efforts but has no Low runs at its
+  own default, its menu reading **Its Own**. The menu offers only the levels that model takes; one
+  it doesn't take is refused with the levels it does. The designs a run launches on that model start
+  at that effort, and so does a design the Creative Director adds later on that model without naming
+  an effort (§chat.design-mode/new-from-parents). You can change it at any time on the card, and the
+  main chat can set it when it opens the card and afterwards (§chat.design-mode/setup-card). The
+  estimate counts it (§chat.design-mode/launch-limits).
 - **Best first, and still while you tick.** Within each section the user's favorites come first,
   the same favorites as the composer's model menu (§chat.model-menu/favorites), never a second list.
   Then come the models in the order of a short ranked list Sova keeps for each provider, most
@@ -164,9 +252,10 @@ checkbox on every row.
   Creative Director never ticks or unticks Design, and unticking Design never changes the Creative Director.
   The main chat's pick is filled in, and on a later run the line under it says what changing the
   Creative Director does (§chat.design-mode/coordinator).
-- **Search.** Typing in the search box shows only the models that match, under their providers'
-  names, in place of the sections. Clearing it brings the sections back, each open or closed as the
-  user left it.
+- **Search.** Typing in the search box shows only the models that match, each provider with a
+  match open with only its matches, in place of the sections; with no match it says so ("No model
+  matches “glx”."). Clearing it brings the sections back, each open or closed as the user left it.
+  A hidden provider's models are never shown, in search or in the Creative Director dropdown.
 - **The main chat's groups are the sections.** A group the main chat names ticks one section, never
   two: `glm` and `zai` both tick Z.ai; `ollama-cloud` ticks only Ollama Cloud and `ollama` only Ollama
   on this computer, so asking for all the Ollama Cloud models never ticks a small local one. What the
@@ -177,6 +266,29 @@ checkbox on every row.
   the one under the provider of the model the chat itself runs on, else the first in the picker's
   order. So a chat on Z.ai asking for `glm-5.3-flash` ticks Z.ai's and not Ollama Cloud's. The
   Creative Director's name resolves the same way.
+- **Only providers that can run now.** As the user decided, a provider is left off the card when
+  Sova knows it can't run right now: its sign-in has stopped working, its key is refused, it has no key or
+  sign-in, or it is Ollama on this computer and that isn't running (checked when the card's list is
+  made, in under a second); a model of Ollama on this computer that isn't downloaded is left off too.
+  When Sova can't tell, the provider stays. A sign-in stops working by the same rule the Usage page
+  and Settings → Accounts use: refused, or its renewal gone; a token that only timed out renews and
+  stays, and a reading of the Codex app's own sign-in says nothing about Sova's. A plan limit or
+  credit running out never hides one. A
+  provider that starts working while the card is up doesn't join that card.
+- **Providers you hide.** As the user decided, each provider's opened section has **Hide
+  {provider}**, which takes that provider off the card: its models stop designing, and a Creative Director among them moves, before
+  it has started, to the first designing model still shown (else the first shown). The last provider
+  shown can't be hidden. Sova remembers it on the server for every later Setup card, including the
+  ones the main chat opens, until you bring it back with **Show**, which brings back every provider
+  you hid. The main chat can't tick a model
+  of a hidden provider: its change names it as hidden, and only your Show brings it back. A save of
+  the card never fails over a hidden provider: its models stay as Sova has them, not designing.
+- **One quiet line says what was left out.** Under the sections, one quiet line names each provider
+  left off for not running, with why ("Ollama on this computer isn't running, so it isn't
+  listed."), and the providers you hid ("2 hidden · Show", where Show brings them back). A model the
+  main chat asked for from a provider left off is named in that provider's sentence ("so glm-5.3
+  isn't listed"), and one from a provider you hid in its own ("glm-5.3 is in a provider you hid."),
+  never dropped in silence. With nothing left out the line isn't there.
 - **What is offered.** Only models that can run, in the sections, the dropdown, search and the main
   chat's groups alike. A model barred for workers in Settings is never offered, and `claude-opus-5`
   is never offered. Ollama models Sova's Ollama Cloud check has found retired, which can only fail,
@@ -289,6 +401,13 @@ default, ask above 12, stop at 24".
   turn the Creative Director's card asks first ("Make more than 12 designs this turn?").
 - **It counts designs, not money.** The limit is on how many designs a run makes, whatever each one
   costs, and each design's real spend shows on its tile (§chat.design-mode/card).
+- **The estimate counts effort.** As the user decided, the run's estimate prices each design by its
+  model and its effort (§chat.design-mode/model-picker): a higher effort counts as costing more, by
+  a rough multiplier per level, so the same plan at High estimates more than at Low. It is worked
+  out again on every change to the card, yours or the main chat's (§chat.design-mode/setup-card).
+- **Efforts hold too.** Start launches each design at the effort its model has on the card, and the
+  main chat's changes before Start (§chat.design-mode/setup-card) are held to the same rows the
+  card offers and the same limits.
 
 ## §chat.design-mode/card — The Lookbook card
 
@@ -339,6 +458,11 @@ Each tile holds the page as it is written (§chat.design-mode/streaming) and:
 On a card 520 pixels wide or less, each tile is a row with its picture on the left.
 
 Everything on the card survives a reload and a Sova restart.
+
+- **It moves down with a change.** The main chat changing the Setup card
+  (§chat.design-mode/setup-card) is an update like any other: the card moves down to that change, and
+  what you had open on it (the Models row, a provider's section, Style, Layout) stays open there
+  (§chat.design-mode/model-picker).
 
 ## §chat.design-mode/design-sessions — Each label is a hidden session
 
@@ -473,7 +597,7 @@ hold still.
 - **A card not drawn yet holds its place.** In a long chat a Lookbook card scrolled far away isn't
   drawn, and its place holds the height this browser last drew it at (a default height for one it
   never drew), so it lands near its real height when it is drawn.
-- **The pickers grow only below the click.** Opening or closing a provider section
+- **The pickers grow only below the click.** Opening or closing the Models row or a provider section
   (§chat.design-mode/model-picker), or the Style or Layout row (§chat.design-mode/directions), changes
   the card only below that row. Opening or closing a provider section is the one exception to no
   layout shift: it logs one layout-shift entry, and every source of that entry is below the clicked
@@ -481,6 +605,18 @@ hold still.
   rows keeps its height whatever it names, and so does the
   row of pairs, which stays one line with Shuffle in its place whether shown or not. Typing in or clearing the search box changes only what is
   below it, and the Creative Director dropdown opens over the card, pushing nothing.
+- **What you open stays where you tapped.** As the user decided, opening the Models row, a provider
+  section, Style or Layout, pressing Hide or Show, and typing in Find a model never move the chat,
+  even while it follows its newest content, and nor does a list that draws a moment later: the row
+  you pressed stays where it was and what opens appears under it
+  (§chat.transcript/rendering). If it runs past the bottom of the screen, the chat stops following
+  and shows Jump to Latest; new messages are followed again once you are back at the end. A reply
+  arriving while the chat still follows is followed as ever.
+- **The Setup bar keeps its height.** The Setup card's bottom bar is the same height whether or not
+  a reason shows under its count (§chat.design-mode/setup-card).
+- **The open view on a phone.** The chat folded to its bar (§chat.design-mode/chat-placement) is
+  one fixed height whatever its latest message says, and showing or hiding the chat moves nothing
+  above it.
 - **The open view holds still too.** Its status chip, version picker and More menu have fixed
   places, the picker there even with one version, so a new version arriving moves nothing beside it.
   Its message box is a fixed three lines tall and scrolls past that, instead of growing as the main
@@ -671,15 +807,36 @@ of the page's address.
 
 ## §chat.design-mode/chat-placement — Where Chat opens, for now
 
-For now, the page and its chat sit **side by side**, and on a phone they stack. **Hide Chat** gives
-the page the room, and **Show Chat** brings the chat back. The user has not
-settled this. As the user decided: "Not sure, I need to see it once it's ready. Build your
+On a desktop the page and its chat sit **side by side**. **Hide Chat** gives
+the page the room, and **Show Chat** brings the chat back, with a message you were typing and your
+place in it kept.
+
+**On a phone the chat folds to a bar.** As the user decided, where the screen is narrower than
+768 pixels the open view gives the page the screen:
+
+- **It starts folded, every time.** The chat starts as a bar about 56 pixels tall at the bottom,
+  with a grip and the latest message on one line, its sender first ("B  Moved the hero up and widened
+  the 3 cards."); with no message yet it reads **Message B** (**Message the Creative Director**).
+  Every design opened starts this way; nothing is remembered between them.
+- **Tap to show it.** The bar is a button that says whether the chat is shown. Pressing it shows
+  the chat at its present share of the screen and moves the focus to **Hide Chat** in the chat's
+  title row, never into its message box; Hide Chat folds it again and the focus goes back to the
+  bar.
+- **Nothing is lost while folded.** A message you were typing, your place in the chat and its
+  latest line are kept while it is folded.
+- **A short header.** As the user decided, from 441 to 767 pixels wide the view's head is one row:
+  the title over its cost line, the status, the version, More and Close. At 440 pixels wide or less
+  it is two rows, as the approved prototype draws it: the title over its cost line with Close beside
+  it, then the status, the version and More. Hide Chat is not in the head on a phone.
+- **The Creative Director's view** gets the same bar.
+
+ As the user decided: "Not sure, I need to see it once it's ready. Build your
 recommendation (Beside the open design) for now, keep this as a revisit, and ask me about it once the
 worktree link has something to show me."
 
-This placement is the first build's and is open to change on the user's look at it. Whatever is
-decided then replaces this paragraph; nothing else in this document depends on the view being side
-by side, only on each design and the Creative Director having a chat of their own.
+The desktop placement is open to change on the user's look at it. Whatever is decided then
+replaces it; nothing else in this document depends on the view being side by side, only on each
+design and the Creative Director having a chat of their own.
 
 ## §chat.design-mode/labels — Stable labels
 
@@ -819,6 +976,9 @@ when you name them, with no new control on Setup.
   (§chat.design-mode/design-sessions). They copy the rules and tokens they need into the page, since
   the page stays sealed and loads only Google Fonts (§chat.design-mode/prototype-frame). While a
   designer reads a skill before its page starts, its tile says **Reading the design skill**.
+- **The main chat may change them on Setup.** When you ask, the main chat adds or takes off a run's
+  skills on its Setup card (§chat.design-mode/setup-card), found the same way; after Start Creative
+  Director they go to the Creative Director in your words.
 - **Each run keeps its own.** A run's skills are stored on the run, and none carries over from an
   earlier run. A Creative Director reused across runs follows the newest run's skills, and a design
   revived after a restart keeps its run's skills.
@@ -845,7 +1005,11 @@ on what it does as designs land: "No note, it reads when asked".
 
 - **Nothing is pushed into it.** No design finishing, no refine, no message and no Creative Director turn
   sends the main chat a note or wakes it, one design at a time or as a batch.
-- **It reads on demand.** `lookbook {op:"read"}` returns the Creative Director's current card and one
+- **It reads the Setup card.** While its newest run is on Setup, `lookbook {op:"read"}` with no label
+  returns what the card holds, only what is ticked: the count line, the designers with their
+  efforts, the Creative Director, the styles and layouts, the skills and the images by name. It
+  changes the card with `lookbook {op:"edit"}` (§chat.design-mode/setup-card).
+- **It reads on demand.** Once the Creative Director has started, `lookbook {op:"read"}` returns the Creative Director's current card and one
   line per design, "A · Bold & Vibrant · Bento · {model} · {status} · 16 versions" (the style alone
   with no layout; "(removed)" after the status of a removed design). With a label,
   `lookbook {op:"read", label}` tells it where that design's page is: its latest version by default,
@@ -972,11 +1136,15 @@ opens on the same Lookbook card (**Lookbook · Brief**), then you press Start, a
   (§chat.design-mode/research); how each link is used (§chat.design-mode/link-modes); the images
   designers will use or the look in words (§chat.design-mode/brief-images); the Creative Director's open
   questions (§chat.design-mode/brief-questions); and a line saying how many designs on which models,
-  styles and layouts, with an estimate; and, when you named skills, a **Design skills: …** line
+  styles and layouts, with an estimate priced by each design's model and effort
+  (§chat.design-mode/launch-limits); and, when you named skills, a **Design skills: …** line
   naming the ones the designers get (§chat.design-mode/skills).
-- **Change.** On that line, **Change** reopens the Setup card's model picker and direction picker
+- **Change.** On that line, **Change** reopens the Setup card's model picker, with its Models row
+  open and each designer's effort (§chat.design-mode/model-picker), and direction picker
   (§chat.design-mode/directions) in the card itself, so a
-  different plan doesn't mean starting again.
+  different plan doesn't mean starting again. Until Start the main chat may change the same things
+  when you ask it (§chat.design-mode/setup-card); its change renews the plan line and estimate as
+  yours does.
 - **After Start.** The brief becomes the **Design Brief** row above the designs, with its facts (how
   many images it used among them) and the summary's first line. Its **Open Brief** opens the same
   dialog read only: what the designs were started from, the Full Prompt included.
@@ -1107,7 +1275,25 @@ way. A run can use your images with no link at all. An image file you point the 
 on this computer ("the logo is in my Downloads folder") joins the same way once it has read it
 (§chat.design-mode/coordinator).
 
-They need no site approval, and the limit of 8 MB per image applies. Of your images other than
+They need no site approval, and the limit of 8 MB per image applies.
+
+- **Where the main chat may take a picture from.** As the user decided, a picture the main chat
+  hands over, when it opens the card, when it changes it (§chat.design-mode/setup-card) or with
+  words it passes on, comes from one of three places: this computer's temporary folder, the folder
+  where Sova keeps the pictures you attached to a message, or the chat's own shared folder. In the
+  shared folder it must be an image file inside it, also once links are followed (a link that leads
+  out of it is refused), of at most 8 MB. A sandboxed chat's temporary folder is its own: a picture
+  it names there is read from that chat's own temporary folder, by the shared folder's rules, and
+  only one not there is looked for in this computer's. When Sova can't tell where a chat's own
+  temporary folder is, a picture missing there is refused with the advice to use the shared folder.
+  A link in the temporary folder to a file that isn't an image is refused as not an image.
+- **A refused picture says why.** Each picture turned away is named as the chat gave it, with its
+  reason: not in a place it may add from, not an image, over 8 MB, or missing; and the answer names
+  the places pictures may come from. The guide says the same up front (§chat.design-mode/guide).
+- **Added and taken off on Setup.** A picture the main chat adds to a run on Setup shows on the
+  card's Images row (§chat.design-mode/setup-card) and is described as any other. Taking one off
+  removes it from that run only: it stays among the chat's images in Page Assets
+  (§chat.design-mode/gallery). Of your images other than
 screenshots, the Creative Director holds the description, never the image itself.
 
 **A screenshot is a reference.** As the user decided, a screenshot you paste is shown to the
@@ -1291,14 +1477,15 @@ launched, so combining earlier designs while a brief is open waits until after S
   images and the efforts it takes. A model turned off in Settings, barred for workers, one Sova knows
   can only fail, or one it doesn't know stays refused, and the Creative Director says why on its card.
   The new tile names its model like any other.
-- **Effort.** As the user decided, it runs at the effort you named ("on high"), else at the effort a
-  design on that model gets from the Setup card when it was ticked there, else at the model's usual
-  default.
+- **Effort.** As the user decided, it runs at the effort you named ("on high"), else at the effort
+  that model has on the run's Setup card when it was ticked there (Low unless you or the main chat
+  chose another, §chat.design-mode/model-picker), else at the model's usual default.
 
 ## §chat.design-mode/commands — The actions are in the command list
 
 Each action a person takes on designs has an entry in Sova's command list (§app/commands): listing a
-chat's designs, reading a page, changing Setup, Start Creative Director, a message, a Refine, a Retry
+chat's designs, reading a page, changing Setup, hiding or showing a provider on Setup
+(**Hide a Lookbook Provider**, §chat.design-mode/model-picker), Start Creative Director, a message, a Refine, a Retry
 (which also starts a stopped design again), stopping, removing and restoring a design, deleting a
 design, a message to the Creative Director, and reading what the designs were told
 (§chat.design-mode/prompt-history). Entries about the whole Lookbook carry its name (**Change Lookbook

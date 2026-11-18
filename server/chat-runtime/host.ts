@@ -668,11 +668,12 @@ export class ChatRuntimeHost {
     feedSince: (_chat, { proc, seq }) => this.feed?.since(proc, seq) ?? { gap: true },
     releaseIdleModelChild: () => releaseIdleClaudeChildren("idle session released by the server's cap"),
     // Its stored folder is back (§chat.worktrees/retirement): reopened in this same process, like "Chat anyway".
-    reopenHere: async (chat): Promise<"reloaded"> => {
+    reopenHere: async (chat, args): Promise<"reloaded"> => {
       assertNotLive(chat.path);
+      if (args?.folderRule) setFolderRule(chat.path, args.folderRule);
       this.reopening = true;
       try {
-        chat.broadcast({ type: "error", code: "reloaded", message: "This chat's worktree is back; reconnect" });
+        chat.broadcast({ type: "error", code: "reloaded", message: args?.message ?? "This chat's worktree is back; reconnect" });
         await chat.dispose();
         this.chat = await acquireChat(chat.path, true);
       } finally {

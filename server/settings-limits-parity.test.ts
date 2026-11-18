@@ -23,6 +23,7 @@ process.env.PATH = (process.env.PATH ?? "").split(":").filter((d) => !existsSync
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const { testApp } = await import("./mesh/app-test-fixtures");
+const { pageHeaders } = await import("./testing/page");
 const app = await testApp();
 
 const overseer = await import("../src/lib/overseer-draft");
@@ -45,7 +46,8 @@ async function get(url: string): Promise<Json> {
 }
 /** The route's verdict: taken (2xx) or refused (4xx, with its words). Never a 5xx. */
 async function putStatus(url: string, body: unknown): Promise<{ ok: boolean; error?: string }> {
-  const res = await app.request(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  // As the operator's page sends it: some settings (Public links) pass only the page's own click.
+  const res = await app.request(url, { method: "PUT", headers: { "Content-Type": "application/json", ...pageHeaders() }, body: JSON.stringify(body) });
   assert.ok(res.status < 500, `PUT ${url} answered ${res.status}`);
   const json = (await res.json().catch(() => ({}))) as { error?: string };
   return res.ok ? { ok: true } : { ok: false, error: json.error };

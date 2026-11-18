@@ -26,6 +26,7 @@ import {
 } from "../shared/baton";
 import type { Person } from "../shared/orgs";
 import { deadWhy, liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink, unsettledLink } from "./baton-links";
+import { sharingOff } from "./share/sharing-off";
 import { tokenFor } from "./link-tokens";
 import { openedSessions } from "./visits";
 import { readBatonSettings } from "./baton-settings";
@@ -483,6 +484,8 @@ const mintWaiters = new Map<string, (token: string) => void>();
 
 /** Mint a link for the statechart's `mint-link`/`mint-links` effect (server/baton-loadout.ts). */
 export function mintForEffect(input: { orgId: string; sessionId: string; n: number; personId: string; offerId?: string; key: string }): void {
+  // While sharing is off a baton still works here, with no public link (§mesh.public/sharing-off).
+  if (sharingOff()) return;
   const token = mintLink(input);
   const k = mintKey(input.sessionId, input.n, input.personId);
   minted.set(k, token);
@@ -496,7 +499,8 @@ export function mintForEffect(input: { orgId: string; sessionId: string; n: numb
 export function takeMinted(sessionId: string, n: number, personId: string, ms = 0): Promise<string | undefined> {
   const k = mintKey(sessionId, n, personId);
   const have = minted.get(k);
-  if (have || ms <= 0) {
+  // Sharing off: no link was made, so none is coming.
+  if (have || ms <= 0 || sharingOff()) {
     minted.delete(k);
     return Promise.resolve(have);
   }

@@ -26,10 +26,7 @@ It asks first: the first press shows "This message and every reply after it leav
 
 Rewind won't stop a running turn for you. It's off while a turn or a compaction runs, while the session is open in a terminal, and in a session you're only watching.
 
-The same rewind is in two more places:
-
-- **Undo last turn** in the Commands palette (the composer's `+` opens it) goes back one message without leaving the composer: pick it, then pick it again to confirm.
-- The session pane's **Timeline** lists every message sent to the session, each with its own Rewind. A message from another session, the Overseer or a teammate has a line above it naming the sender, such as "From the Overseer". Type `/tree` in the composer to open it with **Inputs Only** on, which keeps only the messages you typed. That filter and the composer's "{n} inputs" count leave out messages from others and scheduled wake-ups.
+To undo your last turn, or go further back, use the session pane's **Timeline**: it lists every message sent to the session, each with its own Rewind. A message from another session, the Overseer or a teammate has a line above it naming the sender, such as "From the Overseer". Type `/tree` in the composer to open it with **Inputs Only** on, which keeps only the messages you typed. That filter and the composer's "{n} inputs" count leave out messages from others and scheduled wake-ups.
 
 ## Regenerate
 
@@ -51,7 +48,7 @@ Until the agent takes it at its next step, your message shows as **Queued**, wit
 
 A message you send while a new chat is still starting shows as **Sending…** and goes out once the chat is ready, in the order you sent it; Stop hands it back to the composer instead, and the chat never runs it.
 
-**Stop** ends the turn, and so does `Esc` while you're in the composer. Anything still queued comes back to the composer for you to edit or send again, and the transcript notes "Stopped by you at 1:43 PM." An `Esc` that closes something (a menu, the command palette, the model picker, the session pane or a dictation) does only that, and an `Esc` within half a second of another never stops a turn, so a quick second press is safe.
+**Stop** ends the turn, and so does `Esc` while you're in the composer. Anything still queued comes back to the composer for you to edit or send again, and the transcript notes "Stopped by you at 1:43 PM." An `Esc` that closes something (a menu, the Commands dialog the composer's `+` opens, the model picker, the session pane or a dictation) does only that, and an `Esc` within half a second of another never stops a turn, so a quick second press is safe.
 
 ## Type anywhere
 

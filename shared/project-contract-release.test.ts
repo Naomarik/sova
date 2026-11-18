@@ -11,7 +11,7 @@ const BASE = {
   merge: {
     checks: [
       { id: "unit", run: ["pnpm", "test"] },
-      { id: "full-int", run: ["pnpm", "test:int"], optional: true },
+      { id: "full-int", run: ["pnpm", "test:int"], optional: true, needsSelect: true },
     ],
   },
 };
@@ -43,10 +43,11 @@ test("the smallest release section fills its defaults", () => {
   });
 });
 
-test("checks: a merge check by id (an optional one too, dropping optional) or one declared here, in order", () => {
+test("checks: a merge check by id (an optional one too, dropping optional and needsSelect: a release runs it whole) or one declared here, in order", () => {
   const r = parse({ playbook: ".sova/playbooks/release", channels: ["stable"], commit: false, scheme: "calver", tag: "release-${version}", quietMin: 60, checks: ["full-int", { id: "site-build", label: "Site build", run: ["pnpm", "site:build"], timeout: 900 }] }).release!;
   assert.deepEqual(r.checkIds, ["full-int", "site-build"]);
   assert.equal(r.checks[0]!.optional, undefined);
+  assert.equal((r.checks[0] as { needsSelect?: true }).needsSelect, undefined);
   assert.deepEqual(r.checks[1], { id: "site-build", label: "Site build", run: ["pnpm", "site:build"], timeout: 900, rerun: false, requires: [] });
   assert.equal(r.commit, false);
   assert.equal(r.scheme, "calver");
@@ -72,6 +73,7 @@ test("refusals name the JSON path of the first problem", () => {
   assert.equal(refusal({ playbook: "p", checks: ["nope"] }), "$.release.checks[0]");
   assert.equal(refusal({ playbook: "p", checks: [{ id: "unit", run: ["x"] }] }), "$.release.checks[0].id");
   assert.equal(refusal({ playbook: "p", checks: [{ id: "x", run: ["x"], optional: true }] }), "$.release.checks[0].optional");
+  assert.equal(refusal({ playbook: "p", checks: [{ id: "x", run: ["x"], needsSelect: true }] }), "$.release.checks[0].needsSelect");
   assert.equal(refusal({ playbook: "p", checks: [{ id: "x", run: "x" }] }), "$.release.checks[0].run");
   assert.equal(refusal({ playbook: "p", checks: ["unit", "unit"] }), "$.release.checks");
   assert.equal(refusal({ playbook: "p", quietMin: 1 }), "$.release.quietMin");

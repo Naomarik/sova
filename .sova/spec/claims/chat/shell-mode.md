@@ -58,8 +58,8 @@ to shell mode, and so does a `!` typed outside a text field that lands in the em
 - **Running it.** Run keeps the command in the box until the chat answers. Once it starts, the box
   is a message box again ("Command started. Shell mode off." is said), unless the command was
   changed meanwhile. A command Sova refuses (the kill guard, a sandbox that can't be prepared)
-  stays in the box with the reason under it, in the composer's reason line, on a line of its own
-  under the foot's controls (which keep their size), what it quotes in backticks drawn as code; it
+  stays in the box with the reason in the composer's reason strip above the message box
+  (§chat.composer/disabled-states), what it quotes in backticks drawn as code; it
   never ran, isn't saved and never reaches the model. A Run while the chat is still connecting
   sends nothing, then or later, and the box says "Not connected yet. Run it again once the chat
   connects." until it has. With no open connection nothing is sent and the box says "Not

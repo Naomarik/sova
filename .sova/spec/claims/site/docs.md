@@ -136,10 +136,14 @@ The Lookbook (§chat/design-mode), part of vis, in the order a person meets it: 
 one-page prototypes from hidden sessions on several models, drawn live on a card and in the Gallery
 tab, the main chat staying out of the work and reading a page only when asked); how to get one: with
 vis on, ask for a Lookbook, by name or in words that plainly mean it (an ordinary ask to sketch or mock up gets a quick drawing
-instead), never for workers; a run, from Lookbook · Setup (what to design, models by
-provider with the Creative Director dropdown, styles in their 5 families and the 12 layouts, Pair Up or
-Every Mix, the batch size and its limits) through Start Creative Director and
-Lookbook · Brief to Start; how a link is used; how skills reach a run (only the skills you name, by
+instead), never for workers; a run, from Lookbook · Setup (what to design, shown in two lines and
+changed in its editor with Save; models under one closed Models row, by provider with the Creative
+Director dropdown, only providers that can run now, Hide and Show for providers you keep off, and
+each designer's effort, Low unless changed and counted in the estimate; styles in their 5 families
+and the 12 layouts, Pair Up or Every Mix, the batch size and its limits; asking the main chat to
+change the open card, the latest change winning the whole card, and which pictures it may add from
+where, §chat.design-mode/setup-card, §chat.design-mode/model-picker, §chat.design-mode/own-images)
+through Start Creative Director and Lookbook · Brief to Start; how a link is used; how skills reach a run (only the skills you name, by
 name or by folder, with nothing loaded by itself; shown on Setup and, when you named some, on the
 brief's Design skills line; the Creative Director choosing which reach the designers and reading
 files you point it to, and designers reading only inside those skills, §chat.design-mode/skills); a Screenshots section on pasted screenshots (only your own
@@ -150,7 +154,8 @@ pictures a design with Rebuild screenshots first and the rest as words only; eve
 the words, and a screenshot is never put in the page, §chat.design-mode/own-images,
 §chat.design-mode/brief-start); and working with designs: statuses and cost, a page
 being written, Google Fonts only, Open and Chat (changing a design by telling it in its chat, an
-ended session starting again from its saved page), More with Stop and Remove (a stopped design's
+ended session starting again from its saved page; on a phone the chat folded to a bar with its
+latest message, one tap away, §chat.design-mode/chat-placement), More with Stop and Remove (a stopped design's
 still and Start Again, the folded Removed section and Restore, §chat.design-mode/stop-remove), the
 Creative Director (its section's Chat with the Creative Director, designs made from others on any
 allowed model, stopping or removing only when asked, its chat listing what each design was told,
@@ -323,7 +328,7 @@ extensions shown but not installable from here.
 
 Which features of a pi add-on work in a Sova chat and which don't: tools, commands, events, providers
 and dialogs; what reaches workers; when an add-on reaches a chat; and that enabling or disabling one
-is done in a terminal.
+is done in a terminal (`pi config`), not in Settings → Extensions, which lists Sova's own extensions.
 
 ## §site.docs/mcp-servers — MCP servers (`/docs/mcp-servers/`)
 
@@ -336,14 +341,16 @@ on its computer, and that chats don't ask before a tool runs.
 
 ## §site.docs/context-files-and-skills — Context files and skills (`/docs/context-files-and-skills/`)
 
-In Features, after MCP servers: what a chat loads from its folders, context files and skills; the
-default, where everything loads but what you disallow on the project's Context Files and Skills
-cards, and that only new chats change; a skill known by its place, not its name; the Sova-wide
-switch that asks first, with Waiting items off, a new chat's notice and held Send, Changed since you
-approved, and Re-approve; each chat's list fixed at its first message and shared with its workers,
-and the transcript line for an item found later; chats no one watches never wait; who may decide,
-only your own click approving; a folder that isn't a project and the Overseer's folder; and the
-Context tab's Everyone view of the skills a chat and its workers opened.
+In Features, after MCP servers: what a chat loads from its folders, context files and skills; one
+switch per item and one per group on a new chat's list, the project's Context Files and Skills cards
+and a folder's list, kept per project, and that only new chats change; Undo after a group flip; a
+skill known by its place, not its name, and sized by its description; the Sova-wide switch "New
+context files and skills start on", and while it is off an item you haven't set is off and marked
+New, with nothing waiting for you; Changed since you turned it on, and Accept Change; each chat's
+list fixed at its first message and shared with its workers, and the transcript line for an item
+found later, with Turn On; who may turn an item on, only your own click; a folder that isn't a
+project and the Overseer's folder; and the Context tab's figure of what a chat loaded from each
+skill, and its Everyone view of the skills a chat and its workers opened.
 
 ## §site.docs/themes — Themes (`/docs/themes/`)
 

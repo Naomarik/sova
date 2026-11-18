@@ -131,11 +131,6 @@ export function ownInputTotal(list: readonly TranscriptItem[], older: Older): nu
 }
 export const messageTotal = (list: readonly TranscriptItem[], older: Older): number => messageCount(list) + older.summary.messages;
 export const anyReply = (list: readonly TranscriptItem[], older: Older): boolean => list.some(isReplyRow) || older.summary.replies;
-/** The newest input on the branch: in the list, else the newest of those above it. */
-export function lastInput(list: readonly TranscriptItem[], older: Older): string | null {
-  for (let i = list.length - 1; i >= 0; i--) if (isInput(list[i]!)) return list[i]!.id;
-  return older.summary.inputs.at(-1) ?? null;
-}
 
 // ---- Fetching --------------------------------------------------------------------------------
 

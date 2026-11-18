@@ -1,47 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFAULT_PO_CAPS } from "../../shared/project-overseer";
-import { attentionLine, emptySectionsLine, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine, summaryChips } from "./project-page";
-
-test("summaryChips: a count not read yet is left out, never shown as 0", () => {
-  assert.deepEqual(summaryChips({}), []);
-  const ids = summaryChips({ sessions: 0, todos: 2 }).map((c) => c.id);
-  assert.deepEqual(ids, ["sessions", "todos"]);
-});
-
-test("summaryChips: a standalone project's ideas are on Overview, and a list with no gaps says ideas", () => {
-  const chip = summaryChips({ ideas: { gaps: 0, other: 2 }, ideasTab: "overview" })[0]!;
-  assert.deepEqual([chip.label, chip.tab, chip.section], ["2 ideas", "overview", "project-ideas"]);
-  assert.equal(summaryChips({ ideas: { gaps: 1, other: 1 }, ideasTab: "overview" })[0]!.label, "1 gap · 1 idea");
-});
-
-test("summaryChips: labels, order, tabs and the conflicts' warn", () => {
-  const chips = summaryChips({
-    sessions: 1,
-    previews: 2,
-    cost: "$27.21",
-    conflicts: 3,
-    decisions: { total: 1, ready: 1 },
-    ideas: { gaps: 2, other: 1 },
-    todos: 0,
-  });
-  assert.deepEqual(
-    chips.map((c) => [c.label, c.tab, c.section]),
-    [
-      ["1 session", "overview", "project-coding"],
-      ["2 previews", "overview", "project-previews"],
-      ["$27.21", "cost", "project-cost"],
-      ["3 conflicts", "requirements", "project-conflicts"],
-      ["1 decision", "requirements", "project-decisions"],
-      ["2 gaps · 1 idea", "requirements", "project-ideas"],
-      ["0 to-dos", "overview", "project-todos"],
-    ],
-  );
-  assert.equal(chips.find((c) => c.id === "conflicts")!.tone, "warn");
-  assert.equal(chips.find((c) => c.id === "decisions")!.title, "1 ready to promote");
-  assert.equal(summaryChips({ conflicts: 0 })[0]!.tone, undefined, "no open conflict is not a warning");
-  assert.equal(summaryChips({ ideas: { gaps: 1, other: 0 } })[0]!.label, "1 gap");
-});
+import { attentionLine, emptySectionsLine, LIMIT_COLUMNS, LIMIT_ROWS, limitCell, paceLine } from "./project-page";
 
 test("attentionLine: only what waits, null when nothing does", () => {
   assert.equal(attentionLine(0, 0), null);

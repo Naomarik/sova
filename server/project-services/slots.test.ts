@@ -26,7 +26,7 @@ import { readRegistry } from "./store";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-slots-agent-"));
 
 const op: Caller = { kind: "operator" };
-const NEXT_ACTION = /Tear down a copy this session made; otherwise ask the user to free a place with Teardown on the Branches tab\.$/;
+const NEXT_ACTION = /Tear down a copy this session made; otherwise ask the user to free a place with Teardown on the Running Copies tab\.$/;
 const roots: string[] = [];
 
 after(() => {

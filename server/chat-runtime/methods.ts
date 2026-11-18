@@ -233,9 +233,10 @@ export const METHODS: Impl = {
     await acquireChat(chat.path, true);
     return "reloaded";
   },
-  reopenHere: async (chat): Promise<"reloaded"> => {
+  // In the server's process a build reads its folder's decisions itself: a rule given changes nothing here.
+  reopenHere: async (chat, args): Promise<"reloaded"> => {
     assertNotLive(chat.path);
-    chat.broadcast({ type: "error", code: "reloaded", message: "This chat's worktree is back; reconnect" });
+    chat.broadcast({ type: "error", code: "reloaded", message: args?.message ?? "This chat's worktree is back; reconnect" });
     await chat.dispose();
     await acquireChat(chat.path, true);
     return "reloaded";

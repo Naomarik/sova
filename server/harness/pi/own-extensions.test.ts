@@ -1,8 +1,8 @@
 // Sova's own extensions and its mode engine in every chat (own-code.ts ownExtensions, patchResolve,
 // ownCodeLoader): the mode slot is recognised by its folder against the REAL mode folder; a pi folder
 // linked into a second, older Sova tree loads this copy's code only, with exactly one mode owner; a
-// shipped extension the pi folder lacks is added (the production default); /extensions "off" stays off
-// by name; a worktree's own agent dir keeps its tree's; a copied-sessions agent dir never runs wake-nudge.
+// shipped extension the pi folder lacks is added (the production default); a pattern's "off" stays off,
+// and an added one is on or off just as pi has it linked; a worktree's own agent dir keeps its tree's; a copied-sessions agent dir never runs wake-nudge.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -142,7 +142,7 @@ test("an agent dir holding copied sessions never runs wake-nudge: neither added 
   assert.ok(!(await resolved(linked)).some((r) => r.path.endsWith("wake-nudge.ts")));
 });
 
-test("/extensions off stays off for Sova's own extensions, by name (linked into another copy, or not linked); modes stay on", async () => {
+test("a pattern's off stays off for Sova's own extensions, by name (linked into another copy, or not linked); modes stay on", async () => {
   const off = { extensions: ["!extensions/btw/index.ts", "!extensions/mode/index.ts", "-extensions/wake-nudge.ts"] };
   const linked = await resolved(agentDir("off-linked", { btw: join(OLD_EXT, "btw"), mode: join(OLD_EXT, "mode") }, off));
   assert.equal(linked.find((r) => r.path === join(OWN_EXT, "btw", "index.ts"))?.enabled, false, "remapped, still off");
@@ -152,6 +152,31 @@ test("/extensions off stays off for Sova's own extensions, by name (linked into 
   assert.equal(missing.find((r) => r.path === join(OWN_EXT, "wake-nudge.ts"))?.enabled, false, "a loose file by its name");
   assert.equal(missing.find((r) => r.path === join(OWN_EXT, "subagents", "index.ts"))?.enabled, true);
   assert.equal(missing.find((r) => r.path === ENGINE)?.enabled, true);
+});
+
+test("an added extension is on or off exactly as pi has it linked, entry by entry: !glob (?, *, ** and a file name), +path over it, a -path that names no entry", async () => {
+  const btw = join(OWN_EXT, "btw", "index.ts");
+  const wake = join(OWN_EXT, "wake-nudge.ts");
+  // [patterns, btw on, wake-nudge on], as pi's isEnabledByOverrides has them for extensions/btw/index.ts and
+  // extensions/wake-nudge.ts.
+  const table: [string[], boolean, boolean][] = [
+    [["!extensions/b?w/index.ts"], false, true],
+    [["!**/btw/**"], false, true],
+    [["!extensions/**", "+extensions/btw/index.ts"], true, false],
+    [["!extensions/**", "+./extensions/wake-nudge.ts"], false, true],
+    [["!extensions/*"], true, false],
+    [["!index.ts"], false, true],
+    [["-extensions/btw"], true, true],
+  ];
+  let n = 0;
+  for (const [patterns, btwOn, wakeOn] of table) {
+    const settings = { extensions: patterns };
+    const linked = await resolved(agentDir(`pat-linked-${n}`, { btw: join(OWN_EXT, "btw"), "wake-nudge.ts": wake }, settings));
+    const added = await resolved(agentDir(`pat-added-${n++}`, {}, settings));
+    const at = (rs: typeof linked, p: string) => rs.find((r) => r.path === p)?.enabled;
+    assert.deepEqual([at(linked, btw), at(linked, wake)], [btwOn, wakeOn], `the control, pi's own flags for links: ${JSON.stringify(patterns)}`);
+    assert.deepEqual([at(added, btw), at(added, wake)], [btwOn, wakeOn], `added, as if linked: ${JSON.stringify(patterns)}`);
+  }
 });
 
 test("a worker on its worktree's own agent dir keeps that tree's extensions: no remap of another tree, nothing added but the engine", async () => {

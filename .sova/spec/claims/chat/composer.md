@@ -20,7 +20,8 @@ Overseer's Quick Actions (§app.overseer/quick-actions), and a workspace's group
 ## §chat.composer/anatomy — Anatomy
 
 The composer is one `<footer>` form holding the run status, staged answers, dictation strip and
-pending attachments, then the input row (mic, `plus` trigger, textarea, Send, Stop), then the foot.
+pending attachments, then the reason strip, then the input row (mic, `plus` trigger, textarea, Send,
+Stop), then the foot.
 
 ```html
 <footer class="composer" data-drop="active|reject (only while dragging over it)">
@@ -58,6 +59,10 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
 
     <!-- pending attachments; omit the <ul> when there are none; see §chat/images -->
     <ul class="attachments" aria-label="Attachments">…</ul>
+
+    <!-- the reason strip: why Send waits or can't send, just above the message box; empty, and not
+         shown, when there is none; a reason for the ear only is visually hidden (§chat.composer/disabled-states) -->
+    <div class="composer-reason composer-notice" id="composer-reason">…icon, reason, an action…</div>
 
     <div class="composer-row">
       <!-- the mic, first in the row; hidden when read only (§chat.voice/button) -->
@@ -116,7 +121,6 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
       <!-- in shell mode only (§chat.shell-mode/box): the Shell mode chip, the terminal icon and its
            words in the caution tone -->
       <span class="chip chip-warn composer-shell-chip"><span class="icon icon-sm" style="--icon: url(/icons/terminal.svg)" aria-hidden="true"></span>Shell mode</span>
-      <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
       <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>
       <!-- the Overseer instead: no mode switch; Quick Actions in its slot, see below -->
@@ -133,7 +137,6 @@ mode switch either, ends with its memory switch in that slot (§app.project-over
 ```html
 <div class="composer-foot">
   <button class="composer-model" …>…</button>
-  <span class="composer-reason" id="composer-reason"></span>
   <div class="composer-accessory">
     <button class="button button-ghost quick-actions-trigger" type="button" aria-haspopup="menu"
             aria-expanded="false" aria-label="Quick Actions" title="Quick actions · ask the Overseer">
@@ -149,7 +152,7 @@ It takes the mode switch's treatment: pushed to the right edge, the model indica
 `--control-sm` row with a `--tap-min` target stretched over it by a `::after`), in the body face
 at caption size, because its label is a name rather than a machine fact. It keeps its word at
 every width; the model id is what shrinks. When the composer collapses, the foot keeps this
-button in flow and drops the rest (the disabled reason stays for assistive technology).
+button in flow and drops the rest.
 
 ## §chat.composer/behavior — Behavior
 
@@ -381,10 +384,15 @@ is always on: there is no switch.
 ## §chat.composer/disabled-states — Disabled states
 
 While the composer can't send (the session is open in a TUI, the chat is reconnecting after its
-socket dropped, a model switch is pending, or a new chat waits for decisions on its context files
-and skills), the reason goes in `.composer-reason` and the
+socket dropped, a model switch is pending, or a new chat's context file or skill flip is saving),
+the reason goes in `.composer-reason` and the
 control is disabled. The reason is one line, per
-the skill's copy ladder. While the chat is reconnecting, the reason there is
+the skill's copy ladder. It is a slim strip just above the message box (`.composer-notice`, keeping
+the id `aria-describedby` points at), inside the composer and as wide as it, never in the foot's row
+beside the model name, at every width (checked at 390 px and 1440 px); with no reason there is no
+strip. Every reason the composer shows goes there, the rows below and its other notes alike
+(compacting, an upload, a shell-mode refusal, which wraps); one that is for assistive technology
+only stays visually hidden. While the chat is reconnecting, the reason there is
 for assistive technology only (visually hidden): what the eye reads is the note floating over the
 transcript's end (§chat.transcript/instant-open), so nothing is added to the composer. A chat
 closed for being quiet while its tab is open is none of these: its tab holds no socket, Send and
@@ -401,8 +409,7 @@ one of the rows below: a notice takes the composer's place, Stop included
 | Session is live in a TUI | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
 | Chat connecting or starting (a new session or a chat this tab opens, on its first connect; a chat this tab woke; until this connection's `hello`) | enabled (typing is fine) | Send and the model, thinking, mode, sandbox and login controls work: a message shows at once as `Sending…` and what each asks goes to the chat in the order asked; Stop is `aria-disabled` until the socket is open, then takes a waiting message back (§chat.transcript/send-while-starting) | none in the composer; the "Connecting to chat…" note floats over the transcript (§chat.transcript/instant-open) |
 | Chat socket dropped, or its chat failed to start for now (until the next `hello`) | enabled | Send `aria-disabled` until the `hello`, Stop until the socket is open | `clock` — "Reconnecting. Your draft is kept." (hidden; shown as the floating note) |
-| New chat with items to decide (asking mode, before its first message, while any context file or skill it could load is Waiting; §chat.context-approval/held-send) | enabled (typing and the draft kept) | Send `aria-disabled` until nothing waits, also when it is decided in another tab or on the project page; **Review** opens the setup card's notice; the per-chat switch alone doesn't release it | `attention` — "Approve or disallow {n context files and m skills} to send." ("2 context files and 1 skill", "3 skills"), with a ghost **Review** after it |
-| New chat whose setup card has a decision made here whose save the server hasn't answered, and nothing Waiting (either mode, before its first message; §chat.context-approval/at-once) | enabled (typing and the draft kept) | Send `aria-disabled` until every such save is accepted (a read after it that fails doesn't hold it), fails or times out (then its items go back as they were) | `clock` — "Saving…" |
+| New chat whose setup card has a flip made here whose save hasn't settled (before its first message; §chat.context-approval/at-once) | enabled (typing and the draft kept) | Send `aria-disabled` until the server has answered every such save and a read of the card started after the answer has come back, or the save fails or times out (then its items go back as they were); a New item never holds it (§chat.context-approval/held-send) | `clock` — "Saving…" |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Session is archived (§chat.transcript/instant-open, "An archived chat"; no socket is held) | enabled (typing and the draft kept) | `Unarchive` in place of Send; the model, mode, sandbox and login controls wait | `archive` — "This session is archived. Unarchive it to send." |
 | Server `error` with `code:"busy"` (the session reopens read only) | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
@@ -429,8 +436,8 @@ command already running in this chat doesn't disable it: several run at once
 (§chat.shell-mode/running). A Run the chat refuses shows the reason in `.composer-reason` with the
 draft kept, and so do a Run with no open connection, and a Run pressed before the chat's `hello`
 ("Not connected yet. Run it again once the chat connects."): unlike a message, a command never
-waits for the chat. A refusal takes a line of its own under the foot's controls
-(`.composer-foot[data-reason-wide]`). While a Run waits for the chat's answer, Run is
+waits for the chat. A refusal takes the strip above the message box like every reason, wrapping
+onto more lines when it is long. While a Run waits for the chat's answer, Run is
 `aria-disabled` (§chat.shell-mode/box).
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them
@@ -445,12 +452,11 @@ Everything you do to a session that isn't typing starts at one ghost `plus` butt
 Commands) and took the model trigger and the session's own facts out of the head (§chat/transcript): the
 composer is where the session is acted on, and the head is for reading.
 
-**The `plus` button opens the Commands palette** (§app.command-palette/opening), at every width,
-on the chat it belongs to. The palette leads with this chat's actions — Attach images, Hide tool
-calls, Hide thinking, Playbooks and Undo last turn (§app.command-palette/rows) — and lists the
-slash commands, the views and the server's commands after them, so there is no Commands row. The
-button has no popover of its own: `aria-haspopup="dialog"`, and `aria-expanded` true while the
-palette it opened is open. Its `aria-label` and `title` stay "More Actions".
+**The `plus` button opens the Commands dialog** (§app.command-palette/opening), at every width,
+on the chat it belongs to. It lists this chat's four actions and nothing else — Attach images, Hide
+tool calls, Hide thinking and Playbooks (§app.command-palette/rows); undoing the last turn is the
+Timeline's Rewind (§chat.timeline/rewind). The button has no popover of its own:
+`aria-haspopup="dialog"`, and `aria-expanded` true while the dialog it opened is open. Its `aria-label` and `title` stay "More Actions".
 
 **One popover, up to three triggers and four panels.** The sandbox shield (§chat.composer/sandbox-shield)
 opens the **sandbox** panel: the Sandbox group alone, its one place. The model indicator in `.composer-foot` (§chat/composer) opens the **model**
@@ -465,7 +471,7 @@ measured on whichever element opened it, and closing returns focus there. The co
 flyout's handle (`show(panel, anchor)` · `close()` · `open` · `anchor`, handed over once on
 mount), so the indicator can toggle the menu it opened and mirror its state in `aria-expanded`.
 
-The model row and the ladder live in the panel the indicator names, not in the palette:
+The model row and the ladder live in the panel the indicator names, not in the Commands dialog:
 one control, one way in, and the thing that says what the session runs is the thing that changes
 it.
 
@@ -522,7 +528,7 @@ it.
   bound in chat sessions only; watch sessions print as usual.
 - **Rows.** The panels' rows; §design.copy-deck/composer-flyout is the inventory. Model and
   Thinking are the model panel's, the Sandbox group the sandbox panel's. Attach images, Playbooks,
-  Hide tool calls, Hide thinking and Undo last turn are the palette's This chat rows
+  Hide tool calls and Hide thinking are the Commands dialog's rows
   (§app.command-palette/rows), not the flyout's.
   - **Model** is the model panel's first row: the current id in mono with its provider, and a
     chevron. It's the picker's trigger: `aria-haspopup="true"`, and while a switch is pending it's `aria-busy` with a
@@ -1001,12 +1007,13 @@ words in its hover; how far it can lag is §app.session-list/content-rules "Row 
 ## §chat.composer/land-confirm — Land asks once
 
 Everywhere Land appears (the composer's Worktrees modal, §chat.composer/worktrees-control, the
-session pane's Worktrees rows, §chat.worktrees/pane, and the Merge Queue tab, §app.merge-queue/view)
+session pane's Worktrees rows, §chat.worktrees/pane, the Merge Queue tab, §app.merge-queue/view, and
+the project page's Sessions rows, §app.project-overseer/sessions-list, whose Land has no ▾ menu)
 the button reads **Land**, a compact button with its ▾ menu as a narrow tab beside it, and pressing
 it queues nothing: it replaces the row's actions with a confirmation, right-aligned under the row:
 "Land {branch}?", then, from a chat's rows (the modal and the pane), "{n} commits go to {project}'s
 merge queue; {target} moves once checks pass.", {project} being the branch's place
-(§chat.worktrees/place); on the project's own Merge Queue tab, "{n} commits go to the merge queue;
+(§chat.worktrees/place); on the project's own Merge Queue and Sessions tabs, "{n} commits go to the merge queue;
 {target} moves once checks pass.". Under it, **Not Yet** on the left and **Land {n} Commits**
 rightmost. One commit reads "1 commit goes" and **Land 1 Commit**; a row whose count isn't known
 reads "Its commits go" and **Land Branch**; a Drafts to land row reads "{n} spec drafts go"

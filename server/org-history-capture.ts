@@ -555,7 +555,7 @@ export function headlineOf(kind: HistoryKind, outcome: HistoryOutcome, d: Record
   const project = label(d.projectName);
   switch (kind) {
     case "request.made":
-      return "Run Now pressed";
+      return "Look Now pressed";
     case "look.started":
       return "Project look started";
     case "gap.filed":

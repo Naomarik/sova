@@ -335,6 +335,7 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       SOVA_USAGE_POLL: "off",
       SOVA_UPDATES_CHECK: "off",
       SOVA_GIT_MAINTENANCE: "off",
+      SOVA_AGENT_CPU: "off",
       // Its own test data (server/worktree-retire-gate.ts): what `sova_archive` may remove worktrees from.
       SOVA_TEST_DATA: scratch,
       // Its chats' shared folders (pi-config/extensions/sandbox/shared-folder.ts): in the scratch root, never the
@@ -346,6 +347,11 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       // Bun's transpiler cache stays the caller's (warm, and outside the sentinel home): Bun keeps it
       // in $HOME/.bun/install/cache/@t@ by default.
       BUN_RUNTIME_TRANSPILER_CACHE_PATH: process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH || join(homedir(), ".bun", "install", "cache", "@t@"),
+      // The runner's SOVA_QUICK_TUNNEL=off (dropped with every SOVA_* above): a missing setting stays off unless
+      // the test passes SOVA_QUICK_TUNNEL in opts.env; `pnpm run dev:hermetic` leaves it unset, so Free is on there.
+      ...(process.env.SOVA_QUICK_TUNNEL ? { SOVA_QUICK_TUNNEL: process.env.SOVA_QUICK_TUNNEL } : {}),
+      // And its SOVA_CLOUDFLARED=off: the server never finds an installed cloudflared; a tunnel test passes its fake.
+      ...(process.env.SOVA_CLOUDFLARED ? { SOVA_CLOUDFLARED: process.env.SOVA_CLOUDFLARED } : {}),
       ...(opts.env ?? {}),
     };
     const bootTimeout = opts.bootTimeoutMs ?? 30_000;

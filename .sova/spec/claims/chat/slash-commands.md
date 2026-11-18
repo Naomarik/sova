@@ -132,19 +132,12 @@ textarea.
 | `Shift+Enter` | Newline as usual. The newline ends the token, so the menu closes |
 | Mouse down on a row | Inserts, the same as `Enter`. Use `mousedown` + `preventDefault()` so the textarea keeps focus. Hover makes a row active |
 
-The command palette's **Slash commands** rows (§app.command-palette/picking) put the same `/{name} ` in an
-empty textarea, with the caret after the space, and focus it; the menu stays closed, and nothing is sent
-until the composer's own `Enter`.
-
 ## §chat.slash-commands/commands-row — Commands row
 
-The composer has no Commands button or row any more. Its tap target for the same commands, for
-phones (where nobody types `/` from habit) and for discoverability, is the Commands palette the
-composer's `plus` button opens (§app.command-palette/opening): its **Slash commands** group lists
-the commands this menu lists, each as `/name` with its description (§app.command-palette/rows),
-and picking one puts `/name ` in the textarea and focuses it, sending nothing
-(§app.command-palette/picking). Typing `/`, and all the keyboard and touch behavior above, stay
-as they are.
+The composer has no Commands button or row, and nothing else lists the slash commands as a tap
+target: the Commands dialog the composer's `plus` button opens holds only the chat's own actions
+(§app.command-palette/rows). Typing `/` is the one way in, on a phone as anywhere, with all the
+keyboard and touch behavior above.
 
 ## §chat.slash-commands/announcements — Announcements
 
@@ -379,7 +372,7 @@ command isn't left waiting), replace the "Ran" row with:
 
 Nothing in the contract says ahead of time which commands are TUI-only, so the client keeps
 its own table of them: `palette`, `sessions`, `sessions-back`, `codefold`, `usage`,
-`usage-refresh`, `working-count`, `extensions`, `websearch` (it opens a browser on the server
+`usage-refresh`, `working-count`, `websearch` (it opens a browser on the server
 machine), and `subagents` and `agents` (each only opens the terminal's subagent monitor). These
 never appear in the menu. `team`, and every `team:…` or `team-…` form, is hidden from the menu too, though it is
 not TUI-only. Hiding is the menu's alone: the full list still decides whether a typed `/word`

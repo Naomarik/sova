@@ -58,6 +58,27 @@ describe("the Lookbook rides vis", () => {
   });
 });
 
+test("a change the user asks for once the card is up is the chat's edit: only what was asked, never a second card; pictures name their three places up front", () => {
+  const core = visGuide("lookbook");
+  const setup = visGuide("lookbook-setup");
+  const tool = mainDesignTools(() => ({ sessionId: "s", path: "p" }), () => "")[0]!;
+  const params = (tool.parameters as { properties: Record<string, { enum?: string[] }> }).properties;
+  assert.deepEqual(params.op!.enum, ["start", "edit", "read", "look", "tell"]);
+  for (const key of ["run", "efforts", "removeModels", "removeModelGroups", "removeDirections", "removeLayouts", "combine", "removeImages", "removeSkills"]) assert.ok(params[key], key);
+  for (const text of [core, setup, tool.description]) {
+    assert.match(text, /only what (?:they|the user) asked to change/);
+    assert.match(text, /\/tmp/);
+    assert.match(text, /attachments folder/);
+    assert.match(text, /shared folder/);
+    assert.match(text, /8 MB/);
+  }
+  assert.match(core, /never open a second card/i);
+  assert.match(tool.description, /never opens a second card/);
+  assert.match(setup, /only before Start Creative Director/);
+  assert.match(setup, /not in one of those places, not an image, over 8 MB, no file there/);
+  assert.doesNotMatch(core + setup, /Tell them to set it there|tell them to change it on the card/);
+});
+
 test("every default set names a real direction, among 20 distinct ones", () => {
   const names = new Set(DESIGN_DIRECTIONS.map((d) => d.name));
   assert.equal(names.size, 20);

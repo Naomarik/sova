@@ -4,6 +4,7 @@ import type { DesignAsset, DesignAssetCatalogue, DesignShotWords } from "../../s
 import { DESIGN_ASSET_KINDS, kindAllowed, screenshotsInUse, SHOT_COLORS_LIMIT } from "../../shared/design-assets";
 import { designBriefBlock, designLinksIn, runOwnImage } from "../../shared/design";
 import { recommendedOption } from "./align";
+import { claudeModelName } from "./format";
 
 /** An answer picked on the card and not yet sent: an option, or words where a question has no options. */
 export interface StagedPick {
@@ -81,7 +82,7 @@ const sameOrigin = (a: string, b: string): boolean => {
 /** A run's grid, the set the server keeps (keptImages) with the unticked ones still shown: what a link on
     Use Its Images captured, in the capture's order, then your images: those the run started with (run.images) and those
     added since it began. */
-export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "captures"> | null, run: Pick<DesignRun, "setup" | "createdAt" | "images">): DesignAsset[] {
+export function assetsOfRun(catalogue: Pick<DesignAssetCatalogue, "assets" | "captures"> | null, run: Pick<DesignRun, "setup" | "createdAt" | "images" | "imagesLeftOut">): DesignAsset[] {
   if (!catalogue) return [];
   const links = (run.setup.links ?? []).filter((l) => l.use === "images");
   const ranked = catalogue.captures.filter((c) => links.some((l) => sameOrigin(l.url, c.url))).flatMap((c) => c.names);
@@ -129,7 +130,7 @@ export function assetStateLine(a: DesignAsset): string {
 export function coordinatorChangeLine(setup: Pick<DesignSetup, "models">, current: string): string {
   const picked = setup.models.find((m) => m.coordinator);
   if (!picked || picked.ref === current) return "";
-  return `This starts a new Creative Director on ${picked.name}; it keeps the notes, not the conversation.`;
+  return `This starts a new Creative Director on ${claudeModelName(picked.ref) ?? picked.name}; it keeps the notes, not the conversation.`;
 }
 
 /** A screenshot's words for designers as one editable text: its feel, then a `#hex role` line per colour. */

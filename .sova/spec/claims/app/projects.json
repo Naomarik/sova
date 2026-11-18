@@ -257,8 +257,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:53Z",
-      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§app.projects/placement": {
@@ -343,7 +343,7 @@
   "§app/projects": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "shared/projects.ts",
       "server/projects/routes.ts",

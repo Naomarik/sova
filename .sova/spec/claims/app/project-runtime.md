@@ -7,7 +7,7 @@ the host that runs it: what its main checkout declares in `.sova/project.json`
 (§app.project-services/contract), whether conformance proved it, and whether the project's stack moved since. It is kept in a
 host-local statechart, `runtime/<p>`, beside the project's watch. It is filled by the **Project
 verbs** playbook, which a coding session runs on a branch of the project, and it is read by the
-project page's Software card and by the overseer. What runs right now (units, pids, instances) is
+project page's Running Copies tab (its setup line and Recent list) and by the overseer. What runs right now (units, pids, instances) is
 never stored in it: the engine's status is the truth for that, joined in when the registry is read.
 
 ## §app.project-runtime/registry — What the registry holds
@@ -70,7 +70,7 @@ something, after a merge of a branch, when the project page reads the registry, 
 minutes; it tells the statechart only when they changed.
 
 The registry keeps a feed, one line per move, read from the statechart's log and returned with
-the registry (the Software card shows it). It says, as the standing moves: "The project declares no software yet
+the registry (the Running Copies tab's **Recent** list shows it, §app.project-runtime/software-card). It says, as the standing moves: "The project declares no software yet
 (.sova/project.json is missing on main)." / "Conformance is running on main." / "The project's
 software is registered: {n} services, proven at {hash12}." / "The project's stack changed since its
 software was registered ({paths}). Run the Project verbs playbook to bring it up to date." /
@@ -115,7 +115,7 @@ The run's region moves idle → running → proposed (its branch has commits and
 idle (merged, or its worktree removed); a run that ended with no commits returns to idle with the
 result "no change". A turn that ends while the session has open alignment questions waiting on the
 operator (§chat.alignment/session-mark) moves it to waiting instead, whatever its branch holds, and
-the next turn (the operator's answer) moves it back to running. The registry's feed (the Software card's, §app.project-runtime/standing) says
+the next turn (the operator's answer) moves it back to running. The registry's feed (the Recent list's, §app.project-runtime/standing) says
 "The Project verbs playbook was started{: why}.", "The Project verbs playbook could not start.",
 "The Project verbs playbook finished with no change.", "The Project verbs playbook proposes a
 definition on {branch}: read it, then merge it." ("… proposes a deploy recipe on {branch}: …" for a playbook
@@ -197,26 +197,36 @@ processes, starts anything outside the verbs, or runs deploy or production tasks
 Its contract reference names every key the parse accepts, `adopt` included (a slot-0 unit the
 operator already runs, §app.project-services/adopt), which a project it onboards almost never needs.
 
-## §app.project-runtime/software-card — The Software card
+## §app.project-runtime/software-card — The setup line on Running Copies
 
-The project page's Overview has a **Software** card reading the registry. It shows the standing as a
-chip (Unregistered, Checking, Registered, Out of date, Failed); one row per
-service: name, kind, scope, isolation method (its why as the title), ports, its live state per
-instance, and its measured memory; each orphan as its own row, "still running in {copy}, no longer
-declared", with an Orphan chip in warn; one row per data resource (name and kind), a sensitive
-one with a Sensitive chip in warn whose title says "Derived from production: copies of it are never
-shared."; "Proven {time} at {hash12} (suite v{n})";
-"Changed since: {paths}" while stale; "Failed at {check}: {detail}" while failed; the playbook
-run's line as a link to its session (while proposed, "The {Title} playbook proposes a definition on
-{branch}", or "… proposes a deploy recipe on {branch}" for a playbook that proposes `deploy`, "…
-proposes a release setup on {branch}" for one that proposes `release`); and, under its own "Feed" label after the actions, the registry's latest feed lines, newest first, with
-the project's onMerge notes (§app.project-services/on-merge) and deploy notes
-(§app.project-services/deploy-status) among them. Its actions are
-**Run Playbook** (**Run Again** once registered), shown only while the statechart would take it,
-and, while a run is proposed, **Merge Branch** (§app.project-runtime/merge). A live run shows as its strip
-(§app.project-runtime/run-progress) and a proposed one as its review
-(§app.project-runtime/run-report). Under its service rows, **Open Branches** links to the project's
-Branches tab (§app.project-services/services-ui), where each copy is started, stopped, opened and read.
+The project page has no Software card. What it showed of the registry now sits on the
+**Running Copies** tab (§app.project-services/services-ui), at the end of the copy-limit card, as
+one line saying whether the project's services are set up, read from the registry: a chip, then
+"checked {time}" (when its definition was proven, else registered) where there is one, then the
+line's buttons.
+
+- **Registered**: "Services set up" (success), and **Run Again**.
+- **Unregistered**: "Not set up yet" (warn), and **Run Playbook**.
+- **Conforming**: "Checking the services" (info).
+- **Stale**: "Out of date" (warn), **Run Again**, and under it "Changed since: {paths}".
+- **Failed**: "Setup failed" (error), **Run Again**, and under it "Failed at {check}: {detail}"
+  (or the definition's error).
+
+Run Playbook and Run Again (`POST /api/projects/:pid/verbs/onboard`, §app.project-runtime/onboard)
+show only while the statechart would take them, and not while the project is archived; started,
+"The Project verbs playbook started on {branch}." Under the line, each orphan, "{service} still
+runs in {copy}, no longer declared." with an **Orphan** chip (warn); while a playbook run is live,
+its strip (§app.project-runtime/run-progress); while one is proposed, **Merge Branch** or **Land**
+(§app.project-runtime/merge) on the line and its review (§app.project-runtime/run-report) under it.
+The per-service rows, the data resources and the "Proven …" line are not shown: each copy's row on
+the same tab shows its services' ports, state and memory. With the registry not read yet, a
+placeholder line; unreadable, "Couldn't read the services setup. {reason}".
+
+At the tab's end, a **Recent** card, closed when the tab opens and shown only while the feed has a
+line, holds the registry's newest 10 feed lines, newest first, each with its time, with the
+project's onMerge notes (§app.project-services/on-merge) and deploy notes
+(§app.project-services/deploy-status) among them; its summary says how many ("1 entry", "{n}
+entries", or "latest 10").
 
 ## §app.project-runtime/review — A proposed run needs you
 
@@ -233,7 +243,7 @@ row, counts in the Overseer's "need you", and is a phone-notification kind, "Pla
 by default (§app.notifications/delivery). The item goes only when the run leaves proposed: its branch
 merged, its worktree removed, or the run working again (a new turn); never on a visit.
 
-While the run is proposed, the project page shows a banner above its summary, on every tab: "{Title}
+While the run is proposed, the project page shows a banner under its head, on every tab: "{Title}
 proposes {hash12} on {branch}." with "Read it, then merge it into {target}." (with no valid
 definition on the branch, "{Title} proposes changes on {branch}." with "Its branch has no valid
 definition: read its report."); a run that proposes `release` names no hash there, since its hash
@@ -288,7 +298,7 @@ is "The release setup changed since it was shown: look again.". A Setup chat's p
 merged here: this route hands it to the Setup chat's own (§app.project-setup/proposal), with its
 rules and refusals. A merge that is refused answers 409 with "The merge was refused: {its reason}".
 With no run proposed it is refused 409: "No playbook run is proposed." It answers the registry, read
-again. The Software card shows **Merge Branch** while a run is proposed, beside the banner's and the
+again. The Running Copies tab's setup line (§app.project-runtime/software-card) shows **Merge Branch** while a run is proposed, beside the banner's and the
 Needs-you row's; each says, on a refusal, why under the button. Merge Branch, and its Land below,
 passes only on the user's own click in Sova's page or a proven click from another of their computers
 (§app.access/your-click): a script, a chat's shell, a card's command or an in-process call is
@@ -305,7 +315,7 @@ doesn't parse counts as set up and shows Land.
 
 ## §app.project-runtime/run-progress — The run as it goes
 
-The Software card shows the live run of a verb playbook as a strip, from what Sova already keeps of
+The Running Copies tab's setup line (§app.project-runtime/software-card) shows the live run of a verb playbook as a strip, from what Sova already keeps of
 its session, with no tool of the run's own: a chip, "Working" (the live indicator) or "Idle"
 ("Waiting for your answers" while the run's region is waiting, "Proposed" while it is proposed),
 how long since the run started ("under 1 min", "12 min", "2 h 5 min"), the session's outline "now"
@@ -316,7 +326,7 @@ answers.
 
 ## §app.project-runtime/run-report — The proposal, from what Sova read
 
-While a run is proposed, the Software card shows what its branch proposes, read by the host from
+While a run is proposed, the Running Copies tab's setup line shows what its branch proposes, read by the host from
 the branch's `.sova/project.json` at its tip and the newest conformance of its hash, never
 from the run's own words: each service (name, kind, scope, isolation method, slot 0's ports), each
 data resource with its Sensitive chip, whether copies can be shared ("Shares {endpoints}",
@@ -326,13 +336,13 @@ each service, or "Conformance failed at {check}: {detail}", or "No conformance o
 yet"). For a run whose playbook proposes `deploy`, the registry's read of the proposal also carries the
 branch's deploy recipe as Sova renders it: for each target, in the order they run, every credential
 check, plan step, build step, step and rollback step as an argv with this host's `${host.…}` values in
-place (a name this host lacks shown unset, never guessed), its verify and its rollback; the Software
-card shows it under the review. For a run whose playbook proposes `release`, it carries the branch's
+place (a name this host lacks shown unset, never guessed), its verify and its rollback; the setup
+line shows it under the review. For a run whose playbook proposes `release`, it carries the branch's
 release setup instead: the settings line (tag and scheme, the channels moved, a release commit or
 tag-only, the gating checks, the quiet minutes, the playbook's folder), the manifest's steps grouped
 "Before the checks", "After the checks, before Publish", "After Publish" and "After a Withdraw" (held
 steps marked "Held for you", built-file steps marked), the playbook's files, or the problem when the
-section, the folder, `release.json` or `PLAYBOOK.md` is missing or doesn't parse; the Software card
+section, the folder, `release.json` or `PLAYBOOK.md` is missing or doesn't parse; the setup line
 and the Releases tab (§app.release/tab) show it. A branch with no valid definition says why ("Its branch has no .sova/project.json." / "The
 definition on its branch is invalid: {error}"). Under it, **Read Report** links to the run's session,
 whose last message is its report.
@@ -402,13 +412,20 @@ check; the proposal is landed or merged as the Setup chat's (§app.project-setup
 
 ## §app.project-runtime/deploy-panel — The Deploy panel
 
-The project page's Overview has a **Deploy** card under the Software card, the operator's view of
-how the project ships, reading `deploy.status` every 5 seconds. With no deploy declared on main it says
+The project page's **Deploy** tab (`#/projects/<pid>/deploy`, after Releases,
+§app.organizations/project-page) holds the Deploy panel at the tab's full width, headed "Deploy" with "Plans from Releases land
+here." (and at its right "Setup {hash}", main's deploy hash in 12 mono characters, titled "The deploy
+section's hash on main: it changes when the setup does"), the operator's view of how the project
+ships, reading `deploy.status` every 5 seconds while the tab shows. The tab's label carries the live
+dot while a deploy or rollback of one of its targets runs and the warn dot while an overseer's
+request to deploy is open; the page keeps that dot current with a read of its own every 30 seconds
+whichever tab shows (a project that declares no deploy answers not-found once, and is read again
+only on Refresh Project), and takes the panel's newer read while the tab shows. With no deploy declared on main it says
 "Main declares no deploy yet.", says in plain words what a deploy is and that the project's Setup
 chat asks how each target ships and proposes it on a branch, running nothing, and offers **Set Up
 with a Chat**; a main with no `.sova/project.json` at all reads the same, never a bare error. Once
-main declares a deploy, the card offers **Change Setup**. Both open the
-project's Setup chat (§app.project-setup/start). While its setup branch is proposed, the card shows
+main declares a deploy, the panel offers **Change Setup**. Both open the
+project's Setup chat (§app.project-setup/start). While its setup branch is proposed, the panel shows
 each proposed target's steps from the branch (§app.project-setup/proposal). Each target is a row: its name, its standing chip
 (Declared, Not declared; §app.project-runtime/deploy-standing), the release it runs ("Runs
 {tag}", "(withdrawn)" when it is; §app.release/deploy), its
@@ -419,12 +436,37 @@ declared target offers **Plan Deploy** (**Open Plan** while a request waits); it
 one line that opens to each check ("{n} checks passed", or "{k} checks passed · {m} let through", open from
 the start when any is let through), what will run in a fresh checkout of the commit, and "Expires in {n} min"; a refusal says why, and when it
 needs a typed reason it asks for it ("Let it through without passing tests, because", "… with main's
-tree dirty, because") and offers **Plan Again**. Plan Deploy of {tag} on the Releases tab plans its target
-here at the release's commit, scrolled into view, with "Planning release {tag} ({commit7})." and **Plan
-the Branch Tip Instead**. A plan offers **Deploy {commit7}**, then a one-line
+tree dirty, because") and offers **Plan Again**. Plan Deploy of {tag} on the Releases tab opens this
+tab and plans its target here at the release's commit, with "Planning release {tag} ({commit7})." and
+**Plan the Branch Tip Instead**; the hand-off is taken once the tab shows, never lost to the switch, and
+nothing scrolls. A plan offers **Deploy {commit7}**, then a one-line
 confirm ("This ships {commit7} to {target}: {about}. Everyone using it gets it.", the period added only when
 {about} doesn't end its own sentence) with **Deploy Now** and
 **Cancel**. **Roll Back** (outlined destructive, its title saying what it does) confirms the same way with
 **Roll Back Now**; it is absent for a target that can't be rolled back. **Read Log** shows the last deploy's
 log (200 lines, redacted), and **Dismiss Request** clears an overseer's request. An archived project
 plans and ships nothing from here.
+
+**Each target's facts** are a short list: **Target** (its name, standing chip and about),
+**Running now** ("Runs {tag}", "(withdrawn)" when it is, and the verified commit) and **Last deploy**
+(its state chip, its line and when it started).
+
+**Step progress.** While a deploy or rollback runs, a card above the targets says so: the
+**Deploying** chip (the live indicator), "Deploying {commit7} to {target}" ("Rolling back {commit7}
+to {target}") with "· step {i}", and a stepper of its steps in order, each done, failed, running or
+waiting: each step it has run, named by its id in the recipe ("2 · Upload"), then the one running
+now. Only when this page shipped the deploy's plan does it know the steps still to come: then they
+follow, waiting, the line reads "· step {i} of {n} · {step}", and a target that declares a verify ends
+on **Check URL**. Otherwise the running step reads "Step {i}" and nothing after it shows:
+`deploy.status` names only the steps that ended. The card goes once the deploy ends; its outcome is
+the target's last deploy line.
+
+**History.** Under the targets, while main declares any, a **History** card lists the targets' deploys
+and rollbacks together, newest first, the newest 20, as `deploy.status` answers them with each
+target named (§app.project-services/deploy-status), read again when a target's last deploy changes:
+the commit in mono, the target, "Rollback · " for a rollback, its result (the URL check's status as
+a chip, "200", with "{host} answered", when it ran one; else its state chip, "Rolled back" for a
+rollback that succeeded, and "at {step}" for a failed step), its deploy id in mono, and when it
+started (relative); its `title` the failure's detail. With none: "No deploys yet. Each one lists
+here with its commit and result." Unread: "Reading the deploy history.", or "Couldn't read the
+deploy history. {reason}".

@@ -22,6 +22,8 @@ import {
   workerReplyKey,
   type ContextPart,
   type ContextSizes,
+  skillLoadedLine,
+  skillSizeFacts,
 } from "./context-parts";
 
 const parts: ContextPart[] = [
@@ -371,4 +373,26 @@ describe("the server's read", () => {
     assert.equal(contextHeadline(50_000, null), "50,000 tokens · this model's limit is unknown");
     assert.equal(contextLayout({ ...base, window: null }).free, null);
   });
+});
+
+test("a skill's row says what this chat loaded from its folder, never adding it to a total; its sheet details the sizes", () => {
+  const files = [
+    { path: "/s/x/SKILL.md", label: "SKILL.md", tokens: 9000 },
+    { path: "/s/x/references/a.md", label: "references/a.md", tokens: 5600, linesRead: 40, lines: 90 },
+  ];
+  const part = { id: "skills:x", group: "skills" as const, label: "x", tokens: 90, read: true, loadedTokens: 14_600, loadedFiles: files, fileTokens: 9300 };
+  assert.equal(skillLoadedLine(part), "loaded ≈15k tokens from 2 files");
+  assert.equal(skillLoadedLine({ ...part, loadedTokens: undefined }), null);
+  assert.deepEqual(partMeta(part), { chip: { word: "Read", done: true }, beside: "loaded ≈15k tokens from 2 files", text: "" });
+  // Only a file of its folder other than SKILL.md: the skill was still used.
+  assert.deepEqual(partMeta({ ...part, read: undefined, loadedFiles: [files[1]!], loadedTokens: 5600 }).chip, { word: "Used", done: true });
+  assert.deepEqual(
+    skillSizeFacts(part).map((f) => [f.label, f.value, f.sub ?? null]),
+    [
+      ["Description", "≈90 tokens", null],
+      ["SKILL.md", "≈9.3k tokens", null],
+      ["Loaded", "≈15k tokens", "from 2 files"],
+    ],
+  );
+  assert.equal(skillSizeFacts({ ...part, loadedTokens: undefined, loadedFiles: undefined }).at(-1)!.value, "not used");
 });

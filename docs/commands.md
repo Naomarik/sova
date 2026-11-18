@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 638 |
-| Routes a catalogue entry points at | 212 |
-| Catalogue entries | 283 |
+| Routes registered | 649 |
+| Routes a catalogue entry points at | 213 |
+| Catalogue entries | 284 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -27,7 +27,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 269 |
+| Class: Left as is, by choice | 279 |
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
@@ -314,6 +314,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `design.list` | List Designs | looks | `GET /api/design` | full |
 | `design.page` | Read Design Page | looks | `GET /api/design/:label/page` | full |
 | `design.setup.set` | Change Lookbook Setup | changes | `PATCH /api/design/runs/:run/setup` | full |
+| `design.setup.hide` | Hide a Lookbook Provider | changes | `POST /api/design/runs/:run/hidden` | full |
 | `design.start` | Start Lookbook Creative Director | changes | `POST /api/design/runs/:run/start` | full |
 | `design.message` | Message a Design | changes | `POST /api/design/:label/message` | full |
 | `design.refine` | Refine a Design | changes | `POST /api/design/:label/refine` | full |
@@ -521,7 +522,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (269)
+### Left as is, by choice (279)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -686,6 +687,14 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/provider-limits/waiting` | sessions |
 | `GET /api/public-links` | sessions |
 | `PUT /api/public-links` | admin |
+| `DELETE /api/public-links/account-token` | admin |
+| `PUT /api/public-links/account-token` | admin |
+| `DELETE /api/public-links/candidate` | admin |
+| `POST /api/public-links/cloudflared/download` | admin |
+| `POST /api/public-links/handed-out` | admin |
+| `POST /api/public-links/setup-chat` | admin |
+| `POST /api/public-links/tunnel/start` | admin |
+| `POST /api/public-links/turn-on` | admin |
 | `POST /api/public-links/verify` | admin |
 | `GET /api/push` | sessions |
 | `PUT /api/push/settings` | admin |
@@ -718,6 +727,8 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/settings/accounts/openai/login` | sessions |
 | `POST /api/settings/accounts/openai/login` | admin |
 | `POST /api/settings/accounts/openai/login/answer` | admin |
+| `GET /api/settings/agent-cpu` | sessions |
+| `PUT /api/settings/agent-cpu` | admin |
 | `POST /api/settings/apply` | admin |
 | `GET /api/settings/claude-status` | sessions |
 | `GET /api/settings/context-approval` | sessions |
@@ -891,6 +902,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/design/:label/stop` | full | `design.stop` |
 | `POST /api/design/coordinator/message` | full | `design.coordinator.message` |
 | `GET /api/design/history` | full | `design.history` |
+| `POST /api/design/runs/:run/hidden` | full | `design.setup.hide` |
 | `PATCH /api/design/runs/:run/setup` | full | `design.setup.set` |
 | `POST /api/design/runs/:run/start` | full | `design.start` |
 | `GET /api/diff/summary` | sessions | `session.diff.summary` |

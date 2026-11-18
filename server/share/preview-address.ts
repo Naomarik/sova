@@ -12,11 +12,15 @@ import { gatewayPreviewUrl } from "./registry";
  */
 
 /** Where previews minted here point. First match: the SOVA_SHARE_PREVIEW_URL pin, this host's own
-    gateway setting, the via gateway's stated address (only once it listed kind `p`); else none,
+    gateway setting, Cloudflare Account's preview address, the via gateway's stated address (only once
+    it listed kind `p`); Cloudflare Free (and Account without a preview address) is `tunnel` mode: each
+    previewed app gets its own Free tunnel (§mesh.public/preview-tunnels), no wildcard url; else none,
     with why (`gateway-old`: the via gateway answered without `p`). */
-export function previewAddress(env: NodeJS.ProcessEnv = process.env, file: PublicLinksFile = readPublicLinks()): PreviewAddress {
+export function previewAddress(env: NodeJS.ProcessEnv = process.env, file: PublicLinksFile = readPublicLinks(env)): PreviewAddress {
   const pin = previewPin(env);
   if (pin) return { url: pin, source: "env" };
+  if (file.route === "account" && file.account?.previewUrl) return { url: file.account.previewUrl, source: "setting" };
+  if (file.route === "quick" || file.route === "account") return { url: null, source: null, mode: "tunnel" };
   if (file.route === "self" && file.gateway) {
     return file.gateway.previewUrl ? { url: file.gateway.previewUrl, source: "setting" } : { url: null, source: null, reason: "no-address", message: PREVIEW_NO_ADDRESS };
   }

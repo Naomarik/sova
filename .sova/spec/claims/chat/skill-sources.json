@@ -33,18 +33,23 @@
       "src/components/SessionSetup.tsx",
       "src/app.css",
       "src/lib/context-parts.ts",
-      "server/context-tab.ts"
+      "server/context-tab.ts",
+      "server/approvals.ts",
+      "shared/approvals.ts",
+      "server/approvals.test.ts",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T18:26Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+      "by": "naomarik",
+      "at": "2026-11-17T13:00Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.skill-sources/project-defaults": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§app/projects",
       "§chat.skill-sources/starting",
@@ -73,18 +78,22 @@
       "shared/approvals.ts",
       "server/approvals.test.ts",
       "server/skill-descent.ts",
-      "server/session-setup.test.ts"
+      "server/session-setup.test.ts",
+      "server/file-measure.ts",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css",
+      "src/lib/approvals.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T16:08Z",
-      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.skill-sources/project-new-chats": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.skill-sources/project-defaults",
       "§chat.transcript/setup-card-toggles",
@@ -117,12 +126,14 @@
       "server/session-loadout-runtime.test.ts",
       "server/session-setup.test.ts",
       "server/skill-descent.ts",
-      "server/chat-host.test.ts"
+      "server/chat-host.test.ts",
+      "src/components/ApprovalSwitches.tsx",
+      "src/components/approval-switches.css"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T16:08Z",
-      "source": "pi-session:ec6da819-fb0b-454b-9ba9-97db0affcbfb#723cbddc"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.skill-sources/rescue": {
@@ -158,12 +169,14 @@
       "server/harness/pi/contract.test.ts",
       "server/harness/pi/QUIRKS.md",
       "server/harness/pi/quirks.ts",
-      "server/harness/pi/skill-sources.test.ts"
+      "server/harness/pi/skill-sources.test.ts",
+      "server/context-scope.ts",
+      "server/context-scope.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T18:26Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+      "at": "2026-11-17T18:17Z",
+      "source": "pi-session:4e642b8d-a7ef-468d-b331-0c649395fd26#66b3316c"
     }
   },
   "§chat/skill-sources": {
@@ -175,9 +188,9 @@
       "server/harness/pi/skill-sources.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T18:26Z",
-      "source": "pi-session:01a1b07d-be49-727f-8989-d4d0378c61bb#55377061"
+      "by": "naomarik",
+      "at": "2026-11-17T13:42Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   }
 }

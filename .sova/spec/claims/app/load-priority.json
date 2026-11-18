@@ -1,4 +1,59 @@
 {
+  "§app.load-priority/ceiling": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.access/your-click",
+      "§app.load-priority/cpu-share",
+      "§app.settings-dialog/general",
+      "§chat.create-mode/settings-cards"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-16T18:39Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#80590cfa"
+    },
+    "code": [
+      "server/agent-cpu.ts",
+      "server/agent-cpu.test.ts",
+      "shared/agent-cpu.ts",
+      "src/components/AgentCpuSettings.tsx",
+      "src/lib/agent-cpu.ts",
+      "src/lib/agent-cpu.test.ts",
+      "src/lib/api.ts",
+      "src/app.css",
+      "server/app.ts",
+      "shared/sova-settings-reference.ts",
+      "server/sova-settings.ts",
+      "pi-config/extensions/mode/create/safety.md",
+      "server/create-guide-growth.json",
+      "server/page-only.ts"
+    ]
+  },
+  "§app.load-priority/cpu-share": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/chat-processes",
+      "§app/background-jobs",
+      "§app/project-services"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-16T18:39Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#80590cfa"
+    },
+    "code": [
+      "server/agent-cpu.ts",
+      "server/agent-cpu.test.ts",
+      "server/index.ts",
+      "package.json",
+      "scripts/run-tests.mjs",
+      "server/testing/hermetic-server.ts"
+    ]
+  },
   "§app.load-priority/workers": {
     "kind": "behavior",
     "authority": "accepted",
@@ -34,7 +89,8 @@
       "docs/perf/2026-10-03-load-and-freezes.md",
       "docs/perf/RUNBOOK.md",
       "scripts/perf/load-experiment.mjs",
-      "scripts/perf/load-standin.mjs"
+      "scripts/perf/load-standin.mjs",
+      "docs/perf/2026-11-16-server-freezes.md"
     ],
     "notOwned": [
       "§app/chat-processes",

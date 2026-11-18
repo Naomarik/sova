@@ -1,8 +1,13 @@
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, onMount, Show } from "solid-js";
+import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import type { LinkView, VerbResult } from "../../shared/project-contract";
 import { type CopyLimitView, type CopyView, isStarting, type ServiceRowView } from "../../shared/services-view";
-import { getProjectServices, runProjectVerb, setCopyLimit } from "../lib/api";
-import { createPoll } from "../lib/poll";
+import { ApiError, getProjectRuntime, getProjectServices, runProjectVerb, runProjectVerbsPlaybook, setCopyLimit } from "../lib/api";
+import { relativeTime } from "../lib/format";
+import { canGoCount, copyGroups, freeButton, freedLine, freeTitle, goWord, type GoReason, inUseCount, type LandedCopies, NO_LANDED } from "../lib/free-slots";
+import { memoryWord, openWord, playbookLabel, portsWord, reviewDefProblem, reviewProofWord, runStrip, runWord, SENSITIVE_TITLE, serviceFacts, setupStatus, shareWord } from "../lib/project-software";
+import { projectSessionHref } from "../lib/projects-route";
+import { createPoll, type Poll } from "../lib/poll";
 import {
   adoptedLine,
   ARCHIVED_COPIES_LINE,
@@ -50,11 +55,25 @@ import { COPY_LINK_GONE, copyLinkDeleted, DELETE_ASK, DELETE_LINK, DELETING } fr
 import { createArm } from "../lib/two-step";
 import "../delete-button.css";
 import { announce, copyText, toast } from "../lib/ui-state";
+import { MergeRunButton, proposedRun } from "./PlaybookReview";
+import { PreviewsCard } from "./PreviewsCard";
+import { DeployRecipeSteps } from "./ProjectDeployPanel";
+import { ReleaseSetupSteps } from "./ReleasesTab";
 import { ServiceLogsDrawer } from "./ServiceLogsDrawer";
-import { Chip, Icon } from "./ui";
+import { Chip, Icon, Placeholder, trapFocus } from "./ui";
 
 const POLL_MS = 5_000;
-const errText = (x: unknown) => (x instanceof Error ? x.message : String(x));
+const errText = (x: unknown) => (x instanceof ApiError || x instanceof Error ? x.message : String(x));
+/** The registry changes on a merge, a conformance or a run: read it often enough to follow one. */
+const RUNTIME_POLL_MS = 15_000;
+/** Recent's lines, newest first. */
+const RECENT_SHOWN = 10;
+
+/** The page's one read of the software registry: Running Copies' setup line and the proposed run's banner share it. */
+export const createRuntimePoll = (projectId: string): Poll<ProjectRuntimeView> => createPoll(() => getProjectRuntime(projectId), RUNTIME_POLL_MS, { cacheKey: `project:${projectId}:runtime` });
+
+/** A live run's state chip: working is the live indicator; waiting on you is warn. */
+const STRIP_TONE: Record<string, "accent" | "warn" | "info" | undefined> = { Working: "accent", "Waiting for your answers": "warn", Proposed: "info", Idle: undefined };
 
 /**
  * A service's ports as one compact tag (its name, then each port), each port with HTTP readiness a
@@ -128,11 +147,14 @@ function CopyLimit(props: { projectId: string; limit: CopyLimitView; archived: b
         when={editing()}
         fallback={
           <p class="orgs-line services-limit-line">
-            <span>
-              {limitLine(props.limit)}, <span class="services-limit-source">{limitSource(props.limit)}</span>
+            <span class="services-limit-words">
+              <strong class="services-limit-count">{limitLine(props.limit).split(" · ")[0]}</strong>{" "}
+              <span class="services-limit-source">
+                · {limitLine(props.limit).split(" · ").slice(1).join(" · ")}, {limitSource(props.limit)}
+              </span>
             </span>
             <Show when={!props.archived}>
-              <button type="button" class="button button-sm button-ghost" onClick={open}>
+              <button type="button" class="button button-sm" onClick={open}>
                 Change
               </button>
             </Show>
@@ -184,6 +206,12 @@ function CopyLimit(props: { projectId: string; limit: CopyLimitView; archived: b
           </div>
         </form>
       </Show>
+      {/* The copies against the places they can use: the line above carries the numbers. */}
+      <Show when={!editing() && props.limit.usable > 0}>
+        <div class="meter-track services-limit-meter" aria-hidden="true">
+          <span class="meter-fill" style={{ "--meter-pct": `${Math.min(100, Math.round((props.limit.copies / props.limit.usable) * 100))}%` }} />
+        </div>
+      </Show>
       <Show when={props.limit.over}>{(o) => <p class="banner banner-warn services-limit-over">{o()}</p>}</Show>
       <Show when={usableLine(props.limit)}>{(u) => <p class="field-hint services-limit-places">{u()}</p>}</Show>
       <For each={props.limit.unavailable ?? []}>{(line) => <p class="field-hint services-limit-places">{line}</p>}</For>
@@ -194,12 +222,23 @@ function CopyLimit(props: { projectId: string; limit: CopyLimitView; archived: b
 }
 
 /**
- * A project's Branches tab (§app.project-services/services-ui): one row per copy on this host, the
+ * A project's Running Copies tab (§app.project-services/services-ui), once Branches: the copy limit and the
+ * services' setup line (Run Playbook or Run Again, a live run, a proposed run's review), then one row per copy on
+ * this host in two groups, In use and Can go (landed, or left stopped by the merge queue; Free Up Slots tears
+ * those down at once, asked first), Previews, the shared services, and the registry's Recent feed, closed. The
  * main checkout's first, each with its ports, memory, state and who made it, Open (its app's entry, while
- * the entry's service is ready) first, and Start, Stop, Apply, Reset, Logs and Teardown run as the operator; the shared services in their own block. Reset and
- * Teardown (and Stop of a shared service) ask first; a refusal reads as a sentence under its row.
+ * the entry's service is ready) first, and Start, Stop, Logs and Teardown run as the operator (Apply and Reset are
+ * not on the page: a chat runs them with its own tools); the shared services in their own block.
+ * Teardown (and Stop of a shared service) asks first; a refusal reads as a sentence under its row.
  */
-export function ProjectServicesTab(props: { projectId: string; archived: boolean }) {
+export function ProjectServicesTab(props: {
+  projectId: string;
+  archived: boolean;
+  /** The page's one read of the software registry (the setup line, a live or proposed run, Recent). */
+  runtime: Poll<ProjectRuntimeView>;
+  /** What the page knows landed (free-slots.ts landedCopies): Can go's copies. Absent: only the merge queue's copy can go. */
+  landed?: () => LandedCopies;
+}) {
   const poll = createPoll(() => getProjectServices(props.projectId), POLL_MS);
   /** `<instance or service>:<verb>` of the verb in flight. */
   const [running, setRunning] = createSignal<string | null>(null);
@@ -457,113 +496,195 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
     );
   };
 
+  /** One copy's row; under Can go, `why` it can go. */
+  const Row = (p: { copy: CopyView; why?: string }) => (
+    <CopyRow
+      copy={p.copy}
+      why={p.why}
+      archived={props.archived}
+      said={said()[p.copy.instance] ?? null}
+      verbs={(verb, quiet) => <VerbButton row={p.copy.instance} verb={verb} name={copyName(p.copy)} body={{ instance: p.copy.instance }} asksFirst={ASKS_FIRST.has(verb)} quiet={quiet} />}
+      share={<ShareParts copy={p.copy} />}
+      shareButton={props.archived ? null : <ShareButton copy={p.copy} />}
+      onLogs={() => setLogs({ instance: p.copy.instance, name: copyName(p.copy) })}
+    />
+  );
+
+  const view = () => poll.data();
+  const root = () => view()?.root ?? "";
+  const groups = createMemo(() => copyGroups(copies(), root(), props.landed?.() ?? NO_LANDED));
+  const [freeing, setFreeing] = createSignal(false);
+  const runningCount = () => copies().filter((c) => c.state === "running" || c.state === "degraded").length;
+
   return (
-    <section class="card orgs-section services-tab" aria-labelledby="project-services">
-      <h2 class="orgs-h2" id="project-services">
-        Branches
-      </h2>
-      <Show when={poll.data()} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read this project's copies. ${poll.error()}` : "Reading this project's copies."}</p>}>
-        {(v) => (
-          <>
-            <Show
-              when={v().limit}
-              fallback={
-                <p class="orgs-line">
-                  {copies().length === 1 ? "1 copy" : `${copies().length} copies`} on this host, {copies().filter((c) => c.state === "running" || c.state === "degraded").length} running.
-                </p>
-              }
-            >
-              {(l) => <CopyLimit projectId={props.projectId} limit={l()} archived={props.archived} changed={() => poll.refetch()} />}
-            </Show>
-            <Show when={props.archived}>
-              <p class="orgs-line">{ARCHIVED_COPIES_LINE}</p>
-            </Show>
-            <Show when={v().error}>{(e) => <p class="field-error">Couldn't read their status. {e()}</p>}</Show>
-            <Show when={poll.error()}>{(e) => <p class="field-error">The last read failed; this is what it showed before. {e()}</p>}</Show>
-            <Show when={copies().length}>
-              <ul class="list services-list">
-                <For each={copies()}>
-                  {(c) => (
-                    <CopyRow
-                      copy={c}
-                      archived={props.archived}
-                      said={said()[c.instance] ?? null}
-                      verbs={(verb, quiet) => <VerbButton row={c.instance} verb={verb} name={copyName(c)} body={{ instance: c.instance }} asksFirst={ASKS_FIRST.has(verb)} quiet={quiet} />}
-                      share={<ShareParts copy={c} />}
-                      shareButton={props.archived ? null : <ShareButton copy={c} />}
-                      onLogs={() => setLogs({ instance: c.instance, name: copyName(c) })}
-                    />
-                  )}
-                </For>
-              </ul>
-            </Show>
-            <Show when={!hasMain() && !props.archived}>
-              <div class="services-main-start">
-                <p class="orgs-line">The main checkout has no copy here yet.</p>
-                <VerbButton row="main" verb="up" name="main" body={{}} label="Start Main" />
-                <Show when={said().main}>{(s) => <p class="field-error services-said">{s()}</p>}</Show>
-              </div>
-            </Show>
-            <Show when={v().shared.length > 0 && copies()[0]}>
-              {(via) => (
-                <div class="services-shared">
-                  <h3 class="list-group-label">Shared services</h3>
-                  <p class="list-meta">One for every copy of the project. Stopping one stops it for all of them.</p>
-                  <ul class="list services-list">
-                    <For each={v().shared}>
-                      {(s) => {
-                        const row = `shared:${s.name}`;
-                        return (
-                          <li class="list-row services-row">
-                            <div class="list-main services-row-main">
-                              <p class="list-title services-row-title">
-                                <span class="services-name">{s.name}</span>
-                                <span class="services-row-chip">
-                                  <Chip tone={SERVICE_CHIP[s.state].tone}>{SERVICE_CHIP[s.state].word}</Chip>
-                                </span>
-                                <span class="services-row-meta">{memoryOf(s.rssBytes ?? null)}</span>
-                              </p>
-                              <Show when={Object.keys(s.ports).length}>
-                                <p class="list-meta services-facts">
-                                  <Ports service={s} />
-                                </p>
-                              </Show>
-                              <Show when={said()[row]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
-                            </div>
-                            {/* Both always offered: the one the service's state calls for is drawn first and plain. */}
-                            <div class="services-actions">
-                              <div class="services-actions-group">
-                                <Show
-                                  when={s.state === "ready" || s.state === "starting"}
-                                  fallback={
-                                    <>
-                                      <Show when={!props.archived}>
-                                        <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} />
-                                      </Show>
-                                      <VerbButton row={row} verb="down" name={s.name} body={{ instance: via().instance, services: [s.name] }} asksFirst quiet />
-                                    </>
-                                  }
-                                >
-                                  <VerbButton row={row} verb="down" name={s.name} body={{ instance: via().instance, services: [s.name] }} asksFirst />
-                                  <Show when={!props.archived}>
-                                    <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} quiet />
-                                  </Show>
+    <section class="services-tab" aria-labelledby="project-services">
+      <div class="services-head">
+        <h2 class="services-h2" id="project-services">
+          Running copies
+        </h2>
+        <p class="services-lede">Live copies of the app on this host, 1 per slot.</p>
+      </div>
+      <div class="card services-summary">
+        <Show when={view()} fallback={<p class="orgs-empty">{poll.error() ? `Couldn't read this project's copies. ${poll.error()}` : "Reading this project's copies."}</p>}>
+          {(v) => (
+            <>
+              <Show
+                when={v().limit}
+                fallback={
+                  <p class="orgs-line">
+                    {copies().length === 1 ? "1 copy" : `${copies().length} copies`} on this host, {runningCount()} running.
+                  </p>
+                }
+              >
+                {(l) => <CopyLimit projectId={props.projectId} limit={l()} archived={props.archived} changed={() => poll.refetch()} />}
+              </Show>
+              <Show when={props.archived}>
+                <p class="orgs-line">{ARCHIVED_COPIES_LINE}</p>
+              </Show>
+              <Show when={v().error}>{(e) => <p class="field-error">Couldn't read their status. {e()}</p>}</Show>
+              <Show when={poll.error()}>{(e) => <p class="field-error">The last read failed; this is what it showed before. {e()}</p>}</Show>
+            </>
+          )}
+        </Show>
+        {/* What replaced the Software card: the services' setup in one line, a live run, a proposed run's review, the feed. */}
+        <SetupStatus projectId={props.projectId} archived={props.archived} runtime={props.runtime} />
+      </div>
+      <Show when={view()}>
+        <div class="services-groups">
+          <div class="services-group">
+            <div class="services-gside">
+              <h3 class="services-gname">In use</h3>
+              <span class="services-gcount">{inUseCount(groups().inUse)}</span>
+            </div>
+            <div class="card services-glist">
+              <Show
+                when={groups().inUse.length || (!hasMain() && !props.archived)}
+                fallback={<p class="empty services-gempty">{groups().canGo.length ? "No copy is in use. The ones under Can go are landed or left by the merge queue." : "No copies on this host."}</p>}
+              >
+                <ul class="list services-list">
+                  <For each={groups().inUse}>{(c) => <Row copy={c} />}</For>
+                </ul>
+                <Show when={!hasMain() && !props.archived}>
+                  <div class="services-main-start">
+                    <p class="orgs-line">The main checkout has no copy here yet.</p>
+                    <VerbButton row="main" verb="up" name="main" body={{}} label="Start Main" />
+                    <Show when={said().main}>{(s) => <p class="field-error services-said">{s()}</p>}</Show>
+                  </div>
+                </Show>
+              </Show>
+            </div>
+          </div>
+          <div class="services-group">
+            <div class="services-gside">
+              <h3 class="services-gname">Can go</h3>
+              <span class="services-gcount">{canGoCount(groups().canGo.length)}</span>
+              <button
+                type="button"
+                class="button button-sm button-destructive services-free"
+                aria-disabled={!groups().canGo.length || running() ? "true" : undefined}
+                aria-describedby={groups().canGo.length ? undefined : "services-free-why"}
+                aria-haspopup="dialog"
+                onClick={() => groups().canGo.length && !running() && setFreeing(true)}
+              >
+                {groups().canGo.length ? `Free Up Slots · ${groups().canGo.length}` : "Free Up Slots"}
+              </button>
+              <Show when={!groups().canGo.length}>
+                <span class="services-free-why" id="services-free-why">
+                  Nothing has landed or been left by the merge queue.
+                </span>
+              </Show>
+            </div>
+            <div class="card services-glist">
+              <Show
+                when={groups().canGo.length}
+                fallback={
+                  <div class="empty services-gempty">
+                    <p class="empty-title">{groups().inUse.length === 1 ? "1 copy in use." : `${groups().inUse.length} copies in use.`} None ready to tear down.</p>
+                    <p class="empty-body">Copies show here once their branch lands, or when the merge queue leaves one stopped.</p>
+                  </div>
+                }
+              >
+                <ul class="list services-list">
+                  <For each={groups().canGo}>{(g) => <Row copy={g.copy} why={goWord(g.why)} />}</For>
+                </ul>
+              </Show>
+            </div>
+          </div>
+        </div>
+      </Show>
+      {/* Preview links (§mesh.public/preview-card): this project's apps, on this host. */}
+      <PreviewsCard projectId={props.projectId} archived={props.archived} />
+      <Show when={(view()?.shared.length ?? 0) > 0 && copies()[0]}>
+        {(via) => (
+          <section class="card orgs-section services-shared" aria-labelledby="services-shared">
+            <h3 class="orgs-h2" id="services-shared">
+              Shared services
+            </h3>
+            <p class="list-meta">One for every copy of the project. Stopping one stops it for all of them.</p>
+            <ul class="list services-list">
+              <For each={view()!.shared}>
+                {(s) => {
+                  const row = `shared:${s.name}`;
+                  return (
+                    <li class="list-row services-row">
+                      <div class="list-main services-row-main">
+                        <p class="list-title services-row-title">
+                          <span class="services-name">{s.name}</span>
+                          <span class="services-row-chip">
+                            <Chip tone={SERVICE_CHIP[s.state].tone}>{SERVICE_CHIP[s.state].word}</Chip>
+                          </span>
+                          <span class="services-row-meta">{memoryOf(s.rssBytes ?? null)}</span>
+                        </p>
+                        <Show when={Object.keys(s.ports).length}>
+                          <p class="list-meta services-facts">
+                            <Ports service={s} />
+                          </p>
+                        </Show>
+                        <Show when={said()[row]}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
+                      </div>
+                      {/* Both always offered: the one the service's state calls for is drawn first and plain. */}
+                      <div class="services-actions">
+                        <div class="services-actions-group">
+                          <Show
+                            when={s.state === "ready" || s.state === "starting"}
+                            fallback={
+                              <>
+                                <Show when={!props.archived}>
+                                  <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} />
                                 </Show>
-                              </div>
-                            </div>
-                          </li>
-                        );
-                      }}
-                    </For>
-                  </ul>
-                </div>
-              )}
-            </Show>
-          </>
+                                <VerbButton row={row} verb="down" name={s.name} body={{ instance: via().instance, services: [s.name] }} asksFirst quiet />
+                              </>
+                            }
+                          >
+                            <VerbButton row={row} verb="down" name={s.name} body={{ instance: via().instance, services: [s.name] }} asksFirst />
+                            <Show when={!props.archived}>
+                              <VerbButton row={row} verb="up" name={s.name} body={{ instance: via().instance, services: [s.name] }} quiet />
+                            </Show>
+                          </Show>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                }}
+              </For>
+            </ul>
+          </section>
         )}
       </Show>
+      <RecentFeed runtime={props.runtime} />
       <Show when={logs()} keyed>
         {(l) => <ServiceLogsDrawer projectId={props.projectId} instance={l.instance} name={l.name} onClose={() => setLogs(null)} />}
+      </Show>
+      <Show when={freeing()}>
+        <FreeUpDialog
+          projectId={props.projectId}
+          copies={groups().canGo}
+          onClose={() => setFreeing(false)}
+          onDone={() => {
+            setFreeing(false);
+            poll.refetch();
+          }}
+        />
       </Show>
     </section>
   );
@@ -575,7 +696,7 @@ export function ProjectServicesTab(props: { projectId: string; archived: boolean
  * all ghost; else the verb its state calls for plain, the quieter rest; the destructive ones apart); at narrow widths the actions wrap
  * under the facts.
  */
-function CopyRow(props: { copy: CopyView; archived: boolean; said: string | null; verbs(v: RowVerb, quiet: boolean): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
+function CopyRow(props: { copy: CopyView; why?: string; archived: boolean; said: string | null; verbs(v: RowVerb, quiet: boolean): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
   const c = () => props.copy;
   const chip = () => copyChip(c().state, isStarting(c().state, c().services), gaveUp(c().services));
   const entry = () => openEntry(c());
@@ -592,8 +713,12 @@ function CopyRow(props: { copy: CopyView; archived: boolean; said: string | null
             <Chip tone={chip().tone}>{chip().word}</Chip>
           </span>
           <span class="services-row-meta">
+            <Show when={props.why}>{(w) => <span class="services-why">{w()}</span>}</Show>
             <span>slot {c().slot}</span>
-            <span title="Resident memory of its services now">{copyMemory(c().services)}</span>
+            {/* Memory only once it was read: a stopped copy has none, and a bare dash says nothing. */}
+            <Show when={copyMemory(c().services) !== "—"}>
+              <span title="Resident memory of its services now">{copyMemory(c().services)}</span>
+            </Show>
             <span title={c().createdBy}>by {createdByWord(c().createdBy)}</span>
           </span>
         </p>
@@ -633,5 +758,267 @@ function CopyRow(props: { copy: CopyView; archived: boolean; said: string | null
       {/* Links and the Share form take the row's whole width, under its facts and actions. */}
       <div class="services-row-share">{props.share}</div>
     </li>
+  );
+}
+
+/**
+ * The services' setup in one line (§app.project-runtime/software-card, which it replaced): the registry's standing
+ * as a chip, when it was checked, and Run Playbook or Run Again while the statecharts would take it; under it why
+ * it failed or is out of date, what still runs undeclared, a live run's progress, and a proposed run's review
+ * with Merge Branch.
+ */
+function SetupStatus(props: { projectId: string; archived: boolean; runtime: Poll<ProjectRuntimeView> }) {
+  const poll = props.runtime;
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const run = async () => {
+    if (busy()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const out = await runProjectVerbsPlaybook(props.projectId);
+      const done = out.worktree ? `The Project verbs playbook started on ${out.worktree.branch}.` : "The Project verbs playbook started.";
+      toast(done);
+      announce(done);
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setBusy(false);
+      poll.refetch();
+    }
+  };
+  return (
+    <div class="services-setup" aria-label="Services setup">
+      <Show when={poll.data()} fallback={<Show when={poll.error()} fallback={<Placeholder lines={1} label="Services setup" />}>{(e) => <p class="orgs-empty">Couldn't read the services setup. {e()}</p>}</Show>}>
+        {(v) => {
+          const st = () => setupStatus(v());
+          const strip = () => runStrip(v(), Date.now());
+          return (
+            <>
+              <div class="services-setup-line">
+                <Chip tone={st().tone}>{st().word}</Chip>
+                <span class="services-setup-when">
+                  <Show when={st().checked}>
+                    {(at) => (
+                      <>
+                        checked <time title={at()}>{relativeTime(at())}</time>
+                      </>
+                    )}
+                  </Show>
+                </span>
+                {/* While a run is proposed: Merge Branch (§app.project-runtime/merge). */}
+                <Show when={proposedRun(v())}>{(r) => <MergeRunButton projectId={props.projectId} run={r()} onDone={(view) => (view ? poll.set(view) : poll.refetch())} />}</Show>
+                <Show when={v().can.onboard && !props.archived}>
+                  <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={() => void run()}>
+                    {busy() ? "Starting…" : playbookLabel(v())}
+                  </button>
+                </Show>
+              </div>
+              <Show when={st().why}>{(why) => <p class={`orgs-line${v().standing === "failed" ? " project-software-failed" : ""}`}>{why()}</p>}</Show>
+              <For each={v().orphans}>
+                {(o) => (
+                  <p class="orgs-line services-orphan">
+                    <Chip tone="warn">Orphan</Chip> <span class="project-software-name">{o.name}</span> still runs in {o.label}, no longer declared.
+                  </p>
+                )}
+              </For>
+              {/* A live run as it goes (§app.project-runtime/run-progress): from its session, no tool of its own. */}
+              <Show when={strip()}>
+                {(s) => (
+                  <p class="project-run-strip" aria-label={`${v().playbook!.label} run`}>
+                    <Chip tone={STRIP_TONE[s().state]} live={s().state === "Working"}>
+                      {s().state}
+                    </Chip>
+                    <Show when={runWord(v())}>{(w) => <span>{w()}</span>}</Show>
+                    <Show when={s().elapsed}>{(e) => <span class="list-meta">{e()}</span>}</Show>
+                    <Show when={s().questions ?? s().now}>{(line) => <span class="project-run-now">{line()}</span>}</Show>
+                    <Show when={v().playbook?.path}>
+                      {(path) => (
+                        <a class="project-software-open" href={projectSessionHref(props.projectId, path())}>
+                          {s().questions ? "Answer in Its Session" : "Open Session"}
+                          <Icon name="chevron-right" small />
+                        </a>
+                      )}
+                    </Show>
+                  </p>
+                )}
+              </Show>
+              {/* What a proposed run's branch proposes, read by Sova (§app.project-runtime/run-report). */}
+              <Show when={v().playbookState === "proposed" ? v().playbook?.review : undefined}>
+                {(r) => (
+                  <div class="project-run-review" role="group" aria-label="What the run proposes">
+                    <Show when={!reviewDefProblem(r())} fallback={<p class="orgs-line project-software-failed">{reviewDefProblem(r())}</p>}>
+                      <ul class="orgs-history-list project-software-list">
+                        <For each={r().services}>
+                          {(s) => (
+                            <li class="orgs-change project-software-row">
+                              <span class="orgs-change-main">
+                                <span class="project-software-name">{s.name}</span> <span class="list-meta" title={s.isolation?.why}>{serviceFacts(s)}</span>
+                                <Show when={portsWord(s)}>{(p) => <span class="list-meta text-mono"> · {p()}</span>}</Show>
+                                <Show when={memoryWord(s.memory)}>{(m) => <span class="list-meta"> · {m()}</span>}</Show>
+                              </span>
+                            </li>
+                          )}
+                        </For>
+                        <For each={r().data}>
+                          {(d) => (
+                            <li class="orgs-change project-software-row">
+                              <span class="orgs-change-main">
+                                <span class="project-software-name">{d.name}</span> <span class="list-meta">data · {d.kind}</span>
+                              </span>
+                              <Show when={d.sensitive}>
+                                <Chip tone="warn" title={SENSITIVE_TITLE}>
+                                  Sensitive
+                                </Chip>
+                              </Show>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                      <p class="list-meta">
+                        {shareWord(r())} · {openWord(r())}
+                      </p>
+                    </Show>
+                    <p class="list-meta">{reviewProofWord(r())}</p>
+                    {/* A deploy-setup run: its recipe as Sova renders it. */}
+                    <Show when={r().deploy}>{(d) => <DeployRecipeSteps recipe={d()} />}</Show>
+                    {/* A Release playbook maker run: the release settings and the playbook's steps it proposes. */}
+                    <Show when={r().release}>{(rel) => <ReleaseSetupSteps setup={rel()} />}</Show>
+                    <Show when={v().playbook?.path}>
+                      {(path) => (
+                        <p class="orgs-line">
+                          <a class="project-software-open" href={projectSessionHref(props.projectId, path())}>
+                            Read Report
+                            <Icon name="chevron-right" small />
+                          </a>
+                        </p>
+                      )}
+                    </Show>
+                  </div>
+                )}
+              </Show>
+              <Show when={error()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+            </>
+          );
+        }}
+      </Show>
+    </div>
+  );
+}
+
+/** The registry's feed (definition, onMerge and deploy notes), newest first, under a closed Recent. */
+function RecentFeed(props: { runtime: Poll<ProjectRuntimeView> }) {
+  const feed = () => props.runtime.data()?.feed ?? [];
+  return (
+    <Show when={feed().length}>
+      <details class="card services-recent">
+        <summary class="services-recent-summary">
+          <span class="services-recent-title">Recent</span>
+          <span class="list-meta">{feed().length > RECENT_SHOWN ? `latest ${RECENT_SHOWN}` : feed().length === 1 ? "1 entry" : `${feed().length} entries`}</span>
+          <Icon name="chevron-down" small />
+        </summary>
+        <ul class="list services-recent-list" aria-label="Recent setup and deploy notes">
+          <For each={feed().slice(0, RECENT_SHOWN)}>
+            {(f) => (
+              <li class="list-row services-recent-row">
+                <span class="services-recent-line">{f.line}</span>
+                <time class="list-meta" title={f.at}>
+                  {relativeTime(f.at)}
+                </time>
+              </li>
+            )}
+          </For>
+        </ul>
+      </details>
+    </Show>
+  );
+}
+
+/**
+ * Free Up Slots, asked first: the copies under Can go with why each can go, what stays (branches, commits,
+ * sessions), then Remove {n} Copies, which tears each down in turn as the operator. Focus starts on Cancel.
+ * A refusal stops nothing else: the dialog stays open with each copy's reason.
+ */
+function FreeUpDialog(props: { projectId: string; copies: readonly { copy: CopyView; why: GoReason }[]; onClose(): void; onDone(): void }) {
+  // The list as it was when opened: a refresh underneath never changes what Remove removes.
+  const list = props.copies.slice();
+  const [pending, setPending] = createSignal(false);
+  const [failed, setFailed] = createSignal<Record<string, string>>({});
+  let cancelButton!: HTMLButtonElement;
+  onMount(() => cancelButton.focus());
+  const close = () => !pending() && props.onClose();
+  const remove = async () => {
+    if (pending()) return;
+    setPending(true);
+    setFailed({});
+    const freed: number[] = [];
+    const why: Record<string, string> = {};
+    for (const { copy } of list) {
+      try {
+        const r = await runProjectVerb(props.projectId, "teardown", { instance: copy.instance, confirm: true });
+        const no = refusalLine(r);
+        if (no) why[copy.instance] = no;
+        else freed.push(copy.slot);
+      } catch (x) {
+        why[copy.instance] = `Couldn't reach the engine. ${errText(x)}`;
+      }
+    }
+    setPending(false);
+    if (freed.length) {
+      const done = freedLine(freed);
+      toast(done);
+      announce(done);
+    }
+    if (Object.keys(why).length) {
+      setFailed(why);
+      announce(`${Object.keys(why).length === 1 ? "1 copy wasn't" : `${Object.keys(why).length} copies weren't`} removed.`);
+    } else props.onDone();
+  };
+  return (
+    <>
+      <div class="scrim" onClick={close} />
+      <div
+        class="modal"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="free-slots-title"
+        aria-describedby="free-slots-body"
+        ref={(el) => trapFocus(el)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") close();
+        }}
+      >
+        <div class="modal-head">
+          <h2 class="modal-title" id="free-slots-title">
+            {freeTitle(list.length)}
+          </h2>
+        </div>
+        <div class="modal-body" id="free-slots-body">
+          <p class="message-text">These copies stop and are removed. Each is landed or left by the merge queue.</p>
+          <ul class="services-free-list">
+            <For each={list}>
+              {(g) => (
+                <li>
+                  <span class="text-mono">{copyName(g.copy)}</span> · slot {g.copy.slot} · {goWord(g.why)}
+                  <Show when={failed()[g.copy.instance]}>{(w) => <p class="field-error">{w()}</p>}</Show>
+                </li>
+              )}
+            </For>
+          </ul>
+          <p class="message-text">The branches, commits and sessions stay. Removing a copy can't be undone, but you can start a new one.</p>
+        </div>
+        <div class="modal-foot">
+          <span class="modal-spacer" />
+          <button ref={cancelButton} type="button" class="button button-ghost" aria-disabled={pending() ? "true" : undefined} onClick={close}>
+            {Object.keys(failed()).length ? "Close" : "Cancel"}
+          </button>
+          <Show when={!Object.keys(failed()).length}>
+            <button type="button" class="button button-destructive" aria-disabled={pending() ? "true" : undefined} onClick={() => void remove()}>
+              {pending() ? "Removing…" : freeButton(list.length)}
+            </button>
+          </Show>
+        </div>
+      </div>
+    </>
   );
 }

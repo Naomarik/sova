@@ -27,6 +27,7 @@ import { inboxTabLabel, openChip, openChipTitle } from "../lib/team-inbox";
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import { trackLinkedTranscript, trackWorkerTranscript } from "../lib/time-spent";
+import { latestMessageRow } from "../lib/design-chat-bar";
 
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
@@ -894,12 +895,16 @@ export function WorkerTranscript(props: {
   onContext(msg: WatchServerMessage): void;
   /** Rows the caller draws among the session's own (the Creative Director's prompt items): the list as drawn. */
   rows?: (items: TranscriptItem[]) => TranscriptItem[];
+  /** The newest message row of the list as drawn (undefined: none yet), each time it changes: a folded chat's bar line. */
+  onLatest?(row: TranscriptItem | undefined): void;
 }) {
   const [items, setItems] = createSignal<TranscriptItem[] | null>(null);
   const shown = createMemo(() => {
     const list = items();
     return list && props.rows ? props.rows(list) : list;
   });
+  const latest = createMemo(() => latestMessageRow(shown() ?? [], props.author));
+  createEffect(() => props.onLatest?.(latest()));
   const [error, setError] = createSignal<string | null>(null);
   const [gone, setGone] = createSignal(false);
   const [lastUpdate, setLastUpdate] = createSignal<string | null>(null);

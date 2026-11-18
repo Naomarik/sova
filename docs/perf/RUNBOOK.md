@@ -1,6 +1,76 @@
-# Load experiment runbook (al_3, feat/load-priority)
+# Load experiment runbook (al_3, feat/load-priority; extended for al_1, feat/server-responsive)
 
-Documented in docs/perf/2026-10-03-load-and-freezes.md; this file is how to re-run it.
+Documented in docs/perf/2026-10-03-load-and-freezes.md and docs/perf/2026-11-16-server-freezes.md;
+this file is how to re-run them. The 2026-11-16 batch (Bun, chats outside the server, freezes) is
+first; the 2026-10-03 batch (Node, the load as the server's child) follows unchanged.
+
+## 2026-11-16: freezes on Bun with chats outside the server
+
+What it adds to the 2026-10-03 harness:
+
+- `--runtime bun`: the server as the user runs it (`bun server/index.ts`, dev:hermetic's switches),
+  in `--server-root <tree>` (default this tree). A BEFORE number for a branch: measure a `git
+  archive` of its base, with node_modules linked in, while the branch's edits are in progress.
+- `--variants chats`: the load starts outside the server (chats moved to `sova-chats.slice` in
+  2026-10, so their tool commands are no longer the server's children): `--standins N` stand-ins
+  (each its own `--mix`, e.g. `test=1,tsc=1`: a full unit-tier run, `node scripts/run-tests.mjs
+  --fresh`, on Bun at half the cores, plus a `tsc --noEmit`), and one disk stand-in (`--disk N`
+  workers: 256 MB written with fsyncs, read back, deleted, then a stat walk of node_modules/.pnpm),
+  all at nice `--load-nice` (10, as a hosted chat's tool commands run) through `nice -n`.
+- `--chats N`: N copied sessions get an entry appended every ~2 s (as N active chats write), each
+  followed by a `/ws/watch?tail=1` socket, plus one `/ws/watch?feed=sessions` socket; the appended
+  bytes are cut off when the run ends. `follow` = append to that socket's next message.
+- Probes besides 2026-10-03's: `/api/health` every 250 ms (p50/p99; an answer >= 2 s or a failure is
+  a freeze seen from outside), `/api/folder-approvals?cwd=<--approvals-cwd>` every 5 s (the
+  approvals folder scan; default `~/webapps/sova`, read only).
+- Freezes: the server's own stall recorder (`server/stall-recorder.ts`, Bun) writes every main-thread
+  stall >= 2 s with its sampled stacks to `<agent dir>/sova/stalls/stalls.jsonl`; the harness takes
+  this server's records, places each in the phase it began in, and the summary counts them and
+  lists their stacks' first Sova frame.
+- `GET /api/sessions` is a fresh build of every row (`listSessionsAfresh`), so its idle p50 is the
+  session-list build time.
+
+- Accounting: a request or a stall counts in every phase it was in flight in (the run's phase
+  starts are in each `.meta.json`), and a request still unanswered when the run stops waiting is
+  a failed sample. A freeze that starts in the ramp and outlasts the load phase is that phase's
+  worst sample, not a phase with no samples.
+- Every server it starts gets `SOVA_AGENT_CPU=off`: a tree with `server/agent-cpu.ts` would
+  otherwise set CPUWeight (and a ceiling) on the machine's real `sova.slice` at start. The
+  experiment never measures a5/a6 (the agents' CPU weight and ceiling): that needs the load under a
+  parent slice of the harness's own (e.g. `sova-perf-agents.slice` with its own CPUWeight), never
+  `sova.slice`, and a user bus.
+
+Sandboxed workers: the bash tool runs at nice 10, so the harness logs its WARNING and the server
+runs at nice 10 with the load at 19 (`nice -n` is relative); `<repo>/.agent` may be mounted read-only,
+hence `--agent-dir .cache/perf-agent`. Without `systemd-run --user` everything shares one cgroup.
+A run started as a background job sits in another pid namespace: `pgrep` from the chat doesn't
+see its processes. Check with `ss -ltn | grep 4867` and the console log instead.
+
+```sh
+# Prepare a private agent dir with every real session copied in (rsync, ~10 s when warm).
+node scripts/perf/load-experiment.mjs --prepare --agent-dir "$PWD/.cache/perf-agent"
+
+# BEFORE: the base commit, archived (the branch's edits stay out of it).
+mkdir -p .cache/baseline && git archive <base> | tar -x -C .cache/baseline \
+  && ln -sfn "$PWD/node_modules" .cache/baseline/node_modules && git rev-parse <base> > .cache/baseline/.baseline-head
+node scripts/perf/load-experiment.mjs --agent-dir "$PWD/.cache/perf-agent" --runtime bun \
+  --server-root .cache/baseline --variants chats --reps 2 --standins 3 --mix test=1,tsc=1 --disk 1 \
+  --chats 6 --out docs/perf/data/<date>-before > docs/perf/data/<date>-before.console.log 2>&1
+
+# AFTER: the same on this tree (drop --server-root).
+node scripts/perf/load-experiment.mjs --agent-dir "$PWD/.cache/perf-agent" --runtime bun \
+  --variants chats --reps 2 --standins 3 --mix test=1,tsc=1 --disk 1 --chats 6 \
+  --out docs/perf/data/<date>-after > docs/perf/data/<date>-after.console.log 2>&1
+
+# Then clean up and check, as below (step 5).
+node scripts/perf/load-experiment.mjs --cleanup
+pgrep -af 'load-standin|disk-worker|run-tests.mjs|server/index.ts'   # must print nothing of ours
+```
+
+One run is about 3 min (start and warm-up ~45 s on 4,700 sessions, idle 30 s, ramp 20 s, load
+60 s, stop, cool 20 s). The summary's second table, "Freezes and health", has the new numbers.
+
+## 2026-10-03: the load as the server's child (Node)
 
 For the orchestrator, who runs it from a session that can reach the user bus. The load-priority
 worker (sandboxed) built the harness and dry-ran it at tiny load without systemd; it cannot run

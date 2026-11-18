@@ -10,11 +10,14 @@ organization places it, and every session run in its folder is listed as its own
 (stakeholder, people, outreach, owner updates, requirements; §app/organizations). The project
 layer never knows organizations exist (§app.projects/seam).
 
-Pages: `#/projects` (the list) and `#/projects/<pid>` (one project, §app.organizations/project-page),
-`…/requirements` (only while placed), `…/branches`, `…/cost`, `…/settings`, `…/overseer`, each taking `?host=<peer>`
-for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/projects` and
+Pages: `#/projects` (the list) and `#/projects/<pid>` (one project on its Sessions tab,
+§app.organizations/project-page), `…/backlog`, `…/requirements` (only while placed),
+`…/running-copies`, `…/merge-queue`, `…/releases`, `…/deploy`, `…/cost`, `…/settings`, `…/overseer`,
+each taking `?host=<peer>` for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/projects` and
 `/api/projects/:pid/…` for every project-layer read and act; the organization's concerns stay under
-`/api/orgs/:id/projects/:pid/…`. There is no other address for a project and no alias.
+`/api/orgs/:id/projects/:pid/…`. There is no other address for a project and one alias: `…/branches`, the Running Copies tab's
+address before it was renamed, opens that tab and is rewritten to `…/running-copies`, so links
+written before (a bookmark, a server's sentence, a card) keep working.
 
 ## §app.projects/registration — A folder becomes a project only when the operator adds it
 
@@ -97,7 +100,7 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   arrow that folds and unfolds its sessions, set on its rows' rail axis, and the guide line
   running from it down that rail folds an unfolded project too (§app.session-list/guide-lines): open by default, the choice kept in memory for the
   page's life (as each Done is), and forced open while a search is on. When you move to a session
-  among its rows (a click, a link, a notification, the palette, or loading the page on it) a
+  among its rows (a click, a link, a notification, or loading the page on it) a
   folded project, and its Done if the session is there, opens for that visit without changing the
   choice, then it is yours to close: a fold you make while on that session stays folded through
   every refresh, running agent and new message until you unfold it or move to a session again.
@@ -190,13 +193,13 @@ and a chat in any of them is one press away.
       free count is unknown: the `{f} free` part is left out and it adds `Other programs were not
       checked.`
     - The pips are hidden from a screen reader; the row's accessible name carries the hover's words.
-    - `—` for a project with no project file. It opens the Branches tab,
-      `#/projects/<pid>/branches`.
+    - `—` for a project with no project file. It opens the Running Copies tab,
+      `#/projects/<pid>/running-copies`.
   - **Memory in use**: a thin bar and the figure (`2.4 GB`): what its chats and running copies use
     now (§app.projects/home-glance). The bar fills its whole width with the mix of the two, in
     two tones (§app.projects/home-memory-bar). `0 MB idle` while nothing of it runs. A
     project with no project file still shows what its chats use. With a project file it opens the
-    Branches tab, else is no link.
+    Running Copies tab, else is no link.
   - A row that opens something tints on hover and carries a chevron; a row with nothing to open
     has neither.
 - **The progress zone**, thin rows just above the foot bar, shown only while something moves; each
@@ -228,7 +231,7 @@ and a chat in any of them is one press away.
     `Couldn't start a chat: {reason}`.
   - **The ⋯ menu** (`Project actions · {name}`): `New Chat…` (the New Session dialog with its folder
     set to the project's root, to pick a model, a branch or a subfolder), `Overseer` (the project's
-    overseer), `Merge Queue`, `Branches` and `Settings` (those tabs of its page).
+    overseer), `Merge Queue`, `Running Copies` and `Settings` (those tabs of its page).
 - **Nothing on the card lands anything.** Ready to merge and the progress zone only say what the
   queue and the release hold; approving a branch stays with the places that show the commit
   approved (§app.merge-queue/approve), and publishing a release with the Releases tab.

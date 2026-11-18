@@ -147,6 +147,7 @@ export class SovaUnderTest {
         PI_CODING_AGENT_DIR: this.agent,
         SOVA_UPDATES_CHECK: "off",
         SOVA_GIT_MAINTENANCE: "off",
+        SOVA_AGENT_CPU: "off",
         SOVA_PRICES_FETCH: "off",
         ...this.miseEnv(),
         ...this.env,

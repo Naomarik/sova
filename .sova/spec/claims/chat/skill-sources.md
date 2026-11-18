@@ -3,9 +3,9 @@
 
 A chat is offered skills from pi's own places and from the Claude skills folders a project or a person
 already keeps, with nothing to copy or configure. It reads them where they are, and writes nothing
-there. Which skills a new chat may load is decided per folder on this computer, allowed unless
-disallowed or asked first (§chat/context-approval, /project-defaults); a chat's list is fixed at its
-first message (/project-new-chats).
+there. Which skills a new chat may load is one switch per skill, kept per folder on this computer
+(§chat/context-approval, /project-defaults); a chat's list is fixed at its first message
+(/project-new-chats).
 
 ## §chat.skill-sources/starting — Which folders a chat starts with
 
@@ -19,6 +19,13 @@ first message (/project-new-chats).
   holding its own `SKILL.md`. That folder itself is never a place to search: what Claude keeps below
   `skills/.system`, or syncs from claude.ai below `skills/synced`, is not offered, including when a
   chat's folder sits under the home folder and the walk above reaches it.
+- **Only the project's real skills.** A skill found in the project's own folders (its `.pi/skills`,
+  `.agents/skills` and `.claude/skills`, from the chat's folder up to the repository's top, or the
+  chat's folder alone outside a repository) is offered, and listed, only when its real place is inside
+  the project (§chat.context-scope/folders): a skills folder, a skill's folder or its `SKILL.md` that
+  is a link to elsewhere, or sits in a folder reached through one, is not. A link that stays inside
+  the project is fine. pi's settings folder, `~/.agents/skills`, settings paths and the home Claude
+  folder are the user's own, not a project's: their skills load wherever their links lead.
 - **Who gets none.** A chat that loads no skills stays that way: the Overseer, a project overseer, a
   baton's gathering chat, the Project Assistant.
 - **Every list agrees.** A chat's own list and the setup card's list for a folder no chat holds
@@ -41,9 +48,10 @@ found. `/skill:name` runs a rescued skill too (§chat.skill-sources/arguments).
 ## §chat.skill-sources/manual-only — A manual-only skill isn't offered
 
 A skill with `disable-model-invocation: true` is never listed to the model, and Sova doesn't say it
-is. It still runs by `/skill:name`. The setup card (§chat.transcript/setup-card-skills) and the Context
-tab (§app.subagents-pane/context-tab) label it Manual only and leave it out of what they count as
-offered.
+is. It still runs by `/skill:name`. The setup card and the project's Skills card list it apart under
+`Slash commands · {n}` (§chat.transcript/setup-card-skills), and the Context tab
+(§app.subagents-pane/context-tab) labels it Manual only; each leaves it out of what it counts as
+offered, and sizes it, where it shows a size, by its whole text.
 
 ## §chat.skill-sources/arguments — What `/skill:name` fills in
 
@@ -65,18 +73,19 @@ these runs exactly as pi runs it.
 Each project, and each folder a chat runs in that is no project, has skill decisions for the chats
 it starts, kept on this computer in its approval list (§chat.context-approval/list).
 
-- **The states.** In the default mode a skill reads **Allowed** or **Disallowed**: a Disallowed one is
-  off in new chats and every other one is on. In the asking mode (§chat.context-approval/modes) a
-  skill is **Approved**, **Disallowed**, **Waiting** (no decision yet, off) or **Changed** (approved,
-  and still on, but its file changed since).
+- **One switch per skill.** A skill is on or off for the folder's new chats
+  (§chat.context-approval/modes). While new ones start on, a Disallowed one is off and every other
+  one is on. While they start off, an approved one is on, and a Disallowed one or one never set is
+  off; one never set is marked **New**, and an approved one whose folder changed since stays on and
+  is marked **Changed** (§chat.context-approval/marks).
 - **Which chats.** Every chat Sova starts in the project's folder: its root, a folder inside it, or
   one of its linked worktrees, as §app/projects matches folders (an archived project matches
   nothing), Claude Code chats included; and every chat in a folder that is no project, by that folder
   (§chat.context-approval/folders). A chat that loads no skills (/starting) has none of this.
 - **The Skills card.** The project page's Settings tab has a **Skills** card right after the **Context
-  Files** card (§chat.context-approval/context-card). Its line reads "New chats load these skills,
-  except the ones you disallow. Open chats keep theirs.", or while asking "New chats load the skills
-  you approve. Open chats keep theirs." It lists every skill a chat in the project could be offered,
+  Files** card (§chat.context-approval/context-card). Its line reads "New chats load the skills you
+  turn on. Open chats keep theirs. Each figure is the skill's description, the part every chat
+  carries." It lists every skill a chat in the project could be offered,
   found by the folder's scan (§chat.context-approval/list): for the project's root, then for each of
   its worktrees, pi's own places with the Claude folders (/starting), then the skills of folders
   inside it (§chat/subfolder-skills), which a project lists unless its root is the home folder or a
@@ -84,30 +93,37 @@ it starts, kept on this computer in its approval list (§chat.context-approval/l
   folder's inside it only where a chat there is offered them: in a git repository below the home
   folder (§chat.subfolder-skills/offering). A skill is one row per place, never per name alone, so a project
   skill named like one of yours is a row of its own; the main folder and its worktrees share a row for
-  the same place. Each row has the skill's name, where it comes from, its state as a chip, and the
-  buttons its mode gives it (§chat.context-approval/modes). A click shows its new state at once and
-  saves (§chat.context-approval/at-once); a save that fails puts the row back and is a toast,
-  "Couldn't save {name}. {message}". With no skill found the card says "No skills found. A
-  chat here would load none." A peer's project (opened with `?host=`) shows no Skills card.
+  the same place. Each row has the skill's name, where it comes from, its description, its size (its
+  listing, with the popover of §chat.transcript/setup-card-skills) and one switch, with its New or
+  Changed mark (§chat.context-approval/marks); manual-only skills are listed apart under `Slash
+  commands · {n}` (§chat.transcript/setup-card-skills). The heading carries the group switch and its
+  Undo line (§chat.context-approval/group). A flip shows at once and saves
+  (§chat.context-approval/at-once); a save that fails puts the row back and is a toast, "Couldn't
+  save {name}. {message}". With no skill found the card says "No skills found. A chat here would load
+  none." A peer's project (opened with `?host=`) shows no Skills card.
 - **The routes.** `GET /api/projects/:pid/skills` answers every row with its key and state, the
   counts, the mode and whether the scan was complete. `PUT /api/projects/:pid/skills {skills: {<skill
   key or name>: "approved" | "disallowed" | "waiting"}}` changes only the skills given (a bare name is
-  the first skill found with it; `waiting` clears a decision) and answers the fresh view; a bad body
-  is refused (400), and so is a skill not found (404: "Nothing named "{name}" is found in
-  {folder}."). They are `project.skills.get` and `project.skills.set`
+  the first skill found with it; `waiting` clears a decision) and answers the fresh view, with an
+  `undo` token for a group switch's save (`group`, §chat.context-approval/group); `{undo: <token>}` takes that
+  save back (409 when it is no longer held). A bad body is refused (400), and so is a skill not found
+  (404: "Nothing named "{name}" is found in {folder}."). They are `project.skills.get` and `project.skills.set`
   (§app.project-commands/projects-sweep).
-- **Approving, and allowing again, are yours.** A PUT that approves a skill, or makes a Disallowed one
-  Approved or Waiting, is refused (403) and nothing changes unless it comes from the operator's own
-  page, with the words of §chat.context-approval/who. Disallowing is open to every caller.
+- **Turning on is yours.** A PUT that approves a skill, or makes a Disallowed one Approved or Waiting,
+  is refused (403) and nothing changes unless it comes from the operator's own page, with the words
+  of §chat.context-approval/who. Turning off is open to every caller.
 - **One save, with its history.** Every change of a project's Skills and Context Files (the cards, a
-  new chat's setup card, a chat's "wasn't loaded" line, a script, the project overseer's
-  `sova_settings`, a Settings change card's Apply and an Undo, §app.project-overseer/settings) is saved
-  the same way: the list is written, one Settings history line is added for each item whose state
-  changed (`field: "skills.<key>"` or `"context.<key>"`, from and to `approved`, `disallowed` or
-  `waiting`), and then the new chats below are rebuilt.
+  new chat's setup card, a group switch and its Undo, a chat's "wasn't loaded" line, a script, the
+  project overseer's `sova_settings`, a Settings change card's Apply and an Undo,
+  §app.project-overseer/settings) is saved the same way: the list is written, one Settings history
+  line is added for each item whose state changed (`field: "skills.<key>"` or `"context.<key>"`, from
+  and to `approved`, `disallowed` or `waiting`), and then the new chats below are rebuilt, once after
+  a run of saves (§chat.context-approval/live). A save checks only the skills it names
+  (§chat.context-approval/list).
 - **A skill that is gone drops off.** A decided skill no longer found in any checkout leaves the card
-  and the list by itself. Only a scan that saw every checkout whole drops one: when git can't list the
-  worktrees, a folder can't be loaded, or a folder walk stops at its limit, every decision is kept.
+  and the list by itself. Only a scan that saw every checkout whole, and began after the folder's
+  latest save, drops one (§chat.context-approval/list): when git can't list the worktrees, a folder
+  can't be loaded, or a folder walk stops at its limit, every decision is kept.
 - **New chats take a change at once** (§chat.context-approval/live). A started chat is never touched
   (§chat.context-approval/fixed).
 - **The project overseer manages them.** Its `sova_settings` lists each skill's state by key and
@@ -119,28 +135,22 @@ it starts, kept on this computer in its approval list (§chat.context-approval/l
 ## §chat.skill-sources/project-new-chats — A new chat in a project: its skills on the setup card
 
 - **The rows.** While the setup card's switches show (§chat.transcript/setup-card-toggles), a chat in
-  a project, or in a folder that is none, marks each skill row (§chat.transcript/setup-card-skills),
-  as each context file row, with its folder's decision. A Disallowed row starts off and says `Off for
-  this project` (`Off for this folder`) under its name, with no buttons; its switch still turns it on
-  for this one chat, and the row then says `Off for this project · on for this chat`. A changed one
-  says `Changed since you approved`, with **Re-approve** and **Disallow**. In the default mode every
-  other row is as any other: no Waiting line, no Approve and no notice. The chat's own switches never
-  change the folder's decisions. Under the lists, the card says where they are kept and opens them
-  (§chat.context-approval/folders). A chat whose own folder Sova doesn't look below
-  (§chat.subfolder-skills/offering), at the home folder say, even a project's, shows no row of a folder
-  below its own.
-- **In the asking mode.** A Waiting row starts off and says `Waiting for your decision · off until you
-  approve it`, with its own **Approve** and **Disallow**, and the card's one notice and the held Send
-  ask for the decisions (§chat.context-approval/held-send). Each answer shows on its row at once and
-  saves to the folder's list as the cards' buttons do (/project-defaults), and the card is read again
-  in place, the page keeping its scroll position and open sections (§chat.context-approval/at-once):
-  an approved item is on, and a disallowed one is off in this same chat as well, before its first
-  message. Every row stays clickable while saves run: the folder's saves go out in click order, a
-  failure puts back only its own row, and Approve All and Disallow All cover what is still waiting
-  at the click (§chat.context-approval/at-once).
-- **Before the first message, flips stay flips.** A chat's own switches are kept as what it changed
-  against its folder's decisions, so a decision made before its first message still reaches it, except
-  for an item the chat switched itself. A switch never turns on a disallowed skill the card doesn't
+  a project, or in a folder that is none, shows each skill row (§chat.transcript/setup-card-skills),
+  as each context file row, with its folder's switch: on or off as the folder's decision says, with
+  its New or Changed mark (§chat.context-approval/marks). A flip there is the folder's: it saves to
+  the folder's list as the cards' switches do (/project-defaults), and the card is read again in
+  place once the chat is rebuilt, the page keeping its scroll position and open sections
+  (§chat.context-approval/at-once). There is no switch for this chat alone and no notice. Under the
+  lists, the card says where they are kept and opens them (§chat.context-approval/folders). A chat
+  whose own folder Sova doesn't look below (§chat.subfolder-skills/offering), at the home folder say,
+  even a project's, shows no row of a folder below its own.
+- **New ones.** While new ones start off, a skill nobody has set is off and marked New; nothing holds
+  Send for it (§chat.context-approval/held-send). Every row stays clickable while saves run: the
+  folder's saves go out in click order, and a failure puts back only its own row
+  (§chat.context-approval/at-once).
+- **Before the first message.** A chat before its first message follows its folder's switches at
+  once (§chat.context-approval/live). One that already holds its own flips from before keeps them
+  (§chat.transcript/setup-card-toggles). A switch never turns on a disallowed skill the card doesn't
   list.
 - **Fixed at the first message.** When the first message is sent, the chat's lists are written into
   its own record exactly once, before the message goes in, with the mode it started in

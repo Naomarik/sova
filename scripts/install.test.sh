@@ -474,8 +474,9 @@ printf '#!/bin/sh\n' > "$home/notsova/pi-config/install.sh"
 ln -s "$old/pi-config/extensions/alpha" "$ext/alpha"
 ln -s "../../../webapps/sova/pi-config/extensions/beta.ts" "$ext/beta.ts"
 ln -s "$home/notsova/pi-config/extensions/gamma" "$ext/gamma"
-mkdir -p "$old/pi-config/extensions/mode"
+mkdir -p "$old/pi-config/extensions/mode" "$old/pi-config/extensions/extension-toggle"
 ln -s "$old/pi-config/extensions/mode" "$ext/mode"
+ln -s "$old/pi-config/extensions/extension-toggle" "$ext/extension-toggle"
 inst
 src=$home/.local/share/sova/pi-config/extensions
 check "$([ "$status" -eq 0 ] && echo true || echo false)" "other Sova copy: exits 0"
@@ -489,6 +490,10 @@ check "$(yes_if said 'skipped the gamma extension')" "other Sova copy: names the
 check "$(yes_if [ "$(cat "$old/pi-config/extensions/alpha/index.ts")" = old ])" "other Sova copy: the other copy itself is untouched"
 check "$(yes_if [ ! -e "$ext/mode" ] && [ ! -L "$ext/mode" ])" "other Sova copy: its mode link is removed, never relinked"
 check "$(yes_if said "removed $ext/mode (links to another Sova copy")" "other Sova copy: says it removed the mode link"
+check "$(yes_if [ ! -e "$ext/extension-toggle" ] && [ ! -L "$ext/extension-toggle" ])" \
+	"other Sova copy: its link to a removed extension (extension-toggle) is removed"
+check "$(yes_if said "removed $ext/extension-toggle (links to another Sova copy; this version has no extension-toggle extension)")" \
+	"other Sova copy: says it removed the extension-toggle link"
 
 # 14. --no-extensions links nothing and writes nothing in the agent dir.
 run_install no-extensions --no-extensions

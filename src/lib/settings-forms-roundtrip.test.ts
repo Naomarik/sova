@@ -384,6 +384,17 @@ const ROWS: Row[] = [
       acceptFrom: { valid: ["nodeAbc123"] },
       ingressPort: { elsewhere: "only a route via a gateway peer saves it", with: { route: "via", viaNodeId: "nodeAbc123" }, invalid: ["", "0", "70000", "48o5"] },
       previewUrl: { valid: "https://*.preview.example.com", invalid: ["https://preview.example.com", "http://*.example.com/path"] },
+      accountUrl: {
+        elsewhere: "Cloudflare Account saves only with a token, which its own your-click route takes",
+        with: { route: "account", accountToken: "x" },
+        invalid: ["", "not a url", "http://share.example.com"],
+      },
+      accountPreviewUrl: {
+        elsewhere: "Cloudflare Account saves only with a token, which its own your-click route takes",
+        with: { route: "account", accountUrl: "https://share.example.com", accountToken: "x" },
+        invalid: ["https://preview.example.com", "http://*.example.com/path"],
+      },
+      accountToken: { elsewhere: "a pasted token is saved by its own your-click route and never read back", with: { route: "account", accountUrl: "https://share.example.com" }, invalid: ["", "  "] },
     },
   },
   {

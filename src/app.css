@@ -770,6 +770,29 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .public-links-choice-name { color: var(--color-ink); }
 .public-links-choice-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .public-links-gateway { gap: var(--space-4); }
+/* Where links open (OpensAt.tsx): one radio list in sections, each section under a micro caps label.
+   An option not set up is greyed in its words, never only by tint: its row says "Needs setup". It
+   stays a full-ink target, selectable. */
+.opens-at { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.opens-at-section { display: flex; flex-direction: column; }
+.opens-at-section-title { margin: 0; font-family: var(--font-mono); font-size: var(--fs-micro); line-height: var(--lh-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+/* Not set up: the name and hint drop to the muted token (still 4.5:1 on surface, so readable), and the
+   "Needs setup" word carries the state in ink-2. The radio stays enabled: the row is selectable. */
+.opens-at-needs-setup :is(.public-links-choice-name, .public-links-choice-meta) { color: var(--color-ink-muted); }
+.opens-at-needs-setup .opens-at-tag { color: var(--color-ink-2); font-weight: var(--fw-medium); }
+.opens-at-needs-setup .toggle-box { border-style: dashed; }
+.opens-at-tag { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.opens-at-badge { margin-left: var(--space-2); vertical-align: middle; }
+.opens-at-note { font-style: normal; }
+.opens-at-setup { padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-md); background: var(--color-surface); }
+.opens-at-setup p { margin: 0; }
+.opens-at-setup-title { font-weight: var(--fw-semibold); color: var(--color-ink); }
+/* A share screen's one line: the choice, then Change on the same line where it fits. */
+.opens-at-line { min-width: 0; }
+.opens-at-current { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-2); }
+.opens-at-install { overflow-wrap: anywhere; }
+.opens-at-broken { display: flex; flex-direction: column; gap: var(--space-1); }
+.opens-at-preview-note { margin: 0; }
 /* Settings → Outreach's sender panel (§app.settings-dialog/outreach): the state, its figures, and each
    control with what it does on the line beside it (wrapping under it when the pane is narrow). */
 .outreach-sender { display: flex; flex-direction: column; gap: var(--space-2); }
@@ -1147,30 +1170,48 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .profile-board-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-2) var(--space-4); }
 .profile-toggle { justify-content: space-between; min-height: var(--tap-min); }
 .profile-toggle-grant > span:first-child { color: var(--color-accent); }
-/* The setup card's per-row switch (§chat.transcript/setup-card-toggles): the switch alone is the
-   label, so its 44px row is the target; a row with one centres on it. An off row stays listed,
-   dimmed, with its switch at full strength so it reads as the thing to turn back on. */
+/* The setup card's per-row switch: the switch and its word are the label, so its 44px row is the
+   target; a row with one centres on it. An off row stays listed, dimmed, with its switch at full
+   strength so it reads as the thing to turn back on. */
 .setup-row:has(.setup-toggle) { align-items: center; }
 .setup-toggle { flex: none; min-height: var(--tap-min); }
-.setup-row-off .setup-name > :not(.setup-decide),
+.setup-row-off .setup-name,
 .setup-row-off .setup-facts { opacity: .5; }
-/* A manual-only skill: the words go under its name, so the name keeps the row's width. */
-.setup-name:has(.setup-manual) { flex-wrap: wrap; gap: 0 var(--space-2); }
-.setup-manual { flex: 0 0 100%; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-/* A new chat's skill that waits for the project's decision: Approve and Disallow under its name.
-   The notice above the fold names the count. */
-.setup-decide { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
-.setup-waiting { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; text-align: start; border-bottom: 1px solid var(--color-border); }
-.setup-waiting .setup-note { color: var(--color-ink-2); }
-.setup-waiting-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 /* The setup card's last line: where this folder's list is kept, with its link. */
+/* A row's Changed line (and Accept Change) or its fingerprint note: a line of its own under the row. */
+.setup-row:has(> .approval-changed, > .approval-note) { flex-wrap: wrap; }
+.setup-row > .approval-changed, .setup-row > .approval-note { flex: 0 0 100%; margin-top: 0; }
+.setup-row > .approval-note { padding-bottom: var(--space-1); }
+/* Manual-only skills, apart: never in the prompt, so no figure; the command, then its description. */
+.setup-slash-head { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+.setup-slash .setup-name { align-items: baseline; }
+.setup-slash .setup-path { flex: none; }
+.setup-slash-desc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .setup-list-link { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
-/* A mid-chat line for an item kept out (§chat.context-approval/mid-chat): its Approve and Disallow follow the words. */
+/* A mid-chat line for an item kept out (§chat.context-approval/mid-chat): its Turn On follows the words. */
 .approval-pending-row .info-row-text { flex-wrap: wrap; justify-content: center; }
 .approval-pending-actions { display: inline-flex; flex: none; gap: var(--space-2); }
 .approval-pending-done { flex: none; color: var(--color-ink-2); }
-/* The composer's reason with its Review button (a Send held for decisions). */
+/* A composer reason's one button, after its words. */
 .composer-reason-action { flex: none; }
+/* The composer's notice (Composer.tsx): a slim strip just above the message box, where the staged
+   answers sit, never in the foot. It wraps rather than truncating; a long refusal quoting code reads
+   whole. With nothing to say, or only words for the ear, it takes no room. */
+.composer-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding-inline: var(--space-1);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.composer-notice > .icon { flex: none; margin-top: calc((var(--fs-caption) * var(--lh-caption) - 16px) / 2); color: var(--color-ink-muted); }
+.composer-notice-text { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; align-self: center; }
+.composer-notice code { overflow-wrap: anywhere; }
+.composer-notice > .composer-reason-action { margin-block: calc(-1 * var(--space-2)); }
+.composer-notice[data-quiet] { display: block; height: 0; padding: 0; margin-top: calc(-1 * var(--space-2)); overflow: hidden; }
 /* A folder's list (not a project), opened from its chat: its two cards, one under the other. */
 .folder-approvals-dialog { max-width: 760px; }
 .folder-approvals-body { display: flex; flex-direction: column; gap: var(--space-4); }
@@ -1178,6 +1219,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
    name ellipsised, then ≈tokens, then the switch at the right edge. */
 @container (max-width: 417.98px) {
   .setup-row:has(.setup-toggle) { flex-direction: row; align-items: center; gap: var(--space-3); }
+  /* The name keeps its line; a New chip or a role goes under it. A slash command's description waits
+     for a wider card. The switch's word goes: the knob says it, and the name needs the room. */
+  .setup-row:has(.setup-toggle) .setup-name { flex-wrap: wrap; row-gap: 0; }
+  .setup-row:has(.setup-toggle) .setup-name > .setup-path { flex: 0 1 100%; }
+  .setup-slash-desc { display: none; }
+  .setup-toggle .approval-switch-word { display: none; }
 }
 .profile-warn { color: var(--status-warn, var(--color-ink-2)); }
 /* A new session's worktrees line under the footnote (§chat.transcript/empty-worktrees): plain status. */
@@ -1296,7 +1343,14 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .setup-context > summary { list-style: none; cursor: pointer; min-height: 44px; justify-content: center; }
 .setup-context > summary::-webkit-details-marker { display: none; }
 .setup-context > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(-1 * var(--focus-offset)); border-radius: var(--r-lg); }
-.setup-context-title { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.setup-context-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; }
+/* The folded line's words after its title: what a new chat starts with, how many new items stay off,
+   how many changed. New and Changed each read by a mark and a word, never by colour alone. */
+.setup-sum-parts { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); min-width: 0; font-size: var(--fs-body); color: var(--color-ink-2); }
+.setup-sum-sep { color: var(--color-ink-muted); }
+.setup-sum-new { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--status-info); }
+.setup-sum-changed { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--status-warn); }
+.setup-sum-changed > span { font-size: 10px; }
 .setup-context .icon-twist { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
 .setup-context[open] > summary .icon-twist { transform: rotate(90deg); }
 .setup-context + .setup-group { border-top: 1px solid var(--color-border); }
@@ -1462,6 +1516,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
   margin-top: var(--space-2);
   border-top: var(--stroke-thin) solid var(--color-border);
 }
+/* Settings → General's Agents' CPU: "Agents may use at most [N] of 16 cores" on one line. */
+.agent-cpu-row { display: flex; align-items: center; gap: var(--space-3); }
+.agent-cpu-row > .input { flex: 0 1 6rem; min-width: 0; }
+.agent-cpu-of { color: var(--color-ink-2); }
 .settings-updates-running { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .settings-updates-version { font-weight: var(--fw-medium); }
 .settings-updates-sha { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
@@ -1731,7 +1789,14 @@ html, body { overflow: clip; overscroll-behavior: none; }
 @media (pointer: coarse) {
   .mq-tab :is(.mq-head, .mq-thread-card, .banner-action, .mq-history > .spread, .mq-run-actions, .mq-crumbs) .button { min-height: var(--tap-min); }
 }
-.mq-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-sunken); }
+/* The strip that heads a tab's card (the Merge Queue's target and origin, Releases' latest release and what came
+   since): one style for both, so they can't drift apart. Two cells: the first at the start, the second
+   (.mq-cell-end) against the card's right edge with its words aligned right, at every width. The first is as wide
+   as its words (at most 55% of the card), so a short label never breaks; the second has the rest and wraps in it. */
+.mq-strip { display: grid; grid-template-columns: fit-content(55%) minmax(0, 1fr); gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-sunken); }
+.mq-strip > .mq-cell { min-width: 0; overflow-wrap: anywhere; }
+.mq-strip > .mq-cell-end { text-align: end; }
+.mq-strip > .mq-cell-end > .mq-cell-value { justify-content: flex-end; }
 .mq-cell p { margin: 0; }
 .mq-cell-value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-1) 0; font-weight: var(--fw-medium); }
 .mq-red { color: var(--status-error); }

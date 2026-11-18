@@ -33,15 +33,17 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import type { HarnessResources } from "../shared/harness";
 import type { SetupMcp } from "../shared/mcp";
 import { CHARS_PER_TOKEN, SETUP_FILE_MAX_BYTES, type SessionSetup, type SessionSetupFileText, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
-import { acquireChatHandle, assertNotLive, chatHandle, closeChat } from "./chat-handle";
+import { acquireChatHandle, assertNotLive, chatHandle, closeChat, RefusedError } from "./chat-handle";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
-import { flipsAgainstProject, isContextOff, isSkillOff, normalizeLoadout, pristineLoadout, type LoadoutEntryData } from "./session-loadout";
+import { flipsAgainstProject, isContextOff, isSkillOff, normalizeLoadout, pristineLoadout, sameLoadout, type LoadoutEntryData } from "./session-loadout";
 import type { ApprovalLookup } from "./approvals-lookup";
 import type { FolderScan } from "./approvals";
-import type { FolderRule } from "../shared/folder-rule";
+import { sameRuleEffect, type FolderRule } from "../shared/folder-rule";
 import type { ApprovalFolder, SetupApproval } from "../shared/approvals";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { candidateDirs, instructionFileIn } from "./deeper-context";
+import { projectFileKeeper } from "./context-scope";
+import { homedir } from "node:os";
 import { inProjectHere, skillDescentAllowed } from "./skill-descent";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot } from "./state-root";
@@ -56,36 +58,10 @@ import { stateView } from "./harness/state-view";
 /** How long an answer stays fresh, per folder. The same size as the Git section's TTL. */
 export const SETUP_TTL_MS = 30_000;
 
-/** Lines in a buffer, counted the way `wc -l` counts them: the newlines, plus one for a last line
-    the file never terminated. An empty file has none. */
-export function countLines(buf: Buffer): number {
-  if (buf.length === 0) return 0;
-  let newlines = 0;
-  for (const byte of buf) if (byte === 10) newlines++;
-  return buf[buf.length - 1] === 10 ? newlines : newlines + 1;
-}
-
-/** pi's own estimate of what a text costs a model: `pi-ai`'s `estimateTextTokens`, ceil(code units /
-    CHARS_PER_TOKEN) — `text.length`, UTF-16 code units, the same count pi makes (an emoji is 2). Sova never tokenizes — a real count belongs to the model, and this is the number
-    pi itself budgets a prompt with, so the card can say what a file costs before it is sent. */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / CHARS_PER_TOKEN);
-}
-
-/** A file's size on disk and what its text would cost. null when it can't be read at all — gone
-    since the caller listed it, a directory, a permission bit: the row is dropped rather than
-    reported as an empty file. */
-export function measureFile(path: string): { bytes: number; lines: number; tokens: number } | null {
-  let buf: Buffer;
-  try {
-    buf = readFileSync(path);
-  } catch {
-    return null;
-  }
-  // Decoded once, for the estimate: pi counts the characters of the text it reads, not the bytes
-  // on disk, and the two differ for anything that isn't ASCII.
-  return { bytes: buf.length, lines: countLines(buf), tokens: estimateTokens(buf.toString("utf8")) };
-}
+// The size rules (countLines, estimateTokens, measureFile, a skill's listing) are pure and live in
+// server/file-measure.ts, which modules this one loads lazily (server/approvals.ts) can import too.
+export { countLines, estimateTokens, measureFile, skillListing, skillListingTokens } from "./file-measure";
+import { estimateTokens, measureFile, skillListingTokens } from "./file-measure";
 
 /** What a loader found, whichever loader it was. Only paths: the contents are pi's business. */
 export type Loadout = HarnessResources;
@@ -159,7 +135,7 @@ async function approvalsOfFolder(cwd: string, fresh: boolean, now: () => number)
     const hit = scanCache.get(lookup.folder.key);
     let scan: FolderScan | null = !fresh && hit && now() - hit.at < SETUP_TTL_MS ? hit.scan : null;
     if (!scan) {
-      scan = await m.folderQuickScan(lookup.folder).catch(() => null);
+      scan = await m.folderQuickScan(lookup.folder, fresh ? { fresh: true } : {}).catch(() => null);
       if (scan) scanCache.set(lookup.folder.key, { at: now(), scan });
     }
     // The scan is the folder's; a chat whose own folder isn't looked below (the home folder, a project's or not:
@@ -241,9 +217,13 @@ export function withApprovals(setup: Loaded, a: SetupApprovals | null, sw: Sessi
   const skills: SessionSetupSkill[] = setup.skills.map((k) => ({ ...k, approval: approvalOf(a, "skill", k.path, places) }));
   if (pristine && a.scan && checkout) {
     const have = new Set([...context, ...skills].map((r) => `${r.approval!.key}`));
+    // Only what it may meet as it works: a row of the folder's list outside the chat's own folder (a sibling's, the
+    // checkout's top for a chat in a folder inside it) never loads into it, at its start or later.
+    const own = m.real(setup.cwd);
     for (const i of a.scan.items) {
       if (have.has(i.key) || i.key.startsWith("/")) continue;
       const path = join(checkout, i.key);
+      if (!strictlyBelow(own, path)) continue;
       const size = measureFile(path);
       if (!size) continue;
       have.add(i.key);
@@ -252,26 +232,17 @@ export function withApprovals(setup: Loaded, a: SetupApprovals | null, sw: Sessi
         context.push({ path, ...size, approval, scanOnly: true, ...(isContextOff(sw.off, path) ? { off: true as const } : {}) });
       } else {
         const description = i.description?.trim();
-        skills.push({ name: i.name, path, ...(description ? { description } : {}), ...size, approval, scanOnly: true, ...(isSkillOff(sw.off, { name: i.name, filePath: path }) ? { off: true as const } : {}) });
+        skills.push({ name: i.name, path, ...(description ? { description } : {}), ...size, listingTokens: skillListingTokens(i.name, description, path), approval, scanOnly: true, ...(isSkillOff(sw.off, { name: i.name, filePath: path }) ? { off: true as const } : {}) });
       }
     }
   }
   return { ...setup, context, skills, approvals: { folder: a.folder, asking } };
 }
 
-/** How many context files and skills a session's first message waits on: none once a message is sent, for a
-    special chat, or without asking first; else its setup read's waiting rows, read fresh. A chat that hasn't
-    reported its loadout yet is read from its folder's rule (a pristine chat's setup asks the folder), never as none. */
-export async function waitingForSession(sessionPath: string, deps: SetupDeps = {}): Promise<number> {
-  const chat = chatHandle(sessionPath);
-  if (chat && (!chat.mirror.pristine || chat.mirror.special)) return 0;
-  return waitingOf(await getSessionSetup(sessionPath, { fresh: true }, deps));
-}
-
-/** How many of a setup's rows wait for a decision while it asks first (Send waits on them). */
-export function waitingOf(setup: SessionSetup): number {
-  if (setup.state !== "ok" || !setup.approvals?.asking) return 0;
-  return [...setup.context, ...setup.skills].filter((r) => r.approval?.state === "waiting").length;
+/** `p` lies in a folder inside `dir` or in `dir` itself, but is not `dir`. */
+function strictlyBelow(dir: string, p: string): boolean {
+  const rel = relative(dir, p);
+  return !!rel && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
 /** The folder's answer as one session sees it: its off rows marked, and whether it can switch them.
@@ -336,7 +307,8 @@ function skillsOf(skills: Loadout["skills"]): SessionSetupSkill[] {
     // The description is frontmatter: it carries the newline that ended it, and a blank one is not
     // a description. Trimmed here so every consumer shows the same words.
     const description = skill.description?.trim();
-    if (size) out.push({ name: skill.name, path: skill.filePath, ...(description ? { description } : {}), ...(skill.manualOnly ? { manualOnly: true as const } : {}), ...size });
+    // A row's figure is its listing, what the model is offered; a manual-only skill is never listed, so it has none.
+    if (size) out.push({ name: skill.name, path: skill.filePath, ...(description ? { description } : {}), ...(skill.manualOnly ? { manualOnly: true as const } : { listingTokens: skillListingTokens(skill.name, description, skill.filePath) }), ...size });
   }
   return out;
 }
@@ -455,7 +427,7 @@ export async function readSetupFile(sessionPath: string, file: string, deps: Set
   // Context tab opens those too, gated on the engine's own rule for one (its folder's first instruction file).
   // A skill of such a folder too (server/subfolder-skills.ts): it is listed there before it is offered.
   // Neither where the chat doesn't look below its folder (server/skill-descent.ts).
-  const below = () => (instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file))) || isSubfolderSkillFile(setup.cwd, file, piSkillsIn);
+  const below = () => (instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file)) && projectFileKeeper(setup.cwd, { home: homedir() })(file)) || isSubfolderSkillFile(setup.cwd, file, piSkillsIn);
   const descends = async () => skillDescentAllowed(setup.cwd, { home: (await import("node:os")).homedir(), inProject: await inProjectHere(setup.cwd) });
   if (!listedPaths(setup).has(file) && !(below() && (await descends())))
     return { ok: false, status: 404, error: "That file isn't in this session's system context." };
@@ -495,9 +467,6 @@ export interface LoadoutCaller {
   page: boolean;
 }
 
-/** The refusal for turning on, from anything but the page, a row the folder keeps off. */
-export const LOADOUT_TURN_ON_REFUSAL = "Only you can turn on a context file or skill this folder keeps off: switch it on in Sova's page.";
-
 /** One switch at a time, so two quick flips write in the order they were made. */
 let applying: Promise<unknown> = Promise.resolve();
 
@@ -512,6 +481,62 @@ export function applyLoadout(path: string, body: unknown, caller: LoadoutCaller 
   return inLoadoutOrder(() => applyLoadoutNow(path, body, caller));
 }
 
+/** What a chat before its first message was built with, as its handle reports it (ChatRuntimeMirror's), and its reopen. */
+export interface FirstMessageChat {
+  path: string;
+  mirror: { pristine?: boolean; special?: unknown; loadout: { off: LoadoutEntryData | null } | null };
+  reopenHere(args: { folderRule?: FolderRule; message?: string }): Promise<unknown>;
+}
+
+/** The refusal of a first message whose chat couldn't be rebuilt with its folder's decisions: it isn't sent, and the
+    next Send tries again. */
+export const FIRST_MESSAGE_NOT_APPLIED = "Sova couldn't apply your context file and skill switches to this chat, so your message wasn't sent. Send it again to retry.";
+
+/** The rule each chat was last rebuilt with by the re-check (its mirror may not have said so yet). */
+const recheckedWith = new WeakMap<object, FolderRule>();
+
+const NOTHING_OFF: LoadoutEntryData = { v: 1, offContext: [], offSkills: [] };
+
+/** The reads a re-check makes (tests replace them). */
+export const recheckReads = {
+  rule: async (path: string): Promise<FolderRule> => (await import("./projects/folder-rule")).folderRuleForSession(path, { strict: true }),
+  entry: async (path: string): Promise<LoadoutEntryData | null> => stateView(await readBranch(path)).latest(LOADOUT)?.data ?? null,
+};
+
+/**
+ * Just before a new chat's first message goes in (§chat.context-approval/at-once): its folder's decisions are read
+ * again and laid over its own entry as its build does (pristineLoadout); when that differs from what it was built
+ * with, it is rebuilt in its own process with them first, so no first message goes out on an old list. True when it
+ * was rebuilt. In the switches' one order, so it never interleaves with a save's rebuild. It never fails open: when
+ * the decisions or the chat's file can't be read, or the rebuild fails, it throws a RefusedError
+ * (FIRST_MESSAGE_NOT_APPLIED): the message is refused, and the next one checks again.
+ */
+export function recheckBeforeFirst(h: FirstMessageChat): Promise<boolean> {
+  const refuse = (what: string, err: unknown): never => {
+    console.warn(`[setup] ${what} for a first message failed: ${err instanceof Error ? err.message : String(err)}`);
+    throw new RefusedError(FIRST_MESSAGE_NOT_APPLIED);
+  };
+  return inLoadoutOrder(async () => {
+    const m = h.mirror;
+    if (!m.pristine || m.special || !m.loadout) return false;
+    const rule = await recheckReads.rule(h.path).catch((err) => refuse("reading its folder's decisions", err));
+    const last = recheckedWith.get(h);
+    if (last && sameRuleEffect(last, rule)) return false;
+    const entry = await recheckReads.entry(h.path).catch((err) => refuse("reading the chat's file", err));
+    const want = pristineLoadout(entry, rule) ?? NOTHING_OFF;
+    const { offMcp: _a, onMcp: _b, ...built } = m.loadout.off ?? NOTHING_OFF;
+    const { offMcp: _c, onMcp: _d, ...wanted } = want;
+    if (sameLoadout(built, wanted)) return false;
+    await h.reopenHere({ folderRule: rule, message: "Applying the context files and skills; reconnect" }).catch((err) => refuse("rebuilding the chat", err));
+    // Only once it is rebuilt: a failed rebuild is tried again at the next message.
+    recheckedWith.set(h, rule);
+    return true;
+  }).catch((err) => {
+    if (err instanceof RefusedError) throw err;
+    return refuse("the re-check", err);
+  });
+}
+
 /** Run `fn` in the switches' one order (a card's switch, a project's skills change rebuilding new chats). */
 export function inLoadoutOrder<T>(fn: () => Promise<T>): Promise<T> {
   const run = applying.then(fn);
@@ -521,10 +546,14 @@ export function inLoadoutOrder<T>(fn: () => Promise<T>): Promise<T> {
 
 const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && [...a].sort().join("\0") === [...b].sort().join("\0");
 
-async function applyLoadoutNow(path: string, body: unknown, caller: LoadoutCaller): Promise<LoadoutResult> {
-  const b = (body ?? {}) as { offContext?: unknown; offSkills?: unknown; offMcp?: unknown; onMcp?: unknown };
-  const data = normalizeLoadout({ v: 1, offContext: b.offContext, offSkills: b.offSkills, offMcp: b.offMcp, onMcp: b.onMcp });
-  if (!data) return { ok: false, status: 400, error: "Expected {path, offContext: absolute paths, offSkills: skill names}" };
+async function applyLoadoutNow(path: string, body: unknown, _caller: LoadoutCaller): Promise<LoadoutResult> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, status: 400, error: "Expected {path, offMcp?: server names, onMcp?: server names}" };
+  const b = body as { offMcp?: unknown; onMcp?: unknown };
+  // Only the MCP servers are switched per chat. Context files and skills are switched for the project (the folder's
+  // list, server/approvals.ts): a body's offContext and offSkills are read past, and a chat keeps any flips of them it
+  // already holds.
+  const mcp = normalizeLoadout({ v: 1, offContext: [], offSkills: [], offMcp: b.offMcp ?? [], onMcp: b.onMcp ?? [] });
+  if (!mcp) return { ok: false, status: 400, error: "Expected {path, offMcp?: server names, onMcp?: server names}" };
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
   if (s.overseer || s.projectOverseer || s.baton || s.org || s.workerSession) return { ok: false, status: 409, error: "This session's context files and skills can't be switched." };
@@ -543,37 +572,14 @@ async function applyLoadoutNow(path: string, body: unknown, caller: LoadoutCalle
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
-  // The card sends the whole off set it shows, of the rows it lists: the runtime's unfiltered lists. Before
-  // the first message that set is the folder's decisions with this chat's flips, so the entry keeps only the
-  // flips (flipsAgainstProject), and a later decision still reaches the chat until it starts.
-  const res = await chat.resources().catch(() => null);
-  const listedContext = (res?.context ?? []).map((f) => f.path);
-  const listedSkills = (res?.skills ?? []).map((k) => ({ name: k.name, filePath: k.filePath }));
-  // The card names a skill by its name or its SKILL.md; the entry keeps the file (a skill of the same name
-  // from another place is another skill). A name it doesn't list is never switched.
-  const fileOf = (n: string) => (n.startsWith("/") ? listedSkills.find((k) => k.filePath === n) : listedSkills.find((k) => k.name === n))?.filePath;
-  const wanted = { ...data, offSkills: [...new Set(data.offSkills.map(fileOf).filter((p): p is string => !!p))] };
+  const had = await readBranch(path)
+    .then((branch) => stateView(branch).latest(LOADOUT)?.data ?? null)
+    .catch(() => null);
   const current = chat.mirror.loadout?.off ?? null;
-  const offNow = {
-    context: listedContext.filter((p) => isContextOff(current, p)),
-    skills: listedSkills.filter((k) => isSkillOff(current, k)).map((k) => k.filePath),
-  };
-  const unchanged =
-    sameSet(offNow.context, data.offContext.filter((p) => listedContext.includes(p))) &&
-    sameSet(offNow.skills, wanted.offSkills) &&
-    sameSet(current?.offMcp ?? [], data.offMcp ?? []) &&
-    sameSet(current?.onMcp ?? [], data.onMcp ?? []);
+  const unchanged = sameSet(current?.offMcp ?? [], mcp.offMcp ?? []) && sameSet(current?.onMcp ?? [], mcp.onMcp ?? []);
   if (!unchanged) {
-    // What the folder keeps off for this chat with no flips of its own.
-    const kept = pristineLoadout(null, stored !== null ? await ruleFor(stored) : null);
-    const keptOff = { context: listedContext.filter((p) => isContextOff(kept, p)), skills: listedSkills.filter((k) => isSkillOff(kept, k)).map((k) => k.filePath) };
-    const next = flipsAgainstProject(wanted, keptOff, { context: new Set(listedContext), skills: new Set(listedSkills.map((k) => k.filePath)) });
-    // Turning on what the folder keeps off is the page's alone: otherwise a chat could approve itself.
-    const had = await readBranch(path)
-      .then((branch) => stateView(branch).latest(LOADOUT)?.data ?? null)
-      .catch(() => null);
-    const newlyOn = [...(next.onContext ?? []).filter((p) => !had?.onContext?.includes(p)), ...(next.onSkills ?? []).filter((n) => !had?.onSkills?.includes(n))];
-    if (newlyOn.length && !caller.page) return { ok: false, status: 403, error: LOADOUT_TURN_ON_REFUSAL, yourClick: true };
+    const { offMcp: _off, onMcp: _on, asking: _a, onlyContext: _oc, onlySkills: _os, ...flips } = had ?? { v: 1 as const, offContext: [], offSkills: [] };
+    const next: LoadoutEntryData = { ...flips, ...(mcp.offMcp ? { offMcp: mcp.offMcp } : {}), ...(mcp.onMcp ? { onMcp: mcp.onMcp } : {}) };
     try {
       await chat.writeLoadout(next);
     } catch (err) {

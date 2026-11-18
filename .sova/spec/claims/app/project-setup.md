@@ -24,11 +24,11 @@ plain words, then offers **Set Up with a Chat**:
   ("Once it is set up, branches land here only through the queue.");
 - the Releases tab (§app.release/tab): what a release is and that the setup proposes a release
   playbook and the `release` section on a branch to land;
-- the Overview's Deploy card (§app.project-runtime/deploy-panel): that the setup asks how the
+- the Deploy tab's panel (§app.project-runtime/deploy-panel): that the setup asks how the
   project ships and proposes its deploy targets on a branch, running nothing.
 
 **Change Setup.** Once a part is set up, the same places offer **Change Setup** instead: the Merge
-Queue tab's head, Settings → Merge Queue's head, the Releases tab's head and the Deploy card. Every
+Queue tab's head, Settings → Merge Queue's head, the Releases tab's head and the Deploy tab's panel. Every
 project gets it, Sova's own included; a project whose every part is set up gets Change Setup only.
 
 **One chat, opened, never doubled.** Set Up with a Chat and Change Setup start the project's Setup

@@ -46,7 +46,7 @@ export const ORDER = {
   credential: ["name", "kind", "check"],
   requires: ["tests"],
   merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches"],
-  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
   releaseCheck: ["id", "label", "run", "timeout", "rerun", "requires"],

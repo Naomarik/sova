@@ -34,6 +34,8 @@ import { stopVoice } from "./voice/service";
 import { startStaticPreviews } from "./project-previews";
 import { startOutreach } from "./outreach/core";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
+import { startTunnelWiring } from "./share/tunnel/wiring";
+import { stopEndedPreviewTunnels } from "./share/preview-link";
 import { startTourSweep } from "./tours/sweep";
 import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
@@ -56,6 +58,7 @@ import { monitorJobs, startJobKeeper, stopJobsOf, sweepJobs } from "./background
 import { onWorkerKilled } from "./chat-workers";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { detachChatHost, startChatHost, stopWorkersOf, wakeOwnerOf, workerChatsOf } from "./chat-host";
+import { agentCpu } from "./agent-cpu";
 import { expectChatRouter } from "./chat-handle";
 import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
@@ -228,7 +231,13 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   console.log(`sova server on http://${HOST}:${info.port} (${SERVER_RUNTIME.name} ${SERVER_RUNTIME.version})`);
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket, streamUpgrade: upgradeSovaStreamSocket });
   // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
-  void startShareRuntime();
+  // Then the Cloudflare tunnels: the share tunnel's wiring, and the tunnels a previous server left
+  // running taken back (§mesh.tunnel/lifetime); every change re-reads open pages' public links.
+  void startShareRuntime()
+    .then(() => startTunnelWiring({ publish: () => publishFeed({ type: "public_links_changed" }) }))
+    // Preview tunnels whose previews ended while Sova was down stop now (§mesh.public/preview-tunnels).
+    .then(() => stopEndedPreviewTunnels())
+    .catch((err) => console.error("[tunnels] start failed:", err instanceof Error ? err.message : err));
   // Project instances back to their desired state (server/project-services/routes.ts).
   void reconcileProjectServices();
   // The merge queue: its verbs, its queues recovered, the typed "land it" door (server/merge-queue/wire.ts).
@@ -252,6 +261,8 @@ server.on("error", (err) => {
 // Where ordinary chats run, and the chats a previous server left running taken back: a browser's
 // connect waits for that (bounded) rather than open a chat its process still holds (§app/chat-processes).
 startChatHost();
+// The agents' slice (sova.slice) below the server's side in CPU weight, and the user's optional ceiling on it (server/agent-cpu.ts).
+void agentCpu().applyAtStart();
 // An archived chat's workers stop with it (§app.chat-processes/workers).
 onSessionArchived((sessionId) => void stopWorkersOf(sessionId, "its parent was archived").catch(() => {}));
 // Archiving or deleting a chat cancels its wake nudges for good, its workers' too (§chat.wake-nudges/archive).

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { PREVIEW_URL_RE, SHARE_PORT_DEFAULT, type PublicLinksFile, type ShareFront, type ShareGatewaySetting, type ShareRoute } from "../shared/public-links";
+import { PREVIEW_URL_RE, SHARE_PORT_DEFAULT, type CloudflareAccountSetting, type PublicLinksFile, type PublicLinksReading, type ShareFront, type ShareGatewaySetting, type ShareRoute } from "../shared/public-links";
 import { stateRoot } from "./state-root";
 import { problemOf } from "../shared/form-rules";
 import { INGRESS_PORT_RULE, PREVIEW_URL_RULE, PUBLIC_URL_RULE, SHARE_PORT_RULE } from "../shared/public-links-limits";
@@ -9,19 +9,26 @@ import { INGRESS_PORT_RULE, PREVIEW_URL_RULE, PUBLIC_URL_RULE, SHARE_PORT_RULE }
 /**
  * The Public links setting (§mesh.public/setting): `<stateRoot>/public-links.json`, 0600, written
  * atomically, parsed strictly (an unknown key or a wrong type rejects the whole file). Separate
- * from peers.json, so a host that is its own gateway works with the mesh off. A missing file is
- * `route: "off"`; a file that doesn't parse is logged and read as off, never half-applied.
+ * from peers.json, so a host that is its own gateway works with the mesh off.
  *
- * `lastKnownUrl` and `verifiedAt` are written only by the server (writeServerFields); a PUT's
- * patch can't carry them. The SOVA_SHARE_* variables win over the file (pinnedByEnv).
+ * What every reader sees is the effective setting (readPublicLinksSetting, PublicLinksReading in
+ * shared/public-links.ts): a missing file, or an Off saved before the Cloudflare Free default (no
+ * `offChosenAt`), reads as `quick`; an Off a PUT saved (`offChosenAt`) is `off` with sharing off
+ * entirely; a file that can't be read or parsed is logged and read as `off`, `broken`, never
+ * half-applied and never `quick` (no tunnel starts for a setup the user saved and we can't read).
+ * SOVA_QUICK_TUNNEL=off (the test runner sets it) keeps the old default: a missing file is off.
+ *
+ * `lastKnownUrl`, `verifiedAt` and `offChosenAt` are written only by the server; a PUT's patch
+ * can't carry them. The SOVA_SHARE_* variables win over the file (pinnedByEnv).
  */
 
 export const OFF: PublicLinksFile = { version: 1, route: "off" };
 
 const FRONTS: readonly ShareFront[] = ["vhost", "caddy", "funnel", "cloudflared"];
-const FILE_KEYS = ["version", "route", "gateway", "ingressPort", "lastKnownUrl", "verifiedAt"];
-const PATCH_KEYS = ["route", "gateway", "ingressPort"];
+const FILE_KEYS = ["version", "route", "gateway", "ingressPort", "lastKnownUrl", "verifiedAt", "account", "offChosenAt"];
+const PATCH_KEYS = ["route", "gateway", "ingressPort", "account"];
 const GATEWAY_KEYS = ["publicUrl", "front", "sharePort", "acceptFrom", "previewUrl"];
+const ACCOUNT_KEYS = ["publicUrl", "previewUrl"];
 /** A Tailscale StableID (e.g. "nXXXXCNTRL"): short, printable, no spaces. */
 const NODE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const ACCEPT_MAX = 256;
@@ -63,7 +70,7 @@ export function parsePublicUrl(v: unknown): string {
 }
 
 function parseRoute(v: unknown): ShareRoute {
-  if (v === "off" || v === "self") return v;
+  if (v === "off" || v === "quick" || v === "account" || v === "self") return v;
   if (isObj(v)) {
     onlyKeys(v, ["via"], "route");
     const via = v.via;
@@ -72,8 +79,10 @@ function parseRoute(v: unknown): ShareRoute {
       if (typeof via.nodeId === "string" && NODE_ID.test(via.nodeId)) return { via: { nodeId: via.nodeId } };
     }
   }
-  return fail('route must be "off", "self" or {via: {nodeId}}');
+  return fail('route must be "off", "quick", "account", "self" or {via: {nodeId}}');
 }
+
+const isTime = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 
 /** A URL as stored: exactly the canonical origin (parsePublicUrl's form, no trailing slash). */
 function storedUrl(v: unknown, what: string): string {
@@ -99,6 +108,34 @@ function parseGateway(v: unknown): ShareGatewaySetting {
     if (parsePreviewUrl(v.previewUrl, false) !== v.previewUrl) fail("gateway.previewUrl must be written like https://*.example.com, with no path or trailing slash");
     out.previewUrl = v.previewUrl as string;
   }
+  return out;
+}
+
+/** Cloudflare Account's address, strictly: publicUrl as stored, previewUrl in its exact form. */
+function parseAccount(v: unknown): CloudflareAccountSetting {
+  if (!isObj(v)) return fail("account must be an object");
+  onlyKeys(v, ACCOUNT_KEYS, "account");
+  const out: CloudflareAccountSetting = { publicUrl: storedUrl(v.publicUrl, "account.publicUrl") };
+  if (v.previewUrl !== undefined) {
+    if (parsePreviewUrl(v.previewUrl, false) !== v.previewUrl) fail("account.previewUrl must be written like https://*.example.com, with no path or trailing slash");
+    out.previewUrl = v.previewUrl as string;
+  }
+  return out;
+}
+
+/** A PUT's account before the strict parse: publicUrl may carry one trailing slash, previewUrl
+    one trailing slash and capitals, and an empty previewUrl is none (as gatewayInput). */
+function accountInput(v: unknown): unknown {
+  if (!isObj(v)) return v;
+  let publicUrl = v.publicUrl;
+  try {
+    publicUrl = parsePublicUrl(v.publicUrl);
+  } catch {
+    // left as sent: the strict parse names the problem
+  }
+  const out: Record<string, unknown> = { ...v, publicUrl };
+  if (v.previewUrl === null || (typeof v.previewUrl === "string" && !v.previewUrl.trim())) delete out.previewUrl;
+  else if (typeof v.previewUrl === "string") out.previewUrl = parsePreviewUrl(v.previewUrl.trim().toLowerCase().replace(/\/$/, ""), false) ?? v.previewUrl;
   return out;
 }
 
@@ -132,53 +169,111 @@ export function parsePublicLinks(raw: unknown): PublicLinksFile {
   }
   if (raw.lastKnownUrl !== undefined) out.lastKnownUrl = storedUrl(raw.lastKnownUrl, "lastKnownUrl");
   if (raw.verifiedAt !== undefined) {
-    if (typeof raw.verifiedAt !== "number" || !Number.isSafeInteger(raw.verifiedAt) || raw.verifiedAt < 0) fail("verifiedAt must be a time");
+    if (!isTime(raw.verifiedAt)) fail("verifiedAt must be a time");
     out.verifiedAt = raw.verifiedAt as number;
   }
+  if (raw.account !== undefined) out.account = parseAccount(raw.account);
+  if (raw.offChosenAt !== undefined) {
+    if (!isTime(raw.offChosenAt)) fail("offChosenAt must be a time");
+    if (out.route !== "off") fail('offChosenAt goes only with route "off"');
+    out.offChosenAt = raw.offChosenAt as number;
+  }
   if (out.route === "self" && !out.gateway) fail('route "self" needs a gateway setting');
+  if (out.route === "account" && !out.account) fail('route "account" needs the Cloudflare Account address');
   return out;
 }
+
+/** Whether a Cloudflare Free tunnel may be the default: false under SOVA_QUICK_TUNNEL=off (the
+    test runner's), where a missing setting reads as off and no Free tunnel ever starts. */
+export function quickTunnelEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.SOVA_QUICK_TUNNEL?.trim().toLowerCase() !== "off";
+}
+
+/** The stored file, raw: `missing` (no file), `broken` (there but unreadable or not parsing),
+    or the file as written (a legacy Off stays `off` here). */
+export type StoredPublicLinks = { kind: "missing" } | { kind: "broken" } | { kind: "ok"; file: PublicLinksFile };
 
 /** The file version last warned about, so a bad file is named once, not on every read. */
 let warnedFile: string | null = null;
 
-/** The setting as stored; off when there is no file or it doesn't parse. A file that doesn't
-    parse is warned about once per version, never quoting its contents. */
-export function readPublicLinks(): PublicLinksFile {
+function warnBroken(version: string, why: string): void {
+  if (warnedFile === version) return;
+  warnedFile = version;
+  console.warn(`[share] public-links.json ignored (read as off, and no Cloudflare tunnel starts for it, until it is fixed or saved again in Settings → Public links): ${why}`);
+}
+
+/** The file as stored. A file that can't be read (other than not being there) or doesn't parse is
+    `broken`, warned about once per version, never quoting its contents. */
+export function readStoredPublicLinks(): StoredPublicLinks {
   let text: string;
   try {
     text = readFileSync(publicLinksFile(), "utf8");
-  } catch {
-    return { ...OFF };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return { kind: "missing" };
+    warnBroken(`unreadable:${(err as NodeJS.ErrnoException)?.code ?? "?"}`, "it can't be read");
+    return { kind: "broken" };
   }
   try {
-    return parsePublicLinks(JSON.parse(text));
+    return { kind: "ok", file: parsePublicLinks(JSON.parse(text)) };
   } catch (err) {
-    const why = err instanceof ParseError ? "it breaks the setting's rules" : "not JSON";
-    const version = `${text.length}:${createHash("sha256").update(text).digest("hex")}`;
-    if (warnedFile !== version) {
-      warnedFile = version;
-      console.warn(`[share] public-links.json ignored (read as off until it is fixed or saved again in Settings → Public links): ${why}`);
-    }
-    return { ...OFF };
+    warnBroken(`${text.length}:${createHash("sha256").update(text).digest("hex")}`, err instanceof ParseError ? "it breaks the setting's rules" : "not JSON");
+    return { kind: "broken" };
   }
 }
 
-function write(file: PublicLinksFile): void {
-  const path = publicLinksFile();
+/** The effective setting of a stored one (PublicLinksReading's rules, shared/public-links.ts). */
+export function effectivePublicLinks(stored: StoredPublicLinks, env: NodeJS.ProcessEnv = process.env): PublicLinksReading {
+  const implicitRoute = quickTunnelEnabled(env) ? "quick" : "off";
+  if (stored.kind === "missing") return { file: { version: 1, route: implicitRoute }, implicit: true, broken: false, sharingOff: false };
+  if (stored.kind === "broken") return { file: { ...OFF }, implicit: false, broken: true, sharingOff: false };
+  const file = stored.file;
+  if (file.route === "off" && file.offChosenAt === undefined) return { file: { ...file, route: implicitRoute }, implicit: true, broken: false, sharingOff: false };
+  return { file, implicit: false, broken: false, sharingOff: file.route === "off" && sharePin(env) === null };
+}
+
+/** The setting as every reader sees it: the effective file and why (implicit, broken, sharing off). */
+export function readPublicLinksSetting(env: NodeJS.ProcessEnv = process.env): PublicLinksReading {
+  return effectivePublicLinks(readStoredPublicLinks(), env);
+}
+
+/** The effective setting (readPublicLinksSetting's `file`): what every link reader acts on. */
+export function readPublicLinks(env: NodeJS.ProcessEnv = process.env): PublicLinksFile {
+  return readPublicLinksSetting(env).file;
+}
+
+function writeJson(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
   chmodSync(tmp, 0o600);
   renameSync(tmp, path);
 }
+const write = (file: PublicLinksFile): void => writeJson(publicLinksFile(), file);
+
+/** The address a Verify vouches for, or null when the route has none of its own. */
+const verifiedAddress = (f: PublicLinksFile): string | null =>
+  f.route === "self" ? (f.gateway?.publicUrl ?? null) : f.route === "account" ? (f.account ? `account:${f.account.publicUrl}` : null) : null;
 
 /**
- * Apply a PUT's patch: `{file}` as written, or `{error}` and nothing written. Changing the
- * gateway's address (or leaving "self") drops `verifiedAt`: a Verify vouches for one address.
+ * Apply a PUT's patch: `{file}` (the effective setting as written), or `{error}` and nothing
+ * written. Changing the verified address (or leaving "self"/"account") drops `verifiedAt`: a
+ * Verify vouches for one address. A patch that sets `route: "off"` stamps `offChosenAt` (sharing
+ * off entirely); any other route drops it. A `self` or via file is written without `account`, so
+ * an older Sova still reads it. A file that can't be read is replaced (saving again fixes it).
  */
-export function patchPublicLinks(patch: unknown): { file: PublicLinksFile } | { error: string } {
-  const cur = readPublicLinks();
+export function patchPublicLinks(patch: unknown, now: number = Date.now()): { file: PublicLinksFile } | { error: string } {
+  const plan = planPublicLinksPatch(patch, now);
+  if ("error" in plan) return plan;
+  write(plan.file);
+  return { file: effectivePublicLinks({ kind: "ok", file: plan.file }).file };
+}
+
+/** patchPublicLinks without the write: `{file}`, the next STORED file a PUT's patch would write
+    (patchPublicLinks' rules: validated, offChosenAt stamped, account dropped for self/via,
+    verifiedAt kept only for the same address), or `{error}`. Nothing is written or changed. */
+export function planPublicLinksPatch(patch: unknown, now: number = Date.now()): { file: PublicLinksFile } | { error: string } {
+  const stored = readStoredPublicLinks();
+  const cur: PublicLinksFile = stored.kind === "ok" ? stored.file : { ...OFF };
   try {
     if (!isObj(patch)) fail("Expected a JSON object body");
     const p = patch as Record<string, unknown>;
@@ -195,10 +290,14 @@ export function patchPublicLinks(patch: unknown): { file: PublicLinksFile } | { 
     if ("route" in p) next.route = p.route;
     if ("gateway" in p) next.gateway = gatewayInput(p.gateway);
     if ("ingressPort" in p) next.ingressPort = p.ingressPort;
+    if ("account" in p) next.account = accountInput(p.account);
     for (const k of PATCH_KEYS) if (next[k] === null) delete next[k];
+    if (next.route !== "off") delete next.offChosenAt;
+    else if ("route" in p && !(cur.route === "off" && cur.offChosenAt !== undefined)) next.offChosenAt = now;
+    if (next.route === "self" || isObj(next.route)) delete next.account;
     const file = parsePublicLinks(next);
-    if (file.route !== "self" || file.gateway?.publicUrl !== cur.gateway?.publicUrl) delete file.verifiedAt;
-    write(file);
+    const addr = verifiedAddress(file);
+    if (addr === null || addr !== verifiedAddress(cur)) delete file.verifiedAt;
     return { file };
   } catch (err) {
     if (err instanceof ParseError) return { error: err.message };
@@ -207,9 +306,12 @@ export function patchPublicLinks(patch: unknown): { file: PublicLinksFile } | { 
 }
 
 /** The server-written fields: a Verify that passed (`verifiedAt`), a via gateway's URL as learnt
-    (`lastKnownUrl`); null removes one. Returns the file as written. */
+    (`lastKnownUrl`); null removes one. Returns the effective setting as written. A file that
+    can't be read is never written over here (only a PUT replaces it): it stays broken. */
 export function writeServerFields(fields: { verifiedAt?: number | null; lastKnownUrl?: string | null }): PublicLinksFile {
-  const file = readPublicLinks();
+  const stored = readStoredPublicLinks();
+  if (stored.kind === "broken") return effectivePublicLinks(stored).file;
+  const file: PublicLinksFile = stored.kind === "ok" ? stored.file : { ...OFF };
   if (fields.verifiedAt !== undefined) {
     if (fields.verifiedAt === null) delete file.verifiedAt;
     else file.verifiedAt = fields.verifiedAt;
@@ -219,7 +321,39 @@ export function writeServerFields(fields: { verifiedAt?: number | null; lastKnow
     else file.lastKnownUrl = parsePublicUrl(fields.lastKnownUrl);
   }
   write(file);
-  return file;
+  return effectivePublicLinks({ kind: "ok", file }).file;
+}
+
+// ---- Turn On (the one-time consent to public Free tunnels) --------------------------------------
+
+/** <stateRoot>/public-links-consent.json: `{version: 1, consentAt}`, 0600, atomic. Its own file,
+    not a key of public-links.json, so a `self` or via file stays readable by an older Sova. */
+export const tunnelConsentFile = () => join(stateRoot(), "public-links-consent.json");
+
+/** When the operator pressed Turn On (ms), or null: never, or the file is missing or bad. */
+export function readTunnelConsent(): number | null {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(tunnelConsentFile(), "utf8"));
+    if (isObj(raw) && raw.version === 1 && isTime(raw.consentAt) && Object.keys(raw).length === 2) return raw.consentAt;
+  } catch {
+    // none
+  }
+  return null;
+}
+
+/** Record Turn On; only the operator's own click in Sova's page calls this, never an agent.
+    Once given it stays: returns the first time recorded. */
+export function recordTunnelConsent(at: number = Date.now()): number {
+  const prior = readTunnelConsent();
+  if (prior !== null) return prior;
+  writeJson(tunnelConsentFile(), { version: 1, consentAt: at });
+  return at;
+}
+
+/** Whether a Free tunnel may start: Free is enabled (quickTunnelEnabled) and Turn On was pressed.
+    The one gate every Free tunnel start, share and preview alike, passes. */
+export function quickTunnelAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return quickTunnelEnabled(env) && readTunnelConsent() !== null;
 }
 
 /** A routed host's via gateway URL as learnt (its hello or ack): kept as `lastKnownUrl`, so links

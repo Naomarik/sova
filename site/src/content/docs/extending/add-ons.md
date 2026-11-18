@@ -60,4 +60,5 @@ chat alone doesn't get them.
 ## Turning one on or off
 
 Adding, removing or disabling an add-on is done in a terminal: `pi install` and `pi remove` for a
-package, the file for your own, and `/extensions` in pi's terminal UI, which has no screen in Sova.
+package, the file for your own, and `pi config` to choose which add-ons load. Sova has no screen for
+them: its Settings → Extensions tab is for Sova's own extensions, not pi add-ons.

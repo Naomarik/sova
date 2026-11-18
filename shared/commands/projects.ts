@@ -438,7 +438,7 @@ export const PROJECT_ENTRIES: CommandEntry[] = [
   {
     id: "project.services.view",
     label: "Show Project Services",
-    summary: "A project's Branches tab: its copies, their services and the supervisor.",
+    summary: "A project's Running Copies tab: its copies, their services and the supervisor.",
     effect: "looks",
     params: { pid: { type: "string", description: "The project's id", in: "path", required: true } },
     route: { method: "GET", path: "/api/projects/:pid/services" },

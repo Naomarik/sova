@@ -5,6 +5,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { HEntry } from "../shared/harness";
+import { homedir } from "node:os";
+import { projectFileKeeper } from "./context-scope";
 import { candidateDirs, resolveToolPath, skippedSegment, SUBFOLDER_SCAN_CAP, visiblePart } from "./deeper-context";
 
 /** One skill a folder's skills folders hold, as its file says. */
@@ -22,7 +24,7 @@ export type SkillsIn = (skillsDir: string) => FolderSkill[];
 const TAG = "sova-skills";
 const HEADER = new RegExp(`^<${TAG} dir="([^"\\n]+)">`);
 /** Inside one folder, in the order a chat's start takes them. */
-const SKILL_FOLDERS = [".agents/skills", ".claude/skills"] as const;
+export const SKILL_FOLDERS = [".agents/skills", ".claude/skills"] as const;
 
 const posix = (p: string) => p.split(sep).join("/");
 const escapeXml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
@@ -141,12 +143,15 @@ export function skillBlocksToAttach(cwd: string, o: SkillAttachOptions): string[
     if (hit === undefined) o.ignored.set(p, (hit = gitIgnores(p)));
     return hit;
   };
+  let real: ((p: string) => boolean) | undefined;
   for (const dir of candidateDirs(cwd, resolveToolPath(cwd, o.path))) {
     if (!SKILL_FOLDERS.some((s) => existsSync(join(dir, s)))) continue;
+    // A project's skills are real files in it: one linked out of the project is never offered.
+    real ??= projectFileKeeper(cwd, { home: homedir() });
     const rel = posix(relative(resolve(cwd), dir));
     if (o.inFlight.has(rel) || (!o.offeredFiles && o.offered().has(rel))) continue;
     const seen = o.offeredFiles?.();
-    const skills = skillsOfFolder(dir, o.read, ignores).filter((s) => !s.manualOnly && !seen?.has(s.filePath) && !o.startingFile?.(s.filePath) && !o.off?.(s) && (!o.allow || o.allow(s.filePath)));
+    const skills = skillsOfFolder(dir, o.read, ignores).filter((s) => !s.manualOnly && !seen?.has(s.filePath) && !o.startingFile?.(s.filePath) && !o.off?.(s) && real!(s.filePath) && (!o.allow || o.allow(s.filePath)));
     if (!skills.length) continue;
     o.inFlight.add(rel);
     out.push(skillsBlock(rel, skills));
@@ -165,13 +170,14 @@ export function listSubfolderSkills(cwd: string, read: SkillsIn, opts: { cap?: n
   const cap = opts.cap ?? SUBFOLDER_SCAN_CAP;
   const root = resolve(cwd);
   const skills: SubfolderSkill[] = [];
+  const real = projectFileKeeper(cwd, { home: homedir() });
   const queue: string[] = [root];
   let seen = 0;
   let incomplete = false;
   while (queue.length) {
     const dir = queue.shift()!;
     if (dir !== root && SKILL_FOLDERS.some((s) => existsSync(join(dir, s)))) {
-      for (const s of skillsOfFolder(dir, read, opts.ignores)) skills.push({ ...s, dir: posix(relative(root, dir)) });
+      for (const s of skillsOfFolder(dir, read, opts.ignores)) if (real(s.filePath)) skills.push({ ...s, dir: posix(relative(root, dir)) });
     }
     let names: string[];
     try {
@@ -206,7 +212,7 @@ export function isSubfolderSkillFile(cwd: string, file: string, read: SkillsIn):
     const at = file.indexOf(`/${sub}/`);
     if (at < 0) continue;
     const dir = file.slice(0, at);
-    if (candidateDirs(cwd, join(dir, "x")).includes(dir) && skillsOfFolder(dir, read).some((s) => s.filePath === file)) return true;
+    if (candidateDirs(cwd, join(dir, "x")).includes(dir) && skillsOfFolder(dir, read).some((s) => s.filePath === file)) return projectFileKeeper(cwd, { home: homedir() })(file);
   }
   return false;
 }

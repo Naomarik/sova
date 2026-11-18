@@ -280,6 +280,7 @@
     "design.remove",
     "design.restore",
     "design.history",
+    "design.setup.hide",
     "playbook.run.open",
     "playbook.run.list",
     "playbook.run.get",

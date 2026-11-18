@@ -157,15 +157,6 @@ export function countdown(until: string, now: number): string {
   return `Publishes in ${h ? `${h}:${String(m).padStart(2, "0")}` : m}:${ss}`;
 }
 
-/** The Overview card's line: "Latest v0.9.0 · 479 landings since", or what is open. */
-export function cardLine(v: Pick<ReleaseView, "initialized" | "latest" | "landingsSince" | "open">): string {
-  // The card's chip says the state: the line names the release only.
-  if (v.open) return `${releaseName(v.open)} in progress`;
-  if (!v.latest) return v.initialized ? "No release yet." : "Releases aren't set up for this project.";
-  const n = v.landingsSince;
-  return `Latest ${v.latest}${n === null || n === undefined ? "" : ` · ${n === 0 ? "no" : n} ${n === 1 ? "landing" : "landings"} since`}`;
-}
-
 /** "A", "A and B", "A, B and C". */
 function list(xs: readonly string[]): string {
   return xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;

@@ -94,22 +94,21 @@ test("a chat's mid-chat lines queue on its folder's queue, read once per folder"
 });
 
 test("Send waits only for saves not yet answered: an answered save whose read hasn't landed holds nothing", () => {
-  const w = [{ kind: "context" as const }, { kind: "skill" as const }, { kind: "skill" as const }];
-  assert.deepEqual(setupHold(w, EMPTY), { context: 1, skills: 2 }, "what waits holds Send");
+  assert.equal(setupHold(EMPTY), null, "nothing saving: nothing holds Send");
   let o = begin(EMPTY, ["a", "b"], "approved", 1);
-  assert.deepEqual(setupHold([], o), { context: 0, skills: 0, saving: true }, "the last decisions saving: Saving…");
+  assert.deepEqual(setupHold(o), { saving: true }, "a flip saving: Saving…");
   o = acked(o, 1, 4);
   // No read has landed since (it failed): the rows keep the decision, but the server has it.
   assert.ok(pendingAny(o), "the rows still show the decision");
-  assert.equal(setupHold([], o), null, "and Send no longer waits");
+  assert.equal(setupHold(o), null, "and Send no longer waits");
   o = begin(o, ["c"], "disallowed", 2);
-  assert.equal(setupHold([], o)?.saving, true, "a newer save still running holds it again");
-  assert.equal(setupHold([], failed(o, 2)), null);
+  assert.equal(setupHold(o)?.saving, true, "a newer save still running holds it again");
+  assert.equal(setupHold(failed(o, 2)), null);
 });
 
 test("the new chat's card holds Send through setupHold only", () => {
   const card = readFileSync(new URL("../components/SessionSetup.tsx", import.meta.url), "utf8");
   // Its two writes: the hold as setupHold reads it, and none when the card goes.
   const calls = [...card.matchAll(/\bsetHold\(([^\n]*)$/gm)].map((m) => m[1]!.trim());
-  assert.deepEqual(calls, ["path(), setupHold(waiting(), overlay())));", "untrack(path), null));"]);
+  assert.deepEqual(calls, ["path(), setupHold(overlay())));", "untrack(path), null));"]);
 });

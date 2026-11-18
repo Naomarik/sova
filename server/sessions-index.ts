@@ -54,7 +54,7 @@ import { removeDesignFiles } from "./design/store";
 import { byActivity } from "../src/lib/summary-diff";
 import { queueChatRole } from "../shared/merge-queue";
 import { opTrack } from "./stall-recorder";
-import { jobsDir, runningJobCount } from "./background-jobs";
+import { type JobCounts, runningJobCount, runningJobCounts } from "./background-jobs";
 import { stateRoot } from "./state-root";
 
 /**
@@ -269,9 +269,10 @@ const heldChatField = (path: string): Pick<SessionSummary, "chat"> => {
 };
 
 /** SessionSummary.jobsRunning: a shut-down chat's running background jobs (the list's `job running` marker). */
-const jobsField = (id: string, path: string): Pick<SessionSummary, "jobsRunning"> => {
+const jobsField = (id: string, path: string, counts?: JobCounts["counts"]): Pick<SessionSummary, "jobsRunning"> => {
   if (heldChatState(path)) return {};
-  const n = runningJobCount(id);
+  // A listing reads every chat's jobs once (runningJobCounts); a one-row read, just its own.
+  const n = counts ? (counts.get(id) ?? 0) : runningJobCount(id);
   return n > 0 ? { jobsRunning: n } : {};
 };
 
@@ -1339,7 +1340,7 @@ let unsettled = 0;
  * written whole, so a folder's mtime moves with each), and whether a model runtime answers context
  * windows. One taken while a store was just written matches nothing.
  */
-function outsideStamp(runtime: boolean, now = Date.now()): string {
+function outsideStamp(runtime: boolean, jobs: JobCounts, now = Date.now()): string {
   const parts: string[] = [runtime ? "rt" : "-"];
   const root = stateRoot();
   for (const name of ROW_STORES) {
@@ -1347,18 +1348,8 @@ function outsideStamp(runtime: boolean, now = Date.now()): string {
     if (st && now - st.mtimeMs < STORE_SETTLE_MS) return `unsettled ${++unsettled}`;
     parts.push(st ? `${st.mtimeMs}:${st.size}` : "-");
   }
-  const jobs = jobsDir();
-  let names: Dirent[] = [];
-  try {
-    names = readdirSync(jobs, { withFileTypes: true });
-  } catch {
-    // no jobs yet
-  }
-  for (const d of names) {
-    if (!d.isDirectory()) continue;
-    const st = statSafe(join(jobs, d.name));
-    parts.push(`${d.name}:${st ? st.mtimeMs : "-"}`);
-  }
+  // Each chat's job folder, as the listing's one pass over them read it (runningJobCounts).
+  if (jobs.stamp) parts.push(jobs.stamp);
   return parts.join("\n");
 }
 
@@ -1769,11 +1760,13 @@ interface RowReads {
   previewLabels: ReturnType<typeof keptLabels>;
   isWorker: (path: string) => boolean;
   parents: WorkerParents;
+  /** Every chat's running background jobs, read once for the whole listing; none for a one-row build (its own folder is read). */
+  jobs?: JobCounts["counts"];
 }
 
-function rowReads(isWorker: (path: string) => boolean): RowReads {
+function rowReads(isWorker: (path: string) => boolean, jobs?: JobCounts["counts"]): RowReads {
   // The stores are read once, when a row is first built: a build that keeps every row reads none.
-  type Stores = Omit<RowReads, "live" | "own" | "isWorker" | "parents">;
+  type Stores = Omit<RowReads, "live" | "own" | "isWorker" | "parents" | "jobs">;
   let stores: Stores | null = null;
   const read = (): Stores =>
     (stores ??= {
@@ -1793,6 +1786,7 @@ function rowReads(isWorker: (path: string) => boolean): RowReads {
     live: readLive(),
     own: readOwnLiveRecords(),
     isWorker,
+    jobs,
     parents: workerSessions.parents(),
     get drafts() { return read().drafts; },
     get titles() { return read().titles; },
@@ -1863,7 +1857,7 @@ async function rowFor(s: BaseSummary, r: RowReads): Promise<SessionSummary | nul
     ...(r.groups[s.id] !== undefined ? { groupId: r.groups[s.id] } : {}),
     busy: isSessionBusy(s.path),
     ...heldChatField(s.path),
-    ...jobsField(s.id, s.path),
+    ...jobsField(s.id, s.path, r.jobs),
     ...attentionFields(s, l, ownRec, r.seen),
     ...decisionFields(s, l, ownRec, r.seen, r.attention, r.stores),
     ...(preview !== undefined ? { draftPreview: preview } : {}),
@@ -1894,7 +1888,9 @@ async function buildSessionsNow(track?: { files?: string[]; dirty?: ReadonlySet<
   const rowSeq = rowChangeSeq();
   const files = track?.files ?? (await listSessionFiles());
   const resolveWindow = await windowResolver();
-  const outside = outsideStamp(!!resolveWindow, startedAt);
+  // Every chat's job folder in one pass: the outside stamp compares them, and each built row reads its count.
+  const jobs = runningJobCounts(undefined, startedAt);
+  const outside = outsideStamp(!!resolveWindow, jobs, startedAt);
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -1905,7 +1901,7 @@ async function buildSessionsNow(track?: { files?: string[]; dirty?: ReadonlySet<
   const [results, workers] = await Promise.all([summariesOf(ordered, resolveWindow, track?.dirty), workerSessionPaths(ordered.all, track?.dirty)]);
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) dropEntry(k);
-  const reads = rowReads((p) => workers.has(p));
+  const reads = rowReads((p) => workers.has(p), jobs.counts);
   const live = liveKeys(reads.live, reads.own);
   const read = new Map<string, string>();
   // Each row's file as its summary was read: a stamp taken from the cache now could be a newer read

@@ -64,14 +64,14 @@ test("a failed stop's sentence stays only while its copy is listed", () => {
 test("the archived banner names what was left running", () => {
   assert.equal(archivedRunningLine([]), null);
   assert.equal(archivedRunningLine([adopted]), null);
-  assert.equal(archivedRunningLine([copy("a")]), "1 copy of it still runs. Stop it on Branches.");
-  assert.equal(archivedRunningLine([copy("a"), copy("b")]), "2 copies of it still run. Stop them on Branches.");
+  assert.equal(archivedRunningLine([copy("a")]), "1 copy of it still runs. Stop it on Running Copies.");
+  assert.equal(archivedRunningLine([copy("a"), copy("b")]), "2 copies of it still run. Stop them on Running Copies.");
   // The shared services are stopped by the banner's own Stop: Branches shows them only through a copy.
-  assert.equal(archivedRunningLine([copy("a"), shared]), "1 copy and its shared services still run. Stop the copy on Branches.");
-  assert.equal(archivedRunningLine([copy("a"), copy("b"), shared]), "2 copies and its shared services still run. Stop the copies on Branches.");
+  assert.equal(archivedRunningLine([copy("a"), shared]), "1 copy and its shared services still run. Stop the copy on Running Copies.");
+  assert.equal(archivedRunningLine([copy("a"), copy("b"), shared]), "2 copies and its shared services still run. Stop the copies on Running Copies.");
   assert.equal(archivedRunningLine([shared]), "Its shared services still run.");
   // An older server's row with no down: Branches it is.
-  assert.equal(archivedRunningLine([{ ...shared, down: null }]), "Its shared services still run. Stop them on Branches.");
+  assert.equal(archivedRunningLine([{ ...shared, down: null }]), "Its shared services still run. Stop them on Running Copies.");
 });
 
 test("the shared services with no copy: Stop Running Copies stops them, and the archived page offers their Stop", () => {

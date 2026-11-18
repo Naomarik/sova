@@ -57,6 +57,27 @@ export function failedLine(v: ProjectRuntimeView): string | null {
   return f ? `Failed at ${f.check}: ${f.detail}` : null;
 }
 
+/**
+ * Running Copies' one-line setup status (it replaced the Software card): a chip for the registry's standing,
+ * when it was last checked (the proof, else the registration), and the line that says why while failed or
+ * out of date. `checked`: an ISO time the tab renders relative.
+ */
+export function setupStatus(v: ProjectRuntimeView): { word: string; tone?: ChipTone; checked: string | null; why: string | null } {
+  const checked = v.proof?.at ?? v.registered?.at ?? null;
+  switch (v.standing) {
+    case "registered":
+      return { word: "Services set up", tone: "success", checked, why: null };
+    case "conforming":
+      return { word: "Checking the services", tone: "info", checked: null, why: null };
+    case "stale":
+      return { word: "Out of date", tone: "warn", checked, why: v.drift?.length ? `Changed since: ${v.drift.join(", ")}` : null };
+    case "failed":
+      return { word: "Setup failed", tone: "error", checked, why: failedLine(v) };
+    default:
+      return { word: "Not set up yet", tone: "warn", checked: null, why: null };
+  }
+}
+
 /** Run Playbook, or Run Again once something is registered. */
 export const playbookLabel = (v: ProjectRuntimeView): string => (v.registered ? "Run Again" : "Run Playbook");
 

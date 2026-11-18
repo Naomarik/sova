@@ -60,3 +60,65 @@ test("own records are those of every process hosting this server's chats, not on
   assert.equal(readLive().get(c)?.status, "idle", "gone from the set, it is a writer again");
   rmSync(join(liveDir, "p5-c.json"));
 });
+
+const settle = () => new Promise((r) => setTimeout(r, 80)); // past the folder's settle window
+async function eventually(check: () => boolean, ms = 2_000): Promise<boolean> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (check()) return true;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  return check();
+}
+
+test("callers share one listing while the folder is unchanged; a rename, a new record or a removal is seen at once", async () => {
+  const live = await import("./live");
+  const d = join(agentDir, "sessions", "d.jsonl");
+  writeFileSync(join(liveDir, "p6-d.json"), record(d, "idle"));
+  await settle();
+  readLiveRecords();
+  const before = live.liveListings;
+  for (let i = 0; i < 20; i++) {
+    assert.equal(readLive().get(d)?.status, "idle");
+    readOwnLiveRecords();
+    readLiveRecords({ includeOwn: true });
+  }
+  assert.equal(live.liveListings, before, "sixty reads of a settled folder list it no more");
+  writeFileSync(join(liveDir, ".p6-d.json.tmp"), record(d, "busy"));
+  renameSync(join(liveDir, ".p6-d.json.tmp"), join(liveDir, "p6-d.json"));
+  assert.equal(readLive().get(d)?.status, "busy", "a heartbeat's rename is seen in the same tick");
+  await settle();
+  const e = join(agentDir, "sessions", "e.jsonl");
+  writeFileSync(join(liveDir, "p7-e.json"), record(e, "idle"));
+  assert.equal(readLive().get(e)?.status, "idle", "a new record is seen in the same tick");
+  await settle();
+  rmSync(join(liveDir, "p7-e.json"));
+  assert.equal(readLive().get(e), undefined, "a removed record is gone in the same tick");
+  rmSync(join(liveDir, "p6-d.json"));
+});
+
+test("an in-place rewrite of a settled folder is seen once its watch reports it", async () => {
+  const f = join(agentDir, "sessions", "f.jsonl");
+  writeFileSync(join(liveDir, "p8-f.json"), record(f, "idle"));
+  await settle();
+  assert.equal(readLive().get(f)?.status, "idle");
+  writeFileSync(join(liveDir, "p8-f.json"), record(f, "waiting-for-you"));
+  // Well under VIEW_MAX_AGE_MS: the watch clears the view, not its age.
+  const { VIEW_MAX_AGE_MS } = await import("./live");
+  const t0 = Date.now();
+  assert.ok(await eventually(() => readLive().get(f)?.status === "waiting-for-you", VIEW_MAX_AGE_MS / 4), "the rewrite reaches readers");
+  assert.ok(Date.now() - t0 < VIEW_MAX_AGE_MS / 4, "seen by the watch's event, long before the view would age out");
+  rmSync(join(liveDir, "p8-f.json"));
+});
+
+test("the own-pid filter applies on each call to a shared listing", async () => {
+  const g = join(agentDir, "sessions", "g.jsonl");
+  writeFileSync(join(liveDir, "p9-g.json"), record(g, "idle"));
+  await settle();
+  assert.equal(readLive().get(g)?.status, "idle");
+  const remove = addOwnPid(process.ppid);
+  assert.equal(readLive().get(g), undefined, "the own-pid filter applies to the shared listing");
+  assert.equal(readLiveRecords({ includeOwn: true }).length, 1);
+  remove();
+  rmSync(join(liveDir, "p9-g.json"));
+});

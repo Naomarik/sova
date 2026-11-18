@@ -2,53 +2,81 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 People outside the tailnet open hand-off links (`/h/`), owner-page links (`/i/`) and session share
-links (`/s/`, §app/session-share), and standalone reviewed tour links (`/t/`, §app.tours/sharing) on a public address. One host, usually the VPS, can be the **public gateway**: its share listener
+links (`/s/`, §app/session-share), and standalone reviewed tour links (`/t/`, §app.tours/sharing) on a public address. Where they open is one choice per computer (§mesh.public/where-links-open), and while today's route works, links move to a newly set-up address only once it is saved and verified: by
+default a Cloudflare Free tunnel Sova runs on this computer, or a Cloudflare tunnel of the user's
+account Sova runs from its token (§mesh/tunnel); or this host is the **public gateway**: its share listener
 (§app.baton/share-listener) sits on `127.0.0.1` behind a **front** outside Sova that terminates TLS
 for one hostname. Any other host can send its links **through** that gateway: it registers the
 SHA-256 of each live token with the gateway over the tailnet, and the gateway forwards a request
 for one of those hashes to the host's share **ingress**, which admits only its gateway. The host
 that minted a token stays the only authority on it; the gateway never sees a token it didn't mint.
-Sova shows the front's configuration and checks it; it never writes or runs it. The wire shapes
+For a front the user runs, Sova shows its configuration and checks it; it never writes or runs it. The wire shapes
 live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fingerprint
 (§mesh.peers/hello) is unchanged.
 
 ## §mesh.public/setting — The Public links setting and where links point
 
 - `<stateRoot>/public-links.json`, mode 0600, written atomically, separate from `peers.json`, so it
-  works with the mesh off: `{version: 1, route: "off" | "self" | {via: {nodeId}}, gateway?:
+  works with the mesh off: `{version: 1, route: "off" | "quick" | "account" | "self" | {via: {nodeId}}, gateway?:
   {publicUrl, front: "vhost" | "caddy" | "funnel" | "cloudflared", sharePort, acceptFrom: "all" |
-  <StableID>[], previewUrl?}, ingressPort?, lastKnownUrl?, verifiedAt?}`. A missing file is `off`. It is parsed
-  strictly: an unknown key, a wrong type, a `route: "self"` without a `gateway`, a gateway missing
+  <StableID>[], previewUrl?}, account?: {publicUrl, previewUrl?}, ingressPort?, lastKnownUrl?, verifiedAt?,
+  offChosenAt?}` (`quick` is Cloudflare Free, `account` Cloudflare Account,
+  §mesh.public/where-links-open). The Turn On click (§mesh.tunnel/turn-on) is not a key of it: it
+  lives in its own file, `<stateRoot>/public-links-consent.json` (mode 0600, `{consentAt}`), so it
+  survives any change of route and an older Sova still reads `public-links.json`. What a missing, older or unreadable file means is
+  §mesh.public/free-default. It is parsed
+  strictly: an unknown key, a wrong type, a `route: "self"` without a `gateway`, a `route: "account"` without an `account`, a gateway missing
   a key, an `acceptFrom` naming a node twice, or a URL not written as its bare `https` origin (no
   path, query, login or trailing slash, nothing the URL parser would rewrite) rejects the whole
-  file, which then reads as off, with a warning once per version of the file that never quotes it.
+  file, which then reads as unreadable, with a warning once per version of the file that never quotes it.
   `via.nodeId` is the gateway peer's StableID, so renaming the peer changes nothing. The gateway
   block is kept while the route is not `self`, so switching back restores it. The share and
   ingress ports default to 4802.
-- `lastKnownUrl` (the via gateway's address as last learnt) and `verifiedAt` (the last Verify that
-  passed) are written only by the server. A saved change of the gateway's address, or any route
+- `lastKnownUrl` (the via gateway's address as last learnt), `verifiedAt` (the last Verify that
+  passed) and `offChosenAt` (when Off was picked, §mesh.public/sharing-off) are written only by the
+  server, as is the consent file, written only on the operator's Turn On click. A saved change of the gateway's address, or any route
   but `self`, drops `verifiedAt`: a Verify vouches for one address.
 - Main listener only (a request from the peer listener, or carrying `X-Sova-Relayed`, which
   another host's `/peer/<id>/` proxy sets on everything it relays, gets the plain 404; a generic
   reverse proxy in front of the main listener, such as `tailscale serve`, Caddy or nginx, is
-  served even though it sets `X-Forwarded-Host`): `GET /api/public-links` → `{file, share, pinnedByEnv, front?, routed?, gateways}`;
-  `PUT /api/public-links` with any of `route`, `gateway`, `ingressPort` (16 KB at most; a gateway
-  may leave out `sharePort` and `acceptFrom` for their defaults, and its URL may carry one trailing
-  slash) → the same answer, or 400 `{error}` naming the problem, with nothing written; `POST
+  served even though it sets `X-Forwarded-Host`): `GET /api/public-links` → `{file, share, pinnedByEnv, front?, routed?, gateways,
+  implicit, broken, consentAt?, sharingOff, tunnel?, account?}` (`implicit`/`broken`: §mesh.public/free-default;
+  `consentAt`: when Turn On was clicked, from the consent file; `sharingOff`: whether Off is in force,
+  §mesh.public/sharing-off; `tunnel`: the tunnels' states, cloudflared and the broken links,
+  §mesh/tunnel; `account`: only whether a token is saved; `candidate`: a setup waiting for its
+  Verify, below);
+  `PUT /api/public-links` with any of `route`, `gateway`, `ingressPort` and `account` (`{publicUrl,
+  previewUrl?}`) (16 KB at most; a gateway may leave out `sharePort` and `acceptFrom` for their
+  defaults; a gateway's and an account's `publicUrl` may carry one trailing slash, their
+  `previewUrl` one trailing slash and capitals, and an empty `previewUrl` is none; `route: "account"` with no `account` saved or sent is a 400; who may send it:
+  §app.access/your-click) → the same answer, or 400 `{error}` naming the problem, with nothing written; `POST
   /api/public-links/verify` → `{ok, status?, error?}` (§mesh.public/front). `front` is the chosen
   front's guide while this host is the gateway, `routed` its routed hosts (§mesh.public/gateway),
   and `gateways` the peers whose hello advertises a gateway (none while the mesh is off).
-- **Binding.** The share listener binds `127.0.0.1:<sharePort>` while this host is the gateway, and
-  nothing otherwise. `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` pin the address; with both set it
+- **A candidate** (§mesh.public/where-links-open). A PUT to `account` or `self` that waits for its
+  Verify writes `<stateRoot>/public-links-candidate.json` instead (mode 0600, written atomically,
+  its own file so `public-links.json` still reads on an older Sova): `{version: 1, patch, file,
+  savedAt, failure?}`, the PUT's body, the setting it would make, when it was saved, and the last
+  Verify that failed (`{reason, at}`); anything else reads as none. The answer is the same as
+  before, with `file` and `share` unchanged and `candidate: {route, publicUrl, previewUrl?, front?,
+  savedAt, failure?}`. While one waits, `POST /api/public-links/verify` checks the candidate's
+  address, not today's; who may send it is then the PUT's door (§app.access/your-click). A pass
+  applies the saved body over the setting as it is then, stamps `verifiedAt`, deletes the candidate
+  file and rebinds; a failure records its reason and changes nothing else. `DELETE
+  /api/public-links/candidate` (main listener, the PUT's door) drops it and its pasted token, stops
+  its tunnel if one runs, and answers as GET does. A PUT that sets a route outright drops it too.
+- **Binding.** The share listener binds `127.0.0.1:<sharePort>` while this host is the gateway or
+  its share tunnel is wanted (§mesh.tunnel/lifetime), and nothing otherwise. `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` pin the address; with both set it
   binds there whatever the setting says. A saved change rebinds without a restart, releasing the
-  old port first; the same address keeps the socket. A routed host binds its ingress instead
+  old port first; the same address keeps the socket. During a candidate's Verify only, a gateway
+  candidate's `sharePort` is bound when nothing else is, and released after. A routed host binds its ingress instead
   (§mesh.public/ingress).
 - **The effective address**, first match wins: `SOVA_SHARE_PUBLIC_URL` (an `http` or `https` bare
-  origin; any other value is ignored with one warning, and the setting decides); this host's own
-  gateway address; the via gateway's address (as its info or ack last stated it, else its hello's,
+  origin; any other value is ignored with one warning, and the setting decides); under Free the
+  share tunnel's current address, under Account its saved address; this host's own gateway address; the via gateway's address (as its info or ack last stated it, else its hello's,
   else `lastKnownUrl`); the bound address; none. Every `/h/`, `/i/`, `/s/` and reviewed tour `/t/` link is built by one
   helper on that address, or is just the path with none. The answer is a `ShareState`: `state` off,
-  configured, verified or unreachable; `source` env, setting, gateway or bound; `publicUrl`; `via`
+  configured, verified or unreachable; `source` env, quick, account, setting, gateway or bound; `publicUrl`; `via`
   (the gateway peer's current id); `warning` with its `warningCode` whenever a link may not
   open from outside; and `listener` while the share port won't open (§mesh.public/listener-failure).
 - **State and warning.** An address of this host's own is `verified` after a Verify of it passed
@@ -56,9 +84,16 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
   `configured` with the `unverified` warning. Through a gateway: `unreachable` when it didn't
   answer; `configured` with `not-accepted` when it answers but doesn't accept this host, or with
   `unconfirmed` before it was asked; `verified` once it answered and accepts. With no address the
-  state is `off` with the `off` warning. The warning codes are `off`, `unverified`, `unreachable`,
-  `unconfirmed`, `not-accepted` and `sleeps`; no server path sets `sleeps` today. Texts:
-  §design.copy-deck/public-links.
+  state is `off` with the `off` warning (`broken` for an unreadable setting). Under Free: `verified`
+  once the tunnel's address passed its outside check, always with the `quick` warning (the address
+  changes when the tunnel starts again); `configured` with `quick-starting` while it starts,
+  with `quick-verifying` while it is up with its address but not yet verified from outside (still
+  coming online; Free has no Verify, its tunnel checks itself again, §mesh.tunnel/lifetime),
+  `quick-turn-on` before Turn On, `quick-setup` while no cloudflared is found; `unreachable` with
+  `tunnel-down` while it is down. The warning codes are `off`, `unverified`, `unreachable`,
+  `unconfirmed`, `not-accepted`, `sleeps`, `quick`, `quick-starting`, `quick-verifying`,
+  `quick-turn-on`, `quick-setup`, `tunnel-down` and `broken`; no server path sets `sleeps` today. Texts:
+  §design.copy-deck/public-links, §design.copy-deck/where-links-open.
 - `pinnedByEnv` lists the `SOVA_SHARE_*` variables that are set (a refused `SOVA_SHARE_PUBLIC_URL`
   isn't; `SOVA_SHARE_PREVIEW_URL` too, §mesh.public/preview-address): they win over the setting, and the panel shows their fields as set by the environment.
 
@@ -69,11 +104,100 @@ gateway's first answer to its hello and info before it replies. The reply then c
 gateway's address and state (`verified` when it accepts) rather than `off` with "Turn on public
 links". When nothing answers in time, it replies with the state as it stands.
 
+## §mesh.public/where-links-open — Where links open: one choice, in sections
+
+- **One choice for every link from this computer**: hand-off, owner, session share, tour and
+  preview links, whoever makes them. It is shown in Settings → Public links (§mesh.public/panel),
+  whole, and on every share screen: the Share sheet and the share page's create form
+  (§app.session-share/sheet), the Shares page (§app.session-share/shares-page), a tour's share and
+  the Previews card (§mesh.public/preview-card), as the current choice on one line with **Change**,
+  which opens the same list less Off, which is picked in Settings → Public links only.
+- **Its sections, in this order:**
+  - **Cloudflare:** **Free**, a Cloudflare Quick Tunnel Sova runs, with no account; its address is
+    random and changes when the tunnel starts again; the default (§mesh.public/free-default).
+    **Account**, a tunnel in the user's Cloudflare account that Sova runs from its token
+    (§mesh.tunnel/account); a Cloudflare tunnel the user runs themself shows here as "You run it".
+  - **Tailscale:** **Funnel** (this host is the gateway, behind Tailscale Funnel), and one
+    **Through {computer}** per computer whose hello advertises a gateway (a saved one no longer
+    advertised keeps its row): links go over Tailscale to that computer, which serves them. Under
+    it the note "{computer} serves these with its own web server (Your own domain)."
+  - **Your own web server:** this host is the gateway for the user's own domain, served by Caddy or
+    nginx on this computer (what the VPS uses).
+  - **Off** (§mesh.public/sharing-off).
+- Each maps to the setting's route (§mesh.public/setting): Free `quick`; Account `account`, and You
+  run it `self` with front `cloudflared`; Funnel `self` with front `funnel`; Your own web server
+  `self` with front `vhost` or `caddy`; Through `{via}`; Off `off`.
+- **Set up or not.** Each option says whether it is on, ready or needs setup, with its one-line
+  hint, as a tag after its name ("· On", "· Ready", "· Needs setup"); Free picked before Turn On
+  reads "· Not turned on", and "· On" after. One not set up has its name and hint in the muted ink
+  (still readable), its tag in the stronger ink, and stays selectable: picking it opens its setup help (its steps,
+  §mesh.public/front, and Set Up With a Chat, §mesh.tunnel/setup-chat), and links keep opening where
+  they open now until it is saved (an address of its own also verified, below). Picking a ready option asks
+  once, "Applies to every link from this computer.", then saves the route.
+- **A new address waits for its Verify.** Your links stay on whatever works now until the new
+  address is saved and verified, then every link moves to it. The route works when it is Free with
+  its share tunnel up, or any other route whose address reads verified (§mesh.public/setting).
+  While it works, saving Cloudflare Account, You run it, Funnel or Your own web server at another
+  address (Account: also its same address with a newly pasted token, §mesh.tunnel/account) keeps
+  that setup as a **candidate**: the setting is untouched and every link keeps today's address.
+  Settings → Public links and every share screen's line then show **Waiting for verification**, with
+  **Verify Address** and **Cancel**. Verify checks the candidate's address from outside, and only a
+  pass makes it the route and moves every link to it. A failed Verify keeps the route and the
+  candidate, and the banner says why. Cancel drops the candidate (and a token pasted for it), and
+  nothing else changes. Saving another candidate replaces it. Picking Off, Free or Through switches at
+  once and drops a waiting candidate. When nothing works yet (Off, an unreadable setting, an
+  unverified address, a Free tunnel not up, a fresh computer), the new route is taken at once, as
+  before. Copy: §design.copy-deck/where-links-open.
+- Free's row also carries its tunnel's state and address, and Turn On (§mesh.tunnel/turn-on) and
+  Download (§mesh.tunnel/cloudflared) while they are needed. Copy:
+  §design.copy-deck/where-links-open.
+
+## §mesh.public/free-default — Free whenever no address is set
+
+- Cloudflare Free is the route whenever no address is set: with no `public-links.json`, and with an
+  Off saved before this list existed (a `route: "off"` without `offChosenAt`), a deliberate one
+  included. The answer then says `implicit: true`, the list shows Free picked, and nothing is
+  written until the user saves. Free opens nothing before Turn On (§mesh.tunnel/turn-on). An Off
+  picked from the list is honoured (§mesh.public/sharing-off). The `SOVA_SHARE_*` pins still win.
+- **An unreadable setting is not "no address".** A file that is there but breaks a parse rule
+  (§mesh.public/setting) reads as no route, with `broken: true`: no tunnel ever starts for it, every
+  mint carries the `broken` warning, and Settings → Public links and every share screen say so until
+  a save replaces it.
+- `SOVA_QUICK_TUNNEL=off` makes the default Off rather than Free, and no Free (quick) tunnel ever
+  starts (the test runner sets it); an Account tunnel explicitly chosen still runs.
+- A `self` or `via` setting is written with none of the new keys, so an older Sova still reads it.
+
+## §mesh.public/sharing-off — Off turns sharing off
+
+- Picking **Off** in the list (a saved `route: "off"` with `offChosenAt`) turns sharing off on this
+  computer entirely, not only its public address. While it is off:
+  - the page hides every Share button and link button of this computer's own sessions and pages (a
+    peer's session keeps its own host's setting): the Sharing section's Share Session and the share
+    page's create form (§app.session-share/sheet), the session header's share icon, a message's Share
+    action in a chat and in a watched chat, a tour's share, the Previews card's New Preview
+    (§mesh.public/preview-card), the baton strip's Get Link, New Link and Send on WhatsApp
+    (§app.baton/links), a person page's Copy Link, Get Link and New Link, and the owner card's Get
+    Owner Link, Copy Owner Link and Get New Owner Link; and the home page shows no Shares card
+    (§chat.transcript/landing-page). Deleting and revoking stay visible;
+  - every agent's share command and tool refuses, making nothing, with "Sharing is off on this
+    computer. The user can turn it on in Settings → Public links." (code `sharing-off`): a
+    preview's start (§app.project-overseer/previews), the services `share` verb
+    (§app.project-services/share, which answers `share-denied` with the same sentence) and every
+    send that carries a link (§app.outreach/links);
+  - in place of the one line with Change, the Shares page, the Previews card and every share
+    screen say "Sharing is off." with **Open Settings** (Settings → Public links). Links already
+    made stay listed without their Copy buttons: Copy Link and Copy {name}'s Link are hidden (on the
+    Shares page an organization link's too, whichever host it lives on), while Delete, Revoke and
+    Open stay.
+- No tunnel runs while it is off. Settings → Public links still shows the whole list, and picking any
+  other option there turns sharing on again.
+
 ## §mesh.public/gateway — This host is the gateway
 
 - With `route: "self"`, the share listener serves links minted here and links registered by
   routed hosts (§mesh.public/routing). Its public URL is the setting's, or `SOVA_SHARE_PUBLIC_URL`
-  when that pin is valid; the pin never makes a host a gateway by itself.
+  when that pin is valid; the pin never makes a host a gateway by itself. A host on Cloudflare Free
+  or Account is no gateway: it never advertises `shareGateway` and takes no routed hosts.
 - Only a gateway advertises itself, in its hello, as an optional field outside the fingerprint:
   `shareGateway: {publicUrl}`. That is discovery only. Another host lists it as a choice when the
   peer answers `up`, that host doesn't read it as Update needed (§mesh.compatibility/host-acts), and
@@ -103,12 +227,22 @@ links". When nothing answers in time, it replies with the state as it stands.
   `setcap` so it can bind 80 and 443, the Caddyfile, then `caddy run`), Tailscale Funnel (a
   one-time `tailscale set --operator`, then `tailscale funnel --bg --https=443`, with a note that
   it is a preview until Funnel is confirmed to pass visitor addresses and live updates), or a
-  Cloudflare Tunnel (create and route, `config.yml`, run). Each step says whether it needs root.
+  Cloudflare Tunnel the user runs (create and route, `config.yml`, run). Under Cloudflare → Account
+  the steps are the dashboard's instead (create a tunnel, give it a public hostname to
+  `http://127.0.0.1:<sharePort>` and, for previews, a wildcard one, copy its token), and Sova runs
+  that tunnel from the token (§mesh.tunnel/account). Their notes: "Sova runs this tunnel from its
+  token and keeps it running. Don't also install it as a service on this computer.", and the same
+  preview note as the Cloudflare Tunnel guide ("Preview: it isn't confirmed yet that the tunnel's
+  X-Forwarded-For ends with each visitor's address. Until it is, every visitor may share one rate
+  limit."); with a preview address, two more: Cloudflare's free edge certificate covers one wildcard
+  level below the domain, and never add a hostname per preview (Certificate Transparency logs
+  publish every issued name). Each step says whether it needs root.
   The nginx and Caddy snippets set `X-Forwarded-For` to the one client address the front saw;
   Funnel sets its own, which its preview note covers. A tunnel's `config.yml` can't set a header,
   so the Cloudflare Tunnel guide carries a preview note instead: it relies on the tunnel's `X-Forwarded-For` ending with the visitor's
   address, which isn't confirmed yet, and until it is, every visitor may share one rate limit.
-  Sova never runs these steps and never writes the front's configuration.
+  Sova never runs these steps and never writes the front's configuration; a setup chat runs them
+  only with the user's approval (§mesh.tunnel/setup-chat).
 - **Verify** checks the effective address as it is now: it fetches `<address>/api/h/<random
   token>` and passes only on the share app's own answer for an unknown link, 404 with JSON `code:
   "not-found"` and `X-Content-Type-Options: nosniff` (the page shell answers 200 for any token, so
@@ -377,15 +511,19 @@ mesh off. Copy is §design.copy-deck/public-links.
 
 - **Top to bottom:** the title with the state chip (`Off`, `Not verified` warn, `Verified` success,
   `Unreachable` error, or `Not listening` error while the share port won't open,
-  §mesh.public/listener-failure), the line, then the **Address** row: the effective address in mono and its
-  source (`Set by environment ({var})`, `From this setting`, `From {gateway}`, `Bound address`), or
-  `None`. Then **Where links open**, radios: `Off`, `This host is the gateway`, and one `Through
-  {gateway}` per peer advertising a gateway (a saved gateway no longer advertised keeps its radio),
-  each with its hint. Then **Visitor logging**, whatever the route: two checkboxes, **Log
+  §mesh.public/listener-failure; under Free also `Starting` info, `Not turned on` and `Needs
+  cloudflared` warn, `Tunnel down` error; `Can't read setting` error while it is unreadable,
+  §mesh.public/free-default), the line, then the **Address** row: the effective address in mono and its
+  source (`Set by environment ({var})`, `Cloudflare Free tunnel`, `Cloudflare Account`, `From this
+  setting`, `From {gateway}`, `Bound address`), or `None`. Then **Where links open**, the sectioned
+  list (§mesh.public/where-links-open), each option with its hint. Then **Visitor logging**, whatever the route: two checkboxes, **Log
   visitors** and **Send the visitor's address to preview apps**, each with its hint
   (§mesh.public/visitor-log). The route's own fields follow.
-- **This host is the gateway:** Public address, Preview address (optional, `https://*.<domain>`,
-  §mesh.public/preview-address), Front (the four front labels), Local port, Accept
+- **Free:** its tunnel's state and address, and Turn On and Download while needed (§mesh/tunnel).
+  **Account:** Public address, Preview address (optional) and the token field (§mesh.tunnel/account),
+  then Verify Address.
+- **Funnel, Your own web server, You run it** (this host is the gateway): Public address, Preview address (optional, `https://*.<domain>`,
+  §mesh.public/preview-address), Front (Your own web server's two: `Your web server`, `Caddy on this host`), Local port, Accept
   links from (`All hosts` or `These hosts`, a checklist of every peer; a saved StableID with no
   peer shows as its id), the front's steps under "Set up the front once" (each step's label, a
   `Needs root` chip when it does, `Copy Step`, the text in mono, then the guide's notes; while the
@@ -393,7 +531,7 @@ mesh off. Copy is §design.copy-deck/public-links.
   **Verify Address**, and **Hosts sending links here** (one read-only row per routed host: its
   name, `{n} links`, `Last push {time}` or `Never pushed`, and `Up` / `Down`, or `Not accepted`
   in its place; none: "No other host sends its links here yet.").
-- **Through {gateway}:** the always-on advice, Ingress port, and, while that gateway is the saved
+- **Through {computer}:** the always-on advice, Ingress port, and, while that gateway is the saved
   route, its `unreachable` or `not-accepted` warning as a warn banner. While the saved route's
   gateway answered its info and is behind (it stated no share protocol number, or a lower one
   than this host's, §mesh.public/share-protocol), a warn banner says it runs an older version of
@@ -413,13 +551,13 @@ mesh off. Copy is §design.copy-deck/public-links.
   setting and any new address are saved. A pass shows "Verified {time}. {url} reaches this
   gateway."; a failure an error banner, "Couldn't reach {url}.", with the reason (or "It answered
   {status}").
-- The Mesh card (§mesh.ui/card) carries a second chip while a route is on, `Public links: gateway`
-  or `Public links: through {gateway}`, in the state chip's tone.
+- The Mesh card (§mesh.ui/card) carries a second chip while a route is on, `Public links: gateway`,
+  `Public links: through {gateway}` or `Public links: Cloudflare`, in the state chip's tone.
 
 ## §mesh.public/listener-failure — A share port that won't open
 
-- When this host should bind its share listener (it is the gateway, or `SOVA_SHARE_HOST` and
-  `SOVA_SHARE_PORT` are both set) and can't, the share state carries `listener: {host, port,
+- When this host should bind its share listener (it is the gateway, its share tunnel is wanted, or
+  `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` are both set) and can't, the share state carries `listener: {host, port,
   reason}` beside its other fields, which stay as they were: the port is taken, the host doesn't
   allow it, the address isn't one of this host's, `SOVA_SHARE_PORT` isn't a port number (`port` is
   then null), or any other error opening it. `reason` is one sentence naming the cause. A later bind that succeeds, or a setting
@@ -430,12 +568,27 @@ mesh off. Copy is §design.copy-deck/public-links.
   the Mesh card's Public links chip (while a route is on) takes the error tone, and an error banner under the Address row
   says "The share port isn't open." with the reason. Copy: §design.copy-deck/public-links.
 
+## §mesh.public/broken-links — Which sent links broke
+
+- When a tunnel's address changes (a Free tunnel that started again, or a Sova start that found its
+  tunnel gone), Sova says which sent links no longer open. It judges each live link by when its full
+  URL last left Sova: in a mint's answer that carried a public URL, in an outreach send, or by a Copy
+  Link click (the page reports those while the route is Free). A link that last left before its
+  tunnel's current address began is broken; one copied or sent since is not.
+- `GET /api/public-links` carries them (`tunnel.broken: {since, links: [{kind, id, title, kept}]}`).
+  The Shares page and an open Share sheet show them in a warn banner, and the Previews card those of
+  its preview tunnels. A link whose token is kept gets **Copy New Link** (its link at the new
+  address); one whose token isn't kept says **Share again**.
+- It comes from the tunnel's own end or the on-demand check (§mesh.tunnel/lifetime), never from a
+  poll, and an open page shows it without a reload. Copy: §design.copy-deck/where-links-open.
+
 ## §mesh.public/preview — Preview links
 
 - A **preview link** (registry kind `p`) publishes one web app running on a loopback port of the
   host that minted it, at the root of an origin of its own: `<label>.<zone>`, where `<zone>` is
   the preview address (§mesh.public/preview-address) and `<label>` is the link's secret, 52
-  lowercase base32 characters (32 random bytes, 256 bits). Every route, redirect, cookie, fetch,
+  lowercase base32 characters (32 random bytes, 256 bits); under Cloudflare Free, its app's own
+  tunnel, the label in the link (§mesh.public/preview-tunnels). Every route, redirect, cookie, fetch,
   websocket and deep-link reload of the app works through it as it does on `localhost`, and two
   previews are two separate sites.
 - `<stateRoot>/preview-links.json` (0600, written atomically, parsed strictly: a file that breaks a
@@ -474,8 +627,10 @@ mesh off. Copy is §design.copy-deck/public-links.
   the project whose worktree holds it. A port held by a running copy (or a shared service) of a
   project whose definition declares `sensitive` data is refused (`sensitive`: "…whose data is
   derived from production: copies are never shared.", §app.project-services/share). `purpose` is one
-  line, at most 200 characters. `days` is 1 by default and at most 30. With no preview address it is refused with a named reason, and no
-  link is made: `no-address` (none set here or on the gateway) or `gateway-old` (the via gateway
+  line, at most 200 characters. `days` is 1 by default and at most 30. Refused with a named reason, no
+  link made: under Cloudflare Free (and Account with no preview address), where the app's own
+  tunnel carries it, `too-many-tunnels`, `quick-turn-on`, `quick-setup` or `tunnel-down`
+  (§mesh.public/preview-tunnels); on any other route with no preview address, `no-address` (none set here or on the gateway) or `gateway-old` (the via gateway
   doesn't list kind `p`: "{gateway} needs updating before it can carry preview links."). The
   answer carries the link, and the link is kept.
 - The app is always dialed at `127.0.0.1:<port>`, then `[::1]:<port>` when nothing listens there,
@@ -508,11 +663,15 @@ mesh off. Copy is §design.copy-deck/public-links.
   `Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `CF-*`, `True-Client-IP`, `Tailscale-*` and
   `x-sova-*` header and the hop-by-hop ones are removed, and none is added, except the
   `X-Forwarded-For` and `X-Forwarded-Proto` the host's **Send the visitor's address to preview
-  apps** switch adds (§mesh.public/visitor-log). Cookies (less the proxy's own `__Host-sova-pv`),
+  apps** switch adds (§mesh.public/visitor-log). Cookies (less the proxy's own `__Host-sova-pv` and
+  `__Host-sova-pk`, §mesh.public/preview-tunnels),
   bodies, methods and the raw path and query pass through as they came.
 - Toward the visitor: an absolute `Location` or `Access-Control-Allow-Origin` on
-  `http(s)://localhost|127.0.0.1|[::1]:<port>` is rewritten to the public origin; each
-  `Set-Cookie` loses only its `Domain=` attribute, so cookies stay on the preview's own host;
+  `http(s)://localhost|127.0.0.1|[::1]:<port>` is rewritten to the public origin (a Free preview's:
+  its tunnel's current address); each
+  `Set-Cookie` loses only its `Domain=` attribute, so cookies stay on the preview's own host, and
+  one naming the proxy's own cookies (`__Host-sova-pv`, `__Host-sova-pk`) is dropped, in every host
+  mode;
   `Cache-Control` becomes `private` (a `public` or `s-maxage` is dropped, and `private` is added
   when neither `private` nor `no-store` is there) so no CDN keeps an app response past Turn Off;
   and `Referrer-Policy: same-origin` is added when the app sent none; while the host logs visitors,
@@ -530,7 +689,9 @@ The share host's limits (§app.baton/share-listener) stay as they are. A preview
 1,200 requests a minute per client address per preview (429), request bodies streamed with a
 25 MB cap (413 before anything is sent when declared larger, else the connection is cut), 60
 seconds for the app's response headers (504), and at most 64 HTTP requests and 16 websockets
-open per preview and 256 of each across all previews (503).
+open per preview and 256 of each across all previews (503). On a Free preview tunnel's host, wrong
+or missing keys count per client address, 20 a minute (429), and at most 6 preview tunnels run at
+once (§mesh.public/preview-tunnels).
 
 ## §mesh.public/preview-offline — What a preview visitor sees
 
@@ -554,7 +715,8 @@ would have expired, and answers them 410 too.
   appears in `pinnedByEnv`. A routed host takes it from its gateway's info, which carries
   `previewUrl` only when asked with `?kinds=1&preview=1` (an older routed host parses the info
   strictly).
-- The share listener splits by `Host` before its path allowlist: a `Host` that is exactly
+- The share listener splits by `Host` before its path allowlist: a `Host` that is exactly a running
+  preview tunnel's goes to that tunnel's previews (§mesh.public/preview-tunnels); one that is exactly
   `<label>.<zone>` of the preview address, with a well-formed label, goes to the preview, whose
   raw request target passes byte for byte; any other `Host` keeps the share host's allowlist, so
   `/h/`, `/i/`, `/s/` and `/api/*` are never reached on a preview host and no preview is reached
@@ -571,9 +733,46 @@ would have expired, and answers them 410 too.
 - **Verify** also fetches `<scheme>://<random label>.<zone>/` and passes it only on the preview
   404 (`code: "preview-not-found"`, `nosniff`); its result is `preview` beside the share check.
 
+## §mesh.public/preview-tunnels — Preview links on Cloudflare Free
+
+- Under Free (and Account with no preview address), each previewed app gets a tunnel of its own, with its own random address, keyed by its
+  port: started when a preview of that port is first made, stopped when no active preview names that
+  port (at Turn Off, at expiry by the minute's sweep, at Sova's start). A person's own link (a
+  sibling), an owner-bound version and a re-share of the same app ride that app's tunnel, each with
+  its own secret. Account with a preview address, and a gateway with one, keep the wildcard address
+  (§mesh.public/preview-address).
+- **The first visit carries the key.** A tunnel's address (words under `trycloudflare.com`) is no
+  secret, so the preview's label stays the secret and moves into the link:
+  `https://<tunnel host>/_sova/open/<label>[/<path>]`. That request passes only when the label is an
+  active preview of this tunnel's port; it then sets the cookie `__Host-sova-pk` (`Path=/; Secure;
+  HttpOnly; SameSite=Lax`, until the preview's expiry) and redirects to `/<path>` (`no-store`,
+  `Referrer-Policy: no-referrer`), so the key leaves the address bar and never reaches the app. Every
+  other request on that host needs that cookie, judged against the record each time, so Turn Off and
+  expiry cut access at once; each page load it lets through renews the cookie to the preview's expiry
+  as it is then, so an Extend carries over; without it the visitor gets the unknown-preview 404
+  (§mesh.public/preview-offline). `/_sova/` is never passed to the app. Wrong or missing keys count
+  per client address, 20 a minute, then 429.
+- A request is a preview tunnel's only when its `Host` is exactly a running preview tunnel's host
+  (lowercase, an optional `:443`); a share-host request never is.
+- **Browser only.** A Free preview needs a browser that keeps the cookie: a script, a webhook or an
+  API client can't use one, and an app that streams with server-sent events doesn't work through
+  it. The Previews card says so, with Where links open on one line, how many of the 6 run, and its
+  tunnels' broken links (§mesh.public/broken-links); Account and own-domain previews work for those.
+- **At most 6 at once.** A mint that would start a seventh preview tunnel is refused,
+  `too-many-tunnels`, and nothing is made (copy: §design.copy-deck/where-links-open).
+- **No tunnel, no preview.** The app's tunnel starts before anything is minted, and the mint waits
+  up to 20 seconds for its address. A mint that can't have one is refused, nothing made: before Turn
+  On `quick-turn-on`, with no cloudflared `quick-setup`, and a tunnel that didn't come up (or Free
+  tunnels switched off by `SOVA_QUICK_TUNNEL=off`) `tunnel-down`, each with that warning's text
+  (§app.baton/links).
+- A kept link is built on read from its tunnel's current address, so the operator's lists always
+  show one that opens; links sent before an address changed are reported
+  (§mesh.public/broken-links).
+
 ## §mesh.public/preview-card — Previews on the project page
 
-- The project page has a **Previews** card: one row per active preview, where a person's own link
+- The project page's **Running Copies** tab has a **Previews** card, under its copies and its
+  Recent list (§app.project-services/services-ui): one row per active preview, where a person's own link
   (a sibling, §mesh.public/preview) is not a row of its own but a recipient of its original's row.
   The row's title is its purpose, else "Preview of port {n}" or "Preview of {folder}" ("the
   worktree" for the worktree itself), as plain text. Under it its parts, in three groups, each part
@@ -631,8 +830,12 @@ would have expired, and answers them 410 too.
   an optional Purpose (at most 200 characters, sent only when not blank), the warning "Anyone with
   this link can use the app on port {n} as if they were on this computer, including its logins,
   admin pages and anything it can change.", **Create Preview** and **Cancel** (closes it). A
-  refused mint shows its reason on the form; a made one closes it. With no preview address the
-  card says so and how to set it, and offers no New Preview.
+  refused mint shows its reason on the form; a made one closes it. With no preview address off
+  Free the card says so and how to set it, and offers no New Preview. While sharing is off
+  (§mesh.public/sharing-off) it offers no New Preview either and says "Sharing is off." with
+  **Open Settings** instead, and its rows keep Open and their Delete buttons but show no Copy Link
+  and no Copy {name}'s Link. Under Free it adds Where links open, the browser-only note, the cap
+  and broken links (§mesh.public/preview-tunnels).
 - The Shares page lists this host's live previews the same way, one row per original with the
   project, port, expiry and the card's **Delete Preview** (with its confirm, line and toasts), its
   recipients on a **Sent to** line each with its own **Copy {name}'s Link** when their link is

@@ -35,8 +35,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-07T12:39Z",
-      "source": "pi-session:01a1b2ec-ac6a-73d4-9fe9-b83cb85cdc7f#008f8e00"
+      "at": "2026-11-17T13:27Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.composer/behavior": {
@@ -105,15 +105,15 @@
       "src/lib/effort.test.ts"
     ],
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-27T08:43Z",
-      "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#db36b4af"
+      "by": "user",
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
     }
   },
   "§chat.composer/disabled-states": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "src/components/ChatView.tsx",
       "src/components/Composer.tsx",
@@ -125,12 +125,14 @@
       "src/components/HostStateNotices.tsx",
       "src/lib/shell-mode.ts",
       "src/lib/chat-wait.test.ts",
-      "src/lib/first-connect-send.browser.test.ts"
+      "src/lib/first-connect-send.browser.test.ts",
+      "src/app.css",
+      "src/lib/approval-hold.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-11T16:06Z",
-      "source": "pi-session:ddb0e3b6-cee0-49d4-939d-916b8e8a54b1#d4f6b709"
+      "by": "naomarik",
+      "at": "2026-11-17T12:59Z",
+      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
     }
   },
   "§chat.composer/esc-stop": {
@@ -226,7 +228,7 @@
   "§chat.composer/land-confirm": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.composer/worktrees-control",
       "§chat.worktrees/pane",
@@ -242,7 +244,8 @@
       "src/lib/merge-queue.ts",
       "src/lib/land-confirm.test.ts",
       "shared/merge-queue.ts",
-      "server/merge-queue/wire.ts"
+      "server/merge-queue/wire.ts",
+      "src/components/ProjectSessionsTab.tsx"
     ],
     "agreed": {
       "by": "user",

@@ -2,6 +2,7 @@ import { archivedDropToast, archivedProjectOf, unarchivedProjectOf } from "../li
 import { archiveSession } from "../lib/session-actions";
 import { createPressTracker, notePress, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
+import { sharingOffHere } from "../lib/public-links";
 import { createStore, produce, reconcile, unwrap } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
@@ -140,10 +141,9 @@ import {
 import { shareHref } from "../lib/share-slice";
 import type { MessageActionItem } from "./MessageActions";
 import { queueRemoveFrame, queueRowActions } from "../lib/queue-actions";
-import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
 import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
-import { ownInputTotal, keptBehind, lastInput as lastInputOf, newestOnly, newRows, withHave } from "../lib/older-rows";
+import { ownInputTotal, keptBehind, newestOnly, newRows, withHave } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { liveTourCalls } from "../lib/tour-rows";
 import { liveDesignCalls } from "../lib/design-rows";
@@ -167,7 +167,7 @@ import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
 import type { ShellRun } from "../../shared/protocol";
 import { HostSendNotice } from "./HostStateNotices";
 import { OverseerMemoryMenu, projectOverseerMemory } from "./OverseerMemoryMenu";
-import { type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { type LoginControl, type SandboxControl, type ThinkingControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { toolsKeyOf } from "../lib/session-tools";
@@ -189,10 +189,10 @@ import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 import type { QueueWorktree } from "./WorktreesModal";
 import { heldAskLine, heldComposerLine, heldDecisionOf } from "../lib/merge-standing";
-import { askReread, askReview, holdOf } from "../lib/approval-hold";
+import { askReread, holdOf, settleSeenNew } from "../lib/approval-hold";
 import { createProfileHold } from "../lib/hello-steady";
 import { noteChatFolder } from "../lib/approval-overlay";
-import { holdLine, REVIEW, SAVING_LINE } from "../lib/approvals";
+import { SAVING_LINE } from "../lib/approvals";
 import { clearPick, pickedDecision } from "../lib/merge-decision-pick";
 import { mergeChanged, mergeFeed, readQueue } from "../lib/merge-queue-client";
 
@@ -283,9 +283,8 @@ export function ChatView(props: {
   onShowTimeline?(inputsOnly?: boolean): void;
   /** Hands the Timeline this chat's rewind (sent over this socket); null when this view goes away. */
   onRewindControl?(control: RewindControl | null): void;
-  /** A rewind landed on this chat, whoever asked (a Timeline row, or the palette's "Undo last
-      turn"): the Timeline must re-read the branch, or it keeps offering the abandoned rows.
-      Success only — a refusal changed nothing. App mints the generation counter the pane watches.
+  /** A rewind landed on this chat: the Timeline must re-read the branch, or it keeps offering the
+      abandoned rows. Success only — a refusal changed nothing. App mints the generation counter the pane watches.
       No text: this view prefills the composer itself, and the pane rebuilds its shadow from the id. */
   onRewound?(info: { path: string; entryId: string }): void;
   /** This session's teams (polled insight), so the status row can name team members as such. */
@@ -1139,6 +1138,8 @@ export function ChatView(props: {
         // "Sending…" and offers no Remove — nothing is known to hold it.
         case "send_ack":
           unacked.settled(msg.clientId);
+          // The first message went in: the New rows its list showed count as left off.
+          settleSeenNew(props.path);
           owner.ack(msg.clientId, msg.queued);
           if (msg.queued) markQueued(setLive, msg.clientId);
           break;
@@ -1373,8 +1374,6 @@ export function ChatView(props: {
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
             {
-              // Held for decisions (asking mode): the setup card reads again, so the hold shows.
-              if (msg.decide === "first") askReread(props.path);
               // A command it names makes no user row: its text comes back from here (a click: its card).
               const taken = handBackSends([unacked.take(msg.clientId, handedBack)].filter((u): u is Unsent => u !== null));
               // Refused before the hello, the chat never had it: its row goes, as the text is back.
@@ -1605,8 +1604,7 @@ export function ChatView(props: {
   type ActionResult = { ok: true; text?: string; tokensBefore?: number } | { ok: false; reason: string; message: string };
   const requests = new Map<string, { kind: RequestKind; resolve: (result: ActionResult) => void }>();
   let requestSeq = 0;
-  /** How many of each kind are waiting, reactively: a strip greys its own action while one is out,
-      and the palette's Undo row greys out while a rewind is. */
+  /** How many of each kind are waiting, reactively: a strip greys its own action while one is out. */
   const [pending, setPending] = createSignal<Record<RequestKind, number>>({ rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 });
   const countPending = () => {
     const n: Record<RequestKind, number> = { rewind: 0, regenerate: 0, queue_remove: 0, compact: 0 };
@@ -1659,8 +1657,6 @@ export function ChatView(props: {
       countPending();
     });
   };
-  /** How many rewinds are out — the palette's Undo row reads this. */
-  const rewindsPending = () => pending().rewind;
   /**
    * A refusal code from a server that may be newer than this build: anything it doesn't know is
    * "internal", which is what the copy for an unrecognized failure already says.
@@ -1704,34 +1700,6 @@ export function ChatView(props: {
   onCleanup(() => noteLinks(props.path, null));
   props.onRewindControl?.({ path: props.path, blocked: rewindBlocked, rewind });
   onCleanup(() => props.onRewindControl?.(null));
-  /** The palette's "Undo last turn": a rewind to just before the newest user message on the branch
-      (never a link message: a partner's words are no rewind target). */
-  const lastInput = () => {
-    const list = items() ?? [];
-    const o = older();
-    // The hello's summary names the newest input above the list when the list holds none.
-    if (o) return lastInputOf(list, o);
-    for (let i = list.length - 1; i >= 0; i--) if (isInput(list[i]!)) return list[i]!.id;
-    return null;
-  };
-  const undoControl: UndoControl = {
-    blocked: () => {
-      const reason = blocked();
-      if (reason) return reason.text;
-      const block = rewindBlocked();
-      if (block === "streaming") return "Stop the turn first, then undo.";
-      if (block === "compacting") return "Wait for compaction to finish, then undo.";
-      if (rewindsPending() > 0) return "A rewind is already in progress.";
-      // Before this connection's hello nothing says where the last input is: can't run yet, and
-      // nothing to say about it.
-      return lastInput() ? null : older() ? "Nothing to undo yet." : "";
-    },
-    run: () => {
-      const id = lastInput();
-      // One rewind at a time: a second confirm before the reply would abandon two turns.
-      if (id && rewindsPending() === 0) void rewind(id).then((r) => !r.ok && toast(r.message));
-    },
-  };
 
   // ---- Per-message actions ------------------------
   /**
@@ -1837,7 +1805,8 @@ export function ChatView(props: {
       quietly does nothing. What extensions add comes after it. */
   const chatActions: ReplyPlace = {
     builtIns: [{ id: "sova.message-actions", items(strip) {
-      return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
+      // Sharing off on the session's host (§mesh.public/sharing-off): no Share on a message.
+      return actionsFor(strip.role, { copyable: copyable(strip) }).filter((kind) => kind !== "share" || !sharingOffHere(hostOf(props.path))).map((kind): MessageActionItem => {
         switch (kind) {
           case "copy":
             return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
@@ -1968,13 +1937,9 @@ export function ChatView(props: {
     // server in order, behind what woke it (a model switch, then Send), and the server applies each
     // before the next (§chat.transcript/send-while-starting). The note still floats (`waitNote`).
     const waking = !!wait().waking;
-    // Asking mode: a new chat sends once every context file and skill it could load is decided. The
-    // draft stays and typing goes on; Review opens the setup card's list. The server holds it too.
-    const hold = holdOf(props.path);
-    if (hold && hold.context + hold.skills > 0) return { icon: "attention", text: holdLine(hold.context, hold.skills), action: { label: REVIEW, run: () => askReview(props.path) } };
-    // Every waiting item is decided here, and the last decisions are still being saved: Send waits
-    // for the server to have them, so a message never bounces.
-    if (hold?.saving) return { icon: "clock", text: SAVING_LINE };
+    // A flip on the new chat's list is still being saved (and the chat rebuilt with it): Send waits,
+    // so a first message never goes out on the list before it. Nothing else about the list holds Send.
+    if (holdOf(props.path)?.saving) return { icon: "clock", text: SAVING_LINE };
     // Connecting, starting or reconnecting: the words float over the transcript's end (`waitNote`),
     // the composer's reason carries them for assistive technology only (§chat.transcript/instant-open).
     const waiting = composerWait(wait(), waitingReason());
@@ -3011,7 +2976,6 @@ export function ChatView(props: {
         shellUnknown={shellMode() === null && !props.overseer && !props.projectOverseer}
         onPlaybooks={() => setShowPlaybooks(true)}
         onPlaybookCard={playbooksHere() ? (playbook, words) => openPlaybookCard(playbook, words) : undefined}
-        undo={undoControl}
         onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}
         picks={composerPicks()}
         onDraft={(has) => {
@@ -3041,7 +3005,7 @@ export function ChatView(props: {
           onClose={(sent) => {
             setShowPlaybooks(false);
             // After a send the next thing is the conversation; otherwise back to the "+" button
-            // (the palette's Playbooks row is opened from it, §chat.playbooks/the-modal).
+            // (the Commands dialog's Playbooks row is opened from it, §chat.playbooks/the-modal).
             if (sent) focusComposerAfter(presses.take());
             else queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
           }}

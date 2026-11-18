@@ -40,7 +40,12 @@ export function designApi(path: string, host: string | null) {
   const run = (id: string) => `/runs/${encodeURIComponent(id)}`;
   return {
     view: () => json<DesignChatView>(url("")),
-    setup: (runId: string, setup: DesignSetup) => json<unknown>(url(`${run(runId)}/setup`), { method: "PATCH", body: JSON.stringify(setup) }),
+    /** The whole card, naming the version of the card it was made from (the run's setupAt, else createdAt): a card
+        changed since then refuses it (409, stale). */
+    setup: (runId: string, setup: DesignSetup, baseSetupAt?: string) =>
+      json<unknown>(url(`${run(runId)}/setup`), { method: "PATCH", body: JSON.stringify(baseSetupAt === undefined ? setup : { ...setup, baseSetupAt }) }),
+    /** Hide or show a provider's section on this card, remembered for later cards (a section id, designSectionOf). */
+    hidden: (runId: string, section: string, hidden: boolean) => json<unknown>(url(`${run(runId)}/hidden`), post({ section, hidden })),
     /** Start Coordinator: asks for no money, that's Start on the brief. */
     start: (runId: string) => json<unknown>(url(`${run(runId)}/start`), post({})),
     /** Start on the brief, on the version you read: a spend ask comes back as a value, any other refusal throws. */

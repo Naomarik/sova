@@ -1211,6 +1211,29 @@ describe("notes and picks", () => {
       await k.done();
     }
   });
+
+  test("extend refuses a pick of a check that needs a selection when it names none, and adds nothing of that call", async () => {
+    const group = { id: "integration-group", label: "Slow test group", run: ["true"], timeout: 60, rerun: false, requires: [], optional: true, needsSelect: true };
+    const def = { ...DEF, merge: { ...DEF.merge!, checks: [...(DEF.merge!.checks as object[]), group] } } as typeof DEF;
+    const k = makeKit({ deps: { definitionAt: async () => ({ def, error: null }) } });
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      k.repo.branch("feat/a", { "server/x.ts": "x\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      await assert.rejects(q.extend(entry.id, ["statecharts", "integration-group"], "server changed"), /"integration-group" \(Slow test group\) runs with a selection: send the pick's select/);
+      await assert.rejects(q.extend(entry.id, ["integration-group"], "server changed", []), /runs with a selection/);
+      assert.deepEqual((await k.entry(entry.id)).picks, [], "a refused call adds no pick, not even the one before it");
+      await q.extend(entry.id, ["integration-group"], "server changed", ["server-slow"]);
+      await q.extend(entry.id, ["statecharts"], "statecharts too");
+      assert.deepEqual((await k.entry(entry.id)).picks, [
+        { id: "integration-group", label: "Slow test group", source: "picked", why: "server changed", select: ["server-slow"] },
+        { id: "statecharts", label: "Statecharts", source: "picked", why: "statecharts too" },
+      ]);
+    } finally {
+      await k.done();
+    }
+  });
 });
 
 describe("recovery", () => {
@@ -1686,6 +1709,33 @@ describe("the view's extras", () => {
       const v = await q.view();
       assert.deepEqual(v.ready!.map((r) => [r.branch, r.commit, r.ahead]), [["feat/ready", a.head, 1]]);
       assert.deepEqual(v.thread, { session: "t1", startedAt: "2026-11-02T00:00:00.000Z", state: "idle" });
+    } finally {
+      await k.done();
+    }
+  });
+  test("ready: a New Coding Session's sova/ branch is listed; a conformance run's sova/ scratch copies and Sova's own sova/ branches are not", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      const coding = k.repo.branch("sova/fix-login-1a2b3c", { "c.txt": "c\n" });
+      const untitled = k.repo.branch("sova/coding-0f9e8d", { "u.txt": "u\n" });
+      // A session titled like one of Sova's own still ends in its 6 hex and is listed.
+      const lookalike = k.repo.branch("sova/conform-tests-abcdef", { "l.txt": "l\n" });
+      k.repo.branch("sova/conform-abc123-a", { "a.txt": "a\n" });
+      k.repo.branch("sova/conform-abc123-b", { "b.txt": "b\n" });
+      k.repo.branch("sova/settings-20261117-1200", { "s.txt": "s\n" });
+      k.repo.branch("sova/release-revert-rl_abc123", { "r.txt": "r\n" });
+      const v = await q.view();
+      assert.deepEqual(
+        v.ready!.map((r) => [r.branch, r.commit]).sort(),
+        [
+          ["sova/coding-0f9e8d", untitled.head],
+          ["sova/conform-tests-abcdef", lookalike.head],
+          ["sova/fix-login-1a2b3c", coding.head],
+        ],
+      );
+      assert.deepEqual((await q.readyRows()).map((r) => r.branch).sort(), ["sova/coding-0f9e8d", "sova/conform-tests-abcdef", "sova/fix-login-1a2b3c"], "the summaries' sweep reads the same list");
     } finally {
       await k.done();
     }

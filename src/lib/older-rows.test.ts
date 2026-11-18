@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AlignDocInfo, TranscriptItem, TranscriptRows } from "../../shared/protocol";
 import { summarize } from "../../shared/row-counts";
-import { afterRows, anyReply, helloRows, inputTotal, keptBehind, lastInput, messageTotal, newRows, type Older, OlderLoader, ownInputTotal, prependRows, WHOLE, withHave } from "./older-rows";
+import { afterRows, anyReply, helloRows, inputTotal, keptBehind, messageTotal, newRows, type Older, OlderLoader, ownInputTotal, prependRows, WHOLE, withHave } from "./older-rows";
 import { inputCount } from "./input-count";
 import type { RowsAsk } from "./api";
 
@@ -84,11 +84,7 @@ test("the readers count the rows held plus the summary of the rest, the same as 
     assert.equal(inputTotal(list, o), whole.filter((r) => r.kind === "user").length, `at ${at}`);
     assert.equal(messageTotal(list, o), 66, `at ${at}`); // 33 inputs, 33 replies
     assert.equal(anyReply(list, o), true);
-    assert.equal(lastInput(list, o), "r96");
   }
-  // A list holding no input: the newest one above it.
-  assert.equal(lastInput(whole.slice(97), olderAt(97)), "r96");
-  assert.equal(lastInput([], WHOLE), null);
 });
 
 test("newRows: the hello's first row and after; rows above it are never new", () => {
@@ -344,7 +340,7 @@ test("ownInputTotal: the rows held plus the summary's own, wherever the cut fall
   for (let at = 0; at <= senders.length; at++) {
     assert.equal(ownInputTotal(senders.slice(at), sendersAt(at)), whole, `cut at ${at}`);
   }
-  // Undo last turn still reads every input, whoever sent it.
+  // The inputs count still reads every input, whoever sent it.
   assert.equal(inputTotal(senders.slice(4), sendersAt(4)), 7);
 });
 

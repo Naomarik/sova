@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import type { HEntry } from "../shared/harness";
 import type { SessionSetup } from "../shared/protocol";
-import { conversationTalk, conversationTokens, getContextView, labelOf, skillReadState, skillsRead, type ContextViewDeps } from "./context-tab";
+import { conversationTalk, conversationTokens, folderReads, getContextView, labelOf, skillFolderOf, skillReadState, skillsRead, type ContextViewDeps } from "./context-tab";
+import { collectFileReads, skillLinesOf } from "./skills";
 import { skillsBlock } from "./subfolder-skills";
 import { splitSystemPrompt } from "./harness/pi/session";
 import { scratchRoot } from "./test-scratch";
@@ -265,4 +266,61 @@ test("subfolder skills: an offered one counts its listing and leaves the convers
   const wrapper = conversationTokens(offered) - (row?.tokens ?? 0);
   assert.equal(v.conversation, wrapper, "the conversation is counted less the listing, so nothing counts twice");
   assert.equal(v.talk?.toolResults.tokens, wrapper);
+});
+
+test("what a skill loaded: its SKILL.md and any file under its folder, each by the lines reached, since the latest compaction", async () => {
+  const call = (name: string, args: unknown) => ({ kind: "assistant", blocks: [{ type: "toolCall", id: "c", name, arguments: args }] }) as Partial<HEntry>;
+  const files: Record<string, string> = {
+    "/s/pdf/SKILL.md": "a\n".repeat(80),
+    "/s/pdf/references/api.md": "r".repeat(400),
+    "/s/pdf/forms.md": "f\n".repeat(50),
+    "/s/pdf/old.md": "o".repeat(4000),
+    "/w/README.md": "w".repeat(4000),
+  };
+  const readText = async (p: string) => files[p] ?? Promise.reject(new Error("gone"));
+  const b = branch(
+    call("read", { path: "/s/pdf/old.md" }),
+    { kind: "compaction", summary: "s" } as Partial<HEntry>,
+    call("read", { path: "/s/pdf/SKILL.md", limit: 30 }),
+    call("read", { path: "/s/pdf/references/api.md" }),
+    call("bash", { command: "sed -n 1,10p /s/pdf/forms.md" }),
+    call("bash", { command: "python3 /s/pdf/scripts/fill.py" }),
+    call("read", { path: "/w/README.md" }),
+  );
+  const v = await getContextView("/s.jsonl", deps({ branch: async () => b, readText }));
+  assert.ok(v.state === "ok");
+  if (v.state !== "ok") return;
+  const pdf = v.skills[0]!;
+  assert.deepEqual(pdf.loadedFiles, [
+    { path: "/s/pdf/SKILL.md", label: "SKILL.md", tokens: 15, linesRead: 30, lines: 80 },
+    { path: "/s/pdf/references/api.md", label: "references/api.md", tokens: 100 },
+    { path: "/s/pdf/forms.md", label: "forms.md", tokens: 5, linesRead: 10, lines: 50 },
+  ]);
+  assert.equal(pdf.loadedTokens, 120);
+  // The row keeps its listing size and its SKILL.md read state; the file's whole size rides beside them.
+  assert.deepEqual([pdf.read, pdf.linesRead, pdf.lines, pdf.fileTokens], [false, 30, 80, 1000]);
+  assert.ok(pdf.tokens < 100);
+  // Never added to a total: the conversation is what it was without the figure.
+  assert.equal(v.conversation, conversationTokens(b) - 20, "less the stand-in's loaded nested file, as ever");
+  // An invocation loads the whole SKILL.md.
+  const invoked = await getContextView("/s.jsonl", deps({ branch: async () => branch({ kind: "user", blocks: [{ type: "text", text: '<skill name="pdf" location="/s/pdf/SKILL.md">\nbody\n</skill>' }] }), readText }));
+  assert.ok(invoked.state === "ok");
+  assert.deepEqual(invoked.state === "ok" && invoked.skills[0]!.loadedFiles, [{ path: "/s/pdf/SKILL.md", label: "SKILL.md", tokens: 40 }]);
+  // Nothing loaded: no figure at all.
+  const none = await getContextView("/s.jsonl", deps({ readText }));
+  assert.ok(none.state === "ok" && none.skills[0]!.loadedTokens === undefined && none.skills[0]!.loadedFiles === undefined);
+});
+
+test("a skill's folder: its SKILL.md's, never a skills folder of lone files nor one holding the chat; a file is the deepest folder's", () => {
+  assert.equal(skillFolderOf("/s/pdf/SKILL.md", "/w"), "/s/pdf");
+  assert.equal(skillFolderOf("skills/pdf/SKILL.md", "/w"), "/w/skills/pdf");
+  assert.equal(skillFolderOf("/s/notes.md", "/w"), null, "a lone .md skill: its folder holds other skills");
+  assert.equal(skillFolderOf("/repo/SKILL.md", "/repo/src"), null, "the chat works inside it: its reads are its work");
+  assert.equal(skillFolderOf("/repo/SKILL.md", "/repo"), null);
+  const call = (path: string) => ({ kind: "assistant", blocks: [{ type: "toolCall", id: "c", name: "read", arguments: { path } }] }) as Partial<HEntry>;
+  const reads = collectFileReads(skillLinesOf(branch(call("/s/pdf/a.md"), call("/s/pdf/inner/b.md"), call("/s/pdf/inner/SKILL.md"), call("/s/pdfx/c.md"), call("/s/pdf/a.md")), "/w"));
+  const got = folderReads(reads, ["/s/pdf", "/s/pdf/inner"], "/w");
+  assert.deepEqual([...got.keys()].sort(), ["/s/pdf", "/s/pdf/inner"]);
+  assert.deepEqual([...got.get("/s/pdf")!.entries()].map(([p, c]) => [p, c.length]), [["/s/pdf/a.md", 2]], "read twice: one file, both reads");
+  assert.deepEqual([...got.get("/s/pdf/inner")!.keys()], ["/s/pdf/inner/b.md"], "its own SKILL.md is the skill's own load, not a folder file");
 });

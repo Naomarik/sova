@@ -5126,7 +5126,7 @@ test("mode: a worker with bash gets the parent's project mode tools (the -e hook
 		await h.call("agent_spawn", { prompt: "pi task", tools: ["read", "bash"] });
 		const w = h.workers.at(-1);
 		assert.ok(w.extensions.includes(PROJECT_TOOLS_WORKER_EXTENSION));
-		assert.equal(PROJECT_TOOLS_WORKER_EXTENSION, path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "project-tools-worker.ts"), "the slot path, named for Sova to fill (no file there)");
+		assert.equal(PROJECT_TOOLS_WORKER_EXTENSION, path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "project-tools-worker.ts"), "the slot path, named for Sova to fill (no file there), by the name older workers' lists carry");
 		const file = w.env[PROJECT_TOOLS_FILE_ENV];
 		assert.ok(file.startsWith(path.join(agentDir, "sova", "project-tools")));
 		assert.deepEqual(readWorkerToolsFile(file).map((c: { id: string }) => c.id), ["release-check"], "only copies with tools");

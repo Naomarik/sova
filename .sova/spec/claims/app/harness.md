@@ -83,8 +83,7 @@ that moves `PI_CODING_AGENT_DIR` moves every such path at once. Sova's own state
 Sova's pi-config extensions find pi's files in the agent directory pi itself runs with
 (`$PI_CODING_AGENT_DIR`, a leading `~` expanded, else `~/.pi/agent`), never a hard-coded
 `~/.pi/agent`, so a pi on a hermetic agent dir neither reads nor writes the live one:
-`/extensions` lists and toggles the extensions and settings of that dir; the usage footer and the
-server's usage fetch read API keys and pi's OpenAI sign-in from that dir's `auth.json`;
+the usage footer and the server's usage fetch read API keys and pi's OpenAI sign-in from that dir's `auth.json`;
 `look_at_image` judges a fallback's subscription usage from that dir's
 `cache/usage-status.json`; and the Claude Code bridge's opt-in diagnostics
 (`PI_CLAUDE_CODE_DEBUG=1`) append to that dir's `claude-code-debug.log`. With no

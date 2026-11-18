@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
-import { folderResources, resourcesOf } from "./resources";
+import { folderResources, resourcesOf, settingsReads } from "./resources";
 import { piCanExpand, piSkillsIn, rescuedSkill, skillArgumentNames, withSkillSources } from "./skill-sources";
 import { loadoutOverrides } from "../../session-loadout";
 
@@ -108,6 +108,30 @@ test("the card's list for a folder no chat holds comes from the same locations",
   try {
     const res = await folderResources(join(root, "p"), join(root, "agent"));
     assert.ok(res.skills.some((s) => s.name === "a"));
+  } finally {
+    if (was === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = was;
+  }
+});
+
+test("a folder's load reads pi's settings without pi's lock, as pi reads them; a file it can't read cleanly goes to pi, locked", async () => {
+  const root = tree({ "p/.git/HEAD": "", "g/gs/SKILL.md": skill("from-global"), "q/ps/SKILL.md": skill("from-project"), "agent/x": "" });
+  writeFileSync(join(root, "agent", "settings.json"), JSON.stringify({ skills: [join(root, "g")] }));
+  mkdirSync(join(root, "p", ".pi"), { recursive: true });
+  writeFileSync(join(root, "p", ".pi", "settings.json"), `\uFEFF${JSON.stringify({ skills: [join(root, "q")] })}`);
+  const was = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = join(root, "nothing");
+  try {
+    const names = async () => (await folderResources(join(root, "p"), join(root, "agent"))).skills.map((s) => s.name).sort();
+    const pis = async () => resourcesOf(await loaded(root, join(root, "p"))).skills.map((s) => s.name).sort();
+    const before = { ...settingsReads };
+    assert.deepEqual(await names(), ["from-global", "from-project"], "both files' skills, as pi applies them");
+    assert.deepEqual(await names(), await pis(), "the same as pi's own locked read");
+    assert.deepEqual([settingsReads.unlocked - before.unlocked, settingsReads.locked - before.locked], [2, 0]);
+    // Read halfway through a write: pi reads it itself, as before.
+    writeFileSync(join(root, "agent", "settings.json"), '{"skills": [');
+    assert.deepEqual(await names(), await pis());
+    assert.equal(settingsReads.locked - before.locked, 1);
   } finally {
     if (was === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = was;

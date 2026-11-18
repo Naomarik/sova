@@ -430,7 +430,8 @@
       "server/owner-versions.ts",
       "server/project-holds.ts",
       "server/project-overseer.ts",
-      "server/owner-request-close-holds.test.ts"
+      "server/owner-request-close-holds.test.ts",
+      "server/project-assistant-versions.integration.test.ts"
     ],
     "agreed": {
       "by": "Omar (al_1 go-ahead)",
@@ -513,7 +514,7 @@
   "§app.project-assistant/versions": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.project-services/share",
       "§app.project-services/instances",
@@ -548,7 +549,8 @@
       "shared/commands-ids.json",
       "server/commands-fuzz.test.ts",
       "server/commands-inventory/baseline.json",
-      "docs/commands.md"
+      "docs/commands.md",
+      "server/share/preview-link.ts"
     ],
     "agreed": {
       "by": "Omar (al_1 go-ahead)",

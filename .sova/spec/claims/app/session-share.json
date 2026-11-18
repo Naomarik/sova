@@ -163,7 +163,7 @@
   "§app.session-share/shares-page": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app.session-share/sheet",
       "§app.insights/placement",
@@ -178,8 +178,14 @@
       "shared/session-share.ts",
       "server/shares-overview.ts",
       "server/shares-overview-tours.test.ts",
-      "src/lib/session-shares.test.ts"
-    ]
+      "src/lib/session-shares.test.ts",
+      "src/components/OpensAt.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-17T18:25Z",
+      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
+    }
   },
   "§app.session-share/sheet": {
     "kind": "behavior",
@@ -199,11 +205,14 @@
       "src/shares.css",
       "src/lib/session-shares.test.ts",
       "server/session-shares-routes.ts",
-      "shared/session-share.ts"
+      "shared/session-share.ts",
+      "src/components/SharePage.tsx",
+      "src/components/OpensAt.tsx"
     ],
     "agreed": {
-      "by": "user (al_3 go-ahead)",
-      "at": "2026-10-14T16:11Z"
+      "by": "user",
+      "at": "2026-11-12T12:42Z",
+      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
     }
   },
   "§app.session-share/slice": {

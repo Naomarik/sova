@@ -311,7 +311,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
     `$GLAB_CONFIG_DIR`, macOS's `~/Library/Application Support/glab-cli`), `/proc` (every
     process's environment and command line, the server's own included), `/sys` and `/dev/fd`
     (the server's own open files; on Linux it resolves into `/proc`, on macOS it does not), and
-    the WhatsApp sender's home and its auth directory wherever configured (§app.outreach/secrets);
+    the WhatsApp sender's home and its auth directory wherever configured (§app.outreach/secrets),
+    and the Cloudflare tunnels' folder `sova/tunnels` in the state folder, beside `sova/auth-token`
+    (the Account tunnel's token, §mesh.tunnel/account);
   - names, anywhere on the machine, so a copy is denied like the original (another worktree's
     `.agent/auth.json`, a `.credentials.json.mtn` backup): `auth.json` and `auth.json.*`;
     `.claude.json` and `.claude.json.*`; any name containing `credentials`; `.env` and `.env.*`
@@ -343,7 +345,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   rate-limit tier) and `~/.claude.json`'s `primaryApiKey`, the literal `apiKey` and header values
   in both `models.json` files (the literal parts of a `$NAME` template; a `!command` is never run
   and never taken as a value), Sova's access token (`sova/auth-token` in `~/.pi/agent` and in the
-  active agent dir, the whole file), every extension backend's key (each file in `sova/extension-keys/`
+  active agent dir, the whole file), the Cloudflare Account tunnel's token (the `TUNNEL_TOKEN` of
+  `sova/tunnels/account-token.env` and of each tunnel unit's environment file in `sova/tunnels/env`
+  in the active agent dir), every extension backend's key (each file in `sova/extension-keys/`
   in both, the whole file; §app.extensions/backend-key), and the server's environment variables whose name contains `KEY`,
   `TOKEN`, `SECRET`, `PASSWORD` or `AUTH` (not `AUTHOR`/`AUTHORITY`). A value counts only when it
   is at least 12 characters and not a boolean, a number, a path or a URL without credentials. A
@@ -1571,7 +1575,7 @@ feed's last list while nothing has changed since it was built, and builds a list
   {target}" (or its no-definition form), dated by its last turn's end, carrying what Merge Branch
   needs (`playbook: {projectId, hash?, branch, target}`).
 - **Needs you, a deploy** (§app.project-services/deploy-status): items of no session, linking to the
-  project's page: `deploy-failed`, one per deploy target whose latest deploy failed, failed its verify
+  project's Deploy tab (`#/projects/<pid>/deploy`): `deploy-failed`, one per deploy target whose latest deploy failed, failed its verify
   or was interrupted, "Deploy of {commit7} to {target} failed: {why}" (or "… ran, and its verify
   failed: …", "… was interrupted: …"; "Rollback of …" for a rollback), until a later deploy of that
   target; and `deploy-request`, one per overseer's open request to deploy, "Deploy {commit7} to
@@ -1660,7 +1664,7 @@ feed's last list while nothing has changed since it was built, and builds a list
   (id `owner-link-request:<org id>`), until a new link is made. Each is act tier and of no session; a
   request's item opens the org's Requests tab at that request (`#/orgs/<id>/requests/<rid>`), a link
   ask the org's People tab, and an open `try` request is an `owner-version-request` item opening the
-  project's Branches tab (§app.project-assistant/requests).
+  project's Running Copies tab (§app.project-assistant/requests).
 - **Needs you, a message not sent** (§app.outreach/send): `outreach-not-sent`, one per project
   overseer's WhatsApp send whose last outcome is refused, failed or unknown, "The WhatsApp message
   to {name} was not sent: {reason}.", opening the person's page, until a later send to that person

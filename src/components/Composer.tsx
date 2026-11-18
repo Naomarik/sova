@@ -63,7 +63,7 @@ import { runStatusEnd } from "../lib/run-status";
 import { openSettings } from "../lib/settings-nav";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
 import { teamNote, type WorkerTally, type WorkingSplit, workersRunningLabel, workersTrigger } from "../lib/workers";
-import { ComposerMenu, type ComposerMenuApi, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { ComposerMenu, type ComposerMenuApi, type LoginControl, type SandboxControl, type ThinkingControl } from "./ComposerMenu";
 import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
 import { ModeMenu, type ModeControl } from "./ModeMenu";
@@ -226,13 +226,11 @@ export function Composer(props: {
   thinking?: ThinkingControl | null;
   /** Chat sessions only: this chat's mode switch, at the right end of the foot. */
   mode?: ModeControl | null;
-  /** Chat sessions only: opens the Playbooks dialog (the palette's Playbooks row). */
+  /** Chat sessions only: opens the Playbooks dialog (the Commands dialog's Playbooks row). */
   onPlaybooks?: () => void;
   /** Chat sessions only: a sent "/<name> [words]" whose row is a playbook with a description opens its
       card instead. False: it didn't open, and the draft stays. */
   onPlaybookCard?: (playbook: { source: "sova" | "user" | "project"; id: string }, words: string) => Promise<boolean>;
-  /** Chat sessions only: the palette's "Undo last turn" row. */
-  undo?: UndoControl | null;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
   sandbox?: SandboxControl | null;
   /** Shell mode (§chat.shell-mode/box): only a chat with its own agent and folder gives it. Absent,
@@ -360,7 +358,6 @@ export function Composer(props: {
     },
   });
   const setDraft = (v: string) => box.setDraft(v);
-  const switchMode = (next: ShellMode, say?: string) => box.switchMode(next, say);
   let disposed = false;
   /** Listeners Solid can't delegate (paste), added by hand so closing can take them off. */
   const listening = new AbortController();
@@ -718,24 +715,11 @@ export function Composer(props: {
           : null
         : null;
 
-  // The command palette's rows for this chat (commands/composers): the menu's commands, "/name "
-  // put in this textarea exactly as the menu's Enter on an empty draft leaves it (nothing is sent),
-  // and the This chat actions: the file picker, Playbooks and Undo last turn.
+  // This chat's composer for the Commands dialog's rows (the file picker, Playbooks) and for
+  // typing from outside a text field (commands/composers).
   createEffect(() => {
     const off = registerComposer(props.path, {
-      commands: () => menuCommands(props.commands ?? []),
       off: () => reason()?.text ?? null,
-      hasDraft: () => text().trim().length > 0 || images().length > 0,
-      insert: (name) => {
-        if (disabled()) return;
-        const next = `/${name} `;
-        switchMode("off"); // "/name " is a message's, never a command
-        setDraft(next);
-        input.value = next;
-        input.focus();
-        input.setSelectionRange(next.length, next.length);
-        updateSlash();
-      },
       // Focus hides only the single view's composer (the footer's inert, below).
       take: () => {
         // The browser types the key into the box in this same keydown, as if typed there: a "!"
@@ -755,10 +739,6 @@ export function Composer(props: {
       canPlaybooks: () => !!props.onPlaybooks,
       playbooks: () => {
         if (!disabled()) props.onPlaybooks?.();
-      },
-      undoBlocked: () => (props.undo ? props.undo.blocked() : undefined),
-      undo: () => {
-        if (!disabled() && props.undo?.blocked() === null) props.undo.run();
       },
     });
     onCleanup(off);
@@ -1287,12 +1267,43 @@ export function Composer(props: {
           </ul>
         </Show>
 
+        {/* The composer's notice (a reason Send waits, or can't send): a slim strip just above the
+            message box, never in the foot beside the model's name. A reason said only to the ear
+            stays visually hidden here. */}
+        <div
+          class="composer-reason composer-notice"
+          id={paneId("composer-reason")}
+          data-soft={shownReason()?.soft && !shownReason()?.quiet ? "" : undefined}
+          data-quiet={shownReason()?.quiet ? "" : undefined}
+          data-wide={shownReason()?.wide ? "" : undefined}
+        >
+          <Show when={shownReason()}>
+            {(r) => (
+              <Show when={!r().quiet} fallback={<span class="visually-hidden">{r().text}</span>}>
+                <Icon name={r().icon} small />
+                <Show when={r().code} fallback={<span class="composer-notice-text">{r().text}</span>}>
+                  <span class="composer-notice-text">
+                    <For each={codeSpans(r().text)}>{(s) => (s.code ? <code>{s.text}</code> : s.text)}</For>
+                  </span>
+                </Show>
+                <Show when={r().action}>
+                  {(act) => (
+                    <button type="button" class="button button-sm button-ghost composer-reason-action" onClick={() => act().run()}>
+                      {act().label}
+                    </button>
+                  )}
+                </Show>
+              </Show>
+            )}
+          </Show>
+        </div>
+
         <div class="composer-row">
           {/* The mic first, left of the plus; gone with the textarea's writability (§chat.voice/button). */}
           <Show when={!props.readOnly}>
             <VoiceButton voice={voice} />
           </Show>
-          {/* The plus opens the Commands palette on this chat (§app.command-palette/opening); the
+          {/* The plus opens the Commands dialog on this chat (§app.command-palette/opening); the
               flyout it sits with holds the model, login and sandbox panels. */}
           <ComposerMenu
             disabled={disabled()}
@@ -1505,7 +1516,6 @@ export function Composer(props: {
 
         <div
           class="composer-foot"
-          data-reason-wide={shownReason()?.wide ? "" : undefined}
           ref={(foot) => {
             // The model's short name is the foot's last part to shrink:
             // where the row doesn't fit once its gaps narrow, the mode switch's icons fold first.
@@ -1583,27 +1593,6 @@ export function Composer(props: {
               Shell mode
             </span>
           </Show>
-          <span class="composer-reason" id={paneId("composer-reason")} data-soft={shownReason()?.soft && !shownReason()?.quiet ? "" : undefined}>
-            <Show when={shownReason()}>
-              {(r) => (
-                <Show when={!r().quiet} fallback={<span class="visually-hidden">{r().text}</span>}>
-                  <Icon name={r().icon} small />
-                  <Show when={r().code} fallback={r().text}>
-                    <span>
-                      <For each={codeSpans(r().text)}>{(s) => (s.code ? <code>{s.text}</code> : s.text)}</For>
-                    </span>
-                  </Show>
-                  <Show when={r().action}>
-                    {(act) => (
-                      <button type="button" class="button button-sm button-ghost composer-reason-action" onClick={() => act().run()}>
-                        {act().label}
-                      </button>
-                    )}
-                  </Show>
-                </Show>
-              )}
-            </Show>
-          </span>
           <Show when={sandboxBadge(props.sandbox?.state() ?? null)}>
             {(b) => (
               <button

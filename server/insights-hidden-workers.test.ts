@@ -3,7 +3,7 @@
 // at most 40, the pane's "Show {n} More" reads the rest from the session's own worker records.
 // Uses a throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -63,12 +63,15 @@ const owner = (() => {
 /** The live record as the sessions extension now writes it: the running worker, then the newest. */
 const liveFile = join(liveDir, `p${process.pid}-bbbbbbbb.json`);
 function publish(listed: number[], total = 57): void {
-  writeFileSync(liveFile, JSON.stringify({
+  // As the writer does it (SCHEMA.md): a dotfile temp renamed over the record.
+  const tmp = join(liveDir, `.p${process.pid}-bbbbbbbb.json.tmp`);
+  writeFileSync(tmp, JSON.stringify({
     heartbeat: Date.now(),
     session: { sessionFile: owner, pid: process.pid, mode: "rpc", status: "idle" },
     presence: { status: "idle", workers: listed.map((n) => ({ id: id(n), name: `reviewer-${n}`, status: n === 57 ? "running" : "killed", backend: "pi" })),
       workerCounts: { total, working: 1, waiting: 0, done: 0, error: 0, killed: total - 1 } },
   }));
+  renameSync(tmp, liveFile);
 }
 const newest40 = [57, ...Array.from({ length: 39 }, (_, i) => 56 - i)]; // ag_57, ag_56 … ag_18
 

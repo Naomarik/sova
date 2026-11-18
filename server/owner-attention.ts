@@ -10,7 +10,7 @@ import { heldRequestIds } from "./project-holds";
  * The owner's asks in Needs you (§app.project-assistant/requests, §app.owner-page/link), act tier,
  * every open owner request (`owner-request`; an outage `owner-outage`, which a phone notification also
  * tells), each opening the org's Requests tab at that request; an open `try` request is an
- * `owner-version-request`, opening the project's Branches tab; and an owner who asked for a new link
+ * `owner-version-request`, opening the project's Running Copies tab; and an owner who asked for a new link
  * (`owner-link-request`), opening the People tab (its Owner card); and a request the owner closed while it was
  * being worked on (`owner-request-closed`, until the operator's Got It). A request the owner closed otherwise leaves
  * Needs you quietly. No session: `path` "".
@@ -148,7 +148,7 @@ export function ownerAttention(): AttentionItem[] {
         }
       }
       const project = projects.find((p) => p.id === r.projectId);
-      // A version the owner asked to try (§app.project-assistant/requests): opens the project's Branches tab.
+      // A version the owner asked to try (§app.project-assistant/requests): opens the project's Running Copies tab.
       if (r.kind === "try") {
         out.push({
           id: `owner-request:${r.id}`,
@@ -159,7 +159,7 @@ export function ownerAttention(): AttentionItem[] {
           kind: "owner-version-request",
           since: Date.parse(r.createdAt) || 0,
           detail: clip(`${ownerName} asks to try ${project?.name ?? "a project"}: ${r.title}`, 200),
-          href: project ? `#/projects/${encodeURIComponent(project.id)}/branches` : `#/orgs/${encodeURIComponent(o.id)}/people`,
+          href: project ? `#/projects/${encodeURIComponent(project.id)}/running-copies` : `#/orgs/${encodeURIComponent(o.id)}/people`,
           org: { orgId: o.id, orgName, ...(project ? { projectId: project.id, projectName: project.name } : {}) },
         });
         continue;

@@ -173,7 +173,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     this host, never in the workspace repo.
 - **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
   card on the org list, org and project pages stops at 880px wide, left-aligned, except the
-  project page's Overview, whose cards fill its columns (§app.organizations/project-page). The project
+  project page's Sessions, Backlog and Deploy tabs, whose lists and cards use the width they are
+  given, up to the page's 1280px (§app.organizations/project-page). The project
   page's title, cut with an ellipsis when it doesn't fit, carries the whole project name as its
   tooltip (`title`).
 - **Counts.** Each tab's label is followed by a count: Projects, the projects not archived;
@@ -371,14 +372,14 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
 ## §app.organizations/project-page — One project's page: a summary and its tabs
 
 - **Every registered project has it** (§app/projects), placed in an organization or not. It reads
-  the project from `GET /api/projects/:pid`; the organization's parts (the Requirements tab and its
-  chips, the main stakeholder, the gathering **Sessions it started**, Send to person…, the Owner
-  Page card) are composed in by the page's route only while the project is placed, and a
+  the project from `GET /api/projects/:pid`; the organization's parts (the Requirements tab with its
+  Files and **Sessions the overseer started**, the main stakeholder, Send to person…, Open
+  History, the Owner Page card) are composed in by the page's route only while the project is placed, and a
   standalone project's page has none of them and never reads an org. Its back link opens
   `#/projects` for a standalone project ("Back to Projects") and the org's Projects tab for a placed one.
-- **Standalone differences.** A standalone project's Overview shows its overseer's open ideas as an
-  **Ideas** card (its **+** adds one), where a placed project keeps them on Requirements as Gaps and
-  ideas; its ideas chip opens the card's tab. Its Settings omit the gathering sessions' model and
+- **Standalone differences.** A standalone project's Backlog shows its overseer's open ideas as an
+  **Ideas** card (its **+** adds one, §app.organizations/backlog-tab), where a placed project keeps
+  them on Requirements as Gaps and ideas. Its Settings omit the gathering sessions' model and
   abilities and the Limits rows for gatherings and promotion (Gathering sessions started, Decisions
   promoted, Gathering sessions open), and its switches (§design.copy-deck/project-powers) have the
   overseer's column only, with no act only an organization has (gatherings, WhatsApp, owner updates,
@@ -387,71 +388,81 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
 - **Head.** The page head is the project's icon at 32px (§app.projects/icon; its letters for a
   project on a peer), then its name (§app.organizations/org-page: cut with an
   ellipsis, the whole name as its `title`), the meta line (the org · folder while placed, the folder
-  alone otherwise), **Refresh Project**, and a
-  **⋯** menu ("Project actions · {project}") holding **Settings** (a link to the Settings tab) and
-  **Archive Project…** (or **Unarchive Project** while archived, §app.organizations/archive). No
-  destructive button sits in the head itself.
-- **Summary**, under the head on every tab:
-  - **The overseer line**: "Paused" (its `title` the brake's reason) while a brake holds every
-    switch Off, then "Watching" or "Not watching", then the last run in the page's own words
-    (§app.project-overseer/watch-loop: "Last looked on its own {time}{tail}." or "It hasn't looked
-    on its own yet.") and "{n} run(s) today."; the line is one line where it fits and wraps on a
-    phone. The **Working** chip while it works, **Run Now** and **Open Overseer** (or **Start
-    Overseer**, with the unread count) sit beside it. Under it, only when true: "Waiting to look
-    at: …", today's and the last message's allowance used, and each Waiting line
-    (§app.project-overseer/limits); while braked, a warn banner with **Resume** (paused by an
-    attach: "Paused on {host}" and when it was attached; an empty roster: "Paused" and the
-    server's reason). No level shows on the page.
-  - **A strip of count chips**, each a link that opens its tab and brings its section into view:
-    `{n} sessions` (coding sessions, Overview), `{n} previews` (active preview links, Overview),
-    the project's cost (`$27.21`, Cost), `{n} conflicts` (open, warn while above 0,
-    Requirements), `{n} decisions` (Requirements; its `title` says how many are ready to promote),
-    `{n} gaps` (open gap ideas, with " · {n} ideas" for the other open ideas, Requirements) and `{n} to-dos` (open, Overview). A count not read yet
-    is left out, never shown as 0.
-- **Shows up at once.** The head, the overseer line's buttons (Run Now, Open Overseer), the count
-  strip, the tabs, every card's frame and heading, and New Coding Session show the moment the page
-  opens; nothing on it waits for another part. Each card and count fills in on its own as its read
-  answers. While a part is still loading it shows placeholder shapes in the design system's
-  skeleton (`.skeleton`, `.skeleton-line`), with no words: the overseer line, each card's body, and
-  a count chip is left out until it is read. A part that can't be read says so in its own words
-  with **Retry** ("Couldn't read the coding sessions.", "Couldn't read the overseer."), and the rest
-  of the page is unaffected. Run Now and Open Overseer (or Start Overseer) act once the overseer's
-  own state has answered, a read that runs no git (§app.project-overseer/coding-worktrees,
+  alone otherwise), then, at its right, the overseer's state word, **Open Overseer** (below),
+  **Refresh Project**, and a
+  **⋯** menu ("Project actions · {project}") holding **Settings** (a link to the Settings tab),
+  **Open History** while placed (the org's History tab filtered to this project,
+  §app.org-history/page) and **Archive Project…** (or **Unarchive Project** while archived,
+  §app.organizations/archive). No destructive button sits in the head itself.
+- **The overseer, in the head.** **Open Overseer** (the `eye` icon; **Start Overseer** while it has
+  no conversation yet) with its unread count as a count chip ("{n} unread" for a screen reader),
+  disabled with "Not read yet" until the overseer's state has answered and, archived with no
+  conversation, "Archived"; and before it one state word only while it applies: **Working** (with
+  the live dot) while its turn runs, **Paused** (its `title` the brake's reason) while a brake
+  holds every switch Off, or **Not watching** while its Watch switch is off; a watching, idle
+  overseer shows no word. The
+  page shows nothing else of it: no sentence about its last look, no allowance line, no count chips
+  and no Run Now, which is on the overseer's own page as **Look Now**
+  (§app.project-overseer/page; its last look, the reasons waiting and the allowance are there too).
+  No level shows on the page.
+- **On every tab, under the head, only when true**: while archived, its banner
+  (§app.organizations/archive); a verb playbook's proposed run and the Setup chat's proposal
+  (§app.project-runtime/review, §app.project-setup/proposal); an act the overseer refused, "The
+  overseer didn't answer." with its reason; while its state can't be read, "Couldn't read the
+  overseer." with its reason and **Retry**; the links an act left; and while braked, a warn banner
+  with **Resume** (paused by an attach: "Paused on {host}" and when it was attached; an empty
+  roster: "Paused" and the server's reason).
+- **Shows up at once.** The head with Open Overseer, the tabs, every card's frame and heading, and
+  New Coding Session show the moment the page opens; nothing on it waits for another part. Each
+  card and each tab's count or dot fills in on its own as its read answers. While a part is still
+  loading it shows placeholder shapes in the design system's skeleton (`.skeleton`,
+  `.skeleton-line`), with no words: each card's body and the Sessions tab's rows; the state word,
+  and a tab's count or dot, are left out until read, never shown as 0. A part that can't be read
+  says so in its own words with **Retry** ("Couldn't read the coding sessions.", "Couldn't read the
+  overseer."), and the rest of the page is unaffected. Open Overseer (or Start Overseer) acts once
+  the overseer's own state has answered, a read that runs no git (§app.project-overseer/coding-worktrees,
   **Read in two steps**), so they never wait on the coding sessions' branches.
 - **Reopening a project** in the same browser tab shows what that tab last saw of it at once (the
-  overseer line, the coding sessions with their branches, the counts, the cost, the cards), then
+  overseer's state word and unread count, the coding sessions with their branches, the tabs' counts
+  and dots, the cost, the cards), then
   updates each part in place as its fresh read answers. Nothing of it is kept once the tab closes
   or reloads, and nothing is written anywhere.
-- **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Merge Queue · Releases · Cost · Settings, the org page's tab strip
-  (`.tabs`, keyboard as §app.organizations/org-page; Requirements carries the warn dot while a
-  conflict is open or a decision is ready to promote). The tab is in the URL:
-  `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/merge-queue` (the project's
+- **Tabs**: Sessions (the default) · Backlog · Requirements (only while placed) · Running Copies ·
+  Merge Queue · Releases · Deploy · Cost · Settings, the org page's tab strip (`.tabs`, keyboard as
+  §app.organizations/org-page). Backlog's label carries the open to-do count while above 0
+  (§app.organizations/backlog-tab); Requirements carries the warn dot while a conflict is open or a
+  decision is ready to promote; Deploy carries the live dot while a deploy or rollback of one of its
+  targets runs ("deploying now") and the warn dot while an overseer's request to deploy is open ("a
+  deploy is asked for"), its words the tab's `title` and hidden text (§app.project-runtime/deploy-panel),
+  kept current whichever tab shows. The tab is in the URL:
+  `#/projects/<pid>` is Sessions, `…/backlog`, `…/requirements`, `…/running-copies` (the old
+  `…/branches` opens it and is rewritten to it, so links written before keep working),
+  `…/merge-queue` (the project's
   merge queue, or, while the queue doesn't serve the project, its "No merge queue settings are
   set up" note with Set Up with a Chat, §app.merge-queue/view,
   §app.merge-queue/setup; its status tabs but Ready to land add their word, `…/merge-queue/<tab>`, and a run's page is `…/merge-queue/<run>`, or `…/merge-queue/<tab>/<run>` when opened from one of them), `…/releases` (the project's releases, or,
-  while they aren't set up, how to set them up, §app.release/tab), `…/cost`, `…/settings` the others
-  (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
+  while they aren't set up, how to set them up, §app.release/tab), `…/deploy`, `…/cost`, `…/settings`
+  the others (`…/overseer` stays the overseer's door). Picking a tab adds a history entry, so Back
   returns to the previous tab and a reload opens the same one; the page is not reloaded and its
   fetched data stays.
-- **Overview.** First, while there is something to act on, a warn banner "{n} conflict(s) open ·
-  {n} decision(s) ready to promote." with **Review Requirements**. Then, in two columns when the
-  pane is at least 1000px wide (one column below): **Coding sessions**
-  (§app.project-overseer/coding-worktrees) and the gathering **Sessions it started**, and **Previews**
-  (§mesh.public/preview-card) in the first; **Software** (§app.project-runtime/software-card), **Releases** (its latest release and the landings since, or the
-  one in progress, §app.release/tab),
-  **Files** (§app.organizations/files-card, while placed or holding a file), **History** (while
-  placed), **Activity** and
-  **To-do** in the second. Overview's
-  cards use the width they are given (no 880px cap); the page stops at 1280px. While the project
-  is placed, Overview's second column has a **History** card before Activity, whose **Open History** opens the org's History tab filtered to this
-  project (§app.org-history/page).
+- **Sessions.** First, while placed and there is something to act on, a warn banner "{n}
+  conflict(s) open · {n} decision(s) ready to promote." with **Review Requirements**. Then the
+  heading **Coding sessions** with **New Coding Session** at its right, and the project's coding
+  sessions as one full-width list grouped by what needs you first
+  (§app.project-overseer/sessions-list). Nothing else is on
+  this tab: the backlog, previews, files, releases and deploys each have their own tab. The page
+  stops at 1280px.
+- **Backlog**: To-do, and Ideas beside it for a standalone project, Activity under them, and, for a
+  standalone project holding a file, Files at its end (§app.organizations/backlog-tab).
 - **Activity** is a card: its newest 5 acts, then **Show All {n}** (and **Show Fewer**). A done
   act has no chip; `Partly`, `Refused` and `Failed` keep theirs. With none: "Nothing yet. Every act
-  it takes, refused or not, lists here."
-- **To-do** is a card of the open items (each with its tick and actions,
+  the overseer takes, refused or not, lists here."
+- **To-do** is a card of the open items, headed "To-do · {n} open" (each with its tick and actions,
   §app.project-overseer/ideas-and-todos); its add form opens from **+** ("Add a to-do item") on
-  its heading and closes after an add or on Cancel.
-- **Requirements.** One status card: the heading `Requirements` with **Reconcile Now** and
+  its heading and closes after an add or on Cancel. With none open: "Nothing on the to-do list.
+  Add one with +, or the overseer files them as it looks." ("{n} done. Nothing open." once some are
+  done).
+- **Requirements** (only while placed). One status card: the heading `Requirements` with **Reconcile Now** and
   **Rewrite Draft**; the main stakeholder select (§app.organizations/stakeholder); the decisions
   line and the spec line; the spec folder in mono; "Last reconciled …" or "Never reconciled."; the
   spec banners; and the **Frozen** switch with its hint. Then **Conflicts** (when any conflict,
@@ -459,8 +470,14 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   (§app.project-overseer/pipeline, when it has a gap row or a held act) and **Gaps and ideas**
   (when an idea is open), each as it is; the empty ones are named in one line instead ("No
   conflicts, decisions, pipeline rows or ideas yet.", listing only the empty ones), with **+ Idea**
-  opening the add form.
-- **Branches**: the project's running copies on this host, one per branch, each opening its app where the project declares an entry (§app.project-services/services-ui).
+  opening the add form. Then **Files** (§app.organizations/files-card) and, once the overseer has
+  started a gathering session or offer, **Sessions the overseer started**, listing them.
+- **Running Copies** (once Branches): the project's running copies on this host, In use and Can
+  go, each opening its app where the project declares an entry; the line saying whether its
+  services are set up, with Run Playbook or Run Again; **Free Up Slots**; **Previews**; the shared
+  services; and the **Recent** list (§app.project-services/services-ui,
+  §app.project-services/free-up-slots, §mesh.public/preview-card).
+- **Deploy**: the Deploy panel at full width (§app.project-runtime/deploy-panel).
 - **Cost**: the Cost card (§app.project-costs/card).
 - **Settings.** In this order: **Icon** (§app.projects/icon: the project's icon, where it comes
   from, and Upload, Replace, Remove, Use Letters or Use Picture; only for a project on this host); **Settings changes waiting** (only while a project overseer's Settings
@@ -476,13 +493,34 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   an owner (§app.owner-page/controls); **Offers** (§chat.offers/project-list); **All settings** and
   **Settings history** (§app.project-overseer/settings); and a **Danger zone** with **Archive Project** (or
   Unarchive). A pick or switch saves at once; Extra instructions and Limits on their own Save.
-- **Width.** At 390px nothing scrolls sideways: the chips wrap, the tab strip scrolls as the org
-  page's does, and every control stays at least 44px tall.
+- **Width.** At 390px nothing scrolls sideways: the head's buttons wrap under the name, the tab
+  strip scrolls as the org page's does, the Sessions rows stack, and every control stays at least
+  44px tall.
+
+## §app.organizations/backlog-tab — The project page's Backlog tab
+
+- **What it holds.** The project page's **Backlog** tab (`#/projects/<pid>/backlog`, after Sessions,
+  §app.organizations/project-page), headed "Backlog" with "What you and the overseer filed for this
+  project.", gathers what you and the overseer filed for the project, which is listed nowhere else
+  on the page: **To-do** and, for a standalone project, **Ideas** ("No open ideas. Add one with +,
+  or the overseer files them as it looks." with none), side by side when the tab is at least 768px
+  wide and one under the other below; then **Activity** under them at the tab's full width; then, for a standalone project holding a file, **Files**
+  (§app.organizations/files-card). A placed project keeps its ideas on Requirements as Gaps and
+  ideas, and its Files there too, so its Backlog is To-do, then Activity.
+- **The cards are as they were.** To-do, Ideas and Activity keep their heading, counts, **+** add
+  forms, ticks, item actions (**Start Coding Session**, and **Send to person…** while placed) and
+  empty lines (§app.organizations/project-page, §app.project-overseer/ideas-and-todos); moving them
+  here changes none of what they do.
+- **The count on its label.** The tab's label carries the open to-do count after "Backlog" while
+  it is above 0 (a screen reader hears "{n} open to-dos"), read with the page and kept current as
+  items are added, ticked or removed; with none open, or before the count is read, the label is
+  "Backlog" alone.
 
 ## §app.organizations/files-card — The project page's Files card
 
-- **Where.** On the project page's Overview, in the second column after Software, while the
-  project is placed or has a file (§app/file-intake). Read from `GET /api/projects/:pid/files`
+- **Where.** On the project page's Requirements tab, after its sections, while the project is
+  placed; on a standalone project's Backlog tab, at its end, while it holds a file
+  (§app/file-intake, §app.organizations/backlog-tab). Read from `GET /api/projects/:pid/files`
   (`{files: [{id, name, size, kind, sender, gathering: {sessionId, title, path?} | null, at, status,
   here}]}`, newest first, deleted ones left out). Refresh Project reads it again, and it re-reads
   every 30 seconds.
@@ -1051,8 +1089,8 @@ Public tour titles, summaries, step/view explanations, callouts and reference te
   - its copies are not started, and those that still run are shown with their Stop, its shared
     services' Stop on the banner (§app.organizations/archive-copies);
   - its overseer is paused: the watch loop starts nothing for it and its reasons wait
-    (§app.project-overseer/watch-loop), Run Now and a message to it (its composer, the global
-    Overseer's route) are refused with "{project} is archived. Unarchive it to use its overseer.",
+    (§app.project-overseer/watch-loop), Look Now on its page (`POST …/overseer/run`) and a message
+    to it (its composer, the global Overseer's route) are refused with "{project} is archived. Unarchive it to use its overseer.",
     and its settings are kept unchanged, so unarchiving resumes it as it was set;
   - nothing new starts in it: a gathering session or offer (`POST /api/baton`, Send to person…),
     Start Coding Session, New Coding Session (§app.project-overseer/new-coding-session), and the
@@ -1077,8 +1115,8 @@ Public tour titles, summaries, step/view explanations, callouts and reference te
   archived {when}. Its overseer is paused and nothing new starts here. Nothing was deleted."
   ("… archived by you, via the Overseer {when} …" for a `via` record), with **Unarchive** (and
   **Stop Shared Services** while its shared services run, §app.organizations/archive-copies), and the
-  start gestures (Start Overseer, Run Now, Start Coding Session, New Coding Session, Send to
-  person…) are disabled with
+  start gestures (Start Overseer, Start Coding Session, New Coding Session,
+  Send to person…) are disabled with
   the reason "Archived". Copy: §design.copy-deck/overseer-orgs.
 
 ## §app.organizations/archive-copies — Archiving a project with running copies
@@ -1122,17 +1160,17 @@ Public tour titles, summaries, step/view explanations, callouts and reference te
   /on-merge); `down`, `status`, `logs`, `teardown`, `doctor` and `share` still run. A copy that
   still runs then (one archived before this rule) is left running: nothing stops it, and the
   server's start neither starts nor stops anything of the project (§app.project-services/reconcile). The archived banner
-  says so while one runs: "1 copy of it still runs. Stop it on Branches." ("{n} copies of it still
-  run. Stop them on Branches.", "1 copy and its shared services still run. Stop the copy on
-  Branches.", "{n} copies and its shared services still run. Stop the copies on Branches.", "Its
-  shared services still run."), Branches a link to the tab, read every 15 s, an adopted main not
+  says so while one runs: "1 copy of it still runs. Stop it on Running Copies." ("{n} copies of it still
+  run. Stop them on Running Copies.", "1 copy and its shared services still run. Stop the copy on
+  Running Copies.", "{n} copies and its shared services still run. Stop the copies on Running Copies.", "Its
+  shared services still run."), Running Copies a link to the tab, read every 15 s, an adopted main not
   counted. While its shared services run, the banner has **Stop Shared Services** (destructive)
-  beside Unarchive, since they may run with no copy to show them on Branches: the first press arms
+  beside Unarchive, since they may run with no copy to show them on Running Copies: the first press arms
   it, reading **Confirm Stop** (leaving the button disarms it), the second stops them with their
   entry's down, reading "Stopping…" meanwhile, then announces "Stopped its shared services."; a
   refusal shows under the banner in the engine's words ("Couldn't reach the engine. {error}" when
   it can't be reached). (A server whose shared entry has no down gets "Its shared services still
-  run. Stop them on Branches." and no button.) The Branches tab (§app.project-services/services-ui) reads
+  run. Stop them on Running Copies." and no button.) The Running Copies tab (§app.project-services/services-ui) reads
   "Archived: its copies can be stopped or torn down, not started. Unarchive it to start one." and
   offers each copy only Stop (running or degraded), Logs and Teardown (not the main copy), and each
   shared service only Stop; Start, Apply, Reset, Share and Start Main are not shown. Existing share

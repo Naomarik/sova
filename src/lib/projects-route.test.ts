@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canonicalQueueHash, PROJECT_TABS, projectHref, projectOverseerHref, projectsRouteFromHash, projectTabHref } from "./projects-route";
+import { canonicalProjectHash, PROJECT_TABS, projectHref, projectOverseerHref, projectsRouteFromHash, projectTabHref } from "./projects-route";
 
 test("the list, one project, its tabs and its overseer", () => {
   assert.deepEqual(projectsRouteFromHash("#/projects"), { kind: "list" });
@@ -9,15 +9,23 @@ test("the list, one project, its tabs and its overseer", () => {
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/requirements"), { kind: "project", projectId: "prj_1", tab: "requirements" });
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/cost/"), { kind: "project", projectId: "prj_1", tab: "cost" });
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/settings"), { kind: "project", projectId: "prj_1", tab: "settings" });
-  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/branches"), { kind: "project", projectId: "prj_1", tab: "branches" });
-  // The tab was Services once: that address is no alias of Branches, and no route.
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/running-copies"), { kind: "project", projectId: "prj_1", tab: "running-copies" });
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/backlog"), { kind: "project", projectId: "prj_1", tab: "backlog" });
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/deploy"), { kind: "project", projectId: "prj_1", tab: "deploy" });
+  // Running Copies was Branches: the old address opens it, and is put back as the new one.
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/branches"), { kind: "project", projectId: "prj_1", tab: "running-copies" });
+  assert.equal(canonicalProjectHash("#/projects/prj_1/branches"), "#/projects/prj_1/running-copies");
+  assert.equal(canonicalProjectHash("#/projects/prj_1/branches/"), "#/projects/prj_1/running-copies/");
+  assert.equal(canonicalProjectHash("#/projects/prj_1/branches?host=vps"), "#/projects/prj_1/running-copies?host=vps");
+  for (const h of ["#/projects/prj_1/running-copies", "#/projects/prj_1", "#/projects/branches", "#/projects/prj_1/branches/x"]) assert.equal(canonicalProjectHash(h), null, h);
+  // The tab was Services once: that address is no alias of Running Copies, and no route.
   assert.equal(projectsRouteFromHash("#/projects/prj_1/services"), null);
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/overseer"), { kind: "overseer", projectId: "prj_1" });
   for (const tab of PROJECT_TABS) {
-    const want = tab === "overview" ? { kind: "project", projectId: "j1" } : { kind: "project", projectId: "j1", tab };
+    const want = tab === "sessions" ? { kind: "project", projectId: "j1" } : { kind: "project", projectId: "j1", tab };
     assert.deepEqual(projectsRouteFromHash(projectTabHref("j1", tab)), want, tab);
   }
-  assert.equal(projectTabHref("j1", "overview"), projectHref("j1"));
+  assert.equal(projectTabHref("j1", "sessions"), projectHref("j1"));
   assert.deepEqual(projectsRouteFromHash(projectOverseerHref("j1")), { kind: "overseer", projectId: "j1" });
 });
 
@@ -29,6 +37,7 @@ test("anything else is not this route", () => {
     "#/projects/a b",
     "#/projects/../x",
     "#/projects/prj_1/overview",
+    "#/projects/prj_1/sessions",
     "#/projects/prj_1/Settings",
     "#/projects/prj_1/cost/x",
     "#/projects/prj_1/overseer/x",
@@ -86,10 +95,10 @@ test("the Merge Queue tab's own tabs: Ready to land is the bare address, each ot
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/merge-queue/ready"), { kind: "project", projectId: "prj_1", tab: "merge-queue" });
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/merge-queue/ready/"), { kind: "project", projectId: "prj_1", tab: "merge-queue" });
   assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/merge-queue/ready/mr_42"), { kind: "project", projectId: "prj_1", tab: "merge-queue", run: "mr_42" });
-  assert.equal(canonicalQueueHash("#/projects/prj_1/merge-queue/ready"), "#/projects/prj_1/merge-queue");
-  assert.equal(canonicalQueueHash("#/projects/prj_1/merge-queue/ready/mr_42"), "#/projects/prj_1/merge-queue/mr_42");
-  assert.equal(canonicalQueueHash("#/projects/prj_1/merge-queue/ready?host=vps"), "#/projects/prj_1/merge-queue?host=vps");
-  for (const h of ["#/projects/prj_1/merge-queue", "#/projects/prj_1/merge-queue/needs-you", "#/projects/prj_1/merge-queue/readyish", "#/projects/prj_1/branches/ready"]) assert.equal(canonicalQueueHash(h), null, h);
+  assert.equal(canonicalProjectHash("#/projects/prj_1/merge-queue/ready"), "#/projects/prj_1/merge-queue");
+  assert.equal(canonicalProjectHash("#/projects/prj_1/merge-queue/ready/mr_42"), "#/projects/prj_1/merge-queue/mr_42");
+  assert.equal(canonicalProjectHash("#/projects/prj_1/merge-queue/ready?host=vps"), "#/projects/prj_1/merge-queue?host=vps");
+  for (const h of ["#/projects/prj_1/merge-queue", "#/projects/prj_1/merge-queue/needs-you", "#/projects/prj_1/merge-queue/readyish", "#/projects/prj_1/branches/ready"]) assert.equal(canonicalProjectHash(h), null, h);
   for (const h of [
     "#/projects/prj_1/merge-queue/ready/needs-you",
     "#/projects/prj_1/merge-queue/ready/mr_1/x",
@@ -117,6 +126,14 @@ test("a project on a peer: a queue tab and a run opened from it carry its host, 
   } finally {
     resetHosts();
   }
+});
+
+test("the tabs' order: Sessions, Backlog, Requirements, Running Copies, Merge Queue, Releases, Deploy, Cost, Settings", async () => {
+  const { PROJECT_TABS, TAB_LABEL } = await import("./projects-route");
+  assert.deepEqual(
+    PROJECT_TABS.map((t) => TAB_LABEL[t]),
+    ["Sessions", "Backlog", "Requirements", "Running Copies", "Merge Queue", "Releases", "Deploy", "Cost", "Settings"],
+  );
 });
 
 test("the Releases tab sits right after Merge Queue, with no page under it", async () => {

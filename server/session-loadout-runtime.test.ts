@@ -30,7 +30,7 @@ for (const name of ["alpha-skill", "beta-skill"]) {
 }
 
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
-const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager");
+const { acquireChat, disposeAllChats, disposeHeldChat, heldChat } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { applyLoadout, clearSetupCache, getSessionSetup } = await import("./session-setup");
 const { LOADOUT_ENTRY } = await import("./session-loadout");
@@ -68,7 +68,7 @@ const ok = <T extends { state: string }>(s: T) => {
   return s as Extract<T, { state: "ok" }>;
 };
 
-test("a switch writes the entry, rebuilds the runtime without the off rows, and the card still lists them", async () => {
+test("an entry a chat already holds is applied: rebuilt without its off rows, and the card still lists them", async () => {
   const path = makeSession();
   const before = await acquireChat(path);
   assert.match(piSession(before).systemPrompt, /GLOBAL-RULES-MARKER/);
@@ -77,18 +77,18 @@ test("a switch writes the entry, rebuilds the runtime without the off rows, and 
   assert.equal(first.toggleable, true);
   assert.ok(first.context.every((f) => !f.off) && first.skills.every((k) => !k.off));
 
-  const r = await applyLoadout(path, { offContext: [GLOBAL], offSkills: ["beta-skill"] });
-  assert.equal(r.ok, true);
-  assert.deepEqual(loadoutEntries(path).map((e) => e.data), [{ v: 1, offContext: [GLOBAL], offSkills: [join(agentDir, "skills", "beta-skill", "SKILL.md")] }], "a skill's switch is kept by its file");
-
-  const after = heldChat(path)!;
+  // As an earlier per-chat switch wrote it (nothing writes one for context files or skills now).
+  before.writeLoadout({ v: 1, offContext: [GLOBAL], offSkills: [join(agentDir, "skills", "beta-skill", "SKILL.md")] });
+  await disposeHeldChat(path, "test reopen");
+  clearSetupCache();
+  const after = await acquireChat(path);
   assert.notEqual(after, before, "the runtime was rebuilt");
   assert.doesNotMatch(piSession(after).systemPrompt, /GLOBAL-RULES-MARKER/);
   assert.match(piSession(after).systemPrompt, /LOCAL-RULES-MARKER/);
   assert.doesNotMatch(piSession(after).systemPrompt, /beta-skill/);
   assert.match(piSession(after).systemPrompt, /alpha-skill/);
 
-  const card = ok((r as { setup: Parameters<typeof ok>[0] }).setup as Awaited<ReturnType<typeof getSessionSetup>>);
+  const card = ok(await getSessionSetup(path, { fresh: true }));
   assert.deepEqual(card.context.map((f) => [f.path, !!f.off]), [[GLOBAL, true], [LOCAL, false]]);
   assert.deepEqual(card.skills.map((k) => [k.name, !!k.off]).sort(), [["alpha-skill", false], ["beta-skill", true]]);
   assert.equal(card.toggleable, true);
@@ -100,18 +100,21 @@ test("a switch writes the entry, rebuilds the runtime without the off rows, and 
   assert.ok(rows.every((r) => (entryOf(r) as { type?: string } | undefined)?.type === "thinking_level_change" || (entryOf(r) as { type?: string } | undefined)?.type === "model_change"));
   assert.equal(after.pristine, true);
 
-  // Every chat gone (a restart): the reopened runtime reads the same entry.
-  await disposeAllChats();
-  clearSetupCache();
-  const reopened = await acquireChat(path);
-  assert.doesNotMatch(piSession(reopened).systemPrompt, /GLOBAL-RULES-MARKER/);
-  assert.doesNotMatch(piSession(reopened).systemPrompt, /beta-skill/);
+  // An MCP switch keeps the context files and skills the entry has off.
+  const mcp = await applyLoadout(path, { offContext: [], offSkills: [], offMcp: ["some-server"] });
+  assert.equal(mcp.ok, true);
+  assert.deepEqual(loadoutEntries(path).at(-1)?.data, { v: 1, offContext: [GLOBAL], offSkills: [join(agentDir, "skills", "beta-skill", "SKILL.md")], offMcp: ["some-server"] });
+  assert.doesNotMatch(piSession(heldChat(path)!).systemPrompt, /GLOBAL-RULES-MARKER/);
+});
 
-  // Back on: a later entry with nothing off brings both back.
-  const back = await applyLoadout(path, { offContext: [], offSkills: [] });
-  assert.equal(back.ok, true);
-  assert.match(piSession(heldChat(path)!).systemPrompt, /GLOBAL-RULES-MARKER/);
-  assert.match(piSession(heldChat(path)!).systemPrompt, /beta-skill/);
+test("the per-chat switch no longer switches context files or skills: a body naming them writes nothing and keeps the runtime", async () => {
+  const path = makeSession();
+  const chat = await acquireChat(path);
+  const r = await applyLoadout(path, { offContext: [GLOBAL], offSkills: ["beta-skill"] });
+  assert.equal(r.ok, true);
+  assert.equal(loadoutEntries(path).length, 0);
+  assert.equal(heldChat(path), chat);
+  assert.match(piSession(chat).systemPrompt, /GLOBAL-RULES-MARKER/);
 });
 
 test("an unchanged set writes nothing and keeps the runtime", async () => {
@@ -126,7 +129,7 @@ test("an unchanged set writes nothing and keeps the runtime", async () => {
 test("refused once a message is on the branch: 409, nothing written, no switches on the card", async () => {
   const path = makeSession(true);
   await acquireChat(path);
-  const r = await applyLoadout(path, { offContext: [GLOBAL], offSkills: [] });
+  const r = await applyLoadout(path, { offMcp: ["some-server"] });
   assert.deepEqual(r, { ok: false, status: 409, error: "Context files, skills and MCP servers are fixed once a message is sent." });
   assert.equal(loadoutEntries(path).length, 0);
   assert.equal(ok(await getSessionSetup(path, { fresh: true })).toggleable, false);
@@ -134,7 +137,7 @@ test("refused once a message is on the branch: 409, nothing written, no switches
 
 test("a malformed body is a 400 and writes nothing", async () => {
   const path = makeSession();
-  for (const body of [{ offContext: ["relative.md"], offSkills: [] }, { offContext: [] }, null]) {
+  for (const body of [{ offMcp: "one" }, { onMcp: [1] }, null]) {
     const r = await applyLoadout(path, body);
     assert.equal(r.ok, false);
     assert.equal((r as { status: number }).status, 400);

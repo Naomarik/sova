@@ -1,0 +1,1 @@
+"Pi only: run the worker on its worktree's own agent dir (<worktree>/.agent: its settings and auth). Modes come only from Sova: under Sova it gets them as any worker does; outside Sova it has none. Valid only when cwd is inside an active worktree this session tracks that has a .agent."

@@ -4,7 +4,7 @@
 // Pure and DOM-free at import, so the rules run under `pnpm test`; components/ContextMenu.tsx
 // draws the panel and binds these to a place's element.
 
-import { createHoldGesture, HOLD_MOVE_PX, type HoldOptions, type HoldPoint } from "./hold-select";
+import { createHoldGesture, HOLD_MOVE_PX, HOLD_SUPPRESS_MS, type HoldOptions, type HoldPoint } from "./hold-select";
 
 // ---- where the panel goes ---------------------------------------------------------------------
 
@@ -180,6 +180,65 @@ export function createOpenOnRelease(env: ReleaseEnv) {
     },
     /** A menu is waiting for its release. */
     waiting: () => waiting !== null,
+  };
+}
+
+// ---- a press outside the open menu closes it --------------------------------------------------
+
+/** The little of a `pointerdown` the outside rule reads. */
+export interface OutsideDown {
+  /** The menu is open now. */
+  open: boolean;
+  /** The press started inside the menu's panel. */
+  inside: boolean;
+  /** The `pointerType`: "mouse", "touch", "pen" (anything else counts as a mouse). */
+  kind: string;
+  /** The `button`: 0 the primary (a finger's and a pen's contact too), 1 the middle, 2 the right. */
+  button: number;
+}
+
+/**
+ * How a press that starts outside an open menu closes it. `down` answers "close" the moment such a
+ * press starts, whatever it turns into; a primary press (a finger, a pen, a mouse's left button) also
+ * arms the rule, so a plain tap or click that follows is spent on the closing: `takeClick` answers
+ * true once for the click that arrives within HOLD_SUPPRESS_MS of its release, and `mouseDown` says
+ * to stop a finger's or pen's compatibility mousedown (it comes only for a tap), so focus and the
+ * keyboard don't move to what was under it. A mouse's own mousedown is left alone (a text-selection
+ * drag still starts). A press that becomes a scroll ends in `cancel`, which disarms: the scroll goes
+ * on and no click is waited for. A right or middle press closes without arming, so its own
+ * `contextmenu` or auxclick still reaches what it was on. Every new press disarms the last one's.
+ */
+export function createOutsidePress(opts: { now?(): number } = {}) {
+  const now = opts.now ?? Date.now;
+  /** The kind of the armed press, or null when none is armed. */
+  let armed: string | null = null;
+  let releasedAt: number | null = null;
+  const disarm = () => {
+    armed = null;
+    releasedAt = null;
+  };
+  return {
+    /** A press started anywhere on the page. */
+    down(p: OutsideDown): "close" | "none" {
+      disarm();
+      if (!p.open || p.inside) return "none";
+      if (p.button === 0) armed = p.kind;
+      return "close";
+    },
+    /** The press became a scroll or was taken away (`pointercancel`): nothing of it is spent. */
+    cancel: disarm,
+    /** The press let go. */
+    up() {
+      if (armed !== null) releasedAt = now();
+    },
+    /** A `mousedown` arrives: whether to prevent it (a finger's or pen's tap that closed the menu). */
+    mouseDown: (): boolean => armed === "touch" || armed === "pen",
+    /** A `click` arrives: whether it is the closing tap's, to be swallowed. Answers true once. */
+    takeClick(): boolean {
+      const take = armed !== null && releasedAt !== null && now() - releasedAt <= HOLD_SUPPRESS_MS;
+      if (take) disarm();
+      return take;
+    },
   };
 }
 

@@ -116,7 +116,7 @@ test("apply of this server's own adopted slot 0 from anything but the page is re
   for (const confirm of [true, false]) {
     const r = await engine.run("apply", { instance: main, ...(confirm ? { confirm } : {}) }, script);
     assert.equal(r.error?.code, "forbidden");
-    assert.equal(r.error?.message, "Only the user restarts Sova. Ask them to press Apply on the Branches tab of Sova's project page. Nothing was restarted.");
+    assert.equal(r.error?.message, "Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted.");
   }
   assert.deepEqual(scheduled, [], "nothing scheduled");
   const page = await engine.run("apply", { instance: main, confirm: true }, op);

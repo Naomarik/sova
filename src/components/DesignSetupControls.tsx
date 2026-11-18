@@ -1,80 +1,127 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, Show, untrack, type Accessor, type JSX } from "solid-js";
-import type { DesignLinkUse, DesignSetup } from "../../shared/design";
+import { createMemo, createSignal, createUniqueId, For, onMount, Show, type JSX } from "solid-js";
+import { designEffortOf, designHasEfforts, type DesignLinkUse, type DesignSetup } from "../../shared/design";
 import type { DesignStore } from "../lib/design-store";
 import { coordinatorChangeLine } from "../lib/design-brief";
 import { designSectionOf } from "../../shared/design-models";
-import { canShuffle, designSections, moveCoordinator, pairsLine, searchModels, setCombine, shufflePairs, tickedLine, toggleDirection, toggleGroup, toggleLayout, toggleModel, type DesignRunView } from "../lib/design-ui";
+import { canShuffle, designModelName, designSections, effortLabel, leftOutLine, modelsSummary, moveCoordinator, pairsLine, searchModels, setCombine, setEffort, shufflePairs, tickedLine, toggleDirection, toggleGroup, toggleLayout, toggleModel, type DesignRunView } from "../lib/design-ui";
+import { createRequestEditor, setupOpenState, type RequestEditor, type SetupDraft, type SetupOpenState } from "../lib/design-setup-view";
 import { ActionMenu } from "./ActionMenu";
 import { Icon } from "./ui";
-import { SearchField, Toggle } from "./form";
+import { SearchField, Select, TextArea, Toggle } from "./form";
 
-export interface SetupDraft {
-  draft: Accessor<DesignSetup>;
-  saving: Accessor<"" | "saving" | "error">;
-  change(next: DesignSetup): void;
-  /** Saves what's waiting now, for a press that needs the server to have it. */
-  flush(): Promise<void>;
-}
+export { createSetupDraft, type SetupDraft } from "../lib/design-setup-view";
 
-/** The Setup card's choices as you make them: saved shortly after each click, and never replaced by an update while unsaved. */
-export function createSetupDraft(run: Accessor<DesignRunView>, store: DesignStore): SetupDraft {
-  const [draft, setDraft] = createSignal<DesignSetup>(untrack(() => run().setup));
-  const [saving, setSaving] = createSignal<"" | "saving" | "error">("");
-  let dirty = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  createEffect(
-    on(
-      () => run().setup,
-      (s) => {
-        if (!dirty) setDraft(s);
-      },
-    ),
-  );
-  const save = () => {
-    timer = undefined;
-    const sent = draft();
-    setSaving("saving");
-    store.api
-      .setup(run().id, sent)
-      .then(() => {
-        if (sent === draft()) dirty = false;
-        setSaving("");
-      })
-      .catch(() => setSaving("error"));
-  };
-  onCleanup(() => {
-    if (timer) {
-      clearTimeout(timer);
-      save();
-    }
-  });
-  return {
-    draft,
-    saving,
-    change: (next) => {
-      setDraft(next);
-      dirty = true;
-      clearTimeout(timer);
-      timer = setTimeout(save, 300);
-    },
-    flush: async () => {
-      if (timer) {
-        clearTimeout(timer);
-        timer = undefined;
-        await store.api.setup(run().id, draft());
-      }
-      dirty = false;
-    },
-  };
-}
-
-/** The models and directions, on Setup and behind the brief's Change: the same controls in both places. */
-export function DesignSetupPickers(props: { setup: SetupDraft; /** The chat's coordinator now, provider/modelId, on a later run. */ currentCoordinator?: string }) {
+/** The models and directions, on Setup and behind the brief's Change: the same controls in both places. `openKey` keeps
+    which rows are open while the card is drawn again (a run and the place); `modelsOpen` is where Models starts. */
+export function DesignSetupPickers(props: {
+  setup: SetupDraft;
+  run: DesignRunView;
+  store: DesignStore;
+  openKey: string;
+  modelsOpen?: boolean;
+  /** The chat's coordinator now, provider/modelId, on a later run. */
+  currentCoordinator?: string;
+}) {
+  const open = setupOpenState(props.openKey, props.modelsOpen);
   return (
     <>
-      <DesignModelPicker setup={props.setup} currentCoordinator={props.currentCoordinator} />
-      <DesignDirectionPicker setup={props.setup} />
+      <DesignModelPicker setup={props.setup} run={props.run} store={props.store} open={open} currentCoordinator={props.currentCoordinator} />
+      <DesignDirectionPicker setup={props.setup} open={open} />
     </>
+  );
+}
+
+/** What do you want to design: the request's first 2 lines and Edit; the whole request opens in an editor of its own
+    (a window, a sheet on a phone), and the card changes only at Save. */
+export function DesignRequestField(props: { setup: SetupDraft; openKey: string }) {
+  const kept = setupOpenState(props.openKey);
+  const editor = createRequestEditor(
+    () => props.setup.draft().brief,
+    (brief) => props.setup.change({ ...props.setup.draft(), brief }),
+    kept.request,
+  );
+  const labelId = createUniqueId();
+  return (
+    <div class="design-request">
+      <h4 class="design-setup-label" id={labelId}>
+        What Do You Want to Design
+      </h4>
+      <div class="design-request-box">
+        <p class="design-request-text" classList={{ "text-muted": !props.setup.draft().brief.trim() }} onClick={() => editor.open()}>
+          {props.setup.draft().brief.trim() || "Say what to design."}
+        </p>
+        <button type="button" class="button button-sm design-request-edit" aria-describedby={labelId} onClick={() => editor.open()}>
+          Edit
+        </button>
+      </div>
+      <Show when={editor.text() !== null}>
+        <RequestEditorDialog editor={editor} kept={kept.request} />
+      </Show>
+    </div>
+  );
+}
+
+function RequestEditorDialog(props: { editor: RequestEditor; kept: SetupOpenState["request"] }) {
+  let dialog!: HTMLDialogElement;
+  let area!: HTMLTextAreaElement;
+  const titleId = createUniqueId();
+  onMount(() => {
+    dialog.showModal();
+    area.focus();
+    // Opened again where the card was drawn again: the cursor goes back where it was.
+    const caret = props.kept.caret ?? [area.value.length, area.value.length];
+    area.setSelectionRange(caret[0], caret[1]);
+  });
+  const keepCaret = () => (props.kept.caret = [area.selectionStart, area.selectionEnd]);
+  const close = (save: boolean) => {
+    props.kept.caret = null;
+    if (save) props.editor.save();
+    else props.editor.cancel();
+  };
+  return (
+    <dialog
+      ref={dialog}
+      class="design-request-dialog"
+      aria-labelledby={titleId}
+      onCancel={(e) => {
+        e.preventDefault();
+        close(false);
+      }}
+      onClick={(e) => e.target === dialog && close(false)}
+    >
+      <div class="sheet-grip" aria-hidden="true" />
+      <div class="modal-head">
+        <h2 class="modal-title" id={titleId}>
+          What Do You Want to Design
+        </h2>
+      </div>
+      <div class="design-request-dialog-body">
+        <TextArea
+          ref={area}
+          class="design-request-field"
+          inputClass="design-request-area"
+          label="What Do You Want to Design"
+          hideLabel
+          value={props.editor.text() ?? ""}
+          onInput={(text) => {
+            props.editor.setText(text);
+            keepCaret();
+          }}
+          onSelect={keepCaret}
+          onKeyUp={keepCaret}
+        />
+        <p class="text-caption text-muted design-request-hint">Paste a link to use a page's images or its feel.</p>
+      </div>
+      <div class="modal-foot">
+        <span class="modal-spacer" />
+        <button type="button" class="button button-ghost" onClick={() => close(false)}>
+          Cancel
+        </button>
+        <button type="button" class="button button-primary" onClick={() => close(true)}>
+          Save
+        </button>
+      </div>
+    </dialog>
   );
 }
 
@@ -114,16 +161,11 @@ function DirectionChip(props: { name: string; on: boolean; onChange(on: boolean)
  * Style and Layout: 2 closed rows, then 1 fixed line for how they combine. A row opens below itself, so
  * nothing above it moves; the combine line keeps its one line and its Shuffle's room whatever is ticked.
  */
-function DesignDirectionPicker(props: { setup: SetupDraft }) {
+function DesignDirectionPicker(props: { setup: SetupDraft; open: SetupOpenState }) {
   const draft = props.setup.draft;
   const change = props.setup.change;
-  const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set());
-  const toggleOpen = (id: string) =>
-    setOpened((was) => {
-      const next = new Set(was);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  const opened = props.open.opened;
+  const toggleOpen = props.open.toggle;
   const styleId = createUniqueId();
   const layoutId = createUniqueId();
   // Families in the order they first appear; a run from before families lists its styles as one group.
@@ -193,52 +235,67 @@ function DesignDirectionPicker(props: { setup: SetupDraft }) {
   );
 }
 
+/** The effort mark beside a model's effort menu: the composer ring's bolt, drawn inline. */
+const EffortBolt = () => (
+  <svg class="design-effort-bolt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true">
+    <path d="M13 3 5 14h6l-1 7 8-11h-6z" />
+  </svg>
+);
+
 /**
- * The models: a Creative Director dropdown and a search box on one row, then one closed section per provider.
- * Everything that opens grows the card below the click: the dropdown lays over the page in the top layer,
- * a section's models come in under its own row, and a search replaces only what is under the box.
+ * The models: one closed row naming the designers (with each one's effort) and the Creative Director. Opened, it holds
+ * the Creative Director menu and Find a model, then one closed row per provider the card lists; each opens its models
+ * below itself, one full-width row each (its switch, its name, its effort menu at the right edge). Under the providers,
+ * one quiet line names those left off and why, and the ones you hid, with Show.
  */
-function DesignModelPicker(props: { setup: SetupDraft; currentCoordinator?: string }) {
+function DesignModelPicker(props: { setup: SetupDraft; run: DesignRunView; store: DesignStore; open: SetupOpenState; currentCoordinator?: string }) {
   const draft = props.setup.draft;
   const change = props.setup.change;
+  const hidden = createMemo(() => props.run.hiddenSections ?? [], undefined, { equals: (a, b) => a.join("\n") === b.join("\n") });
   const byRef = createMemo(() => new Map(draft().models.map((m) => [m.ref, m])));
-  const sections = createMemo(() => designSections(draft().models));
+  const shown = createMemo(() => draft().models.filter((m) => !hidden().includes(designSectionOf(m.ref).id)));
+  const sections = createMemo(() => designSections(draft().models, hidden()));
   // Keyed by id: a tick redraws a section's words, never its row, so focus and the open state stay put.
   const sectionIds = createMemo(() => sections().map((x) => x.id), undefined, { equals: (a, b) => a.join("\n") === b.join("\n") });
   const section = (id: string) => sections().find((x) => x.id === id);
-  const [opened, setOpened] = createSignal<ReadonlySet<string>>(new Set());
+  const opened = props.open.opened;
   const [query, setQuery] = createSignal("");
-  const found = createMemo(() => searchModels(draft().models, query()));
-  const foundSections = createMemo(() => {
-    const out: { id: string; name: string; refs: string[] }[] = [];
-    for (const m of found()) {
-      const sec = designSectionOf(m.ref);
-      const held = out.find((x) => x.id === sec.id);
-      if (held) held.refs.push(m.ref);
-      else out.push({ ...sec, refs: [m.ref] });
-    }
-    return out;
-  });
+  const searching = () => !!query().trim();
+  // While searching: each provider with a match, open, holding only what matched.
+  const found = createMemo(() => new Set(searchModels(shown(), query()).map((m) => m.ref)));
+  const summary = createMemo(() => modelsSummary({ models: shown() }));
+  const quiet = createMemo(() => leftOutLine(props.run));
   const coordinator = () => draft().models.find((m) => m.coordinator);
-  const toggleOpen = (id: string) =>
-    setOpened((was) => {
-      const next = new Set(was);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
+  const [hideError, setHideError] = createSignal("");
+  const panelId = createUniqueId();
+  const providers = async (change: { hide?: string[]; show?: string[] }) => {
+    setHideError("");
+    try {
+      // Your clicks first, so the card the server changes is the one you see.
+      await props.setup.flush();
+      let answer: unknown;
+      for (const section of change.hide ?? []) answer = await props.store.api.hidden(props.run.id, section, true);
+      for (const section of change.show ?? []) answer = await props.store.api.hidden(props.run.id, section, false);
+      // The card as the server now holds it (a hidden provider's rows unticked, the Creative Director moved).
+      props.setup.adopt(answer);
+      props.store.refresh();
+    } catch (e) {
+      setHideError(e instanceof Error ? e.message : "That couldn't be changed. Try again.");
+    }
+  };
 
   const Row = (p: { model: string }) => {
     const m = () => byRef().get(p.model);
     return (
       <Show when={m()}>
         {(model) => (
-          <li class="design-model-cell">
+          <li class="design-model-row">
             <Toggle
               switch
               class="design-model-toggle"
               label={
                 <span class="design-model-name" title={model().ref}>
-                  {model().name}
+                  {designModelName(model())}
                   <Show when={!model().vision}>
                     <span class="text-muted design-model-note" title="This model can't read images. It works from a text outline of the page.">
                       {" "}
@@ -247,10 +304,27 @@ function DesignModelPicker(props: { setup: SetupDraft; currentCoordinator?: stri
                   </Show>
                 </span>
               }
-              ariaLabel={`${model().name}: design`}
+              ariaLabel={`${designModelName(model())}: design`}
               checked={model().design}
               onChange={(on) => change(toggleModel(draft(), p.model, on))}
             />
+            <Show when={designHasEfforts(model())}>
+              <span class="design-model-effort" hidden={!model().design} title="Effort: how long it thinks before each page. More costs more.">
+                <EffortBolt />
+                <Select
+                  class="design-effort-field"
+                  selectClass="design-effort-select"
+                  label={`Effort for ${designModelName(model())}`}
+                  hideLabel
+                  value={designEffortOf(model()) ?? ""}
+                  options={[
+                    ...(designEffortOf(model()) === null ? [{ value: "", label: "Its Own" }] : []),
+                    ...(model().efforts ?? []).map((level) => ({ value: level, label: effortLabel(level) })),
+                  ]}
+                  onChange={(level) => change(setEffort(draft(), p.model, level))}
+                />
+              </span>
+            </Show>
           </li>
         )}
       </Show>
@@ -260,118 +334,154 @@ function DesignModelPicker(props: { setup: SetupDraft; currentCoordinator?: stri
   return (
     <div class="stack-2 design-models">
       <h4 class="design-setup-label">Models</h4>
-      <div class="design-pick-bar">
-        <div class="design-pick-coord">
-          <span class="design-pick-coord-label" id="design-coordinator-label">
-            Creative Director
-          </span>
-          <ActionMenu
-            label={`Creative Director: ${coordinator()?.name ?? "none"}`}
-            title="1 model coordinates the team. It can coordinate without designing."
-            text={coordinator()?.name ?? "Pick a Model"}
-            icon={null}
-            align="start"
-            ghost={false}
-            class="design-pick-coord-button"
-            menuName="Creative Director"
-            panelClass="design-coord-menu"
-            returnFocus
-          >
-            {(api) => (
-              <For each={sectionIds()}>
-                {(id) => (
-                  <div role="group" aria-label={section(id)?.name}>
-                    <div class="popover-label" aria-hidden="true">
-                      {section(id)?.name}
-                    </div>
-                    <For each={section(id)?.refs ?? []}>
-                      {(ref) => {
-                        const m = () => byRef().get(ref)!;
-                        return (
-                          <api.Item
-                            label={m().name}
-                            aria={`${m().name}${m().design ? ", designing" : ""}`}
-                            checked={m().coordinator}
-                            end={m().design ? "Designing" : undefined}
-                            onRun={() => change(moveCoordinator(draft(), ref))}
-                          />
-                        );
-                      }}
-                    </For>
-                  </div>
-                )}
-              </For>
-            )}
-          </ActionMenu>
+      <div class="design-sections">
+        <div class="design-section-head design-models-head">
+          <button type="button" class="design-section-open design-models-open" aria-expanded={props.open.models() ? "true" : "false"} aria-controls={panelId} onClick={() => props.open.setModels(!props.open.models())}>
+            <span class="design-models-sum">
+              <span class="design-section-name design-models-names" title={summary().designers}>
+                {/* Each designer kept whole, its separator held to it, so a phone's second line starts with a name. */}
+                <For each={summary().designerList} fallback={summary().designers}>
+                  {(name, i) => (
+                    <>
+                      {i() > 0 ? "\u00a0· " : ""}
+                      <span class="design-models-one">{name}</span>
+                    </>
+                  )}
+                </For>
+              </span>
+              <span class="text-caption text-muted design-models-coord">{summary().coordinator}</span>
+            </span>
+            <span class="design-section-count design-models-count">{summary().count}</span>
+            <Icon name="chevron-down" small class="design-section-arrow" />
+          </button>
         </div>
-        <SearchField class="design-model-search" label="Find a model" placeholder="Find a model" spellcheck={false} value={query()} onInput={setQuery} />
-      </div>
-      {/* A later run's place for the Creative Director change, kept whether or not it says anything. */}
-      <Show when={props.currentCoordinator}>
-        <p class="text-caption text-muted design-setup-coord-note" role="status">
-          {coordinatorChangeLine(draft(), props.currentCoordinator!)}
-        </p>
-      </Show>
-      <Show
-        when={!query().trim()}
-        fallback={
-          <div class="design-model-found" aria-label="Models found">
-            <Show when={foundSections().length} fallback={<p class="text-caption text-muted design-model-none">No model matches “{query().trim()}”.</p>}>
-              <For each={foundSections()}>
-                {(sec) => (
-                  <div role="group" aria-label={sec.name}>
-                    <p class="design-section-label">{sec.name}</p>
-                    <ul class="design-model-grid">
-                      <For each={sec.refs}>{(ref) => <Row model={ref} />}</For>
-                    </ul>
-                  </div>
-                )}
-              </For>
+        <Show when={props.open.models()}>
+          <div class="design-models-panel" id={panelId}>
+            <div class="design-pick-bar">
+              <div class="design-pick-coord">
+                <span class="design-pick-coord-label">Creative Director</span>
+                <ActionMenu
+                  label={`Creative Director: ${coordinator() ? designModelName(coordinator()!) : "none"}`}
+                  title="1 model coordinates the team. It can coordinate without designing."
+                  text={coordinator() ? designModelName(coordinator()!) : "Pick a Model"}
+                  icon={null}
+                  align="start"
+                  ghost={false}
+                  class="design-pick-coord-button"
+                  menuName="Creative Director"
+                  panelClass="design-coord-menu"
+                  returnFocus
+                >
+                  {(api) => (
+                    <For each={sectionIds()}>
+                      {(id) => (
+                        <div role="group" aria-label={section(id)?.name}>
+                          <div class="popover-label" aria-hidden="true">
+                            {section(id)?.name}
+                          </div>
+                          <For each={section(id)?.refs ?? []}>
+                            {(ref) => {
+                              const m = () => byRef().get(ref)!;
+                              return (
+                                <api.Item
+                                  label={designModelName(m())}
+                                  aria={`${designModelName(m())}${m().design ? ", designing" : ""}`}
+                                  checked={m().coordinator}
+                                  end={m().design ? "Designing" : undefined}
+                                  onRun={() => change(moveCoordinator(draft(), ref))}
+                                />
+                              );
+                            }}
+                          </For>
+                        </div>
+                      )}
+                    </For>
+                  )}
+                </ActionMenu>
+              </div>
+              <SearchField class="design-model-search" label="Find a model" placeholder="Find a model" spellcheck={false} value={query()} onInput={setQuery} />
+            </div>
+            {/* A later run's place for the Creative Director change, kept whether or not it says anything. */}
+            <Show when={props.currentCoordinator}>
+              <p class="text-caption text-muted design-setup-coord-note" role="status">
+                {coordinatorChangeLine(draft(), props.currentCoordinator!)}
+              </p>
             </Show>
-          </div>
-        }
-      >
-        <div class="design-sections">
-          <For each={sectionIds()}>
-            {(id) => {
-              const sec = () => section(id);
-              const isOpen = () => opened().has(id);
-              const gridId = createUniqueId();
-              return (
-                <Show when={sec()}>
-                  {(s) => (
-                    <div class="design-section" role="group" aria-label={s().name}>
+            <For each={sectionIds()}>
+              {(id) => {
+                const sec = () => section(id);
+                const refs = () => (searching() ? (sec()?.refs ?? []).filter((r) => found().has(r)) : (sec()?.refs ?? []));
+                const isOpen = () => (searching() ? refs().length > 0 : opened().has(id));
+                const gridId = createUniqueId();
+                return (
+                  <Show when={sec() && (!searching() || refs().length > 0)}>
+                    <div class="design-section" role="group" aria-label={sec()!.name}>
                       <div class="design-section-head">
-                        <button type="button" class="design-section-open" aria-expanded={isOpen() ? "true" : "false"} aria-controls={gridId} onClick={() => toggleOpen(id)}>
-                          <span class="design-section-name">{s().name}</span>
-                          <span class="design-section-ticked" title={s().summary}>
-                            {s().summary}
+                        <button type="button" class="design-section-open" aria-expanded={isOpen() ? "true" : "false"} aria-controls={gridId} disabled={searching()} onClick={() => props.open.toggle(id)}>
+                          <span class="design-section-name">{sec()!.name}</span>
+                          <span class="design-section-ticked" title={sec()!.summary}>
+                            {sec()!.summary}
                           </span>
-                          <span class="design-section-count">{`${s().on} of ${s().count}`}</span>
+                          <span class="design-section-count">{`${sec()!.on} of ${sec()!.count}`}</span>
                           <Icon name="chevron-down" small class="design-section-arrow" />
                         </button>
                         <Toggle
                           class="design-toggle-inline design-section-all"
                           label="All"
-                          ariaLabel={`${s().name}: all designing`}
-                          checked={s().on === s().count}
-                          mixed={s().on > 0 && s().on < s().count}
+                          ariaLabel={`${sec()!.name}: all designing`}
+                          checked={sec()!.on === sec()!.count}
+                          mixed={sec()!.on > 0 && sec()!.on < sec()!.count}
                           onChange={(on) => change(toggleGroup(draft(), id, on))}
                         />
                       </div>
                       <Show when={isOpen()}>
-                        <ul class="design-model-grid" id={gridId} aria-label={`${s().name} models`}>
-                          <For each={s().refs}>{(ref) => <Row model={ref} />}</For>
-                        </ul>
+                        <div class="design-provider-panel" id={gridId}>
+                          <ul class="design-model-list" aria-label={`${sec()!.name} models`}>
+                            <For each={refs()}>{(ref) => <Row model={ref} />}</For>
+                          </ul>
+                          <Show when={!searching()}>
+                            <div class="design-provider-foot">
+                              <button
+                                type="button"
+                                class="button button-ghost button-sm"
+                                data-holds-view=""
+                                title={`Leave ${sec()!.name} off this card and later ones. Show brings it back.`}
+                                onClick={() => void providers({ hide: [id] })}
+                              >
+                                Hide {sec()!.name}
+                              </button>
+                            </div>
+                          </Show>
+                        </div>
                       </Show>
                     </div>
-                  )}
+                  </Show>
+                );
+              }}
+            </For>
+            <Show when={searching() && found().size === 0}>
+              <p class="text-caption text-muted design-models-quiet">No model matches “{query().trim()}”.</p>
+            </Show>
+            <Show when={quiet().text || quiet().hidden || hideError()}>
+              <p class="text-caption text-muted design-models-quiet">
+                <Show when={hideError()}>
+                  <span class="field-error" role="alert">
+                    {hideError()}{" "}
+                  </span>
                 </Show>
-              );
-            }}
-          </For>
-        </div>
-      </Show>
+                {quiet().text}
+                <Show when={quiet().hidden}>
+                  {quiet().text ? " " : ""}
+                  {quiet().hidden} ·{" "}
+                  <button type="button" class="design-models-show" data-holds-view="" onClick={() => void providers({ show: hidden() })}>
+                    Show
+                  </button>
+                </Show>
+              </p>
+            </Show>
+          </div>
+        </Show>
+      </div>
     </div>
   );
 }

@@ -381,6 +381,17 @@ describe("§app.owner-page/send: the Overseer sends the owner their page link", 
       assert.match(r.text, /^Not sent to Omar Hughes: This link can't be opened from outside yet\. Turn on public links in Settings → Public links\. You can send it yourself from the People tab\.$/);
       assert.equal(logOf().at(-1)!.code, "address-off");
       nothing();
+      // Off picked in the list turns sharing off (§mesh.public/sharing-off): the send refuses, making nothing.
+      const links = await import("./public-links");
+      links.patchPublicLinks({ route: "off" });
+      try {
+        const off = await sendOwner("Omar Hughes");
+        assert.match(off.text, /^Not sent to Omar Hughes: Sharing is off on this computer\. The user can turn it on in Settings → Public links\./);
+        assert.equal(logOf().at(-1)!.code, "sharing-off");
+        nothing();
+      } finally {
+        rmSync(links.publicLinksFile(), { force: true });
+      }
     } finally {
       process.env.SOVA_SHARE_PUBLIC_URL = PUBLIC;
     }
@@ -449,6 +460,53 @@ describe("§app.owner-page/send: the Overseer sends the owner their page link", 
     assert.equal((await send(dup)).outcome, "sent");
     assert.equal((await send(dup)).outcome, "sent");
     assert.equal(sender.sent(), n + 1, "delivered once");
+  });
+
+  test("on Cloudflare Free a client's link goes out with Free's note, also while its address is still coming online (q5)", async () => {
+    const { LINK_WARNINGS } = await import("../shared/public-links");
+    const links = await import("./public-links");
+    const { setShareTunnelForTest } = await import("./share/share-state");
+    const { UNVERIFIED } = await import("./share/tunnel/manager");
+    await setOwner(org.id, omar.id);
+    const quickEnv = process.env.SOVA_QUICK_TUNNEL;
+    delete process.env.SOVA_SHARE_PUBLIC_URL;
+    process.env.SOVA_QUICK_TUNNEL = "on";
+    links.recordTunnelConsent();
+    links.patchPublicLinks({ route: "quick" });
+    const tunnel = (reason?: string) => () => ({ key: { kind: "share" as const }, mode: "quick" as const, state: "up" as const, origin: "https://able-baker-charlie-delta.trycloudflare.com", epoch: 1, ...(reason ? { reason } : {}) });
+    try {
+      for (const [name, reason, code] of [
+        ["still coming online", `${UNVERIFIED}.`, "quick-verifying"],
+        ["verified", undefined, "quick"],
+      ] as const) {
+        setShareTunnelForTest(tunnel(reason));
+        const r = await send({ orgId: org.id, personId: omar.id, link: { kind: "owner" }, by: "operator-via-overseer", key: `k-free-${code}` });
+        assert.equal(r.outcome, "sent", `${name}: the link goes out`);
+        assert.equal(r.linkWarning, LINK_WARNINGS[code], `${name}: with its note`);
+      }
+      // A link handed out with the tunnel reading up still gets the on-demand check (§mesh.tunnel/lifetime):
+      // one the check finds dead is refused, never sent as it was.
+      let state = tunnel()();
+      let checks = 0;
+      setShareTunnelForTest(
+        () => state,
+        async () => {
+          checks++;
+          state = { ...state, state: "degraded" as never, reason: "The tunnel doesn't answer." };
+          return state;
+        },
+      );
+      const dead = await send({ orgId: org.id, personId: omar.id, link: { kind: "owner" }, by: "operator-via-overseer", key: "k-free-dead" });
+      assert.equal(checks, 1, "the send asked the tunnel, once");
+      assert.deepEqual([dead.outcome, dead.code], ["refused", "address-down"]);
+    } finally {
+      setShareTunnelForTest(null);
+      rmSync(links.publicLinksFile(), { force: true });
+      rmSync(links.tunnelConsentFile(), { force: true });
+      process.env.SOVA_SHARE_PUBLIC_URL = PUBLIC;
+      if (quickEnv === undefined) delete process.env.SOVA_QUICK_TUNNEL;
+      else process.env.SOVA_QUICK_TUNNEL = quickEnv;
+    }
   });
 
   test("runs the user didn't start, and approvals for later or standing rules, never send", async () => {

@@ -132,14 +132,14 @@ describe("start_version (§app.project-assistant/tools)", () => {
     assert.ok(!/v_[a-z2-9]{8}/.test(textOf(r)), "no handle");
   });
 
-  test("Off: a `try` request in Needs you (the project's Branches tab), nothing starts; a second ask files none", async () => {
+  test("Off: a `try` request in Needs you (the project's Running Copies tab), nothing starts; a second ask files none", async () => {
     await po.patchProjectOverseer(project.id, { powers: { assistant: { copiesRun: false } } });
     const acts = runActs().length;
     const r = await ask("Start it please", { name: "start_version", arguments: { version: "Current version" } }, "I've asked the team.");
     assert.equal(textOf(r), "Create, start and update running copies is off for the Project Assistant. Do not retry it. Tell the owner it went to the team: it reaches the operator as a request.");
     assert.deepEqual(tryRequests().map((x) => [x.title, x.status]), [["Current version", "with-team"]]);
     const item = ownerAttention().find((i) => i.id === `owner-request:${tryRequests()[0]!.id}`)!;
-    assert.deepEqual([item.kind, item.tier, item.href, item.detail], ["owner-version-request", "act", `#/projects/${project.id}/branches`, "Alperen Kaya asks to try Archery website: Current version"]);
+    assert.deepEqual([item.kind, item.tier, item.href, item.detail], ["owner-version-request", "act", `#/projects/${project.id}/running-copies`, "Alperen Kaya asks to try Archery website: Current version"]);
     assert.equal(serving(), false, "nothing started");
     assert.equal(runActs().length, acts, "no act set off");
     await ask("Please, start it", { name: "start_version", arguments: { version: "Current version" } }, "It's with the team.");

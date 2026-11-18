@@ -3,69 +3,49 @@
    (#/projects, §app.projects/list). Token values only; builds on orgs.css. */
 
 
-/* ---- The summary: the overseer line, what waits, and the count chips. */
-.project-summary { display: flex; flex-direction: column; gap: var(--space-3); }
-.project-summary-overseer { display: flex; flex-direction: column; gap: var(--space-2); }
-.project-summary-overseer > .orgs-line { margin: 0; }
-.project-summary-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
-.project-summary-status { flex: 1 1 22rem; min-width: 0; margin: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
-.project-summary-actions { flex: none; flex-wrap: wrap; }
-.project-level {
-  display: inline-block;
-  padding: 0 var(--space-2);
-  border-radius: var(--r-full);
-  background: var(--color-sunken);
-  border: var(--stroke-thin) solid var(--color-border);
-  color: var(--color-ink);
-  font-family: var(--font-mono);
-  font-size: var(--fs-mono);
-  white-space: nowrap;
+/* ---- The head's overseer part: one state word, then Open Overseer (with its unread count) before the ⋯ menu. */
+.project-head-actions { flex: none; flex-wrap: nowrap; justify-content: flex-end; gap: var(--space-2); }
+.project-head-overseer { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.project-state-word { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-2); white-space: nowrap; }
+.project-open-overseer .chip-count { margin-inline-start: var(--space-1); }
+/* A head under 640px has no room for Open Overseer beside the title: the overseer part takes a second row, its
+   button the row's width at full touch height, and ⋯ and Refresh stay on the first. The head is the container, so
+   it can't restyle itself by its own width: it may always wrap, and only this step gives it something to wrap. */
+.session-head.project-page { flex-wrap: wrap; row-gap: var(--space-2); }
+@container session-head (max-width: 639px) {
+  .project-head-actions { display: contents; }
+  .project-head-overseer { order: 1; flex: 1 1 100%; }
+  .project-open-overseer { flex: 1 1 auto; min-height: var(--control-md); font-size: var(--fs-body); }
 }
-/* Each chip a link to its tab and section: a pill at the button's small height, a 44px target. */
-.project-counts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.project-count {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: var(--control-sm);
-  padding: 0 var(--space-3);
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-full);
-  background: var(--color-surface);
-  color: var(--color-ink-2);
-  font-size: var(--fs-caption);
-  line-height: var(--lh-caption);
-  text-decoration: none;
-  white-space: nowrap;
-}
-.project-count::after { content: ""; position: absolute; inset: calc((var(--tap-min) - 100%) / -2) 0; }
-.project-count:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
-.project-count:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.project-count-warn { color: var(--status-warn); background: var(--status-warn-bg); }
-.project-count .chip-dot { width: 6px; height: 6px; }
 
 /* ---- Tabs and their panel. */
 .project-tabpanel { display: flex; flex-direction: column; gap: var(--space-5); }
-/* Overview: two columns from 1000px of pane, one below; its cards fill their column. */
-.project-overview { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); align-items: start; }
-@container insights (min-width: 1000px) {
-  .project-overview { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+/* Backlog: To-do and Ideas side by side from 768px of pane, one below; Activity under them. Cards fill the width. */
+.project-backlog { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+@container insights (min-width: 768px) {
+  .project-backlog:not(.project-backlog-one) { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
-.project-col { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
-.project-overview .card.orgs-section { max-width: none; }
+.project-tabpanel .card.orgs-section { max-width: none; }
+/* A tab's own head (Backlog, Deploy; Sessions and Running Copies draw the same): its name at heading-m and one
+   line under it, an action at its end. It sits 16px above the tab's first card, closer than the cards are apart. */
+.project-tab-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: calc(-1 * var(--space-2)); }
+.project-tab-head-text { flex: 1 1 18rem; min-width: 0; }
+.project-tab-h2 { margin: 0; font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); letter-spacing: var(--ls-heading); color: var(--color-ink); }
+.project-tab-lede { margin: 2px 0 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+/* A tab's marks: a count in the label (Backlog's open to-dos) is `.org-tab-count`; a deploy running now is the
+   live dot; one that waits on the operator is the warn dot (`.org-tab-dot`). The words are in the tab's hidden text. */
+.project-tabs > .tab > .live-dot { width: 7px; height: 7px; }
 .project-anchor, .project-tabpanel .orgs-section { scroll-margin-top: var(--space-4); }
 .project-empty-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); max-width: 880px; }
 .project-empty-line > .orgs-empty { margin: 0; }
 .project-activity .orgs-change { min-height: var(--tap-min); }
 
 .project-muted { color: var(--color-ink-muted); }
-/* The Software card (§app.project-runtime/software-card). */
+/* Names and failures in Running Copies' setup line, a run's review and the deploy recipe. */
 .project-software-name { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .project-software-failed { color: var(--status-error); }
-.project-software-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-/* Open Branches: a link with a 44px target, its chevron saying it goes somewhere. */
-.project-software-open { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--tap-min); font-weight: var(--fw-medium); }.project-software-feed { border-top: 1px solid var(--color-border); padding-top: var(--space-2); }
+/* Open Session, Read Report: a link with a 44px target, its chevron saying it goes somewhere. */
+.project-software-open { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--tap-min); font-weight: var(--fw-medium); }
 .project-spec-line { font-size: var(--fs-caption); }
 .project-frozen { max-width: 24rem; }
 
@@ -382,6 +362,60 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .card.orgs-section.services-tab,
 .card.orgs-section.running-copies,
 .card.orgs-section.projects-list-card { max-width: none; }
+/* Running Copies: a heading and its one line, the summary card (limit, setup line), the copies in two groups,
+   Previews, the shared services, Recent. */
+.services-tab { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+.services-tab > .card { margin: 0; max-width: none; }
+.services-head { display: flex; flex-direction: column; gap: 2px; }
+.services-h2 { margin: 0; font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-semibold); letter-spacing: var(--ls-heading); }
+.services-lede { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.services-summary { padding: var(--space-4); }
+.services-summary .services-limit { margin-bottom: 0; }
+/* The setup line: the standing's chip, when it was checked, then its action, under a divider. */
+.services-setup { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-3); padding-top: var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
+.services-setup > p, .services-setup .project-run-strip { margin: 0; }
+.services-setup-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+/* "checked 2h ago" stays on one line: where the row is too narrow, the action wraps under it instead. */
+.services-setup-when { flex: 1 0 auto; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
+.services-setup-line > .button { min-height: var(--tap-min); }
+.services-orphan { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+/* The groups: a side column (name, count, Free Up Slots) beside the group's list; stacked at folded width. */
+.services-groups { display: flex; flex-direction: column; }
+.services-group { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: var(--space-5); padding: var(--space-5) 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.services-group:first-child { border-top: 0; padding-top: 0; }
+.services-gside { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding-top: var(--space-3); min-width: 0; }
+.services-gname { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); }
+.services-gcount { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.services-free { margin-top: var(--space-3); width: 100%; white-space: normal; text-align: center; min-height: var(--tap-min); }
+.services-free-why { margin-top: var(--space-2); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.card.services-glist { margin: 0; max-width: none; padding: 0 var(--space-4); align-self: start; }
+.services-glist > .services-list > .services-row + .services-row { border-top: var(--stroke-thin) solid var(--color-border); }
+.services-glist > .services-main-start { margin: 0; padding: var(--space-3) 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.services-glist > .services-main-start:first-child { border-top: 0; }
+/* The list's last line: the sentence quiet, Start Main at the row's end (under it where the row is narrow). */
+.services-glist > .services-main-start > .orgs-line { flex: 1 1 14rem; color: var(--color-ink-muted); }
+.services-gempty { margin: 0; padding: var(--space-5) 0; align-items: flex-start; text-align: left; gap: 2px; }
+.services-why { color: var(--color-ink-2); }
+@container services (max-width: 767px) {
+  .services-group { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); padding: var(--space-4) 0; }
+  .services-gside { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); padding-top: 0; }
+  .services-free { width: auto; margin-top: var(--space-2); }
+  .services-free-why { flex-basis: 100%; margin-top: 0; }
+  .card.services-glist { padding: 0 var(--space-3); }
+}
+/* Recent: the registry's feed, closed until opened. */
+.services-recent { padding: 0; }
+.services-recent-summary { display: flex; align-items: center; gap: var(--space-2); min-height: var(--tap-min); padding: var(--space-2) var(--space-4); cursor: pointer; list-style: none; border-radius: var(--r-lg); }
+.services-recent-summary::-webkit-details-marker { display: none; }
+.services-recent-summary > .icon { margin-left: auto; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.services-recent[open] > .services-recent-summary > .icon { transform: rotate(180deg); }
+.services-recent-title { font-size: var(--fs-heading-s); font-weight: var(--fw-semibold); }
+.services-recent-list { margin: 0; padding: 0 var(--space-4) var(--space-2); list-style: none; border-top: var(--stroke-thin) solid var(--color-border); }
+.services-recent-row { display: flex; align-items: baseline; gap: var(--space-3); padding: var(--space-2) 0; }
+.services-recent-row + .services-recent-row { border-top: var(--stroke-thin) solid var(--color-border); }
+.services-recent-line { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.services-recent-row > time { white-space: nowrap; }
+.services-free-list { margin: 0; padding-left: var(--space-5); font-size: var(--fs-caption); line-height: var(--lh-caption); display: flex; flex-direction: column; gap: var(--space-1); }
 .services-list, .running-copies-list { margin: 0; padding: 0; list-style: none; }
 .services-row { align-items: flex-start; flex-wrap: wrap; gap: var(--space-2) var(--space-4); padding: var(--space-3) 0; }
 .services-row-main { min-width: 14rem; display: flex; flex-direction: column; gap: var(--space-2); }
@@ -420,7 +454,6 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-actions-note { margin: 0; max-width: 28rem; text-align: right; white-space: normal; }
 .services-main-start { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--space-3); }
 .services-main-start .services-said { flex-basis: 100%; }
-.services-shared { margin-top: var(--space-5); }
 /* Running branches: a project's name, then its copies as the tab draws them, tighter. */
 .running-copies-project { padding: var(--space-3) 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
 .running-copies-project:first-child { padding-top: 0; }
@@ -479,11 +512,6 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 /* The proposal is its own box, so what the run proposes never reads as main's standing above it. */
 .project-run-review { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3); border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
 .project-run-review > p { margin: 0; }
-.project-software-actions > .button { min-height: var(--tap-min); }
-/* The feed is history, about both the definition and deploys: a labelled block under the actions. */
-.project-software-feed-block { display: flex; flex-direction: column; gap: var(--space-1); border-top: var(--stroke-thin) solid var(--color-border); padding-top: var(--space-3); }
-.project-software-feed-block > .text-eyebrow { margin: 0; }
-.project-software-feed-block > .project-software-feed { border-top: 0; padding-top: 0; }
 
 /* The Deploy card (§app.project-runtime/deploy-panel), and the deploy recipe the Software card shows.
    Both cards are a container, so a card at folded width stacks whatever the window is. */
@@ -509,13 +537,11 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .deploy-targets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .deploy-target { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) 0; }
 .deploy-target:first-child { padding-top: 0; }
+.deploy-target:last-child { padding-bottom: 0; }
+.deploy-setup-hash { white-space: nowrap; }
 .deploy-target + .deploy-target { border-top: var(--stroke-thin) solid var(--color-border); padding-top: var(--space-3); }
-/* Name, then the standing and the last deploy as two rows of one grid: the chips share a column, the words the next. */
-.deploy-target-facts { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: var(--space-2) var(--space-3); }
-.deploy-fact { display: contents; }
-.deploy-target-facts > .project-software-name { grid-column: 1; }
-.deploy-fact > .chip { grid-column: 2; justify-self: start; }
-.deploy-fact > :not(.chip) { grid-column: 3; min-width: 0; }
+/* The target's about under its name and standing. */
+.deploy-about { display: block; margin-top: 2px; color: var(--color-ink-2); }
 .deploy-last-line { color: var(--color-ink-2); overflow-wrap: anywhere; }
 .deploy-when { font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .deploy-target-body { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
@@ -565,6 +591,38 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
   .deploy-actions > .deploy-rollback { flex-basis: 100%; margin: var(--space-2) 0 0; }
   .deploy-step { padding: var(--space-2); }
   .deploy-check-list { padding-left: var(--space-3); }
+}
+
+/* The Deploy tab: a deploy under way (its line, then its steps), the target's facts, and History. */
+.deploy-progress { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border: var(--stroke-icon) solid var(--color-accent); border-radius: var(--r-lg); background: var(--color-surface); container: project-card / inline-size; }
+.deploy-progress-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* One column per step: a rule over its number and name. Done is ink-2, the one running now is the accent and
+   medium weight (and aria-current), one still to come is the border; a failed one is the error hue and says so. */
+.deploy-stepper { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.deploy-stepper-step { padding-top: var(--space-2); border-top: 3px solid var(--color-border); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.deploy-stepper-step[data-state="done"] { border-top-color: var(--color-ink-2); color: var(--color-ink-2); }
+.deploy-stepper-step[data-state="now"] { border-top-color: var(--color-accent); color: var(--color-ink); font-weight: var(--fw-medium); }
+.deploy-stepper-step[data-state="failed"] { border-top-color: var(--status-error); color: var(--status-error); font-weight: var(--fw-medium); }
+/* The target's facts: a label column, then the value. */
+.deploy-facts { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; }
+.deploy-facts > dt { padding-top: 2px; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.deploy-facts > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+/* History: the commit, the target, what came of it, and when at the row's end. */
+.deploy-history { margin: 0; padding: 0; list-style: none; }
+.deploy-history-row { display: grid; grid-template-columns: 96px 128px minmax(0, 1fr) auto; align-items: center; gap: var(--space-1) var(--space-3); min-height: var(--row-height); padding: var(--space-2) 0; border-top: var(--stroke-thin) solid var(--color-border); }
+.deploy-history-row:first-child { border-top: 0; }
+.deploy-history-commit { font-family: var(--font-mono); font-size: var(--fs-mono); font-weight: var(--fw-medium); color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deploy-history-target { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deploy-history-result { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); min-width: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+.deploy-history-when { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; text-align: end; }
+@container project-card (max-width: 479px) {
+  .deploy-stepper { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3) var(--space-2); }
+  .deploy-facts { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .deploy-facts > dd { margin-bottom: var(--space-2); }
+  .deploy-facts > dd:last-child { margin-bottom: 0; }
+  .deploy-history-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .deploy-history-result { grid-column: 1 / -1; grid-row: 2; }
+  .deploy-history-when { grid-column: 3; grid-row: 1; }
 }
 
 /* Files people sent the project (§app.organizations/files-card): a row each, name over its meta,
@@ -633,6 +691,9 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-limit { display: flex; flex-direction: column; gap: var(--space-2); margin-bottom: var(--space-3); }
 .services-limit-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); margin: 0; }
 .services-limit-source { color: var(--color-ink-muted); }
+.services-limit-words { flex: 1; min-width: 15rem; }
+.services-limit-count { font-weight: var(--fw-semibold); }
+.services-limit-meter { margin: var(--space-1) 0; }
 .services-limit-form { display: flex; flex-direction: column; gap: var(--space-2); max-width: 28rem; }
 .services-limit-input { max-width: 6rem; }
 .services-limit-over { margin: 0; }
@@ -672,7 +733,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 /* The page's title takes focus on opening a project (for screen readers); it is no keyboard stop, so it shows no ring. */
 .project-page .session-head-title[tabindex="-1"]:focus { outline: none; }
 
-/* The Settings tab's Skills card: one row per skill, its state chip, then Approve and Disallow. */
+/* The Settings tab's Context Files and Skills cards: one row per item, its figure, then its switch (approval-switches.css). */
 .project-skills-rows { margin: var(--space-2) 0 0; padding: 0; }
 .project-skill-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
 .project-skill-row .list-main { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

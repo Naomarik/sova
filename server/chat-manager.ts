@@ -3071,7 +3071,7 @@ class ChatSession {
    * chat's mode. Sova's engine is called directly, never through prompt(), so no command text can
    * reach the model; it appends the marker entry this session later restores from. Resolves once
    * the switch is in the engine's memory; the delegate routing probe it then starts isn't awaited.
-   * Returns the plan that ran ("command" = taken, "skip" = a foreign writer got it, "unsupported" =
+   * Returns the plan that ran ("command" = the engine took it, "skip" = a foreign writer got it, "unsupported" =
    * no modes in this chat: no engine handle), so callers can decide what else to do.
    */
   async applyMode(state: ModeState, projectModes?: readonly string[]): Promise<"skip" | "unsupported" | "command"> {
@@ -3085,7 +3085,7 @@ class ChatSession {
     }
     const plan = modeApplyPlan({
       foreign: live || this.hasForeignWrites(),
-      hasModeCommand: this.hasModeOwner(),
+      hasModeOwner: this.hasModeOwner(),
       pristine: this.isPristine(),
       streaming,
     });
@@ -5268,6 +5268,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
         return {
           ...b,
           promptNotes: [...(b.promptNotes ?? []), cwdFallbackNote(fallback)],
+          // Its context files are its stored folder's to decide, never the home folder's (server/context-scope.ts).
+          contextScopeCwd: fallback.original,
           ...(worker ? {} : { flags: () => ({ ...b.flags(), cwdNotWritable: true }) }),
         };
       }

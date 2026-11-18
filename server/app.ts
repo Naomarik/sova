@@ -51,6 +51,7 @@ import { ensureTourToolRuntime, setTourNeedsYou, setTourResumed } from "./tours/
 import { setTourSignInWaits, tourResumedNotifier, tourSignInNotifier } from "./tours/sign-in-notice";
 import { registerSessionForkRoutes } from "./session-fork-routes";
 import { mountPreviewLinks } from "./preview-links-routes";
+import { sharingOffResponse } from "./share/sharing-off";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { mountOutreachRelay } from "./outreach/relay";
@@ -81,7 +82,7 @@ import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { fixedNameRefusal } from "../shared/fixed-names";
 import { rowsOf } from "./transcript";
-import { parsePiBranch, readBranch, unknownEntries } from "./harness/pi/reader";
+import { parsePiBranchYielding, readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
 import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
 import { modelCheck, modelCheckStatus } from "./harness/pi/model-sync";
@@ -97,7 +98,7 @@ import { realRetireDeps, removeFinished, restoreRetired } from "./worktree-retir
 import { retirementViewOf } from "./worktree-retire-view";
 import { cleanupAnswer, pendingWhileOff, removeGate, summaryWhileOff, viewWhileOff } from "./cleanup-switch";
 import type { WorktreeRestoreRequest } from "../shared/protocol";
-import { applyLoadout, getSessionSetup, readSetupFile, waitingForSession } from "./session-setup";
+import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
 import { notPageNorProven } from "./mesh/click-proof";
 import { OrgError } from "./org-error";
 import { getContextView } from "./context-tab";
@@ -114,6 +115,7 @@ import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { registerProfileSwitchRoutes } from "./profile-switch";
 import { makeChatDefault, registerProfileEditorRoutes } from "./profile-editor-routes";
 import { startOnDefault } from "./default-start";
+import { setupChatRoute } from "./share/setup-chat";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
 import { CREATE_NO_DEFAULT, createNotNamed, singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
@@ -194,6 +196,7 @@ import { localRequest } from "./mesh/proxy";
 import { notPage, pageOnlyRefusal, personWatching, yourClickBody, yourClickRefusal } from "./page-only";
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
 import { registerSovaSettingsRoutes } from "./sova-settings-routes";
+import { registerAgentCpuRoutes } from "./agent-cpu";
 import { setSovaSettingsDeps } from "./sova-settings";
 import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
@@ -318,6 +321,9 @@ export function buildApp(deps: AppDeps) {
   });
 
   app.onError((err, c) => {
+    // Sharing is off (§mesh.public/sharing-off): a link store refused before writing anything.
+    const off = sharingOffResponse(err, c);
+    if (off) return off;
     console.error("[api]", err);
     return c.json({ error: err.message }, 500);
   });
@@ -517,12 +523,25 @@ export function buildApp(deps: AppDeps) {
     return createWebSession(c, dir);
   });
 
+  // Set Up With a Chat (§mesh.tunnel/setup-chat): a new chat seeded with a public-links option's setup brief.
+  app.post("/api/public-links/setup-chat", (c) =>
+    setupChatRoute(c, {
+      create: (ctx, cwd) => createWebSessionFile(ctx, cwd),
+      setModel: (path, model) => openingTaken(path, { model }),
+      applyDefault: (path, cwd) => startOnDefault(path, cwd, false),
+      prompt: (path, text) => promptSession(path, text),
+      summary: (path) => getSessionSummary(path),
+    }),
+  );
+
   // Organizations, rosters and baton sessions (server/org-routes.ts; §app/organizations, §app/baton).
   registerOrgRoutes(app);
   registerWrapupRoutes(app);
   registerProjectOverseerRoutes(app);
   registerProjectSettingsRoutes(app);
   registerSovaSettingsRoutes(app);
+  // Settings → General's Agents' CPU: the optional ceiling on sova.slice (server/agent-cpu.ts).
+  registerAgentCpuRoutes(app);
   setCreateSettingsRun(runCreateSettings);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
@@ -672,7 +691,7 @@ export function buildApp(deps: AppDeps) {
     if (typeof body.text !== "string") return c.json({ error: "text must be a string" }, 400);
     if (body.members !== undefined && (!Array.isArray(body.members) || body.members.some((m) => typeof m !== "string")))
       return c.json({ error: "members must be an array of session ids" }, 400);
-    const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined, undefined, personWatching(c));
+    const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined);
     if (r.ok) return c.json(r.result);
     return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
   });
@@ -965,7 +984,7 @@ export function buildApp(deps: AppDeps) {
     summary: (path) => getSessionSummary(path),
     sessionFiles: listSessionFiles,
     readBranch,
-    parseBranch: (text) => parsePiBranch(text).branch,
+    parseBranch: async (text) => (await parsePiBranchYielding(text)).branch,
     // A conflict's scratch copy the merge thread made itself: the queue's own, never listed (merge-queue/owners.ts).
     queueMade: async () => (await import("./merge-queue/wire")).worktreeQueueMadeNow(),
     targetOf: async (main) => (await import("./merge-queue/wire")).landingTargetOf(main),
@@ -2086,12 +2105,6 @@ export function buildApp(deps: AppDeps) {
       const got = await chatFor(path);
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
-    }
-    // A watched page's first message (this computer's or another's) into a chat that asks first waits until nothing is left to decide; a program's never
-    // does (§chat.context-approval/held-send).
-    if (personWatching(c)) {
-      const waiting = await waitingForSession(path).catch(() => 0);
-      if (waiting > 0) return c.json({ error: `Approve or disallow ${waiting === 1 ? "1 context file or skill" : `${waiting} context files and skills`} to send.`, code: "decide-first", waiting }, 409);
     }
     const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c));
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);

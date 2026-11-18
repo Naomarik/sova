@@ -1617,18 +1617,6 @@ function visualMarkdown(visual: AlignVisual): string[] {
 	return [`${fence}vis ${visual.kind}`, visual.source, fence];
 }
 
-/** The TUI widget: "◇ align · al_3 2/7 open · al_2 implementing · alt+a view". */
-export function widgetText(docs: readonly AlignDocument[], keyHint: string): string {
-	const parts = ["◇ align"];
-	for (const doc of openDocsOf(docs)) {
-		const open = openQuestionsOf(doc).length;
-		const status = alignStatus(doc);
-		parts.push(status === "aligning" && liveQuestionsOf(doc).length > 0 ? `${doc.id} ${open}/${liveQuestionsOf(doc).length} open` : `${doc.id} ${alignStatusWord(status)}`);
-	}
-	if (keyHint.trim() !== "") parts.push(`${keyHint.trim()} view`);
-	return parts.join(" · ");
-}
-
 // ── The settle nudge's heuristic ─────────────────────────────────────────────
 
 const FENCED = /```[\s\S]*?```/g;
@@ -1740,8 +1728,6 @@ export const looksLikeUncapturedPlan = (reply: string, context: PlanContext = {}
 
 // ── Legacy: an older session's align-doc entries (read-only) ────────────────
 
-export type LegacyAlignStatus = "aligning" | "questions-open" | "ready" | "confirmed" | "implementing";
-
 export interface LegacyAlignQuestion {
 	n: number;
 	text: string;
@@ -1763,23 +1749,6 @@ export interface LegacyAlignDoc {
 export interface LegacyAlignEntryData {
 	version: 1;
 	doc: LegacyAlignDoc | null;
-}
-
-export function legacyStatus(doc: LegacyAlignDoc): LegacyAlignStatus {
-	if (doc.explicitStatus === "implementing") return "implementing";
-	if (doc.explicitStatus === "confirmed") return "confirmed";
-	const open = doc.questions.filter((question) => !question.checked).length;
-	if (open > 0) return "questions-open";
-	if (doc.questions.length > 0) return "ready";
-	return "aligning";
-}
-
-/** "v3 · questions open · 2/5 settled". */
-export function legacyLine(doc: LegacyAlignDoc): string {
-	const total = doc.questions.length;
-	const settled = doc.questions.filter((question) => question.checked).length;
-	const status = legacyStatus(doc).replace("-", " ");
-	return `v${doc.revision} · ${status}${total > 0 ? ` · ${settled}/${total} settled` : ""}`;
 }
 
 function normalizeLegacyQuestion(value: unknown): LegacyAlignQuestion | undefined {
@@ -1814,19 +1783,4 @@ export function normalizeAlignEntry(data: unknown): LegacyAlignEntryData | undef
 	} catch {
 		return undefined;
 	}
-}
-
-// ── Viewer scroll math ───────────────────────────────────────────────────────
-
-/** First visible line index, clamped so the window stays within `total` lines. */
-export function clampScroll(scroll: number, total: number, height: number): number {
-	const max = Math.max(0, Math.floor(total) - Math.max(1, Math.floor(height)));
-	if (!Number.isFinite(scroll)) return 0;
-	return Math.max(0, Math.min(Math.floor(scroll), Number.isFinite(max) ? max : 0));
-}
-
-export function viewport<T>(lines: T[], scroll: number, height: number): T[] {
-	const rows = Math.max(0, Number.isFinite(height) ? Math.floor(height) : 0);
-	const start = clampScroll(scroll, lines.length, rows);
-	return lines.slice(start, start + rows);
 }

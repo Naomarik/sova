@@ -3,6 +3,7 @@ import { deliverStranded, handOverWhenGoing } from "./lib/chat-outbox";
 import { chatCourier } from "./lib/chat-courier";
 import { loadAlignment } from "./lib/alignment-draft";
 import { batch, createEffect, createMemo, createResource, createSignal, lazy, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
+import { sharingOffHere } from "./lib/public-links";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/protocol";
@@ -35,10 +36,10 @@ import { firstBaseline, helloNews, weighHello, HELLO_POLL_MS, meshReadInit, path
 import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { HostUpdatePage } from "./components/HostStateNotices";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerCantOpen, peerInfo, sameMeshInfo, sessionRouteFromHash, updateNeededFor, setMeshState } from "./lib/mesh";
-import { bindKey, paletteKeyAction } from "./commands/keys";
+import { bindKey } from "./commands/keys";
 import { composerOf } from "./commands/composers";
-import { DETAILS_BESIDE_QUERY, keyPlatform, OVERLAY_CANDIDATES, startTyping } from "./lib/type-anywhere";
-import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
+import { DETAILS_BESIDE_QUERY, OVERLAY_CANDIDATES, startTyping } from "./lib/type-anywhere";
+import { closePalette, paletteRequest } from "./commands/palette-open";
 import { isOverseerHash, OVERSEER_HASH, overseerHistoryId, overseerRedirect } from "./lib/overseer";
 import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
 import { ListRows, ROW_STAMP_SLACK_MS } from "./lib/list-rows";
@@ -50,7 +51,7 @@ import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
 import { extHref, extRouteFromHash } from "./lib/ext-route";
 import { movedOrgHash, orgsRouteFromHash } from "./lib/orgs-route";
-import { canonicalQueueHash, projectsRouteFromHash } from "./lib/projects-route";
+import { canonicalProjectHash, projectsRouteFromHash } from "./lib/projects-route";
 import { projectSummaryKey, recall } from "./lib/page-cache";
 import type { ProjectSummary } from "../shared/projects";
 import { onListRefresh } from "./lib/list-refresh";
@@ -77,7 +78,7 @@ import { sessionWorking } from "./lib/workers";
 import { answeredPeers, workPeers } from "./lib/work-now";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
-import { SettingsDialog, TABS as SETTINGS_TAB_LABELS } from "./components/SettingsDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
 import { ExplanationsCard, ExplanationsView } from "./components/ExplanationsView";
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
@@ -163,7 +164,7 @@ const EXTENSIONS_POLL_MS = 15_000;
 /** While a peer is configured, its status and its sessions are re-read this often. Never with none. */
 const MESH_POLL_MS = 15_000;
 const folded = () => window.matchMedia("(max-width: 767px)").matches;
-/** The command palette and the shortcut sheet: their own files, fetched on their first opening. */
+/** The Commands dialog and the shortcut sheet: their own files, fetched on their first opening. */
 const CommandPalette = lazy(() => import("./components/CommandPalette"));
 const ShortcutSheet = lazy(() => import("./components/ShortcutSheet"));
 
@@ -439,7 +440,7 @@ export function App() {
   /** A project page's address names its host when the project is a peer's: noted before the page reads it. */
   const projectsRouteOf = (hash: string) => {
     // `…/merge-queue/ready` is Ready to land's bare address, put in its place with no history entry.
-    const canon = canonicalQueueHash(hash);
+    const canon = canonicalProjectHash(hash);
     if (canon) history.replaceState(history.state, "", (hash = canon));
     const r = projectsRouteFromHash(hash);
     if (r && r.kind !== "list" && r.host) notePeerProjects(r.host, [r.projectId]);
@@ -516,7 +517,7 @@ export function App() {
     setCreating(true);
   };
   createEffect(on(creating, (open) => !open && setNewSessionPrefill(null), { defer: true }));
-  /** The palette is open: by the key, or by a composer's "+" (commands/palette-open.ts). */
+  /** The Commands dialog is open, by a composer's "+" (commands/palette-open.ts). */
   const paletteOpen = () => paletteRequest() !== null;
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
   // The Settings modal is opened from the sidebar foot's gear, and at Modes by the mode menu's
@@ -535,10 +536,9 @@ export function App() {
       return { ...m, [path]: control };
     });
   /**
-   * The newest rewind that landed in a chat, whoever asked for it (a Timeline row, the composer's
-   * Undo last turn). `changed` is minted here and only grows, like PaneInsight.changed: the pane
-   * re-reads its rows on a bump, so two rewinds to the same message still refresh. A refusal never
-   * gets here, so it changes nothing. The path gates the fan-out: one session's rewind must never
+   * The newest rewind that landed in a chat (a Timeline row asked for it). `changed` is minted here
+   * and only grows, like PaneInsight.changed: the pane re-reads its rows on a bump, so two rewinds
+   * to the same message still refresh. A refusal never gets here, so it changes nothing. The path gates the fan-out: one session's rewind must never
    * refresh another's pane.
    */
   const [rewound, setRewound] = createSignal<{ path: string; entryId: string; changed: number } | null>(null);
@@ -632,15 +632,7 @@ export function App() {
   // A session route to an Overseer file opened before the Overseer's info was read moves once it lands.
   createEffect(on(overseer.data, () => sessionRouteFromHash(location.hash) && onHash(), { defer: true }));
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
-  /** Ctrl/⌘+K: the command palette; "?": the shortcut sheet (§app/command-palette). Each is a
-      separate file the browser fetches on its first opening. On a Mac, Ctrl+K in a text field is
-      the field's own (delete to the end of the line), so it's left to it there. */
-  const offPaletteKey = bindKey("palette.open", (e) => {
-    const act = paletteKeyAction(e, keyPlatform.mac);
-    if (act === "field") return false; // the browser's: a Mac text field's delete-to-end
-    if (act === "toggle") togglePaletteFromKey();
-    return true; // a held key's repeats are swallowed: it toggles once
-  });
+  /** "?": the shortcut sheet, a separate file the browser fetches on its first opening. */
   const offShortcutsKey = bindKey("shortcuts.open", () => {
     if (paletteOpen()) return false;
     setShortcutsOpen(true);
@@ -661,7 +653,6 @@ export function App() {
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("hashchange", onHash);
     offOverseerKey();
-    offPaletteKey();
     offShortcutsKey();
     offListRefresh();
     clearInterval(tick);
@@ -799,8 +790,6 @@ export function App() {
     const p = focusedPath();
     return (p ? summaryOf(p) : undefined) ?? null;
   });
-  /** The chat the palette's rows act on: the one whose "+" opened it, else the focused one. */
-  const palettePath = () => paletteRequest()?.path ?? focusedPath();
   /** The group the route names, once its name is known; the workspace needs the group itself. */
   const openGroup = createMemo(() => {
     const id = groupRoute()?.id;
@@ -1407,7 +1396,7 @@ export function App() {
               </Match>
               {/* Projects, placed or not (#/projects[/<project>[/<tab>|/overseer]]). Not keyed: ProjectsView keys each page. */}
               <Match when={projectsRoute()}>
-                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} sessions={list} />}
+                {(r) => <ProjectsView route={r()} titleRef={(el) => (projectsTitleEl = el)} sessions={list} attention={() => attention.data()} />}
               </Match>
               {/* Organizations, their rosters and hand-off sessions (#/orgs[/<id>[/<tab>|/people/<person>]]). */}
               {/* Not keyed: a tab change on an org's page (#/orgs/<id>/<tab>) is a new route object,
@@ -1481,7 +1470,9 @@ export function App() {
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
                   <ExplanationsCard explanations={explanations.data()} now={now()} />
                   {/* Every public link at a glance, and the way into #/shares. */}
-                  <OverviewSharesCard />
+                  <Show when={!sharingOffHere()}>
+                    <OverviewSharesCard />
+                  </Show>
                   {/* Last: every organization at a glance, and the way into #/orgs. */}
                   <OverviewOrgsCard now={now()} />
                 </div>
@@ -1547,44 +1538,22 @@ export function App() {
       <Show when={staleChange()}>
         {(change) => <StaleTabBanner change={change()} onDismiss={() => setStaleChange(null)} />}
       </Show>
-      <Show when={paletteOpen()}>
-        <CommandPalette
-          host={{
-            wide: unfolded,
-            collapsed,
-            extensions: () => (extensions.data() ?? []).map((x) => ({ id: x.id, title: x.title })),
-            openNewSessionDialog: () => setCreating(true),
-            openShortcuts: () => setShortcutsOpen(true),
-            settingsTabs: () => SETTINGS_TAB_LABELS,
-          }}
-          origin={paletteRequest()?.origin ?? "key"}
-          returnTo={paletteRequest()?.trigger ?? null}
-          context={() => {
-            // Opened from a pane's "+", every row about the chat acts on that pane's chat, which
-            // need not be the workspace's focused one (§app.command-palette/opening).
-            const path = palettePath();
-            const s = path ? (summaryOf(path) ?? null) : null;
-            const c = composerOf(path);
-            return {
-              session: s ? { path: s.path, id: s.id, title: s.title, terminal: !!s.live } : null,
-              composer:
-                c && path
-                  ? {
-                      commands: c.commands(),
-                      off: c.off(),
-                      hasDraft: c.hasDraft(),
-                      hideTools: hideTools(path),
-                      hideThinking: hideThinking(path),
-                      playbooks: c.canPlaybooks(),
-                      undo: c.undoBlocked(),
-                    }
-                  : null,
-            };
-          }}
-          chatPath={palettePath}
-          composer={() => composerOf(palettePath())}
-          onClose={closePalette}
-        />
+      <Show when={paletteRequest()}>
+        {(req) => (
+          <CommandPalette
+            returnTo={req().trigger}
+            state={() => {
+              // Every row acts on the chat whose "+" opened it, which need not be the workspace's
+              // focused one (§app.command-palette/opening).
+              const path = req().path;
+              const c = composerOf(path);
+              return c ? { off: c.off(), hideTools: hideTools(path), hideThinking: hideThinking(path), playbooks: c.canPlaybooks() } : null;
+            }}
+            chatPath={() => req().path}
+            composer={() => composerOf(req().path)}
+            onClose={closePalette}
+          />
+        )}
       </Show>
       <Show when={shortcutsOpen()}>
         <ShortcutSheet onClose={() => setShortcutsOpen(false)} />

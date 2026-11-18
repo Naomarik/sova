@@ -31,9 +31,15 @@ and which rows it holds; everything here holds for it without being said again.
   as Sova's other menus are.
 - **One at a time.** Opening one closes any other menu that is open, another place's included. A
   right-click on a second thing while a menu is open closes that one and opens the second's.
-- **Closing.** Escape, or a click or tap anywhere else, closes it and nothing happens. Focus goes
-  back to the thing it was opened on. A menu closes by itself when what it belongs to
-  leaves the screen.
+- **Closing.** Escape closes it. So does any press that starts outside it, with a finger, a pen
+  or a mouse, the moment the press starts rather than when it is let go; the dimmed area around
+  a phone's sheet counts as outside. A plain tap or click outside only closes the menu: what was
+  under it is not opened, pressed or focused, focus goes back to the thing the menu was opened
+  on, and the next tap or click works as usual. A swipe, drag or hold that starts outside closes
+  the menu and then carries on as it would have: the list scrolls, a row drags or lifts. A
+  right-click on another thing with such a menu closes this one and opens that one's. Scrolling
+  with a mouse wheel or a trackpad presses nothing and leaves the menu open. A menu closes by
+  itself when what it belongs to leaves the screen.
 - **Its rows** are the system's menu rows (§design/menu-rows). Enter or Space runs the focused
   one. A row that can't run is disabled and says why on its second line.
 - **Where they are.** Today only on the sidebar's session rows (§app.session-list/row-menu).

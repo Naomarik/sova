@@ -19,10 +19,7 @@ import {
 	changeLine,
 	CHANGE_REQUEST_TEXT,
 	marksChangeRequest,
-	clampScroll,
 	foldAlignments,
-	legacyLine,
-	legacyStatus,
 	nextDocId,
 	normalizeAlignDetails,
 	normalizeAlignEntry,
@@ -33,8 +30,6 @@ import {
 	recommendedOption,
 	recommendedText,
 	toMarkdown,
-	viewport,
-	widgetText,
 	type AlignDetails,
 	type AlignDocument,
 	type AlignEnv,
@@ -479,7 +474,6 @@ test("counts, the hidden note and the widget cover open documents only", () => {
 	assert.match(compacted, /recommendations are not decisions/);
 	assert.match(compacted, /^al_3 "Third" · aligning · 1 of 2 open\n {2}q1 One: decided — no\n {2}q2 Two: Two\? \(rec: /m);
 	assert.doesNotMatch(compacted, /al_2/, "a finished alignment is not in it either");
-	assert.equal(widgetText(docs, "alt+a"), "◇ align · al_1 3/3 open · al_3 1/2 open · alt+a view");
 });
 
 test("changeLine: one short word per change, consecutive decisions merged", () => {
@@ -610,22 +604,10 @@ test("legacy align-doc entries: read-only, strictly shaped, newest on the branch
 	for (const bad of [null, {}, { version: 2, doc: null }, { version: 1, doc: { ...legacyDoc, questions: [{ n: "1" }] } }, { version: 1, doc: { ...legacyDoc, explicitStatus: "done" } }]) {
 		assert.equal(normalizeAlignEntry(bad), undefined);
 	}
-	assert.equal(legacyStatus(legacyDoc), "questions-open");
-	assert.equal(legacyLine(legacyDoc), "v3 · questions open · 1/2 settled");
 	const entry = (doc: unknown) => ({ type: "custom", customType: ALIGN_ENTRY_TYPE, data: { version: 1, doc } });
 	assert.equal(foldAlignments([entry(legacyDoc), entry({ ...legacyDoc, revision: 4 })]).legacy?.revision, 4);
 	assert.equal(foldAlignments([entry(legacyDoc), entry(null)]).legacy, null);
 	assert.deepEqual(foldAlignments([entry(legacyDoc)]).docs, [], "a legacy doc is never a tool document");
-});
-
-test("clampScroll/viewport keep the window inside the content", () => {
-	assert.equal(clampScroll(-5, 10, 4), 0);
-	assert.equal(clampScroll(99, 10, 4), 6);
-	assert.equal(clampScroll(3, 2, 4), 0);
-	assert.equal(clampScroll(Number.NaN, 10, 4), 0);
-	assert.deepEqual(viewport([1, 2, 3, 4, 5], 1, 2), [2, 3]);
-	assert.deepEqual(viewport([1, 2, 3], 5, 2), [2, 3]);
-	assert.deepEqual(viewport([1, 2, 3], 0, 0), []);
 });
 
 // ── Technical notes, visuals and the writing style (§chat.alignment/document, §chat.alignment/visuals) ──

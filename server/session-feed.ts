@@ -186,6 +186,9 @@ export class SessionFeed {
   private checkDue = false;
   /** Listeners whose snapshot is still being built. */
   private joining = 0;
+  /** What publish() sent while each listener was joining: it gets them right after its join frames,
+      so a push made during a join is never lost for it. Dropped when the join fails or the socket goes. */
+  private readonly held = new Set<SessionFeedMessage[]>();
   private sent = new Map<string, SessionMarks>();
   /** rowSignature per listed path as of the last diff; null before the first (no baseline yet). */
   private rows: Map<string, string> | null = null;
@@ -244,11 +247,14 @@ export class SessionFeed {
         console.warn("[session-feed] watch failed:", err instanceof Error ? err.message : String(err));
       }
     }
+    const held: SessionFeedMessage[] = [];
+    this.held.add(held);
     this.run(async () => {
       try {
         await this.diff(true);
       } finally {
         this.joining--;
+        this.held.delete(held);
       }
       if (gone) return;
       this.clients.add(send);
@@ -257,9 +263,12 @@ export class SessionFeed {
         send({ type: "rows_hello", epoch: this.epochId, version: this.version });
       }
       send({ type: "marks", full: true, sessions: [...this.sent.values()] });
+      for (const msg of held.splice(0)) send(msg);
     });
     return () => {
       gone = true;
+      this.held.delete(held);
+      held.length = 0;
       this.clients.delete(send);
       this.rowClients.delete(send);
       if (this.clients.size === 0 && this.joining === 0) this.stop();
@@ -297,8 +306,15 @@ export class SessionFeed {
     return l.list;
   }
 
-  /** Sent to every listener as is (tags backfill progress). */
+  /** Sent to every listener as is (tags backfill progress); a listener still joining gets it after its join frames. */
   publish(msg: SessionFeedMessage): void {
+    this.broadcast(msg);
+    for (const held of this.held) held.push(msg);
+  }
+
+  /** The feed's own frames (its diffs' marks and `after` frames) to the joined listeners only: a
+      joiner's snapshot already carries what they say. */
+  private broadcast(msg: SessionFeedMessage): void {
     for (const send of this.clients) send(msg);
   }
 
@@ -387,7 +403,7 @@ export class SessionFeed {
     if (this.opts.stamps && this.opts.stamps.listed() <= signal) this.nudge(0);
     const { changes, next } = diffMarks(this.sent, list);
     this.sent = next;
-    if (changes.length) this.publish({ type: "marks", sessions: changes });
+    if (changes.length) this.broadcast({ type: "marks", sessions: changes });
     const rows = new Map(list.map((s) => [s.path, rowSignature(s)]));
     // The first diff is the baseline (a client that connects re-reads the list itself).
     if (this.rows && listChanged(this.rows, rows)) {
@@ -410,7 +426,7 @@ export class SessionFeed {
       // The first of each type is the baseline: a client reads the value itself when it connects.
       const before = this.extras.get(f.type);
       this.extras.set(f.type, json);
-      if (before !== undefined && before !== json) this.publish(f);
+      if (before !== undefined && before !== json) this.broadcast(f);
     }
   }
 }

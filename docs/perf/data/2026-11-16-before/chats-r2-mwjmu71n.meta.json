@@ -1,0 +1,48 @@
+{
+ "runId": "chats-r2-mwjmu71n",
+ "variant": "chats",
+ "rep": 2,
+ "phases": [
+  {
+   "phase": "idle",
+   "at": 1794855914613
+  },
+  {
+   "phase": "ramp",
+   "at": 1794855944612
+  },
+  {
+   "phase": "load",
+   "at": 1794855964671
+  },
+  {
+   "phase": "done",
+   "at": 1794856024674
+  }
+ ],
+ "nice": 10,
+ "weight": null,
+ "mix": "test=1,tsc=1",
+ "T": {
+  "idle": 30,
+  "ramp": 20,
+  "load": 60,
+  "cool": 20
+ },
+ "systemd": false,
+ "bigPath": "sessions/\u2026/2026-10-01T09-51-43-081Z_01a0f6e0-7fe9-7271-b42d-a82970163772.jsonl",
+ "runtime": "bun",
+ "serverRoot": ".cache/baseline",
+ "serverHead": "c66ac037a8dc270f36b40bc4e4616c3c9f5e384f",
+ "standins": 3,
+ "disk": 1,
+ "chats": [
+  "sessions/\u2026/2026-11-16T16-49-32-362Z_a6acd616-a231-459f-bd68-f5bb4a996942.jsonl",
+  "sessions/\u2026/2026-11-16T18-38-12-881Z_01a1e5a7-0d91-742e-ba13-b1168b54786b.jsonl",
+  "sessions/\u2026/2026-11-16T18-38-12-882Z_01a1e5a7-0d92-742e-ba13-b11d5978b7bf.jsonl",
+  "sessions/\u2026/2026-11-16T18-38-12-882Z_01a1e5a7-0d92-742e-ba13-b11fae22a765.jsonl",
+  "sessions/\u2026/2026-11-16T18-38-12-883Z_01a1e5a7-0d93-742e-ba13-b122ab44fc93.jsonl",
+  "sessions/\u2026/2026-11-16T18-38-12-878Z_01a1e5a7-0d8d-742e-ba13-b1153d9a7cf4.jsonl"
+ ],
+ "approvalsCwd": "~/webapps/sova"
+}

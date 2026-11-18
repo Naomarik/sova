@@ -107,6 +107,84 @@ describe("a project's cards", () => {
   });
 });
 
+describe("the group switch and its Undo", () => {
+  test("a group save answers an Undo token; Undo puts each record back with a history line, turning on only from the page's click; a token works once", async () => {
+    const p = await project("undo");
+    const url = `/api/projects/${p.id}/context-files`;
+    assert.equal((await call("PUT", url, { files: { "AGENTS.md": "approved" } }, pageHeaders())).status, 200);
+    // Not a group press: two keys alone take no token.
+    const two = await call("PUT", url, { files: { "svc/AGENTS.md": "disallowed", "AGENTS.md": "approved" } }, pageHeaders());
+    assert.equal(((await two.json()) as { undo?: string }).undo, undefined);
+    const before = store.folderDecisions(p.key).context["AGENTS.md"];
+    // The group switch (it says so): AGENTS.md off, svc's disallow lifted.
+    const off = await call("PUT", url, { files: { "AGENTS.md": "disallowed", "svc/AGENTS.md": "waiting" }, group: true }, pageHeaders());
+    assert.equal(off.status, 200);
+    const token = ((await off.json()) as { undo?: string }).undo!;
+    assert.ok(token);
+    // Its Undo turns AGENTS.md back on: the page's alone.
+    for (const [who, h] of notThePage()) assert.equal((await call("PUT", url, { undo: token }, h)).status, 403, who);
+    assert.equal(store.folderDecisions(p.key).context["AGENTS.md"]?.state, "disallowed");
+    const u = await call("PUT", url, { undo: token }, pageHeaders());
+    assert.equal(u.status, 200);
+    const v = (await u.json()) as { files: { key: string; state: string }[]; undone?: number; kept?: number; undo?: string };
+    assert.deepEqual([v.undone, v.kept, v.undo], [2, 0, undefined]);
+    assert.deepEqual(store.folderDecisions(p.key).context["AGENTS.md"], before, "exactly as it was, its fingerprint included");
+    assert.equal(v.files.find((f) => f.key === "svc/AGENTS.md")?.state, "disallowed");
+    assert.deepEqual(
+      readHistory(p.id).slice(-2).map((r) => [r.field, r.from, r.to]).sort(),
+      [["context.AGENTS.md", "disallowed", "approved"], ["context.svc/AGENTS.md", "waiting", "disallowed"]],
+    );
+    const again = await call("PUT", url, { undo: token }, pageHeaders());
+    assert.equal(again.status, 409);
+    assert.deepEqual(await again.json(), { error: "Undo is no longer available. Nothing was changed.", code: "undo-gone" });
+    assert.equal((await call("PUT", url, { undo: 5 }, pageHeaders())).status, 400);
+    assert.equal((await call("PUT", url, { files: { "AGENTS.md": "disallowed" }, group: "no spaces" }, pageHeaders())).status, 400);
+    assert.equal((await call("PUT", url, { files: { "AGENTS.md": "disallowed" }, group: 1 }, pageHeaders())).status, 400);
+    assert.equal((await call("PUT", url, { files: { "AGENTS.md": "disallowed" }, groupId: "x" }, pageHeaders())).status, 400, "groupId only beside group: true");
+  });
+
+  test("through the folder route: all on leaves an approved row as it is, even alone, and the Undo that turns them off again is anyone's", async () => {
+    const p = await project("undo-folder");
+    await call("PUT", "/api/folder-approvals", { cwd: p.dir, files: { "AGENTS.md": "approved" } }, pageHeaders());
+    const kept = store.folderDecisions(p.key).context["AGENTS.md"];
+    writeFileSync(join(p.dir, "AGENTS.md"), "# project, changed since\n");
+    await call("GET", `/api/folder-approvals?cwd=${encodeURIComponent(p.dir)}`, undefined); // the card, drawn with it Changed
+    // The group switch naming the one row it thinks is off, which another tab turned on meanwhile and has changed since:
+    // still never an Accept Change.
+    const one = await call("PUT", "/api/folder-approvals", { cwd: p.dir, files: { "AGENTS.md": "approved" }, group: true }, pageHeaders());
+    assert.equal(one.status, 200);
+    assert.deepEqual(store.folderDecisions(p.key).context["AGENTS.md"], kept);
+    const on = await call("PUT", "/api/folder-approvals", { cwd: p.dir, files: { "AGENTS.md": "approved", "svc/AGENTS.md": "approved" }, skills: { tidy: "approved" }, group: true }, pageHeaders());
+    const v = (await on.json()) as { files: { key: string; state: string; changed?: true }[]; undo?: string };
+    assert.deepEqual(store.folderDecisions(p.key).context["AGENTS.md"], kept, "a group save never accepts a change");
+    assert.equal(v.files.find((f) => f.key === "AGENTS.md")?.changed, true);
+    assert.equal(v.files.find((f) => f.key === "svc/AGENTS.md")?.state, "approved");
+    const u = await call("PUT", "/api/folder-approvals", { cwd: p.dir, undo: v.undo }, { [TOKEN]: "t" });
+    assert.equal(u.status, 200);
+    assert.equal(((await u.json()) as { undone?: number }).undone, 2);
+    assert.deepEqual(store.folderDecisions(p.key).context, { "AGENTS.md": kept });
+    assert.deepEqual(store.folderDecisions(p.key).skills, {});
+  });
+});
+
+test("Undo is kept per group: a Skills group flip, then a Context files one in the same folder; the Skills Undo still restores the skills", async () => {
+  const p = await project("undo-groups");
+  // The id in `group`, or as `groupId` beside `group: true`: the same.
+  const sk = await call("PUT", `/api/projects/${p.id}/skills`, { skills: { tidy: "disallowed" }, group: true, groupId: "card:skills:project" }, pageHeaders());
+  const skillsToken = ((await sk.json()) as { undo?: string }).undo!;
+  assert.ok(skillsToken);
+  const cx = await call("PUT", "/api/folder-approvals", { cwd: p.dir, files: { "AGENTS.md": "disallowed", "svc/AGENTS.md": "disallowed" }, group: "card:context:project" }, pageHeaders());
+  const contextToken = ((await cx.json()) as { undo?: string }).undo!;
+  assert.ok(contextToken);
+  const u = await call("PUT", `/api/projects/${p.id}/skills`, { undo: skillsToken }, pageHeaders());
+  assert.equal(u.status, 200, await u.clone().text());
+  assert.equal(((await u.json()) as { undone?: number }).undone, 1);
+  assert.deepEqual(store.folderDecisions(p.key).skills, {}, "the skills are back");
+  assert.equal(store.folderDecisions(p.key).context["AGENTS.md"]?.state, "disallowed", "the files' flip stands");
+  assert.equal((await call("PUT", "/api/folder-approvals", { cwd: p.dir, undo: contextToken }, pageHeaders())).status, 200, "and its own Undo is still there");
+  assert.deepEqual(store.folderDecisions(p.key).context, {});
+});
+
 describe("another computer's page", () => {
   const peer = { meshPeer: { id: "other" } };
   const seen = (r: Request) => ({ req: { method: r.method, raw: r, header: (n: string) => r.headers.get(n) ?? undefined } }) as never;

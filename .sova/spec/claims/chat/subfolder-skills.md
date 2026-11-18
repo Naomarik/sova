@@ -23,7 +23,10 @@ turn and no restart of a Claude process.
   chat works.
 - **Which folders.** The folders strictly below the chat's folder, down to the touched file's folder,
   outermost first. A folder whose name starts with `.`, `node_modules`, and everything below either
-  doesn't count, as for instruction files. Nor does a skills folder git ignores; a folder git can't
+  doesn't count, as for instruction files, nor does a folder whose real place leaves the chat's
+  folder (a link out of it), nor any below it. Nor does a skill whose real place is outside the project
+  (§chat.context-scope/folders): a skill folder or `SKILL.md` that is a link out of the project or
+  leads nowhere; a link that stays inside the project is fine. Nor does a skills folder git ignores; a folder git can't
   answer for (no repository, or an error) counts.
 - **What offers them.** Only a read, an edit or a write that succeeds. Bash, grep, find and ls never do.
 - **How it reaches the model.** One text block per folder at the end of that action's result, after
@@ -57,7 +60,8 @@ turn and no restart of a Claude process.
   you're asking for it directly and it costs nothing until then, unless this chat switched that name off. It expands as a starting skill's does,
   with its arguments filled in (§chat.skill-sources/arguments), and then counts as read. In a chat
   Sova doesn't look below (/offering), no folder below is searched: a name only a subfolder's skill has
-  is sent as typed, as an unknown skill's is, while the chat's starting skills still expand.
+  is sent as typed, as an unknown skill's is, while the chat's starting skills still expand. A skill
+  linked out of the project (/offering) is never found this way either.
 - **Same name.** The name stays with the skill offered first: the chat's starting skill, else the one
   offered earliest on the branch, else the outermost one below the chat's folder. The model is still
   offered a subfolder's skill of the same name, with its location, since a service's own skill may

@@ -261,7 +261,8 @@ It applies only where the stored folder is the session's own local one: a remote
 local placeholder is gone) is still refused, so a home folder of this machine never stands in for
 a folder on a target; a chat whose folder Sova chooses (the Overseer, a baton or project overseer
 session) keeps its own rule. A worker chat whose stored folder is gone follows the same rule as any
-other chat.
+other chat. A chat running in the home folder this way loads its context files as its stored folder
+allows, never the home folder's (§chat/context-scope).
 
 Nothing on disk changes. The session file keeps its header (its id, its stored folder, its
 project), its transcript and its worktree records; opening a chat never recreates the missing

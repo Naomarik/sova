@@ -669,11 +669,12 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "auth-lock-path",
     kind: "semantic",
     relies:
-      "pi writes auth.json under proper-lockfile's `<file>.lock` directory, and which file is pi's own rule: through 1.5.0 (and the terminal's 0.87) the path as given (realpath: false), from 1.5.1 the file it resolves to (proper-lockfile's default realpath, #11655). Login sync writes the same file under the same lock, so it takes the given path's lock and, where auth.json is a link to another file, that file's too, with pi's own proper-lockfile and stale/update times that never steal pi's lock or lose ours.",
+      "pi writes auth.json under proper-lockfile's `<file>.lock` directory, and which file is pi's own rule: through 1.5.0 (and the terminal's 0.87) the path as given (realpath: false), from 1.5.1 the file it resolves to (proper-lockfile's default realpath, #11655). Login sync writes the same file under the same lock, so it takes the given path's lock and, where auth.json is a link to another file, that file's too, with pi's own proper-lockfile and stale/update times that never steal pi's lock or lose ours. pi writes through the link (writeFileSync on the path), so sync replaces the file the link points at, never the link.",
     pi: ["FileAuthStorageBackend.acquireLockSyncWithRetry", "FileAuthStorageBackend.acquireLockAsync", "AuthStorage.modify", "proper-lockfile realpath"],
     where: [
       { file: "server/sync/logins-stores.ts", symbol: "PiAuthStore.lockSpecs" },
       { file: "server/sync/logins-stores.ts", symbol: "lockDirOf" },
+      { file: "server/sync/logins-stores.ts", symbol: "PiAuthStore.writeTarget" },
     ],
     canary: "P48 auth-lock-path: pi locks auth.json on the file it resolves to, so on a linked auth.json its own write waits for the target's lock and not for the link's",
     retireWhen: "pi exports a credential write under its own lock; the given path's lock goes once no pi through 1.5.0 writes here (every chat reloaded, the terminal on 1.5.1 or later)",

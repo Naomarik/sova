@@ -227,6 +227,28 @@ test("pi: a linked auth.json is written under both locks, the link's (pi through
   }
   await write();
   assert.deepEqual(JSON.parse(readFileSync(link, "utf8")), { zai: keyEntry("sk") }, "the control: with neither held, it writes");
+  // The write goes through the link, as pi's own does: the link stays a link and its target holds the entry
+  // (a rename over the link would leave a regular file beside a stale target).
+  assert.ok(lstatSync(link).isSymbolicLink(), "auth.json is still a link");
+  assert.deepEqual(JSON.parse(readFileSync(target, "utf8")), { zai: keyEntry("sk") }, "and the file it points at was written");
+  assert.equal(statSync(target).mode & 0o777, 0o600);
+  assert.deepEqual(readdirSync(join(target, "..")), ["shared-auth.json"], "no temp file left beside the target");
+  assert.deepEqual(readdirSync(join(link, "..")), ["auth.json"], "nor beside the link");
+});
+
+test("pi: a link whose target is not there yet is written through, like pi's own first write", async () => {
+  const dir = scratch();
+  mkdirSync(join(dir, "store"));
+  mkdirSync(join(dir, "agent"));
+  const target = join(dir, "store", "shared-auth.json");
+  const link = join(dir, "agent", "auth.json");
+  symlinkSync(join("..", "store", "shared-auth.json"), link); // relative, as a hand-made link often is
+  await new PiAuthStore(link, { lockDeadlineMs: 200 }).transact(() => ({ result: 0, changes: new Map([["zai", keyEntry("sk")]]) }));
+  assert.ok(lstatSync(link).isSymbolicLink(), "auth.json is still a link");
+  assert.deepEqual(JSON.parse(readFileSync(target, "utf8")), { zai: keyEntry("sk") });
+  const release = await lockfile.lock(target, { realpath: false, stale: 30_000 });
+  await assert.rejects(new PiAuthStore(link, { lockDeadlineMs: 200 }).transact(() => ({ result: 0, changes: new Map([["zai", keyEntry("sk2")]]) })), LockBusyError, "the target's lock holds it off");
+  await release();
 });
 
 test("pi: the pinned pi's own modify through a linked auth.json and our write, racing, both survive", async () => {
@@ -249,6 +271,7 @@ test("pi: the pinned pi's own modify through a linked auth.json and our write, r
   const onDisk = JSON.parse(readFileSync(link, "utf8"));
   assert.deepEqual(onDisk["openai-codex"], oauthEntry("two"), "pi's refresh kept");
   assert.deepEqual(onDisk.zai, keyEntry("sk-new"), "our pushed entry kept");
+  assert.ok(lstatSync(link).isSymbolicLink(), "and auth.json is still a link");
 });
 
 test("pi: a regular auth.json under a linked folder is one lock, taken once", async () => {

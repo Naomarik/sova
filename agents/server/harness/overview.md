@@ -311,7 +311,10 @@ found so far (pi 1.5.2).
   (`PI_STOCK_PREAMBLES`, `pi-config/extensions/claude-code/provider/stream.ts`); its drift alarm fails when
   the installed pi's preamble is neither.
 - pi 1.5.1 locks `auth.json` on the file it resolves to (#11655); through 1.5.0, and the terminal's older
-  pi, on the path as given. Login sync takes both when `auth.json` is a link to another file (quirk P48).
+  pi, on the path as given. Login sync takes both when `auth.json` is a link to another file, and replaces
+  the file the link points at, never the link (quirk P48). pi versions on either side of that change do not
+  hold each other off on such a link: run side by side they lose each other's writes (a plain `auth.json`
+  is safe).
 - Since 1.0.3 pi added fields to what its events carry: `aborted` on `agent_settled`, `structuredContent`
   on a tool's result, `durationMs` on `tool_execution_end`, tool results and replies, `totalFromProvider`
   in a usage's cost, `argumentsError` on a tool call. Wire 1 is a fixed contract and drops each by the

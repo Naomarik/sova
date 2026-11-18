@@ -1,20 +1,12 @@
 // What a tool row's name means. pi names a tool from its server and raw name, shortening a long one with a hash
-// (quirk P35), so a chat's kept list says what each name was; a tool result's details say so too, on success. With
-// neither it is no server's tool: a name alone can't tell, and `my-server` has already become `my_server` in it.
-import { createHash } from "node:crypto";
+// (pi's own rule, through the adapter's piToolNames), so a chat's kept list says what each name was; a tool
+// result's details say so too, on success. With neither it is no server's tool: a name alone can't tell, and
+// `my-server` has already become `my_server` in it.
 import type { McpToolName } from "../../shared/mcp";
+import { piToolNames } from "../harness/pi/mcp-tool-name";
 import type { McpChatList } from "./list-shape";
 
 export type McpNames = ReadonlyMap<string, McpToolName>;
-
-const NAME_MAX = 64;
-
-/** pi's name for a tool, and the hashed form it takes when that is too long or taken. */
-export function piToolNames(server: string, tool: string): string[] {
-  const name = `mcp__${server}__${tool}`.replace(/[^A-Za-z0-9_]/g, "_");
-  const hash = createHash("sha256").update(`${server}\0${tool}`).digest("hex").slice(0, 8);
-  return [name, `${name.slice(0, NAME_MAX - hash.length - 1)}_${hash}`];
-}
 
 export function mcpNamesOf(list: McpChatList | null | undefined): McpNames {
   const names = new Map<string, McpToolName>();

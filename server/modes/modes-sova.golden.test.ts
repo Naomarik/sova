@@ -5,7 +5,8 @@
 // SOVA_MODES_GOLDEN=record re-takes the recordings from here.
 // Real chats in this process on a scripted model; a throwaway agent dir, ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { after, test } from "node:test";
 
 const { beginCase, cm, matchRecording } = await import("./tests/harness.fixture");
@@ -24,6 +25,14 @@ for (const c of CASES.filter((c) => (c.proc === true) === false)) {
     matchRecording(c.name, rec);
   });
 }
+
+// The store holds every tool declaration a recorded request carried, extensions' tools included, as the
+// chat loads them (natively). TypeBox's Type.Optional() writes "~optional" into a schema that isn't
+// TypeBox's (pi-ai 1.5's StringEnum under a native import), and the model's provider would receive it.
+test("no recorded tool declaration carries a schema library's marker (a \"~…\" key)", { skip: RECORD ? "recording" : false }, () => {
+  const marked = readdirSync(STORE_DIR).filter((f) => /"~[A-Za-z]+":/.test(readFileSync(join(STORE_DIR, f), "utf8")));
+  assert.deepEqual(marked, []);
+});
 
 test("the store holds exactly what the recordings refer to (a re-record deletes what it no longer uses)", { skip: RECORD ? "recording" : false }, () => {
   const used = referencedBlobs();

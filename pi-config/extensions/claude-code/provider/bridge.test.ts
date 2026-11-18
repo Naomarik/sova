@@ -14,7 +14,8 @@ import { join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
+import { type Api, type AssistantMessageEvent, type Model, normalizeContext, type Message, type Tool } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import {
 	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, memorySystemPrompt, memoryViewFrame, MIN_FOLD_CHARS, SYSTEM_PROMPT_BOUNDARY, withoutMemoryPrefix,
 	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow, type ClaudeLoginSource,

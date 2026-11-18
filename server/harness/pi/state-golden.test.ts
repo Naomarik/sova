@@ -78,6 +78,7 @@ const overseer = await import("../../overseer");
 const projectOverseer = await import("../../project-overseer");
 const orgs = await import("../../orgs");
 const baton = await import("../../baton");
+const { hostOf } = await import("../../org-engine");
 
 after(async () => {
   await disposeAllChats();
@@ -312,7 +313,9 @@ test("G5: a baton session: seed entries, operator moves with no flush, then a st
   await until(() => customs(c.path, "sova-baton-handoff").length === 3);
   const release = model.hold();
   says(chat, c.sessionId, bob.id, "first");
-  await until(() => piSession(chat).isStreaming);
+  // The reply is being written (the chart's fact): pi's isStreaming is true a step earlier from 1.2.0,
+  // while the run's start step still runs, and a take-back there is a different history.
+  await until(() => hostOf(org.id).data(`baton/${org.id}/${c.sessionId}`)?.["reply"] === "writing");
   says(chat, c.sessionId, bob.id, "second");
   says(chat, c.sessionId, bob.id, "third");
   await until(() => chat.queue.size === 2);

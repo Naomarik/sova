@@ -60,3 +60,4 @@ A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
 A {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
+sdk abort []

@@ -31,8 +31,8 @@ interface Handed {
  * - `realSteering`/`realFollowUp` are `Agent`'s own queues: what `hasQueuedMessages()` reports and
  *   what `drain()` takes from. A drained message is COMMITTED to the model.
  * - `mirrorSteering`/`mirrorFollowUp` are `getSteeringMessages()`/`getFollowUpMessages()`. Pushed
- *   with the real queue; spliced only by `announce()` (message_start), and only when the text is
- *   non-empty — pi's `if (messageText)` hole, reproduced exactly.
+ *   with the real queue; spliced only by `announce()` (message_start), by text — an empty text
+ *   (an image-only message) included, as pi does from 1.5.1 (quirk P9).
  * - `handOff` resolves only after `handlerDelay`, because the real one awaits extension `input`
  *   handlers before anything is queued. A transform returning null is a handler that answered
  *   `{action:"handled"}`: the message is swallowed and NOTHING is queued.
@@ -144,7 +144,9 @@ class FakeSdk {
   /**
    * message_start for the delivered message, with the SDK's own splice rule reproduced exactly —
    * including the two ways it misses, because both are load-bearing:
-   *  • `if (messageText)`: an empty-text (image-only) message never leaves the mirror at all;
+   *  • BY TEXT: a text that reached message_start rewritten matches nothing, and its entry never
+   *    leaves the mirror at all (an empty text matches like any other: pi 1.5.1 dropped the
+   *    `if (messageText)` that kept an image-only message mirrored for the session's life);
    *  • THE STEERING MIRROR IS CHECKED FIRST for ANY delivered user message, whatever queue it
    *    actually came from (agent-session.js:389-401). So a FOLLOW-UP whose text equals a queued
    *    STEER's splices the STEERING mirror, and the per-kind mirror then understates that lane.
@@ -152,7 +154,7 @@ class FakeSdk {
    *    the one Sova runs, which is exactly how the unsound per-kind rule got written.
    */
   announce(_kind: "steer" | "followUp", text: string | undefined): void {
-    if (!text) return;
+    if (text === undefined) return;
     const si = this.mirrorSteering.indexOf(text);
     if (si !== -1) {
       this.mirrorSteering.splice(si, 1);
@@ -722,17 +724,18 @@ describe("the outgoing queue", () => {
   // ---------------------------------------------------------------------------------------------
 
   test("BUG 1 — an image-only send is delivered and does NOT strand the queue", async () => {
-    // The SDK's mirror splice is skipped for empty text, so an image-only message stays mirrored
-    // for the session's life. A queue that waits for the MIRROR to empty waits for ever and every
-    // later message is stranded. Presence is read from the REAL queue, so it does not.
+    // Through pi 1.5.0 the SDK's mirror splice was skipped for empty text, so an image-only message
+    // stayed mirrored for the session's life, and a queue that waited for the MIRROR to empty
+    // waited for ever. Presence is read from the REAL queue, so it never did; pi 1.5.1 splices the
+    // empty text too. (The entry that still never leaves is a rewritten text's, below.)
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "", images: [{ type: "image", data: "AAAA", mimeType: "image/png" }], origin: "client", id: "img" });
     r.queue.enqueue({ kind: "followUp", text: "next", origin: "client", id: "n" });
     await settle();
     assert.deepEqual(r.sdk.realSteering, [""], "the image-only send went in");
 
-    r.sdk.deliver("steer"); // drained AND announced — but the mirror keeps the empty entry
-    assert.deepEqual(r.sdk.mirrorSteering, [""], "the mirror still lists it, exactly as pi does");
+    r.sdk.deliver("steer"); // drained AND announced: the empty text is spliced like any other
+    assert.deepEqual(r.sdk.mirrorSteering, [], "the mirror sheds it, exactly as pi does");
     r.queue.onSdkEvent();
     await settle();
 
@@ -802,7 +805,7 @@ describe("the outgoing queue", () => {
   });
 
   test("an extension rewriting the message text is a non-event for delivery", async () => {
-    // The OTHER way the mirror never sheds an item: an extension `message` handler rewrites the
+    // The way the mirror never sheds an item: an extension `message` handler rewrites the
     // user text before message_start (_replaceMessageInPlace, agent-session.js:530-549), so the
     // SDK's own indexOf splice misses and the entry stays mirrored for ever. Delivery is read from
     // the real queue, so this is invisible here — asserted rather than assumed.
@@ -837,21 +840,22 @@ describe("the outgoing queue", () => {
     assert.ok(!r.gone(r.one).some(([id, reason]) => id === "a" && reason === "removed"));
   });
 
-  test("ONE IN, ONE OUT with an image-only item, where the mirror never sheds ours: held, never guessed delivered or removed", async () => {
+  test("ONE IN, ONE OUT with an item whose text was rewritten, where the mirror never sheds ours: held, never guessed delivered or removed", async () => {
     const r = rig();
-    r.queue.enqueue({ kind: "steer", text: "", images: [{ type: "image", data: "AAAA", mimeType: "image/png" }], origin: "client", id: "img" });
+    r.queue.enqueue({ kind: "steer", text: "original", origin: "client", id: "a" });
     await settle();
     r.sdk.extensionFollowUp("wake nudge");
-    r.sdk.deliver("steer"); // delivered; no splice, so the mirror keeps ours
-    assert.deepEqual(r.sdk.mirrorSteering, [""], "ours is still mirrored, as pi leaves it");
+    r.sdk.drain("steer");
+    r.sdk.announce("steer", "REWRITTEN BY AN EXTENSION"); // delivered; indexOf misses, so the mirror keeps ours
+    assert.deepEqual(r.sdk.mirrorSteering, ["original"], "ours is still mirrored, as pi leaves it");
 
-    const outcome = await r.queue.remove("img");
+    const outcome = await r.queue.remove("a");
     assert.deepEqual(outcome, { ok: false, reason: "internal", message: HANDED_REFUSAL });
     assert.deepEqual(r.sdk.realFollowUp, ["wake nudge"], "nothing of anyone else's was dropped to find out");
     r.sdk.deliver("followUp");
     r.queue.onSdkEvent();
     await settle();
-    assert.deepEqual(r.gone(r.one), [["img", "delivered"]], "delivered once the real queue is empty");
+    assert.deepEqual(r.gone(r.one), [["a", "delivered"]], "delivered once the real queue is empty");
   });
 
   test("a foreign message with BYTE-IDENTICAL text in the same lane is still not mistaken for ours", async () => {

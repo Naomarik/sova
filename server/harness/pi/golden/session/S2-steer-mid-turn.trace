@@ -60,6 +60,7 @@ B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"st
 write {"id":"00000007","type":"message","role":"user"}
 A {"type":"event","event":{"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"steer one"}],"timestamp":1000000000000}},"entryId":"00000007"}
 B {"type":"event","v":2,"event":{"type":"message.end","role":"user","entryId":"00000007"}}
+A {"type":"event","event":{"type":"queue_update","steering":[],"followUp":[]}}
 A {"type":"event","event":{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":""},{"type":"image","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==","mimeType":"image/png"}],"timestamp":1000000000000}}}
 B {"type":"event","v":2,"event":{"type":"message.start","role":"user","text":"","images":["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="]}}
 write {"id":"00000008","type":"message","role":"user"}
@@ -75,3 +76,4 @@ A {"type":"event","event":{"type":"agent_end","messages":[{"role":"system","elid
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
 got model calls 2
+sdk abort []

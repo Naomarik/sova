@@ -5,7 +5,8 @@
 // or new Date() is 1 ms after the last, from the same start for every scenario), the faux provider streams
 // fixed-size chunks with scripted response ids and tool-call ids, and what pi still mints at random (entry
 // ids, the session id) and the run's paths are renumbered by `normalize` into same-length placeholders,
-// consistently across a scenario's session.jsonl and events.json. Not two at once: every run uses RUN_ROOT.
+// consistently across a scenario's session.jsonl and events.json, and the one real clock pi reads (pi
+// 1.1.0's `durationMs`, from performance.now()) is written as 0. Not two at once: every run uses RUN_ROOT.
 import { deflateSync } from "node:zlib";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -181,7 +182,8 @@ const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 /**
  * `texts` with what pi mints at random replaced, the same way in each: the run's agent dir by `/golden-agent`,
  * entry ids (8 hex, in file order) by `00000001`…, uuids by `00000000-0000-7000-8000-<12 digits>` in order of
- * first appearance. Same length, same order; times need nothing (the fake clock).
+ * first appearance. Same length, same order; times need nothing (the fake clock), but how long a tool or a
+ * reply took (`"durationMs":<n>`, measured on the monotonic clock) is real and becomes 0.
  */
 export function normalize(texts: string[], ids: readonly string[], agentDir: string): string[] {
   const idMap = new Map<string, string>();
@@ -189,7 +191,7 @@ export function normalize(texts: string[], ids: readonly string[], agentDir: str
   const uuids = new Map<string, string>();
   const replaced = texts.map((t) => t.split(agentDir).join("/golden-agent"));
   for (const t of replaced) for (const m of t.matchAll(UUID)) if (!uuids.has(m[0])) uuids.set(m[0], `00000000-0000-7000-8000-${String(uuids.size + 1).padStart(12, "0")}`);
-  return replaced.map((t) => t.replace(UUID, (u) => uuids.get(u)!).replace(/"([0-9a-f]{8})"/g, (q, id: string) => (idMap.has(id) ? `"${idMap.get(id)}"` : q)));
+  return replaced.map((t) => t.replace(UUID, (u) => uuids.get(u)!).replace(/"([0-9a-f]{8})"/g, (q, id: string) => (idMap.has(id) ? `"${idMap.get(id)}"` : q)).replace(/"durationMs":\s?\d+/g, (m) => m.replace(/\d+$/, "0")));
 }
 
 /**

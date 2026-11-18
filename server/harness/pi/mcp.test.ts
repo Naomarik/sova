@@ -56,6 +56,46 @@ describe("SnapshotTransport", () => {
     assert.deepEqual((heard[1]!.result as McpCheckRecord).tools, record.tools);
     assert.equal(started(), 0);
   });
+
+  test("a request its sender gave up on while the server started never reaches it, and is no failure of the server", async () => {
+    /** A server whose start waits for `open`, recording every message it is sent. */
+    class Slow extends Events {
+      values: string[] = [];
+      stderr = "";
+      sandboxed = false;
+      pid = 1;
+      sent: JsonRpc[] = [];
+      open!: () => void;
+      private readonly opened = new Promise<void>((r) => (this.open = r));
+      start() {
+        return this.opened;
+      }
+      async close() {}
+      async send(m: JsonRpc) {
+        this.sent.push(m);
+        if (m.method === "initialize") queueMicrotask(() => this.emitMessage({ id: m.id, result: {} }));
+        else if (m.id !== undefined) queueMicrotask(() => this.emitMessage({ id: m.id, result: { ok: true } }));
+      }
+    }
+    const server = new Slow();
+    let starts = 0;
+    const statuses: { state?: string }[] = [];
+    const t = new SnapshotTransport(record, () => (starts++, server as unknown as StdioServer), (p) => void statuses.push(p), 1000);
+    const heard: { id?: unknown }[] = [];
+    t.onMessage((m) => heard.push(m as never));
+    await t.send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} });
+    const gaveUp = new AbortController();
+    const dropped = t.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "t" } }, { signal: gaveUp.signal });
+    const kept = t.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "t" } }, { signal: new AbortController().signal });
+    gaveUp.abort();
+    server.open();
+    await Promise.all([dropped, kept]);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(server.sent.filter((m) => m.method === "tools/call").map((m) => m.id), [3], "only the call still waited for went out");
+    assert.deepEqual(heard.map((m) => m.id), [1, 3], "and the dropped one gets no reply");
+    assert.equal(starts, 1);
+    assert.ok(!statuses.some((s) => s.state === "failed"), JSON.stringify(statuses));
+  });
 });
 
 describe("a filled value never leaves through the transport", () => {

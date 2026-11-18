@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DefaultPackageManager } from "@earendil-works/pi-coding-agent";
 import { PROJECT_TOOLS_WORKER_SLOT } from "../../../pi-config/extensions/mode/project-tools.ts";
 import type { PiLoaderOptions } from "./extension-types";
@@ -274,20 +275,36 @@ function piMinimatch(): (path: string, pattern: string) => boolean {
 /** A path with `/` separators, as pi compares them (package-manager.js toPosixPath). */
 const posixOf = (p: string) => p.split(sep).join("/");
 
+/** A pattern's path as pi reads it: its override rule runs each pattern through utils/paths.js normalizePath
+    (pi 1.2.0), so `~` and `~/…` are the home folder and a `file://` URL is its path. pi's Windows shell-path
+    step is left out (Sova runs on no Windows), and a URL that is no file path stays as written: it matches
+    nothing here, where pi's own resolve() would have thrown on it first. */
+function piPatternPath(p: string): string {
+  if (p === "~") return homedir();
+  if (p.startsWith("~/")) return join(homedir(), p.slice(2));
+  if (!/^file:\/\//.test(p)) return p;
+  try {
+    return fileURLToPath(p);
+  } catch {
+    return p;
+  }
+}
+
 /**
  * Whether pi would load the extension entry `path`, found under the agent dir `baseDir`, by the user's extension
  * patterns (settings.json `extensions`): pi's override rule (package-manager.js isEnabledByOverrides) to the
  * letter. `!glob` (pi's minimatch, against the path relative to `baseDir`, its file name, or the whole path) turns
  * it off; `+path` (exact: relative or whole, a leading `./` dropped) back on; `-path` (the same) off over both.
+ * Each pattern's `~`, `~/…` or `file://` form is read as pi reads it (piPatternPath).
  * Anything else in the list doesn't count here. A copy of pi's rule: quirk P46 pins it against pi's.
  */
 export function enabledByOverrides(path: string, patterns: readonly unknown[], baseDir: string): boolean {
-  const of = (kind: string) => patterns.filter((p): p is string => typeof p === "string" && p.startsWith(kind)).map((p) => posixOf(p.slice(1)));
+  const of = (kind: string) => patterns.filter((p): p is string => typeof p === "string" && p.startsWith(kind)).map((p) => p.slice(1));
   const rel = posixOf(relative(baseDir, path));
   const whole = posixOf(path);
   const name = basename(path);
-  const glob = (ps: string[]) => ps.length > 0 && ps.some((p) => piMinimatch()(rel, p) || piMinimatch()(name, p) || piMinimatch()(whole, p));
-  const exact = (ps: string[]) => ps.map((p) => (p.startsWith("./") ? p.slice(2) : p)).some((p) => p === rel || p === whole);
+  const glob = (ps: string[]) => ps.map((p) => posixOf(piPatternPath(p))).some((p) => piMinimatch()(rel, p) || piMinimatch()(name, p) || piMinimatch()(whole, p));
+  const exact = (ps: string[]) => ps.map((p) => posixOf(piPatternPath(p.startsWith("./") || p.startsWith(".\\") ? p.slice(2) : p))).some((p) => p === rel || p === whole);
   let on = true;
   if (glob(of("!"))) on = false;
   if (exact(of("+"))) on = true;

@@ -5,15 +5,16 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P46 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P48 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPi } from "./testing/load-pi.ts";
 import { STANDIN_FILTER } from "./headless.ts";
 import { enabledByOverrides, extensionEntries, packageFrom, patchResolve } from "./own-code.ts";
@@ -28,6 +29,9 @@ import { expandedSkill } from "../../skill-sources.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
+/** Folders a canary made under the home folder (the runner's throwaway one), removed with `dir`. */
+const underHome: string[] = [];
+after(() => underHome.forEach((d) => rmSync(d, { recursive: true, force: true })));
 process.env.PI_CODING_AGENT_DIR = dir;
 const pi = await loadPi();
 const { createAgentSession, defineTool, DefaultResourceLoader, initTheme, ModelRuntime, SessionManager, SettingsManager } = pi.agent;
@@ -208,6 +212,93 @@ describe("pi contract", () => {
     assert.equal(two.id, second);
     assert.equal(two.parentId, first, "the next entry is parented on the leaf");
     assert.equal(two.data, null);
+  });
+
+  test("wire 1 stays as pi 1.0.3 shaped it: the fields pi added since (agent_settled's aborted, a tool's durationMs, a tool result's structuredContent) are in pi's events and in no wire-1 frame", async () => {
+    const { v1Frame } = await import("./wire.ts");
+    const { session, faux, events } = await scriptedSession();
+    faux.setResponses([fauxAssistantMessage([fauxText("calling"), fauxToolCall("echo", { text: "hi" })], { stopReason: "toolUse" }), fauxAssistantMessage("done")]);
+    await session.prompt("go");
+    await session.waitForIdle();
+    /** Where pi puts each newer field: every `<event type>: <path>` that holds one, over a list of events. */
+    const newer = (list: any[]) => {
+      const found = new Set<string>();
+      for (const e of list) {
+        if (e.type === "agent_settled" && "aborted" in e) found.add("agent_settled: aborted");
+        if (e.type === "tool_execution_end" && "durationMs" in e) found.add("tool_execution_end: durationMs");
+        if (e.type === "tool_execution_end" && e.result && "structuredContent" in e.result) found.add("tool_execution_end: result.structuredContent");
+        if ((e.type === "message_start" || e.type === "message_end") && e.message && "durationMs" in e.message) found.add(`${e.type}: message.durationMs`);
+        if (e.type === "turn_end" && (e.toolResults ?? []).some((m: any) => "durationMs" in m)) found.add("turn_end: toolResults[].durationMs");
+        if (e.type === "agent_end" && (e.messages ?? []).some((m: any) => "durationMs" in m)) found.add("agent_end: messages[].durationMs");
+      }
+      return [...found].sort();
+    };
+    const fromPi = newer(events);
+    assert.deepEqual(
+      fromPi.filter((f) => f !== "tool_execution_end: result.structuredContent"),
+      ["agent_end: messages[].durationMs", "agent_settled: aborted", "message_end: message.durationMs", "message_start: message.durationMs", "tool_execution_end: durationMs", "turn_end: toolResults[].durationMs"],
+      "the control: where pi puts them (a place added or gone: withoutNewerFields in wire.ts follows it)",
+    );
+    const frames = events.map((e) => JSON.parse(JSON.stringify(v1Frame(e))).event);
+    assert.deepEqual(newer(frames), [], "none reaches a wire-1 frame");
+    // Only by place: the same word in a tool's own details passes, and nothing else of the event is lost.
+    const end = events.find((e) => e.type === "tool_execution_end");
+    const kept = (v1Frame({ ...end, result: { ...end.result, structuredContent: { a: 1 }, details: { durationMs: 7, aborted: true } } }) as any).event;
+    const { durationMs: _took, ...rest } = end;
+    assert.deepEqual(kept, { ...rest, result: { ...end.result, details: { durationMs: 7, aborted: true } } });
+    const compaction = { type: "compaction_end", reason: "manual", result: undefined, aborted: true, willRetry: false };
+    assert.deepEqual((v1Frame(compaction) as any).event, compaction, "compaction_end's aborted is wire 1's own");
+    session.dispose();
+  });
+
+  test("wire 1 on a real provider's messages: pi-ai's own code adds a reply's durationMs, a cost's totalFromProvider and a tool call's argumentsError (the faux provider sets none), and no frame carries one wherever a message rides", async () => {
+    const { v1Frame } = await import("./wire.ts");
+    const { calculateCost, createAssistantMessageEventStream, parseToolCallArguments } = pi.ai as any;
+    // The controls: each field as pi-ai itself sets it (a field pi-ai stops setting, or sets elsewhere, fails here).
+    const usage = () => {
+      const u = { input: 3, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 5, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+      calculateCost({ cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } }, u);
+      return u;
+    };
+    const call = { type: "toolCall", id: "tc1", name: "echo", ...parseToolCallArguments("[1, 2]") };
+    const stream = createAssistantMessageEventStream();
+    const reply: any = { role: "assistant", api: "x", provider: "x", model: "x", stopReason: "toolUse", timestamp: Date.now(), content: [{ type: "text", text: "calling" }, call], usage: usage() };
+    stream.push({ type: "done", reason: "toolUse", message: reply });
+    assert.equal(reply.usage.cost.totalFromProvider, false, "calculateCost marks its total");
+    assert.equal(typeof call.argumentsError, "string", "arguments that are no object are an argumentsError");
+    assert.equal(typeof reply.durationMs, "number", "the event stream times the reply");
+    // A tool's own details may hold the same words: they are the tool's, and pass.
+    const details = { durationMs: 7, argumentsError: "mine", cost: { totalFromProvider: true } };
+    const result = { role: "toolResult", toolCallId: "tc1", toolName: "echo", content: [{ type: "text", text: "hi" }], details, isError: false, timestamp: Date.now(), durationMs: 4, usage: usage() };
+    const events: any[] = [
+      { type: "message_start", message: reply },
+      { type: "message_end", message: reply },
+      { type: "message_end", message: result },
+      { type: "turn_end", message: reply, toolResults: [result] },
+      { type: "agent_end", messages: [{ role: "user", content: "go", timestamp: 1 }, reply, result] },
+      { type: "entry_appended", entry: { type: "message", id: "e1", parentId: null, timestamp: "t", message: reply } },
+      { type: "message_update", message: reply, assistantMessageEvent: { type: "toolcall_end", contentIndex: 1, toolCall: call, partial: reply } },
+      { type: "message_update", message: reply, assistantMessageEvent: { type: "done", reason: "toolUse", message: reply } },
+      { type: "message_update", message: reply, assistantMessageEvent: { type: "error", reason: "error", error: reply } },
+    ];
+    /** Every path under `v` that ends in one of the three names, a tool's `details` left out. */
+    const newer = (v: unknown, at = ""): string[] => {
+      if (!v || typeof v !== "object") return [];
+      return Object.entries(v).flatMap(([k, x]) => (k === "details" ? [] : ["durationMs", "totalFromProvider", "argumentsError"].includes(k) ? [`${at}${k}`] : newer(x, `${at}${Array.isArray(v) ? "[]" : k}.`)));
+    };
+    const places = (list: any[]) => [...new Set(list.flatMap((e) => newer(e).map((path) => `${e.type}${e.assistantMessageEvent ? `/${e.assistantMessageEvent.type}` : ""}: ${path}`)))].sort();
+    const inPi = places(events);
+    assert.ok(inPi.includes("turn_end: message.durationMs") && inPi.includes("message_update/toolcall_end: assistantMessageEvent.toolCall.argumentsError") && inPi.includes("entry_appended: entry.message.usage.cost.totalFromProvider"), `the control: pi's events hold them (${inPi.length} places)`);
+    const frames = events.map((e) => JSON.parse(JSON.stringify(v1Frame(e))).event);
+    assert.deepEqual(places(frames), [], "none reaches a wire-1 frame");
+    // Nothing else is lost: a frame is its event less exactly those keys (message_update keeps its own wire shape).
+    const less = (v: any): any => (Array.isArray(v) ? v.map(less) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([k]) => !["durationMs", "totalFromProvider", "argumentsError"].includes(k)).map(([k, x]) => [k, k === "details" ? x : less(x)])) : v);
+    events.forEach((e, i) => {
+      if (e.type !== "message_update") assert.deepEqual(frames[i], less(JSON.parse(JSON.stringify(e))), e.type);
+    });
+    assert.deepEqual(frames[4].messages[2].details, details, "a tool's own details pass whole");
+    assert.deepEqual(frames[6], { type: "message_update", usage: less(reply.usage), assistantMessageEvent: { type: "toolcall_end", contentIndex: 1, toolCall: less(call) } });
+    assert.equal(reply.durationMs !== undefined && call.argumentsError !== undefined && reply.usage.cost.totalFromProvider === false, true, "and pi's own objects are left as they were");
   });
 
   test("C3: a run, a steer, a retry and a compaction emit the events and fields bind() reads", async () => {
@@ -511,7 +602,7 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P9 queue-one-bit: an image-only steer stays in the mirror after delivery while the agent's queue is empty; clearQueue() returns both kinds; continue() takes steering first", async () => {
+  test("P9 queue-one-bit: the mirror is spliced by text at message_start, so a delivered image-only steer leaves it and a twin's delivery takes a still-queued message's entry, while hasQueuedMessages() is the real queue; clearQueue() returns both kinds; continue() takes steering first", async () => {
     const { session, model } = await quirkSession();
     let release = model.hold();
     let run = session.prompt("first");
@@ -523,8 +614,8 @@ describe("pi contract", () => {
     await run;
     assert.equal(lastUser(model.calls[1]!), "", "the image-only steer was delivered");
     assert.equal(session.agent.hasQueuedMessages(), false, "the agent's real queue is empty");
-    assert.deepEqual([...session.getSteeringMessages()], [""], "fixed: the mirror now drops a delivered image-only steer; queue.ts's sdkHolds can trust it");
-    assert.deepEqual(session.clearQueue(), { steering: [""], followUp: [] });
+    assert.deepEqual([...session.getSteeringMessages()], [], "an image-only steer's empty text is spliced at delivery like any other (pi 1.5.1, #8612)");
+    assert.deepEqual(session.clearQueue(), { steering: [], followUp: [] });
     release = model.hold();
     run = session.prompt("second");
     await until(() => model.calls.length === 3, "the model call");
@@ -535,6 +626,20 @@ describe("pi contract", () => {
     release();
     await run;
     const user = (text: string) => ({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() }) as never;
+    // By text, never by identity: a delivered message takes the mirror entry of a still-queued one
+    // with its text, so a non-empty mirror proves nothing and only the real queue proves delivery.
+    release = model.hold();
+    run = session.prompt("third");
+    await until(() => model.calls.length === 4, "the model call");
+    await session.followUp("twin");
+    session.agent.steer(user("twin"));
+    let atTwin: { followUp: string[]; queued: boolean } | undefined;
+    model.reply(() => void (atTwin = { followUp: [...session.getFollowUpMessages()], queued: session.agent.hasQueuedMessages() }));
+    release();
+    await run;
+    assert.equal(lastUser(model.calls[4]!), "twin", "the agent's own steer was delivered first");
+    assert.deepEqual(atTwin, { followUp: [], queued: true }, "fixed: pi's mirror tracks delivery by identity; the one-bit reading and sdkTookHanded's guard (queue.ts) may go");
+    assert.equal(model.calls.length, 6, "the follow-up was delivered after it");
     session.agent.followUp(user("follow"));
     session.agent.steer(user("steer"));
     await session.agent.continue();
@@ -933,7 +1038,8 @@ describe("pi contract", () => {
       const s = session as any;
       session.setActiveToolsByName(["read", "echo", "orch"]);
       const state = s.agent.state.tools as { name: string; description: string }[];
-      assert.deepEqual(state.map((t) => t.name), ["read", "echo", "orch"], "the active tools, in order");
+      assert.deepEqual(state.map((t) => t.name), ["read", "orch", "echo"], "the named tools, each where it already was: pi keeps the order of tools that stay active, whatever order they are named in (1.5.0, #11495)");
+      assert.deepEqual(session.getActiveToolNames(), state.map((t) => t.name), "getActiveToolNames() is agent.state.tools' order");
       const registry = new Map(session.getAllTools().map((t: any) => [t.name, t]));
       const echo = state.find((t) => t.name === "echo")!;
       if (mode === "on") {
@@ -1003,7 +1109,7 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("project_verbs arriving at turn_end, on P23 (§app.project-services/tool-offered): the chat's tools in a fresh chat's order, the first request unchanged where it was offered, and the run's prompt sections kept", async () => {
+  test("project_verbs arriving at turn_end, on P23 (§app.project-services/tool-offered): the tool joins after the chat's others and a reopen lists it in a fresh chat's order without changing the request, the first request unchanged where it was offered, and the run's prompt sections kept", async () => {
     const { offeredToolExtension } = await import("../../served-tools");
     const tool = (name: string) => ({ name, label: name, description: `The ${name} tool.`, parameters: Type.Object({}), execute: async () => ({ content: [{ type: "text", text: name }], details: {} }) });
     /** Tools before and after the gated one, and a section written as the mode engine writes it, at every run's start. */
@@ -1048,7 +1154,7 @@ describe("pi contract", () => {
     assert.equal(model.calls.length, 2, "one run, two requests");
     assert.ok(!toolsOf(model.calls[0]!).includes("gated"), "the first request doesn't have it");
     assert.ok(toolsOf(model.calls[1]!).includes("gated"), "the step after setup arrived does");
-    assert.deepEqual(session.getActiveToolNames(), order, "the order a fresh chat has, so a reopen changes nothing");
+    assert.deepEqual(session.getActiveToolNames(), [...order.filter((n: string) => n !== "gated"), "gated"], "pi keeps the active tools where they are and appends the arrival (1.5.0, #11495); the reopen below changes no request");
     assert.deepEqual([...toolsOf(model.calls[1]!)].sort(), [...order].sort());
     assert.match(systemPromptOf(model.calls[1]!), /CONTRACT-MODE-SECTION/, "the tool change keeps the run's sections for the rest of the run (P39)");
     model.reply({ text: "again" });
@@ -1057,12 +1163,12 @@ describe("pi contract", () => {
     session.dispose();
 
     const reopened = await quirkSession({ file, extensions: chat(() => yes) as never });
-    assert.deepEqual(reopened.session.getActiveToolNames(), order, "reopened: the same order");
+    assert.deepEqual(reopened.session.getActiveToolNames(), order, "reopened: a fresh chat's order");
     reopened.model.reply({ text: "back" });
     await reopened.session.prompt("back again");
     const updates = (reopened.model.calls[0]!.context as { messages: any[] }).messages.filter((m) => m.role === "system");
     assert.ok(updates.length >= 2, "the control: the transcript's system messages are in the request");
-    assert.equal(updates.at(-1).sections?.tools, undefined, "the tool list in the prompt doesn't change at a reopen (appending the tool would: fixed order)");
+    assert.equal(updates.at(-1).sections?.tools, undefined, "the tool list in the prompt doesn't change at a reopen, whatever the order");
     assert.equal((updates.at(-1).toolsAdded ?? []).length, 0, "nor does the declared set");
     reopened.session.dispose();
   });
@@ -1111,7 +1217,9 @@ describe("pi contract", () => {
 
   test("P46 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns", async () => {
     const { DefaultPackageManager } = pi.agent;
-    const t = join(dir, "p43");
+    // Under the home folder (the runner's throwaway one), so a `~/…` pattern can name an entry.
+    const t = realpathSync(mkdtempSync(join(homedir(), "sova-p46-")));
+    underHome.push(t);
     const agentDir = join(t, "agent");
     const ext = join(agentDir, "extensions");
     const put = (rel: string, text = "export default () => {};\n") => (mkdirSync(dirname(join(ext, rel)), { recursive: true }), writeFileSync(join(ext, rel), text));
@@ -1141,8 +1249,11 @@ describe("pi contract", () => {
     }
     assert.ok(plain.some((r) => r.path === join(ext, "loose.ts")), "the control: a loose file is an extension");
     // Each kind of pattern, each place pi matches it (relative, file name, whole path; minimatch's *, **, ?, braces,
-    // classes; a leading ./), and the precedence !, then +, then -.
+    // classes; a leading ./), each form pi reads a pattern's path in (`~/…` from the home folder, a file:// URL:
+    // pi 1.2.0), and the precedence !, then +, then -.
     const abs = (rel: string) => join(ext, rel);
+    const tilde = (rel: string) => `~/${relative(homedir(), abs(rel))}`;
+    assert.ok(!relative(homedir(), ext).startsWith(".."), "the control: the entries lie under the home folder");
     const table: string[][] = [
       [], ["!extensions/dirts/index.ts"], ["!extensions/loose.ts"], ["!extensions/*"], ["!extensions/**"], ["!**/index.ts"], ["!extensions/dir?s/index.ts"],
       ["!index.ts"], ["!loose.ts"], ["!*.ts"], ["!extensions/{dirts,dirjs}/index.*"], ["!extensions/[d]irts/index.ts"], ["!./extensions/loose.ts"],
@@ -1150,7 +1261,12 @@ describe("pi contract", () => {
       ["!extensions/**", "+extensions/dirts/index.ts"], ["!extensions/**", "+./extensions/loose.ts"], ["!**", `+${abs("pkg/b.ts")}`], ["!extensions/**", "+extensions/dirts"],
       ["-extensions/dirts/index.ts"], ["-./extensions/loose.ts"], [`-${abs("loose.ts")}`], ["-extensions/dirts"], ["-extensions/pkg/index.ts"], ["-extensions/*"],
       ["!extensions/**", "+extensions/dirts/index.ts", "-extensions/dirts/index.ts"], ["+extensions/loose.ts", "-extensions/loose.ts"],
+      [`!${tilde("loose.ts")}`], [`!${tilde("dir*/index.*")}`], ["!~/**"], ["!~"], ["!extensions/**", `+${tilde("dirts/index.ts")}`], [`-${tilde("pkg/a.ts")}`],
+      [`!${pathToFileURL(abs("loose.ts")).href}`], ["!**", `+${pathToFileURL(abs("pkg/b.ts")).href}`], [`-${pathToFileURL(abs("dirjs/index.js")).href}`],
     ];
+    const offUnder = async (patterns: string[]) => (await resolveWith(patterns)).filter((r) => r.path.startsWith(ext + "/") && !r.enabled).map((r) => relative(ext, r.path));
+    assert.deepEqual(await offUnder([`!${tilde("loose.ts")}`]), ["loose.ts"], "the control: pi expands `~` in a pattern (were it literal, the rows above could not tell)");
+    assert.deepEqual(await offUnder([`-${pathToFileURL(abs("dirjs/index.js")).href}`]), ["dirjs/index.js"], "the control: pi reads a file:// pattern as its path");
     for (const patterns of table) {
       const got = (await resolveWith(patterns)).filter((r) => r.path.startsWith(ext + "/"));
       assert.ok(got.length >= 7, `the control: every entry resolves under ${JSON.stringify(patterns)}`);
@@ -1222,9 +1338,23 @@ describe("pi contract", () => {
     assert.equal(seen.a, direct, "the extensions' instance is the one a plain import gets");
     assert.notEqual(seen.c, seen.a, "the control: one that can't load natively is translated, with its own copy");
     delete (globalThis as any).__sovaP26;
+    // A native import gets pi-ai's real entry, not the view pi's loader aliases it to, and from pi-ai 1.5.0
+    // the two differ: no Type on the real one, and a StringEnum that is a plain object, into which TypeBox's
+    // Type.Optional() writes its marker as a key the model's provider would receive.
+    const view = await import(pathToFileURL(join(pi.dir, "dist/core/extensions/pi-ai-extension-view.js")).href);
+    const plain = '{"type":"string","enum":["a","b"]}';
+    assert.equal(JSON.stringify(Type.Optional(view.StringEnum(["a", "b"]))), plain, "the loader's view: a TypeBox schema, and Optional adds no key");
+    assert.equal(typeof view.Type?.Object, "function", "and it carries Type");
+    assert.equal(
+      JSON.stringify(Type.Optional((pi.ai as any).StringEnum(["a", "b"]))),
+      '{"type":"string","enum":["a","b"],"~optional":true}',
+      "fixed?: pi-ai's own StringEnum is a TypeBox schema again, or TypeBox no longer writes its marker: subagents/string-enum.ts and create-guide-tool's Type.Unsafe wrap may go",
+    );
+    assert.equal(JSON.stringify(Type.Optional(Type.Unsafe((pi.ai as any).StringEnum(["a", "b"])))), plain, "what the wrap gives: the schema as pi 1.0.3 had it");
+    assert.equal((pi.ai as any).Type, undefined, "fixed?: pi-ai's entry re-exports Type again");
   });
 
-  test("P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry", () => {
+  test("P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its HTML export, its CLI and its entry", () => {
     const piDist = join(pi.dir, "dist");
     const tuiDist = join(packageFrom(pi.dir, "@earendil-works/pi-tui")!, "dist");
     // The filter matches by these path tails, as they sit under any node_modules.
@@ -1261,8 +1391,20 @@ describe("pi contract", () => {
     }
     const allowed = /^(?:core\/tools\/renderers\/[^/]+|extensions\/[^/]+\/(?:renderer|ui|tools)|cli\/[^/]+|package-manager-cli|index|modes\/index|utils\/image-convert)\.js <- /;
     const themeTakes = "modes/interactive/theme/theme.js <- utils/syntax-highlight.js";
+    // The HTML export's tool renderer hands tool renderers pi's key-hint helpers (pi 1.5.0, #4748).
+    const exportTakes = "core/export-html/tool-renderer.js <- modes/interactive/components/keybinding-hints.js";
     assert.ok(takers.includes(themeTakes), `the theme takes the highlighter:\n${takers.join("\n")}`);
-    assert.deepEqual(takers.filter((t) => t !== themeTakes && !allowed.test(t)), [], "outside pi's terminal mode, a drawing module taken by code a Sova chat may run: triage by QUIRKS.md P27");
+    assert.deepEqual(takers.filter((t) => t !== themeTakes && t !== exportTakes && !allowed.test(t)), [], "outside pi's terminal mode, a drawing module taken by code a Sova chat may run: triage by QUIRKS.md P27");
+    // Only exportToHtml() builds that renderer, and Sova never exports a session through pi.
+    const builders = walk(piDist).filter((f) => !relative(piDist, f).startsWith("bundle/") && readFileSync(f, "utf8").includes("createToolHtmlRenderer(")).map((f) => relative(piDist, f)).sort();
+    assert.deepEqual(builders, ["core/agent-session.js", "core/export-html/tool-renderer.js"], "who builds the HTML export's tool renderer");
+    const agentSession = readFileSync(join(piDist, "core", "agent-session.js"), "utf8");
+    assert.equal(agentSession.split("createToolHtmlRenderer(").length, 2, "agent-session builds it once");
+    assert.match(agentSession, /async exportToHtml\([^)]*\) \{[^}]{0,300}createToolHtmlRenderer\(/, "inside exportToHtml()");
+    const sova = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const sources = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? (e.name === "node_modules" ? [] : sources(join(d, e.name))) : /(?<!\.test)\.ts$/.test(e.name) ? [join(d, e.name)] : []));
+    const exporting = ["server", "shared", "pi-config/extensions"].flatMap((d) => sources(join(sova, d))).filter((f) => /\.exportToHtml\s*\(/.test(readFileSync(f, "utf8"))).map((f) => relative(sova, f));
+    assert.deepEqual(exporting, [], "Sova calls pi's HTML export, whose tool renderer takes a stand-in in a chat process: triage by QUIRKS.md P27");
   });
 
   test("P28 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode", async () => {
@@ -1320,6 +1462,98 @@ describe("pi contract", () => {
   };
   const onlyConfig = { errors: [], autoEnableCodemode: false, servers: [{ name: "s", source: "sova", scope: "global", config: { command: "no-such-program", exposure: "direct" } }] };
 
+  test("P47 no-idle-warming: pi warms on after a run settles by default, and with the getter answering streaming for idle it stops at the settle, off stays off, and settings.json holds no cacheWarming", async () => {
+    // A provider whose model declares a cache lifetime (12 s, so the next warm falls inside pi's 30-minute idle
+    // limit), so pi has something to warm; the stream function is pi's own. Nothing here waits for a timer.
+    const usage = { input: 10, output: 1, cacheRead: 500_000, cacheWrite: 0, totalTokens: 500_011, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+    let providerCalls = 0;
+    const streamSimple = (model: any) => {
+      providerCalls++;
+      const stream = pi.ai.createAssistantMessageEventStream();
+      const message = { role: "assistant", content: [{ type: "text", text: "ok" }], api: model.api, provider: model.provider, model: model.id, usage, stopReason: "stop", timestamp: Date.now() };
+      queueMicrotask(() => (stream.push({ type: "start", partial: message }), stream.push({ type: "done", reason: "stop", message }), stream.end(message)));
+      return stream;
+    };
+    /** One turn of a session over `settingsManager`: the warmer's status right after the run settled. */
+    const afterOneTurn = async (name: string, settingsManager: any) => {
+      const runtime = await ModelRuntime.create({ authPath: join(dir, `p47-${name}-auth.json`), modelsPath: null, refreshOnCreate: false });
+      runtime.registerProvider("warm", {
+        name: "Warm", baseUrl: "http://127.0.0.1:9", apiKey: "stub", api: "warm-api", streamSimple,
+        models: [{ id: "cached", name: "cached", input: ["text"], reasoning: false, contextWindow: 1_000_000, maxTokens: 8000, cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, promptCache: { short: 12, long: 3600 } }],
+      } as never);
+      const cwd = join(dir, `p47-${name}`);
+      mkdirSync(cwd, { recursive: true });
+      const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: dir, settingsManager });
+      await resourceLoader.reload();
+      const { session } = await createAgentSession({ cwd, agentDir: dir, modelRuntime: runtime, model: runtime.getModel("warm", "cached"), sessionManager: SessionManager.inMemory(cwd), settingsManager, resourceLoader, noTools: "builtin" as const });
+      await session.bindExtensions({});
+      const before = providerCalls;
+      await session.prompt("hello");
+      const status = session.cacheWarmingStatus;
+      const out = { state: status?.state, reason: status?.reason, calls: providerCalls - before, usage: session.sessionManager.getEntries().filter((e: any) => e.type === "usage").length };
+      session.dispose();
+      return out;
+    };
+    const { warmOnlyWhileStreaming } = await import("./cache-warming.ts");
+    const piDefault = SettingsManager.inMemory({ retry: { enabled: false } } as never);
+    assert.equal(piDefault.getCacheWarmingMode(), "idle", "fixed?: pi's default is no longer idle warming; warmOnlyWhileStreaming may go");
+    assert.equal((await afterOneTurn("default", piDefault)).state, "scheduled", "the control: on pi's default a settled chat still has a warm scheduled");
+    // A settings file pi really reads (and would write), in an agent dir of its own.
+    const agentDir = join(dir, "p47-agent");
+    mkdirSync(agentDir, { recursive: true });
+    const settingsFile = join(agentDir, "settings.json");
+    for (const [setting, mode, reason] of [[undefined, "streaming", "agent run settled"], ["idle", "streaming", "agent run settled"], ["streaming", "streaming", "agent run settled"], ["off", "off", "cache warming disabled"]] as const) {
+      writeFileSync(settingsFile, `${JSON.stringify({ ...(setting ? { cacheWarming: setting } : {}), retry: { enabled: false } }, null, 2)}\n`);
+      const before = readFileSync(settingsFile, "utf8");
+      const settingsManager = SettingsManager.create(dir, agentDir);
+      warmOnlyWhileStreaming(settingsManager);
+      assert.equal(settingsManager.getCacheWarmingMode(), mode, `cacheWarming ${setting ?? "unset"}`);
+      assert.deepEqual(await afterOneTurn(`set-${setting ?? "unset"}`, settingsManager), { state: "inactive", reason, calls: 1, usage: 0 }, `cacheWarming ${setting ?? "unset"}: nothing is scheduled once the run settled, and only the reply was requested`);
+      assert.equal(readFileSync(settingsFile, "utf8"), before, "settings.json is untouched");
+    }
+  });
+
+  test("P48 auth-lock-path: pi locks auth.json on the file it resolves to, so on a linked auth.json its own write waits for the target's lock and not for the link's", async () => {
+    // pi's own store class and its own proper-lockfile (neither exported by the package).
+    const { AuthStorage } = await import(pathToFileURL(join(pi.dir, "dist", "core", "auth-storage.js")).href);
+    const lockfile = createRequire(join(pi.dir, "package.json"))("proper-lockfile") as { lock(file: string, o: object): Promise<() => Promise<void>> };
+    let refusals = 0;
+    const lock = lockfile.lock.bind(lockfile);
+    lockfile.lock = async (file, o) => lock(file, o).catch((error: { code?: string }) => {
+      if (error.code === "ELOCKED") refusals++;
+      throw error;
+    });
+    const t = join(dir, "p48");
+    mkdirSync(join(t, "store"), { recursive: true });
+    mkdirSync(join(t, "agent"), { recursive: true });
+    const target = join(t, "store", "shared-auth.json");
+    const link = join(t, "agent", "auth.json");
+    writeFileSync(target, "{}", { mode: 0o600 });
+    symlinkSync(target, link);
+    const storage = AuthStorage.create(link);
+    const key = (k: string) => ({ type: "api_key", key: k });
+    try {
+      // The link's own lock, as pi through 1.5.0 took it: pi 1.5.1+ doesn't wait for it.
+      let release = await lock(link, { realpath: false, stale: 30_000 });
+      await storage.modify("zai", async () => key("one"));
+      assert.deepEqual(JSON.parse(readFileSync(target, "utf8")).zai, key("one"), "written through the link while the link's lock was held");
+      await release();
+      // The target's lock: pi waits for it.
+      release = await lock(target, { realpath: false, stale: 30_000 });
+      const before = refusals;
+      let done = false;
+      const write = storage.modify("zai", async () => key("two")).then(() => (done = true));
+      await until(() => refusals > before, "pi refused the target's lock (fixed?: pi locks auth.json by the path as given again: PiAuthStore.lockSpecs' second lock may go)");
+      assert.equal(done, false, "pi's write waits");
+      assert.deepEqual(JSON.parse(readFileSync(target, "utf8")).zai, key("one"));
+      await release();
+      await write;
+      assert.deepEqual(JSON.parse(readFileSync(target, "utf8")).zai, key("two"));
+    } finally {
+      lockfile.lock = lock;
+    }
+  });
+
   test("P30 mcp-snapshot-transport: a transport answering initialize and tools/list connects at session_start; pi declares its tools in the first request, reads no mcp.json and sends a call to send", async () => {
     const sent: { method?: string }[] = [];
     let built = 0;
@@ -1360,20 +1594,6 @@ describe("pi contract", () => {
     assert.ok(source.includes("`${name}: needs sign-in, run /mcp login ${name} (${exposure})`"), "the needs-sign-in line");
     assert.equal(readStatus("s", ["s: needs sign-in, run /mcp login s (direct)"]).state, "needs-sign-in");
     assert.deepEqual(readStatus("s", ["s: failed (direct)\n    boom: no key"]), { state: "failed", errors: ["failed (direct)", "boom: no key"] });
-    session.dispose();
-  });
-
-  test("P35 mcp-tool-name: a plain, a sanitized and a shortened tool register under the names piToolNames gives", async () => {
-    const { piToolNames } = await import("../../mcp/tool-names");
-    const seen: { name: string }[] = [];
-    const long = "x".repeat(100);
-    const config = { errors: [], autoEnableCodemode: false, servers: [{ name: "my-srv", source: "sova", scope: "global", config: { command: "no-such-program", exposure: "direct" } }] };
-    const factory = pi.agent.createMcpExtension({ loadConfig: () => config as never, createTransport: () => answeringTransport(["plain", "a.b", long].map((name) => ({ name, inputSchema: { type: "object" } })), []) as never });
-    const wrapped = (api: any) => factory(new Proxy(api, { get(t, k) { if (k === "registerTool") return (d: never) => (seen.push(d), t.registerTool(d)); const v = t[k]; return typeof v === "function" ? v.bind(t) : v; } }));
-    const { session } = await quirkSession({ extensions: [wrapped] });
-    await session.bindExtensions({ uiContext: { notify() {}, setStatus() {}, select: async () => undefined, confirm: async () => false, input: async () => undefined, custom: async () => undefined, setWidget() {}, theme: {} } as never, mode: "rpc" as never });
-    while (seen.length < 3) await new Promise((r) => setTimeout(r, 1));
-    assert.deepEqual(seen.map((d) => d.name), [piToolNames("my-srv", "plain")[0], piToolNames("my-srv", "a.b")[0], piToolNames("my-srv", long)[1]]);
     session.dispose();
   });
 
@@ -1522,7 +1742,7 @@ describe("pi contract", () => {
     assert.equal(stopped.cancelled, true);
   });
 
-  test("P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session", async () => {
+  test("P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given, reports a dropped session, and never sends a request given up on while it waited for a token", async () => {
     const { McpSessionExpiredError, StreamableHttpTransport } = await import("@earendil-works/pi-mcp");
     const { piLiteral } = await import("./mcp");
     const url = "http://127.0.0.1:9/mcp";
@@ -1573,6 +1793,28 @@ describe("pi contract", () => {
     assert.equal(heard.length, 1, "the reply came before send resolved");
     assert.equal(asked[0]!.get("x-value"), "!no-such-command ${HOME}");
     await assert.rejects(http.send({ jsonrpc: "2.0", id: 2, method: "tools/call" }), McpSessionExpiredError);
+
+    // A request whose sender gave up while the token was fetched is not dispatched (pi-mcp 1.2.0): AddressServer
+    // passes pi's send options on and reads the McpAbortError by class.
+    const { McpAbortError } = await import("@earendil-works/pi-mcp");
+    let giveToken!: (token: string) => void;
+    const dispatched: string[] = [];
+    const waiting = new StreamableHttpTransport({
+      url,
+      authProvider: { token: () => new Promise<string>((r) => (giveToken = r)) } as never,
+      fetch: async (_input, init) => (dispatched.push(String(init?.body)), new Response(null, { status: 202 })),
+    });
+    await waiting.start();
+    const gaveUp = new AbortController();
+    const late = waiting.send({ jsonrpc: "2.0", id: 3, method: "tools/call" }, { signal: gaveUp.signal });
+    gaveUp.abort();
+    giveToken("token");
+    await assert.rejects(late, McpAbortError, "fixed?: pi-mcp sends a request whose sender gave up, or reports it another way (mcp-http.ts AddressServer.send)");
+    assert.deepEqual(dispatched, [], "nothing went out");
+    const control = waiting.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    giveToken("token");
+    await control;
+    assert.equal(dispatched.length, 1, "the control: without an abort it is sent");
   });
 
   test("P31 mcp-command-through-api: the factory registers mcp on the API it is handed, so a proxy that drops it leaves no /mcp and the extension's events running", async () => {

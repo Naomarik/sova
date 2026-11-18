@@ -119,12 +119,12 @@ test("a queue chat never takes another profile: applyProfile is refused (409) an
 });
 
 // The reply shape (§chat.mode-menu/reply-shape) is for the chats the user reads and talks to. The merge queue's own
-// chats are machine-facing (the thread's questions reach the user on the merge card), so Sova launches them without
-// it; a playbook run's chat (an ordinary chat, or one on the run's own profile) and the release thread have it.
+// chats and the release thread are machine-facing (the thread's questions reach the user on the merge card), so Sova
+// launches them without it; a playbook run's chat (an ordinary chat, or one on the run's own profile) has it.
 const shapes = async (path: string) => piSession(await acquireChat(path)).systemPrompt.split(REPLY_SHAPE_INSTRUCTIONS).length - 1;
 
-test("reply shape: the merge thread's and the reviewer's prompts never carry it; a playbook run's chat and the release thread carry it once", async () => {
-  for (const profile of [THREAD_PROFILE, "merge-reviewer"]) {
+test("reply shape: the merge thread's, the reviewer's and the release thread's prompts never carry it; a playbook run's chat carries it once", async () => {
+  for (const profile of [THREAD_PROFILE, "merge-reviewer", RELEASE_THREAD_PROFILE]) {
     const made = await createChat(request, cwd, profile, "", `queue chat · ${profile}`);
     assert.ok(made.ok, JSON.stringify(made));
     if (!made.ok) return;
@@ -138,7 +138,4 @@ test("reply shape: the merge thread's and the reviewer's prompts never carry it;
   const applied = await applyProfile(path, { remove: [], grant: [] }, "start");
   assert.ok(applied.ok, JSON.stringify(applied));
   assert.equal(await shapes(path), 1, "on the run's own profile");
-  const release = await createChat(request, cwd, RELEASE_THREAD_PROFILE, "", "Release thread");
-  assert.ok(release.ok, JSON.stringify(release));
-  if (release.ok) assert.equal(await shapes(release.path), 1, "the release thread follows its playbook and has it");
 });

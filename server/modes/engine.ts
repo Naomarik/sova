@@ -105,7 +105,7 @@ function withStrictRemoved(current: readonly string[], snapshot: readonly string
 /** The launch flags Sova passes per hosted session (index.ts REVIEW_FLAG, VISUALS_FLAG). */
 export const REVIEW_FLAG = "adversarial-review";
 export const VISUALS_FLAG = "align-visuals";
-/** Set by Sova for the merge queue's own chats (the merge thread and the reviewer): no reply shape in their mode section. */
+/** Set by Sova for its own machine-facing chats (the merge thread, its reviewers, the release thread): no reply shape in their mode section. */
 export const REPLY_SHAPE_OFF_FLAG = "reply-shape-off";
 
 /** A switch's marker, without the snapshot recordSwitch adds (index.ts SwitchMarker). */
@@ -378,7 +378,7 @@ export class ModeEngine {
   }
 
   /** The `mode` section now (index.ts modeBlock): a worker's modes, or a main chat's blocks then the reply shape, which it
-      has whatever its modes, unless Sova launched it without (REPLY_SHAPE_OFF_FLAG: the merge queue's own chats). */
+      has whatever its modes, unless Sova launched it without (REPLY_SHAPE_OFF_FLAG: the merge thread, its reviewers, the release thread). */
   modeBlock(): string | undefined {
     if (this.workerRole) return composeWorkerPrompt({ minorModes: this.headMinors() });
     const blocks = composePrompt(

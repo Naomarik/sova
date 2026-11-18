@@ -367,8 +367,8 @@ instruction that sets a reply's own shape (align's sentence or two naming a new
 alignment, the Overseer's answer groups) wins. The engine adds it
 (`withReplyShape` in `modeBlock`), so `composePrompt` stays the mode blocks
 alone; a worker's section (`composeWorkerPrompt`) never has it, nor does the
-merge queue's own chats' (the merge thread and its reviewers: Sova launches them
-with `reply-shape-off`). The project overseer runs no modes, so it rides that
+merge queue's own chats' or the release thread's (Sova launches its own named
+chats with `reply-shape-off`). The project overseer runs no modes, so it rides that
 chat's own prompt; the baton and the Project Assistant, which talk to
 non-technical people, never get it.
 

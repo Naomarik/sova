@@ -44,7 +44,7 @@ export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinit
  *   pi-config/extensions/claude-code/provider/index.ts CLAUDE_PROVIDER_FLAG).
  * - `review`: adversarial review (`adversarial-review`, server/modes/engine.ts REVIEW_FLAG).
  * - `replyShapeOff`: no reply shape in the mode section (`reply-shape-off`, server/modes/engine.ts
- *   REPLY_SHAPE_OFF_FLAG): the merge queue's own chats, the merge thread and its reviewers.
+ *   REPLY_SHAPE_OFF_FLAG): Sova's own machine-facing chats, the merge thread, its reviewers and the release thread.
  * - `alignVisuals`: the align mode's Visuals as the chat's launch record has them (`align-visuals`, `on` or
  *   `off`, server/modes/engine.ts VISUALS_FLAG); absent, the engine reads mode-align.json.
  * - `link`: this server's bound origin and its per-install token for the `link` extension (`sova-link`,

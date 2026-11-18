@@ -158,7 +158,7 @@ export function modesExtension(pi: PiExtensionAPI, options: ModesExtensionOption
   pi.registerFlag("major", { description: "Start in a mode: normal | delegate", type: "string" });
   pi.registerFlag(REVIEW_FLAG, { description: "Adversarial review of alignments", type: "boolean", default: false });
   pi.registerFlag(VISUALS_FLAG, { description: "Align visuals for this session: on | off (default: mode-align.json)", type: "string" });
-  pi.registerFlag(REPLY_SHAPE_OFF_FLAG, { description: "No reply shape in the mode section (the merge queue's own chats)", type: "boolean", default: false });
+  pi.registerFlag(REPLY_SHAPE_OFF_FLAG, { description: "No reply shape in the mode section (Sova's merge thread, merge reviewers and release thread)", type: "boolean", default: false });
   pi.registerFlag("minor", { description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`, type: "string" });
   engine.listen();
 

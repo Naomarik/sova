@@ -790,6 +790,8 @@ describe("standing notes and the extra prompt: fixed at opening, live through th
 
   test("a run an extension's message starts keeps the prompt and carries the run note, so a change reaches it there; the next run doesn't repeat it", async () => {
     const chat = await overseerChat();
+    // A card left open: its lines ride in the same hidden message as the run note (§app.overseer/confirm).
+    modelCalls.push(() => ({ toolCall: { name: "sova_card", arguments: { ops: [{ op: "create", title: "CARD-GAMMA?", options: [{ label: "Yes" }, { label: "No" }] }] } } }));
     await userSends(chat, "before");
     const prompt = systemOf(contexts.at(-1));
     writeNotes("NOTE-GAMMA\n");
@@ -804,7 +806,11 @@ describe("standing notes and the extra prompt: fixed at opening, live through th
     // pi runs the start-of-run step on such a run too (1.2.0), so it has a run note like any other.
     assert.match(lastNote(calls[0]), /\[changed\]/, "the run the extension's message started is told what changed");
     assert.match(lastNote(calls[0]), /NOTE-GAMMA/);
+    const card = /\[cards\] Open cards[\s\S]*\n(c_\d+) "CARD-GAMMA\?"/.exec(lastNote(calls[0]))?.[1];
+    assert.ok(card, "and of the open cards, in the same hidden message");
     assert.equal(lastNote(calls[1]), lastNote(calls[0]), "once for the run, not again at its next request");
+    // The card goes with this test (the conversation is shared by the file).
+    modelCalls.push(() => ({ toolCall: { name: "sova_card", arguments: { card, ops: [{ op: "drop", reason: "the test is over" }] } } }));
     await userSends(chat, "after");
     assert.notEqual(lastNote(contexts.at(-1)), lastNote(calls[0]), "the control: the user's run has a note of its own");
     assert.doesNotMatch(lastNote(contexts.at(-1)), /\[changed\]/, "and it was told already: nothing changed since");

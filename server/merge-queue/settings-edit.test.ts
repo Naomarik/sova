@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
-import { applyToData, changeWords, editSettingsText, isEmptyChange, parseChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
+import { applyToData, changeWords, editSettingsText, isEmptyChange, parseChange, REVIEW_KIT_DIR, reviewKitDirAt, SettingsEditError } from "./settings-edit";
 
 // §app.merge-queue/settings
 
@@ -51,7 +51,7 @@ describe("editing Sova's own project file in place", () => {
     assert.deepEqual(JSON.parse(out), applyToData(raw, { push: false, review: false, checks: { build: { optional: true }, unit: { rerun: false } } }));
     // push's value, unit's rerun gone, build's optional added, review's line gone; nothing else but the commas JSON needs
     // (the data check above says which check each one is in).
-    assert.deepEqual(lineDiff(SOVA, out), { removed: ['"push": true', '"rerun": true', '"review": ".sova/playbooks/review"'], added: ['"push": false', '"optional": true'] });
+    assert.deepEqual(lineDiff(SOVA, out), { removed: ['"push": true', '"rerun": true', '"review": ".sova/playbook-config/review"'], added: ['"push": false', '"optional": true'] });
     assert.equal(out.slice(0, out.indexOf('"merge"')), SOVA.slice(0, SOVA.indexOf('"merge"')));
     assert.equal(out.slice(out.indexOf('\n  "release"')), SOVA.slice(SOVA.indexOf('\n  "release"')), "what follows the merge section stays");
   });
@@ -61,6 +61,17 @@ describe("editing Sova's own project file in place", () => {
     assert.equal(JSON.parse(off).merge.review, undefined);
     const on = editSettingsText(off, { review: true }, { kitExists: true });
     assert.equal(on, SOVA);
+  });
+
+  test("turning review on names .sova/playbook-config/review, or the old place while only it is on the target", async () => {
+    const NEW = ".sova/playbook-config/review";
+    const OLD = ".sova/playbooks/review";
+    assert.equal(REVIEW_KIT_DIR, NEW);
+    for (const [there, want] of [[[], NEW], [[NEW], NEW], [[OLD], OLD], [[NEW, OLD], NEW]] as const)
+      assert.equal(await reviewKitDirAt(async (rel) => (there as readonly string[]).includes(rel)), want, `on the target: ${there.join(", ") || "neither"}`);
+    const off = editSettingsText(SOVA, { review: false });
+    assert.equal(JSON.parse(editSettingsText(off, { review: true }, { kitExists: true, kitDir: OLD })).merge.review, OLD);
+    assert.throws(() => editSettingsText(off, { review: true }, { kitDir: OLD }), new RegExp(OLD.replace(/[./]/g, "\\$&")));
   });
 
   test("Reuse passes from identical code: off writes merge.reuse false, on removes it (the default): the round trip is the same bytes", () => {

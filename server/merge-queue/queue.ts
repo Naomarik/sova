@@ -68,8 +68,8 @@ import { type HostAdapter, type HostKind, type HostRepo, NO_HOST_WORDS, NO_ORIGI
 import { githubAdapter } from "./hosts/github";
 import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
-import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
-import { PROJECT_PLAYBOOK } from "./thread";
+import { changeWords, editSettingsText, isEmptyChange, reviewKitDirAt, SettingsEditError } from "./settings-edit";
+import { projectPlaybookRel } from "./thread";
 import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
 import { commitResolution } from "./resolve-content";
 import { dropRunDrafts } from "./run-logs";
@@ -838,8 +838,8 @@ export class ProjectQueue {
       checks: d.checks,
       review: d.review,
       kitFiles,
-      kitOnTarget: await at(REVIEW_KIT_DIR),
-      projectPlaybook: existsSync(join(this.root, PROJECT_PLAYBOOK, "PLAYBOOK.md")),
+      kitOnTarget: await at(await reviewKitDirAt(at)),
+      projectPlaybook: existsSync(join(this.root, projectPlaybookRel(this.root), "PLAYBOOK.md")),
       projectPlaybookDiffers: await playbookDiffers(this.git, this.root, head),
       names: { setUp: namesOf.exists, count },
       models: { review: await effectiveModel(picks.review, check), thread: await effectiveModel(picks.thread, check) },
@@ -985,7 +985,9 @@ export class ProjectQueue {
     const shown = await this.git(["show", `${head}:${SETTINGS_FILE}`], this.root);
     const text = shown.code === 0 ? shown.stdout : '{\n  "version": 1\n}\n';
     try {
-      return editSettingsText(text, changes, { kitExists: (await this.git(["cat-file", "-e", `${head}:${REVIEW_KIT_DIR}`], this.root)).code === 0 });
+      const has = async (rel: string) => (await this.git(["cat-file", "-e", `${head}:${rel}`], this.root)).code === 0;
+      const kitDir = await reviewKitDirAt(has);
+      return editSettingsText(text, changes, { kitExists: await has(kitDir), kitDir });
     } catch (err) {
       if (err instanceof SettingsEditError) throw new MergeFailure("invalid-request", err.message);
       throw err;

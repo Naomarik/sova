@@ -28,7 +28,7 @@ export interface FolderGroup {
   /** Unique among the viewer's groups. */
   id: string;
   label: string;
-  /** One line under the label: where the files come from (`.sova/playbooks/review at 97927e0`). */
+  /** One line under the label: where the files come from (`.sova/playbook-config/review at 97927e0`). */
   caption?: string;
   list(): Promise<FolderItem[]>;
   read(path: string): Promise<FolderText>;

@@ -148,12 +148,20 @@ describe("the Setup chat's lifecycle", () => {
   });
 });
 
-test("the Setup chat finds its own recipe, project-setup, which the Playbooks list leaves out (listed: false)", async () => {
+test("the Setup chat finds its own recipe in system-playbooks/, which the Playbooks list leaves out; a user's project-setup replaces nothing", async () => {
   // onboardFacts reads the catalog with includeUnlisted: without it, `playbook` comes back null.
   const { onboardFacts, SETUP_PLAYBOOK_ID } = await import("./onboard");
-  const { listPlaybooks } = await import("../playbooks");
+  const { listPlaybooks, SYSTEM_PLAYBOOKS_DIR, userPlaybooksDir } = await import("../playbooks");
   const p = await project();
-  const facts = await onboardFacts(p.id, SETUP_PLAYBOOK_ID);
-  assert.match(facts.playbook?.dir ?? "", /[/\\]playbooks[/\\]project-setup$/);
-  assert.ok(!(await listPlaybooks(p.root)).playbooks.some((x) => x.id === SETUP_PLAYBOOK_ID), "the Playbooks list leaves it out");
+  const mine = join(userPlaybooksDir(), SETUP_PLAYBOOK_ID);
+  mkdirSync(mine, { recursive: true });
+  writeFileSync(join(mine, "PLAYBOOK.md"), "---\ntitle: My setup\nproposes: pipeline\n---\n# mine\n");
+  try {
+    const facts = await onboardFacts(p.id, SETUP_PLAYBOOK_ID);
+    assert.equal(facts.playbook?.dir, join(SYSTEM_PLAYBOOKS_DIR, SETUP_PLAYBOOK_ID));
+    const listed = (await listPlaybooks(p.root)).playbooks.filter((x) => x.id === SETUP_PLAYBOOK_ID);
+    assert.deepEqual(listed.map((x) => [x.source, x.dir, x.replacesSova]), [["user", mine, undefined]], "only the user's is listed, an ordinary one of theirs");
+  } finally {
+    rmSync(mine, { recursive: true, force: true });
+  }
 });

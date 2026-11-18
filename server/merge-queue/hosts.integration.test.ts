@@ -189,7 +189,7 @@ describe("the tools themselves", () => {
 describe("the request folder's real checks", () => {
   test("the example kit: a failing check sends the text back with its reason; the rewrite passes", async () => {
     const root = scratchRoot("request-kit-int");
-    cpSync(join(import.meta.dirname, "..", "..", ".sova", "playbooks", "request"), join(root, ".sova", "playbooks", "request"), { recursive: true });
+    cpSync(join(import.meta.dirname, "..", "..", ".sova", "playbook-config", "request"), join(root, ".sova", "playbooks", "request"), { recursive: true });
     const kit = loadRequestKit(root, ".sova/playbooks/request", "github") as RequestKit;
     assert.ok(!("error" in kit), JSON.stringify(kit));
     assert.equal(kit.checks.length, 1);

@@ -7,7 +7,7 @@ import { BODY_MAX, type HostKind, TITLE_MAX } from "./types";
 
 /**
  * The text of a pull or merge request (a18, q13): a project's "request" skill folder, built like the review's
- * (`.sova/playbooks/review`): `PLAYBOOK.md` says how to write the title and description, `references/` holds templates
+ * (`.sova/playbook-config/review`): `PLAYBOOK.md` says how to write the title and description, `references/` holds templates
  * and examples, and `scripts/check*.mjs` check a drafted text. The repo's own GitHub/GitLab template is added when it
  * has one. Without a folder, a plain default playbook (no checks of its own).
  *

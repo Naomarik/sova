@@ -8,13 +8,13 @@ import { fileURLToPath } from "node:url";
 
 /**
  * The release playbooks' drivers as the agent runs them (the playbook bundle convention: a digest on stdout, exit 0 fine,
- * 1 something to act on, 2 couldn't tell): playbooks/release-maker/scripts/release-maker.mjs and
- * playbooks/release/scripts/release.mjs, in scratch repositories. Their logic is covered in-process by
+ * 1 something to act on, 2 couldn't tell): system-playbooks/release-maker/scripts/release-maker.mjs and
+ * system-playbooks/release/scripts/release.mjs, in scratch repositories. Their logic is covered in-process by
  * release-playbooks.test.ts; this file holds only what needs the process: the exit codes and the digests.
  */
 
-const MAKER = fileURLToPath(new URL("../playbooks/release-maker/scripts/release-maker.mjs", import.meta.url));
-const REL = fileURLToPath(new URL("../playbooks/release/scripts/release.mjs", import.meta.url));
+const MAKER = fileURLToPath(new URL("../system-playbooks/release-maker/scripts/release-maker.mjs", import.meta.url));
+const REL = fileURLToPath(new URL("../system-playbooks/release/scripts/release.mjs", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "playbooks-release-int-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 const env = { ...process.env, PI_CODING_AGENT_DIR: join(dir, "agent") };

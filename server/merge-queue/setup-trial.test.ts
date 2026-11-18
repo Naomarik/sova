@@ -37,7 +37,7 @@ describe("a setup branch (pure rules)", () => {
   });
 
   test("the release playbook folders: either side's, plus the default", () => {
-    assert.deepEqual(releaseFolders({ release: { playbook: "./ops/release/" } }, null), ["ops/release", ".sova/playbooks/release"]);
+    assert.deepEqual(releaseFolders({ release: { playbook: "./ops/release/" } }, null), ["ops/release", ".sova/playbook-config/release", ".sova/playbooks/release"]);
   });
 
   test("a trial runs the release checks that are new, changed or named; the rest are not run", () => {

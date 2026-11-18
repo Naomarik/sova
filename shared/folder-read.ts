@@ -30,7 +30,7 @@ export interface FolderFile {
 
 /** Sova's shipped folders a viewer may show, by id: its folder relative to Sova's install. */
 export const FOLDER_BUILTINS: Readonly<Record<string, string>> = {
-  "merge-queue-method": "playbooks/merge-queue",
+  "merge-queue-method": "system-playbooks/merge-queue",
 };
 
 /** The `src` query parameter of a source. Pure. */

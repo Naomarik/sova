@@ -3,13 +3,13 @@ import type { EffectiveModel, FolderRef, MergeFixedValues, MergeQueueSettings } 
 import { HOOK_TIMEOUT_MAX, type ProjectDef } from "../../shared/project-contract";
 import { mergeCopyPath } from "./copy";
 import type { Git } from "./guard";
-import { PROJECT_PLAYBOOK, THREAD_MAX_AGE_MS, THREAD_MAX_CONTEXT } from "./thread";
+import { projectPlaybookRel, THREAD_MAX_AGE_MS, THREAD_MAX_CONTEXT } from "./thread";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
 import { QueueStore } from "./store";
 import { landHowSetting } from "./strategy";
-import { REVIEW_KIT_DIR } from "./settings-edit";
+import { reviewKitDirAt } from "./settings-edit";
 
 /**
  * The settings block of the queue's view (§app.merge-queue/settings): what the queue uses, read from the target's
@@ -22,7 +22,7 @@ import { REVIEW_KIT_DIR } from "./settings-edit";
  * (which the viewer shows): a tracked change, or a file the target hasn't.
  */
 export async function playbookDiffers(git: Git, root: string, head: string): Promise<boolean> {
-  const dir = PROJECT_PLAYBOOK.split("\\").join("/");
+  const dir = projectPlaybookRel(root);
   const tracked = await git(["diff", "--quiet", head, "--", dir], root);
   if (tracked.code === 1) return true;
   const untracked = await git(["ls-files", "--others", "--exclude-standard", "--", dir], root);
@@ -82,7 +82,7 @@ export function buildSettings(a: SettingsInput): MergeQueueSettings {
   const kit = a.review && m?.review ? m.review : undefined;
   const folder = (label: string, dir: string): FolderRef | null => (a.projectId ? { label, source: { kind: "project", project: a.projectId, ref: a.head, dir } } : null);
   const kitFolder = kit ? folder("Review instructions", kit) : null;
-  const book = a.projectPlaybook ? folder("This project's playbook", PROJECT_PLAYBOOK.split("\\").join("/")) : null;
+  const book = a.projectPlaybook ? folder("This project's playbook", projectPlaybookRel(a.root)) : null;
   const projectBook = book ? { ...book, differsFromFolder: !!a.projectPlaybookDiffers } : null;
   return {
     at: a.head,
@@ -152,7 +152,7 @@ export async function bareSettings(root: string, d: BareSettingsDeps): Promise<M
     local = readFileSync(join(root, ".sova/project.json"), "utf8");
   } catch {}
   const picks = readModels(store.dir);
-  const playbook = existsSync(join(root, PROJECT_PLAYBOOK, "PLAYBOOK.md"));
+  const playbook = existsSync(join(root, projectPlaybookRel(root), "PLAYBOOK.md"));
   return buildSettings({
     root,
     projectId: d.projectIdOf(root),
@@ -162,7 +162,7 @@ export async function bareSettings(root: string, d: BareSettingsDeps): Promise<M
     checks: s.checks,
     review: false,
     kitFiles: [],
-    kitOnTarget: await has(REVIEW_KIT_DIR),
+    kitOnTarget: await has(await reviewKitDirAt(has)),
     projectPlaybook: playbook,
     ...(playbook ? { projectPlaybookDiffers: await playbookDiffers(d.git, root, s.head) } : {}),
     names: { setUp: names.exists, count },

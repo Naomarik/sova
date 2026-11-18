@@ -139,7 +139,7 @@ describe("a project folder at a ref", () => {
 describe("Sova's own folders", () => {
   test("a builtin reads only its allow-listed folder", async () => {
     const sova = scratchRoot("folder-read-sova-");
-    write(sova, "playbooks/merge-queue/PLAYBOOK.md", "# Method\n");
+    write(sova, "system-playbooks/merge-queue/PLAYBOOK.md", "# Method\n");
     write(sova, "server/secret-ish.ts", "x\n");
     const deps = { rootOf: () => "/nowhere", sovaRoot: sova };
     const l = await listFolder({ kind: "builtin", id: "merge-queue-method" }, deps);

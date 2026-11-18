@@ -27,7 +27,7 @@ import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "./claude-login-known";
 import { projectLoginView, setProjectLogin } from "./projects/claude-login";
 import { checkoutRootOf, discoverProjectModes, readProjectMode } from "../pi-config/extensions/mode/project-discovery.ts";
 import { OrgError } from "./org-error";
-import { isPlaybookId, listProjectPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook } from "./playbooks";
+import { isPlaybookId, listProjectPlaybooks, parseFrontmatter, PROJECT_CONFIG_DIR, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook } from "./playbooks";
 import { approvalOf, approve as approveProfile, readTrust } from "./profile-trust";
 import { findProfile, profileSources } from "./profile-sources";
 import { isApproved as modeApproved, recordApproval as recordModeApproval } from "./project-mode-approvals";
@@ -519,7 +519,7 @@ const FILE_MAX = 64 * 1024;
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 /** The settings files' places, relative to the project root (local edits are looked for under these). */
-export const SETTINGS_PLACES = [CONTRACT_FILE, OFFERS_FILE, ".sova/profiles", ...PROJECT_PLAYBOOK_DIRS.map((d) => d.split("\\").join("/")), PROJECT_MODES_DIR];
+export const SETTINGS_PLACES = [CONTRACT_FILE, OFFERS_FILE, ".sova/profiles", ...PROJECT_PLAYBOOK_DIRS.map((d) => d.split("\\").join("/")), PROJECT_CONFIG_DIR, PROJECT_MODES_DIR];
 
 /** Whether `rel` is a settings file (a commit of Apply touches nothing else). */
 export const isSettingsPath = (rel: string): boolean =>

@@ -1,5 +1,5 @@
 // Run: pnpm test:int server/merge-queue/discover-names.integration.test.ts
-// The merge thread's name discovery (playbooks/merge-queue/scripts/discover-names.mjs, the names
+// The merge thread's name discovery (system-playbooks/merge-queue/scripts/discover-names.mjs, the names
 // interview): it finds each kind in fixtures under a temporary agent dir and HOME (never the real
 // ~/.pi), drops public and generic terms, merges additively at 0600 into the project's names file,
 // takes the user's own names, flags names origin/<target> already has, never prints a value without
@@ -12,7 +12,7 @@ import { delimiter, join } from "node:path";
 import { after, test } from "node:test";
 
 const REPO = join(import.meta.dirname, "..", "..");
-const DISCOVER = join(REPO, "playbooks", "merge-queue", "scripts", "discover-names.mjs");
+const DISCOVER = join(REPO, "system-playbooks", "merge-queue", "scripts", "discover-names.mjs");
 const SCAN = join(REPO, "scripts", "merge-checks", "leak-scan.mjs");
 const dir = mkdtempSync(join(tmpdir(), "discover-names-"));
 after(() => rmSync(dir, { recursive: true, force: true }));

@@ -113,5 +113,5 @@ was published. What changed is in [CHANGELOG.md](CHANGELOG.md).
   `--force` are never used.
 
 An agent cuts a release by following the release playbook,
-[.sova/playbooks/release/PLAYBOOK.md](.sova/playbooks/release/PLAYBOOK.md): checks, release
+[.sova/playbook-config/release/PLAYBOOK.md](.sova/playbook-config/release/PLAYBOOK.md): checks, release
 commit and notes, then it stops until the maintainer says to publish.

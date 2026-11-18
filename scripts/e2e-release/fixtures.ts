@@ -81,7 +81,7 @@ export const LOCAL_STEPS: ReleaseStep[] = [
 
 /** The default `release` pointer (the settings' `release` section); spread it to vary one key (`{...DEFAULT_POINTER, commit: false}`). */
 export const DEFAULT_POINTER: Record<string, unknown> = {
-  playbook: ".sova/playbooks/release",
+  playbook: ".sova/playbook-config/release",
   tag: "v${version}",
   scheme: "semver",
   channels: ["stable"],
@@ -294,9 +294,9 @@ export class ReleaseFixture {
     this.put("package.json", JSON.stringify({ name: this.name, version: first, private: true }, null, 2) + "\n");
     this.put("CHANGELOG.md", `# Changelog\n\n## v${first}\n\n- First release.\n`);
     if (this.kind !== "bare" && !this.opts.noPlaybook) {
-      this.put(".sova/playbooks/release/PLAYBOOK.md", `---\nname: Release\ndescription: How ${this.name} is released.\n---\n${PLAYBOOK(this.kind, this.manifest().steps)}`);
-      this.put(".sova/playbooks/release/release.json", JSON.stringify(this.manifest(), null, 2) + "\n");
-      this.put(".sova/playbooks/release/scripts/release.mjs", DRIVER(this.state));
+      this.put(".sova/playbook-config/release/PLAYBOOK.md", `---\nname: Release\ndescription: How ${this.name} is released.\n---\n${PLAYBOOK(this.kind, this.manifest().steps)}`);
+      this.put(".sova/playbook-config/release/release.json", JSON.stringify(this.manifest(), null, 2) + "\n");
+      this.put(".sova/playbook-config/release/scripts/release.mjs", DRIVER(this.state));
     }
     for (const [rel, text] of Object.entries(this.opts.files ?? {})) this.put(rel, text);
   }

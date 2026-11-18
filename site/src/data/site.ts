@@ -3,7 +3,7 @@
 // install URL, command and script link stay the same across releases. `release` names the
 // numbered tag `stable` points at; it drives only the hero pill's label and its release-page link.
 // A release sets it in its release commit (and re-verifies every claim on the page against it):
-// .sova/playbooks/release/PLAYBOOK.md.
+// .sova/playbook-config/release/PLAYBOOK.md.
 
 export const release = "v0.16.0";
 export const installRef = "stable";

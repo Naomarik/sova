@@ -3,6 +3,8 @@ import type { MergeSettingsChange } from "../../shared/merge-queue-settings";
 import { HOOK_TIMEOUT_MAX, parseDefinition } from "../../shared/project-contract";
 import type { LandHow } from "../../shared/merge-queue";
 import { isLandHow } from "./strategy";
+// Temporary (migrations/manifest.json: playbook-config-old-place).
+import { configDirOfAsync } from "../../migrations/playbook-config-old-place/index.mjs";
 
 /**
  * A merge-settings save as a text edit of `.sova/project.json` (§app.merge-queue/settings): only the values the
@@ -20,8 +22,11 @@ const LAND_WORDS: Record<LandHow, string> = { local: "merging locally", "github-
 
 const EDITABLE = new Set(["push", "review", "checks", "land", "reuse", "deleteBranches"]);
 
-/** The kit folder `review: on` sets back. */
-export const REVIEW_KIT_DIR = ".sova/playbooks/review";
+/** The kit folder `review: on` sets back (§chat.playbooks/playbook-config). */
+export const REVIEW_KIT_DIR = ".sova/playbook-config/review";
+
+/** The kit folder `review: on` sets back on a target `has` reads: REVIEW_KIT_DIR, or the old place while only it is there. */
+export const reviewKitDirAt = (has: (rel: string) => Promise<boolean>): Promise<string> => configDirOfAsync("review", REVIEW_KIT_DIR, has);
 
 // ---- a JSON reader that keeps where each value sits ---------------------------------------------
 
@@ -152,12 +157,12 @@ function removeMember(text: string, o: Extract<Node, { t: "obj" }>, key: string)
 }
 
 /** The change applied to the file's data (what the text edit must equal). Pure. */
-export function applyToData(raw: Record<string, unknown>, c: MergeSettingsChange): Record<string, unknown> {
+export function applyToData(raw: Record<string, unknown>, c: MergeSettingsChange, kitDir: string = REVIEW_KIT_DIR): Record<string, unknown> {
   const out = structuredClone(raw);
   const merge = ((out.merge as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
   if (c.push !== undefined) merge.push = c.push;
   if (c.review === false) delete merge.review;
-  if (c.review === true && merge.review === undefined) merge.review = REVIEW_KIT_DIR;
+  if (c.review === true && merge.review === undefined) merge.review = kitDir;
   if (c.land === "local") delete merge.land;
   else if (c.land !== undefined) merge.land = c.land;
   if (c.reuse === true) delete merge.reuse;
@@ -256,7 +261,8 @@ export function parseChange(v: unknown): MergeSettingsChange {
  * change can't apply (a check that isn't declared, review on without the kit, checks that come from test.run) or
  * the result isn't a valid definition.
  */
-export function editSettingsText(text: string, c: MergeSettingsChange, opts: { kitExists?: boolean } = {}): string {
+export function editSettingsText(text: string, c: MergeSettingsChange, opts: { kitExists?: boolean; kitDir?: string } = {}): string {
+  const kitDir = opts.kitDir ?? REVIEW_KIT_DIR;
   let raw: Record<string, unknown>;
   try {
     raw = JSON.parse(text) as Record<string, unknown>;
@@ -271,7 +277,7 @@ export function editSettingsText(text: string, c: MergeSettingsChange, opts: { k
     if (!Array.isArray(rawMerge?.checks)) throw new SettingsEditError("this project's checks aren't declared in its merge section, so they can't be changed here");
     for (const id of ids) if (!(rawMerge.checks as { id?: unknown }[]).some((x) => x?.id === id)) throw new SettingsEditError(`no check "${id}" in the merge section`);
   }
-  if (c.review === true && rawMerge?.review === undefined && !opts.kitExists) throw new SettingsEditError(`there is no review kit at ${REVIEW_KIT_DIR} on the target: add one in a branch first`);
+  if (c.review === true && rawMerge?.review === undefined && !opts.kitExists) throw new SettingsEditError(`there is no review kit at ${kitDir} on the target: add one in a branch first`);
 
   // Each edit is made on the text the previous one left, its places read afresh: no two ever overlap.
   const splice = (t: string, sp: Splice | null) => (sp ? t.slice(0, sp.at) + sp.text + t.slice(sp.end) : t);
@@ -302,7 +308,7 @@ export function editSettingsText(text: string, c: MergeSettingsChange, opts: { k
     // No merge section yet: one is added holding only what the change sets.
     const m: string[] = [];
     if (c.push !== undefined) m.push(`"push": ${c.push}`);
-    if (c.review === true) m.push(`"review": ${JSON.stringify(REVIEW_KIT_DIR)}`);
+    if (c.review === true) m.push(`"review": ${JSON.stringify(kitDir)}`);
     if (c.land !== undefined && c.land !== "local") m.push(`"land": ${JSON.stringify(c.land)}`);
     if (c.reuse === false) m.push(`"reuse": false`);
     if (c.deleteBranches === true) m.push(`"deleteBranches": true`);
@@ -311,7 +317,7 @@ export function editSettingsText(text: string, c: MergeSettingsChange, opts: { k
     if (find(root, "merge")!.value.t !== "obj") throw new SettingsEditError("the merge section isn't an object");
     if (c.push !== undefined) out = splice(out, setMember(out, obj(out, ["merge"]), "push", String(c.push)));
     if (c.review === false) out = splice(out, removeMember(out, obj(out, ["merge"]), "review"));
-    if (c.review === true && !find(obj(out, ["merge"]), "review")) out = splice(out, setMember(out, obj(out, ["merge"]), "review", JSON.stringify(REVIEW_KIT_DIR)));
+    if (c.review === true && !find(obj(out, ["merge"]), "review")) out = splice(out, setMember(out, obj(out, ["merge"]), "review", JSON.stringify(kitDir)));
     if (c.land === "local") out = splice(out, removeMember(out, obj(out, ["merge"]), "land"));
     else if (c.land !== undefined) out = splice(out, setMember(out, obj(out, ["merge"]), "land", JSON.stringify(c.land)));
     if (c.reuse === true) out = splice(out, removeMember(out, obj(out, ["merge"]), "reuse"));
@@ -334,7 +340,7 @@ export function editSettingsText(text: string, c: MergeSettingsChange, opts: { k
   } catch {
     throw new SettingsEditError("the edit didn't leave valid JSON");
   }
-  const want = hasMerge || c.push !== undefined || c.review === true || (c.land !== undefined && c.land !== "local") || c.reuse === false || c.deleteBranches === true ? applyToData(raw, c) : raw;
+  const want = hasMerge || c.push !== undefined || c.review === true || (c.land !== undefined && c.land !== "local") || c.reuse === false || c.deleteBranches === true ? applyToData(raw, c, kitDir) : raw;
   if (!isDeepStrictEqual(after, want)) throw new SettingsEditError("the edit didn't come out as asked");
   try {
     parseDefinition(out);

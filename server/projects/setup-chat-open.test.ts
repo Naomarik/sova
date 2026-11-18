@@ -24,6 +24,7 @@ const { MergeQueues } = await import("../merge-queue/queue");
 const { standInRun } = await import("../merge-queue/testing/queue-kit");
 const { definitionAt } = await import("../project-services/deploy-recipe");
 const { checksOf } = await import("../merge-queue/checks");
+const { playbookTurnText } = await import("../../shared/playbooks");
 after(() => closeAllOrgHosts());
 
 const ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.invalid", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.invalid" };
@@ -138,6 +139,37 @@ describe("Start Fresh", () => {
     assert.equal(now.current?.run, first.sessionId, "the proposal stays the first run's");
     assert.deepEqual(now.history.map((h) => [h.sessionId, h.why, h.branch]), [[first.sessionId, "fresh", first.worktree!.branch]]);
     assert.equal((await openSetup(a.id, M, s.deps)).sessionId, fresh.sessionId, "one standing chat still");
+  });
+});
+
+describe("a Setup chat whose playbook folder is gone (started before Sova's own playbooks moved)", () => {
+  /** The chat's file as pi writes it, its first message naming the playbook folder `dir`. */
+  const chatNaming = (path: string, dir: string) => {
+    const head = { type: "session", version: 3, id: "00000000-0000-7000-8000-00000000000a", timestamp: "2026-01-01T00:00:00.000Z", cwd: tmp };
+    const text = `Playbook: Project setup — ${dir}\n${playbookTurnText({ title: "Project setup", dir, body: "# b\n" }, "").split("\n")[1]}\n\n# b\n`;
+    const msg = { type: "message", id: "00000001", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text }], timestamp: 1 } };
+    writeFileSync(path, `${JSON.stringify(head)}\n${JSON.stringify(msg)}\n`);
+  };
+
+  test("Change Setup takes Start Fresh's path by itself; one whose folder is there is reopened; refused while it works", async () => {
+    const a = await project();
+    const s = stand(a.root);
+    const first = await openSetup(a.id, M, s.deps);
+    const here = join(tmp, "install", "system-playbooks", "project-setup");
+    mkdirSync(here, { recursive: true });
+    writeFileSync(join(here, "PLAYBOOK.md"), "# b\n");
+    chatNaming(first.path, here);
+    assert.equal((await openSetup(a.id, M, s.deps)).reopened, true, "its folder holds the playbook: reopened");
+    chatNaming(first.path, join(tmp, "install", "playbooks", "project-setup"));
+    s.state.working = true;
+    await assert.rejects(openSetup(a.id, M, s.deps), (e: Error) => e.message === STILL_WORKING);
+    assert.deepEqual(s.calls.archived, []);
+    s.state.working = false;
+    const next = await openSetup(a.id, M, s.deps);
+    assert.equal(next.reopened, false);
+    assert.notEqual(next.sessionId, first.sessionId);
+    assert.deepEqual(s.calls.archived, [first.path], "the old chat archived, as Start Fresh does");
+    assert.deepEqual(setupRecordOf(a.id).history.map((h) => [h.sessionId, h.why]), [[first.sessionId, "fresh"]]);
   });
 });
 

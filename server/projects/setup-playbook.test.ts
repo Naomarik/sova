@@ -1,4 +1,4 @@
-// The Setup chat's playbook (playbooks/project-setup): what it shows the model must be what Sova accepts. Every drawing
+// The Setup chat's playbook (system-playbooks/project-setup): what it shows the model must be what Sova accepts. Every drawing
 // in its references parses as a vis block; the driver's drawing of Sova's own definition parses too (no row over the
 // renderer's step limit); every JSON sample is a valid definition fragment; every merge/release/deploy key the parser
 // accepts is named in references/definition.md; and its frontmatter says it proposes the whole pipeline.
@@ -11,10 +11,10 @@ import { DEFINITION_KEYS, parseDefinition } from "../../shared/project-contract"
 import { parseFlow } from "../../src/vis/kinds/flow/parse";
 import { parseSteps } from "../../src/vis/kinds/steps/parse";
 // @ts-expect-error: a plain .mjs script, no types
-import * as ps from "../../playbooks/project-setup/scripts/project-setup.mjs";
+import * as ps from "../../system-playbooks/project-setup/scripts/project-setup.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
-const PLAYBOOK = join(REPO, "playbooks", "project-setup");
+const PLAYBOOK = join(REPO, "system-playbooks", "project-setup");
 
 function mdFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {

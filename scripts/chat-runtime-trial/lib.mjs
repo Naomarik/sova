@@ -231,6 +231,16 @@ export function server({ tag, env, mode = "unit", log, root = ROOT, liveLike = f
     /** The server's main pid. */
     pid: () => (mode === "unit" ? Number(show(unit, "MainPID")) : child?.pid ?? 0),
     cgroup: () => (mode === "unit" ? show(unit, "ControlGroup") : ""),
+    /** Child mode: null while the server runs, else why it is gone (its exit code and the log's last
+        lines), so a wait for its health stops at once. Unit mode has none. */
+    gone: mode === "unit" ? undefined : () => {
+      if (!child || child.exitCode === null && child.signalCode === null) return null;
+      let tail = "";
+      try {
+        tail = readFileSync(log, "utf8").trimEnd().split("\n").slice(-12).join("\n");
+      } catch {}
+      return `the server exited (code ${child.exitCode ?? child.signalCode}) before it answered:\n${tail}`;
+    },
     /** A restart as the service manager does it; `changes` (env) start the new server differently
         (another SOVA_BUILD, say), which for a unit means stop and start again. */
     async restart(changes) {

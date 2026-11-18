@@ -37,6 +37,8 @@ Your plan (choices, cast, steps, stop points, cycle settings) is in the run bloc
 | `scripts/shoot.mjs` | screenshots of each arm's replies, for the collage |
 | `scripts/collage.mjs` | one image: each arm side by side per cycle |
 
+The scripts' tests are in `tests/` (Node only, nothing installed): `node --test tests/*.test.mjs` from this folder. Run them after any edit here; a branch that edits this playbook runs them before it lands.
+
 `references/arms.md` says how an arm is made (its own worktree and test copy of Sova, a prompt variant file, or a re-score of saved replies). `references/record.md` is the record's shape, rules and commands. `references/noise.md` is the noise and copy-effect check. `references/cost.md` prices a round.
 
 ## When you stop

@@ -2,24 +2,23 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { scratchRoot } from "./test-scratch";
+import { scratchRoot } from "./scratch.mjs";
 
 /**
- * The A/B cycle's commands as a campaign runs them (playbooks/ab-cycle/scripts: runner, score, chart, record), on a
- * made-up campaign in a scratch project whose arms are shell commands that print fixed replies: no model, no cost.
- * The counting, the check and the arm rule are covered in-process by ab-cycle-scripts.test.ts; this file holds what
- * needs the processes: the files they write, what they print and their exit codes.
+ * The A/B cycle's commands as a campaign runs them (../scripts: runner, score, chart, record), on a made-up campaign in
+ * a scratch project whose arms are shell commands that print fixed replies: no model, no cost. The counting, the check
+ * and the arm rule are covered in-process by scripts.test.mjs; this file holds what needs the processes: the files
+ * they write, what they print and their exit codes.
  */
 
-const script = (name: string) => fileURLToPath(new URL(`../playbooks/ab-cycle/scripts/${name}.mjs`, import.meta.url));
+const script = (name) => fileURLToPath(new URL(`../scripts/${name}.mjs`, import.meta.url));
 const root = scratchRoot("ab-cycle-int-");
-after(() => rmSync(root, { recursive: true, force: true }));
-const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "init.defaultBranch=master", "-c", "commit.gpgSign=false", ...a], { cwd, stdio: "pipe", encoding: "utf8" }).trim();
-const run = (name: string, ...a: string[]) => spawnSync(process.execPath, [script(name), ...a], { cwd: root, encoding: "utf8" });
-const json = (p: string) => JSON.parse(readFileSync(p, "utf8"));
-const put = (p: string, v: unknown) => {
+const git = (cwd, ...a) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "init.defaultBranch=master", "-c", "commit.gpgSign=false", ...a], { cwd, stdio: "pipe", encoding: "utf8" }).trim();
+const run = (name, ...a) => spawnSync(process.execPath, [script(name), ...a], { cwd: root, encoding: "utf8" });
+const json = (p) => JSON.parse(readFileSync(p, "utf8"));
+const put = (p, v) => {
   mkdirSync(join(p, ".."), { recursive: true });
   writeFileSync(p, typeof v === "string" ? v : `${JSON.stringify(v, null, 2)}\n`);
 };
@@ -45,7 +44,7 @@ const removed = git(project, "rev-parse", "HEAD");
 // The campaign, in the project's ignored cache; each arm runs in a folder of its own outside the project.
 const campaign = join(project, ".cache", "ab", "demo");
 const record = join(project, ".sova", "ab", "vis-demo.jsonl");
-const armDir = (a: string) => {
+const armDir = (a) => {
   const d = join(root, "arms", a);
   mkdirSync(d, { recursive: true });
   return d;

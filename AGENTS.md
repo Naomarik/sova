@@ -81,8 +81,17 @@ also update Y" list live in its guide: read the guide of every area your task to
 - Run Sova's tests only through the runner: `pnpm test <file>`, `pnpm test:int <file>` (an
   integration file), or the `project_verbs` `test` verb (`select: [<file>]`). Never a bare `bun test`,
   `node --test` or `tsx --test`, not even for one file: it skips the throwaway home, and one such run
-  wrote a test chat into the user's real sessions. A file's `// Run:` header naming another command is
-  stale. pi-config extension tests run as their guides say (testing guide).
+  wrote a test chat into the user's real sessions. The one exception: a playbook's own `tests/` folder
+  (below) runs as `node --test playbooks/<id>/tests/*.test.mjs`, never another path. A file's `// Run:`
+  header naming another command is stale. pi-config extension tests run as their guides say (testing guide).
+- A playbook a user starts in a chat (`playbooks/<id>/`, e.g. `ab-cycle`) keeps the tests of its own
+  scripts in its own `tests/` folder: plain `*.test.mjs` on `node:test`, importing only Node's
+  built-ins and `../scripts/`, nothing from Sova or `node_modules`. Each file makes itself safe on
+  import (`tests/scratch.mjs`: a throwaway root outside every repository, HOME and the agent dir in
+  it, git's search stopped there), since no runner does. Run them when you edit the playbook; Sova's
+  test run never picks them up. System playbooks (merge queue, release, release maker, project
+  setup, project deploy, project verbs) are Sova: their tests, and every test of how Sova reads or
+  shows any playbook, stay in Sova's suite.
 - Write tests as the testing guide's "Writing tests" says: a rule over its edges where one exists,
   else one example per edge; each behaviour once, in the smallest harness; wait on events.
 - Never run the spec replay suite (`pi-config/extensions/spec/tests/replay`) while working: it is a

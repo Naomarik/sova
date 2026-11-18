@@ -10,10 +10,10 @@
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadPi } from "./testing/load-pi.ts";
 import { STANDIN_FILTER } from "./headless.ts";
 import { enabledByOverrides, extensionEntries, packageFrom, patchResolve } from "./own-code.ts";
@@ -28,6 +28,9 @@ import { expandedSkill } from "../../skill-sources.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
+/** Folders a canary made under the home folder (the runner's throwaway one), removed with `dir`. */
+const underHome: string[] = [];
+after(() => underHome.forEach((d) => rmSync(d, { recursive: true, force: true })));
 process.env.PI_CODING_AGENT_DIR = dir;
 const pi = await loadPi();
 const { createAgentSession, defineTool, DefaultResourceLoader, initTheme, ModelRuntime, SessionManager, SettingsManager } = pi.agent;
@@ -1126,7 +1129,9 @@ describe("pi contract", () => {
 
   test("P46 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns", async () => {
     const { DefaultPackageManager } = pi.agent;
-    const t = join(dir, "p43");
+    // Under the home folder (the runner's throwaway one), so a `~/…` pattern can name an entry.
+    const t = realpathSync(mkdtempSync(join(homedir(), "sova-p46-")));
+    underHome.push(t);
     const agentDir = join(t, "agent");
     const ext = join(agentDir, "extensions");
     const put = (rel: string, text = "export default () => {};\n") => (mkdirSync(dirname(join(ext, rel)), { recursive: true }), writeFileSync(join(ext, rel), text));
@@ -1156,8 +1161,11 @@ describe("pi contract", () => {
     }
     assert.ok(plain.some((r) => r.path === join(ext, "loose.ts")), "the control: a loose file is an extension");
     // Each kind of pattern, each place pi matches it (relative, file name, whole path; minimatch's *, **, ?, braces,
-    // classes; a leading ./), and the precedence !, then +, then -.
+    // classes; a leading ./), each form pi reads a pattern's path in (`~/…` from the home folder, a file:// URL:
+    // pi 1.2.0), and the precedence !, then +, then -.
     const abs = (rel: string) => join(ext, rel);
+    const tilde = (rel: string) => `~/${relative(homedir(), abs(rel))}`;
+    assert.ok(!relative(homedir(), ext).startsWith(".."), "the control: the entries lie under the home folder");
     const table: string[][] = [
       [], ["!extensions/dirts/index.ts"], ["!extensions/loose.ts"], ["!extensions/*"], ["!extensions/**"], ["!**/index.ts"], ["!extensions/dir?s/index.ts"],
       ["!index.ts"], ["!loose.ts"], ["!*.ts"], ["!extensions/{dirts,dirjs}/index.*"], ["!extensions/[d]irts/index.ts"], ["!./extensions/loose.ts"],
@@ -1165,7 +1173,12 @@ describe("pi contract", () => {
       ["!extensions/**", "+extensions/dirts/index.ts"], ["!extensions/**", "+./extensions/loose.ts"], ["!**", `+${abs("pkg/b.ts")}`], ["!extensions/**", "+extensions/dirts"],
       ["-extensions/dirts/index.ts"], ["-./extensions/loose.ts"], [`-${abs("loose.ts")}`], ["-extensions/dirts"], ["-extensions/pkg/index.ts"], ["-extensions/*"],
       ["!extensions/**", "+extensions/dirts/index.ts", "-extensions/dirts/index.ts"], ["+extensions/loose.ts", "-extensions/loose.ts"],
+      [`!${tilde("loose.ts")}`], [`!${tilde("dir*/index.*")}`], ["!~/**"], ["!~"], ["!extensions/**", `+${tilde("dirts/index.ts")}`], [`-${tilde("pkg/a.ts")}`],
+      [`!${pathToFileURL(abs("loose.ts")).href}`], ["!**", `+${pathToFileURL(abs("pkg/b.ts")).href}`], [`-${pathToFileURL(abs("dirjs/index.js")).href}`],
     ];
+    const offUnder = async (patterns: string[]) => (await resolveWith(patterns)).filter((r) => r.path.startsWith(ext + "/") && !r.enabled).map((r) => relative(ext, r.path));
+    assert.deepEqual(await offUnder([`!${tilde("loose.ts")}`]), ["loose.ts"], "the control: pi expands `~` in a pattern (were it literal, the rows above could not tell)");
+    assert.deepEqual(await offUnder([`-${pathToFileURL(abs("dirjs/index.js")).href}`]), ["dirjs/index.js"], "the control: pi reads a file:// pattern as its path");
     for (const patterns of table) {
       const got = (await resolveWith(patterns)).filter((r) => r.path.startsWith(ext + "/"));
       assert.ok(got.length >= 7, `the control: every entry resolves under ${JSON.stringify(patterns)}`);

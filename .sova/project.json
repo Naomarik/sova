@@ -11,7 +11,13 @@
     {
       "id": "node-modules",
       "run": ["node", "scripts/copy-node-modules.mjs", "${main}/node_modules", "node_modules"],
-      "inputs": ["pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json", "scripts/copy-tree.mjs", "scripts/copy-node-modules.mjs"],
+      "inputs": [
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "package.json",
+        "scripts/copy-tree.mjs",
+        "scripts/copy-node-modules.mjs"
+      ],
       "timeout": 600
     },
     {

@@ -6,6 +6,8 @@ import { toolCtx } from "../harness/pi/tools";
 import { confinementOf } from "../background-jobs-request";
 import { sandboxInfoOf } from "../sandbox-state";
 import type { ProjectEngine } from "./engine";
+// Temporary (migrations/manifest.json: system-playbooks-old-paths).
+import { movedPlaybookLines } from "../../migrations/system-playbooks-old-paths/index.mjs";
 
 /**
  * The instance note (§app.project-services/instance-note): what a coding session is told about each of
@@ -123,12 +125,26 @@ export function registerInstanceNote(pi: PiExtensionAPI, engine: () => ProjectEn
   registerNoteHooks(pi, (ctx) => sessionNote(engine, own, ctx, workerFlags));
 }
 
-/** The session's note now (null: none, or it could not be read). */
+/** The session's note now (null: none, or it could not be read). A chat whose conversation names a playbook folder
+    of Sova's that moved is also told the new folder (§chat.playbooks/system-playbooks). */
 export async function sessionNote(engine: () => ProjectEngine, own: (ctx: HookCtx) => Promise<string[]>, ctx: HookCtx, workerFlags?: WorkerFlags): Promise<string | null> {
+  let note: string | null = null;
   try {
-    return await currentNote(engine(), await own(ctx), ctx.state(), sandboxedOf(ctx.state(), workerFlags));
+    note = await currentNote(engine(), await own(ctx), ctx.state(), sandboxedOf(ctx.state(), workerFlags));
   } catch {
-    return null;
+    note = null;
+  }
+  // Temporary (migrations/manifest.json: system-playbooks-old-paths).
+  const moved = movedPlaybookLines(userTexts(ctx));
+  return [note, ...moved].filter((t): t is string => !!t).join("\n\n") || null;
+}
+
+/** The text of each user message on the chat's branch. */
+function userTexts(ctx: HookCtx): string[] {
+  try {
+    return ctx.branch().flatMap((h) => (h.kind === "user" ? [h.blocks.map((b) => (b.type === "text" ? b.text : "")).join("")] : []));
+  } catch {
+    return [];
   }
 }
 

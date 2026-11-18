@@ -156,6 +156,21 @@ test("delivered hidden at a turn's start only when it changed, again after a com
   define(def(), checkout);
 });
 
+test("a chat whose first message names Sova's old project-verbs folder is told the new one at its next turn; one naming the new folder is told nothing", async () => {
+  const repo = realpathSync(join(import.meta.dirname, "..", ".."));
+  const turnFor = async (dir: string) => {
+    const handlers: Record<string, (e: unknown, ctx: unknown) => Promise<unknown>> = {};
+    const pi = { on: (name: string, fn: (e: unknown, ctx: unknown) => Promise<unknown>) => (handlers[name] = fn), sendMessage: () => {} };
+    registerInstanceNote(pi as never, () => engine, async () => []);
+    const first = { type: "message", id: "1", parentId: null, message: { role: "user", content: [{ type: "text", text: `Playbook: Project verbs — ${dir}\nEvery relative path in this playbook is relative to that directory.\n\n# Project verbs\n` }] } };
+    return (await handlers.before_agent_start!({}, { sessionManager: { getBranch: () => [first] } })) as { message: { content: string; display: boolean } } | undefined;
+  };
+  const moved = await turnFor(join(repo, "playbooks", "project-verbs"));
+  assert.equal(moved?.message.display, false, "hidden, like the instance note");
+  assert.equal(moved?.message.content, `Your playbook moved: read it and run its scripts from ${join(repo, "system-playbooks", "project-verbs")}; the old folder is gone.`);
+  assert.equal(await turnFor(join(repo, "system-playbooks", "project-verbs")), undefined, "the new folder: no line, and no note at all");
+});
+
 test("a write-only worker's note has no 'cannot reach these ports' line, though its own sandbox reads on; an On worker's has it", async () => {
   const on = { type: "custom", customType: "sandbox", data: { version: 1, on: true, level: "workspace-write", backend: "bwrap", enforcement: "full" } };
   const noteFor = async (flags: Record<string, string | true>) => {

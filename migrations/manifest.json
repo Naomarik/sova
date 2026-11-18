@@ -21,12 +21,13 @@
   },
   {
     "id": "system-playbooks-old-paths",
-    "what": "Sova's six own playbooks moved from playbooks/<id> to system-playbooks/<id>; a chat started before the move names the old folder in its first message, which is read at the new place.",
+    "what": "Sova's six own playbooks moved from playbooks/<id> to system-playbooks/<id>; a chat started before the move names the old folder in its first message: it keeps project_verbs (the folder is read at the new place) and its next turn is told the new folder.",
     "since": "0.16.0",
     "removeIn": "0.18.0",
     "paths": [
       "migrations/system-playbooks-old-paths",
       "server/project-services/tools.ts",
+      "server/project-services/note.ts",
       "server/project-services/tool-offered.test.ts"
     ]
   }

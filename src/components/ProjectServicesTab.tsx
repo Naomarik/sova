@@ -824,7 +824,7 @@ function SetupStatus(props: { projectId: string; archived: boolean; runtime: Pol
                 {/* While a run is proposed: Merge Branch (§app.project-runtime/merge). */}
                 <Show when={proposedRun(v())}>{(r) => <MergeRunButton projectId={props.projectId} run={r()} onDone={(view) => (view ? poll.set(view) : poll.refetch())} />}</Show>
                 <Show when={v().can.onboard && !props.archived}>
-                  <button type="button" class={`button button-sm${unset() ? " button-primary" : ""}`} aria-disabled={busy() ? "true" : undefined} onClick={() => void run()}>
+                  <button type="button" class={`button button-sm${unset() && !proposedRun(v()) ? " button-primary" : ""}`} aria-disabled={busy() ? "true" : undefined} onClick={() => void run()}>
                     <Icon name="chat" small />
                     {busy() ? "Opening…" : playbookLabel(v())}
                   </button>
@@ -899,7 +899,7 @@ function SetupStatus(props: { projectId: string; archived: boolean; runtime: Pol
                     </Show>
                     <p class="list-meta">{reviewProofWord(r())}</p>
                     <Show when={!reviewDefProblem(r())}>
-                      <p class="list-meta text-mono">{testsWord(r())}</p>
+                      <p class="list-meta" classList={{ "text-mono": !!r().test }}>{testsWord(r())}</p>
                       <p class="list-meta">{setupStepsWord(r())}</p>
                     </Show>
                     {/* A deploy-setup run: its recipe as Sova renders it. */}

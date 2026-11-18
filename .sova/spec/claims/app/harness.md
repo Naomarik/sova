@@ -144,7 +144,10 @@ sockets already read as the visit's tab).
   figures, a reply's context fill, a tool result's tool and failure, a measured reply's timing) and
   no `meta`. A consumer that
   doesn't ask (an older bundle, a cached page, an older peer's page through this host's mesh proxy,
-  a script) gets today's frames and rows byte for byte, and nothing it shows changes.
+  a script) gets today's frames and rows byte for byte, and nothing it shows changes. Wire 1 keeps
+  that shape across pi upgrades: fields a newer pi adds to its events and messages (a run's
+  `aborted`, a tool's or a reply's `durationMs`, a tool result's `structuredContent`, a cost's
+  `totalFromProvider`, a tool call's `argumentsError`) are left out of every wire-1 frame.
 - **One mapping, on both sides.** Every wire-2 event is a wire-1 event mapped by one pure function,
   and every row's facts are its wire-1 facts mapped by another (`fromV1` and `factsFromMeta`,
   `shared/wire-v1.ts`); the server and the browser use the same two. The one exception is a measured

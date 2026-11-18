@@ -98,9 +98,8 @@ overseer's conversations already open under their own head (§app.project-overse
   Overseer was last told (the prompt's opening text, or the newest run note since the last compaction
   that gave it), the run note (§app.overseer/run-note) gives its whole current text, which replaces
   the prompt's, so a `sova_note`, a `sova_idea`, a `sova_todo`, a notes, idea or todo edit or a
-  Settings save or a memory switch reaches the Overseer from its next run (the next message, brief or wake-up), with no
-  `/clear`. A run an extension's message starts (an `/explain` result, a worker's report) has no run
-  note and gets them at the next run that has one. The prompt file and the tool list are read when
+  Settings save or a memory switch reaches the Overseer from its next run (the next message, brief or wake-up, or a
+  run an extension's message starts: an `/explain` result, a worker's report), with no `/clear`. The prompt file and the tool list are read when
   the runtime opens; a change to either (a Sova update) changes the prompt once.
 - **Tools.** The session runs with an allowlist: every `sova_*` tool, `read`, `grep`, `find`,
   `ls`, `write`, `edit` and `wake_nudge` (`write` and `edit` on the terms of
@@ -833,7 +832,8 @@ jumps to it (§app.overseer/links).
   carries a line "may be stale: <session id> active since <time>" for each such session, so the
   model checks it before acting and drops or replaces it; the server never changes the card itself.
   In the global Overseer the same hidden message also carries the run note (§app.overseer/run-note),
-  so it is there on every run a message starts, with open cards or none.
+  so it is there on every run a message starts, an extension's message included, with open cards or
+  none.
   After a compaction the same note is written once, after the summary. The note
   is persisted, so it survives restarts, folds and compaction, and it never changes who a run belongs
   to (§app.overseer/tools). Typed replies ("2", "archive a and c, keep b") are mapped by the model,
@@ -997,8 +997,9 @@ jumps to it (§app.overseer/links).
 
 ## §app.overseer/run-note — The run note: the time, and what cleared
 
-Every run of the global Overseer that a message starts (the user's, a brief, a fired wake-up)
-carries one hidden note, in the same hidden message as the open cards (§app.overseer/confirm):
+Every run of the global Overseer that a message starts (the user's, a brief, a fired wake-up, or
+an extension's message: a worker's report, the `/team` plan, an `/explain` result) carries one
+hidden note, in the same hidden message as the open cards (§app.overseer/confirm):
 never in the thread, never the system prompt, persisted with the conversation, and never changing
 who the run belongs to (§app.overseer/tools).
 
@@ -1012,7 +1013,8 @@ who the run belongs to (§app.overseer/tools).
   as in the prompt) and a line saying it replaces that part of the system prompt; one that became
   empty says so. A part is told once per change: the note's details record a fingerprint of each
   part as told, and a later note repeats a part only when it changed again, or when a compaction
-  came after the note that told it. The first run note of a conversation records the opening values
+  came after the note that told it. A change is told on whichever run comes first, an
+  extension-started one included, and is then not told again on the user's next message. The first run note of a conversation records the opening values
   the prompt is rendered from.
 - **Cleared since briefed.** Each blocker a brief (§app.overseer/proactivity) on the branch named in
   the last 24 hours that is not a Needs-you item now, and not one you dismissed

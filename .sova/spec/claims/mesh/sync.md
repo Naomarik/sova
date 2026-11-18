@@ -127,7 +127,12 @@ Deleting pi's `auth.json` is not a logout: no tombstone is made, and its logins 
 hosts. A file that turns up empty after being missing, is found empty when Sova starts, or is an empty
 new file in the old one's place counts the same as a deleted one. Removing a login from the file while
 Sova runs (pi's own logout rewrites it in place) is a logout and spreads as above.
-Every local write takes the owning program's own lock and replaces the file atomically at mode 0600. Claude Code's credentials name no account, so a new entry that
+Every local write takes the owning program's own lock and replaces the file atomically at mode 0600.
+Where pi's `auth.json` is a link to another file, the write goes through the link, as pi's own does:
+the link stays a link and the file it points at (one not there yet included) is the one replaced,
+under the locks of both, so pi and anything else reading the shared file see the same logins. A
+link pointed elsewhere while the locks were held abandons that write until the next change. A store
+that empties is deleted at its own path; only Claude Code's is, and it refuses a link. Claude Code's credentials name no account, so a new entry that
 replaces one with more than 10 minutes left is a login (a re-login or another account), not a refresh. Known gap:
 a Claude Code re-login made in the last 10 minutes of a pre-sync login's access token is taken for a
 refresh of it, so a logout of the old login made on another host at about the same time also removes

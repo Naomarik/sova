@@ -54,7 +54,9 @@
       "shared/schedules.ts",
       "shared/wake.ts",
       "server/schedules.test.ts",
-      "shared/playbook-delivery.test.ts"
+      "shared/playbook-delivery.test.ts",
+      "server/harness/pi/playbook.ts",
+      "server/harness/pi/run-start.ts"
     ],
     "requires": [
       "§chat.profiles/singleton",

@@ -922,7 +922,8 @@
       "server/project-services/store.ts",
       "server/modes/engine.ts",
       "server/harness/pi/contract.test.ts",
-      "server/chat-host.ts"
+      "server/chat-host.ts",
+      "server/harness/pi/run-start.ts"
     ],
     "agreed": {
       "by": "naomarik",

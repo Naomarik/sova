@@ -17,6 +17,8 @@ const FULL = {
     { id: "knobs", label: "Knobs", type: "multi", each: "cycle", options: [{ id: "a", label: "A" }, { id: "b", label: "B" }], default: ["b"] },
     { id: "cases", label: "Cases", type: "list", ask: "optional", default: ["one"] },
     { id: "testModels", label: "Test models", type: "models", default: [{ model: "zai/glm-5.3", effort: "low" }] },
+    { id: "source", label: "The failure to fix", type: "text", ask: "chat", required: true },
+    { id: "bars", label: "Counts as fixed when", type: "list", ask: "chat", default: ["it passes"] },
   ],
   facts: [{ id: "latest", label: "Latest", help: "looked up" }],
   teams: {
@@ -38,6 +40,11 @@ const FULL = {
     ] },
   ],
   commands: ["session.create", "session.list"],
+  align: { questions: [
+    { id: "failure", ask: "What fails today, and in which chats?", fills: "source" },
+    { id: "fixed", ask: "What counts as fixed?", fills: "bars" },
+    { id: "why", ask: "Why now?" },
+  ] },
 };
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 const ok = (raw: unknown): PlaybookSpec => {
@@ -69,6 +76,11 @@ test("the full description reads as written, with derived values where it leaves
   assert.deepEqual(grader!.count, { n: 1 });
   assert.equal(cycleOf(s)?.settings.askEvery, 2);
   assert.deepEqual(stepsOf(s.steps).map((x) => [x.id, x.teams, x.goal]), [["measure", ["scouts"], "A chart of {{target}}"], ["fix", ["fixers"], undefined], ["run", ["bench"], undefined], ["talk", [], undefined]], "a step without teams is the main chat's alone");
+  assert.deepEqual(s.align, { questions: [
+    { id: "failure", ask: "What fails today, and in which chats?", fills: "source" },
+    { id: "fixed", ask: "What counts as fixed?", fills: "bars" },
+    { id: "why", ask: "Why now?" },
+  ] }, "a question may fill a chat choice, or none");
   assert.deepEqual(s.commands, ["session.create", "session.list"], "a command that only looks may be listed too: looking is free");
 });
 
@@ -76,6 +88,7 @@ test("a description that sets nothing else is a plain playbook: no teams, nothin
   const s = ok({ version: 1, listed: false });
   assert.equal(s.listed, false);
   assert.deepEqual(s.run, { where: "this-chat", whereFixed: false, worktree: "none", needs: [] });
+  assert.equal(s.align, undefined, "no align: straight to the card");
   assert.deepEqual([s.teams, s.steps, s.inputs, s.facts, s.commands], [[], [], [], [], []]);
   assert.equal(ok({ version: 1 }).listed, true);
 });
@@ -126,19 +139,25 @@ test("each fault is refused with its exact path and words", () => {
     ["notes outside", (r) => (r.teams.bench.members.runner.notes = "../x.md"), `teams.bench.members.runner.notes: must be a markdown file inside the playbook's folder, like "phases/measure.md".`],
     ["count and per", (r) => (r.teams.bench.members.runner.count = 2), `teams.bench.members.runner: has "count" and "per"; use one.`],
     ["count names a text", (r) => (r.teams.fixers.members.consultant.count = { input: "target" }), `teams.fixers.members.consultant.count.input: must name a number input ("rivals").`],
-    ["per names a number", (r) => (r.teams.bench.members.runner.per = { input: "rivals" }), `teams.bench.members.runner.per.input: must name a multi, list or models input ("knobs", "cases", "testModels").`],
+    ["per names a number", (r) => (r.teams.bench.members.runner.per = { input: "rivals" }), `teams.bench.members.runner.per.input: must name a multi, list or models input ("knobs", "cases", "testModels", "bars").`],
     ["startsOff not optional", (r) => (r.teams.bench.members.grader.optional = false), `teams.bench.members.grader.startsOff: needs "optional": true (only a member you may turn off can start off).`],
     ["unknown team in a step", (r) => r.steps[0].teams.push("judges"), `steps[0].teams[1]: must be a declared team: "fixers", "bench", "scouts".`],
     ["team twice in a step", (r) => r.steps[0].teams.push("scouts"), `steps[0].teams[1]: "scouts" is named twice.`],
     ["unused team", (r) => (r.teams.extra = { goal: "Spare" }), "teams.extra: no step names it."],
-    ["slot in a goal", (r) => (r.teams.scouts.goal = "Find {{nope}}"), `teams.scouts.goal: "{{nope}}" isn't an input or fact ("target", "rivals", "fast", "kind", "knobs", "cases", "testModels", "latest").`],
-    ["slot in a step goal", (r) => (r.steps[1].steps[0].goal = "Fix {{run}}"), `steps[1].steps[0].goal: "{{run}}" isn't an input or fact ("target", "rivals", "fast", "kind", "knobs", "cases", "testModels", "latest").`],
+    ["slot in a goal", (r) => (r.teams.scouts.goal = "Find {{nope}}"), `teams.scouts.goal: "{{nope}}" isn't an input or fact ("target", "rivals", "fast", "kind", "knobs", "cases", "testModels", "source", "bars", "latest").`],
+    ["slot in a step goal", (r) => (r.steps[1].steps[0].goal = "Fix {{run}}"), `steps[1].steps[0].goal: "{{run}}" isn't an input or fact ("target", "rivals", "fast", "kind", "knobs", "cases", "testModels", "source", "bars", "latest").`],
     ["two groups", (r) => r.steps.push(clone(FULL.steps[1])), `steps[2]: a playbook has at most one repeating group ("cycle" is one).`],
     ["nested group", (r) => r.steps[1].steps.push({ id: "in", label: "In", repeat: { max: 2 }, steps: [] }), "steps[1].steps[3]: a repeating group holds plain steps only."],
     ["askEvery past max", (r) => (r.steps[1].repeat.askEvery = 6), "steps[1].repeat.askEvery: must be a whole number from 1 to 5."],
     ["until rule without one", (r) => delete r.steps[1].repeat.rule, `steps[1].repeat.until: "rule" needs the stop rule in "rule".`],
     ["optional stop off", (r) => (r.steps[0].startsOff = true), `steps[0].startsOff: needs "stop": "optional" (only an optional stop can start off).`],
     ["duplicate step id", (r) => (r.steps[1].steps[0].id = "measure"), `steps: the step id "measure" is used twice.`],
+    ["align fills a card choice", (r) => (r.align.questions[0].fills = "target"), `align.questions[0].fills: must name a choice worked out in the chat (ask "chat"): "source", "bars".`],
+    ["align fills one twice", (r) => (r.align.questions[1].fills = "source"), `align.questions[1].fills: "source" is filled by align.questions[0] already.`],
+    ["align question id twice", (r) => (r.align.questions[2].id = "failure"), `align.questions[2].id: "failure" is used twice.`],
+    ["align question of two lines", (r) => (r.align.questions[2].ask = "Why\nnow?"), "align.questions[2].ask: is one line."],
+    ["align with no questions", (r) => (r.align.questions = []), "align.questions: has 1 to 8 questions."],
+    ["align with nine questions", (r) => (r.align.questions = Array.from({ length: 9 }, (_, i) => ({ id: `q${i}`, ask: "?" }))), "align.questions: has 1 to 8 questions."],
     ["chat on a number", (r) => (r.inputs[1].ask = "chat"), `inputs[1].ask: "chat" is for a text or list choice; a short choice (number, toggle, choice, multi, models) stays on the card.`],
     ["chat on models", (r) => (r.inputs[6].ask = "chat"), `inputs[6].ask: "chat" is for a text or list choice; a short choice (number, toggle, choice, multi, models) stays on the card.`],
     ["unknown ask", (r) => (r.inputs[0].ask = "later"), `inputs[0].ask: must be one of "always", "once", "optional", "chat".`],

@@ -290,7 +290,24 @@ export interface PlaybookSpec {
   /** Catalogue ids (shared/commands-ids.json) of the Sova commands the run uses. Those that change
       things are the ones the card lists (looking is free, so listing one that only looks is harmless). */
   commands: string[];
+  /** Present: the playbook starts with an alignment in the chat, before its card. */
+  align?: PlaybookAlign;
 }
+
+/** One question the opening alignment settles; its confirmed decision fills a chat choice (`fills`). */
+export interface AlignQuestion {
+  id: string;
+  /** The question, one line. Its options and recommendation come from the chat at run time. */
+  ask: string;
+  /** The id of an input with `ask: "chat"` the decision fills; absent: context no choice holds. */
+  fills?: string;
+}
+
+export interface PlaybookAlign {
+  questions: AlignQuestion[];
+}
+
+export const ALIGN_QUESTIONS_MAX = 8;
 
 export type ParseResult<T> = T | { error: string };
 
@@ -302,7 +319,7 @@ const fail = (path: string, fault: string): never => {
   throw new Fault(`${path}: ${fault}`);
 };
 
-const TOP_KEYS = ["version", "listed", "run", "inputs", "facts", "teams", "steps", "machine", "commands"];
+const TOP_KEYS = ["version", "listed", "run", "inputs", "facts", "teams", "steps", "machine", "commands", "align"];
 const RUN_KEYS = ["where", "worktree", "mode", "minorModes", "permissions", "needs"];
 const INPUT_BASE_KEYS = ["id", "label", "help", "type", "ask", "required", "each", "default"];
 const INPUT_TYPE_KEYS: Record<InputType, string[]> = {
@@ -759,6 +776,34 @@ function parseMachine(v: unknown, teams: PlaybookTeam[], slots: string[]): Playb
   return { initial, states };
 }
 
+/** The opening alignment: its questions, each filling at most one chat choice, each chat choice filled once at most. */
+function parseAlign(v: unknown, inputs: PlaybookInput[]): PlaybookAlign {
+  const o = obj(v, "align");
+  keysOnly(o, ["questions"], "align");
+  const qs = arr(o.questions, "align.questions");
+  if (qs.length < 1 || qs.length > ALIGN_QUESTIONS_MAX) fail("align.questions", `has 1 to ${ALIGN_QUESTIONS_MAX} questions.`);
+  const chat = inputs.filter(isChatFilled).map((x) => x.id);
+  const questions = qs.map((x, i): AlignQuestion => {
+    const path = `align.questions[${i}]`;
+    const q = obj(x, path);
+    keysOnly(q, ["id", "ask", "fills"], path);
+    const out: AlignQuestion = { id: id(q.id, `${path}.id`), ask: line(q.ask, `${path}.ask`, GOAL_MAX) };
+    if (q.fills !== undefined) {
+      if (typeof q.fills !== "string" || !chat.includes(q.fills)) fail(`${path}.fills`, `must name a choice worked out in the chat (ask "chat"): ${list(chat) || "none declared"}.`);
+      out.fills = q.fills as string;
+    }
+    return out;
+  });
+  questions.forEach((q, i) => {
+    const first = questions.findIndex((x) => x.id === q.id);
+    if (first !== i) fail(`align.questions[${i}].id`, `"${q.id}" is used twice.`);
+    if (q.fills === undefined) return;
+    const by = questions.findIndex((x) => x.fills === q.fills);
+    if (by !== i) fail(`align.questions[${i}].fills`, `"${q.fills}" is filled by align.questions[${by}] already.`);
+  });
+  return { questions };
+}
+
 function parseCommands(v: unknown): string[] {
   if (v === undefined) return [];
   const xs = arr(v, "commands");
@@ -809,6 +854,7 @@ export function parsePlaybookSpec(raw: unknown): ParseResult<PlaybookSpec> {
       steps,
       ...(machine ? { machine } : {}),
       commands: parseCommands(o.commands),
+      ...(o.align !== undefined ? { align: parseAlign(o.align, inputs) } : {}),
     };
   } catch (err) {
     if (err instanceof Fault) return { error: err.message };

@@ -257,7 +257,7 @@ test("a playbook.json beside the entry is read strictly: its description, or its
   assert.equal(by.good!.specError, undefined);
   assert.deepEqual([by.plain!.spec, by.plain!.specError], [undefined, undefined], "no playbook.json: a plain playbook");
   assert.equal(by["no-page"]!.specError, `teams.t.members.r.notes: "references/roles/r.md" isn't in the playbook's folder.`);
-  assert.equal(by["bad-key"]!.specError, `playbook.json: unknown key "colour". Known: version, listed, run, inputs, facts, teams, steps, machine, commands.`);
+  assert.equal(by["bad-key"]!.specError, `playbook.json: unknown key "colour". Known: version, listed, run, inputs, facts, teams, steps, machine, commands, align.`);
   assert.match(by["not-json"]!.specError!, /^playbook\.json: isn't valid JSON \(/);
   for (const id of ["no-page", "bad-key", "not-json"]) assert.equal(by[id]!.spec, undefined);
 });

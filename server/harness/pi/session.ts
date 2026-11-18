@@ -212,13 +212,13 @@ export function keepHearingRequests(agent: { streamFunction: PiStreamFn }, repla
   if (listeners && !agent.streamFunction[REQUESTS]) agent.streamFunction = heardStream(agent.streamFunction, listeners);
 }
 
-/** One pi event as the HarnessEvent it is (exactly one per event). */
 /** A pi tool event's call id and tool name, when it names them. */
 const toolCallOf = (event: { [k: string]: unknown }): { callId?: string; name?: string } => ({
   ...(typeof event.toolCallId === "string" && event.toolCallId ? { callId: event.toolCallId } : {}),
   ...(typeof event.toolName === "string" && event.toolName ? { name: event.toolName } : {}),
 });
 
+/** One pi event as the HarnessEvent it is (exactly one per event). */
 export function harnessEventOf(event: { type: string; [k: string]: any }): HarnessEvent {
   const frame = () => v1Frame(event);
   const type = NAMES[event.type] ?? "other";

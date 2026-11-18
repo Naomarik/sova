@@ -328,3 +328,70 @@ describe("the session list", () => {
     assert.notEqual(storesGeneration(), g, "a card closed");
   });
 });
+
+describe("a choice worked out with the chat", () => {
+  const dir = join(scratchAgentDir, "sova", "playbooks", "chatty");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "PLAYBOOK.md"), "---\ntitle: Chatty\ndescription: Works a choice out with the chat\n---\nConduct it.\n");
+  writeFileSync(
+    join(dir, "playbook.json"),
+    JSON.stringify({
+      version: 1,
+      inputs: [
+        { id: "failure", label: "The failure to fix", type: "text", multiline: true, ask: "chat", required: true, help: "What goes wrong today" },
+        { id: "level", label: "Level", type: "choice", ask: "always", required: true, options: [{ id: "lo", label: "Low" }, { id: "hi", label: "High" }], default: "lo" },
+      ],
+      steps: [{ id: "go", label: "Go" }],
+    }),
+  );
+  let n = 0;
+  const chat = () => {
+    const id = `chat-chatty-${++n}`;
+    const path = join(scratchAgentDir, "sessions", "--proj--", `2026-11-16T00-02-0${n}-000Z_${id}.jsonl`);
+    writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-16T00:02:00.000Z", cwd: scratchAgentDir })}\n`);
+    return { id, path };
+  };
+  const openIn = async (path: string, extra: Record<string, unknown> = {}) => (await (await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "chatty" }, cwd: scratchAgentDir, path, ...extra }))).json()) as PlaybookRunView;
+
+  test("keeps Start off until the chat fills it; the person's page can't, the chat's own call can", async () => {
+    const c = chat();
+    const v = await openIn(c.path);
+    assert.equal(v.choices.find((x) => x.id === "failure")!.ask, "chat");
+    assert.equal(v.startBlocked, "Work out The failure to fix with the chat first.");
+    const page = await asPage(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { failure: "mine" } } }));
+    assert.equal(page.status, 400);
+    assert.deepEqual(await page.json(), { error: "The failure to fix is worked out with the chat: ask it there. Nothing was changed." });
+    assert.equal((await asPage(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { level: "hi" } } }))).status, 200, "the short choices stay the person's");
+    const filled = await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision + 1, edits: { choices: { failure: "The read tool loses the last line." } } }));
+    assert.equal(filled.status, 200);
+    const after = (await filled.json()) as PlaybookRunView;
+    assert.equal(after.choices.find((x) => x.id === "failure")!.value, "The read tool loses the last line.");
+    assert.equal(after.startBlocked, null);
+  });
+
+  test("the chat is told in its own context which card waits on it and the command that fills it, until it's filled", async () => {
+    const { playbookCardNote } = await import("./note");
+    const c = chat();
+    assert.equal(await playbookCardNote(c.id), null, "no card, no note");
+    const v = await openIn(c.path);
+    const note = (await playbookCardNote(c.id))!;
+    assert.ok(note.startsWith(`This chat shows the card of the playbook "Chatty" (run ${v.id}), not started.`), note);
+    assert.ok(note.includes("- The failure to fix [failure], text, several lines, required before Start: What goes wrong today"), note);
+    assert.ok(note.includes("If the request is ambiguous about one of them and align mode is on, you may open an alignment first"), note);
+    assert.ok(note.includes(`run playbook.run.edit --run ${v.id} --json '{"revision": <its revision>, "edits": {"choices": {"<choice id>": <value>}}}'`), note);
+    assert.ok(!note.includes("[level]"), "only the choices the chat works out");
+    await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { failure: "x" } } }));
+    assert.equal(await playbookCardNote(c.id), null, "filled: nothing waits on the chat");
+  });
+
+  test("a card stands where it was opened: the page's last item and the time, kept on reopening, taken anew by a card replacing it", async () => {
+    const c = chat();
+    const v = await openIn(c.path, { after: "item-7" });
+    assert.equal(v.anchor?.after, "item-7");
+    assert.match(v.anchor?.at ?? "", /^\d{4}-\d\d-\d\dT/);
+    assert.deepEqual((await openIn(c.path, { after: "item-9" })).anchor, v.anchor, "the same card reopened keeps its place");
+    const other = (await (await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "trial" }, cwd: scratchAgentDir, path: c.path, after: "item-9" }))).json()) as PlaybookRunView;
+    assert.equal(other.anchor?.after, "item-9");
+    assert.equal((await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "chatty" }, cwd: scratchAgentDir, path: c.path, after: 5 }))).status, 400);
+  });
+});

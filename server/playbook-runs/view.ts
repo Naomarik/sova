@@ -29,6 +29,11 @@ function bare(r: PlaybookRunRecord, error: string): PlaybookRunView {
 }
 
 export async function runView(r: PlaybookRunRecord): Promise<PlaybookRunView> {
+  const v = await drawn(r);
+  return r.anchor ? { ...v, anchor: r.anchor } : v;
+}
+
+async function drawn(r: PlaybookRunRecord): Promise<PlaybookRunView> {
   if (r.plan && r.started) {
     // A record frozen before teams had goals reads as today's card (legacy-view.ts).
     const frozen = isLegacyView(r.plan.view) ? upgradeLegacyView(r.plan.view) : r.plan.view;

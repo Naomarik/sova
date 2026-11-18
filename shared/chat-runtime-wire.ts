@@ -259,6 +259,7 @@ export interface ChatAsks {
   "reply.timings": { args: { sessionId: string }; result: { v: string; timings: Record<string, ReplyTiming> } | null };
   /** The offer tool's note of a run button's outcome (§chat.offers/card), server/session-offers.ts. */
   "offers.note": { args: { sessionId: string }; result: string | null };
+  "playbook.cardNote": { args: { sessionId: string }; result: string | null };
   /** The list a chat takes now (server/mcp/chat.ts, §app.mcp/tool-list). */
   "mcp.list": { args: { path: string; cwd: string; sandboxOn: boolean; offMcp: string[]; onMcp: string[] }; result: unknown | null };
   /** A worker's server failed under its confinement: its note for the chat that started it (§app.mcp/sandbox). */
@@ -292,6 +293,7 @@ export const ASK_POLICY: Record<ChatAskMethod, "nothing" | "wait"> = {
   singleton: "nothing",
   "reply.timings": "nothing",
   "offers.note": "nothing",
+  "playbook.cardNote": "nothing",
   "mcp.list": "nothing",
   "mcp.tell": "nothing",
   "cards.note": "nothing",

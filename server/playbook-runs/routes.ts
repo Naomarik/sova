@@ -155,6 +155,7 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     if (b.cwd !== undefined && typeof b.cwd !== "string") return c.json({ error: "cwd must be an absolute folder." }, 400);
     if (b.path !== undefined && typeof b.path !== "string") return c.json({ error: "path must be a chat's session path." }, 400);
     if (b.text !== undefined && (typeof b.text !== "string" || b.text.length > MAX_TEXT)) return c.json({ error: `text must be text, at most ${MAX_TEXT} characters.` }, 400);
+    if (b.after !== undefined && (typeof b.after !== "string" || !b.after || b.after.length > 200)) return c.json({ error: "after must be a transcript item's id." }, 400);
     const p = b.playbook;
     if (!isRecord(p) || !SOURCES.includes(p.source as (typeof SOURCES)[number]) || typeof p.id !== "string" || !p.id) return c.json({ error: "playbook must be { source: sova | user | project, id }." }, 400);
     let shownIn: { id: string; path: string } | undefined;
@@ -190,7 +191,8 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
       changeRun(old.id, (x) => {
         x.closed = true;
       });
-    const run = createRun({ playbook: refOf(loaded.info), cwd, ...(shownIn ? { shownIn } : {}), ...(text ? { text } : {}), initial: first });
+    const anchor = { ...(typeof b.after === "string" ? { after: b.after } : {}), at: new Date().toISOString() };
+    const run = createRun({ playbook: refOf(loaded.info), cwd, anchor, ...(shownIn ? { shownIn } : {}), ...(text ? { text } : {}), initial: first });
     const tMade = Date.now();
     const view = await runView(run);
     const took = Date.now() - t0;
@@ -228,6 +230,11 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     if (!loaded?.spec) return c.json({ error: loaded?.error ? `The playbook's description can't be read: ${loaded.error}` : "The playbook is gone." }, 409);
     const edits = cleanEdits(loaded.spec, b.edits);
     if (typeof edits === "string") return c.json({ error: edits }, 400);
+    // A choice worked out with the chat is the chat's to fill: the card shows it read-only.
+    if (!notPage(c) && edits.choices) {
+      const chatOnes = Object.keys(edits.choices).map((id) => loaded.spec!.inputs.find((i) => i.id === id)!).filter((i) => i.ask === "chat");
+      if (chatOnes.length) return c.json({ error: `${chatOnes[0]!.label} is worked out with the chat: ask it there. Nothing was changed.` }, 400);
+    }
     // A chat or a script fills in the playbook's own choices; models, roles, stops and cycles are the person's.
     if (notPage(c) && (edits.roles || edits.teams || edits.stops || edits.cycle)) return c.json({ error: "Only the person changes a card's models, members, notes, stops and cycle settings, on the card in Sova's page. A chat may fill in its choices. Nothing was changed." }, 403);
     changeRun(r.id, (x) => {

@@ -125,6 +125,11 @@ export interface PlaybookCycleView {
   rule?: string;
 }
 
+export interface PlaybookRunAnchor {
+  after?: string;
+  at: string;
+}
+
 export type PlaybookRunState = "draft" | "starting" | "started";
 
 export interface PlaybookRunStarted {
@@ -166,6 +171,9 @@ export interface PlaybookRunView {
   startError?: string;
   /** The playbook's description can't be read now (a draft whose playbook.json broke). */
   error?: string;
+  /** Where the card stands in its chat's conversation: after the item the page showed last when it was opened
+      (`after`, absent when it sent none), and when it was opened. Absent on runs made before it was kept. */
+  anchor?: PlaybookRunAnchor;
   /** A run started before teams had goals: its record was read from the old shape (its roles as team members,
       with no briefs), so the card may say the record predates teams. */
   legacy?: true;
@@ -205,6 +213,8 @@ export interface PlaybookRunOpenBody {
   path?: string;
   /** Words typed after /<id>. */
   text?: string;
+  /** The last transcript item the page showed when the card was opened: the card stands after it. */
+  after?: string;
 }
 /** PATCH /api/playbook-runs/:run */
 export interface PlaybookRunEditBody {

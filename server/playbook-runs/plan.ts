@@ -291,7 +291,7 @@ function blocked(view: PlaybookRunView, spec: PlaybookSpec, edits: PlaybookCardE
   for (const input of spec.inputs) {
     const v = valueOf(edits, input);
     if (isEmpty(v)) {
-      if (input.required) return `Fill in ${input.label} first.`;
+      if (input.required) return input.ask === "chat" ? `Work out ${input.label} with the chat first.` : `Fill in ${input.label} first.`;
       continue;
     }
     const why = env.checkValue(input, v);

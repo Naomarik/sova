@@ -4,7 +4,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { isPlaybookRunId, type PlaybookCardEdits, type PlaybookChoiceOrigin, type PlaybookRoleEdit, type PlaybookRunStarted, type PlaybookRunState } from "../../shared/playbook-run";
+import { isPlaybookRunId, type PlaybookCardEdits, type PlaybookChoiceOrigin, type PlaybookRoleEdit, type PlaybookRunAnchor, type PlaybookRunStarted, type PlaybookRunState } from "../../shared/playbook-run";
 import type { PlaybookPlan } from "./plan";
 import { sessionsChanged } from "../list-generation";
 import { stateRoot } from "../state-root";
@@ -27,6 +27,8 @@ export interface PlaybookRunRecord {
   cwd: string;
   /** The chat whose card this is; none when it was opened outside a chat. */
   shownIn?: { id: string; path: string };
+  /** Where its card stands in the chat's conversation, set when it was opened and never changed. */
+  anchor?: PlaybookRunAnchor;
   /** Words typed after /<id>. */
   text?: string;
   revision: number;

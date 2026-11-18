@@ -87,6 +87,7 @@ import { LOADING_TOOLS } from "./deeper-context";
 import { playbookExtension, type PlaybookHost } from "./harness/pi/playbook";
 import { playbookHost } from "./playbook-host";
 import { playbookCommandRows } from "./playbook-runs/commands";
+import { PLAYBOOK_CARD_NOTE } from "./playbook-runs/note";
 import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
 
@@ -138,6 +139,7 @@ installVisOwnKindsHook();
 
 /** The offer note in this process (a chat the server hosts itself: tests). */
 const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
+const playbookCardNoteHere = async (sessionId: string): Promise<string | null> => (await import("./playbook-runs/note")).playbookCardNote(sessionId);
 const cardNoteHere = async (sessionId: string, since: string | null): Promise<string | null> =>
   (await import("./merge-queue/card-note")).withMergeCardNote((await import("./transcript-cards")).cardNoteFor(sessionId, since), sessionId, since);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
@@ -211,6 +213,8 @@ export interface ChatHosts {
   instanceNote?: (ctx: HookCtx) => Promise<string | null>;
   /** The offer tool's note of a run button's outcome (§chat.offers/card). */
   offerNote?: (sessionId: string) => Promise<string | null>;
+  /** The note of the playbook cards this chat shows that wait on it to fill a choice (server/playbook-runs/note.ts). */
+  playbookCardNote?: (sessionId: string) => Promise<string | null>;
   /** The list a chat takes now (§app.mcp/tool-list): projects live in the server's engines. */
   mcpList?: (ask: McpListAsk) => Promise<McpChatList | null>;
   /** A worker's server failed under its confinement: the chat that started it hears (§app.mcp/sandbox). */
@@ -5179,6 +5183,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               memory(),
               // playbook_read, once a schedule's fire delivered a playbook here (§chat.schedules/playbook-read).
               playbookExtension(chatHosts.playbook ?? playbookHost),
+              // A playbook card waiting on this chat to fill a choice: told in its own context, never in the thread.
+              servedToolsExtension("sova-playbook-card-note", [], (ctx) => (chatHosts.playbookCardNote ?? playbookCardNoteHere)(ctx.sessionId), PLAYBOOK_CARD_NOTE),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
               projectVerbsLoad(path),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).

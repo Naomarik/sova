@@ -1,0 +1,47 @@
+// The card as the page draws it: a draft drawn now from the playbook and this
+// computer; a started run from the plan Start froze, never drawn again.
+import type { PlaybookRunView } from "../../shared/playbook-run";
+import { liveEnv, loadPlaybook } from "./env";
+import { isLegacyView, upgradeLegacyView } from "./legacy-view";
+import { runCard } from "./plan";
+import type { PlaybookRunRecord } from "./store";
+
+/** A card whose playbook can't be read now: what the run says of itself, and why. */
+function bare(r: PlaybookRunRecord, error: string): PlaybookRunView {
+  return {
+    id: r.id,
+    revision: r.revision,
+    playbook: { source: r.playbook.source, id: r.playbook.id, title: r.playbook.title, dir: r.playbook.dir },
+    state: r.state,
+    choices: [],
+    teams: [],
+    who: { teams: 0, members: 0 },
+    steps: [],
+    cycle: null,
+    howItRuns: "",
+    commands: [],
+    helpers: { total: 0, limit: 24 },
+    startBlocked: error,
+    error,
+    ...(r.started ? { started: r.started } : {}),
+    ...(r.startError ? { startError: r.startError } : {}),
+  };
+}
+
+export async function runView(r: PlaybookRunRecord): Promise<PlaybookRunView> {
+  const v = await drawn(r);
+  return r.anchor ? { ...v, anchor: r.anchor } : v;
+}
+
+async function drawn(r: PlaybookRunRecord): Promise<PlaybookRunView> {
+  if (r.plan && r.started) {
+    // A record frozen before teams had goals reads as today's card (legacy-view.ts).
+    const frozen = isLegacyView(r.plan.view) ? upgradeLegacyView(r.plan.view) : r.plan.view;
+    return { ...frozen, id: r.id, revision: r.revision, state: r.state, started: r.started, startBlocked: "This run has started." };
+  }
+  const loaded = await loadPlaybook(r.playbook, r.cwd).catch(() => null);
+  if (!loaded) return bare(r, "The playbook is gone.");
+  if (!loaded.spec) return bare(r, loaded.error ? `The playbook's description can't be read: ${loaded.error}` : "The playbook has no description.");
+  const env = await liveEnv(loaded.spec, loaded.info, r.started?.chat.path ?? r.shownIn?.path, r.cwd);
+  return runCard(r, loaded.spec, env).view;
+}

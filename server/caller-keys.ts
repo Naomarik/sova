@@ -17,7 +17,9 @@ export const CALLER_HEADER = "x-sova-caller";
 
 /** Who a call came from: its chat while the key's process runs, an installed extension whose own key
     let it in (server/extension-keys.ts), a transcript card's view by its type (a command it ran
-    through the page, §chat.transcript-cards/view-api), any other key, or none at all. */
+    through the page, §chat.transcript-cards/view-api), any other key, or none at all. In `chat:<id>` the id is the
+    session's id (the session header's uuid, as chat-host issues it, server/chat-host.ts), not its session path, which
+    is what shared/chat-runtime.ts's ChatId means. */
 export type Caller = `chat:${string}` | `ext:${string}` | `card:${string}` | "unattributed" | "no-key";
 
 interface KeyRecord {
@@ -73,7 +75,8 @@ export class CallerKeys {
     return this.byHash;
   }
 
-  /** A new key for the process about to start on `unit`; that unit's earlier key names nobody from now on. */
+  /** A new key for the process about to start on `unit`; that unit's earlier key names nobody from now on. `chatId` is
+      the session's id (chat-host passes `summary.id`), not the session path a ChatId is. */
   issue(chatId: string, unit: string): string {
     const keys = this.loaded();
     const key = randomBytes(32).toString("base64url");

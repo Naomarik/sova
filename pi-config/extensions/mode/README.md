@@ -460,6 +460,9 @@ Sova. Its own block follows delegate's and changes nothing in it.
   and one file per topic, whose first line is that topic's line in the table of contents. `guide.ts`
   reads them once at load, and `create-guide-tool.ts` is the `create_guide` lookup. The guide works from
   any folder: it needs no project and no checkout.
+- The `playbooks` topic is a contents page: its sections are `create/playbooks/<section>.md`, each opening
+  with its own contents line, opened with `create_guide {topic: "playbooks", section}`. A running playbook's
+  main chat gets the same contents (`playbookSections()` in `guide.ts`, read by Sova's server).
 - `create_guide` is in the loadout only while the chat is in create. Workers get neither it nor the
   table of contents.
 - Switching to create turns `align` on and moves no other minor mode.

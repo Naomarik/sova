@@ -45,13 +45,14 @@ function project(extra: Record<string, string> = {}): string {
   return r;
 }
 
-test("the maker proposes release but is folded into the Setup chat: never listed; the general method is listed and is not a verb playbook", async () => {
+test("the maker proposes release but is folded into the Setup chat: never listed; the general method is Sova's own (unlisted) and is not a verb playbook", async () => {
   const cat = await listPlaybooks(dir);
   assert.equal(cat.playbooks.find((p) => p.id === "release-maker"), undefined, "folded: only the Setup chat runs it");
   const head = readFileSync(new URL("../playbooks/release-maker/PLAYBOOK.md", import.meta.url), "utf8").split("\n---")[0]!;
   assert.match(head, /^title: Release playbook maker$/m);
   assert.match(head, /^proposes: release$/m);
-  const gen = cat.playbooks.find((p) => p.id === "release");
+  assert.equal(cat.playbooks.find((p) => p.id === "release"), undefined, "only release chats run it");
+  const gen = (await listPlaybooks(dir, { includeUnlisted: true })).playbooks.find((p) => p.id === "release");
   assert.ok(gen, "shipped");
   assert.equal(gen!.proposes, undefined);
 });

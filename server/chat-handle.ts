@@ -879,6 +879,8 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return singletonFor(a.key, a.path ?? path);
     case "reply.timings":
       return fetchSessionTimings(String(a.sessionId ?? ""));
+    case "playbook.cardNote":
+      return (await import("./playbook-runs/note")).playbookCardNote(String(a.sessionId ?? ""));
     case "offers.note":
       return offerNoteFor(String(a.sessionId ?? ""));
     case "mcp.list":

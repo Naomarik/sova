@@ -1,54 +1,10 @@
 # automation: recipes you run by hand, or that run by themselves
 
-Recommend a playbook for a recipe the person runs by hand. For one that runs by itself, recommend a schedule on a playbook when an existing profile fits, and an automation file when the run needs its own model, mode or permissions. For something that runs by itself after every reply in one project, see Reply hooks in the `modes` topic: no schedule does that.
+A playbook, how to make one and how to save it, is the `playbooks` topic. This topic is for a project's playbook that runs by itself: recommend an automation file, which names its own model, mode and permissions.
 
-A project's playbooks, schedules and automation files need a project in Git. In a project with no merge queue the same branch is the person's to merge; in a folder that isn't in Git they're made by hand. In a folder that isn't a project, the person's own playbooks still work, and the project-only things need Add as Project (the `project` topic). A project's playbooks and automations count once they are on its main branch: a branch's copy does nothing.
+Until repeats from a playbook's card arrive, a project playbook can also run by itself from a schedule in its `PLAYBOOK.md` head lines (`when:`, `profile:`, `tz:`, `task:`), approved in the Playbooks dialog. That is the current way, not the way forward: don't start new ones unless the person asks, and say repeats will replace it. For something that runs by itself after every reply in one project, see Reply hooks in the `modes` topic: no schedule does that.
 
-## Your own playbooks
-
-- Change: a recipe available in all the person's chats on this computer, optionally replacing a shipped one with the same id.
-- Lives: `<agent dir>/sova/playbooks/<id>/PLAYBOOK.md`. The id is lowercase letters, digits and dashes. Files the entry names sit beside it, and relative paths in it resolve against its own folder.
-- Approves: the person, by their OK on the whole file.
-- By: OK. Show the path and the whole file first.
-- Live: now: the Playbooks dialog reads the folder each time it opens. It doesn't spread to other computers.
-- Check: the composer's plus, Playbooks, lists it under Yours.
-
-The entry's head is `key: value` lines, one line each, not YAML. Sova reads `title`, `name`, `description` and `promptHint`:
-
-```markdown
----
-title: Weekly tidy
-description: Clear finished worktrees and report what's left.
----
-List this project's worktrees. For each finished one, say what's left in it.
-```
-
-## A project's playbooks
-
-- Change: a recipe for everyone on the project.
-- Lives: `.sova/playbooks/<id>/PLAYBOOK.md` in the project, the same grammar. A folder written as a skill, with `SKILL.md`, works too. Sova never runs a playbook's scripts: the agent runs them under the chat's own permissions.
-- Approves: the person, by Land or Apply.
-- By: Land or Card. Land when it has more than its one `PLAYBOOK.md`. The card is the `playbook` setting, with its id and the file's text.
-- Live: after landing, or once the card is applied, the next time the Playbooks dialog opens.
-- Check: the Playbooks dialog lists it under This project.
-
-## Schedules
-
-- Change: when a project playbook runs by itself, with which profile. Keys in its head: `when:` (`daily 09:00`, `weekdays 09:00,17:00`, `weekends 10:00`, `mon,wed,fri 09:00`, `every 30m`, `every 2h`, `claude-limit-reset`; up to 3 joined by `;`), `profile:` (required), `tz:` and `task:`. A schedule in the person's own playbooks is ignored.
-- Lives: the head of the project's `PLAYBOOK.md`. Its approval lives on this computer, outside every repository.
-- Approves: only the person's own click in the page: Approve in the Playbooks dialog, or Apply and Approve on the card. A schedule on another of their computers can be approved from this page too. A change to `when:`, `tz:` or the profile pauses it until it's approved again. Edits to the instructions and to `task:` never ask again.
-- By: Land or Card. The card is the `playbook` setting.
-- Live: after it's on the main branch and approved, from its next time. Nothing fires unapproved. 30 minutes is the shortest interval, and a schedule fires at most 48 times a day.
-- Check: the Playbooks dialog shows its state and next run; its sessions show under Automations in the session list. After 10 runs nobody opened, it pauses.
-
-Add to the playbook's head:
-
-```markdown
-when: weekdays 09:00
-profile: reviewer
-tz: Europe/Berlin
-task: Review yesterday's work
-```
+Schedules and automation files need a project in Git. In a project with no merge queue the same branch is the person's to merge; in a folder that isn't in Git they're made by hand. In a folder that isn't a project they need Add as Project (the `project` topic). They count once they are on the project's main branch: a branch's copy does nothing.
 
 ## Automation files
 

@@ -11,7 +11,7 @@ import { after, test } from "node:test";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-playbooks-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
-const { isPlaybookId, listPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook, userPlaybooksDir } = await import("./playbooks");
+const { isPlaybookId, listPlaybooks, listProjectPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook, userPlaybooksDir } = await import("./playbooks");
 const PROJECT_PLAYBOOKS = PROJECT_PLAYBOOK_DIRS[1];
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
@@ -233,4 +233,59 @@ test("a schedule is read from a project playbook only; a bad line is invalid wit
   assert.match(by("bad")!.reason!, /every takes 30m/);
   assert.deepEqual(by("shipped-timer"), { when: "daily 09:00", profile: "p", state: "not-project", reason: "Schedules run only from a project's playbooks." });
   assert.equal(by("plain"), undefined);
+});
+
+test("a playbook.json beside the entry is read strictly: its description, or its exact fault, and never hides the rest", async () => {
+  const deps = base();
+  const pb = (id: string, json: unknown, extra: Record<string, string> = {}) => {
+    drop(deps.shippedDir, id, fm({ title: id }, "b"));
+    writeFileSync(join(deps.shippedDir, id, "playbook.json"), typeof json === "string" ? json : JSON.stringify(json));
+    for (const [f, t] of Object.entries(extra)) {
+      mkdirSync(join(deps.shippedDir, id, f, ".."), { recursive: true });
+      writeFileSync(join(deps.shippedDir, id, f), t);
+    }
+  };
+  const helper = { version: 1, teams: { t: { goal: "Do it", members: { r: { label: "R", brief: "Does it", notes: "references/roles/r.md" } } } }, steps: [{ id: "s", label: "S", teams: ["t"] }] };
+  pb("good", helper, { "references/roles/r.md": "how" });
+  pb("no-page", helper);
+  pb("bad-key", { version: 1, colour: "red" });
+  pb("not-json", "{ version: 1");
+  drop(deps.shippedDir, "plain", fm({ title: "plain" }, "b"));
+  const by = Object.fromEntries((await listPlaybooks(undefined, deps)).playbooks.map((p) => [p.id, p]));
+  assert.deepEqual(Object.keys(by).sort(), ["bad-key", "good", "no-page", "not-json", "plain"], "a refused description hides nothing");
+  assert.deepEqual(by.good!.spec?.teams.map((t) => [t.id, t.members.map((m) => m.id)]), [["t", ["r"]]]);
+  assert.equal(by.good!.specError, undefined);
+  assert.deepEqual([by.plain!.spec, by.plain!.specError], [undefined, undefined], "no playbook.json: a plain playbook");
+  assert.equal(by["no-page"]!.specError, `teams.t.members.r.notes: "references/roles/r.md" isn't in the playbook's folder.`);
+  assert.equal(by["bad-key"]!.specError, `playbook.json: unknown key "colour". Known: version, listed, run, inputs, facts, teams, steps, machine, commands, align.`);
+  assert.match(by["not-json"]!.specError!, /^playbook\.json: isn't valid JSON \(/);
+  for (const id of ["no-page", "bad-key", "not-json"]) assert.equal(by[id]!.spec, undefined);
+});
+
+test("listed: false leaves a playbook out of the list in every folder, unless Sova's own caller asks for it", async () => {
+  const deps = base();
+  const cwd = fresh("project");
+  const hidden = JSON.stringify({ version: 1, listed: false });
+  for (const [root, id] of [[deps.shippedDir, "sova-only"], [deps.userDir, "my-hidden"], [join(cwd, PROJECT_PLAYBOOK_DIRS[0]), "proj-hidden"]] as const) {
+    drop(root, id, fm({ title: id }, "b"));
+    writeFileSync(join(root, id, "playbook.json"), hidden);
+  }
+  drop(deps.shippedDir, "shown", fm({ title: "shown" }, "b"));
+  writeFileSync(join(deps.shippedDir, "shown", "playbook.json"), JSON.stringify({ version: 1, listed: true }));
+  assert.deepEqual((await listPlaybooks(cwd, deps)).playbooks.map((p) => p.id), ["shown"]);
+  assert.deepEqual((await listPlaybooks(cwd, { ...deps, includeUnlisted: true })).playbooks.map((p) => p.id).sort(), ["my-hidden", "proj-hidden", "shown", "sova-only"]);
+});
+
+test("the real tree: Sova's own recipes are unlisted, still found by the callers that run them, and every description reads", async () => {
+  // This tree's own folders, read directly: a cwd would resolve to the main checkout's project (server/project-root.ts).
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  const deps = { userDir: join(fresh("nouser"), "absent") };
+  const shippedOnly = ["merge-queue", "release", "release-maker", "project-deploy", "project-setup"];
+  const listed = (await listPlaybooks(undefined, deps)).playbooks;
+  for (const id of shippedOnly) assert.ok(!listed.some((p) => p.id === id), `${id} is listed`);
+  const shipped = (await listPlaybooks(undefined, { ...deps, includeUnlisted: true })).playbooks;
+  for (const id of shippedOnly) assert.ok(shipped.some((p) => p.id === id), `${id} is found with includeUnlisted`);
+  const project = await listProjectPlaybooks(root);
+  for (const id of ["merge-queue", "release", "review", "request"]) assert.equal(project.find((p) => p.id === id)?.spec?.listed, false, `.sova/playbooks/${id}`);
+  for (const p of [...shipped, ...project]) assert.equal(p.specError, undefined, `${p.source}/${p.id}: ${p.specError}`);
 });

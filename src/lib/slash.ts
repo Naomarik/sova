@@ -27,6 +27,18 @@ export function slashTokenAt(text: string, caret: number): SlashToken | null {
   return { start, end, query };
 }
 
+const SOURCE_LABEL: Record<SlashCommand["source"], string> = {
+  extension: "ext",
+  prompt: "prompt",
+  skill: "skill",
+  builtin: "built-in",
+};
+
+/** A row's source chip in the "/" menu: a playbook's row says "playbook", whatever source it rides on. */
+export function sourceChip(c: SlashCommand): string {
+  return c.playbook ? "playbook" : SOURCE_LABEL[c.source];
+}
+
 /** Name prefix matches first, then name substring, then description matches; each by name. */
 export function rankCommands(commands: SlashCommand[], query: string): SlashCommand[] {
   const q = query.toLowerCase();

@@ -13,7 +13,10 @@ extend Sova. It is built on Delegate, never a copy of it: one `orchestrates(mode
 - The guide the model reads: `pi-config/extensions/mode/create/`. `overview.md` is the mode's block,
   `shared.md` the rules every lookup returns, one file per topic. `guide.ts` reads them once at load from
   beside itself, so a chat carries the guide of the code it runs and needs no checkout, project or spec.
-  `create-guide-tool.ts` is the `create_guide` tool.
+  `create-guide-tool.ts` is the `create_guide` tool. The `playbooks` topic is a contents page whose sections
+  are `create/playbooks/<section>.md` (each with its own `# <section>: <words>` line, opened with
+  `create_guide {topic, section}`); `playbookSections()` hands the same contents to a running playbook's
+  message, so a section added there reaches both.
 - Tests: `cd pi-config/extensions/mode && node --test create/guide.test.ts` (the file format, the list, the
   lookup). `server/create-guide-growth.test.ts` holds Sova's own lists to the entries.
 - The site pages: `site/src/content/docs/modes/create.md` and `site/src/content/docs/extending/`.

@@ -86,6 +86,8 @@ import type { McpNote } from "../shared/mcp";
 import { LOADING_TOOLS } from "./deeper-context";
 import { playbookExtension, type PlaybookHost } from "./harness/pi/playbook";
 import { playbookHost } from "./playbook-host";
+import { playbookCommandRows } from "./playbook-runs/commands";
+import { PLAYBOOK_CARD_NOTE } from "./playbook-runs/note";
 import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
 
@@ -137,6 +139,7 @@ installVisOwnKindsHook();
 
 /** The offer note in this process (a chat the server hosts itself: tests). */
 const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
+const playbookCardNoteHere = async (sessionId: string): Promise<string | null> => (await import("./playbook-runs/note")).playbookCardNote(sessionId);
 const cardNoteHere = async (sessionId: string, since: string | null): Promise<string | null> =>
   (await import("./merge-queue/card-note")).withMergeCardNote((await import("./transcript-cards")).cardNoteFor(sessionId, since), sessionId, since);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
@@ -210,6 +213,8 @@ export interface ChatHosts {
   instanceNote?: (ctx: HookCtx) => Promise<string | null>;
   /** The offer tool's note of a run button's outcome (§chat.offers/card). */
   offerNote?: (sessionId: string) => Promise<string | null>;
+  /** The note of the playbook cards this chat shows that wait on it to fill a choice (server/playbook-runs/note.ts). */
+  playbookCardNote?: (sessionId: string) => Promise<string | null>;
   /** The list a chat takes now (§app.mcp/tool-list): projects live in the server's engines. */
   mcpList?: (ask: McpListAsk) => Promise<McpChatList | null>;
   /** A worker's server failed under its confinement: the chat that started it hears (§app.mcp/sandbox). */
@@ -1099,7 +1104,7 @@ export function resolveRegenerate(branch: readonly HEntry[], entryId: string): R
     // A tour's sign-in notice (`[tour_sign_in tN]`, §app.tours/sites) parses as a wake too, under its own name.
     const wake = parseWakeNudge(text);
     if (wake)
-      return { ok: false, reason: "wake", message: wake.tour ? "That reply answered a tour's sign-in notice, not a message you sent, so there is nothing to send again." : "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
+      return { ok: false, reason: "wake", message: wake.tour ? "That reply answered a tour's sign-in notice, not a message you sent, so there is nothing to send again." : wake.playbookAlign ? "That reply answered a playbook's request to open its alignment, not a message you sent, so there is nothing to send again." : "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
     // A partner's message over a link (kind "link", §mesh.links/transcript) is not the user's
     // either; replaying it would redeliver the partner's words as a fresh message.
     if (isLinkMessage(text))
@@ -1134,11 +1139,14 @@ function imageBlocks(content: unknown): QueueImage[] | undefined {
 }
 
 /** The runtime's commands as pi's rpc get_commands lists them, per runtime/cwd. */
-function listCommands(harness: HarnessSession, subfolderSkills = true): SlashCommand[] {
+function listCommands(harness: HarnessSession, subfolderSkills = true, playbooks: readonly SlashCommand[] = []): SlashCommand[] {
   // Sova's own `compact` leads; an extension command of that name could never run from here,
   // because the text is intercepted before pi sees it (ChatSession.handle), so it is not offered.
   // A subfolder's skills only where the chat looks below its folder.
-  return [COMPACT_COMMAND, ...harness.commands({ subfolderSkills }).filter((c) => !(c.source === "extension" && c.name === COMPACT_COMMAND.name))];
+  const own = [COMPACT_COMMAND, ...harness.commands({ subfolderSkills }).filter((c) => !(c.source === "extension" && c.name === COMPACT_COMMAND.name))];
+  // A playbook's card row only where no command of the chat's own has its name.
+  const taken = new Set(own.map((c) => c.name));
+  return [...own, ...playbooks.filter((c) => !taken.has(c.name))];
 }
 
 /** A session's title as the list would say it: its name, else its first message, else "Untitled". A first
@@ -2197,7 +2205,10 @@ class ChatSession {
       // another tool made (nested) doesn't: its caller's end does, once.
       if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
       // A subfolder's skills join the / menu once offered, and leave with the block (§chat.subfolder-skills/command).
-      if (event.type === "run.settled" || event.type === "compaction.end") this.refreshCommands();
+      if (event.type === "run.settled" || event.type === "compaction.end") {
+        this.refreshCommands();
+        this.readPlaybookRows();
+      }
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
       // (§app.claude-logins/switch-queue).
@@ -2310,6 +2321,8 @@ class ChatSession {
       }
     });
     this.lastCommands = null;
+    // The playbooks' / rows go in the first commands message, so a tab hears the list once.
+    this.playbookRows = await playbookCommandRows(harness.cwd).catch(() => []);
     this.refreshCommands(); // extension commands exist only after bindExtensions
     this.sendSandbox((m) => this.broadcast(m));
     // The same rule the extension's own session_start runs, so both agree on this session's mode.
@@ -3367,9 +3380,29 @@ class ChatSession {
     this.broadcast(next);
   }
 
+  /** The / rows of this folder's playbooks that open a card, read after each turn. */
+  private playbookRows: SlashCommand[] = [];
+  private playbookRowsReading = false;
+
+  private readPlaybookRows(): void {
+    if (this.playbookRowsReading) return;
+    this.playbookRowsReading = true;
+    void playbookCommandRows(this.harness.cwd)
+      .then((rows) => {
+        if (JSON.stringify(rows) === JSON.stringify(this.playbookRows)) return;
+        this.playbookRows = rows;
+        this.refreshCommands();
+      })
+      // listPlaybooks reports a remote or missing folder in its answer: a failure here is rare, and the next turn tries again.
+      .catch(() => {})
+      .finally(() => {
+        this.playbookRowsReading = false;
+      });
+  }
+
   commands(): ChatServerMessage {
     try {
-      return { type: "commands", commands: listCommands(this.harness, descendsHere(this.path, this.harness.cwd)) };
+      return { type: "commands", commands: listCommands(this.harness, descendsHere(this.path, this.harness.cwd), this.playbookRows) };
     } catch (err) {
       console.error("[chat] listing commands failed", err);
       return { type: "commands", commands: [] };
@@ -5150,6 +5183,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               memory(),
               // playbook_read, once a schedule's fire delivered a playbook here (§chat.schedules/playbook-read).
               playbookExtension(chatHosts.playbook ?? playbookHost),
+              // A playbook card waiting on this chat to fill a choice: told in its own context, never in the thread.
+              servedToolsExtension("sova-playbook-card-note", [], (ctx) => (chatHosts.playbookCardNote ?? playbookCardNoteHere)(ctx.sessionId), PLAYBOOK_CARD_NOTE),
               // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
               projectVerbsLoad(path),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).

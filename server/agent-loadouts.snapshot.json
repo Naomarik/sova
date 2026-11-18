@@ -12951,12 +12951,12 @@
       ]
     },
     "create-guide": {
-      "bytes": 736,
+      "bytes": 1016,
       "tools": [
         {
           "name": "create_guide",
           "label": "create guide",
-          "description": "Open one topic of Create's table of contents before acting on it: returns the rules every topic shares, then what the topic covers, each thing with what can be changed, where it lives, who approves it, how it changes, how it goes live and how to check it.",
+          "description": "Open one topic of Create's table of contents before acting on it: returns the rules every topic shares, then what the topic covers, each thing with what can be changed, where it lives, who approves it, how it changes, how it goes live and how to check it. The playbooks topic opens on its contents page; add `section` to open one of its sections.",
           "parameters": {
             "type": "object",
             "required": [
@@ -12981,6 +12981,7 @@
                   "project",
                   "landing",
                   "releases",
+                  "playbooks",
                   "automation",
                   "cards",
                   "overseers",
@@ -12988,6 +12989,20 @@
                   "computers"
                 ],
                 "description": "The topic, as Create's table of contents lists it"
+              },
+              "section": {
+                "type": "string",
+                "enum": [
+                  "what",
+                  "cast",
+                  "choices",
+                  "steps",
+                  "card",
+                  "repeats",
+                  "commands",
+                  "saving"
+                ],
+                "description": "With topic playbooks: one section of its contents page"
               }
             },
             "additionalProperties": false

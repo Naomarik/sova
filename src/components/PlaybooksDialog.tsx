@@ -19,6 +19,7 @@ import { scheduleLine } from "../lib/schedules";
 import { ScheduleCard } from "./ScheduleCard";
 import { Banner, Icon, trapFocus } from "./ui";
 import { hostOf } from "../lib/mesh";
+import { heldListNote, playbookCardError, playbookHasCard } from "../lib/playbook-card";
 
 /** Same rule as everywhere else: a skeleton only after the fetch has actually been slow. */
 const SKELETON_MS = 300;
@@ -52,6 +53,15 @@ export function PlaybooksDialog(props: {
   onSend(text: string): boolean;
   onClose(sent: boolean): void;
   onOrphan?(text: string): void;
+  /** A playbook with a description opens its card above the message box instead of the text step.
+      False: it didn't open (said in a toast); the dialog stays. */
+  onOpenCard?(playbook: PlaybookInfo): Promise<boolean>;
+  /** Why this chat runs no playbook cards (a baton chat, an overseer), or null: a playbook with a
+      description then can't be sent as bare text here either, since it would skip its cast and stops. */
+  cardsOff?: string | null;
+  /** The playbook a run of which holds this chat, by its title; null: none. A chat runs one playbook,
+      so a playbook with a card then opens in a new chat, and the list says so. */
+  held?: string | null;
 }) {
   const [catalog, setCatalog] = createSignal<PlaybookCatalog | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -177,6 +187,18 @@ export function PlaybooksDialog(props: {
     props.onClose(false);
   };
   const choose = (p: PlaybookInfo) => {
+    if (playbookHasCard(p) && props.onOpenCard) {
+      void props.onOpenCard(p).then((opened) => {
+        if (!opened) return;
+        // What was typed for other playbooks stays for the next opening, as a close keeps it.
+        leaving = true;
+        const d = drafts();
+        if (playbookDraftsEmpty(d)) kept.delete(props.path);
+        else kept.set(props.path, d);
+        props.onClose(true);
+      });
+      return;
+    }
     lastKey = playbookKey(p);
     setActive(lastKey);
     setDrafts((d) => ({ ...d, last: lastKey }));
@@ -187,9 +209,18 @@ export function PlaybooksDialog(props: {
     setChosen(null);
     queueMicrotask(() => (lastKey && rows.get(lastKey)?.focus()) || undefined);
   };
+  /** Why Send Playbook is off: the chat can't send, or the chosen playbook's description is broken
+      (it runs from its card or not at all, never as bare text without its cast and stops). */
+  const reason = (): ComposerReason | null => {
+    const p = chosen();
+    if (props.blocked) return props.blocked;
+    if (p && playbookCardError(p)) return { icon: "attention", text: "Fix its playbook.json first." };
+    if (p && playbookHasCard(p) && props.cardsOff) return { icon: "attention", text: props.cardsOff };
+    return null;
+  };
   const send = () => {
     const p = chosen();
-    if (!p || props.blocked) return;
+    if (!p || reason()) return;
     if (!props.onSend(playbookTurnText(p, text()))) return; // refused here: keep everything
     leaving = true;
     const rest = sentPlaybookDraft(drafts(), playbookKey(p));
@@ -229,6 +260,7 @@ export function PlaybooksDialog(props: {
           when={chosen()}
           fallback={
             <div class="modal-body">
+              <Show when={props.held}>{(title) => <Banner tone="info" size="compact" title={heldListNote(title()).title} body={heldListNote(title()).body} />}</Show>
               <Show when={error()}>
                 {(message) => (
                   <Banner
@@ -285,6 +317,16 @@ export function PlaybooksDialog(props: {
                                           <span class="list-meta">{p.description}</span>
                                         </span>
                                       </Show>
+                                      {/* A description that doesn't parse: its exact fault. */}
+                                      <Show when={playbookCardError(p)}>
+                                        {(err) => (
+                                          <span class="list-line list-meta-row">
+                                            <span class="list-meta playbook-card-error">
+                                              <Icon name="attention" small /> {err()}
+                                            </span>
+                                          </span>
+                                        )}
+                                      </Show>
                                       {/* Its schedule and state (§chat.schedules/where-shown). */}
                                       <Show when={p.schedule}>
                                         {(sch) => (
@@ -316,6 +358,9 @@ export function PlaybooksDialog(props: {
             <div class="modal-body">
               <Show when={p().description}>
                 <p class="text-caption text-muted">{p().description}</p>
+              </Show>
+              <Show when={playbookCardError(p())}>
+                {(err) => <Banner tone="warn" title="Its playbook.json can't be read, so it can't run." body={err()} />}
               </Show>
               <Show when={p().schedule}>
                 {(sch) => (
@@ -363,7 +408,7 @@ export function PlaybooksDialog(props: {
               Back
             </button>
           </Show>
-          <Show when={chosen() && props.blocked}>
+          <Show when={chosen() && reason()}>
             {(r) => (
               <span class="text-caption text-muted" id="playbooks-reason">
                 <Icon name={r().icon} small /> {r().text}
@@ -382,8 +427,8 @@ export function PlaybooksDialog(props: {
             <button
               type="button"
               class="button button-primary"
-              aria-disabled={props.blocked ? "true" : undefined}
-              aria-describedby={props.blocked ? "playbooks-reason" : undefined}
+              aria-disabled={reason() ? "true" : undefined}
+              aria-describedby={reason() ? "playbooks-reason" : undefined}
               onClick={send}
             >
               Send Playbook

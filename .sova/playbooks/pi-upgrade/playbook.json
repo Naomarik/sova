@@ -1,0 +1,261 @@
+{
+  "version": 1,
+  "listed": true,
+  "run": {
+    "where": "new-chat",
+    "worktree": "none",
+    "mode": "delegate",
+    "needs": [
+      "project"
+    ]
+  },
+  "inputs": [
+    {
+      "id": "target",
+      "label": "Move Sova's pi to",
+      "help": "A version (\"1.5.2\") or \"latest\"",
+      "type": "text",
+      "default": "latest",
+      "ask": "always",
+      "required": true
+    },
+    {
+      "id": "terminal",
+      "label": "Update the terminal pi too",
+      "help": "Your pi in the terminal shares settings and extensions with Sova, so it moves at the landing",
+      "type": "toggle",
+      "default": true,
+      "ask": "once",
+      "required": true
+    },
+    {
+      "id": "perf",
+      "label": "Measure speed before and after",
+      "help": "Start-up, memory and reply time against master; worth it for a big jump",
+      "type": "toggle",
+      "default": false,
+      "ask": "optional",
+      "required": false
+    },
+    {
+      "id": "notes",
+      "label": "Anything to look at closely",
+      "help": "Optional: tell the main chat before Start about a worry, or a feature you want from the release.",
+      "type": "text",
+      "ask": "chat",
+      "required": false
+    }
+  ],
+  "facts": [
+    {
+      "id": "pinned",
+      "label": "Sova pins now"
+    },
+    {
+      "id": "latest",
+      "label": "Latest release",
+      "help": "With its date"
+    },
+    {
+      "id": "between",
+      "label": "Releases in between"
+    },
+    {
+      "id": "installed",
+      "label": "Terminal pi on this computer"
+    }
+  ],
+  "teams": {
+    "research": {
+      "label": "Research",
+      "goal": "Find what moving Sova to the new pi would bring and cost, through every changelog entry and Sova's code, changing nothing",
+      "members": {
+        "changelog-reader": {
+          "label": "Changelog reader",
+          "brief": "Reads and tags every changelog entry and type change between the two versions, one row each",
+          "kind": "investigation",
+          "models": [
+            {
+              "model": "claude-code/claude-opus-5-5",
+              "effort": "medium"
+            },
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "medium"
+            }
+          ],
+          "notes": "references/roles/changelog-reader.md"
+        },
+        "dep-mapper": {
+          "label": "Dependency mapper",
+          "brief": "Maps every place Sova depends on pi, above all the ones no test watches",
+          "kind": "investigation",
+          "models": [
+            {
+              "model": "claude-code/claude-opus-5-5",
+              "effort": "medium"
+            },
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "medium"
+            }
+          ],
+          "notes": "references/roles/dep-mapper.md"
+        },
+        "scratch-tester": {
+          "label": "Scratch tester",
+          "brief": "Runs Sova's checks at both versions in throwaway copies and tells pi's failures from the environment's",
+          "kind": "routine",
+          "models": [
+            {
+              "model": "claude-code/claude-opus-5-5",
+              "effort": "medium"
+            },
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "medium"
+            }
+          ],
+          "notes": "references/roles/scratch-tester.md"
+        },
+        "judge": {
+          "label": "Judge",
+          "brief": "Challenges every claim, sorts each entry into wins, tradeoffs, risks or the rest, and drafts the verdict and plan",
+          "kind": "planning",
+          "models": [
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "high"
+            },
+            {
+              "model": "claude-code/claude-opus-5-5",
+              "effort": "high"
+            }
+          ],
+          "notes": "references/roles/judge.md"
+        }
+      }
+    },
+    "upgrade": {
+      "label": "Upgrade",
+      "goal": "Move Sova to the new pi on its own branch, keeping pi at the edge, only after the user's yes",
+      "members": {
+        "implementer": {
+          "label": "Implementer",
+          "brief": "Carries out the agreed plan step by step on the branch, refactoring so pi stays at the edge",
+          "kind": "complex",
+          "models": [
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "high"
+            },
+            {
+              "model": "claude-code/claude-opus-5-5",
+              "effort": "high"
+            }
+          ],
+          "notes": "references/roles/implementer.md"
+        },
+        "boundary-keeper": {
+          "label": "Boundary keeper",
+          "brief": "Reads each commit and refuses anything that would let pi past the harness boundary",
+          "kind": "investigation",
+          "models": [
+            {
+              "model": "claude-code/claude-opus-5-5",
+              "effort": "high"
+            },
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "high"
+            }
+          ],
+          "notes": "references/roles/boundary-keeper.md"
+        }
+      }
+    },
+    "check": {
+      "label": "Regression check",
+      "goal": "Show the upgrade went smoothly with no regressions, running the check list and no more",
+      "members": {
+        "verifier": {
+          "label": "Regression checker",
+          "brief": "Runs the check list against master and the branch and reports each result side by side",
+          "kind": "routine",
+          "models": [
+            {
+              "model": "claude-code/claude-opus-5-5",
+              "effort": "medium"
+            },
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "medium"
+            }
+          ],
+          "notes": "references/roles/verifier.md"
+        }
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "find",
+      "label": "Find the target; nothing to do ends here",
+      "phase": "phases/find.md"
+    },
+    {
+      "id": "research",
+      "label": "Research every changelog entry and Sova's code, changing nothing",
+      "phase": "phases/research.md",
+      "teams": [
+        "research"
+      ]
+    },
+    {
+      "id": "report",
+      "label": "The report: wins, tradeoffs, risks, the rest",
+      "report": "table",
+      "phase": "phases/report.md"
+    },
+    {
+      "id": "plan",
+      "label": "A plan ready to carry out; asks you before anything changes",
+      "stop": "always",
+      "report": "verdict",
+      "phase": "phases/plan.md",
+      "teams": [
+        "research"
+      ]
+    },
+    {
+      "id": "upgrade",
+      "label": "The upgrade, on its own branch",
+      "asks": [
+        "the boundary baseline would have to grow",
+        "a package wants an install script",
+        "a session version bump nobody foresaw",
+        "anything you'd see that the plan didn't cover",
+        "a queue check fails only on the old terminal pi"
+      ],
+      "phase": "phases/upgrade.md",
+      "teams": [
+        "upgrade"
+      ]
+    },
+    {
+      "id": "check",
+      "label": "Check it went smoothly, with no regressions",
+      "stop": "always",
+      "report": "table",
+      "phase": "phases/check.md",
+      "teams": [
+        "check"
+      ]
+    },
+    {
+      "id": "after",
+      "label": "After landing: the terminal pi and what to tell you",
+      "phase": "phases/after-landing.md"
+    }
+  ]
+}

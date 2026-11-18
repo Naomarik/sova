@@ -39,6 +39,7 @@
    "<inline:sova-shell-model>",
    "<inline:sova-memory>",
    "<inline:sova-playbook>",
+   "<inline:sova-playbook-card-note>",
    "<inline:sova-project-verbs>",
    "<inline:sova-topics>",
    "<inline:sova-tours>",
@@ -124,9 +125,9 @@
        "rules": "@898a2a6e09208de2",
        "docs": "@0f5fabf6c3c47c4c",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-       "mode": "@8184da72ca3ccd18"
+       "mode": "@c8e57fc0768a3bec"
       },
-      "toolsAdded": "@c660266c6ba1c84f"
+      "toolsAdded": "@665f1bd31e96bccd"
      },
      {
       "role": "user",
@@ -185,9 +186,9 @@
       "rules": "@898a2a6e09208de2",
       "docs": "@0f5fabf6c3c47c4c",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
-      "mode": "@8184da72ca3ccd18"
+      "mode": "@c8e57fc0768a3bec"
      },
-     "toolsAdded": "@998323392727dbb7"
+     "toolsAdded": "@39a465a3cd6137f8"
     }
    }
   ],

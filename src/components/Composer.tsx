@@ -5,6 +5,7 @@ import { avatarLogins, composerLogin } from "../lib/claude-login";
 import { runControls, stopButton } from "../lib/compact";
 import { composerKey, createEscTimes, createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, toEnd, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
+import { commandPlaybook, typedPlaybook } from "../lib/playbook-card";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { canRun, codeSpans, folderName, SHELL_MARKER, shellPlaceholder, type ShellControl, type ShellMode } from "../lib/shell-mode";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
@@ -227,6 +228,9 @@ export function Composer(props: {
   mode?: ModeControl | null;
   /** Chat sessions only: opens the Playbooks dialog (the Commands dialog's Playbooks row). */
   onPlaybooks?: () => void;
+  /** Chat sessions only: a sent "/<name> [words]" whose row is a playbook with a description opens its
+      card instead. False: it didn't open, and the draft stays. */
+  onPlaybookCard?: (playbook: { source: "sova" | "user" | "project"; id: string }, words: string) => Promise<boolean>;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
   sandbox?: SandboxControl | null;
   /** Shell mode (§chat.shell-mode/box): only a chat with its own agent and folder gives it. Absent,
@@ -581,6 +585,19 @@ export function Composer(props: {
     const token = slashToken();
     const cmd = slashMatches()[index];
     if (!token || !cmd) return;
+    // A playbook's row opens its card when the command leads the message: what follows goes with it.
+    const pb = commandPlaybook(cmd);
+    if (pb && props.onPlaybookCard && !input.value.slice(0, token.start).trim() && images().length === 0) {
+      const words = input.value.slice(token.end).trim();
+      setSlashToken(null);
+      void props.onPlaybookCard(pb, words).then((opened) => {
+        if (!opened) return;
+        setDraft("");
+        input.value = "";
+        updateSlash();
+      });
+      return;
+    }
     const next = insertCommand(input.value, token, cmd.name);
     setDraft(next.text);
     input.value = next.text;
@@ -931,6 +948,19 @@ export function Composer(props: {
       input.value = "";
       setSlashToken(null);
       announce(`New session in ${cwd}.`);
+      return;
+    }
+    // "/<playbook>" opens that playbook's card above the message box; the words after the name go
+    // with it. Nothing reaches the runtime. With images attached it's a message like any other.
+    const pb = !props.picks && props.onPlaybookCard && images().length === 0 ? typedPlaybook(text(), props.commands ?? []) : null;
+    if (pb) {
+      if (startingNew) return;
+      startingNew = true;
+      const opened = await props.onPlaybookCard!(pb.playbook, pb.words).finally(() => (startingNew = false));
+      if (!opened) return;
+      setDraft("");
+      input.value = "";
+      setSlashToken(null);
       return;
     }
     // "/clear" in the Overseer: a new conversation. Nothing reaches the runtime; the old one stays

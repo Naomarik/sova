@@ -3,6 +3,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PLAYBOOK_ENTRIES, PLAYBOOK_PROPOSES, type PlaybookProposes, type PlaybookCatalog, type PlaybookEntry, type PlaybookInfo, type PlaybookSchedule } from "../shared/protocol";
 import { scheduleOf, scheduleText } from "../shared/schedules";
+import { PLAYBOOK_JSON, pagesOf, parsePlaybookSpec, validatePlaybookFiles, type PlaybookSpec } from "../shared/playbook-format";
 import { defaultRemoteOf, type RemoteCwd } from "./files";
 import { projectOf } from "./project-root";
 import { stateRoot } from "./state-root";
@@ -48,8 +49,9 @@ export interface PlaybooksDeps {
   userDir?: string;
   /** The remote reading of a cwd (default: server/files.ts's, lexical). */
   remoteOf?: (path: string) => RemoteCwd | null;
-  /** List the Setup chat's own playbook (only its start reads it: it never runs as another chat's turn). */
-  withSetup?: boolean;
+  /** Also list the playbooks whose description says `listed: false`: Sova's
+      own callers, which look up their chat's recipe (the Setup chat's project-setup) or start a run. */
+  includeUnlisted?: boolean;
 }
 
 /**
@@ -124,6 +126,40 @@ export async function playbookProposes(dir: string): Promise<boolean> {
   }
 }
 
+/**
+ * A playbook folder's `playbook.json`, read strictly: null when the
+ * folder has none (a plain playbook), else the description or the exact fault. A page it names that
+ * isn't in the folder (a phase, a stop rule, a member's notes) is a fault too.
+ */
+export async function readPlaybookSpec(dir: string): Promise<{ spec: PlaybookSpec } | { error: string } | null> {
+  let text: string;
+  try {
+    text = await readFile(join(dir, PLAYBOOK_JSON), "utf8");
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    return { error: `${PLAYBOOK_JSON}: Sova can't read it (${code ?? (err as Error).message}).` };
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (err) {
+    return { error: `${PLAYBOOK_JSON}: isn't valid JSON (${(err as Error).message}).` };
+  }
+  const spec = parsePlaybookSpec(raw);
+  if ("error" in spec) return spec;
+  const present: string[] = [];
+  for (const { file } of pagesOf(spec)) {
+    try {
+      if ((await stat(join(dir, file))).isFile()) present.push(file);
+    } catch {
+      // missing: the folder check names it
+    }
+  }
+  const [missing] = validatePlaybookFiles(spec, present);
+  return missing ? { error: missing } : { spec };
+}
+
 async function readOne(dir: string, id: string, source: Source): Promise<{ info: PlaybookInfo; fields: Record<string, string> }> {
   const { entry, text } = await readEntry(dir);
   const { fields, body } = parseFrontmatter(text);
@@ -142,6 +178,9 @@ async function readOne(dir: string, id: string, source: Source): Promise<{ info:
   if ((PLAYBOOK_PROPOSES as readonly string[]).includes(proposes ?? "")) info.proposes = proposes as PlaybookProposes;
   const schedule = headerSchedule(fields, source);
   if (schedule) info.schedule = schedule;
+  const spec = await readPlaybookSpec(dir);
+  if (spec && "spec" in spec) info.spec = spec.spec;
+  else if (spec) info.specError = spec.error;
   return { info, fields };
 }
 
@@ -238,10 +277,13 @@ async function projectPlaybooks(
   return { state: { state: "ok" }, entries: entries.sort(byTitle) };
 }
 
-/** Shipped playbooks folded into the Setup chat (server/projects/onboard.ts FOLDED_PLAYBOOKS): kept for their scripts, never listed. */
+/** Shipped playbooks folded into the Setup chat (server/projects/onboard.ts FOLDED_PLAYBOOKS): kept for their scripts;
+    their descriptions say `listed: false`. */
 export const FOLDED_SETUP_PLAYBOOKS: readonly string[] = ["release-maker", "project-deploy"];
-/** The Setup chat's playbook: listed only for its own start (PlaybooksDeps.withSetup). */
-export const SETUP_PLAYBOOK = "project-setup";
+
+/** Listed in the Playbooks dialog and the / rows: every playbook but one whose description says
+    `listed: false`. A refused description lists it, so its error shows. */
+export const isListed = (p: PlaybookInfo): boolean => p.spec?.listed !== false;
 
 /**
  * The catalog, rescanned, one group after another and each sorted by title (then id): shipped
@@ -257,11 +299,12 @@ export async function listPlaybooks(cwd?: string, deps: PlaybooksDeps = {}): Pro
   const shippedIds = new Set(shipped.entries.map((p) => p.id));
   const userIds = new Set(user.entries.map((p) => p.id));
   for (const p of user.entries) if (shippedIds.has(p.id)) p.replacesSova = true;
-  // The setup playbooks folded into the Setup chat are never listed: only the Setup chat runs their parts.
+  // A playbook only Sova's own chats run (`listed: false`) is left out unless the caller asks for it.
+  const shown = (p: PlaybookInfo) => deps.includeUnlisted || isListed(p);
   const playbooks = [
-    ...shipped.entries.filter((p) => !userIds.has(p.id) && !FOLDED_SETUP_PLAYBOOKS.includes(p.id) && (deps.withSetup || p.id !== SETUP_PLAYBOOK)).sort(byTitle),
-    ...user.entries.sort(byTitle),
-    ...project.entries,
+    ...shipped.entries.filter((p) => !userIds.has(p.id) && shown(p)).sort(byTitle),
+    ...user.entries.filter(shown).sort(byTitle),
+    ...project.entries.filter(shown),
   ];
   return { playbooks, project: project.state, ...(user.error ? { error: user.error } : {}) };
 }

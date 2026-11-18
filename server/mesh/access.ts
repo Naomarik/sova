@@ -383,6 +383,9 @@ export function classifyRequest(method: string, pathname: string): Classified {
   if (path === "/api/tours" || path.startsWith("/api/tours/")) return tourRequest(method, path);
   // A chat's designs stay on the host that owns the chat.
   if (path === "/api/design" || path.startsWith("/api/design/")) return { need: "full", rule: "full:design" };
+  // A playbook run's card makes chats and grants a playbook's powers on the host that owns its chats; Start and
+  // Save as My Defaults are click doors a peer's relay never passes (server/page-only.ts).
+  if (path === "/api/playbook-runs" || path.startsWith("/api/playbook-runs/")) return { need: "full", rule: "full:playbook-runs" };
   const read = method === "GET" || method === "HEAD";
   if (PROJECT_DRAFT_SPECS_RE.test(path)) return { need: "full", rule: "full:project-draft-specs" };
   let m = SESSION_RE.exec(path);

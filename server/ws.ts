@@ -16,6 +16,7 @@ import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClie
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
 import { resolveSessionPath } from "./paths";
 import { onDesignNews } from "./design/live";
+import { onPlaybookRunNews } from "./playbook-runs/news";
 import { lookbookNormalize, lookbookSessionOf } from "./design/transcript";
 import { trackViewer } from "./seen";
 import { nudgeMarks, sessionFeed } from "./session-feed";
@@ -305,10 +306,13 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   const offCards = viewer ? onCardNews((e) => e.id === id && client.send({ type: "cards_changed" })) : null;
   // The same pane hears its chat's designs as they are written.
   const offDesigns = viewer ? onDesignNews((n) => n.sessionId === id && client.send({ type: "event", v: 2, event: n.event })) : null;
+  // And its playbook runs' cards as they change.
+  const offRuns = viewer ? onPlaybookRunNews((n) => n.sessionId === id && client.send({ type: "event", v: 2, event: n.event })) : null;
   ws.on("close", () => {
     gone = true;
     offCards?.();
     offDesigns?.();
+    offRuns?.();
     if (viewer) trackViewer(id, -1);
     if (chat) stayToHear();
   });

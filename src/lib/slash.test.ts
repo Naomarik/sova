@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { TUI_ONLY_COMMANDS, enterRunsLocal, localCommand, menuCommands, slashMenuSuppressed, tuiOnlyCommand } from "./slash";
+import { TUI_ONLY_COMMANDS, enterRunsLocal, localCommand, menuCommands, slashMenuSuppressed, sourceChip, tuiOnlyCommand } from "./slash";
 
 test("localCommand claims a bare /agents and /subagents", () => {
   assert.equal(localCommand("/agents"), "subagents");
@@ -147,4 +147,10 @@ test("tuiOnlyCommand names a bare TUI-only command typed in full, nothing else",
   assert.equal(tuiOnlyCommand("/team"), null);
   assert.equal(tuiOnlyCommand("/remote"), null);
   assert.equal(tuiOnlyCommand("/extensions"), null, "no add-on registers /extensions any more: an extension's own /extensions is the runtime's");
+});
+
+test("a row's source chip: a playbook's row says playbook, whatever source it rides on", () => {
+  assert.equal(sourceChip({ name: "ab-cycle", source: "builtin", playbook: { source: "sova", id: "ab-cycle" } }), "playbook");
+  assert.equal(sourceChip({ name: "compact", source: "builtin" }), "built-in");
+  assert.equal(sourceChip({ name: "x", source: "extension" }), "ext");
 });

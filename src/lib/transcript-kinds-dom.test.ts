@@ -31,6 +31,7 @@ const CASES: Record<string, { items: TranscriptItem[]; props?: Record<string, un
   "wake: a schedule with a playbook": {
     items: [row("w3", { kind: "wake", text: "[schedule s1] Reason: nightly", wake: { id: "s1", schedule: true, reason: "nightly", playbook: { id: "pb-1", load: "inline" } } as never })],
   },
+  "playbook-run: Start's message, folded": { items: [row("pr1", { kind: "user", text: "Run the playbook \"A/B cycle\" as its conductor: its recipe is in the playbook block below and this run's plan, frozen from the card the user started, in the run block after it. Start the helpers and teams yourself, exactly as the run block says.\n<playbook id=\"ab-cycle\" sha=\"abc\" load=\"full\">\nBody\n</playbook>\n<run id=\"pr_aaaaaaaaaaaa\" playbook=\"ab-cycle\" revision=\"4\" folder=\"/shared/c/playbook-runs/pr_aaaaaaaaaaaa\">\nYour choices:\n</run>" })] },
   "wake: a tour sign-in": { items: [row("w4", { kind: "wake", text: "[tour_sign_in t1]", wake: { id: "t1", tour: true } })] },
   "topic: two notes": {
     items: [

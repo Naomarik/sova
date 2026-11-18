@@ -250,6 +250,23 @@ export interface DesignRunData {
 }
 export const DESIGN_RUN = kind<DesignRunData>("sova-design-run", "branch-list", (d) => (isRecord(d) && d.v === 1 && filled(d.runId) && filled(d.at) ? (d as DesignRunData) : null));
 
+/** A playbook run's mark on a chat's own file: written at Start. `conducts`: this chat
+    conducts the run; otherwise this chat's card started it in the chat named by `chat`. The card itself reads
+    the run store (server/playbook-runs/store.ts); the mark keeps the link when the store is gone. */
+export interface PlaybookRunMarkerData {
+  v: 1;
+  runId: string;
+  at: string;
+  playbook: { source: string; id: string; title: string };
+  conducts: boolean;
+  chat?: { id: string; path: string };
+}
+export const PLAYBOOK_RUN = kind<PlaybookRunMarkerData>("sova-playbook-run", "branch-list", (d) =>
+  isRecord(d) && d.v === 1 && filled(d.runId) && filled(d.at) && isRecord(d.playbook) && filled(d.playbook.id) && typeof d.conducts === "boolean" && (d.conducts || (isRecord(d.chat) && filled(d.chat.id)))
+    ? (d as PlaybookRunMarkerData)
+    : null,
+);
+
 // ---- Extension-owned shapes (the pi-config core builds and reads the data; Sova routes it) ----------
 
 /** The session's active mode triple (newest usable on the branch), the data `pinEntryFor` builds. A body
@@ -331,7 +348,7 @@ export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
     REWIND, TOPIC_DELIVERED, SHELL_CLOSED, SHELL_RUN, FANOUT_MEMBER, PROFILE, CHAT_PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, APPROVAL_PENDING, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
-    BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT, DESIGN_RUN,
+    BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT, DESIGN_RUN, PLAYBOOK_RUN,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,
   ].map((k) => [k.type, k as StateKind<unknown>]),
 );

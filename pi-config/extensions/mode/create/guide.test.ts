@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CREATE_FILES, CREATE_GROUPS, CREATE_GUIDE_NAMES, CREATE_INSTRUCTIONS, CREATE_TOPICS, createContents, createGuide, parseHeader, sandboxNote, stripOwnerNotes } from "./guide.ts";
+import { readdirSync } from "node:fs";
+import { CREATE_FILES, CREATE_GROUPS, CREATE_GUIDE_NAMES, CREATE_INSTRUCTIONS, CREATE_TOPICS, createContents, createGuide, parseHeader, PLAYBOOK_SECTION_FILES, PLAYBOOK_SECTION_NAMES, PLAYBOOK_SECTION_ORDER, playbookContents, playbookSections, sandboxNote, stripOwnerNotes } from "./guide.ts";
 
 /** §chat.create-mode/contents, word for word: the table of contents the mode promises. */
 const PROMISED = `- **Make it yours.**
@@ -23,6 +24,7 @@ const PROMISED = `- **Make it yours.**
   - \`project\`: how your project runs, tests, shares and ships
   - \`landing\`: what must pass before a branch reaches your project, and how it lands
   - \`releases\`: numbered versions of your project, and how they're made and published
+  - \`playbooks\`: repeatable jobs with a cast, your choices and steps, and how to make one
   - \`automation\`: recipes you run by hand, or that run by themselves
   - \`cards\`: buttons, cards and drawings that are your project's own
   - \`overseers\`: how the Overseers and the Project Assistant watch, act and hold back
@@ -64,7 +66,7 @@ const NOT_STANDALONE: [RegExp, string][] = [
 test("the table of contents is the promised list, generated from each file's own header line", () => {
 	assert.equal(createContents(), PROMISED);
 	assert.equal(CREATE_GROUPS.length, 6);
-	assert.equal(CREATE_TOPICS.length, 20);
+	assert.equal(CREATE_TOPICS.length, 21);
 	assert.deepEqual(CREATE_GUIDE_NAMES, CREATE_TOPICS);
 	assert.deepEqual(CREATE_TOPICS.filter((topic, i) => CREATE_TOPICS.indexOf(topic) !== i), []);
 });
@@ -171,9 +173,61 @@ test("every entry says, for each thing, what can change, where it lives, who app
 });
 
 test("every entry stands alone: it depends on no project, no checkout and no spec", () => {
-	const found = ["shared", "overview", ...CREATE_TOPICS].flatMap((name) => {
-		const text = stripOwnerNotes(CREATE_FILES[name] ?? "");
+	const texts: [string, string][] = [
+		...["shared", "overview", ...CREATE_TOPICS].map((name): [string, string] => [name, CREATE_FILES[name] ?? ""]),
+		...Object.entries(PLAYBOOK_SECTION_FILES).map(([name, text]): [string, string] => [`playbooks/${name}`, text]),
+	];
+	const found = texts.flatMap(([name, raw]) => {
+		const text = stripOwnerNotes(raw);
 		return NOT_STANDALONE.filter(([pattern]) => pattern.test(text)).map(([, what]) => `${name}: ${what}`);
 	});
 	assert.deepEqual(found, []);
+});
+
+/** §chat.playbooks/contents-page, word for word: the playbook know-how's contents, shared by Create and a run. */
+const PROMISED_SECTIONS = `- \`what\`: what a playbook is, and the files in its folder
+- \`cast\`: who runs it: teams, their goals, and the members they must have
+- \`choices\`: what the person picks on the card
+- \`steps\`: steps, stop points, cycles and flows
+- \`card\`: what the person sees before Start, and after
+- \`repeats\`: running a playbook again by itself
+- \`commands\`: what Sova itself can do from a playbook
+- \`saving\`: checking a playbook, and saving it where it belongs`;
+
+test("the playbooks topic opens on its contents page, generated from each section file's own header line", () => {
+	assert.equal(playbookContents(), PROMISED_SECTIONS);
+	const page = createGuide("playbooks");
+	assert.ok(page.startsWith(stripOwnerNotes(CREATE_FILES.shared!)), "the shared rules come first");
+	assert.ok(page.includes(PROMISED_SECTIONS), "the contents list in its place");
+	assert.ok(!page.includes("{{"), "no placeholder left");
+	for (const words of ["## Your own playbooks", "## A project's playbooks", "`section`"]) assert.ok(page.includes(words), words);
+});
+
+test("the section files on disk and the contents list can't disagree", () => {
+	const onDisk = readdirSync(new URL("./playbooks/", import.meta.url)).filter((n) => n.endsWith(".md")).map((n) => n.slice(0, -3)).sort();
+	assert.deepEqual([...PLAYBOOK_SECTION_ORDER].sort(), onDisk, "every file is listed in the order, and every listed name has a file");
+	for (const name of onDisk) assert.equal(parseHeader(PLAYBOOK_SECTION_FILES[name]!)?.topic, name, `playbooks/${name}.md starts with "# ${name}: <words>"`);
+	assert.deepEqual(PLAYBOOK_SECTION_NAMES, PLAYBOOK_SECTION_ORDER);
+	const listed = playbookSections();
+	assert.deepEqual(listed.map((s) => s.name), PLAYBOOK_SECTION_ORDER);
+	for (const s of listed) assert.ok(s.file.startsWith("/") && s.file.endsWith(`/playbooks/${s.name}.md`), s.file);
+});
+
+test("a section opens on its own; a section of another topic, or one that isn't listed, is refused naming the sections", () => {
+	assert.equal(createGuide("playbooks", "cast"), stripOwnerNotes(PLAYBOOK_SECTION_FILES.cast!));
+	assert.equal(createGuide("playbooks", ""), createGuide("playbooks"), "an empty section is the topic");
+	assert.throws(() => createGuide("playbooks", "nope"), (err: Error) => err.message === `No section nope in playbooks. Sections: ${PLAYBOOK_SECTION_ORDER.join(", ")}.`);
+	assert.throws(() => createGuide("models", "cast"), /^Error: The models topic has no sections/);
+});
+
+test("the commands section points at sova list and describe, never a copy of the catalogue", () => {
+	const text = PLAYBOOK_SECTION_FILES.commands!;
+	for (const words of ["scripts/sova.mjs\" list", "scripts/sova.mjs\" describe"]) assert.ok(text.includes(words), words);
+	for (const words of ["Land", "Start on a card", "approvals", "restarting or updating Sova"]) assert.ok(text.includes(words), words);
+	assert.ok(!/session\.list\b.*\n.*session\.get\b.*\n.*session\.read\b/.test(text), "no list of commands");
+});
+
+test("automation no longer teaches playbooks: the playbooks topic does", () => {
+	for (const gone of ["## Your own playbooks", "## A project's playbooks"]) assert.ok(!CREATE_FILES.automation!.includes(gone), gone);
+	assert.ok(CREATE_FILES.automation!.includes("the `playbooks` topic"));
 });

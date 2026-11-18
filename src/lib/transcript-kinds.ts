@@ -31,6 +31,8 @@ import type { Component } from "solid-js";
 import type { TranscriptItem } from "../../shared/protocol";
 import { rowFacts } from "../../shared/wire-v1";
 import { isBriefText } from "../../shared/senders";
+import { parseRunMessage } from "../../shared/playbook-run";
+import { cardRowRun } from "./playbook-card";
 import { normalizeOfferDetails, OFFER_TOOL } from "../../shared/session-offers";
 import { CARD_TOOL, normalizeCardDetails as normalizeRaisedCard, type CardInfo } from "../../shared/transcript-cards";
 import { checkCardData, dataCardHeight } from "../../shared/view-cards";
@@ -140,7 +142,7 @@ export interface LiveKindContext {
 }
 
 /** The live views (components/LiveKinds.tsx `LIVE_VIEWS`), by name. */
-export type LiveView = "wake" | "topic" | "brief" | "user" | "assistant-text" | "thinking" | "align" | "info" | "tour" | "design" | "show-changes" | "offer" | "card" | "settings" | "tool";
+export type LiveView = "wake" | "topic" | "brief" | "playbook-run" | "user" | "assistant-text" | "thinking" | "align" | "info" | "tour" | "design" | "show-changes" | "offer" | "card" | "settings" | "tool";
 
 /** What a live view gets: the piece of the run it draws, and the value its kind's live match gave. */
 export interface LiveKindViewProps<V = unknown> {
@@ -155,7 +157,7 @@ export interface LiveForm {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "design" | "owner-request" | "handoff-run" | "mcp-note" | "approval-pending" | "overseer-answer" | "profile-mark" | "lookbook-item" | "lookbook" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "design" | "owner-request" | "handoff-run" | "mcp-note" | "approval-pending" | "overseer-answer" | "profile-mark" | "lookbook-item" | "lookbook" | "brief" | "playbook-run" | "playbook-card" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -245,6 +247,28 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     placement: "anchored",
     view: { page: "brief" },
     live: { match: (input) => input.kind === "user" && isBriefText(input.entry.text) && input.entry, view: "brief" },
+  }),
+  // Start's message to a playbook's main chat: one folded row, not a bubble of instructions and blocks.
+  kind({
+    id: "playbook-run",
+    match: (it) => it.kind === "user" && parseRunMessage(it.text),
+    // Folded to one row: its height is the row's, never the hidden text's.
+    estimate: () => "40px",
+    host: "page",
+    placement: "anchored",
+    view: { page: "playbook-run" },
+    live: { match: (input) => input.kind === "user" && parseRunMessage(input.entry.text), view: "playbook-run" },
+  }),
+  // A playbook's card where it was opened: the setup card before Start, the run's record after it. The
+  // page makes its row (lib/playbook-card-rows); the value is the run's id.
+  kind({
+    id: "playbook-card",
+    match: (it) => it.kind === "info" && cardRowRun(it.id),
+    // Near a setup card's height with its sections folded as they open; it grows to fit once drawn.
+    estimate: () => "420px",
+    host: "page",
+    placement: "anchored",
+    view: { page: "playbook-card" },
   }),
   kind({ id: "user", match: (it) => it.kind === "user", host: "page", placement: "anchored", view: { page: "user" }, live: { match: (input) => input.kind === "user" && input.entry, view: "user" } }),
   // The sent markers draw nothing themselves: each tags the row it names.

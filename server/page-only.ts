@@ -86,6 +86,8 @@ const DOORS = {
   restart: "Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted.",
   update: "Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed.",
   cardClick: "Only the user answers a card. Ask them to click it in that chat. Nothing was sent.",
+  playbookStart: "Only the user starts a playbook run. Ask them to press Start on its card in Sova's page. Nothing was started.",
+  playbookDefaults: "Only the user saves a playbook's defaults. Ask them to press Save as My Defaults on its card in Sova's page. Nothing was saved.",
   extensions: "Only the user changes extensions. Ask them to do it in Settings → Extensions. Nothing was changed.",
   agentCpu: "Only the user changes how much CPU agents may use. Ask them to do it in Settings → General. Nothing was changed.",
   accountToken: "Only the user saves or removes the Cloudflare token. Ask them to do it in Settings → Public links. Nothing was changed.",

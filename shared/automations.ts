@@ -132,7 +132,8 @@ function parseSettings(v: unknown): AutomationSettings | { error: string } {
   return out;
 }
 
-function parsePermissions(v: unknown): AutomationPermissions | { error: string } {
+/** An automation's `permissions` (also a playbook's `run.permissions`, shared/playbook-format.ts), strictly. */
+export function parsePermissions(v: unknown): AutomationPermissions | { error: string } {
   if (v === undefined) return { remove: [], grant: [], oneAtATime: false, limits: { ...DEFAULT_LIMITS }, overseerMayStart: false };
   if (!isObj(v)) return { error: `"permissions" must be an object.` };
   const bad = unknownKeys(v, PERMISSION_KEYS, `"permissions" `);

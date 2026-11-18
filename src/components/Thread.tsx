@@ -1577,6 +1577,8 @@ export function ThreadScroller(props: {
       </section>
       {/* Always mounted, shown by attribute: inserting it relaid out the whole transcript at the
           first scroll up (base.css `.jump-latest`). */}
+      {/* A playbook's setup card presses this at Start, found by this class and `data-shown`
+          (PlaybookCard.tsx, the fold at Start): keep both when changing it. */}
       <button type="button" class="button jump-latest" data-shown={away() !== null && !props.empty ? "" : undefined} onClick={resumeFollowing}>
         <Icon name="chevron-down" small />
         {newCount() > 0 ? `Jump to Latest · ${newCount()} new` : "Jump to Latest"}

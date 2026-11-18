@@ -1,0 +1,446 @@
+/* A playbook's card in a chat. Before Start it is a setup card standing in the conversation, like
+   an alignment card (.pb-inline), and stays there after Start as the run's record. A started run
+   (Lookbook design A) is a strip floating over the end of the conversation, just above the message
+   box, its card opening upward from the strip's place. None has a band or a background beyond its
+   own box. */
+
+/* ---- The anchor sits between the conversation and the message box and has no height; the layer
+   is the message box's column (.composer-inner), so strip, card and message box share their edges. ---- */
+.pb-float { position: relative; flex: none; height: 0; z-index: 5; }
+.pb-layer {
+  position: absolute;
+  bottom: var(--space-2);
+  left: max(var(--space-4), calc((100% - (var(--measure) + var(--space-9))) / 2));
+  width: min(var(--measure) + var(--space-9), 100% - 2 * var(--space-4));
+  container: pb-layer / inline-size;
+}
+/* Focus shows the conversation alone: no message box, so nothing floats above one. */
+.app[data-focus="on"] > .app-main:has(> .transcript-wrap) > .pb-float { display: none; }
+
+/* ---- The strip: the chat's one run, closed (a chat runs one playbook at most). ---- */
+.pb-strips {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+}
+.pb-strips:empty { display: none; }
+/* Under an open card the strips keep their box (the conversation doesn't move) and leave the page. */
+.pb-strips[data-covered] { visibility: hidden; }
+.pb-strip {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: calc(var(--tap-min) + var(--space-3));
+  padding: var(--space-1) var(--space-3);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.pb-strip:hover { background: var(--color-sunken); }
+.pb-strip-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+/* The whole strip is the opener's target; the answers beside it sit above that. */
+.pb-strip-open::after { content: ""; position: absolute; inset: 0; border-radius: calc(var(--r-lg) - var(--stroke-thin)); }
+.pb-strip-open:focus { outline: none; }
+.pb-strip-open:focus-visible::after { outline: var(--focus-ring); outline-offset: calc(-1 * var(--focus-width)); }
+.pb-strip-open > .icon { flex: none; color: var(--color-ink-muted); }
+.pb-strip-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.pb-strip-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.pb-strip-head > .chip { flex: none; }
+.pb-strip-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-medium);
+  color: var(--color-ink);
+}
+.pb-strip-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.pb-strip-answers { position: relative; z-index: 1; flex: none; display: flex; gap: var(--space-2); }
+/* The chevron points up, at where the card opens. It takes no press of its own: the strip's does. */
+.pb-strip-chevron { flex: none; pointer-events: none; color: var(--color-ink-muted); transform: rotate(-90deg); transition: color var(--dur-fast) var(--ease-standard); }
+.pb-strip:hover .pb-strip-chevron { color: var(--color-ink); }
+/* A narrow column: the strip only opens the card, whose own buttons are in the thumb's reach. */
+@container pb-layer (max-width: 519px) {
+  .pb-strip-answers { display: none; }
+}
+
+/* The conversation's end leaves the strips their room, so its last row is never under them, and
+   the chat's floating controls sit above them (--pb-lift, set by PlaybookFloat: the strips' height
+   and the gap over them). A Lookbook card's pinned bar stops above them too. */
+.transcript-wrap[data-pb-strip] .transcript-inner::after { content: ""; display: block; height: var(--pb-lift); }
+.transcript-wrap[data-pb-strip] > :is(.jump-latest, .chat-wait-note, .focus-toggle) { translate: 0 calc(-1 * var(--pb-lift)); }
+.transcript-wrap[data-pb-strip][data-design-pinned] > :is(.jump-latest, .chat-wait-note, .focus-toggle) { translate: 0 calc(-1 * (var(--pb-lift) + var(--design-pinned-h, 0px))); }
+.transcript-wrap[data-pb-strip] .design-card-foot { bottom: var(--pb-lift); }
+
+/* ---- The open card: it rises from the strips' place, at their width, over the conversation's
+   end, and never moves it. ---- */
+.pb-card {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  max-height: min(calc(var(--pb-room, 60vh) - var(--space-6)), 640px);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-2);
+  /* clip, not hidden: a hidden box still scrolls programmatically, so focus or a scrollIntoView
+     landing on it (Start pressed while the card still rises) would scroll its head out of view. */
+  overflow: hidden;
+  overflow: clip;
+  container: pb-card / inline-size;
+  animation: pb-rise var(--dur-base) var(--ease-standard);
+}
+@keyframes pb-rise { from { opacity: 0; transform: translateY(var(--space-2)); } }
+.pb-card[hidden] { display: none; }
+.pb-card:focus { outline: none; }
+.pb-card:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* The head: the eyebrow over the name and its state, Minimize at the end of both lines. */
+.pb-head {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content;
+  grid-template-areas: "eyebrow eyebrow min" "title chip min";
+  align-items: center;
+  column-gap: var(--space-2);
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.pb-head > .chip { grid-area: chip; justify-self: start; }
+.pb-min { grid-area: min; }
+.pb-eyebrow {
+  grid-area: eyebrow;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  font-weight: var(--fw-semibold);
+}
+.pb-title {
+  grid-area: title;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+}
+
+.pb-body {
+  /* `relative`: the form kit's visually hidden labels (absolute, no insets) belong to this
+     scroller, not to the card, so they never make the card's own box taller than it is. */
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.pb-body > * { flex: none; }
+.pb-summary, .pb-how { margin: 0; }
+/* A started run: how its chat stands now, and under it when and where it started. */
+.pb-now {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-md);
+  background: var(--color-sunken);
+}
+.pb-now-line { margin: 0; font-weight: var(--fw-medium); }
+.pb-record { margin: 0; color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+
+.pb-section { display: flex; flex-direction: column; }
+.pb-section-label {
+  margin: 0 0 var(--space-1);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  font-weight: var(--fw-semibold);
+}
+
+/* A row: label · value · where it came from · its actions. */
+.pb-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr) minmax(0, max-content) max-content;
+  /* By the first line: a long value never leaves its label hanging beside its middle. */
+  align-items: first baseline;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.pb-row-label { font-weight: var(--fw-medium); display: flex; flex-direction: column; }
+.pb-row-value { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.pb-row-origin { color: var(--color-ink-muted); font-size: var(--fs-caption); text-align: end; }
+.pb-row-help { color: var(--color-ink-muted); font-size: var(--fs-caption); font-weight: var(--fw-regular); }
+/* What a choice asks, always on its own line under the answer, whatever the answer's length. */
+.pb-row-value > .pb-row-help { flex-basis: 100%; }
+/* A free-text answer on the record: its first 2 lines, then Show All (LongAnswer). */
+.pb-answer { flex: 1 1 100%; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.pb-answer-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.pb-answer-text[data-all] { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
+/* The button's words start at the answer's edge. */
+.pb-answer-more { margin-inline-start: calc(-1 * var(--space-3)); }
+.pb-row[data-empty] .pb-row-origin { color: var(--status-warn); font-weight: var(--fw-medium); }
+.pb-row-why { color: var(--color-ink-muted); font-size: var(--fs-caption); }
+.pb-model { font-variant-numeric: tabular-nums; }
+
+.pb-text, .pb-list { width: 100%; }
+.pb-num { width: 5.5rem; }
+.pb-cycle-line .pb-num { width: 4.5rem; min-height: var(--control-sm); }
+.pb-toggle { min-height: var(--control-sm); }
+.pb-multi { display: flex; flex-wrap: wrap; gap: 0 var(--space-3); }
+.pb-only-select .select, .pb-until .select { min-height: var(--control-sm); }
+
+.pb-models { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.pb-model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 0 0 var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-caption);
+}
+.pb-model-remove {
+  min-width: var(--control-sm);
+  min-height: var(--control-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.pb-model-remove:hover { background: var(--color-sunken); color: var(--color-ink); }
+.pb-model-remove:focus-visible { outline: var(--focus-ring); outline-offset: calc(-1 * var(--focus-width)); }
+
+/* ---- Who runs: one block per team, headed by its goal; its required members are rows inside. ---- */
+.pb-teams { display: flex; flex-direction: column; gap: var(--space-2); }
+.pb-who-legacy { margin: 0 0 var(--space-2); }
+.pb-team {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+}
+.pb-team-head { display: flex; flex-direction: column; padding-bottom: var(--space-2); }
+.pb-team-eyebrow {
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  font-weight: var(--fw-semibold);
+}
+.pb-team-goal { font-weight: var(--fw-medium); color: var(--color-ink); }
+/* A member: its name · its model, why, its brief and your note · on or off. */
+.pb-member { grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr) max-content; }
+.pb-member[data-off] .pb-model, .pb-member[data-off] .pb-member-brief { color: var(--color-ink-muted); }
+.pb-member[data-blocked] .pb-model { color: var(--status-warn); font-weight: var(--fw-medium); }
+.pb-member-brief { flex-basis: 100%; color: var(--color-ink-2); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.pb-member-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.pb-team-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding-top: var(--space-2);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.pb-team-adds { flex: 1 1 14rem; min-width: 0; color: var(--color-ink-muted); font-size: var(--fs-caption); }
+/* A note for this run: Add Note, then its one-line field; after Start, a line of the record. */
+.pb-run-note { flex: 1 1 100%; min-width: 0; margin: 0; }
+.pb-run-note .input { min-height: var(--control-sm); }
+.pb-run-note-add { margin-inline-end: calc(-1 * var(--space-3)); }
+.pb-run-note-said { flex-basis: 100%; color: var(--color-ink-2); font-size: var(--fs-caption); overflow-wrap: anywhere; }
+
+.pb-more, .pb-steps, .pb-who, .pb-flow { display: block; }
+/* The flow's drawing keeps its own width and scrolls sideways inside the card when it is wider. */
+.pb-flow-drawing { min-width: 0; overflow-x: auto; }
+.pb-more-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  cursor: pointer;
+}
+.pb-more-summary::-webkit-details-marker { display: none; }
+.pb-more-summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
+.pb-more-summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.pb-more > .pb-more-summary { color: var(--color-ink-2); font-size: var(--fs-caption); }
+
+.pb-step-list { margin: 0; padding: 0; list-style: none; }
+.pb-step {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  padding: var(--space-1) 0;
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.pb-step[data-cycle] { box-shadow: inset 2px 0 0 var(--color-border-strong); }
+.pb-step-n { color: var(--color-ink-muted); text-align: right; }
+.pb-step-text { display: flex; flex-direction: column; min-width: 0; }
+.pb-step-goal { color: var(--color-ink-2); font-size: var(--fs-caption); }
+.pb-step-runs { color: var(--color-ink-muted); font-size: var(--fs-caption); }
+.pb-cycle { padding: var(--space-2) 0 0 calc(2rem + var(--space-3)); }
+.pb-cycle-line { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+
+.pb-note { margin: var(--space-1) 0 0; color: var(--color-ink-muted); font-size: var(--fs-caption); }
+.pb-error { flex: none; margin: 0; padding: var(--space-2) var(--space-4) 0; color: var(--status-error); }
+
+.pb-foot {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-sunken);
+}
+/* On the foot's own fill a quiet button's hover is the card's surface. */
+.pb-foot .button-ghost:hover:not(:disabled) { background: var(--color-surface); }
+.pb-foot-hint { flex: 1 1 12rem; min-width: 0; color: var(--color-ink-muted); font-size: var(--fs-caption); }
+.pb-close { margin-left: auto; }
+
+/* A narrow card: each row stacks, its label over its value. */
+@container pb-card (max-width: 560px) {
+  /* The buttons' reason first, on its own line, then the buttons. */
+  .pb-foot { padding-block: var(--space-2); }
+  .pb-foot-hint { order: -1; flex-basis: 100%; }
+  .pb-row { grid-template-columns: minmax(0, 1fr) max-content; }
+  .pb-row-label { grid-column: 1 / -1; }
+  .pb-row-value { grid-column: 1 / -1; }
+  .pb-row-origin { text-align: start; }
+  /* A member: its name with its switches beside it, then everything about it under both. */
+  .pb-member { grid-template-columns: minmax(0, 1fr) max-content; align-items: center; }
+  .pb-member > .pb-row-label { grid-column: 1; }
+  .pb-member > .pb-member-actions { grid-column: 2; grid-row: 1; }
+  .pb-member > .pb-row-value { grid-row: 2; }
+  .pb-step { grid-template-columns: 1.5rem minmax(0, 1fr); }
+  .pb-step-stop { grid-column: 2; }
+  .pb-cycle { padding-left: 0; }
+}
+
+/* The form kit's fields inside the card's rows and sentences. */
+.pb-row-value > .field, .pb-cycle-line > .field { margin: 0; }
+.pb-text, .pb-list { flex: 1 1 16rem; }
+.pb-until { flex-direction: row; align-items: center; gap: var(--space-2); }
+.pb-until .field-label { font-weight: var(--fw-regular); font-size: inherit; }
+.pb-coming { margin-left: var(--space-1); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }
+
+/* The run's mark in the conversation: Start's row, with Open Card beside it. */
+.pb-mark { display: flex; align-items: flex-start; gap: var(--space-2); }
+.pb-mark > .toolcard { flex: 1 1 auto; min-width: 0; }
+.pb-mark-open { flex: none; }
+
+/* A choice worked out with the main chat: no control, its value as the chat filled it, or a muted
+   line while it waits for the chat. */
+.pb-chat-waiting { color: var(--color-ink-muted); }
+
+/* ---- The card in the conversation: the setup card before Start, the run's record after it. A row
+   of the thread, as wide as an alignment card: it scrolls with the conversation and has no scroll
+   of its own, so nothing of the floating card's place, height or rise applies. ---- */
+.pb-card.pb-inline {
+  position: static;
+  width: auto;
+  max-width: var(--measure);
+  max-height: none;
+  box-shadow: var(--shadow-1);
+  animation: none;
+}
+.pb-inline > .pb-head:not(:has(> .pb-min)) { padding-inline-end: var(--space-4); }
+/* The state chip keeps its own width beside a long name (the name wraps instead), so it never runs
+   under Show Card. */
+.pb-inline > .pb-head { grid-template-columns: minmax(0, max-content) minmax(max-content, 1fr) max-content; }
+.pb-inline .pb-title { font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); white-space: normal; overflow-wrap: anywhere; }
+.pb-inline > .pb-body { flex: none; overflow: visible; overscroll-behavior: auto; }
+/* The setup card's buttons: pinned to the end of the view while the card is in view (lib/pinned-bar),
+   at the card's end otherwise. Opaque, and lifted by a shadow only while pinned over what scrolls
+   behind them. */
+.pb-inline > .pb-foot { position: sticky; bottom: 0; z-index: 4; }
+.pb-inline > .pb-foot[data-pinned] { box-shadow: var(--shadow-2); }
+/* The record: what was agreed, read-only. Flat, so the run's strip is the one raised thing. */
+.pb-inline[data-state="started"] { box-shadow: none; }
+.pb-inline[data-state="started"] > .pb-head { border-bottom: 0; padding-bottom: 0; }
+/* Folded: its head and when it started; Show Card opens the rest in place. */
+.pb-inline[data-folded] > .pb-body > :not(.pb-now) { display: none; }
+.pb-fold[aria-expanded="true"] > .icon-twist { transform: rotate(90deg); }
+.pb-fold > .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+/* A card value the chat set: muted words beside it, as a choice's right-hand column. */
+.pb-from-chat { color: var(--color-ink-muted); font-size: var(--fs-caption); white-space: nowrap; }
+
+/* Jump to Latest never covers any part of a playbook's card in the conversation, a setup card or a
+   run's record: while its box would lie over one (lib/jump-cover marks the transcript), it isn't shown. */
+.transcript-wrap[data-pb-under-jump] > .jump-latest[data-shown] { visibility: hidden; pointer-events: none; }
+/* The gap between the strip (or its open card) and the message box is the page's own: nothing of
+   the conversation passing behind the strip shows as a sliver under it. As wide as the strip, so it
+   is no band. */
+.pb-layer:has(.pb-strip)::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: var(--space-2);
+  background: var(--color-bg);
+}
+
+/* A narrow card in the conversation: the state chip goes under the name, which then has the whole
+   line beside Show Card. */
+@container pb-card (max-width: 560px) {
+  .pb-inline > .pb-head {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-areas: "eyebrow min" "title min" "chip min";
+    row-gap: var(--space-1);
+  }
+}

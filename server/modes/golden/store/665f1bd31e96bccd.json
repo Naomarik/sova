@@ -126,7 +126,13 @@
    "required": [
     "id"
    ],
-   "properties": {},
+   "properties": {
+    "id": {
+     "type": "string",
+     "pattern": "^ag_\\d+$",
+     "description": "Exact worker ID (ag_NN)."
+    }
+   },
    "additionalProperties": false
   }
  },
@@ -177,6 +183,10 @@
     "id"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "full": {
      "type": "boolean"
     },
@@ -204,6 +214,10 @@
     "message"
    ],
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -224,6 +238,10 @@
   "parameters": {
    "type": "object",
    "properties": {
+    "id": {
+     "type": "string",
+     "minLength": 1
+    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -497,6 +515,10 @@
      "type": "string",
      "description": "where: the words, path or name; map: a namespace"
     },
+    "id": {
+     "type": "string",
+     "description": "A §id (toc, read, impact, map)"
+    },
     "dir": {
      "type": "string",
      "enum": [
@@ -557,7 +579,7 @@
     "ops": {
      "type": "array",
      "items": {
-      "anyOf": "@efddf5ee21db1c1d"
+      "anyOf": "@8f0d66a627303464"
      },
      "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
      "minItems": 1
@@ -568,7 +590,7 @@
  },
  {
   "name": "create_guide",
-  "description": "@d8d27a6f2379e44a",
+  "description": "@f71802cf827cb044",
   "parameters": {
    "type": "object",
    "required": [
@@ -593,6 +615,7 @@
       "project",
       "landing",
       "releases",
+      "playbooks",
       "automation",
       "cards",
       "overseers",
@@ -600,6 +623,20 @@
       "computers"
      ],
      "description": "The topic, as Create's table of contents lists it"
+    },
+    "section": {
+     "type": "string",
+     "enum": [
+      "what",
+      "cast",
+      "choices",
+      "steps",
+      "card",
+      "repeats",
+      "commands",
+      "saving"
+     ],
+     "description": "With topic playbooks: one section of its contents page"
     }
    },
    "additionalProperties": false

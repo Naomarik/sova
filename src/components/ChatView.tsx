@@ -45,7 +45,7 @@ import { BatonStrip } from "./BatonStrip";
 import { PairedLines } from "./PairedLines";
 import { createLimits } from "../lib/mode-menu";
 import { sandboxOffMissing, sandboxStateOf, type SandboxState } from "../lib/sandbox";
-import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { ApiError, createSession, fetchPlaybooks, playbookRunsApi, approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { memoryRowWords, memoryTurnWords } from "../lib/memory-ui";
@@ -153,6 +153,14 @@ import { triageKey, triageOf } from "../lib/align-triage";
 import { Composer, type ComposerReason } from "./Composer";
 import { ShellCard } from "./ShellCard";
 import { ShellDock } from "./ShellDock";
+import { openCardOnArrival, PlaybookFloat, PlaybookInlineContext, PlaybookRunsContext, showPlaybookCard, type PlaybookChatNow, type PlaybookInlineHost } from "./PlaybookCard";
+import { PlaybookInlineCard } from "./PlaybookInlineCard";
+import { createPlaybookCardRows } from "../lib/playbook-card-rows";
+import { isPlaybookRunEvent, playbookRunEvent, usePlaybookRuns } from "../lib/playbook-runs";
+import { boardState } from "../lib/agents-board";
+import { cardOpenedWords, chatHolding, chatNowOf, heldRows, inlineCards, isAligning, lastEntryId, NO_PLAYBOOKS_HERE, playbookRows, playbooksRunHere, withoutPlaybookRows, withPlaybookRows, type HeldBy } from "../lib/playbook-card";
+import { socketReconnects } from "../lib/socket";
+import type { PlaybookRunView } from "../../shared/playbook-run";
 import { answersAtHello, cardOfRun, nextShellRuns, runShell, SHELL_DROPPED, shellAnswerOf, shellOffered, stopOnClose } from "../lib/shell-runs";
 import { createShellBar } from "../lib/shell-bar";
 import type { ShellAnswer, ShellControl } from "../lib/shell-mode";
@@ -637,8 +645,85 @@ export function ChatView(props: {
   /** The host holding this chat can't take sends from this page (§mesh.compatibility/states): the chat
       stays open and live, and nothing goes out of it, reads included (a socket frame is a writing request). */
   const hostGate = createMemo(() => sendingOff(props.path));
+  /** This chat's playbook cards: the drafts it opened, the runs it started
+      or conducts. Not the Overseers': no playbook runs there. */
+  const playbookRuns = props.overseer || props.projectOverseer ? null : usePlaybookRuns(props.path, () => props.summary?.()?.cwd ?? null, hostOf(props.path));
+  /** Whether this chat offers playbook cards at all: what Start refuses here, the page never offers
+      (a baton chat is only known once its summary arrives, so this is read live). */
+  const playbooksHere = () =>
+    !!playbookRuns && playbooksRunHere({ overseer: !!props.overseer, projectOverseer: !!props.projectOverseer || !!props.summary?.()?.projectOverseer, baton: !!props.summary?.()?.baton });
+  /** The "/" rows of the playbooks this chat's folder sees, built here: a new chat has no runtime, so
+      no commands of its own yet. Read again on a reconnect; the chat's own names win a clash. */
+  const [pageRows, setPageRows] = createSignal<SlashCommand[]>([]);
+  if (playbookRuns) {
+    const cwdNow = createMemo(() => props.summary?.()?.cwd ?? null);
+    const readRows = () => {
+      const cwd = cwdNow();
+      void fetchPlaybooks(cwd, hostOf(props.path))
+        .then((c) => cwd === cwdNow() && setPageRows(playbookRows(c.playbooks)))
+        .catch(() => {});
+    };
+    createEffect(on(cwdNow, readRows));
+    createEffect(on(socketReconnects, readRows, { defer: true }));
+  }
+  /** The run that holds this chat, if one does: a chat runs one playbook at most. */
+  const heldBy = createMemo(() => (playbookRuns && playbooksHere() ? chatHolding(playbookRuns.runs(), playbookRuns.holding()) : null));
+  /** A playbook picked in a chat a run holds: a new chat in this folder, with that playbook's card
+      open in it. False: it couldn't, said in a toast. */
+  const openCardInNewChat = async (playbook: Pick<PlaybookRunView["playbook"], "source" | "id">, text: string | undefined, held: HeldBy): Promise<boolean> => {
+    const cwd = props.summary?.()?.cwd;
+    const host = hostOf(props.path);
+    /** The new chat, once made: a failure after it says the chat is there. */
+    let made: { path: string } | null = null;
+    try {
+      if (!cwd) throw new Error("this chat's folder isn't known yet");
+      made = await createSession(cwd, host);
+      const run = await playbookRunsApi(host).open({ playbook: { source: playbook.source, id: playbook.id }, cwd, path: made.path, ...(text ? { text } : {}) });
+      openCardOnArrival(made.path, run.id);
+      announce(`${run.playbook.title} opened in a new chat: this chat already runs ${held.title}.`);
+      location.hash = sessionHrefOn(host, made.path);
+      return true;
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      // An empty chat isn't listed, so one left behind is out of the way; the words still say it was made.
+      toast(made ? `A new chat was made, but the playbook didn't open in it: ${why}` : `The playbook didn't open in a new chat: ${why}`);
+      return false;
+    }
+  };
+  /** Opens (or finds) this chat's card for a playbook with a description, with the words typed after
+      its name, and brings it into view open; in a chat a run holds, in a new chat instead. False: it
+      couldn't, said in a toast. */
+  const openPlaybookCard = async (playbook: Pick<PlaybookRunView["playbook"], "source" | "id">, text?: string): Promise<boolean> => {
+    if (!playbookRuns || !playbooksHere()) return false;
+    const held = heldBy();
+    if (held) return openCardInNewChat(playbook, text, held);
+    try {
+      // The card stands after what the conversation ends with now.
+      const run = await playbookRuns.open(playbook, text, lastEntryId(items()));
+      // A playbook that aligns first has no card to show yet: the chat opens its alignment.
+      if (!isAligning(run)) showPlaybookCard(run.id, playbookRuns);
+      announce(cardOpenedWords(run));
+      return true;
+    } catch (e) {
+      // A refusal that says why (a description that can't be read, a chat a run already holds) is
+      // said as is; the second also means this page's list is behind, so it is read again.
+      const said = e instanceof ApiError && (e.status === 400 || e.status === 409);
+      if (e instanceof ApiError && e.status === 409) playbookRuns.refresh();
+      toast(said ? e.message : `The playbook's card didn't open: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
+  };
   /** This chat process's code (WS "code", §app.chat-processes/code-pickup); null: current, or no message since the hello. */
   const [code, setCode] = createSignal<CodeView | null>(null);
+  /** How this chat stands, for a run it conducts: its turn, its helpers, and what the session list
+      says its last turn left for you (the same reading, `boardState`). */
+  const playbookChat: PlaybookChatNow = {
+    path: props.path,
+    now: createMemo(() => {
+      const s = props.summary?.();
+      return chatNowOf(s ? boardState(s, null, live.running) : null, live.running, workersWorking());
+    }),
+  };
   /** Reload Now, and the failed banner's Try Again: the chat reloads at once if quiet, else when it is. */
   const reloadCode = () => void chatSend({ type: "reload_code" });
   props.onCode?.({ view: () => (hostGate() ? null : code()), quiet: () => ({ running: live.running, workersWorking: workersWorking(), commandRunning: shellRuns().some((r) => r.state === "running") }), reload: reloadCode });
@@ -1243,6 +1328,11 @@ export function ChatView(props: {
           // A design's page and state go to its card and the Gallery, never into the turn's rows.
           if (isDesignEvent(msg.event)) {
             designEvent(props.path, hostOf(props.path), msg.event);
+            break;
+          }
+          // A playbook run's new state goes to its docked card, never into the turn's rows.
+          if (isPlaybookRunEvent(msg.event)) {
+            playbookRunEvent(props.path, hostOf(props.path), msg.event.run);
             break;
           }
           // Wire 1 or 2 alike (an older server never sends 2): in the contract's words, the entry a
@@ -2426,6 +2516,18 @@ export function ChatView(props: {
   };
   /** A baton session's names, from its strip (§app/baton). */
   const [batonNames, setBatonNames] = createSignal<Record<string, string> | undefined>(undefined);
+  /** The chat's playbook card where it stands in the conversation: the setup card before Start, the
+      run's record after it (a put-away run's included). None where this chat offers no cards. */
+  const playbookCards = createMemo(() => (playbookRuns && playbooksHere() ? inlineCards(playbookRuns.runs(), playbookRuns.putAway()) : []));
+  /** The thread's rows with the card's row among them. A new chat has no rows to stand among: its
+      card is drawn under the opening lines instead (below). */
+  const threadRows = createPlaybookCardRows(threadItems, () => (emptyScreen() ? [] : playbookCards()));
+  const playbookInline: PlaybookInlineHost | null = playbookRuns && {
+    store: playbookRuns,
+    host: hostOf(props.path),
+    chat: playbookChat,
+    run: (id) => playbookCards().find((r) => r.id === id),
+  };
   return (
     <>
       <Show when={props.summary?.()?.baton}>
@@ -2626,6 +2728,8 @@ export function ChatView(props: {
             <CardJumpContext.Provider value={jumpToCardId}>
             <AlignAnswerContext.Provider value={alignAnswer}>
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
+              <PlaybookRunsContext.Provider value={playbookRuns}>
+              <PlaybookInlineContext.Provider value={playbookInline}>
               <DesignSessionContext.Provider value={{ path: () => props.path, host: () => hostOf(props.path) }}>
               <TourSessionContext.Provider value={{
                 sessionId: () => props.summary?.()?.id,
@@ -2641,7 +2745,7 @@ export function ChatView(props: {
               <OfferContext.Provider value={offers}>
               <CardContext.Provider value={raisedCards}>
               <HistoryItems
-                items={threadItems() ?? list()}
+                items={threadRows() ?? list()}
                 author={props.author}
                 names={batonNames()}
                 streaming={live.running}
@@ -2680,6 +2784,8 @@ export function ChatView(props: {
               </SettingsCardContext.Provider>
               </TourSessionContext.Provider>
               </DesignSessionContext.Provider>
+              </PlaybookInlineContext.Provider>
+              </PlaybookRunsContext.Provider>
               </ChangesSession.Provider>
               <For each={commandRows()}>
                 {(row) => (
@@ -2718,6 +2824,7 @@ export function ChatView(props: {
                 <Show
                   when={props.overseer}
                   fallback={
+                    <>
                     <div class="empty">
                       <p class="empty-title">
                         New session in <code>{props.cwdLabel}</code>.
@@ -2743,6 +2850,12 @@ export function ChatView(props: {
                       <p class="empty-body">Your first message becomes its title.</p>
                       <EmptyWorktrees path={props.path} />
                     </div>
+                    {/* A playbook's card opened in a chat with no message yet: under the opening lines,
+                        where the conversation will start (it is a row of the thread from then on). */}
+                    <PlaybookInlineContext.Provider value={playbookInline}>
+                      <For each={playbookCards().map((r) => r.id)}>{(id) => <PlaybookInlineCard run={id} land />}</For>
+                    </PlaybookInlineContext.Provider>
+                    </>
                   }
                 >
                   {(o) => o().empty()}
@@ -2760,15 +2873,29 @@ export function ChatView(props: {
         <ProfileSwitchLine path={props.path} state={chatProfile()} />
       </ThreadScroller>
       </ToolSourceContext.Provider>
+      <Show when={playbooksHere() && playbookRuns}>
+        {(store) => (
+          <PlaybookFloat
+            store={store()}
+            host={hostOf(props.path)}
+            chat={playbookChat}
+            // A stop's answer is your message: never a steer, and what stops Send stops it.
+            answer={hostGate() ? undefined : { send: (text) => send(text, false, []), blocked: () => blocked()?.text ?? null }}
+          />
+        )}
+      </Show>
       <ShellDock bar={shellBar} />
-      <Show when={!hostGate()} fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}>
+      <Show
+        when={!hostGate()}
+        fallback={<HostSendNotice host={hostOf(props.path)!} reading={hostGate()!} />}
+      >
       <Composer
         path={props.path}
         cwd={props.summary?.()?.cwd ?? null}
         blocked={blocked()}
         readOnly={batonGate()}
         unarchive={archivedPane() && !batonGate() ? { run: () => void unarchive(), busy: unarchiving() } : null}
-        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : commands()}
+        commands={props.overseer ? commands().filter((c) => c.name !== "mode") : playbooksHere() ? heldRows(withPlaybookRows(commands(), pageRows()), heldBy()) : withoutPlaybookRows(commands())}
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}
@@ -2848,6 +2975,7 @@ export function ChatView(props: {
         shell={shellAllowed() ? shellControl : null}
         shellUnknown={shellMode() === null && !props.overseer && !props.projectOverseer}
         onPlaybooks={() => setShowPlaybooks(true)}
+        onPlaybookCard={playbooksHere() ? (playbook, words) => openPlaybookCard(playbook, words) : undefined}
         onSend={(text, running, attachments) => send(text, running, attachments, undefined, true)}
         picks={composerPicks()}
         onDraft={(has) => {
@@ -2871,6 +2999,9 @@ export function ChatView(props: {
           // Never a steer: a whole playbook mid-turn goes in as a follow-up the server queues
           // behind the running turn (a removable queue row), not into the turn it would derail.
           onSend={(text) => send(text, false, [])}
+          onOpenCard={playbooksHere() ? (p) => openPlaybookCard({ source: p.source, id: p.id }) : undefined}
+          cardsOff={playbooksHere() ? null : NO_PLAYBOOKS_HERE}
+          held={heldBy()?.title ?? null}
           onClose={(sent) => {
             setShowPlaybooks(false);
             // After a send the next thing is the conversation; otherwise back to the "+" button

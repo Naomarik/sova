@@ -44,6 +44,8 @@ import { registerVoiceRoutes } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
 import { mountTourRoutes } from "./tour-routes";
 import { mountDesignRoutes } from "./design/routes";
+import { mountPlaybookRunRoutes } from "./playbook-runs/routes";
+import { playbookContents } from "./playbook-runs/contents";
 import { installPageReaderSandbox } from "./design/page-paths";
 import { ensureTourToolRuntime, setTourNeedsYou, setTourResumed } from "./tours/runtime";
 import { setTourSignInWaits, tourResumedNotifier, tourSignInNotifier } from "./tours/sign-in-notice";
@@ -577,6 +579,8 @@ export function buildApp(deps: AppDeps) {
   registerSessionShareRoutes(app);
   mountTourRoutes(app);
   mountDesignRoutes(app);
+  // Playbook cards: open, edit, Save as My Defaults, and Start by your own click (server/playbook-runs/).
+  mountPlaybookRunRoutes(app, { contents: playbookContents });
   // A tour recording waiting for a sign-in marks its chat as needing you and tells its agent once, through
   // Sova's own prompt, so a chat Sova can't write to gets only the mark (§app.tours/sites). No secret goes either way.
   // The notice is held while the chat is busy (never queued behind its turn) and dropped once that wait has ended.

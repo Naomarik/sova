@@ -1,7 +1,7 @@
-// A pi worker's project mode tools under Sova's engine: the loader's in-place rewrite answers
-// mode/project-tools-worker.ts with this file, in the same slot. The same hooks as the extension's file
-// (project-tools-worker.ts): the parent's saved copies, the same definitions, on for the worker's life,
-// refused while its sandbox is on. One addition: a personal mode's programs are told the worker's checkout
+// A pi worker's project mode tools under Sova's engine: the loader's in-place rewrite answers the
+// project-tools slot (PROJECT_TOOLS_WORKER_SLOT in a mode folder, a name with no file behind it) with this
+// file, in the same place. The parent's saved copies, the same definitions as the parent's, on for the
+// worker's life, refused while its sandbox is on. One addition: a personal mode's programs are told the worker's checkout
 // as their project root (§chat.mode-menu/personal-modes), as the parent chat's are: asked at each call, since these
 // register before session_start and until then `cwd` is the process's own folder, Sova's code.
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../../../pi-config/extensions/sandbox/state.ts";

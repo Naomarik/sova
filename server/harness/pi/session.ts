@@ -279,7 +279,7 @@ function sourceLocation(info: { scope: string } | undefined): string | undefined
 
 /** Where a tool comes from, by its pi source path: `builtin:<name>` is pi's own; an angle-bracket path
     (`<inline:name>`, an extension factory, or `<sdk:name>`, a custom tool) is Sova's runtime's; a file is an
-    extension, named by its folder (`…/mode/index.ts` → `mode`) or its file (`…/btw.ts` → `btw`). Sova's own modules
+    extension, named by its folder (`…/remote/index.ts` → `remote`) or its file (`…/btw.ts` → `btw`). Sova's own modules
     in the mode extension's slots (own-code.ts) go by the name of the file each stands in for: who runs a chat's
     modes doesn't show. */
 export function toolSource(path: string | undefined, entries: ModesEntries = modesEntries()): Pick<HarnessToolInfo, "source" | "origin"> {

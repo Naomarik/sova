@@ -54,7 +54,6 @@ export const TUI_ONLY_COMMANDS: ReadonlySet<string> = new Set([
   "usage",
   "usage-refresh",
   "working-count",
-  "extensions",
   "websearch",
   "subagents",
   "agents",

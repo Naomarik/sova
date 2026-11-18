@@ -76,7 +76,7 @@ branch being landed.**
 | `reuse` | `true` / `false`. Absent or `true`: a check whose runner supports it may reuse passes from identical code (same argv and inputs). `false`: every check runs in full on every landing (`SOVA_FRESH=1`). A trial follows it too |
 | `deleteBranches` | `true` / `false`. Absent or `false`: automatic cleanup removes a landed branch's folder and keeps the branch. `true`: it deletes the branch too, its last commit staying restorable. |
 
-**A check**: `{id, label?, run, timeout?, rerun?, requires?, optional?}`.
+**A check**: `{id, label?, run, timeout?, rerun?, requires?, optional?, needsSelect?}`.
 - `id`: a name, unique among the checks (and among the release's own).
 - `label`: what the queue shows, 1–60 characters, default the id.
 - `run`: an argv. Templates: the definition's own (`${checkout}` is the merge copy, `${main}` the main
@@ -96,6 +96,8 @@ branch being landed.**
   walkthroughs) must not fail without one: it works out what the branch calls for (from
   `$SOVA_MERGE_TARGET` and the branch's changes since the merge base) or exits 0 with
   `{"skipped": "<why>"}` in `$SOVA_OUT`. A check that exits 2 with no selection fails every trial.
+- `needsSelect` (`true`): a pick of it must name its selection; the merge thread's pick without one
+  (`merge.extend` with no `select`) is refused. A trial still runs it with none, as above.
 
 **What a check sees.** It runs in the merge copy (cwd its root) with an allow-list environment:
 `PATH`, `HOME`, `USER`, `LANG`, `TZ`, `TMPDIR`, the XDG dirs, `MISE_*`, plus `SOVA_V`, `SOVA_SLOT`,

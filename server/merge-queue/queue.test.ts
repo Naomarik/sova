@@ -1211,6 +1211,29 @@ describe("notes and picks", () => {
       await k.done();
     }
   });
+
+  test("extend refuses a pick of a check that needs a selection when it names none, and adds nothing of that call", async () => {
+    const group = { id: "integration-group", label: "Slow test group", run: ["true"], timeout: 60, rerun: false, requires: [], optional: true, needsSelect: true };
+    const def = { ...DEF, merge: { ...DEF.merge!, checks: [...(DEF.merge!.checks as object[]), group] } } as typeof DEF;
+    const k = makeKit({ deps: { definitionAt: async () => ({ def, error: null }) } });
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      k.repo.branch("feat/a", { "server/x.ts": "x\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      await assert.rejects(q.extend(entry.id, ["statecharts", "integration-group"], "server changed"), /"integration-group" \(Slow test group\) runs with a selection: send the pick's select/);
+      await assert.rejects(q.extend(entry.id, ["integration-group"], "server changed", []), /runs with a selection/);
+      assert.deepEqual((await k.entry(entry.id)).picks, [], "a refused call adds no pick, not even the one before it");
+      await q.extend(entry.id, ["integration-group"], "server changed", ["server-slow"]);
+      await q.extend(entry.id, ["statecharts"], "statecharts too");
+      assert.deepEqual((await k.entry(entry.id)).picks, [
+        { id: "integration-group", label: "Slow test group", source: "picked", why: "server changed", select: ["server-slow"] },
+        { id: "statecharts", label: "Statecharts", source: "picked", why: "statecharts too" },
+      ]);
+    } finally {
+      await k.done();
+    }
+  });
 });
 
 describe("recovery", () => {

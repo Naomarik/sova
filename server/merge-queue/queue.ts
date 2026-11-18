@@ -1593,9 +1593,16 @@ export class ProjectQueue {
       const d = await this.declared();
       const declared = Array.isArray(d.def?.merge?.checks) ? d.def!.merge!.checks : [];
       const extra = (d.def?.merge as { optional?: { id: string; label: string }[] } | undefined)?.optional ?? [];
-      for (const id of checks) {
+      const found = checks.map((id) => {
         const c = declared.find((x) => x.id === id) ?? extra.find((x) => x.id === id) ?? (id === "test" && d.def?.test ? { id: "test", label: "Tests" } : null);
         if (!c) throw new MergeFailure("invalid-request", `no check "${id}" in the project's merge section`);
+        // A check the project marks needsSelect is never picked without a selection: it would run what it works out for
+        // itself, or skip, and not what the pick meant.
+        if ((c as { needsSelect?: true }).needsSelect && !select?.length) throw new MergeFailure("invalid-request", `"${id}" (${c.label}) runs with a selection: send the pick's select (its groups, files or walkthroughs)`);
+        return c;
+      });
+      for (const c of found) {
+        const id = c.id;
         e.picks = e.picks.filter((p) => !(p.id === id && JSON.stringify(p.select ?? []) === JSON.stringify(select ?? [])));
         e.picks.push({ id, label: c.label, source: "picked", why: why.trim().slice(0, 200), ...(select?.length ? { select } : {}) });
       }

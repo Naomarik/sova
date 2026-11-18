@@ -324,6 +324,7 @@
    "mergeCheck.rerun": "landing",
    "mergeCheck.requires": "landing",
    "mergeCheck.optional": "landing",
+   "mergeCheck.needsSelect": "landing",
    "mergeInstall.run": "landing",
    "mergeInstall.inputs": "landing",
    "mergeInstall.timeout": "landing"

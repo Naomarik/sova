@@ -47,7 +47,7 @@ Extensions with no guide, and the contract Sova parses where there is one:
 - `topic-outline`: its state, and its summarizer defaults, mirrored by hand in
   `server/topic-outline-settings.ts` (keep them equal). Its summarizer spawns `claude` on a login
   (see [claude-code](claude-code/overview.md)).
-- `vision-delegate`, `btw`, `codefold`, `compact-handoff`, `explain`, `extension-toggle`, `wake-nudge.ts`,
+- `vision-delegate`, `btw`, `codefold`, `compact-handoff`, `explain`, `wake-nudge.ts`,
   `working-subagent-count.ts`: Sova imports none of them. `dev:hermetic` leaves out `wake-nudge` once
   `.agent` holds copied sessions (see the testing guide).
 
@@ -62,8 +62,8 @@ Extensions with no guide, and the contract Sova parses where there is one:
   (`/claude-login`), whose arguments are contracts too.
 - **Sova loads its own copy.** A Sova chat, its workers and the warm-up load every extension in this directory
   from the chat's own copy of Sova's code, whatever `~/.pi/agent/extensions/` links to (another Sova copy, or
-  nothing): `server/harness/pi/own-code.ts`, §app.chat-processes/code-generations. `/extensions` off stays off,
-  by name; the mode slot is always Sova's engine (and a pi terminal has no modes). Only the pi terminal follows the links. A worker on a
+  nothing): `server/harness/pi/own-code.ts`, §app.chat-processes/code-generations. An extension switched off in the agent dir's
+  settings (`pi config`) stays off, by name; the mode slot is always Sova's engine (and a pi terminal has no modes). Only the pi terminal follows the links. A worker on a
   worktree's own `.agent` and a hermetic server on a branch keep that branch's extensions.
 - **What Sova imports.** Sova's tsconfig doesn't cover `pi-config/`, except the files the server or the web
   app imports (hence `allowImportingTsExtensions`). Each guide names them. Every such file stays

@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P45 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P46 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -16,7 +16,7 @@ import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadPi } from "./testing/load-pi.ts";
 import { STANDIN_FILTER } from "./headless.ts";
-import { packageFrom, patchResolve } from "./own-code.ts";
+import { enabledByOverrides, extensionEntries, packageFrom, patchResolve } from "./own-code.ts";
 import { hearRequests } from "./session.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
 import { PiHarnessSession } from "./session.ts";
@@ -1106,6 +1106,56 @@ describe("pi contract", () => {
       for (const k of ["pkg-a", "plain", "proj"]) assert.equal(after.get(k), before.get(k), k);
     } finally {
       unpatch();
+    }
+  });
+
+  test("P46 own-code-pi-rules: own-code's copies answer as pi does: a directory's extension entries, and each entry on or off by the user's patterns, over a table of shapes and patterns", async () => {
+    const { DefaultPackageManager } = pi.agent;
+    const t = join(dir, "p43");
+    const agentDir = join(t, "agent");
+    const ext = join(agentDir, "extensions");
+    const put = (rel: string, text = "export default () => {};\n") => (mkdirSync(dirname(join(ext, rel)), { recursive: true }), writeFileSync(join(ext, rel), text));
+    // Each shape resolveExtensionEntries tells apart: index.ts; index.js only; both (index.ts wins); a manifest (one entry missing, one
+    // without ./) beside an index it shadows; a manifest whose entries are all missing (the index wins); nothing.
+    put("dirts/index.ts");
+    put("dirjs/index.js");
+    put("both/index.ts");
+    put("both/index.js");
+    for (const f of ["a.ts", "b.ts", "index.ts"]) put(`pkg/${f}`);
+    put("pkg/package.json", JSON.stringify({ pi: { extensions: ["./a.ts", "./missing.ts", "b.ts"] } }));
+    put("pkgnone/index.ts");
+    put("pkgnone/package.json", JSON.stringify({ pi: { extensions: ["./missing.ts"] } }));
+    put("loose.ts");
+    mkdirSync(join(ext, "empty"), { recursive: true });
+    const dirs = ["dirts", "dirjs", "both", "pkg", "pkgnone", "empty"];
+    const resolveWith = async (patterns: string[]) => {
+      writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ extensions: patterns }));
+      const pm = new DefaultPackageManager({ cwd: t, agentDir, settingsManager: SettingsManager.create(t, agentDir) });
+      return (await pm.resolve()).extensions as { path: string; enabled: boolean }[];
+    };
+    const under = (r: { path: string }, name: string) => r.path === join(ext, name) || r.path.startsWith(join(ext, name) + "/");
+    const plain = await resolveWith([]);
+    for (const name of dirs) {
+      const piSays = plain.filter((r) => under(r, name)).map((r) => r.path);
+      assert.deepEqual(extensionEntries(join(ext, name)) ?? [], piSays, `${name}: pi's resolveExtensionEntries rule changed (own-code.ts extensionEntries copies it)`);
+    }
+    assert.ok(plain.some((r) => r.path === join(ext, "loose.ts")), "the control: a loose file is an extension");
+    // Each kind of pattern, each place pi matches it (relative, file name, whole path; minimatch's *, **, ?, braces,
+    // classes; a leading ./), and the precedence !, then +, then -.
+    const abs = (rel: string) => join(ext, rel);
+    const table: string[][] = [
+      [], ["!extensions/dirts/index.ts"], ["!extensions/loose.ts"], ["!extensions/*"], ["!extensions/**"], ["!**/index.ts"], ["!extensions/dir?s/index.ts"],
+      ["!index.ts"], ["!loose.ts"], ["!*.ts"], ["!extensions/{dirts,dirjs}/index.*"], ["!extensions/[d]irts/index.ts"], ["!./extensions/loose.ts"],
+      ["!extensions/dirts"], [`!${abs("dirts/index.ts")}`], ["!extensions/pkg/a.ts"],
+      ["!extensions/**", "+extensions/dirts/index.ts"], ["!extensions/**", "+./extensions/loose.ts"], ["!**", `+${abs("pkg/b.ts")}`], ["!extensions/**", "+extensions/dirts"],
+      ["-extensions/dirts/index.ts"], ["-./extensions/loose.ts"], [`-${abs("loose.ts")}`], ["-extensions/dirts"], ["-extensions/pkg/index.ts"], ["-extensions/*"],
+      ["!extensions/**", "+extensions/dirts/index.ts", "-extensions/dirts/index.ts"], ["+extensions/loose.ts", "-extensions/loose.ts"],
+    ];
+    for (const patterns of table) {
+      const got = (await resolveWith(patterns)).filter((r) => r.path.startsWith(ext + "/"));
+      assert.ok(got.length >= 7, `the control: every entry resolves under ${JSON.stringify(patterns)}`);
+      for (const r of got)
+        assert.equal(enabledByOverrides(r.path, patterns, agentDir), r.enabled, `${relative(ext, r.path)} under ${JSON.stringify(patterns)}: pi's isEnabledByOverrides rule changed (own-code.ts enabledByOverrides copies it)`);
     }
   });
 

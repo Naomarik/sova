@@ -338,6 +338,9 @@ const groupNames = opts["--groups"] ? splitNames([opts["--groups"]]) : [];
 const pickedNames = opts["--picked-groups"] ? splitNames(opts["--picked-groups"]) : [];
 const badGroup = [...groupNames, ...pickedNames].find((n) => n !== "all" && !GROUPS.some((g) => g.name === n));
 if (badGroup) console.error(`run-tests: no test group ${badGroup} (groups: ${GROUPS.map((g) => g.name).join(", ")}, all)`);
+// --base chooses what a bare --picked-groups compares the branch with; named groups run whatever changed, so a base
+// beside them would be dropped unread: refused, never ignored.
+if (opts["--base"] && pickedNames.length) usageExit(`run-tests: --base goes with a bare --picked-groups (the groups the branch's changes trigger), not with named groups\n${USAGE}`);
 if ((runtime !== "node" && runtime !== "bun") || (opts["--integration"] && opts["--all"]) || picks.length > 1 || (opts["--base"] && !opts["--changed"] && !opts["--landing"] && !opts["--picked-groups"]) || badGroup || (opts["--groups"] && !groupNames.length)) usageExit(USAGE);
 // The slow groups are integration files: --landing, --groups and --picked-groups mean that tier unless one is named.
 if ((opts["--landing"] || opts["--groups"] || opts["--picked-groups"]) && !opts["--all"]) opts["--integration"] = true;
@@ -539,23 +542,22 @@ function branchGroupsOnly(files, base) {
   try {
     changed = changedSince(ROOT, base);
   } catch (err) {
-    usageExit(`run-tests: --picked-groups: no merge base with ${base} (${String(err.stderr ?? err.message).trim().split("\n")[0]})`);
+    console.error(`run-tests: --picked-groups: no merge base with ${base} (${String(err.stderr ?? err.message).trim().split("\n")[0]})`);
+    process.exit(2);
   }
   const landing = selectFiles(files, changed, { mode: "landing" });
   const since = `${changed.length} file${changed.length === 1 ? "" : "s"} changed since the merge base with ${base}`;
   const pick = selectFiles(files, [], { mode: "groups", only: landing.ran });
   // A triggered group with no file in this tree has nothing to run either.
-  if (!pick.files.length) {
-    say(`run-tests: --picked-groups, none named: skipped: ${NO_GROUP_APPLIES} (${since}).`);
-    for (const s of landing.skipped) say(`run-tests: skipped group ${s.name} (${s.title}): ${s.why === "never" ? "never at landing" : "no change to its triggers"}.`);
-    picked = { ...pick, ran: [], skipped: landing.skipped };
-    noGroupApplies = true;
-    return [];
+  const none = !pick.files.length;
+  if (none) say(`run-tests: --picked-groups, none named: skipped: ${NO_GROUP_APPLIES} (${since}).`);
+  else {
+    say(`run-tests: --picked-groups, none named: the slow groups a landing runs for this branch's changes (${since}): ${pick.files.length} of ${files.length} test files (${pick.ran.map(titleOf).join(", ")}).`);
+    for (const name of landing.ran) say(`run-tests: running group ${name} (${titleOf(name)}): its triggers changed (${shortList(landing.hits[name])}).`);
   }
-  say(`run-tests: --picked-groups, none named: the slow groups a landing runs for this branch's changes (${since}): ${pick.files.length} of ${files.length} test files (${pick.ran.map(titleOf).join(", ")}).`);
-  for (const name of landing.ran) say(`run-tests: running group ${name} (${titleOf(name)}): its triggers changed (${shortList(landing.hits[name])}).`);
   for (const s of landing.skipped) say(`run-tests: skipped group ${s.name} (${s.title}): ${s.why === "never" ? "never at landing" : "no change to its triggers"}.`);
-  picked = { ...pick, skipped: landing.skipped };
+  picked = none ? { ...pick, ran: [], skipped: landing.skipped } : { ...pick, skipped: landing.skipped };
+  noGroupApplies = none;
   return pick.files;
 }
 

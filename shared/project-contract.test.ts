@@ -387,9 +387,10 @@ test("merge: target, push, checks (a list or \"none\"), install and review, pars
   assert.equal(m({ checks: [{ id: "a", run: ["x", "${merge.nope}"] }] }), "$.merge.checks[0].run[1]");
   assert.equal(m({ checks: [{ id: "a", run: ["x"], optional: "yes" }] }), "$.merge.checks[0].optional");
   assert.equal(m({ checks: [{ id: "a", run: ["x"], optional: true }] }), "$.merge.checks");
-  assert.deepEqual(parse({ version: 1, services, merge: { checks: [{ id: "a", run: ["x"] }, { id: "b", run: ["y"], optional: true }] } }).merge?.checks, [
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], needsSelect: "yes" }] }), "$.merge.checks[0].needsSelect");
+  assert.deepEqual(parse({ version: 1, services, merge: { checks: [{ id: "a", run: ["x"], needsSelect: false }, { id: "b", run: ["y"], optional: true, needsSelect: true }] } }).merge?.checks, [
     { id: "a", label: "a", run: ["x"], timeout: 600, rerun: false, requires: [] },
-    { id: "b", label: "b", run: ["y"], timeout: 600, rerun: false, requires: [], optional: true },
+    { id: "b", label: "b", run: ["y"], timeout: 600, rerun: false, requires: [], optional: true, needsSelect: true },
   ]);
   assert.equal(m({ install: { run: ["x"] } }), "$.merge.install.inputs");
   assert.equal(m({ install: { run: ["x", "${merge.base}"], inputs: ["l"] } }), "$.merge.install.run[1]");

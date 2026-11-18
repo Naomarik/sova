@@ -3258,7 +3258,7 @@ async function hermetic() {
   const decoys = [".pi/agent", ".claude", ".codex", ".local/bin"];
   for (const d of decoys) mkdirSync(join(home, d), { recursive: true });
   const decoy = (rel, text) => writeFileSync(join(home, rel), text);
-  for (const f of ["settings.json", "models.json", "auth.json", "topic-outline.json", "extension-toggle.json", "vision-delegate.json", "usage-status.json", "team-defaults.json", "subagent-profiles.json"]) decoy(join(".pi/agent", f), JSON.stringify({ tripwire: true }));
+  for (const f of ["settings.json", "models.json", "auth.json", "topic-outline.json", "vision-delegate.json", "usage-status.json", "team-defaults.json", "subagent-profiles.json"]) decoy(join(".pi/agent", f), JSON.stringify({ tripwire: true }));
   mkdirSync(join(home, ".pi/agent/extensions"), { recursive: true });
   mkdirSync(join(home, ".pi/agent/cache"), { recursive: true });
   decoy(".claude/.credentials.json", JSON.stringify({ claudeAiOauth: { accessToken: "tripwire", refreshToken: "tripwire", expiresAt: Date.now() + 3600_000 } }));
@@ -3520,7 +3520,7 @@ async function tw3() {
   await nextServer();
 }
 
-// tw4: a chat that starts and doesn't fire (its extension turned off with /extensions: Sova loads its own
+// tw4: a chat that starts and doesn't fire (its extension turned off in the agent dir's settings: Sova loads its own
 // extensions whatever the agent dir links, so unlinking it no longer takes it away, and an "off" stays off):
 // one start, the record dropped, no loop; the nudge waits and fires at the next open with the extension
 // back on. A record the chat doesn't know costs one start and goes.
@@ -3530,7 +3530,7 @@ async function tw4() {
   const { id } = await nudgeThenShutDown(a, "12s", "NO-EXTENSION");
   const settings = join(agent, "settings.json");
   const had = existsSync(settings) ? readFileSync(settings, "utf8") : null;
-  // As /extensions writes an "off" for a loose file in the agent dir (extension-toggle's `-` pattern).
+  // As `pi config` writes an "off" for a loose file in the agent dir (pi's `-` pattern).
   writeFileSync(settings, JSON.stringify({ ...(readJson(settings) ?? {}), extensions: ["-extensions/wake-nudge.ts"] }, null, 2));
   try {
     await wakeWait(() => wakeLog().some((l) => l.includes("doesn't know it")), 60000);

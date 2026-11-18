@@ -132,8 +132,8 @@ describe("mode.json read/merge/write", () => {
 });
 
 describe("modeApplyPlan (how the chat a switch was sent to takes it)", () => {
-  const base = { foreign: false, hasModeCommand: true, pristine: false, streaming: false };
-  test("the extension's command, never a reload (its workers would stop)", () => {
+  const base = { foreign: false, hasModeOwner: true, pristine: false, streaming: false };
+  test("Sova's engine takes it, never a reload (its workers would stop)", () => {
     assert.equal(modeApplyPlan(base), "command");
     assert.equal(modeApplyPlan({ ...base, streaming: true }), "command");
   });
@@ -141,9 +141,9 @@ describe("modeApplyPlan (how the chat a switch was sent to takes it)", () => {
     assert.equal(modeApplyPlan({ ...base, pristine: true }), "command");
     assert.equal(modeApplyPlan({ ...base, pristine: true, streaming: true }), "command");
   });
-  test("no mode command: never prompt, never reload", () => {
-    assert.equal(modeApplyPlan({ ...base, hasModeCommand: false }), "unsupported");
-    assert.equal(modeApplyPlan({ ...base, hasModeCommand: false, pristine: true }), "unsupported");
+  test("no mode engine in the chat: never prompt, never reload", () => {
+    assert.equal(modeApplyPlan({ ...base, hasModeOwner: false }), "unsupported");
+    assert.equal(modeApplyPlan({ ...base, hasModeOwner: false, pristine: true }), "unsupported");
   });
   test("a foreign writer wins over everything", () => {
     assert.equal(modeApplyPlan({ ...base, foreign: true, pristine: true }), "skip");

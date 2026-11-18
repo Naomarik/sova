@@ -861,6 +861,14 @@ if $extensions; then
 		ln -s "$src" "$dst"
 		linked=$((linked + 1))
 	done
+	# A link to an extension this version removed (extension-toggle, the old /extensions command), into
+	# another Sova copy that still has it: removed, never relinked.
+	for name in extension-toggle; do
+		if [ -L "$ext_dst/$name" ] && other_sova_copy "$(readlink "$ext_dst/$name")" "$name"; then
+			rm -f "$ext_dst/$name"
+			say "removed $ext_dst/$name (links to another Sova copy; this version has no $name extension)"
+		fi
+	done
 	# Our links to extensions this version no longer has, and to the mode folder (an extension once).
 	for dst in "$ext_dst"/* "$ext_dst"/.[!.]*; do
 		[ -L "$dst" ] || continue

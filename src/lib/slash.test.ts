@@ -146,4 +146,5 @@ test("tuiOnlyCommand names a bare TUI-only command typed in full, nothing else",
   assert.equal(tuiOnlyCommand("/sess"), null);
   assert.equal(tuiOnlyCommand("/team"), null);
   assert.equal(tuiOnlyCommand("/remote"), null);
+  assert.equal(tuiOnlyCommand("/extensions"), null, "no add-on registers /extensions any more: an extension's own /extensions is the runtime's");
 });

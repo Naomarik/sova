@@ -215,18 +215,20 @@ export function chatModeOf(state: StateView, file = modeFile()): ModeState {
 }
 
 /**
- * How the chat a switch was sent to takes it:
+ * How the chat a switch was sent to takes it (`hasModeOwner`: Sova's mode engine runs this chat's modes):
  * - "skip": a foreign writer was seen; we never write it. It resolves its own mode when reopened.
- * - "unsupported": the mode extension's /mode command isn't loaded here (so nothing reads the
- *   mode); never prompt instead.
- * - "command": run the extension's own /mode handler (no reload: that would stop its workers).
+ * - "unsupported": no mode engine runs this chat (so nothing reads the mode); never prompt instead.
+ * - "command": Sova's engine takes the switch directly (no reload: that would stop its workers). The
+ *   name is older than the engine (it once meant the extension's /mode command) and stays: it crosses
+ *   the chat-runtime contract (shared/chat-runtime.ts applyMode), which a chat on an older code
+ *   generation still answers with it.
  *   A never-prompted chat takes this path too — the marker entry it appends is a deliberate
  *   user write, and it is what pins this session's mode.
  */
-export function modeApplyPlan(chat: { foreign: boolean; hasModeCommand: boolean; pristine: boolean; streaming: boolean }):
+export function modeApplyPlan(chat: { foreign: boolean; hasModeOwner: boolean; pristine: boolean; streaming: boolean }):
   "skip" | "unsupported" | "command" {
   if (chat.foreign) return "skip";
-  if (!chat.hasModeCommand) return "unsupported";
+  if (!chat.hasModeOwner) return "unsupported";
   return "command";
 }
 

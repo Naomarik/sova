@@ -9,7 +9,7 @@ import { PlaybookCard, PlaybookInlineContext } from "./PlaybookCard";
  * (lib/playbook-card-rows), and under a new chat's opening lines, which have no rows yet. Outside a
  * chat that shows cards (a read-only watch) it draws nothing.
  */
-export function PlaybookInlineCard(props: { run: string }) {
+export function PlaybookInlineCard(props: { run: string; /** The chat holds nothing but this card: the view lands on it when the chat opens. */ land?: boolean }) {
   const host = useContext(PlaybookInlineContext);
   const run = createMemo(() => host?.run(props.run));
   return (
@@ -20,6 +20,7 @@ export function PlaybookInlineCard(props: { run: string }) {
             <PlaybookCard
               inline
               shown
+              land={props.land}
               run={view()}
               store={h().store}
               host={h().host}

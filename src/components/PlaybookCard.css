@@ -413,3 +413,21 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
 .pb-inline[data-folded] > .pb-body > :not(.pb-now) { display: none; }
 .pb-fold[aria-expanded="true"] > .icon-twist { transform: rotate(90deg); }
 .pb-fold > .icon-twist { transition: transform var(--dur-fast) var(--ease-standard); }
+/* A card value the chat set: muted words beside it, as a choice's right-hand column. */
+.pb-from-chat { color: var(--color-ink-muted); font-size: var(--fs-caption); white-space: nowrap; }
+
+/* While a setup card's buttons are pinned the view is inside the card: Jump to Latest would cover a
+   line of it, so it isn't shown; the card's end is the pinned buttons. */
+.transcript-wrap[data-pb-pinned] > .jump-latest[data-shown] { visibility: hidden; pointer-events: none; }
+/* The gap between the strip (or its open card) and the message box is the page's own: nothing of
+   the conversation passing behind the strip shows as a sliver under it. As wide as the strip, so it
+   is no band. */
+.pb-layer:has(.pb-strip)::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: var(--space-2);
+  background: var(--color-bg);
+}

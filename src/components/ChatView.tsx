@@ -2888,7 +2888,7 @@ export function ChatView(props: {
                     {/* A playbook's card opened in a chat with no message yet: under the opening lines,
                         where the conversation will start (it is a row of the thread from then on). */}
                     <PlaybookInlineContext.Provider value={playbookInline}>
-                      <For each={playbookCards().map((r) => r.id)}>{(id) => <PlaybookInlineCard run={id} />}</For>
+                      <For each={playbookCards().map((r) => r.id)}>{(id) => <PlaybookInlineCard run={id} land />}</For>
                     </PlaybookInlineContext.Provider>
                     </>
                   }

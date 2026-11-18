@@ -30,6 +30,15 @@ export const isChatChoice = (c: Pick<PlaybookChoiceView, "ask">): boolean => c.a
 /** What a chat-filled choice says while the chat hasn't filled it. */
 export const CHAT_WAITING = "Waiting for the chat to fill this in.";
 
+/** What a value the chat set says beside it, a choice or any other card value alike. */
+export const FROM_CHAT = "From the chat";
+
+/** Whether the chat set this card value last (an edit path such as "roles.writer.pick",
+    "stops.check" or "cycle.max"): the view lists them; a change of yours on the card takes one out. */
+export function setByChat(view: { fromChat?: readonly string[] } | null | undefined, path: string): boolean {
+  return !!view?.fromChat?.includes(path);
+}
+
 /** A choice's right-hand line: "Needed" while a required one is empty, else where its value came
     from. A value you set yourself says nothing: the card is yours, so "Your pick" told you nothing.
     A chat-filled choice can't be edited on the card, so an edit to it is the chat's: "From the chat".
@@ -502,6 +511,38 @@ export function lastEntryId(items: readonly { id: string }[] | null | undefined)
 export function recordNote(inline: boolean, closed: boolean): string {
   if (!inline) return "Progress comes in the chat's messages.";
   return closed ? "This is the card as you started it. You put its strip away; the run was not changed." : "This is the card as you started it.";
+}
+
+/** The record's one line in the chat that conducts its run. That chat's conversation already marks
+    the start ("Playbook {title} started", with the time), so the record doesn't say it again: it
+    says what it is. */
+export function ownRecordLine(revision: number, closed: boolean): string {
+  return `The card as you set it up: revision ${revision}.${closed ? " You put its strip away; the run was not changed." : ""}`;
+}
+
+/** Whether the record in the conversation folds now: at the moment its card's run starts (the run
+    moves to the strip, the card closes to its head), never on any other change. */
+export function foldsOnStart(was: PlaybookRunView["state"] | undefined, now: PlaybookRunView["state"]): boolean {
+  return now === "started" && was !== undefined && was !== "started";
+}
+
+/** The line beside the setup card's buttons. What the card already says in its error line isn't
+    said again beside Start: the line is empty then, and Start is described by the error line. */
+export function footHint(hint: string, error: string | null | undefined): string {
+  return error && hint.trim() === error.trim() ? "" : hint;
+}
+
+/**
+ * How far a conversation scrolls to land on a card standing in it (added to its scroll position):
+ * a card taller than the view reads from its top; a shorter one is brought wholly into view by the
+ * shortest way; one already whole in view doesn't move. `gap` is the room kept at the view's edge.
+ */
+export function cardLanding(card: { top: number; bottom: number }, view: { top: number; bottom: number }, gap: number): number {
+  const fromTop = card.top - view.top - gap;
+  if (card.bottom - card.top > view.bottom - view.top - 2 * gap) return fromTop;
+  if (fromTop < 0) return fromTop;
+  const pastEnd = card.bottom - view.bottom + gap;
+  return pastEnd > 0 ? pastEnd : 0;
 }
 
 /** The button that folds the record in the conversation to its head, and opens it again. */

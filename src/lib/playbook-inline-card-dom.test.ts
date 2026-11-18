@@ -77,8 +77,10 @@ test("before Start: the setup card in the conversation carries Start and Close C
   assert.doesNotMatch(html, / id="pb-card-/, "the strip's popup id is the floating card's alone");
 });
 
-test("after Start: the same card is the read-only record, with no buttons of the run's", () => {
-  const run = view({ state: "started", started });
+const ELSEWHERE = { ...started, chat: { id: "b", path: "/chats/b.jsonl", title: "A/B cycle (playbook)" }, newChat: true };
+
+test("after Start, in the chat whose card started a run elsewhere: the read-only record says it started, once", () => {
+  const run = view({ state: "started", started: ELSEWHERE });
   const html = draw(() => inChat(host(run), run.id));
   assert.match(html, /class="card pb-card pb-inline"/);
   assert.match(html, /data-state="started"/);
@@ -93,9 +95,36 @@ test("after Start: the same card is the read-only record, with no buttons of the
   assert.match(html, /<button[^>]*aria-expanded="false"[^>]*>(?:<[^>]*>|\s)*Show Card/);
 });
 
+test("in the run's own chat the record never says Started: the conversation's start row does, so it is said once", () => {
+  const run = view({ state: "started", started });
+  const html = draw(() => inChat(host(run), run.id));
+  assert.match(html, /data-state="started"/);
+  assert.match(html, /The card as you set it up: revision 3\./);
+  assert.doesNotMatch(html, /Started/, "no Started chip and no Started line");
+  assert.doesNotMatch(html, /class="chip/, "no state chip at all: the strip says how the run stands");
+  for (const label of ["Start", "Continue", "Stop Here", "Close Card"]) assert.doesNotMatch(html, button(label), label);
+  assert.match(html, /Show Card/);
+});
+
 test("a put-away run's record says its strip was put away and that the run wasn't changed", () => {
   const run = view({ state: "started", started, closed: true });
-  assert.match(draw(() => inChat(host(run), run.id)), /This is the card as you started it\. You put its strip away; the run was not changed\./);
+  assert.match(draw(() => inChat(host(run), run.id)), /The card as you set it up: revision 3\. You put its strip away; the run was not changed\./);
+});
+
+test("a broken playbook's fault is printed once: in the card's error line, which Start is described by, not again beside Start", () => {
+  const fault = "The playbook's description can't be read: playbook.json: isn't valid JSON.";
+  const run = view({ error: fault, startBlocked: fault });
+  const html = draw(() => inChat(host(run), run.id));
+  // What is printed on the card (hover titles aside): the fault, once.
+  const printed = html.replace(/<[^>]*>/g, " ");
+  assert.equal(printed.split("isn't valid JSON").length - 1, 1);
+  assert.match(html, /<p class="pb-error" role="alert" id="([^"]+)">The playbook's description can't be read/);
+  const errorId = /<p class="pb-error" role="alert" id="([^"]+)">/.exec(html)![1]!;
+  assert.match(html, new RegExp(`<button[^>]*pb-start[^>]*aria-describedby="${errorId}"`));
+  assert.match(html, /<span class="pb-foot-hint"[^>]*><\/span>/);
+  // A reason that isn't the error line's stays beside Start.
+  const other = draw(() => inChat(host(view({ startBlocked: "Work out The failure to fix with the chat first." })), "pr_aaaaaaaaaaaa"));
+  assert.match(other, /<span class="pb-foot-hint"[^>]*>Work out The failure to fix with the chat first\.<\/span>/);
 });
 
 test("the floating card of the same run keeps its dialog, Minimize, the stop's answers and Close Card", () => {

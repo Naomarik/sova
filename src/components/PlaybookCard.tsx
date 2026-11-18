@@ -42,6 +42,10 @@ import {
   toPick,
   recordNote,
   recordFoldLabel,
+  cardLanding,
+  foldsOnStart,
+  footHint,
+  ownRecordLine,
   revealStep,
 } from "../lib/playbook-card";
 import type { PlaybookRunsStore } from "../lib/playbook-runs";
@@ -97,6 +101,16 @@ export const PlaybookInlineContext = createContext<PlaybookInlineHost | null>(nu
 const INLINE_ATTR = "data-pb-inline";
 /** Room kept above a setup card brought to the top of the view. */
 const INLINE_GAP = 8;
+/** How long a chat that opens on its card keeps landing on it while what stands above settles. */
+const LAND_SETTLE_MS = 3000;
+/** Scrolls the conversation to a card standing in it: from its top when it is taller than the view,
+    else wholly into view (lib/playbook-card `cardLanding`). */
+function landOnCard(el: HTMLElement): void {
+  const view = el.closest<HTMLElement>(".transcript");
+  if (!view) return el.scrollIntoView({ block: "nearest", behavior: "instant" });
+  const by = cardLanding(el.getBoundingClientRect(), view.getBoundingClientRect(), INLINE_GAP);
+  if (by) view.scrollTop += by;
+}
 
 /** One chat's cards: which is open (one at a time) and which have been opened, so each keeps what
     was typed, an open prompt and its place while it is minimized. */
@@ -238,19 +252,15 @@ export function PlaybookFloat(props: { store: PlaybookRunsStore; host: string | 
   const showInline = (id: string, tries = 20) => {
     // The jump lands on the card's row (building the rows down to it when it stands above the ones
     // built so far) and stops the view following the conversation's end, as a scroll up would.
-    const jumped = jumpToEntry(cardRowId(id), props.chat.path);
+    jumpToEntry(cardRowId(id), props.chat.path);
     const el = anchor.parentElement?.querySelector<HTMLElement>(`[${INLINE_ATTR}="${CSS.escape(id)}"]`);
     if (!el) {
       if (tries > 0) requestAnimationFrame(() => isDraft(id) && showInline(id, tries - 1));
       return;
     }
     // A card taller than the view reads from its top (its buttons stay pinned at the view's end);
-    // a shorter one is whole in view where the jump put it.
-    const view = el.closest<HTMLElement>(".transcript");
-    const box = el.getBoundingClientRect();
-    const port = view?.getBoundingClientRect();
-    if (view && port && box.height > port.height - 2 * INLINE_GAP) view.scrollTop += box.top - port.top - INLINE_GAP;
-    else if (!jumped) el.scrollIntoView({ block: "nearest", behavior: "instant" });
+    // a shorter one is whole in view, where the jump put it or by the shortest way.
+    landOnCard(el);
     el.focus({ preventScroll: true });
   };
   const focusCard = (id: string) => requestAnimationFrame(() => anchor.querySelector<HTMLElement>(`#${CSS.escape(cardDomId(id))}`)?.focus({ preventScroll: true }));
@@ -415,6 +425,8 @@ export function PlaybookCard(props: {
   here?: string;
   /** Standing in the conversation, where it was opened; else floating over it from the strip. */
   inline?: boolean;
+  /** Inline, in a chat that holds nothing but this card: the view lands on it when the chat opens. */
+  land?: boolean;
   /** Open over the conversation; false while minimized (it stays mounted). An inline card is always shown. */
   shown: boolean;
   status: RunStatus;
@@ -563,10 +575,56 @@ export function PlaybookCard(props: {
       (the chat opened again) starts folded; one that froze under your eyes at Start stays as it was. */
   const foldable = () => !!props.inline && run().state === "started";
   const [folded, setFolded] = createSignal(untrack(foldable));
+  /** The record in the chat that conducts its run: that chat's conversation marks the start itself. */
+  const ownRecord = () => foldable() && run().started?.chat.path === props.here;
+  let card!: HTMLElement;
+  // At Start the run moves to its strip and the card closes to its head, so nothing of it is left
+  // under the new strip; it is brought back into view where it stands.
+  createEffect<PlaybookRunView["state"]>((was) => {
+    const now = run().state;
+    if (props.inline && foldsOnStart(was, now)) {
+      setFolded(true);
+      requestAnimationFrame(() => {
+        if (!card.isConnected) return;
+        // The run begins at the conversation's end, where its strip has its room: a view that had
+        // left the end (reading the card) goes back to following it, as Jump to Latest does; one
+        // already there only keeps the record in view.
+        const jump = card.closest<HTMLElement>(".transcript-wrap")?.querySelector<HTMLElement>(":scope > .jump-latest[data-shown]");
+        if (jump) jump.click();
+        else landOnCard(card);
+      });
+    }
+    return now;
+  });
+  onMount(() => {
+    if (!props.inline || !props.land) return;
+    // The chat's opening lines above the card are still being read in as it opens (what the chat
+    // loads, its repository), and each pushes the card down: the view lands again as they settle,
+    // until the reader takes the view themselves.
+    const view = card.closest<HTMLElement>(".transcript");
+    const above = card.closest<HTMLElement>(".transcript-inner");
+    const land = () => card.isConnected && landOnCard(card);
+    const frame = requestAnimationFrame(land);
+    const settling = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(land);
+    if (above) settling?.observe(above);
+    const theirs = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    const stop = () => {
+      settling?.disconnect();
+      clearTimeout(timeout);
+      cancelAnimationFrame(frame);
+      for (const type of theirs) view?.removeEventListener(type, stop);
+    };
+    for (const type of theirs) view?.addEventListener(type, stop, { passive: true });
+    const timeout = setTimeout(stop, LAND_SETTLE_MS);
+    onCleanup(stop);
+  });
+  const errorLine = () => saveError() ?? run().startError ?? run().error ?? null;
+  const setupHint = () => footHint(startWhy() ?? done() ?? (changing() ? "Saving your changes…" : `Revision ${run().revision}. Start runs exactly this card.`), errorLine());
   const choices = createMemo(() => splitChoices(run().choices));
 
   return (
     <section
+      ref={card}
       class="card pb-card"
       classList={{ "pb-inline": !!props.inline }}
       // One run may show twice in a chat, its record in the conversation and its card over it: the
@@ -593,9 +651,12 @@ export function PlaybookCard(props: {
         <span class="pb-title" id={id("title")}>
           {run().playbook.title}
         </span>
-        <Chip tone={props.status.tone} live={props.status.live}>
-          {props.status.label}
-        </Chip>
+        {/* In the run's own chat the conversation's "Playbook … started" row says it started: the record doesn't too. */}
+        <Show when={!ownRecord()}>
+          <Chip tone={props.status.tone} live={props.status.live}>
+            {props.status.label}
+          </Chip>
+        </Show>
         <Show when={!props.inline}>
           <button type="button" class="button button-sm button-ghost pb-min" title="Minimize the card (Esc)" onClick={() => props.onMinimize()}>
             <Icon name="chevron-down" small />
@@ -617,7 +678,10 @@ export function PlaybookCard(props: {
           <Show when={props.status.detail || (run().state !== "draft" && run().started)}>
             <div class="pb-now">
               <Show when={props.status.detail}>{(d) => <p class="pb-now-line">{d()}</p>}</Show>
-              <Show when={run().state !== "draft" && run().started}>
+              <Show when={ownRecord()}>
+                <p class="pb-record">{ownRecordLine(run().started?.revision ?? run().revision, !!run().closed)}</p>
+              </Show>
+              <Show when={!ownRecord() && run().state !== "draft" && run().started}>
                 {(st) => (
                   <p class="pb-record">
                     Started <span class="text-num">{shortClock(st().at)}</span> as revision <span class="text-num">{st().revision}</span>
@@ -795,9 +859,9 @@ export function PlaybookCard(props: {
 
         </div>
 
-      <Show when={saveError() ?? run().startError ?? run().error}>
+      <Show when={errorLine()}>
         {(err) => (
-          <p class="pb-error" role="alert">
+          <p class="pb-error" role="alert" id={id("error")}>
             {err()}
           </p>
         )}
@@ -811,8 +875,9 @@ export function PlaybookCard(props: {
             // (a setup card is often taller than the screen), and the chat's floating controls lift above them.
             if (!props.inline) return;
             onMount(() => {
-              const card = foot.closest<HTMLElement>(".pb-card");
-              if (card) onCleanup(watchPinnedBar(foot, card));
+              // While they are pinned the view is inside the card, and Jump to Latest would cover a
+              // line of it: it isn't shown then (PlaybookCard.css); the card's end is these buttons.
+              onCleanup(watchPinnedBar(foot, card, (pinned, wrap) => wrap?.toggleAttribute("data-pb-pinned", pinned)));
             });
           }}
         >
@@ -820,7 +885,7 @@ export function PlaybookCard(props: {
             type="button"
             class="button button-sm button-primary pb-start"
             aria-disabled={startWhy() ? "true" : undefined}
-            aria-describedby={id("why")}
+            aria-describedby={setupHint() ? id("why") : id("error")}
             title={startWhy() ?? undefined}
             onClick={() => void start()}
           >
@@ -834,7 +899,7 @@ export function PlaybookCard(props: {
             Repeat… <span class="pb-coming">Coming</span>
           </button>
           <span class="pb-foot-hint" id={id("why")}>
-            {startWhy() ?? done() ?? (changing() ? "Saving your changes…" : `Revision ${run().revision}. Start runs exactly this card.`)}
+            {setupHint()}
           </span>
           <button type="button" class="button button-sm button-ghost pb-close" disabled={!!busy() || !editable()} onClick={() => void close()}>
             Close Card

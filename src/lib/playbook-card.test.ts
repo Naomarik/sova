@@ -15,6 +15,10 @@ import {
   cardOpenedWords,
   recordNote,
   recordFoldLabel,
+  ownRecordLine,
+  foldsOnStart,
+  footHint,
+  cardLanding,
   chatHolding,
   heldListNote,
   heldRows,
@@ -30,6 +34,7 @@ import {
   runStatus,
   choiceOriginLine,
   isChatChoice,
+  setByChat,
   chatNowOf,
   controlLabel,
   type RunChatNow,
@@ -515,4 +520,56 @@ test("what a way in says aloud, and the record's last sentence", () => {
   assert.equal(recordNote(true, true), "This is the card as you started it. You put its strip away; the run was not changed.");
   assert.equal(recordFoldLabel(true), "Show Card");
   assert.equal(recordFoldLabel(false), "Hide Card");
+});
+
+test("a card value the chat set reads From the chat, by its edit path; one it didn't, or a view without the list, doesn't", () => {
+  const view = { fromChat: ["roles.writer.pick", "stops.check", "cycle.max", "teams.write.note"] };
+  for (const p of view.fromChat) assert.equal(setByChat(view, p), true, p);
+  assert.equal(setByChat(view, "cycle.askEvery"), false);
+  assert.equal(setByChat(view, "roles.reader.pick"), false);
+  assert.equal(setByChat({}, "cycle.max"), false);
+  assert.equal(setByChat(null, "cycle.max"), false);
+});
+
+// ---- Defects from the a24 gallery (6d7ea1a05) ----
+
+test("the record in the run's own chat says what it is, never that it started: the conversation's start row says that", () => {
+  assert.equal(ownRecordLine(4, false), "The card as you set it up: revision 4.");
+  assert.equal(ownRecordLine(4, true), "The card as you set it up: revision 4. You put its strip away; the run was not changed.");
+  for (const closed of [false, true]) assert.doesNotMatch(ownRecordLine(4, closed), /start/i);
+});
+
+test("the record folds at the moment its run starts, and at no other change", () => {
+  const states = ["draft", "starting", "started"] as const;
+  for (const was of [undefined, ...states]) for (const now of states) assert.equal(foldsOnStart(was, now), now === "started" && (was === "draft" || was === "starting"), `${was} -> ${now}`);
+});
+
+test("a fault the card's error line says isn't said again beside Start; any other line stays", () => {
+  const fault = "The playbook's description can't be read: playbook.json: isn't valid JSON.";
+  assert.equal(footHint(fault, fault), "");
+  assert.equal(footHint(`${fault} `, fault), "");
+  assert.equal(footHint("Work out The failure to fix with the chat first.", fault), "Work out The failure to fix with the chat first.");
+  for (const none of [null, undefined, ""]) assert.equal(footHint(fault, none), fault);
+  assert.equal(footHint("Revision 3. Start runs exactly this card.", null), "Revision 3. Start runs exactly this card.");
+});
+
+test("landing on a card: a tall one from its top, a short one wholly into view by the shortest way, one in view not at all", () => {
+  const view = { top: 100, bottom: 700 };
+  const gap = 8;
+  // Taller than the view (less its gaps): its top goes under the view's top, wherever it is now.
+  for (const top of [-900, 100, 400, 1500]) assert.equal(cardLanding({ top, bottom: top + 590 }, view, gap), top - 108, `tall at ${top}`);
+  // Shorter: below the view (a chat that holds only a card opens above it), its end comes to the view's end.
+  assert.equal(cardLanding({ top: 900, bottom: 1300 }, view, gap), 608);
+  // Above the view: its top comes to the view's top.
+  assert.equal(cardLanding({ top: -300, bottom: 100 }, view, gap), -408);
+  // Half in view at either edge: only as far as it takes.
+  assert.equal(cardLanding({ top: 500, bottom: 760 }, view, gap), 68);
+  assert.equal(cardLanding({ top: 60, bottom: 300 }, view, gap), -48);
+  // Whole in view: it doesn't move.
+  for (const top of [108, 200, 292]) assert.equal(cardLanding({ top, bottom: top + 400 }, view, gap), 0, `in view at ${top}`);
+  // After any landing the card is where the rule says: a second landing moves nothing.
+  for (const card of [{ top: 900, bottom: 1300 }, { top: -300, bottom: 100 }, { top: 1500, bottom: 2400 }]) {
+    const by = cardLanding(card, view, gap);
+    assert.equal(cardLanding({ top: card.top - by, bottom: card.bottom - by }, view, gap), 0, JSON.stringify(card));
+  }
 });

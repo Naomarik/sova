@@ -17,7 +17,6 @@ import type { ContentsSection } from "./message";
 import { effectiveEdits, fromChatOf } from "./plan";
 import { showsToken, TOKEN_HEADER } from "../auth";
 import { CALLER_HEADER, callerKeys } from "../caller-keys";
-import { canonicalPath } from "../paths";
 import { projectKeyOf, realHost, RunRefused, startRun } from "./start";
 import { changeRun, createRun, draftsOf, oneRunRefusal, openDraftOf, runById, runHolding, runsOfChat } from "./store";
 import { runView } from "./view";
@@ -152,13 +151,14 @@ export function editPaths(e: PlaybookCardEdits): string[] {
   return out;
 }
 
-/** The request comes from the card's own chat: its key names the chat that shows the card (or conducts it). */
-function cardsOwnChat(c: Context, r: { shownIn?: { path: string }; started?: { chat: { path: string } } }): boolean {
+/** The request comes from the card's own chat: its key names the chat that shows the card (or conducts it), by the
+    session id chat-host issues it under (server/chat-host.ts: callerKeys.issue(chatId = the session's id, unit)). */
+function cardsOwnChat(c: Context, r: { shownIn?: { id: string }; started?: { chat: { id: string } } }): boolean {
   if (!showsToken(c.req.header(TOKEN_HEADER))) return false;
   const caller = callerKeys.callerOf(c.req.header(CALLER_HEADER));
   if (!caller.startsWith("chat:")) return false;
-  const chat = canonicalPath(caller.slice("chat:".length));
-  return [r.shownIn?.path, r.started?.chat.path].some((p) => !!p && canonicalPath(p) === chat);
+  const chat = caller.slice("chat:".length);
+  return [r.shownIn?.id, r.started?.chat.id].some((id) => !!id && id === chat);
 }
 
 const fail = (c: Context, err: unknown) => {

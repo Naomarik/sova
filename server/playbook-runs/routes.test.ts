@@ -442,8 +442,11 @@ describe("the card's own chat sets any of its values", () => {
   callerKeys.setLiveness(() => true);
   const c = join(scratchAgentDir, "sessions", "--proj--", "2026-11-18T01-00-00-000Z_chat-own.jsonl");
   writeFileSync(c, `${JSON.stringify({ type: "session", version: 3, id: "chat-own", timestamp: "2026-11-18T01:00:00.000Z", cwd: scratchAgentDir })}\n`);
-  const ownKey = callerKeys.issue(canonicalPath(c), "unit-own");
-  const otherKey = callerKeys.issue(canonicalPath(chatPath), "unit-other");
+  // Issued as chat-host issues a chat's key (server/chat-host.ts): under the chat's session id, never its path.
+  const ownKey = callerKeys.issue("chat-own", "unit-own");
+  const otherKey = callerKeys.issue("chat-a", "unit-other");
+  // A key under the card's path names no chat Sova runs: it widens nothing.
+  const pathKey = callerKeys.issue(canonicalPath(c), "unit-path");
   const asKey = (key: string) => (path: string, init: RequestInit) => app.request(path, { ...init, headers: { ...(init.headers as Record<string, string>), [CALLER_HEADER]: key, "x-sova-token": sovaToken() } }, { incoming: {} });
   const own = asKey(ownKey);
   const other = asKey(otherKey);
@@ -473,7 +476,7 @@ describe("the card's own chat sets any of its values", () => {
 
   test("another chat or a script fills in choices only; Start, My Defaults and Close Card stay the person's", async () => {
     const v = await openCard();
-    for (const call of [other, asChat]) {
+    for (const call of [other, asChat, asKey(pathKey)]) {
       const res = await call(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { stops: { run: false } } }));
       assert.equal(res.status, 403);
       assert.deepEqual(await res.json(), { error: "Only the person, or the chat showing this card, changes its models, members, notes, stops and cycle settings. A script or another chat may fill in its choices. Nothing was changed." });

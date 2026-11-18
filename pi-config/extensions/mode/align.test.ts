@@ -26,7 +26,6 @@ import {
 	openText,
 	optionLetter,
 	planSignal,
-	withoutWorkingNotes,
 	recommendedOption,
 	recommendedText,
 	toMarkdown,
@@ -767,19 +766,39 @@ test("marksChangeRequest: any align op but get marks the run, refused or not; no
 	assert.equal(marksChangeRequest({ ops: [{}] }), false);
 });
 
-test("planSignal: the reply is judged without its working notes (b2)", () => {
-	assert.equal(planSignal("Plan:\n- a\n- b\n\nShould I go ahead?\n\n### Working notes\nlong detail..."), "asks-decision");
-	// The fold's own words never decide it: a plan inside the notes is working, not the reply's end.
-	assert.equal(planSignal("Done: the export works.\n\n### Working notes\nOpen questions: which format do you prefer? Should I go ahead?"), null);
-	assert.equal(planSignal("Done.\n\n### Working notes\n## Alignment: Export\n- q1"), null, "nor an old alignment block in the notes");
-	// Any case, nothing else on the line; a lookalike heading is ordinary text.
-	assert.equal(withoutWorkingNotes("Top.\n### WORKING NOTES  \nmore"), "Top.\n");
-	assert.equal(withoutWorkingNotes("Top.\n### Working notes: detail\nmore"), "Top.\n### Working notes: detail\nmore");
-	assert.equal(withoutWorkingNotes("Top.\n## Working notes\nmore"), "Top.\n## Working notes\nmore");
-	// A heading inside a code fence is code; the first one outside it cuts.
-	const fenced = "Top.\n```md\n### Working notes\n```\nShould I go ahead?\n### Working notes\nx";
-	assert.equal(withoutWorkingNotes(fenced), "Top.\n```md\n### Working notes\n```\nShould I go ahead?\n");
-	assert.equal(withoutWorkingNotes("No notes here."), "No notes here.");
+test("planSignal: the whole reply is judged; a findings report with no ask never reads like a plan", () => {
+	// The reply shape: a short summary, then the full report (findings as a list and a table), then where it looked.
+	const report = [
+		"The export drops rows when a session has a fork; nothing changed yet.",
+		"",
+		"## Findings",
+		"- `server/export.ts` skips entries after the fork point (read, line 88).",
+		"- Does the TUI export keep them? Yes: it walks the whole tree.",
+		"- The open questions in al_2 are all decided, so none of this is blocked.",
+		"",
+		"| Case | Rows | Expected |",
+		"|---|---|---|",
+		"| no fork | 12 | 12 |",
+		"| one fork | 7 | 12 |",
+		"",
+		"Looked in: server/export.ts, the export tests.",
+	].join("\n");
+	assert.equal(planSignal(report), null);
+	assert.equal(planSignal(`${report}\n\nAlso changes: none`), null, "with the spec mode's closing line");
+	// An old reply's `### Working notes` heading is ordinary text: what follows it is the reply's end.
+	assert.equal(planSignal("Done: the export works.\n\n### Working notes\nRead a.ts. Ran the tests."), null);
+	assert.equal(planSignal("Done.\n\n### Working notes\nOpen questions: which format do you prefer? Should I go ahead?"), "asks-decision", "an ask after the heading is the reply's end, no longer hidden");
+	assert.equal(planSignal("Done.\n\n### Working notes\n## Alignment: Export\n- q1"), "markdown-alignment", "so is an old alignment block after it");
+	// A plan that asks reads like one, whether the ask closes the reply or sits in its summary above the report.
+	assert.equal(planSignal(`${report.replace("Looked in: server/export.ts, the export tests.", "Plan:\n- a\n- b")}\n\nShould I go ahead?`), "asks-decision", "an ask at the end");
+	const summaryAsks = report.replace("nothing changed yet.", "I'd walk the whole tree instead. Should I go ahead?");
+	assert.equal(planSignal(summaryAsks), "asks-decision", "an ask in the summary");
+	assert.equal(planSignal(report.replace("nothing changed yet.", "which do you prefer for the fix, JSONL or CSV?")), "asks-decision", "a choice in the summary");
+	assert.equal(planSignal(report.replace("nothing changed yet.", "which do you prefer for the fix, JSONL or CSV?"), { userAsked: true }), null, "unless it answers the user's own question");
+	assert.equal(planSignal(report.replace("nothing changed yet.", "the fix is on `feat/x`. Want me to merge it?")), null, "a merge confirmation in the summary");
+	// An old reply's heading sits below its ask: judged whole, the ask is the summary's.
+	assert.equal(planSignal("Plan:\n- a\n- b\n\nShould I go ahead?\n\n### Working notes\nRead the code. Nothing else."), null, "the plan's ask is neither the first nor the last paragraph");
+	assert.equal(planSignal("Should I go ahead with the plan below?\n\n### Working notes\nRead the code. Nothing else."), "asks-decision", "an ask in its first paragraph");
 });
 
 test("align's arguments: ops written as JSON text read as the list they mean; anything else is left for the schema check", () => {

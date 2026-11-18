@@ -1636,19 +1636,6 @@ const RUN_CONFIRM = /\b(?:merge|merging|push|release|restart|deploy|commit|rebas
 /** A leftover alignment block in the old markdown shape: its `## Alignment: <title>` anchor, colon and all. */
 const MARKDOWN_ALIGNMENT = /^\s*#{1,4}\s+alignment:\s*\S/im;
 const LIST_ITEM = /^\s*(?:\d+[.)]|[-*•])\s+\S/;
-/** The reply's working-notes fold (§chat.alignment/reply): a line reading exactly `### Working notes`, any case. */
-const WORKING_NOTES = /^### working notes[ \t]*$/im;
-
-/**
- * A reply without its working notes: everything from the first `### Working notes` line outside a code
- * fence to the end is dropped (§chat.alignment/reply), so what the user must read is what is judged.
- */
-export function withoutWorkingNotes(reply: string): string {
-	const masked = reply.replace(FENCED, (fence) => fence.replace(/[^\n]/g, " "));
-	const at = masked.search(WORKING_NOTES);
-	return at < 0 ? reply : reply.slice(0, at);
-}
-
 /** What the nudge knows about the run beyond its reply. */
 export interface PlanContext {
 	/** The user's prompt that started the run was itself a question: options offered back answer it. */
@@ -1701,16 +1688,18 @@ function questionList(body: string): boolean {
  *   questions"), a go-ahead ("should I go ahead", "take my recommendations") or a choice ("which do
  *   you prefer", unless the user's own prompt asked a question and the options answer it) — never a
  *   merge, push or restart confirmation;
+ * - a first paragraph (the reply's summary, which a full report may follow) with such a question;
  * - a list of two or more items with such words anywhere, closed by a go-ahead ask ("Go?", or one
  *   of the above);
  * - or, wherever it sits, a labelled list of questions (questionList).
- * The reply's working notes (withoutWorkingNotes), code fences and the spec mode's "Also changes"
- * line are ignored. Calibrated offline against real
+ * The whole reply is judged (a `### Working notes` heading is ordinary text); code fences and the
+ * spec mode's "Also changes" line are ignored. Findings, as a list or table, with no decision put to
+ * the user never count. Calibrated offline against real
  * sessions (align.test.ts pins the shapes, false positives included).
  */
 export function planSignal(reply: string, context: PlanContext = {}): "markdown-alignment" | "question-list" | "asks-decision" | "list-then-decision" | null {
 	if (typeof reply !== "string") return null;
-	const body = withoutWorkingNotes(reply).replace(FENCED, " ").replace(SPEC_TRAILER, "").trim();
+	const body = reply.replace(FENCED, " ").replace(SPEC_TRAILER, "").trim();
 	if (MARKDOWN_ALIGNMENT.test(body)) return "markdown-alignment";
 	const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
 	const last = paragraphs[paragraphs.length - 1] ?? "";
@@ -1720,6 +1709,7 @@ export function planSignal(reply: string, context: PlanContext = {}): "markdown-
 		const anyDecisionWords = LABEL_ASK.test(body) || APPROVAL_ASK.test(body) || CHOICE_ASK.test(body);
 		if (items >= 2 && anyDecisionWords && BARE_GO.test(last) && !questionsOf(last).some((q) => RUN_CONFIRM.test(q))) return "list-then-decision";
 	}
+	if (paragraphs.length > 1 && decisionAsk(paragraphs[0]!, context)) return "asks-decision";
 	return questionList(body) ? "question-list" : null;
 }
 

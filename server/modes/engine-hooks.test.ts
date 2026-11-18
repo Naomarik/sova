@@ -166,8 +166,11 @@ test("settle nudge, Careful: with the change-request mark (or any align op but g
   assert.equal(nudgedBy(await host.run("explain playbooks", [], ASKS)), false, "the mark ends with its run");
   // A refused create still marks the run (refused or not); it recorded nothing, so the plan is nudged.
   assert.equal(nudgedBy(await host.run("add an export", [{ ops: [{ op: "create" }] }], ASKS)), true);
-  // The plan just above its working notes is the reply's end.
-  assert.equal(nudgedBy(await host.run("add an export", [{ ops: [{ op: "change_request" }] }], "Plan:\n- a\n- b\n\nShould I go ahead?\n\n### Working notes\nRead the code. Nothing else.")), true);
+  // The whole reply is judged: a summary that asks, above its full report, is nudged; a findings
+  // report that asks nothing is not.
+  const report = "## Findings\n- the route is missing\n- the button is wired\n\nLooked in: server/export.ts.";
+  assert.equal(nudgedBy(await host.run("add an export", [{ ops: [{ op: "change_request" }] }], `I'd add the route. Should I go ahead?\n\n${report}`)), true, "an ask in the summary");
+  assert.equal(nudgedBy(await host.run("add an export", [{ ops: [{ op: "change_request" }] }], `The export needs a route; nothing changed.\n\n${report}`)), false, "findings with no ask");
 });
 
 // ── Project minor modes (§chat.mode-menu/project-modes) ─────────────────────────────────────────

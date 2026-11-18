@@ -213,6 +213,12 @@ export function keepHearingRequests(agent: { streamFunction: PiStreamFn }, repla
 }
 
 /** One pi event as the HarnessEvent it is (exactly one per event). */
+/** A pi tool event's call id and tool name, when it names them. */
+const toolCallOf = (event: { [k: string]: unknown }): { callId?: string; name?: string } => ({
+  ...(typeof event.toolCallId === "string" && event.toolCallId ? { callId: event.toolCallId } : {}),
+  ...(typeof event.toolName === "string" && event.toolName ? { name: event.toolName } : {}),
+});
+
 export function harnessEventOf(event: { type: string; [k: string]: any }): HarnessEvent {
   const frame = () => v1Frame(event);
   const type = NAMES[event.type] ?? "other";
@@ -249,10 +255,11 @@ export function harnessEventOf(event: { type: string; [k: string]: any }): Harne
       // A server's tool: its row reads the server and the tool (§app.mcp/in-a-chat).
       const mcp = typeof event.toolName === "string" ? mcpToolOf(event.toolName) : undefined;
       if (mcp) event.mcp = mcp;
-      return typeof event.parentToolCallId === "string" ? { type, frame, nested: true } : { type, frame };
+      return { type, frame, ...toolCallOf(event), ...(typeof event.parentToolCallId === "string" ? { nested: true } : {}) };
     }
-    case "tool.update":
     case "tool.end":
+      return { type, frame, ...toolCallOf(event), ...(typeof event.parentToolCallId === "string" ? { nested: true } : {}) };
+    case "tool.update":
       return typeof event.parentToolCallId === "string" ? { type, frame, nested: true } : { type, frame };
     default:
       return { type, frame } as HarnessEvent;

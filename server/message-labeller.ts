@@ -181,7 +181,7 @@ export class MessageLabeller {
       if (this.barred(s)) return false;
       const answer = r.answers.label as Extract<Answer, { type: "choice" }> | undefined;
       if (answer?.type !== "choice" || !(MESSAGE_LABELS as readonly string[]).includes(answer.choice)) throw new DecisionError("malformed-answer", "no label in the answer");
-      store.label(session, m.id, { ...storedLabel(answer), provider: r.provider, model: r.model, at: this.now() });
+      store.label(session, m.id, { ...storedLabel(answer), provider: r.provider, model: r.model, at: this.now(), sentAt: m.sentAt });
       this.retry.delete(key);
       return true;
     } catch (err) {

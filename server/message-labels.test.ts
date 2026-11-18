@@ -360,6 +360,24 @@ describe("the chain and catching up", () => {
     }
   });
 
+  test("a label keeps its message's send time beside when it was labelled: a press for one that waited; an older line has none", async () => {
+    const provider = createFakeProvider({ id: "jev", reply: answer("asking") });
+    const s = sessionFile([user("m1", null, "first", T0 + 1000), user("m2", "m1", "second", T0 + 9000)]);
+    const store = freshStore();
+    store.noteSwitch(true, T0);
+    store.press(s.id, "m2", T0 + 5000);
+    assert.equal(await labeller({ s, store, provider: () => provider, now: () => T0 + 60_000 }).tick(), 2);
+    const labels = store.read(s.id).labels;
+    assert.deepEqual([labels.get("m1")?.sentAt, labels.get("m1")?.at], [T0 + 1000, T0 + 60_000]);
+    assert.equal(labels.get("m2")?.sentAt, T0 + 5000, "a message that waited in the queue: its press");
+    const line = readFileSync(join(store.dir, `${s.id}.jsonl`), "utf8").split("\n").find((l) => l.includes('"m1"') && l.includes("label"))!;
+    assert.equal(JSON.parse(line).sentAt, T0 + 1000);
+    // A label stored before send times were kept reads with none.
+    const old = freshStore();
+    old.label("s-old", "m", { label: "asking", confidence: 1, provider: "jev", model: "j", at: T0 });
+    assert.equal("sentAt" in old.read("s-old").labels.get("m")!, false);
+  });
+
   test("a check runs as the session's own one-shot, for the usage ledger", async () => {
     const seen: unknown[] = [];
     const provider = createFakeProvider({

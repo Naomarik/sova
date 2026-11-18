@@ -12,11 +12,17 @@
 //   command  a shell command per case; {model} {effort} {promptFile} {case} {arm} are filled in, and
 //            its stdout is the reply (or JSON {reply, tools, cost})
 //   rescore  no run: the results of round `from` (arm `fromArm`, default the same id) are copied in
+//
+// A round refuses to start (exit 3, naming the arm) when a test chat could read the subject's record:
+// an arm whose cwd or worktree still holds .sova/ab/, or that runs inside the campaign's own worktree,
+// where the record is written (references/arms.md). A prediction naming an id that isn't a case, or a
+// sealed case, stops it the same way.
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { args, campaign, die, listDir, modelText, pickCases, pool, sleep, slug, sovaClient, writeJson } from "./lib.mjs";
+import { armRefusals, predictionProblems, projectOf } from "./record-lib.mjs";
 
 const { pos, opt } = args();
 if (!pos[0] || opt.round === undefined) die("usage: runner.mjs <campaign> --round <n> [--arms A,B] [--models m@effort,...] [--cases ...] [--parallel 2] [--timeout 300] [--again]", 3);
@@ -28,6 +34,9 @@ for (const a of armIds) if (!allArms[a]) die(`round ${n} has no arm ${a} (arms.j
 const models = K.models(opt.models);
 const cases = pickCases(K.cases(), opt.cases);
 if (!cases.length) die("no cases picked", 3);
+const picked = Object.fromEntries(armIds.map((a) => [a, allArms[a]]));
+const refused = [...armRefusals(picked, { project: projectOf(K.W) }), ...predictionProblems(picked, K.cases())];
+if (refused.length) die(`round ${n} doesn't start:\n${refused.join("\n")}`, 3);
 const parallel = Number(opt.parallel ?? K.c.parallel ?? 2);
 const timeoutMs = 1000 * Number(opt.timeout ?? K.c.timeoutSec ?? 300);
 

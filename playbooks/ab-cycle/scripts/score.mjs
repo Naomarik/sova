@@ -10,10 +10,16 @@
 //
 // A round's best arm is the one with the highest pass rate over every test model, ties going to the
 // cheaper; the baseline arm (master) is never "best". --winner records the main chat's own pick instead.
+//
+// total also sets each candidate arm's prediction (arms.json: problem, why, expectFix, mayBreak) beside
+// what the round did against the arm's base (references/ledger.md, "Predicted beside observed"). It
+// counts and never judges: the best arm is still picked by pass rate, then cost. A prediction naming an
+// id that isn't a case, or a sealed case, stops it (exit 3).
 import { randomBytes } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { args, campaign, die, listDir, readJson, slug, writeJson } from "./lib.mjs";
+import { comparePrediction, findBase, onlySealed, predictionCounts, predictionProblems } from "./record-lib.mjs";
 
 const SUBS = ["check", "blind", "unblind", "total"];
 const { pos, opt } = args();
@@ -133,7 +139,32 @@ function doUnblind() {
 const sum = (xs) => xs.reduce((s, x) => s + x, 0);
 const rate = (p, t) => (t ? Math.round((1000 * p) / t) / 10 : 0);
 
+/** One arm's grades in one round: {model folder: {case: pass}}. */
+function gradesOf(round, arm) {
+  const out = {};
+  for (const m of models) {
+    const dir = join(K.round(round), "grades", arm, slug(m));
+    for (const f of listDir(dir)) if (f.endsWith(".json")) (out[slug(m)] ??= {})[f.slice(0, -5)] = !!readJson(join(dir, f)).pass;
+  }
+  return out;
+}
+
+/** Each candidate arm's prediction beside what it did against its base. A round on the sealed cases compares none. */
+function predictions(scores) {
+  const mine = Object.fromEntries(Object.keys(arms).map((a) => [a, gradesOf(n, a)]));
+  const graded = Object.values(mine).flatMap((g) => Object.values(g).flatMap((x) => Object.keys(x)));
+  if (onlySealed(graded, [...cases.values()])) return;
+  const armsOf = (r) => (r === n ? arms : readJson(join(K.round(r), "arms.json"), {}));
+  for (const [a, arm] of Object.entries(arms)) {
+    if (arm.baseline || !scores.arms[a]) continue;
+    const base = findBase(armsOf, n, arm);
+    scores.arms[a].prediction = comparePrediction({ arm, grades: mine[a], baseGrades: base ? gradesOf(base.round, base.arm) : {}, base, models: models.map(slug) });
+  }
+}
+
 function doTotal() {
+  const wrong = predictionProblems(arms, [...cases.values()]);
+  if (wrong.length) die(`round ${n}: ${wrong.join("\n")}`, 3);
   const scores = { round: n, at: new Date().toISOString(), arms: {} };
   const ungraded = [];
   for (const [a, arm] of Object.entries(arms)) {
@@ -172,13 +203,14 @@ function doTotal() {
   const rivals = Object.entries(scores.arms).filter(([, v]) => !v.baseline && v.all.total);
   rivals.sort(([, x], [, y]) => y.all.rate - x.all.rate || (x.all.cost ?? 0) - (y.all.cost ?? 0));
   scores.best = typeof opt.winner === "string" ? opt.winner : rivals[0]?.[0] ?? null;
+  predictions(scores);
   writeJson(join(K.round(n), "scores.json"), scores);
 
   const row = {
     round: n,
     at: scores.at,
     base: arms[Object.keys(arms).find((a) => !arms[a].baseline) ?? ""]?.base ?? null,
-    arms: Object.fromEntries(Object.entries(scores.arms).map(([a, v]) => [a, { label: v.label, baseline: v.baseline, change: v.change, ref: v.ref, rate: v.all.rate, pass: v.all.pass, total: v.all.total, cost: v.all.cost, perModel: Object.fromEntries(Object.entries(v.models).map(([s, x]) => [s, x.rate])) }])),
+    arms: Object.fromEntries(Object.entries(scores.arms).map(([a, v]) => [a, { label: v.label, baseline: v.baseline, change: v.change, ref: v.ref, rate: v.all.rate, pass: v.all.pass, total: v.all.total, cost: v.all.cost, perModel: Object.fromEntries(Object.entries(v.models).map(([s, x]) => [s, x.rate])), ...(v.prediction ? { prediction: predictionCounts(v.prediction) } : {}) }])),
     best: scores.best,
     ...(typeof opt.note === "string" ? { note: opt.note } : {}),
   };
@@ -187,6 +219,15 @@ function doTotal() {
   rows.sort((x, y) => x.round - y.round);
   writeFileSync(K.ledgerFile, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
   for (const [a, v] of Object.entries(scores.arms)) console.log(`${a} ${v.label}${v.baseline ? " (baseline)" : ""}: ${v.all.pass}/${v.all.total} = ${v.all.rate}%${v.all.cost !== null ? `, $${v.all.cost.toFixed(4)}` : ""}`);
+  for (const [a, v] of Object.entries(scores.arms)) {
+    const p = v.prediction;
+    if (!p) continue;
+    console.log(
+      p.stated
+        ? `${a} predicted vs observed: expected to fix ${p.expectFix.length}: ${p.fixedExpected.n} fixed, ${p.notFixed.n} not; ${p.fixedUnexpected.n} fixed without being expected; at risk ${p.mayBreak.length}: ${p.brokeExpected.n} broken; ${p.brokeUnexpected.n} broken without being expected`
+        : `${a} stated no prediction: ${p.fixedUnexpected.n} fixed, ${p.brokeUnexpected.n} broken`,
+    );
+  }
   console.log(`best: ${scores.best ?? "none"}`);
 }
 

@@ -1548,7 +1548,7 @@ describe("pi contract", () => {
     assert.equal(stopped.cancelled, true);
   });
 
-  test("P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session", async () => {
+  test("P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given, reports a dropped session, and never sends a request given up on while it waited for a token", async () => {
     const { McpSessionExpiredError, StreamableHttpTransport } = await import("@earendil-works/pi-mcp");
     const { piLiteral } = await import("./mcp");
     const url = "http://127.0.0.1:9/mcp";
@@ -1599,6 +1599,28 @@ describe("pi contract", () => {
     assert.equal(heard.length, 1, "the reply came before send resolved");
     assert.equal(asked[0]!.get("x-value"), "!no-such-command ${HOME}");
     await assert.rejects(http.send({ jsonrpc: "2.0", id: 2, method: "tools/call" }), McpSessionExpiredError);
+
+    // A request whose sender gave up while the token was fetched is not dispatched (pi-mcp 1.2.0): AddressServer
+    // passes pi's send options on and reads the McpAbortError by class.
+    const { McpAbortError } = await import("@earendil-works/pi-mcp");
+    let giveToken!: (token: string) => void;
+    const dispatched: string[] = [];
+    const waiting = new StreamableHttpTransport({
+      url,
+      authProvider: { token: () => new Promise<string>((r) => (giveToken = r)) } as never,
+      fetch: async (_input, init) => (dispatched.push(String(init?.body)), new Response(null, { status: 202 })),
+    });
+    await waiting.start();
+    const gaveUp = new AbortController();
+    const late = waiting.send({ jsonrpc: "2.0", id: 3, method: "tools/call" }, { signal: gaveUp.signal });
+    gaveUp.abort();
+    giveToken("token");
+    await assert.rejects(late, McpAbortError, "fixed?: pi-mcp sends a request whose sender gave up, or reports it another way (mcp-http.ts AddressServer.send)");
+    assert.deepEqual(dispatched, [], "nothing went out");
+    const control = waiting.send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    giveToken("token");
+    await control;
+    assert.equal(dispatched.length, 1, "the control: without an abort it is sent");
   });
 
   test("P31 mcp-command-through-api: the factory registers mcp on the API it is handed, so a proxy that drops it leaves no /mcp and the extension's events running", async () => {

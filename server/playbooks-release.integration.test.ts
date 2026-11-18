@@ -44,11 +44,11 @@ test("release-maker: candidates 0, init 0 then 1, check 1 before init and 0 afte
   assert.equal(run(MAKER, r, "check").status, 1, "no settings yet");
   const i = run(MAKER, r, "init", "--bump", "package.json");
   assert.equal(i.status, 0, i.stdout + i.stderr);
-  assert.match(i.stdout, /wrote \.sova\/playbooks\/release\/PLAYBOOK\.md/);
+  assert.match(i.stdout, /wrote \.sova\/playbook-config\/release\/PLAYBOOK\.md/);
   assert.equal(run(MAKER, r, "init").status, 1, "never overwrites");
   const ok = run(MAKER, r, "check");
   assert.equal(ok.status, 0, ok.stdout);
-  assert.match(ok.stdout, /release-maker check: .*: ok — \.sova\/playbooks\/release, tag v\$\{version\}, 4 step\(s\)/);
+  assert.match(ok.stdout, /release-maker check: .*: ok — \.sova\/playbook-config\/release, tag v\$\{version\}, 4 step\(s\)/);
   assert.equal(run(MAKER, r, "fmt", "--check").status, 0);
   assert.equal(run(MAKER, r, "nonsense").status, 2);
   assert.ok(!existsSync(join(r, "RAN-RELEASE")), "no candidate ran");

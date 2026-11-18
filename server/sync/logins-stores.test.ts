@@ -204,6 +204,66 @@ test("H5: pi's own modify of one provider and our write of another, racing, both
   assert.deepEqual(onDisk.zai, keyEntry("sk-new"), "our pushed entry kept");
 });
 
+/** `<dir>/agent/auth.json`, a link to `<dir>/store/shared-auth.json` holding `content`. */
+function linkedAuth(content: unknown): { link: string; target: string } {
+  const dir = scratch();
+  const target = join(dir, "store", "shared-auth.json");
+  const link = join(dir, "agent", "auth.json");
+  mkdirSync(join(dir, "store"));
+  mkdirSync(join(dir, "agent"));
+  writeFileSync(target, JSON.stringify(content, null, 2), { mode: 0o600 });
+  symlinkSync(target, link);
+  return { link, target };
+}
+
+test("pi: a linked auth.json is written under both locks, the link's (pi through 1.5.0) and its target's (pi 1.5.1+)", async () => {
+  const { link, target } = linkedAuth({});
+  const write = () => new PiAuthStore(link, { lockDeadlineMs: 200 }).transact(() => ({ result: 0, changes: new Map([["zai", keyEntry("sk")]]) }));
+  for (const [held, who] of [[link, "the link's lock, as pi through 1.5.0 and the terminal's pi take it"], [target, "the target's lock, as pi 1.5.1+ takes it"]] as const) {
+    const release = await lockfile.lock(held, { realpath: false, stale: 30_000 });
+    await assert.rejects(write(), LockBusyError, `held off by ${who}`);
+    assert.equal(readFileSync(target, "utf8"), "{}", "and nothing was written");
+    await release();
+  }
+  await write();
+  assert.deepEqual(JSON.parse(readFileSync(link, "utf8")), { zai: keyEntry("sk") }, "the control: with neither held, it writes");
+});
+
+test("pi: the pinned pi's own modify through a linked auth.json and our write, racing, both survive", async () => {
+  const { link } = linkedAuth({ "openai-codex": oauthEntry("one"), zai: keyEntry("sk-old") });
+  const pi = AuthStorage.create(link);
+  let piInside = false;
+  let finishRefresh!: () => void;
+  const refreshDone = new Promise<void>((r) => (finishRefresh = r));
+  const piModify = pi.modify("openai-codex", async () => {
+    piInside = true;
+    await refreshDone;
+    return oauthEntry("two");
+  });
+  await until("pi inside its lock", () => piInside);
+  const refusedBefore = lockRefusals;
+  const ours = new PiAuthStore(link).transact(() => ({ result: undefined, changes: new Map([["zai", keyEntry("sk-new")]]) }));
+  await until("our write refused pi's lock", () => lockRefusals > refusedBefore);
+  finishRefresh();
+  await Promise.all([piModify, ours]);
+  const onDisk = JSON.parse(readFileSync(link, "utf8"));
+  assert.deepEqual(onDisk["openai-codex"], oauthEntry("two"), "pi's refresh kept");
+  assert.deepEqual(onDisk.zai, keyEntry("sk-new"), "our pushed entry kept");
+});
+
+test("pi: a regular auth.json under a linked folder is one lock, taken once", async () => {
+  const dir = scratch();
+  mkdirSync(join(dir, "real"));
+  symlinkSync(join(dir, "real"), join(dir, "agent"));
+  const path = join(dir, "agent", "auth.json");
+  writeFileSync(path, "{}", { mode: 0o600 });
+  await new PiAuthStore(path, { lockDeadlineMs: 200 }).transact(() => ({ result: 0, changes: new Map([["zai", keyEntry("sk")]]) }));
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "real", "auth.json"), "utf8")), { zai: keyEntry("sk") });
+  const release = await lockfile.lock(join(dir, "real", "auth.json"), { realpath: false, stale: 30_000 });
+  await assert.rejects(new PiAuthStore(path, { lockDeadlineMs: 200 }).transact(() => ({ result: 0 })), LockBusyError, "the control: the folder's two names are one lock");
+  await release();
+});
+
 test("pi observes our rename-based write at its next read (no restart)", async () => {
   const dir = scratch();
   const path = join(dir, "auth.json");

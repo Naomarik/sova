@@ -7,11 +7,14 @@ import type { EntryKind, StoreId } from "./logins-merge";
 /**
  * The two credential stores login sync reads and writes, each through its consumer's OWN lock:
  *
- * - pi `auth.json`: proper-lockfile's `auth.json.lock` directory, exactly as pi 0.87.1's
- *   `FileAuthStorageBackend` takes it (`realpath: false`). pi's sync path waits with `stale: 10s`
- *   and its async path holds with `stale: 30s` (so its mtime may lag 15s during a refresh, which
- *   has a 15s network timeout): we wait with 30s so we never steal a refresh in flight, and hold
- *   with a 2s update so pi's 10s waiter never steals ours.
+ * - pi `auth.json`: proper-lockfile's `<file>.lock` directory, as pi's `FileAuthStorageBackend`
+ *   takes it. Which file depends on the pi: through 1.5.0 (and the terminal's 0.87) the path as
+ *   given (`realpath: false`), from 1.5.1 the file it resolves to (#11655). The two differ only
+ *   when `auth.json` is itself a link to another file, and then we take both, the given path's
+ *   first, so a chat on either pi is held off (`PiAuthStore.lockSpecs`). pi's sync path waits with
+ *   `stale: 10s` and its async path holds with `stale: 30s` (so its mtime may lag 15s during a
+ *   refresh, which has a 15s network timeout): we wait with 30s so we never steal a refresh in
+ *   flight, and hold with a 2s update so pi's 10s waiter never steals ours.
  * - Claude Code `.credentials.json`: `<claudeDir>/.oauth_refresh.lock` then the legacy
  *   `<realpath claudeDir>.lock`, in Claude Code 2.1.282's order, both `stale: 60s, update: 5s`.
  *
@@ -296,6 +299,17 @@ abstract class FileStore implements CredentialStore {
   }
 }
 
+/** The directory proper-lockfile makes for `file` (`<file>.lock`), by the real folder it lands in. */
+function lockDirOf(file: string): string {
+  let dir = dirname(file);
+  try {
+    dir = realpathSync(dir);
+  } catch {
+    // An unreadable folder: compared as written.
+  }
+  return join(dir, `${basename(file)}.lock`);
+}
+
 /** pi's `auth.json`: many providers, oauth + api_key, per pi 0.87.1's `ReadOnlyAuthStorage.load` rules. */
 export class PiAuthStore extends FileStore {
   readonly id = "pi" as const;
@@ -307,8 +321,21 @@ export class PiAuthStore extends FileStore {
   constructor(path: string, options?: FileStoreOptions) {
     super(path, options);
   }
+  /**
+   * The given path's lock (pi through 1.5.0, the terminal's pi) and, where `auth.json` is a link to
+   * another file, that file's too (pi 1.5.1+ locks the file it resolves to), in that order. They are
+   * one lock unless the two name different lock directories: a linked folder above a regular file
+   * resolves to the same directory entry, and taking it twice would wait on ourselves.
+   */
   protected lockSpecs(): LockSpec[] {
-    return [{ file: this.path, stale: 30_000, update: 2_000 }];
+    const given: LockSpec = { file: this.path, stale: 30_000, update: 2_000 };
+    let real: string;
+    try {
+      real = realpathSync(this.path);
+    } catch {
+      return [given]; // no file yet: nothing to resolve, and pi creates it before it locks
+    }
+    return lockDirOf(real) === lockDirOf(this.path) ? [given] : [given, { ...given, file: real }];
   }
   protected classify(data: Record<string, unknown>) {
     const entries = new Map<string, StoreEntry>();

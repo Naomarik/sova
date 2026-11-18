@@ -788,7 +788,7 @@ describe("standing notes and the extra prompt: fixed at opening, live through th
     writeOverseerSettings({ ...defaultSettings() });
   });
 
-  test("a run an extension's message starts keeps the prompt; the change reaches the next run with a note", async () => {
+  test("a run an extension's message starts keeps the prompt and carries the run note, so a change reaches it there; the next run doesn't repeat it", async () => {
     const chat = await overseerChat();
     await userSends(chat, "before");
     const prompt = systemOf(contexts.at(-1));
@@ -801,8 +801,13 @@ describe("standing notes and the extra prompt: fixed at opening, live through th
     assert.equal(calls.length, 2);
     assert.equal(systemOf(calls[1]), prompt);
     assert.doesNotMatch(piSession(chat).systemPrompt, /NOTE-GAMMA/);
+    // pi runs the start-of-run step on such a run too (1.2.0), so it has a run note like any other.
+    assert.match(lastNote(calls[0]), /\[changed\]/, "the run the extension's message started is told what changed");
+    assert.match(lastNote(calls[0]), /NOTE-GAMMA/);
+    assert.equal(lastNote(calls[1]), lastNote(calls[0]), "once for the run, not again at its next request");
     await userSends(chat, "after");
-    assert.match(lastNote(contexts.at(-1)), /NOTE-GAMMA/);
+    assert.notEqual(lastNote(contexts.at(-1)), lastNote(calls[0]), "the control: the user's run has a note of its own");
+    assert.doesNotMatch(lastNote(contexts.at(-1)), /\[changed\]/, "and it was told already: nothing changed since");
     writeNotes("");
   });
 

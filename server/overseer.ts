@@ -1126,12 +1126,14 @@ export const buildOverseerTools = () => overseerTools(host, limits);
  * ideas, todos, caps and extra instructions are re-read at every run, and what changed since the
  * Overseer was last told goes in that run's note (`noteParts`), never into this prompt.
  *
- * Two places need it. A run started by a message (the user's, a brief, a wake-up) builds its prompt
- * from `before_agent_start`, which sets it. A run started by an extension's message
- * (`sendMessage(…, {triggerTurn:true})`) skips that hook and builds later requests from the
- * session's base options, which the SDK builds from the loader's parts: `parts` is that very array,
- * refilled in place at every run's start, and the chat has the session rebuild them when the text
- * changed (SpecialLoadoutResult.promptAtRunStart).
+ * Two places need it. Every run builds its prompt from `before_agent_start`, which sets it: one a
+ * message starts (the user's, a brief, a wake-up) and, from pi 1.2.0, one an extension's message
+ * starts (`sendMessage(…, {triggerTurn:true})`: a worker reporting back, the /team plan, explain),
+ * which so carries a run note like any other. What no `before_agent_start`
+ * built (a run the queue's wake starts, a read between runs) comes from the session's base options,
+ * which the SDK builds from the loader's parts: `parts` is that very array, refilled in place at
+ * every run's start, and the chat has the session rebuild them when the text changed
+ * (SpecialLoadoutResult.promptAtRunStart).
  */
 class LivePrompt {
   /** The array the resource loader holds (the user's APPEND_SYSTEM.md parts, then ours). */

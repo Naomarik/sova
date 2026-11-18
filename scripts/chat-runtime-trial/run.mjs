@@ -293,7 +293,7 @@ async function boot(o = {}) {
     const s = server({ tag: `${tag}-${++n}`, env, mode, log, root: o.root, liveLike });
     s.up();
     try {
-      await healthy(url, undefined, () => listenFailed(log));
+      await healthy(url, undefined, () => listenFailed(log) ?? s.gone?.());
     } catch (err) {
       const why = listenFailed(log);
       if (!why || attempt >= 3 || (fixedPort && !o.agent)) throw err;
@@ -325,7 +325,7 @@ async function restart(changes) {
   const before = srv.pid();
   await srv.restart(changes);
   await sleep(1000);
-  await healthy(base);
+  await healthy(base, undefined, () => srv.gone?.() ?? null);
   R.note(`server restarted: pid ${before} → ${srv.pid()}${changes ? ` (${JSON.stringify(changes)})` : ""}`);
 }
 /** A kept background job's process (§app.background-jobs/keeping): what a Sova stop leaves running. */

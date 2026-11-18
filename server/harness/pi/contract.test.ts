@@ -1360,6 +1360,57 @@ describe("pi contract", () => {
   };
   const onlyConfig = { errors: [], autoEnableCodemode: false, servers: [{ name: "s", source: "sova", scope: "global", config: { command: "no-such-program", exposure: "direct" } }] };
 
+  test("P47 no-idle-warming: pi warms on after a run settles by default, and with the getter answering streaming for idle it stops at the settle, off stays off, and settings.json holds no cacheWarming", async () => {
+    // A provider whose model declares a cache lifetime (12 s, so the next warm falls inside pi's 30-minute idle
+    // limit), so pi has something to warm; the stream function is pi's own. Nothing here waits for a timer.
+    const usage = { input: 10, output: 1, cacheRead: 500_000, cacheWrite: 0, totalTokens: 500_011, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+    let providerCalls = 0;
+    const streamSimple = (model: any) => {
+      providerCalls++;
+      const stream = pi.ai.createAssistantMessageEventStream();
+      const message = { role: "assistant", content: [{ type: "text", text: "ok" }], api: model.api, provider: model.provider, model: model.id, usage, stopReason: "stop", timestamp: Date.now() };
+      queueMicrotask(() => (stream.push({ type: "start", partial: message }), stream.push({ type: "done", reason: "stop", message }), stream.end(message)));
+      return stream;
+    };
+    /** One turn of a session over `settingsManager`: the warmer's status right after the run settled. */
+    const afterOneTurn = async (name: string, settingsManager: any) => {
+      const runtime = await ModelRuntime.create({ authPath: join(dir, `p47-${name}-auth.json`), modelsPath: null, refreshOnCreate: false });
+      runtime.registerProvider("warm", {
+        name: "Warm", baseUrl: "http://127.0.0.1:9", apiKey: "stub", api: "warm-api", streamSimple,
+        models: [{ id: "cached", name: "cached", input: ["text"], reasoning: false, contextWindow: 1_000_000, maxTokens: 8000, cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 }, promptCache: { short: 12, long: 3600 } }],
+      } as never);
+      const cwd = join(dir, `p47-${name}`);
+      mkdirSync(cwd, { recursive: true });
+      const resourceLoader = new DefaultResourceLoader({ cwd, agentDir: dir, settingsManager });
+      await resourceLoader.reload();
+      const { session } = await createAgentSession({ cwd, agentDir: dir, modelRuntime: runtime, model: runtime.getModel("warm", "cached"), sessionManager: SessionManager.inMemory(cwd), settingsManager, resourceLoader, noTools: "builtin" as const });
+      await session.bindExtensions({});
+      const before = providerCalls;
+      await session.prompt("hello");
+      const status = session.cacheWarmingStatus;
+      const out = { state: status?.state, reason: status?.reason, calls: providerCalls - before, usage: session.sessionManager.getEntries().filter((e: any) => e.type === "usage").length };
+      session.dispose();
+      return out;
+    };
+    const { warmOnlyWhileStreaming } = await import("./cache-warming.ts");
+    const piDefault = SettingsManager.inMemory({ retry: { enabled: false } } as never);
+    assert.equal(piDefault.getCacheWarmingMode(), "idle", "fixed?: pi's default is no longer idle warming; warmOnlyWhileStreaming may go");
+    assert.equal((await afterOneTurn("default", piDefault)).state, "scheduled", "the control: on pi's default a settled chat still has a warm scheduled");
+    // A settings file pi really reads (and would write), in an agent dir of its own.
+    const agentDir = join(dir, "p47-agent");
+    mkdirSync(agentDir, { recursive: true });
+    const settingsFile = join(agentDir, "settings.json");
+    for (const [setting, mode, reason] of [[undefined, "streaming", "agent run settled"], ["idle", "streaming", "agent run settled"], ["streaming", "streaming", "agent run settled"], ["off", "off", "cache warming disabled"]] as const) {
+      writeFileSync(settingsFile, `${JSON.stringify({ ...(setting ? { cacheWarming: setting } : {}), retry: { enabled: false } }, null, 2)}\n`);
+      const before = readFileSync(settingsFile, "utf8");
+      const settingsManager = SettingsManager.create(dir, agentDir);
+      warmOnlyWhileStreaming(settingsManager);
+      assert.equal(settingsManager.getCacheWarmingMode(), mode, `cacheWarming ${setting ?? "unset"}`);
+      assert.deepEqual(await afterOneTurn(`set-${setting ?? "unset"}`, settingsManager), { state: "inactive", reason, calls: 1, usage: 0 }, `cacheWarming ${setting ?? "unset"}: nothing is scheduled once the run settled, and only the reply was requested`);
+      assert.equal(readFileSync(settingsFile, "utf8"), before, "settings.json is untouched");
+    }
+  });
+
   test("P30 mcp-snapshot-transport: a transport answering initialize and tools/list connects at session_start; pi declares its tools in the first request, reads no mcp.json and sends a call to send", async () => {
     const sent: { method?: string }[] = [];
     let built = 0;

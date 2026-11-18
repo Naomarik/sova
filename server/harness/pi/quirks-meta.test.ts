@@ -55,7 +55,7 @@ const DETECTORS: [string, RegExp][] = [
   ["method-table cast", /as unknown as Record<"(?:prompt|steer|followUp)"/],
   [
     "SDK member assignment",
-    /(?<!\bthis)\.(?:_[A-Za-z]\w*|append(?:Compaction|ModelChange|ThinkingLevelChange|Message|CustomEntry|CustomMessageEntry|LabelChange|SessionInfo|Usage|ContextEdit)|streamFunction|getApiKey|hasConfiguredAuth|transformContext|getSteeringMode|getFollowUpMode)\s*=(?![=>])/,
+    /(?<!\bthis)\.(?:_[A-Za-z]\w*|append(?:Compaction|ModelChange|ThinkingLevelChange|Message|CustomEntry|CustomMessageEntry|LabelChange|SessionInfo|Usage|ContextEdit)|streamFunction|getApiKey|hasConfiguredAuth|transformContext|getSteeringMode|getFollowUpMode|getCacheWarmingMode)\s*=(?![=>])/,
   ],
 ];
 

@@ -651,6 +651,20 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi exports its extension-entry and override rules, or resolves an extension it was not given as if it were linked",
   },
   {
+    id: "P47",
+    name: "no-idle-warming",
+    kind: "monkey-patch",
+    relies:
+      "pi's CacheWarmer asks settingsManager.getCacheWarmingMode() at each decision (createAgentSession hands it the getter), and in \"streaming\" mode it stops when the run settles, while \"idle\" (pi's default from 1.5.1) keeps re-sending the request's prefix for up to 30 minutes. Replacing that getter on a runtime's own settings object to answer \"streaming\" for \"idle\" keeps a Sova chat on warming only while a reply streams, leaves \"off\" off, and writes nothing to settings.json, which the terminal pi reads.",
+    pi: ["SettingsManager.getCacheWarmingMode", "CacheWarmer.onAgentSettled", "AgentSession.cacheWarmingStatus", "createAgentSession", "SETTINGS_DEFAULTS.cacheWarming"],
+    where: [
+      { file: "server/harness/pi/cache-warming.ts", symbol: "warmOnlyWhileStreaming" },
+      { file: OPEN, symbol: "servicesForCwd" },
+    ],
+    canary: "P47 no-idle-warming: pi warms on after a run settles by default, and with the getter answering streaming for idle it stops at the settle, off stays off, and settings.json holds no cacheWarming",
+    retireWhen: "pi takes a cache-warming mode per session, or Sova decides idle warming with a rule of its own (never for a worker)",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

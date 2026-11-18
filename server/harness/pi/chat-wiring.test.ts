@@ -6,11 +6,12 @@
 // - the stream guard hears each event before the chat's own listener does;
 // - a worker's keyed send keeps its key to the message the model gets, in pi's settle window too, and one
 //   Stop drops is told as never run (§app.chat-processes/worker-instructions);
-// - steers sent mid-turn land together: each its own message (with its key), all before the one reply.
+// - steers sent mid-turn land together: each its own message (with its key), all before the one reply;
+// - a chat's own settings object answers "streaming" for pi's default cache warming (P47), settings.json untouched.
 // Real pi with a ScriptedModel (testing/scripted-model.ts), one throwaway PI_CODING_AGENT_DIR; ~/.pi is never
 // read or written and no real model is called.
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -203,6 +204,21 @@ describe("an idle composer steer starts a turn exactly as an idle prompt does", 
     const prompt = await twoTyped("prompt");
     assert.deepEqual(prompt, { acks: [["c1", false], ["c2", true]], starting: true, attended: true, errors: [], reached: ["first", "second"] });
     assert.deepEqual(await twoTyped("steer"), prompt);
+  });
+});
+
+describe("a chat warms its prompt cache only while a reply streams (P47 no-idle-warming)", () => {
+  test("a chat and a worker opened on pi's default read \"streaming\", ask pi for the same, and leave settings.json as it was", async () => {
+    const settingsFile = join(agentDir, "settings.json");
+    const before = readFileSync(settingsFile, "utf8");
+    assert.equal("cacheWarming" in JSON.parse(before), false, "the control: nothing is set, so pi's own default (idle warming) would apply");
+    for (const worker of [false, true]) {
+      const { chat } = await openChat(undefined, { worker });
+      const session = piSession(chat) as unknown as { settingsManager: { getCacheWarmingMode(): string }; cacheWarmingStatus?: { state: string } };
+      assert.equal(session.settingsManager.getCacheWarmingMode(), "streaming", worker ? "a worker" : "a chat");
+      assert.notEqual(session.cacheWarmingStatus?.state, "scheduled", "nothing is scheduled on an idle chat");
+    }
+    assert.equal(readFileSync(settingsFile, "utf8"), before, "settings.json is untouched");
   });
 });
 

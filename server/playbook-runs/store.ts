@@ -29,6 +29,8 @@ export interface PlaybookRunRecord {
   shownIn?: { id: string; path: string };
   /** Where its card stands in the chat's conversation, set when it was opened and never changed. */
   anchor?: PlaybookRunAnchor;
+  /** Waiting on the alignment its playbook requires first (align-first.ts), since when; no card is drawn meanwhile. */
+  aligning?: { since: string };
   /** Words typed after /<id>. */
   text?: string;
   revision: number;

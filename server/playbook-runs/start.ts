@@ -63,7 +63,7 @@ export interface StartHost {
   env(spec: PlaybookSpec, info: PlaybookInfo, chatPath: string | undefined, cwd: string): Promise<CardEnv>;
 }
 
-const realHost: StartHost = {
+export const realHost: StartHost = {
   chat: (path) => acquireChatHandle(path),
   prompt: async (path, text) => {
     const r = await promptSession(path, text);

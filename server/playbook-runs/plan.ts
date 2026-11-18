@@ -241,7 +241,8 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv):
     ...(r.started ? { started: r.started } : {}),
     ...(r.startError ? { startError: r.startError } : {}),
   };
-  view.startBlocked = blocked(view, spec, edits, env);
+  view.startBlocked = r.aligning ? "Waiting for the alignment to be decided in the chat." : blocked(view, spec, edits, env);
+  if (r.aligning) view.aligning = true;
   return { view, resolved };
 }
 

@@ -15,9 +15,11 @@ import { answersKey, firstValues, readAnswers, saveAnswers } from "./answers";
 import { loadPlaybook, refOf } from "./env";
 import type { ContentsSection } from "./message";
 import { effectiveEdits } from "./plan";
-import { projectKeyOf, RunRefused, startRun } from "./start";
+import { projectKeyOf, realHost, RunRefused, startRun } from "./start";
 import { changeRun, createRun, draftsOf, oneRunRefusal, openDraftOf, runById, runHolding, runsOfChat } from "./store";
 import { runView } from "./view";
+import { abandonAlignment, beginAlignment, settleChat, type AlignFirstHost } from "./align-first";
+import { onAgentSettled } from "../chat-manager";
 
 const SOURCES = ["sova", "user", "project"] as const;
 const MAX_TEXT = 20_000;
@@ -143,10 +145,15 @@ const fail = (c: Context, err: unknown) => {
 
 export interface PlaybookRunRouteDeps {
   contents: () => ContentsSection[];
+  /** Tests only: a stand-in for the chat an alignment-first playbook asks (align-first.ts). */
+  alignHost?: AlignFirstHost;
 }
 
 export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): void {
   const request = statingOwnNumber(app);
+  const alignHost: AlignFirstHost = deps.alignHost ?? realHost;
+  // A card waiting on an alignment is looked at whenever its chat's turn settles: decided, it's drawn.
+  if (!deps.alignHost) onAgentSettled((path) => void settleChat(idOf(path), alignHost));
 
   // Open a card: this chat's open draft of that playbook, or a new draft in place of its draft of another one;
   // a chat a run holds opens none (one playbook per chat).
@@ -173,11 +180,15 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
     if (holding) return c.json({ error: oneRunRefusal(holding), holding: holding.id }, 409);
     const open = shownIn ? openDraftOf(shownIn.id, ref) : undefined;
     if (open) {
-      if (text !== undefined && text !== open.text)
-        changeRun(open.id, (r) => {
+      // Opened again, it comes to where the person is now, as an alignment card shows at its newest; one still
+      // waiting on its alignment isn't drawn yet, so it has no place to move.
+      changeRun(open.id, (r) => {
+        if (text !== undefined && text !== r.text) {
           r.text = text;
           r.revision++;
-        });
+        }
+        if (!r.aligning) r.anchor = { ...(typeof b.after === "string" ? { after: b.after } : {}), at: new Date().toISOString() };
+      });
       return c.json(await runView(runById(open.id)!));
     }
     const t0 = Date.now();
@@ -192,9 +203,20 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
         x.closed = true;
       });
     const anchor = { ...(typeof b.after === "string" ? { after: b.after } : {}), at: new Date().toISOString() };
-    const run = createRun({ playbook: refOf(loaded.info), cwd, anchor, ...(shownIn ? { shownIn } : {}), ...(text ? { text } : {}), initial: first });
+    // A playbook that requires an alignment first, in a chat: the card waits on it, undrawn.
+    const aligning = loaded.spec.align && shownIn ? { since: anchor.at } : undefined;
+    const run = createRun({ playbook: refOf(loaded.info), cwd, anchor, ...(aligning ? { aligning } : {}), ...(shownIn ? { shownIn } : {}), ...(text ? { text } : {}), initial: first });
+    // The person's /name asks the chat to open it; a chat that opened the card itself is told by its card note.
+    // A chat that can't be asked gets the card at once, those choices left to work out with it.
+    if (aligning && !notPage(c)) {
+      const why = await beginAlignment(run, loaded.spec, alignHost).catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
+      if (why) {
+        console.warn(`[playbook-runs] ${run.id}: its alignment couldn't be asked for: ${why}`);
+        abandonAlignment(runById(run.id)!);
+      }
+    }
     const tMade = Date.now();
-    const view = await runView(run);
+    const view = await runView(runById(run.id)!);
     const took = Date.now() - t0;
     if (took > 1000) console.warn(`[playbook-runs] opening a card took ${took} ms (playbook ${tLoad - t0} ms, answers ${tMade - tLoad} ms, card ${Date.now() - tMade} ms)`);
     return c.json(view, 201);
@@ -236,10 +258,13 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
       if (chatOnes.length) return c.json({ error: `${chatOnes[0]!.label} is worked out with the chat: ask it there. Nothing was changed.` }, 400);
     }
     // A chat or a script fills in the playbook's own choices; models, roles, stops and cycles are the person's.
+    // The chat filling a choice brings the card down to where it did, under its last words.
+    const moves = notPage(c) && !!edits.choices && !r.aligning;
     if (notPage(c) && (edits.roles || edits.teams || edits.stops || edits.cycle)) return c.json({ error: "Only the person changes a card's models, members, notes, stops and cycle settings, on the card in Sova's page. A chat may fill in its choices. Nothing was changed." }, 403);
     changeRun(r.id, (x) => {
       x.edits = mergeEdits(x.edits, edits);
       x.revision++;
+      if (moves) x.anchor = { at: new Date().toISOString() };
       delete x.startError;
     });
     return c.json(await runView(runById(r.id)!));

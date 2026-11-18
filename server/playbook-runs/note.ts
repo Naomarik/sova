@@ -1,6 +1,7 @@
 // What a chat is told, in its own context and never in the thread, while it shows a playbook card with a choice
 // worked out with it still empty: which card, which choices, and the command that fills them (the card's own
 // choices-fill route, playbook.run.edit). Gone once each such choice is filled or the card is closed or started.
+import { alignMessage } from "./align-first";
 import { loadPlaybook, SOVA_SCRIPT } from "./env";
 import { effectiveEdits } from "./plan";
 import { runsOfChat, type PlaybookRunRecord } from "./store";
@@ -15,6 +16,7 @@ export async function cardNoteOf(r: PlaybookRunRecord, script: string = SOVA_SCR
   if (r.state !== "draft" || r.closed) return null;
   const loaded = await loadPlaybook(r.playbook, r.cwd).catch(() => null);
   if (!loaded?.spec) return null;
+  if (r.aligning) return alignMessage(r, loaded.spec);
   const edits = effectiveEdits(r);
   const open = loaded.spec.inputs.filter((i) => i.ask === "chat" && empty(edits.choices?.[i.id]));
   if (!open.length) return null;

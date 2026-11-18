@@ -6,7 +6,7 @@
  */
 
 /** Where a choice's value came from, as the card labels it. */
-export type PlaybookChoiceOrigin = "default" | "last" | "standing" | "message" | "looked-up" | "you";
+export type PlaybookChoiceOrigin = "default" | "last" | "standing" | "message" | "looked-up" | "alignment" | "you";
 
 export const PLAYBOOK_CHOICE_ORIGIN_WORDS: Record<PlaybookChoiceOrigin, string> = {
   default: "Default",
@@ -14,7 +14,9 @@ export const PLAYBOOK_CHOICE_ORIGIN_WORDS: Record<PlaybookChoiceOrigin, string> 
   standing: "Your standing answer",
   message: "From your message",
   "looked-up": "Looked up",
-  you: "Your pick",
+  alignment: "From your alignment",
+  /** A value set on the card says nothing of where it came from (a chat-worked one reads "From the chat" on the page). */
+  you: "",
 };
 
 /** One model a role may run on: a model ref ("provider/id", as a chat or a pi worker names it, or
@@ -171,6 +173,8 @@ export interface PlaybookRunView {
   startError?: string;
   /** The playbook's description can't be read now (a draft whose playbook.json broke). */
   error?: string;
+  /** The playbook requires an alignment first, and the chat's isn't confirmed yet: the card isn't drawn. */
+  aligning?: true;
   /** Where the card stands in its chat's conversation: after the item the page showed last when it was opened
       (`after`, absent when it sent none), and when it was opened. Absent on runs made before it was kept. */
   anchor?: PlaybookRunAnchor;

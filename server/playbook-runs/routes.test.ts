@@ -384,14 +384,25 @@ describe("a choice worked out with the chat", () => {
     assert.equal(await playbookCardNote(c.id), null, "filled: nothing waits on the chat");
   });
 
-  test("a card stands where it was opened: the page's last item and the time, kept on reopening, taken anew by a card replacing it", async () => {
+  test("a card stands at the newest point it was opened or filled by the chat; the page's own edit doesn't move it; a card replacing it takes its own", async () => {
     const c = chat();
     const v = await openIn(c.path, { after: "item-7" });
     assert.equal(v.anchor?.after, "item-7");
     assert.match(v.anchor?.at ?? "", /^\d{4}-\d\d-\d\dT/);
-    assert.deepEqual((await openIn(c.path, { after: "item-9" })).anchor, v.anchor, "the same card reopened keeps its place");
-    const other = (await (await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "trial" }, cwd: scratchAgentDir, path: c.path, after: "item-9" }))).json()) as PlaybookRunView;
-    assert.equal(other.anchor?.after, "item-9");
+    store.changeRun(v.id, (x) => (x.anchor = { after: "item-7", at: "2026-01-01T00:00:00.000Z" }));
+    const again = await openIn(c.path, { after: "item-9" });
+    assert.equal(again.id, v.id);
+    assert.equal(again.anchor?.after, "item-9", "opened again: where the person is now");
+    assert.ok(again.anchor!.at > "2026-01-01T00:00:00.000Z");
+    store.changeRun(v.id, (x) => (x.anchor = { after: "item-9", at: "2026-01-01T00:00:00.000Z" }));
+    await asPage(`/api/playbook-runs/${v.id}`, patch({ revision: again.revision, edits: { choices: { level: "hi" } } }));
+    assert.deepEqual(store.runById(v.id)!.anchor, { after: "item-9", at: "2026-01-01T00:00:00.000Z" }, "the page's own edit leaves it");
+    await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: again.revision + 1, edits: { choices: { failure: "x" } } }));
+    const moved = store.runById(v.id)!.anchor!;
+    assert.equal(moved.after, undefined, "under the chat's last words");
+    assert.ok(moved.at > "2026-01-01T00:00:00.000Z");
+    const other = (await (await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "trial" }, cwd: scratchAgentDir, path: c.path, after: "item-12" }))).json()) as PlaybookRunView;
+    assert.equal(other.anchor?.after, "item-12");
     assert.equal((await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "chatty" }, cwd: scratchAgentDir, path: c.path, after: 5 }))).status, 400);
   });
 });

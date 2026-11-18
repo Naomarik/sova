@@ -10,7 +10,7 @@
  * index.ts: a child that loaded the manager could delegate recursively.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { StringEnum } from "@earendil-works/pi-ai";
+import { StringEnum } from "./string-enum.ts";
 import { Type } from "typebox";
 import { gateRefusal, gatedIds, WAKE_HEADER } from "./delivery.ts";
 import { writeInboxCaps } from "./inbox.ts";

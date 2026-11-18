@@ -50,7 +50,7 @@ test("the reason says what couldn't run and what runs instead", () => {
   assert.equal(say(["list/a"]), "A is turned off in Settings → Models, so B");
   assert.equal(say(["list/a", "list/b"]), "None of this playbook's models can run, so your profile's model, R");
   assert.equal(say(["list/a", "list/b", "prof/r", "prof/f"]), "None of this playbook's models can run, and your profile's model can't run either, so this chat's model, C");
-  assert.equal(say(["pick/p"], { pick: P }), "Your pick, P, is turned off in Settings → Models, so A");
+  assert.equal(say(["pick/p"], { pick: P }), "P is turned off in Settings → Models, so A");
   assert.equal(say(["list/a", "list/b"], { only: true }), "None of its models can run here (only these models): A is turned off in Settings → Models; B is turned off in Settings → Models.");
   const none = resolveRoleModel({ list: [], only: false, kind: "routine" }, ctx(new Set()));
   assert.deepEqual([none.use, none.reason], [C, "Your profile has no model for routine work, so this chat's model"]);

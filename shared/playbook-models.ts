@@ -83,7 +83,7 @@ export function resolveRoleModel(input: ResolveRoleInput, ctx: ResolveContext): 
     const why = forced ?? ctx.denial(choice) ?? undefined;
     chain.push({ choice, source, ...(why ? { why } : {}) });
   };
-  if (input.pick) add(input.pick, "pick", input.only && !input.list.some((c) => sameModel(c, input.pick!)) ? "isn't one of this role's models (only these models)" : undefined);
+  if (input.pick) add(input.pick, "pick", input.only && !input.list.some((c) => sameModel(c, input.pick!)) ? "isn't one of this member's models (only these models)" : undefined);
   for (const c of input.list) add(c, "list");
   const route = input.kind ? ctx.routes?.[input.kind] : undefined;
   if (!input.only) {
@@ -111,7 +111,7 @@ export function resolveRoleModel(input: ResolveRoleInput, ctx: ResolveContext): 
 function reasonText(skipped: ChainEntry[], use: ChainEntry, name: (c: WorkerChoice) => string): string {
   const parts: string[] = [];
   const pick = skipped.find((e) => e.source === "pick");
-  if (pick) parts.push(`your pick, ${name(pick.choice)}, ${pick.why}`);
+  if (pick) parts.push(`${name(pick.choice)} ${pick.why}`);
   const list = skipped.filter((e) => e.source === "list");
   if (use.source === "list" || list.length === 1) parts.push(...list.slice(0, 2).map((e) => `${name(e.choice)} ${e.why}`), ...(list.length > 2 ? [`${list.length - 2} more can't run`] : []));
   else if (list.length) parts.push("none of this playbook's models can run");

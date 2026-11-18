@@ -15,7 +15,7 @@
 // scripts/start-server.sh decides (server/runtime-choice.ts). Bun missing: the watcher exits 1.
 
 import { spawn } from "node:child_process";
-import { watch } from "node:fs";
+import { existsSync, watch } from "node:fs";
 import { join } from "node:path";
 import { launch } from "../server/runtime-choice.ts";
 
@@ -71,6 +71,7 @@ function restart() {
 
 let timer = null;
 for (const dir of WATCH_DIRS) {
+  if (!existsSync(join(ROOT, dir))) continue; // a tree without it (migrations/ once every migration is gone) watches the rest
   watch(join(ROOT, dir), { recursive: true }, (_event, filename) => {
     const f = String(filename ?? "");
     const base = f.split("/").pop() ?? "";

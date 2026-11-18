@@ -75,6 +75,7 @@ writeFileSync(join(agentDir, "prompts", "mk.md"), "---\ndescription: make a sess
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { acquireChat, disposeAllChats, heldChat } = await import("./chat-manager");
 const { parseModeRequest } = await import("./mode-state");
+const { REPLY_SHAPE_INSTRUCTIONS } = await import("../pi-config/extensions/mode/prompt.ts");
 const { SessionManager } = await import("@earendil-works/pi-coding-agent");
 const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
@@ -769,6 +770,11 @@ describe("standing notes and the extra prompt: fixed at opening, live through th
     await userSends(chat, "hello");
     const prompt = systemOf(contexts.at(-1));
     const own = piSession(chat).systemPrompt;
+    // The reply shape every chat the user talks to has (§chat.mode-menu/reply-shape) reaches the Overseer through its
+    // mode section, once; its own "How to answer" stays in its prompt and wins where it sets the shape.
+    const shape = JSON.stringify(REPLY_SHAPE_INSTRUCTIONS).slice(1, -1);
+    assert.equal(prompt.split(shape).length - 1, 1, "the reply shape, once");
+    assert.match(prompt, /## How to answer/);
 
     writeNotes("NOTE-ALPHA: ignore ~/scratch\n"); // what sova_note and PUT /api/overseer/notes write
     await userSends(chat, "what are my notes?");

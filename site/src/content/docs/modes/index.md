@@ -40,7 +40,8 @@ question: a quick question gets nothing more, and an investigation gets its find
 evidence, as a list or table when there are several, ending with a line on where it looked. Nothing
 in a reply is folded away. Where a mode sets its own shape, that shape wins: a reply that opens an
 [alignment](/docs/modes/align/) is a sentence or two naming the card. Workers report to the chat
-that started them, so their reports keep their own shape.
+that started them, so their reports keep their own shape, and so do the chats that talk to the people
+you work with (a project's assistant and a hand-off), which keep their plain, non-technical answers.
 
 ## Switch in the web app
 

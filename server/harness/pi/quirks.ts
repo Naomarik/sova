@@ -60,7 +60,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "open-writes-nothing",
     kind: "monkey-patch",
     relies:
-      "Building a session on a branch with no messages (or no thinking entry) appends model_change/thinking_level_change through the session manager's own appendModelChange/appendThinkingLevelChange properties, so replacing them before construction defers those writes; Sova queues them until the first write and drops the one that restates the recorded model.",
+      "Building a session on a branch with no messages (or no thinking entry) appends model_change/thinking_level_change through the session manager's own appendModelChange/appendThinkingLevelChange properties, so replacing them before construction defers those writes; Sova queues them until the first write and drops the one that restates the recorded model. pi 1.5.1 (#11451) also appends through them at a run's start; the methods are restored once a chat's runtime is built, so that is pi's own write after Sova's.",
     pi: ["createAgentSession", "SessionManager.appendModelChange", "SessionManager.appendThinkingLevelChange"],
     where: [
       { file: OPEN, symbol: "openPiSession" },
@@ -186,7 +186,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P10",
     name: "leaf-is-last-line",
     kind: "semantic",
-    relies: "navigateTree({summarize:false}) writes nothing and moves only the in-memory leaf, and SessionManager.open takes the file's last line as the leaf; a rewind therefore appends a marker so the move survives a reopen.",
+    relies: "navigateTree({summarize:false}) writes nothing and moves only the in-memory leaf, and SessionManager.open takes the file's last line as the leaf; a rewind therefore appends a marker so the move survives a reopen. pi 1.5.1 refuses navigateTree while a prompt is in its preflight; rewindSession returns that as an internal refusal.",
     pi: ["AgentSession.navigateTree", "SessionManager.open", "SessionManager.getLeafId"],
     where: [
       { file: OPS, symbol: "rewindSession" },
@@ -413,7 +413,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "steer-all",
     kind: "monkey-patch",
     relies:
-      "pi builds the agent's steering mode from settingsManager.getSteeringMode() (createAgentSession) and reads it again on AgentSession.reload() (syncQueueModesFromSettings, after settingsManager.reload()), so replacing that getter on a runtime's own settings object makes every queued steer land in one step (PendingMessageQueue in \"all\" mode), survives a reload, and writes nothing to settings.json; follow-ups keep pi's one-at-a-time.",
+      "pi builds the agent's steering mode from settingsManager.getSteeringMode() (createAgentSession) and reads it again on AgentSession.reload() (syncQueueModesFromSettings, after settingsManager.reload()), so replacing that getter on a runtime's own settings object makes every queued steer land in one step (PendingMessageQueue in \"all\" mode), survives a reload, and writes nothing to settings.json; follow-ups keep pi's one-at-a-time. pi 1.5.1 refuses reload() while streaming or compacting; Sova calls it only in the canary, idle.",
     pi: ["SettingsManager.getSteeringMode", "AgentSession.reload", "AgentSession.syncQueueModesFromSettings", "createAgentSession", "PendingMessageQueue.peek"],
     where: [
       { file: "server/harness/pi/queue-modes.ts", symbol: "steerAllAtOnce" },

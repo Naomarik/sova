@@ -83,10 +83,10 @@
     {
       "id": "source",
       "label": "The failure to fix",
-      "help": "One line: what goes wrong, or a chat's path that shows it. Test cases come from it and from real history.",
+      "help": "Worked out with the main chat before Start: what goes wrong, and a chat that shows it.",
       "type": "text",
-      "ask": "always",
-      "required": false
+      "ask": "chat",
+      "required": true
     },
     {
       "id": "testModels",
@@ -149,10 +149,18 @@
     {
       "id": "bars",
       "label": "Counts as fixed when",
-      "help": "One line: the result that ends the cycles. The first stop shows it on a sample chart.",
+      "help": "Worked out with the main chat before Start, from this starting point. The first stop shows it on a sample chart.",
       "type": "text",
       "default": "Every test model passes 90%, none worse than master",
-      "ask": "always",
+      "ask": "chat",
+      "required": true
+    },
+    {
+      "id": "measure",
+      "label": "How it's measured",
+      "help": "Worked out with the main chat before Start: a script check per case, a blind grader, or both.",
+      "type": "text",
+      "ask": "chat",
       "required": true
     },
     {
@@ -459,5 +467,24 @@
     "session.send",
     "project.verb.up",
     "project.verb.apply"
-  ]
+  ],
+  "align": {
+    "questions": [
+      {
+        "id": "failure",
+        "ask": "What fails today, and in which chats?",
+        "fills": "source"
+      },
+      {
+        "id": "fixed",
+        "ask": "What counts as fixed?",
+        "fills": "bars"
+      },
+      {
+        "id": "measure",
+        "ask": "What is measured, and how: a script check per case, a blind grader, or both?",
+        "fills": "measure"
+      }
+    ]
+  }
 }

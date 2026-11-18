@@ -40,9 +40,9 @@
     {
       "id": "notes",
       "label": "Anything to look at closely",
-      "help": "Optional, a line: a worry, or a feature you want from the release",
+      "help": "Optional: tell the main chat before Start about a worry, or a feature you want from the release.",
       "type": "text",
-      "ask": "optional",
+      "ask": "chat",
       "required": false
     }
   ],

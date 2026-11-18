@@ -502,6 +502,25 @@ export class Queries {
     };
   }
 
+  /**
+   * The range's spend per owner and per By project row key (the Costs tab's own entries and fold), for the
+   * Time Spent tab's Cost columns. `from` null: everything recorded up to `today`.
+   */
+  spendBy(q: { from: string | null; today: string; tz: string; fold: Fold }): { byOwner: Map<string, Acc>; byRow: Map<string, Acc> } {
+    const tz = validZone(q.tz);
+    const days = q.from === null ? this.ledger.dayNames().filter((d) => d <= addDays(q.today, 1)) : this.utcDays(q.from, q.today);
+    const byOwner = new Map<string, Acc>();
+    const byRow = new Map<string, Acc>();
+    for (const day of days) {
+      for (const e of this.summary(day, tz)) {
+        if ((q.from && e.ld < q.from) || e.ld > q.today) continue;
+        get(byRow, q.fold(e.cwd, e.kind, e.project).key, () => new Acc()).merge(e.acc);
+        if (e.owner) get(byOwner, e.owner, () => new Acc()).merge(e.acc);
+      }
+    }
+    return { byOwner, byRow };
+  }
+
   today(q: { tz: string }): UsageToday {
     const tz = validZone(q.tz);
     const today = this.localDay(tz)(this.now());

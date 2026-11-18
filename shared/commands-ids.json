@@ -284,7 +284,8 @@
     "playbook.run.open",
     "playbook.run.list",
     "playbook.run.get",
-    "playbook.run.edit"
+    "playbook.run.edit",
+    "usage.time"
   ],
   "retired": [
     "settings.agents.get",

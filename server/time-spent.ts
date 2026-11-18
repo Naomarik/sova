@@ -9,8 +9,9 @@
 
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
-import { TIME_SPENT_ROWS, type TimeSpentReport, type TimeSpentRow } from "../shared/time-spent";
+import type { TimeSpentReport, TimeSpentRow } from "../shared/time-spent";
 import { stateRoot } from "./state-root";
+import { replayAttention, type TimeSpentLine, type TimeSpentRun } from "./time-spent-replay";
 
 /** How long the clock remembers who holds a moment. An older run can't be told from one already counted, so it is dropped. */
 export const CLOCK_MEMORY_MS = 6 * 3_600_000;
@@ -20,8 +21,6 @@ const SAME_PAGE_DRIFT_S = 2;
 /** How far past this computer's time a page's own runs may be placed. A delayed report pushes the page's next run
     ahead by the delay; past this, seconds are more than the time that has gone by could hold, and are dropped. */
 const SAME_PAGE_AHEAD_S = 300;
-
-const ROWS = new Set<string>(TIME_SPENT_ROWS);
 
 /** Seconds on this computer's clock, [start, end). */
 interface Claim {
@@ -36,16 +35,9 @@ interface Claim {
 }
 
 /** One line of a session's file. */
-interface Line extends TimeSpentRun {
-  d?: readonly string[];
-}
+type Line = TimeSpentLine;
 
-/** Counted seconds [s, e) on this computer's clock, and what they were spent on. */
-export interface TimeSpentRun {
-  s: number;
-  e: number;
-  r: TimeSpentRow;
-}
+export type { TimeSpentRun };
 
 export interface TimeSpentSums {
   you: number;
@@ -150,33 +142,14 @@ export class TimeSpentStore {
 
   /** The file replayed: its runs after every take-back, and each document's first moment on screen. */
   private replay(session: string): { runs: Line[]; firstShown: Map<string, number> } {
-    const runs: Line[] = [];
-    const firstShown = new Map<string, number>();
-    if (!safeId(session)) return { runs, firstShown };
+    if (!safeId(session)) return { runs: [], firstShown: new Map() };
     let text: string;
     try {
       text = readFileSync(this.file(session), "utf8");
     } catch {
-      return { runs, firstShown };
+      return { runs: [], firstShown: new Map() };
     }
-    for (const raw of text.split("\n")) {
-      if (!raw) continue;
-      let l: any;
-      try {
-        l = JSON.parse(raw);
-      } catch {
-        continue;
-      }
-      if (Array.isArray(l?.x)) {
-        takeBack(runs, l.x[0], l.x[1]);
-        continue;
-      }
-      if (!ROWS.has(l?.r) || !Number.isInteger(l.s) || !Number.isInteger(l.e) || l.e <= l.s) continue;
-      runs.push(l);
-      // A moment later lost to another page was still on screen: first shown stays.
-      for (const d of l.d ?? []) if (!firstShown.has(d)) firstShown.set(d, l.s * 1000);
-    }
-    return { runs, firstShown };
+    return replayAttention(text);
   }
 
   /** The session is gone: its record goes with it, and the clock forgets it held any moment. */
@@ -302,19 +275,6 @@ function joined(spans: [number, number][]): [number, number][] {
     else if (to > from) out.push([from, to]);
   }
   return out;
-}
-
-/** Cuts [from, to) out of the runs so far. */
-function takeBack(runs: Line[], from: unknown, to: unknown): void {
-  if (typeof from !== "number" || typeof to !== "number") return;
-  for (let i = runs.length - 1; i >= 0; i--) {
-    const r = runs[i]!;
-    if (r.e <= from || r.s >= to) continue;
-    const pieces: Line[] = [];
-    if (r.s < from) pieces.push({ ...r, e: from });
-    if (r.e > to) pieces.push({ ...r, s: to });
-    runs.splice(i, 1, ...pieces);
-  }
 }
 
 const stores = new Map<string, TimeSpentStore>();

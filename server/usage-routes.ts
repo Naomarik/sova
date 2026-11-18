@@ -6,6 +6,7 @@ import { listProjects } from "./projects/spaces";
 import { attachedWorkspaces, defaultWorkspacesDir } from "./orgs";
 import { overseerDir } from "./overseer-store";
 import { agentRoot } from "./state-root";
+import { readDecisionSettings } from "./decide-settings";
 
 /**
  * The usage ledger's routes (shared/usage/wire.ts, §app.insights/usage-ledger and
@@ -36,6 +37,15 @@ function foldInput(): FoldInput {
   return { projects, overseer: [overseerDir(), defaultWorkspacesDir(), ...workspaces], exclude: agentRoot(), temp: [...new Set([tmpdir(), "/tmp", "/var/tmp"])] };
 }
 
+/** The message labels switch: off, the Time Spent tab offers no Your Messages. */
+function labelsOn(): boolean {
+  try {
+    return readDecisionSettings().features.messageLabels === true;
+  } catch {
+    return false;
+  }
+}
+
 export function registerUsageRoutes(app: Hono<any>): void {
   app.get("/api/usage/costs", async (c) =>
     relay(
@@ -56,6 +66,18 @@ export function registerUsageRoutes(app: Hono<any>): void {
         provider: c.req.queries("provider") ?? [],
         model: c.req.queries("model") ?? [],
         tz: c.req.query("tz") ?? "UTC",
+      }),
+    ),
+  );
+  // The Time Spent tab (shared/usage/time.ts): your time beside agent time, By project as Costs folds it.
+  app.get("/api/usage/time", async (c) =>
+    relay(
+      await askUsage("time", {
+        range: c.req.query("range") ?? "30d",
+        project: c.req.query("project") ?? null,
+        tz: c.req.query("tz") ?? "UTC",
+        fold: foldInput(),
+        labels: labelsOn(),
       }),
     ),
   );

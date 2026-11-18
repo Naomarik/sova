@@ -8,11 +8,15 @@ import { deliveredHint } from "./playbook-tools";
 import { playbookPayload } from "./playbook-payload";
 import { conductedBy } from "./playbook-runs/store";
 import { scheduleKeeper } from "./schedules";
+// Temporary (migrations/manifest.json: system-playbooks-old-paths).
+import { movedPlaybookDir } from "../migrations/system-playbooks-old-paths/index.mjs";
 
 /** The playbook of a run this session conducts, as a bundle. */
 function runBundle(sessionId: string, hint?: { id: string; dir?: string }): BundleRef | null {
   const r = conductedBy(sessionId, hint);
-  return r ? { id: r.playbook.id, dir: r.playbook.dir, entry: r.playbook.entry } : null;
+  // A run started before Sova's own playbooks moved keeps the old folder: read it at the new place.
+  // Temporary (migrations/manifest.json: system-playbooks-old-paths).
+  return r ? { id: r.playbook.id, dir: movedPlaybookDir(r.playbook.dir), entry: r.playbook.entry } : null;
 }
 
 async function bundleFor(sessionId: string, hint?: { id: string; dir?: string }): Promise<BundleRef | null> {

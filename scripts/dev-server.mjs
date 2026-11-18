@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { launch } from "../server/runtime-choice.ts";
 
 const ROOT = join(import.meta.dirname, "..");
-const WATCH_DIRS = ["server", "shared", join("pi-config", "extensions", "mode")];
+const WATCH_DIRS = ["server", "shared", "migrations", join("pi-config", "extensions", "mode")];
 const DEBOUNCE_MS = 300;
 const TERM_GRACE_MS = 8000;
 

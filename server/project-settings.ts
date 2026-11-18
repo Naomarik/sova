@@ -531,7 +531,8 @@ export function settingOfPath(rel: string): { setting: SettingId; id?: string } 
   if (rel === OFFERS_FILE) return { setting: "offers" };
   let m = /^\.sova\/profiles\/([^/]+)\.json$/.exec(rel);
   if (m) return { setting: "profile", id: m[1]! };
-  m = /^\.sova\/(?:marketing\/)?playbooks\/([^/]+)\//.exec(rel);
+  // A project's config for Sova's own chats (.sova/playbook-config/<id>/) reads as it did in .sova/playbooks/<id>/.
+  m = /^\.sova\/(?:(?:marketing\/)?playbooks|playbook-config)\/([^/]+)\//.exec(rel);
   if (m) return { setting: "playbook", id: m[1]! };
   m = new RegExp(`^${PROJECT_MODES_DIR.replace(/[.]/g, "\\.")}/([^/]+)/`).exec(rel);
   if (m) return { setting: "mode", id: m[1]! };

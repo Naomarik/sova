@@ -68,6 +68,7 @@ import { type HostAdapter, type HostKind, type HostRepo, NO_HOST_WORDS, NO_ORIGI
 import { githubAdapter } from "./hosts/github";
 import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
+// reviewKitDirAt and projectPlaybookRel read the old place too. Temporary (migrations/manifest.json: playbook-config-old-place).
 import { changeWords, editSettingsText, isEmptyChange, reviewKitDirAt, SettingsEditError } from "./settings-edit";
 import { projectPlaybookRel } from "./thread";
 import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";

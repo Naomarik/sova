@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
 import { QueueStore } from "./store";
 import { landHowSetting } from "./strategy";
+// reviewKitDirAt and projectPlaybookRel read the old place too. Temporary (migrations/manifest.json: playbook-config-old-place).
 import { reviewKitDirAt } from "./settings-edit";
 
 /**

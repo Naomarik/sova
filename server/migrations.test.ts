@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { migrationsDue } from "../migrations/due.mjs";
 
 /**
  * migrations/: temporary code that keeps something older working, one folder per migration, each listed in
@@ -42,7 +43,8 @@ test("the version comparison orders versions by number, not by text", () => {
   assert.ok(!before("1.0.0", "0.18.0"));
 });
 
-test("every migration is still due: Sova's version is before its removeIn", () => {
+test("no migration is due at Sova's version (the backstop of the release's own gate, migrations/due.mjs)", () => {
+  assert.deepEqual(migrationsDue(version, manifest), [], `due at ${version}: delete each due migration's folder, entry and the files its paths name`);
   for (const m of manifest) assert.ok(before(version, m.removeIn), `${m.id} is due for removal in ${m.removeIn} (Sova is ${version}): delete migrations/${m.id}/, its entry and the call sites its paths name`);
 });
 
@@ -61,6 +63,31 @@ test("each entry is whole, began before it ends, and its folder and paths are th
 test("each code file a migration lists names it, so a search for its id finds every place to remove", () => {
   for (const m of manifest)
     for (const p of m.paths.filter((x) => /\.(ts|mjs)$/.test(x) && !x.endsWith(".test.ts"))) assert.ok(readFileSync(join(ROOT, p), "utf8").includes(m.id), `${p} names ${m.id}`);
+});
+
+test("every file that imports a migration is among that migration's paths", () => {
+  // Sova's own code, its system playbooks, its config playbooks, pi-config and scripts: wherever an import could sit.
+  const roots = ["server", "shared", "src", "pi-config", "system-playbooks", "playbooks", "scripts", ".sova/playbook-config"];
+  const skip = new Set(["node_modules", ".cache", "dist"]);
+  const files: string[] = [];
+  const walk = (d: string) => {
+    for (const n of readdirSync(join(ROOT, d))) {
+      if (skip.has(n)) continue;
+      const rel = `${d}/${n}`;
+      if (statSync(join(ROOT, rel)).isDirectory()) walk(rel);
+      else if (/\.(ts|tsx|mjs|js)$/.test(n)) files.push(rel);
+    }
+  };
+  for (const r of roots) if (existsSync(join(ROOT, r))) walk(r);
+  const importing = new Map<string, string[]>();
+  for (const f of files)
+    for (const m of readFileSync(join(ROOT, f), "utf8").matchAll(/(?:from\s+|import\s*\(\s*)["'][^"']*migrations\/([a-z0-9-]+)\/index(?:\.mjs)?["']/g)) importing.set(m[1]!, [...new Set([...(importing.get(m[1]!) ?? []), f])]);
+  assert.ok((importing.get("system-playbooks-old-paths") ?? []).length > 0, "the scan finds the imports it checks");
+  for (const [id, fs] of importing) {
+    const entry = manifest.find((m) => m.id === id);
+    assert.ok(entry, `${fs.join(", ")} import migrations/${id}, which the manifest doesn't list`);
+    for (const f of fs) assert.ok(entry.paths.includes(f), `${f} imports migrations/${id} but isn't among its paths`);
+  }
 });
 
 test("every folder under migrations/ is a listed migration", () => {

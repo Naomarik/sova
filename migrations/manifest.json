@@ -16,19 +16,26 @@
       "system-playbooks/merge-queue/references/picks.md",
       "system-playbooks/project-setup/PLAYBOOK.md",
       "server/merge-queue/setup-trial.test.ts",
-      "server/merge-queue/thread.test.ts"
+      "server/merge-queue/thread.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/settings.ts",
+      "server/merge-queue/settings-edit.test.ts"
     ]
   },
   {
     "id": "system-playbooks-old-paths",
-    "what": "Sova's six own playbooks moved from playbooks/<id> to system-playbooks/<id>; a chat started before the move names the old folder in its first message: it keeps project_verbs (the folder is read at the new place) and its next turn is told the new folder.",
+    "what": "Sova's six own playbooks moved from playbooks/<id> to system-playbooks/<id>; a chat or a playbook run started before the move names the old folder (its first message, its run record): it keeps project_verbs, its run is still found and read at the new place, and its next turn is told the new folder.",
     "since": "0.16.0",
     "removeIn": "0.18.0",
     "paths": [
       "migrations/system-playbooks-old-paths",
       "server/project-services/tools.ts",
       "server/project-services/note.ts",
-      "server/project-services/tool-offered.test.ts"
+      "server/project-services/tool-offered.test.ts",
+      "server/project-services/note.test.ts",
+      "server/playbook-runs/store.ts",
+      "server/playbook-host.ts",
+      "server/playbook-runs/moved-folder.test.ts"
     ]
   }
 ]

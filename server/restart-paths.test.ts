@@ -31,10 +31,10 @@ test("the walk reads runtime imports only: type-only ones are left out, a src/ f
   assert.deepEqual(runtimeSpecifiers(text, false).sort(), ["./b", "./d", "./e", "./g"]);
 });
 
-test("needsRestart: server code, shared, pi-config, the server's src/ imports, the packages and the toolchain", () => {
-  for (const f of ["server/index.ts", "shared/protocol.ts", "pi-config/extensions/mode/align.ts", "src/lib/message.ts", "src/lib/tool-diff-stats.ts", "src/lib/summary-diff.ts", "src/lib/mesh-resync.ts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "mise.toml"])
+test("needsRestart: server code, shared, pi-config, migrations, the server's src/ imports, the packages and the toolchain", () => {
+  for (const f of ["server/index.ts", "shared/protocol.ts", "pi-config/extensions/mode/align.ts", "migrations/system-playbooks-old-paths/index.mjs", "migrations/manifest.json", "src/lib/message.ts", "src/lib/tool-diff-stats.ts", "src/lib/summary-diff.ts", "src/lib/mesh-resync.ts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "mise.toml"])
     assert.equal(needsRestart(f), true, f);
-  for (const f of ["src/app.tsx", "src/components/Sidebar.tsx", "src/lib/message.test.ts", "server/README.md", "pi-config/extensions/mode/spec-mode.md", "server/attention.test.ts", "server/x.integration.test.ts", ".sova/spec/manifest.json", "docs/commands.md", "index.html"])
+  for (const f of ["src/app.tsx", "src/components/Sidebar.tsx", "src/lib/message.test.ts", "server/README.md", "pi-config/extensions/mode/spec-mode.md", "server/attention.test.ts", "server/x.integration.test.ts", ".sova/spec/manifest.json", "docs/commands.md", "index.html", "migrations/README.md"])
     assert.equal(needsRestart(f), false, f);
   assert.equal(readiness.needsRestart, needsRestart, "merge-readiness reads the same rule");
 });

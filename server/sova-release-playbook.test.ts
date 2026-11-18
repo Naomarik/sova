@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -13,6 +13,7 @@ import * as maker from "../system-playbooks/release-maker/scripts/release-maker.
 import { formatText } from "../system-playbooks/project-verbs/scripts/project-verbs.mjs";
 // @ts-expect-error: a plain .mjs driver, no types
 import * as sr from "../.sova/playbook-config/release/scripts/sova-release.mjs";
+import { migrationsDue, readMigrations } from "../migrations/due.mjs";
 
 /**
  * Sova's own release setup: its `release` section and `site` deploy target (in .sova/project.json), its project release
@@ -42,7 +43,7 @@ test("Sova's release settings and site target are in .sova/project.json, parse, 
   assert.equal(def.release?.playbook, ".sova/playbook-config/release");
   assert.deepEqual(def.release?.channels, ["stable"]);
   assert.equal(def.release?.commit, true);
-  assert.deepEqual(def.release?.checkIds, ["release-notes", "release-integration", "release-extensions", "release-spec-replay", "release-site", "release-spec", "release-leaks"]);
+  assert.deepEqual(def.release?.checkIds, ["migrations-due", "release-notes", "release-integration", "release-extensions", "release-spec-replay", "release-site", "release-spec", "release-leaks"]);
   const site = def.deploy?.targets.find((t) => t.name === "site");
   assert.ok(site);
   assert.equal(site.releases, "only");
@@ -187,4 +188,39 @@ test("the Docs step runs every release and finishes on its own; the Release Note
   assert.match(playbook, /No such label: there is no note/);
   assert.match(playbook, /It never contains the note/);
   assert.match(general, /ask from a Project Assistant or an overseer is the quoted `Asked by …` line, separate from the note/);
+});
+
+test("every script Sova's own config playbooks run by path (`node <path>`) is in the tree", () => {
+  const pages: string[] = [];
+  const walk = (d: string) => {
+    for (const n of readdirSync(d)) {
+      const p = join(d, n);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (n.endsWith(".md")) pages.push(p);
+    }
+  };
+  walk(join(ROOT, ".sova", "playbook-config"));
+  const named = pages.flatMap((p) => [...readFileSync(p, "utf8").matchAll(/node (\.sova\/[^\s`'"]+\.mjs)/g)].map((m) => [p.slice(ROOT.length + 1), m[1]!] as const));
+  assert.ok(named.length >= 3, "the release playbook names its scripts by path");
+  for (const [page, script] of named) assert.ok(existsSync(join(ROOT, script)), `${page} runs ${script}, which isn't in the tree`);
+});
+
+test("a release at or past a migration's removeIn is refused at its version step and by its release check; one before it goes on", () => {
+  const r = mkdtempSync(join(tmpdir(), "sova-mig-due-"));
+  try {
+    mkdirSync(join(r, "migrations"));
+    writeFileSync(join(r, "migrations", "manifest.json"), JSON.stringify([{ id: "a", removeIn: "0.18.0" }, { id: "b", removeIn: "1.2.0" }]));
+    const due = (v: string) => migrationsDue(v, readMigrations(r)).map((m) => m.id);
+    for (const [v, want] of [["0.17.9", []], ["0.18.0-rc.1", ["a"]], ["0.18.0", ["a"]], ["0.19.3", ["a"]], ["1.1.9", ["a"]], ["1.2.0", ["a", "b"]], ["2.0.0", ["a", "b"]]] as const)
+      assert.deepEqual(due(v), want, v);
+    writeFileSync(join(r, "package.json"), JSON.stringify({ version: "0.18.0" }));
+    assert.equal(sr.migrationsDueCheck(r, undefined), 1, "the release check reads package.json's version: the release commit's");
+    assert.equal(sr.migrationsDueCheck(r, "0.17.1"), 0, "the version step names the version it picked");
+  } finally {
+    rmSync(r, { recursive: true, force: true });
+  }
+  // Sova's own: the check is a release check, and nothing is due at the version it is at.
+  const def = parseDefinition(readFileSync(join(ROOT, ".sova/project.json"), "utf8"));
+  assert.deepEqual(def.release?.checks.find((c) => c.id === "migrations-due")?.run, ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "migrations-due"]);
+  assert.equal(sr.migrationsDueCheck(ROOT, undefined), 0, "nothing is due at Sova's own version");
 });

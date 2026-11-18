@@ -236,6 +236,12 @@
     "commit": true,
     "checks": [
       {
+        "id": "migrations-due",
+        "label": "No migration due at this version",
+        "run": ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "migrations-due"],
+        "timeout": 60
+      },
+      {
         "id": "release-notes",
         "label": "Release notes entry",
         "run": ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "changelog-check"],

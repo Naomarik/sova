@@ -5,7 +5,7 @@ description: Sova's own additions to the merge thread's method: what's worth not
 
 # Merge thread: Sova
 
-Read Sova's merge-thread method first (the first message names it: `playbooks/merge-queue/PLAYBOOK.md` in Sova's install); this file adds what is particular to Sova and wins where they differ. Paths are relative to this folder unless they start at the repo root.
+Read Sova's merge-thread method first (the first message names it: `system-playbooks/merge-queue/PLAYBOOK.md` in Sova's install); this file adds what is particular to Sova and wins where they differ. Paths are relative to this folder unless they start at the repo root.
 
 ## What's worth noting
 Write the note from this list only (`references/noting.md` has the paths behind each line):

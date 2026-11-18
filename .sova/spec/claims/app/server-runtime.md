@@ -189,7 +189,9 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   merge queue's form (Sova's Slow test group check, which appends the merge thread's selection):
   with names it runs those groups as `--groups` does; with none it runs only the slow groups
   `--landing` would add for the change since the merge base with `--base <rev>`, else the queue's
-  target (`SOVA_MERGE_TARGET`), else `master`, never the everyday set, and prints which and why;
+  target (`SOVA_MERGE_TARGET`), else `master`, never the everyday set, and prints which and why
+  (`--base` beside named groups is a usage error, exit 2, never ignored; with no merge base it says
+  so on stderr, writes no report and exits 2);
   when the change triggers none it runs nothing, prints and reports (`SOVA_OUT` `skipped`) "no slow
   group applies to this branch's changes", and exits 0. `--plan` prints the selection as JSON (the files,
   the groups run and skipped, the lane count and an estimate from the recorded file times: their

@@ -372,7 +372,7 @@ command isn't left waiting), replace the "Ran" row with:
 
 Nothing in the contract says ahead of time which commands are TUI-only, so the client keeps
 its own table of them: `palette`, `sessions`, `sessions-back`, `codefold`, `usage`,
-`usage-refresh`, `working-count`, `extensions`, `websearch` (it opens a browser on the server
+`usage-refresh`, `working-count`, `websearch` (it opens a browser on the server
 machine), and `subagents` and `agents` (each only opens the terminal's subagent monitor). These
 never appear in the menu. `team`, and every `team:…` or `team-…` form, is hidden from the menu too, though it is
 not TUI-only. Hiding is the menu's alone: the full list still decides whether a typed `/word`

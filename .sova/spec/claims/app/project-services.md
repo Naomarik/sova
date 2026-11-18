@@ -108,8 +108,9 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
 - **`merge`** (optional): how the project's branches land through its merge queue
   (§app/merge-queue), outside the definition's hash. `target` (a branch; default the main
   checkout's branch), `push` (boolean; absent: push when the repository has an `origin` remote),
-  `checks`: 1 to 30 checks `{id, label, run: argv, timeout?, rerun?, requires?, optional?}` in the
-  order they run (`optional: true`: not required; it runs only when the merge thread picks it) (ids unique; `run` a template argv that may also read `${merge.base}`, `${merge.tip}` and
+  `checks`: 1 to 30 checks `{id, label, run: argv, timeout?, rerun?, requires?, optional?, needsSelect?}` in the
+  order they run (`optional: true`: not required; it runs only when the merge thread picks it;
+  `needsSelect: true`: the merge thread's pick of it must name its selection, §app.merge-queue/checks) (ids unique; `run` a template argv that may also read `${merge.base}`, `${merge.tip}` and
   `${merge.target}`; `rerun: true` when its failures name test files and `run` plus those files
   reruns only them (a check that is the project's `test.run` with selection flags after it is rerun
   as `test.run` plus the files, §app.merge-queue/blame); `requires` the services started in the merge copy first), or `"none"` (the
@@ -781,8 +782,8 @@ answering the one result shape with its own `merge` key (§app.project-services/
   sent from the thread's tool as from the routes or the CLI),
   `merge.extend` (an entry, the check ids it adds, why, and a selection, `select`, for a check that
   takes one: the slow test group, files or walkthroughs it runs; never removes one; the tool's help
-  for `checks` and `select` names the full pick and says a check that takes a selection runs bare
-  without one and fails), `merge.resolve` (an entry, its judgement, `no-behaviour-change` (with
+  for `checks` and `select` names the full pick, and `select`'s says a pick of a check that declares
+  `needsSelect` is refused without one), `merge.resolve` (an entry, its judgement, `no-behaviour-change` (with
   `contents`, each resolved file's text, which Sova commits in the scratch copy, or the commit of
   its resolution), `chat-fixes` (with its diagnosis), or `needs-user` (with its question and
   choices for the user; `behaviour-differs` is taken as the old word for it), the files, both sides

@@ -174,12 +174,13 @@
       "server/project-services/no-services.integration.test.ts",
       "server/merge-queue/checks.ts",
       "server/merge-queue/checks.test.ts",
-      "shared/project-contract-release.test.ts"
+      "shared/project-contract-release.test.ts",
+      "playbooks/project-setup/references/definition.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "by": "user",
+      "at": "2026-11-17T18:59Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#7cb0e8e1"
     }
   },
   "§app.project-services/create": {
@@ -529,8 +530,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-11T11:22Z",
-      "source": "pi-session:153d255f-fbbd-46ec-933b-56f5b0674df1#79716458"
+      "at": "2026-11-13T20:59Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
     },
     "code": [
       "server/merge-queue/routes.ts",

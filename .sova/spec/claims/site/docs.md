@@ -328,7 +328,7 @@ extensions shown but not installable from here.
 
 Which features of a pi add-on work in a Sova chat and which don't: tools, commands, events, providers
 and dialogs; what reaches workers; when an add-on reaches a chat; and that enabling or disabling one
-is done in a terminal.
+is done in a terminal (`pi config`), not in Settings → Extensions, which lists Sova's own extensions.
 
 ## §site.docs/mcp-servers — MCP servers (`/docs/mcp-servers/`)
 

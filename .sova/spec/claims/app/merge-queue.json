@@ -267,8 +267,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-13T03:00Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#71ebdfba"
+      "at": "2026-11-13T20:59Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
     },
     "code": [
       "server/merge-queue/checks.ts",
@@ -293,7 +293,10 @@
       "shared/merge-queue.ts",
       "server/merge-queue/testing/repo.ts",
       "server/test-cache-guard.test.ts",
-      "server/spec-runner.ts"
+      "server/spec-runner.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue.test.ts",
+      "shared/project-contract.ts"
     ]
   },
   "§app.merge-queue/conflicts": {

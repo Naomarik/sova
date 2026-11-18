@@ -70,7 +70,12 @@
       "src/components/Composer.tsx",
       "src/components/ChatView.tsx",
       "src/lib/slash.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-13T20:59Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
+    }
   },
   "§chat.slash-commands/compact-handoff": {
     "kind": "behavior",

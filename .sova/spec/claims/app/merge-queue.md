@@ -582,7 +582,11 @@ the change could break: statecharts tests when statecharts changed, the end-to-e
 walkthroughs (a build, then the named walkthroughs) when the composer or transcript changed, the
 spec replay when the spec engine changed. Each pick carries its
 reason and, for a check that takes one, its selection: the slow integration group, or the
-walkthroughs, it names (`merge.extend`'s `select`, §chat.merge-queue/thread). It can add checks,
+walkthroughs, it names (`merge.extend`'s `select`, §chat.merge-queue/thread). A pick of a check the
+project marks `needsSelect` (§app.project-services/contract) that names no selection is refused
+(`invalid-request`, saying `"<id>" (<label>) runs with a selection: send the pick's select (its
+groups, files or walkthroughs)`), and nothing that call names is added; a trial's picks
+are Sova's own and still run with none (above). It can add checks,
 never drop the required ones. Picks count only if they arrive before
 the run's checks start; otherwise the run uses the required checks and their triggers alone.
 

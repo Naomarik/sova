@@ -58,7 +58,9 @@ approval, when:
   arrive before the run's checks start. The message for every queued branch gives the full pick,
   `merge.extend {entry, checks: [id], why, select}`, and says `select` is part of it, to be copied
   whenever the pick has one; the tool's own help says the same (§app.project-services/merge-verbs).
-  No setting governs this, and the queue doesn't handle a pick sent with no selection specially.
+  No setting governs this. A pick of a check the project marks `needsSelect` sent without a selection is
+  refused, and the message says
+  so (§app.merge-queue/checks).
 - **a merge conflicted.** It judges the conflict with `merge.resolve`, ruling no behaviour change,
   the chat fixes it, or behaviour differs (it needs the user, with its question and choices), with
   the target's side and the branch's side in plain words (§app.merge-queue/conflicts). It works the

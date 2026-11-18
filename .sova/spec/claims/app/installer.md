@@ -61,6 +61,14 @@ default. The agent dir is `$PI_CODING_AGENT_DIR` when set (a leading `~` expande
   into its own folder, and `--check` changes nothing and fails on one ("stale link, mode is not an
   extension: <link>"). A hermetic test server's agent dir links only what pi would load, so it has
   no `mode` link, and one left from before is removed as stale.
+- **No `/extensions`.** Sova ships no extension-toggle extension (the old `/extensions` command):
+  switching pi's extensions on and off is pi's own `pi config`. A link of ours to it, whose target
+  is gone, is removed as above; one into another copy of Sova that still has it is removed too,
+  never relinked, and named ("removed <link> (links to another Sova copy; this version has no
+  extension-toggle extension)"); anything else there is left as it is. `pi-config/install.sh`'s full
+  run and `--links` remove an `extension-toggle` link into its own folder ("removed <link>
+  (extension-toggle was removed)"), and `--check` changes nothing and fails on one ("stale link,
+  extension-toggle was removed: <link>").
 - **No personal configuration.** It writes no `settings.json`, `models.json`,
   `keybindings.json`, `vision-delegate.json`, `auth.json` or sandbox policy, and links no
   `pi-sessions` command. `pi-config/install.sh`, which does install a whole personal setup,

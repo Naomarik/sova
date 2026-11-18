@@ -356,8 +356,8 @@
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T16:05Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
+      "at": "2026-11-13T20:59Z",
+      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
     },
     "code": [
       "server/web-settings.ts",

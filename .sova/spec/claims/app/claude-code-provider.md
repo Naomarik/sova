@@ -215,8 +215,12 @@ account and has been seen to change between asks.
   offline, or before any read has finished. It is data, never a tracked file.
 - **No restart.** A change to the list reaches open pages (the picker and Settings' model rows) and
   running chats (their picker, a model switch to it, `agent_models`) with no restart and no reload:
-  every process follows the file, and the server tells open pages (`claude_models_changed`), which
-  read `GET /api/claude/catalog` again. The Project Overseer panel and the Orgs view read their model
+  every process follows the file, and the server tells open pages (`claude_models_changed`; a page whose feed is still
+  connecting gets it right after its snapshot, §app.decisions/push), which
+  read `GET /api/claude/catalog` again. The server says so only once its own model list has the
+  change, so each time it does, an open page also reads its model rows and its model list again,
+  even when its catalog already had the change (a read of the file can see it first); a read that
+  is no such message and finds nothing new reads nothing more. The Project Overseer panel and the Orgs view read their model
   list when they open, so they pick up a new model when reopened, with no restart.
 - **When the table can't be read.** A read that finds no models, finds a table that isn't whole, finds
   a field gone from every row (context, capabilities or output cap: one row may lack one, a whole

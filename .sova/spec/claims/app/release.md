@@ -46,7 +46,7 @@ wording can never change what Publish pushes:
   is **tag-only**: the release is of the target's tip at Start, and nothing is committed.
 - `checks` (at most 20): the **gating checks** the queue runs on the release after the merge's required
   set (§app.release/checks): each a merge check's id (an optional one included) or a check declared
-  here with a merge check's keys but `optional` (`{id, label, run, timeout, rerun, requires}`), ids
+  here with a merge check's keys but `optional` and `needsSelect` (`{id, label, run, timeout, rerun, requires}`), ids
   unique across both.
 - `quietMin` (5 to 1440, default 30): minutes without a report from the release chat, while the queue
   is frozen, before Sova says so (§app.release/quiet).

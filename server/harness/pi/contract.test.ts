@@ -251,6 +251,56 @@ describe("pi contract", () => {
     session.dispose();
   });
 
+  test("wire 1 on a real provider's messages: pi-ai's own code adds a reply's durationMs, a cost's totalFromProvider and a tool call's argumentsError (the faux provider sets none), and no frame carries one wherever a message rides", async () => {
+    const { v1Frame } = await import("./wire.ts");
+    const { calculateCost, createAssistantMessageEventStream, parseToolCallArguments } = pi.ai as any;
+    // The controls: each field as pi-ai itself sets it (a field pi-ai stops setting, or sets elsewhere, fails here).
+    const usage = () => {
+      const u = { input: 3, output: 2, cacheRead: 0, cacheWrite: 0, totalTokens: 5, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+      calculateCost({ cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } }, u);
+      return u;
+    };
+    const call = { type: "toolCall", id: "tc1", name: "echo", ...parseToolCallArguments("[1, 2]") };
+    const stream = createAssistantMessageEventStream();
+    const reply: any = { role: "assistant", api: "x", provider: "x", model: "x", stopReason: "toolUse", timestamp: Date.now(), content: [{ type: "text", text: "calling" }, call], usage: usage() };
+    stream.push({ type: "done", reason: "toolUse", message: reply });
+    assert.equal(reply.usage.cost.totalFromProvider, false, "calculateCost marks its total");
+    assert.equal(typeof call.argumentsError, "string", "arguments that are no object are an argumentsError");
+    assert.equal(typeof reply.durationMs, "number", "the event stream times the reply");
+    // A tool's own details may hold the same words: they are the tool's, and pass.
+    const details = { durationMs: 7, argumentsError: "mine", cost: { totalFromProvider: true } };
+    const result = { role: "toolResult", toolCallId: "tc1", toolName: "echo", content: [{ type: "text", text: "hi" }], details, isError: false, timestamp: Date.now(), durationMs: 4, usage: usage() };
+    const events: any[] = [
+      { type: "message_start", message: reply },
+      { type: "message_end", message: reply },
+      { type: "message_end", message: result },
+      { type: "turn_end", message: reply, toolResults: [result] },
+      { type: "agent_end", messages: [{ role: "user", content: "go", timestamp: 1 }, reply, result] },
+      { type: "entry_appended", entry: { type: "message", id: "e1", parentId: null, timestamp: "t", message: reply } },
+      { type: "message_update", message: reply, assistantMessageEvent: { type: "toolcall_end", contentIndex: 1, toolCall: call, partial: reply } },
+      { type: "message_update", message: reply, assistantMessageEvent: { type: "done", reason: "toolUse", message: reply } },
+      { type: "message_update", message: reply, assistantMessageEvent: { type: "error", reason: "error", error: reply } },
+    ];
+    /** Every path under `v` that ends in one of the three names, a tool's `details` left out. */
+    const newer = (v: unknown, at = ""): string[] => {
+      if (!v || typeof v !== "object") return [];
+      return Object.entries(v).flatMap(([k, x]) => (k === "details" ? [] : ["durationMs", "totalFromProvider", "argumentsError"].includes(k) ? [`${at}${k}`] : newer(x, `${at}${Array.isArray(v) ? "[]" : k}.`)));
+    };
+    const places = (list: any[]) => [...new Set(list.flatMap((e) => newer(e).map((path) => `${e.type}${e.assistantMessageEvent ? `/${e.assistantMessageEvent.type}` : ""}: ${path}`)))].sort();
+    const inPi = places(events);
+    assert.ok(inPi.includes("turn_end: message.durationMs") && inPi.includes("message_update/toolcall_end: assistantMessageEvent.toolCall.argumentsError") && inPi.includes("entry_appended: entry.message.usage.cost.totalFromProvider"), `the control: pi's events hold them (${inPi.length} places)`);
+    const frames = events.map((e) => JSON.parse(JSON.stringify(v1Frame(e))).event);
+    assert.deepEqual(places(frames), [], "none reaches a wire-1 frame");
+    // Nothing else is lost: a frame is its event less exactly those keys (message_update keeps its own wire shape).
+    const less = (v: any): any => (Array.isArray(v) ? v.map(less) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).filter(([k]) => !["durationMs", "totalFromProvider", "argumentsError"].includes(k)).map(([k, x]) => [k, k === "details" ? x : less(x)])) : v);
+    events.forEach((e, i) => {
+      if (e.type !== "message_update") assert.deepEqual(frames[i], less(JSON.parse(JSON.stringify(e))), e.type);
+    });
+    assert.deepEqual(frames[4].messages[2].details, details, "a tool's own details pass whole");
+    assert.deepEqual(frames[6], { type: "message_update", usage: less(reply.usage), assistantMessageEvent: { type: "toolcall_end", contentIndex: 1, toolCall: less(call) } });
+    assert.equal(reply.durationMs !== undefined && call.argumentsError !== undefined && reply.usage.cost.totalFromProvider === false, true, "and pi's own objects are left as they were");
+  });
+
   test("C3: a run, a steer, a retry and a compaction emit the events and fields bind() reads", async () => {
     const { session, faux, events } = await scriptedSession();
     let steered = false;

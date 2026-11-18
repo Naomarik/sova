@@ -27,18 +27,14 @@ export function servedVisToolsExtension(name: string, specs: readonly ToolSpec[]
   } };
 }
 
-/** `active` with `tool` where a fresh chat has it: before the first active tool registered after it. */
-export function atRegisteredPlace(active: readonly string[], tool: string, registered: readonly string[]): string[] {
-  const later = new Set(registered.slice(registered.indexOf(tool) + 1));
-  const at = active.findIndex((name) => later.has(name));
-  return at < 0 ? [...active, tool] : [...active.slice(0, at), tool, ...active.slice(at)];
-}
-
 /**
  * An extension whose tool is active only once `offered` says so (§app.project-services/tool-offered). It stays
  * registered and declared everywhere; a chat with the tool from its start sees no change at all, because
  * nothing is set when nothing changes. Asked as the chat opens, at each message and after each step (at
  * turn_end the next request of the same run has it, P23). Once yes, yes until the chat opens again.
+ * An arriving tool joins after the chat's other tools: pi keeps the active ones where they are and
+ * appends a new one, whatever order it is handed (1.5.0), and a reopen lists it where a fresh chat
+ * has it, with no change to the request (the P23 canary pins both).
  */
 export function offeredToolExtension<E extends { factory: (pi: PiExtensionAPI) => void }>(base: E, tool: string, offered: (ctx: HookCtx, prompt?: string) => Promise<boolean>): E {
   return { ...base, factory: (pi: PiExtensionAPI) => {
@@ -49,8 +45,7 @@ export function offeredToolExtension<E extends { factory: (pi: PiExtensionAPI) =
       const current = pi.getActiveTools();
       if (yes === current.includes(tool)) return;
       if (!yes) return pi.setActiveTools(current.filter((name) => name !== tool));
-      const registered = pi.getAllTools().map((t) => t.name);
-      if (registered.includes(tool)) pi.setActiveTools(atRegisteredPlace(current, tool, registered));
+      if (pi.getAllTools().some((t) => t.name === tool)) pi.setActiveTools([...current, tool]);
     };
     pi.on("session_start", async (_event, ctx) => {
       yes = false;

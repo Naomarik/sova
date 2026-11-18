@@ -1519,8 +1519,8 @@ class ChatSession {
     sdk: {
       // The REAL queue (`hasQueued`, the agent's own) and the mirror, through the driving session
       // (P9 queue-one-bit, server/harness/pi/QUIRKS.md). Delivery is read from the real queue, never
-      // the mirror: the mirror is spliced late and skips empty text, so an image-only send never
-      // leaves it. The mirror is read ONLY as a change detector against our own earlier reading of
+      // the mirror: the mirror is spliced late and by text, so its entries are not the queued
+      // messages. The mirror is read ONLY as a change detector against our own earlier reading of
       // it (server/queue.ts sdkHolds); server/queue.ts's header has the full account.
       hasQueued: () => this.harness.queue.hasQueued(),
       mirrorTotal: () => this.harness.queue.mirrorTotal(),
@@ -1789,8 +1789,9 @@ class ChatSession {
    * branch exactly as ours would).
    *
    * `hasQueuedMessages()` is the REAL queue, deliberately, not `pendingMessageCount`: that is the
-   * mirror sum, and the mirror keeps empty-text entries for ever — so one image-only send would
-   * make every later rewind refuse for the life of the session.
+   * mirror sum, and the mirror can keep an entry for ever (it is spliced by text, quirk P9: a text
+   * rewritten on its way in never matches) — so one such send would make every later rewind
+   * refuse for the life of the session.
    */
   hasPendingSends(): boolean {
     return this.queue.size > 0 || this.harness.queue.hasQueued();

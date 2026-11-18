@@ -172,14 +172,14 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "queue-one-bit",
     kind: "semantic",
     relies:
-      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, so an image-only steer stays in it after delivery; clearQueue() returns and clears both kinds; continue() drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P26) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. peekQueuedMessages() exists and is unused.",
+      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, steering first, so it lags the drain and a delivered message takes the entry of a still-queued one with its text (an image-only steer's empty text included: from pi 1.5.1 it leaves the mirror at delivery; through 1.5.0 it stayed for the session's life); clearQueue() returns and clears both kinds; continue() drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P28) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. peekQueuedMessages() exists and is unused.",
     pi: ["Agent.hasQueuedMessages", "Agent.continue", "Agent.peekQueuedMessages", "AgentSession.getSteeringMessages", "AgentSession.getFollowUpMessages", "AgentSession.clearQueue"],
     where: [
       { file: SESSION, symbol: "PiHarnessSession.queue" },
       { file: "server/queue.ts", symbol: "SdkQueueView" },
       { file: "server/queue.ts", symbol: "WebQueue.sdkTookHanded" },
     ],
-    canary: "P9 queue-one-bit: an image-only steer stays in the mirror after delivery while the agent's queue is empty; clearQueue() returns both kinds; continue() takes steering first",
+    canary: "P9 queue-one-bit: the mirror is spliced by text at message_start, so a delivered image-only steer leaves it and a twin's delivery takes a still-queued message's entry, while hasQueuedMessages() is the real queue; clearQueue() returns both kinds; continue() takes steering first",
     retireWhen: "Sova adopts peekQueuedMessages(), or pi's mirror tracks delivery by identity",
   },
   {
@@ -334,7 +334,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "declared-tools",
     kind: "private-read",
     relies:
-      "agent.state.tools is the set the next request declares, with the descriptions a prepareLoadout hook gave them (getAllTools() keeps the registry's); the private _hiddenDeclarations names the declarations requests leave out; a tool's sourceInfo.path is `builtin:<name>` for pi's own, `<inline:<name>>` for an extension factory, else the extension's file.",
+      "agent.state.tools is the set the next request declares, in pi's own order (the tools that stay active keep their place and a newly active one is appended, whatever order setActiveToolsByName is handed: pi 1.5.0), with the descriptions a prepareLoadout hook gave them (getAllTools() keeps the registry's); the private _hiddenDeclarations names the declarations requests leave out; a tool's sourceInfo.path is `builtin:<name>` for pi's own, `<inline:<name>>` for an extension factory, else the extension's file.",
     pi: ["Agent.state.tools", "AgentSession._hiddenDeclarations", "AgentSession._applyToolLoadout", "AgentSession.getAllTools", "SourceInfo.path"],
     where: [{ file: SESSION, symbol: "PiHarnessSession.declaredTools" }, { file: SESSION, symbol: "toolSource" }],
     canary: "P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source",
@@ -399,13 +399,13 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "headless-standins",
     kind: "monkey-patch",
     relies:
-      "A chat process answers each module STANDIN_FILTER matches (pi-tui's screen, terminal and components, marked, pi's modes/interactive/ but its theme, pi's syntax highlighter) with inert stand-ins of the same export names. pi-tui keeps its text, key and colour helpers in modules apart from its drawing ones; pi's theme takes only the highlighter from them; outside its terminal mode pi takes a drawing module only in terminal renderers, its CLI and its entry's re-exports, none of which a Sova chat calls.",
+      "A chat process answers each module STANDIN_FILTER matches (pi-tui's screen, terminal and components, marked, pi's modes/interactive/ but its theme, pi's syntax highlighter) with inert stand-ins of the same export names. pi-tui keeps its text, key and colour helpers in modules apart from its drawing ones; pi's theme takes only the highlighter from them; outside its terminal mode pi takes a drawing module only in terminal renderers, its HTML export's tool renderer (AgentSession.exportToHtml alone builds it), its CLI and its entry's re-exports, none of which a Sova chat calls.",
     pi: ["@earendil-works/pi-tui dist/", "dist/modes/interactive/", "dist/utils/syntax-highlight.js"],
     where: [
       { file: "server/harness/pi/headless.ts", symbol: "installHeadless" },
       { file: "server/harness/pi/headless.ts", symbol: "standInSource" },
     ],
-    canary: "P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry",
+    canary: "P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its HTML export, its CLI and its entry",
     retireWhen: "pi ships an entry point without its terminal drawing code",
   },
   {

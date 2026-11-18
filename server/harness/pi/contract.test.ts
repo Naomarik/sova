@@ -511,7 +511,7 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P9 queue-one-bit: an image-only steer stays in the mirror after delivery while the agent's queue is empty; clearQueue() returns both kinds; continue() takes steering first", async () => {
+  test("P9 queue-one-bit: the mirror is spliced by text at message_start, so a delivered image-only steer leaves it and a twin's delivery takes a still-queued message's entry, while hasQueuedMessages() is the real queue; clearQueue() returns both kinds; continue() takes steering first", async () => {
     const { session, model } = await quirkSession();
     let release = model.hold();
     let run = session.prompt("first");
@@ -523,8 +523,8 @@ describe("pi contract", () => {
     await run;
     assert.equal(lastUser(model.calls[1]!), "", "the image-only steer was delivered");
     assert.equal(session.agent.hasQueuedMessages(), false, "the agent's real queue is empty");
-    assert.deepEqual([...session.getSteeringMessages()], [""], "fixed: the mirror now drops a delivered image-only steer; queue.ts's sdkHolds can trust it");
-    assert.deepEqual(session.clearQueue(), { steering: [""], followUp: [] });
+    assert.deepEqual([...session.getSteeringMessages()], [], "an image-only steer's empty text is spliced at delivery like any other (pi 1.5.1, #8612)");
+    assert.deepEqual(session.clearQueue(), { steering: [], followUp: [] });
     release = model.hold();
     run = session.prompt("second");
     await until(() => model.calls.length === 3, "the model call");
@@ -535,6 +535,20 @@ describe("pi contract", () => {
     release();
     await run;
     const user = (text: string) => ({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() }) as never;
+    // By text, never by identity: a delivered message takes the mirror entry of a still-queued one
+    // with its text, so a non-empty mirror proves nothing and only the real queue proves delivery.
+    release = model.hold();
+    run = session.prompt("third");
+    await until(() => model.calls.length === 4, "the model call");
+    await session.followUp("twin");
+    session.agent.steer(user("twin"));
+    let atTwin: { followUp: string[]; queued: boolean } | undefined;
+    model.reply(() => void (atTwin = { followUp: [...session.getFollowUpMessages()], queued: session.agent.hasQueuedMessages() }));
+    release();
+    await run;
+    assert.equal(lastUser(model.calls[4]!), "twin", "the agent's own steer was delivered first");
+    assert.deepEqual(atTwin, { followUp: [], queued: true }, "fixed: pi's mirror tracks delivery by identity; the one-bit reading and sdkTookHanded's guard (queue.ts) may go");
+    assert.equal(model.calls.length, 6, "the follow-up was delivered after it");
     session.agent.followUp(user("follow"));
     session.agent.steer(user("steer"));
     await session.agent.continue();
@@ -933,7 +947,8 @@ describe("pi contract", () => {
       const s = session as any;
       session.setActiveToolsByName(["read", "echo", "orch"]);
       const state = s.agent.state.tools as { name: string; description: string }[];
-      assert.deepEqual(state.map((t) => t.name), ["read", "echo", "orch"], "the active tools, in order");
+      assert.deepEqual(state.map((t) => t.name), ["read", "orch", "echo"], "the named tools, each where it already was: pi keeps the order of tools that stay active, whatever order they are named in (1.5.0, #11495)");
+      assert.deepEqual(session.getActiveToolNames(), state.map((t) => t.name), "getActiveToolNames() is agent.state.tools' order");
       const registry = new Map(session.getAllTools().map((t: any) => [t.name, t]));
       const echo = state.find((t) => t.name === "echo")!;
       if (mode === "on") {
@@ -1003,7 +1018,7 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("project_verbs arriving at turn_end, on P23 (§app.project-services/tool-offered): the chat's tools in a fresh chat's order, the first request unchanged where it was offered, and the run's prompt sections kept", async () => {
+  test("project_verbs arriving at turn_end, on P23 (§app.project-services/tool-offered): the tool joins after the chat's others and a reopen lists it in a fresh chat's order without changing the request, the first request unchanged where it was offered, and the run's prompt sections kept", async () => {
     const { offeredToolExtension } = await import("../../served-tools");
     const tool = (name: string) => ({ name, label: name, description: `The ${name} tool.`, parameters: Type.Object({}), execute: async () => ({ content: [{ type: "text", text: name }], details: {} }) });
     /** Tools before and after the gated one, and a section written as the mode engine writes it, at every run's start. */
@@ -1048,7 +1063,7 @@ describe("pi contract", () => {
     assert.equal(model.calls.length, 2, "one run, two requests");
     assert.ok(!toolsOf(model.calls[0]!).includes("gated"), "the first request doesn't have it");
     assert.ok(toolsOf(model.calls[1]!).includes("gated"), "the step after setup arrived does");
-    assert.deepEqual(session.getActiveToolNames(), order, "the order a fresh chat has, so a reopen changes nothing");
+    assert.deepEqual(session.getActiveToolNames(), [...order.filter((n: string) => n !== "gated"), "gated"], "pi keeps the active tools where they are and appends the arrival (1.5.0, #11495); the reopen below changes no request");
     assert.deepEqual([...toolsOf(model.calls[1]!)].sort(), [...order].sort());
     assert.match(systemPromptOf(model.calls[1]!), /CONTRACT-MODE-SECTION/, "the tool change keeps the run's sections for the rest of the run (P39)");
     model.reply({ text: "again" });
@@ -1057,12 +1072,12 @@ describe("pi contract", () => {
     session.dispose();
 
     const reopened = await quirkSession({ file, extensions: chat(() => yes) as never });
-    assert.deepEqual(reopened.session.getActiveToolNames(), order, "reopened: the same order");
+    assert.deepEqual(reopened.session.getActiveToolNames(), order, "reopened: a fresh chat's order");
     reopened.model.reply({ text: "back" });
     await reopened.session.prompt("back again");
     const updates = (reopened.model.calls[0]!.context as { messages: any[] }).messages.filter((m) => m.role === "system");
     assert.ok(updates.length >= 2, "the control: the transcript's system messages are in the request");
-    assert.equal(updates.at(-1).sections?.tools, undefined, "the tool list in the prompt doesn't change at a reopen (appending the tool would: fixed order)");
+    assert.equal(updates.at(-1).sections?.tools, undefined, "the tool list in the prompt doesn't change at a reopen, whatever the order");
     assert.equal((updates.at(-1).toolsAdded ?? []).length, 0, "nor does the declared set");
     reopened.session.dispose();
   });
@@ -1224,7 +1239,7 @@ describe("pi contract", () => {
     delete (globalThis as any).__sovaP26;
   });
 
-  test("P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry", () => {
+  test("P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its HTML export, its CLI and its entry", () => {
     const piDist = join(pi.dir, "dist");
     const tuiDist = join(packageFrom(pi.dir, "@earendil-works/pi-tui")!, "dist");
     // The filter matches by these path tails, as they sit under any node_modules.
@@ -1261,8 +1276,20 @@ describe("pi contract", () => {
     }
     const allowed = /^(?:core\/tools\/renderers\/[^/]+|extensions\/[^/]+\/(?:renderer|ui|tools)|cli\/[^/]+|package-manager-cli|index|modes\/index|utils\/image-convert)\.js <- /;
     const themeTakes = "modes/interactive/theme/theme.js <- utils/syntax-highlight.js";
+    // The HTML export's tool renderer hands tool renderers pi's key-hint helpers (pi 1.5.0, #4748).
+    const exportTakes = "core/export-html/tool-renderer.js <- modes/interactive/components/keybinding-hints.js";
     assert.ok(takers.includes(themeTakes), `the theme takes the highlighter:\n${takers.join("\n")}`);
-    assert.deepEqual(takers.filter((t) => t !== themeTakes && !allowed.test(t)), [], "outside pi's terminal mode, a drawing module taken by code a Sova chat may run: triage by QUIRKS.md P27");
+    assert.deepEqual(takers.filter((t) => t !== themeTakes && t !== exportTakes && !allowed.test(t)), [], "outside pi's terminal mode, a drawing module taken by code a Sova chat may run: triage by QUIRKS.md P27");
+    // Only exportToHtml() builds that renderer, and Sova never exports a session through pi.
+    const builders = walk(piDist).filter((f) => !relative(piDist, f).startsWith("bundle/") && readFileSync(f, "utf8").includes("createToolHtmlRenderer(")).map((f) => relative(piDist, f)).sort();
+    assert.deepEqual(builders, ["core/agent-session.js", "core/export-html/tool-renderer.js"], "who builds the HTML export's tool renderer");
+    const agentSession = readFileSync(join(piDist, "core", "agent-session.js"), "utf8");
+    assert.equal(agentSession.split("createToolHtmlRenderer(").length, 2, "agent-session builds it once");
+    assert.match(agentSession, /async exportToHtml\([^)]*\) \{[^}]{0,300}createToolHtmlRenderer\(/, "inside exportToHtml()");
+    const sova = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+    const sources = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? (e.name === "node_modules" ? [] : sources(join(d, e.name))) : /(?<!\.test)\.ts$/.test(e.name) ? [join(d, e.name)] : []));
+    const exporting = ["server", "shared", "pi-config/extensions"].flatMap((d) => sources(join(sova, d))).filter((f) => /\.exportToHtml\s*\(/.test(readFileSync(f, "utf8"))).map((f) => relative(sova, f));
+    assert.deepEqual(exporting, [], "Sova calls pi's HTML export, whose tool renderer takes a stand-in in a chat process: triage by QUIRKS.md P27");
   });
 
   test("P28 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode", async () => {

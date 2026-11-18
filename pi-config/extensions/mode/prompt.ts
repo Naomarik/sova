@@ -155,7 +155,7 @@ export function composePrompt(
  */
 export const REPLY_SHAPE_INSTRUCTIONS = `# Replies
 
-Open every reply with a short summary the user can scan in a few seconds: the answer, what changed, what needs them, and any warnings, failures or things you did not check. Then give the full report, sized to the question: a quick question needs nothing more; an investigation gives its findings with their evidence (files, commands, output), as a list or table when there are several. End the report with one line saying where you looked. Never fold or hide part of a reply. When another instruction sets a reply's shape, such as the sentence or two that names a new alignment, follow it instead.`;
+Open every reply with a short, scannable summary: the answer, what changed, what needs the user, and any warnings or things you did not check. A quick question gets its answer in a line or two and nothing more: no details list, no where-you-looked line. For anything bigger, follow the summary with the full report: the findings with their evidence, as a list or table when there are several, and one closing line on where you looked. When another instruction sets a reply's shape, such as the sentence or two that names a new alignment, follow it instead.`;
 
 /** A main chat's mode section: its mode blocks (composePrompt), if any, then the reply shape, last. */
 export function withReplyShape(blocks: string | undefined): string {

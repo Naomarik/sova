@@ -1056,12 +1056,11 @@ test("composeWorkerPrompt: the spec block byte for byte, then the worker note; n
 
 test("reply shape: every main chat's mode section ends with it, exactly once, in every mode and mix of minor modes; no worker's ever has it", () => {
 	// Its words: a summary first, then the report sized to the question; no fold, word or line count, or fold heading.
-	assert.match(REPLY_SHAPE_INSTRUCTIONS, /^# Replies\n\nOpen every reply with a short summary/);
-	assert.match(REPLY_SHAPE_INSTRUCTIONS, /warnings, failures or things you did not check/);
-	assert.match(REPLY_SHAPE_INSTRUCTIONS, /Then give the full report, sized to the question: a quick question needs nothing more/);
-	assert.match(REPLY_SHAPE_INSTRUCTIONS, /as a list or table when there are several/);
+	assert.match(REPLY_SHAPE_INSTRUCTIONS, /^# Replies\n\nOpen every reply with a short, scannable summary: the answer, what changed, what needs the user, and any warnings or things you did not check\./);
+	assert.match(REPLY_SHAPE_INSTRUCTIONS, /A quick question gets its answer in a line or two and nothing more: no details list, no where-you-looked line\./);
+	assert.match(REPLY_SHAPE_INSTRUCTIONS, /For anything bigger, follow the summary with the full report: the findings with their evidence, as a list or table when there are several, and one closing line on where you looked\./);
 	assert.match(REPLY_SHAPE_INSTRUCTIONS, /When another instruction sets a reply's shape, such as the sentence or two that names a new alignment, follow it instead\./);
-	assert.doesNotMatch(REPLY_SHAPE_INSTRUCTIONS, /Working notes|\d+ words|lines at most|two parts/);
+	assert.doesNotMatch(REPLY_SHAPE_INSTRUCTIONS, /Working notes|\d+ words|lines at most|two parts|fold/);
 	const count = (text: string | undefined) => (text ?? "").split(REPLY_SHAPE_INSTRUCTIONS).length - 1;
 	const minorSets: MinorMode[][] = [[], ["align"], ["spec"], ["vis"], ["align", "spec", "vis"]];
 	let seen = 0;

@@ -6,7 +6,7 @@ alsoUpdate: ["server/harness/pi/QUIRKS.md", "server/harness/pi/quirks.ts", "agen
 
 Sova speaks its own harness contract; pi is its one harness, behind one adapter (§app/harness). This
 guide holds the boundary's rules and ratchets, the pi SDK facts Sova relies on, and the SDK surprises
-found so far (pi 1.0.3).
+found so far (pi 1.5.2).
 
 ## What lives here, and its docs
 
@@ -42,7 +42,7 @@ found so far (pi 1.0.3).
   (`server/harness/pi/testing/handle.ts`). (§app.harness/session)
 - **Every reach into pi's internals is a quirk** in `server/harness/pi/QUIRKS.md` (typed rows:
   `quirks.ts`): a monkey-patch, private read, error text, ordering or internal API, each with its sites
-  and a canary (`P1`…`P46`, `T1`) in `contract.test.ts`. On a pin bump or a TUI pi upgrade, run the
+  and a canary (`P1`…`P48`, `T1`; P35 is retired) in `contract.test.ts`. On a pin bump or a TUI pi upgrade, run the
   canaries against that pi (command below); a failing canary is a triage by its row, never a test edit.
   `quirks-meta.test.ts` fails on a private cast, method-table cast or SDK-member assignment no row
   names. A new reach adds its row, canary and sites in the same change.
@@ -106,7 +106,7 @@ found so far (pi 1.0.3).
 - The wire: the frontend asks for `wire=2` and renders live streaming from `SovaEvent`s;
   `shared/wire-v1.ts` maps an older server's v1 frames and rows.
 
-### pi SDK facts (verified against the installed package, 1.0.3)
+### pi SDK facts (verified against the installed package, 1.5.2)
 
 - **CRITICAL: no file locking.** If a session is open in a TUI, the webapp must NEVER write to it (no
   prompt/steer). Detect via `~/.pi/agent/sessions/live/*.json` (schema:
@@ -153,43 +153,48 @@ found so far (pi 1.0.3).
   (`server/chat-shell.ts`) stops it and waits for its record first. The runtime's extension bus is Sova's
   (`sandboxBus`, handed to the loader in `servicesForCwd`), so the adapter hears `sandbox:state`.
 - Extension dialog bridge (ExtensionUIContext) pattern: `<pi>/dist/modes/rpc/rpc-mode.js`
-  (`createExtensionUIContext` at line 83, bound via `bindExtensions({uiContext, mode:"rpc", ...})` at
-  line 231). Sova's is `createPiUiContext`/`bindPiExtensions` (`server/harness/pi/ui-bridge.ts`), bound
+  (`createExtensionUIContext` at line 87, bound via `bindExtensions({uiContext, mode:"rpc", ...})` at
+  line 234). Sova's is `createPiUiContext`/`bindPiExtensions` (`server/harness/pi/ui-bridge.ts`), bound
   by `PiChatHost.bindExtensions` (`server/harness/pi/host.ts`).
 
-### SDK surprises (pi 1.0.3)
+### SDK surprises (pi 1.5.2)
 
 `<pi>` is the pi package directory above; `<pi-ai>` is pi-ai beside its real path.
 
 - `SessionManager.open(path)` is NOT read-only: `loadEntriesFromFile` appends `"\n"` to a trailing
-  partial line (`<pi>/dist/core/session-manager.js:367`) and `_rewriteFile()` (`:754`) rewrites the whole
-  file when migrating old versions (`:722`). Never call it on a file a TUI may own: transcript/watch
+  partial line (`<pi>/dist/core/session-manager.js:368`) and `_rewriteFile()` (`:755`) rewrites the whole
+  file when migrating old versions (`:723`). Never call it on a file a TUI may own: transcript/watch
   use our own parser (`server/harness/pi/reader.ts`); `open()` only for webapp-owned chats.
 - `SessionManager.create(cwd)` defers writing the file until the first user or assistant message
-  (`_persist()`/`_hasConversation()`, `<pi>/dist/core/session-manager.js:791-800`, since 0.99.0; through
+  (`_persist()`/`_hasConversation()`, `<pi>/dist/core/session-manager.js:792-800`, since 0.99.0; through
   0.87.1 it waited for the first assistant reply; quirk P11). `POST /api/sessions` writes the header
   line itself so the new session exists on disk immediately.
 - Opening a chat runtime must not write: the SDK appends model_change/thinking_level_change at
-  construction (empty sessions, or no thinking entry on the branch; `<pi>/dist/core/sdk.js:281-289`, the
-  same since 0.85.1). `openPiSession` (`server/harness/pi/open.ts`, quirk P1) defers those two appends
+  construction (empty sessions, or no thinking entry on the branch; `<pi>/dist/core/sdk.js:292-303`, the
+  same since 0.85.1; pi 1.5.1 also appends at a run's start after a rewind across a change, #11451, quirk P1). `openPiSession` (`server/harness/pi/open.ts`, quirk P1) defers those two appends
   and the chat replays them right before its first write (`ChatSession.flushDeferredAppends`); a
   never-prompted session stays untouched.
 - pi's `theme` singleton is not re-exported from the package entry (`<pi>/dist/index.d.ts` exports
   `initTheme`/`Theme` only, though `theme` exists on `<pi>/dist/modes/interactive/theme/theme.ts`). The
   ExtensionUIContext bridge (`currentTheme`, `server/harness/pi/ui-bridge.ts`, quirk P17) calls
   `initTheme()` and reads `globalThis[Symbol.for("@earendil-works/pi-coding-agent:theme")]`, the key pi
-  sets in `<pi>/dist/modes/interactive/theme/theme.js:524`. It asks for `"dark"`: pi 1.0 (0.99.0) defaults
+  sets in `<pi>/dist/modes/interactive/theme/theme.js:503`. It asks for `"dark"`: pi 1.0 (0.99.0) defaults
   `initTheme()` to `system` (the terminal's ANSI palette), and its `dark` is 0.99.0's revised palette.
 - The sessions extension also loads inside our embedded runtimes and writes `live/*.json` with the
   server's own pid. `server/live.ts` ignores own-pid and dead-pid records, otherwise every
   webapp-owned session would look TUI-busy.
 - pi 0.86.0 writes two entry shapes 0.85.1 never emitted, and our OWN runtimes write them too:
   `message` entries with `role:"system"` (the prompt/tool loadout: `content`, `sections`,
-  `toolsAdded`/`toolsRemoved`; `SystemMessage` in `<pi-ai>/dist/types.d.ts:331`) and top-level
+  `toolsAdded`/`toolsRemoved`; `SystemMessage` in `<pi-ai>/dist/types.d.ts:360`) and top-level
   `type:"usage"` entries (`UsageEntry`, `session-manager.d.ts:36`, written by
-  `SessionManager.appendUsage()`; only caller `<pi>/dist/core/cache-warmer.js:249` with `kind:"cache_warm"`).
-  Cache warming is ON by default (`getCacheWarmingMode()` → `"streaming"`,
-  `<pi>/dist/core/settings-manager.js:637`), so expect these in webapp-owned sessions. The webapp hides both
+  `SessionManager.appendUsage()`; only caller `<pi>/dist/core/cache-warmer.js:188` with `kind:"cache_warm"`).
+  Cache warming is ON by default (`getCacheWarmingMode()`, `<pi>/dist/core/settings-manager.js:725`): through
+  pi 1.5.0 the default was `"streaming"` (warm only while a reply streams); from 1.5.1 it is `"idle"`, which
+  also re-sends an idle chat's prefix for up to 30 minutes, through `modelRuntime.streamSimple` (never the
+  agent's stream function, so P25's request hook does not see a warm). Sova's chats keep `"streaming"`:
+  `warmOnlyWhileStreaming` (`server/harness/pi/cache-warming.ts`, quirk P47) answers `"streaming"` where the
+  setting says `"idle"`, on each runtime's own settings object, and writes no file the terminal reads. So
+  expect these entries in webapp-owned sessions. The webapp hides both
   (their `system` and `usage-record` kinds give no rows, `server/transcript.ts` `entryRows`) and never
   counts them: a cache warm's spend is the usage ledger's record, written when the warm call ends
   (llm-inflight `runtime.ts`). They never move context fill: `contextForBranch` reads
@@ -205,10 +210,10 @@ found so far (pi 1.0.3).
   send goes through `harness.send()` (pi's `prompt()`). So the pi-config handlers (`vision-delegate`,
   which describes attached images for non-vision models, and `wake-nudge`) have always run against our
   runtimes; the new case is the mid-stream steer. A handler returning `{action:"handled"}` silently
-  swallows the message (`<pi>/dist/core/extensions/runner.js:1112`); `null`/`undefined` is the safe
+  swallows the message (`<pi>/dist/core/extensions/runner.js:1224`); `null`/`undefined` is the safe
   fall-through, and neither of ours returns `handled`. A mid-stream steer that CARRIES IMAGES while the
   model cannot see them waits on `vision-delegate`'s describe call before it is queued
-  (`pi-config/extensions/vision-delegate/index.ts:180-191`), so it can land after the turn it meant to
+  (`pi-config/extensions/vision-delegate/index.ts:181-192`), so it can land after the turn it meant to
   interrupt: nothing is dropped, and plain steers are unaffected.
 - Unidentified writers (e.g. a headless/orchestrating pi, not in the live registry): `/ws/chat`
   refuses (`code:"busy"`, close 4409) a session the server doesn't hold whose mtime is < 120 s old
@@ -220,7 +225,7 @@ found so far (pi 1.0.3).
   `~/.pi/agent/sova/web-sessions.json` (`server/web-sessions.ts`); everything else is "external".
   Writes re-read + merge (safe with several servers); reads use the startup copy plus this server's
   own adds, so ids another running server adds show as "web" here only after a restart.
-- Images: 1.0.3 `ImageContent` is still `{type:"image", data, mimeType}` (`<pi-ai>/dist/types.d.ts:277`)
+- Images: 1.5.2 `ImageContent` is still `{type:"image", data, mimeType}` (`<pi-ai>/dist/types.d.ts:273`)
   for prompt/steer/followUp AND storage (`<pi>/docs/sdk.md`'s `source:{type:"base64"}` example is stale).
 - Model favorites are the command-palette's `~/.pi/agent/model-favorites.json`
   (`{version:1, models:[{provider,id}]}`), read and written through that extension's own
@@ -230,21 +235,21 @@ found so far (pi 1.0.3).
 - pi 0.87.0 made the `SessionManager` canonical for model context: every request is built from
   `sessionManager.buildSessionProjection()` (`<pi>/dist/core/agent-session.js`
   `prepareNextTurnWithContext`), and `agent.state.messages` is overwritten from it
-  (`_refreshFinalizedContext`, `:418`). ASSIGNING `agent.state.messages` no longer reaches the model:
+  (`_refreshFinalizedContext`, `:625`). ASSIGNING `agent.state.messages` no longer reaches the model:
   append through the session's SessionManager and call `session.refreshContext()`
-  (`agent-session.d.ts:314`); the `btw` extension's side-thread seed does exactly that
+  (`agent-session.d.ts:407`); the `btw` extension's side-thread seed does exactly that
   (`seedBtwSession`), and so does the chat's `enterQueued` through
   `HarnessSession.appendUserMessage`/`refreshContext` (quirk P6). Sova assigns it nowhere.
 - pi 0.87.0 `context_edit` entries (`ContextEditEntry`, `session-manager.d.ts`: `targetId`,
   `replacement: {content} | null`) change what an earlier entry sends the model, never raw history. pi
   writes one ITSELF on every auto-retry and overflow recovery (`_omitRecoveryAttempt`,
-  `agent-session.js:667`, emitted as `entry_appended`), so webapp-owned sessions get them. The
+  `agent-session.js:902`, emitted as `entry_appended`), so webapp-owned sessions get them. The
   transcript renders nothing for them (`entryRows`) and the edited message keeps its row;
   `contextForBranch` does not treat one as staleness (pi's own accounting does: usage before a later
   edit is not the context size). In practice pi's only trailing edit is followed by a retry reply or a
   compaction, both of which already reset the fill.
 - pi 0.87.0 defers a `prompt()` made while `agent_settled` is being emitted (session listeners
-  included, `agent-session.js:531-553`): it resolves at once, and its turn runs inside the PREVIOUS
+  included, `agent-session.js:738-757`, `_emitAgentSettled`): it resolves at once, and its turn runs inside the PREVIOUS
   `prompt()`'s promise, whose rejection then carries the deferred turn's error. An item still held when
   the queue wakes on `agent_settled` is handed off synchronously inside that window, so its turn takes
   this path (quirk P5): it still starts, and its failure surfaces through the previous call's failure
@@ -257,14 +262,14 @@ found so far (pi 1.0.3).
   stay out of that window on purpose: a settle only schedules a drain on a timer, after the web queue's
   own hand-off, and a batch counts as delivered at its user entry's `message_end` (the
   `sova-topic-delivered` marker), never when its `prompt()` resolves.
-- `Agent.peekQueuedMessages()` exists from 0.87.0 (pi-agent-core `agent.d.ts:102`) but Sova's queue
+- `Agent.peekQueuedMessages()` exists from 0.87.0 (pi-agent-core `agent.d.ts:109`) but Sova's queue
   deliberately does not use it; `server/chat-queue-clients.test.ts` pins its presence.
 - pi 1.0 `PromptOptions.preflightResult` gets a disposition, `"started" | "queued" | "handled"`
   (`PromptDisposition`), not a boolean, and a refused prompt (already processing, compaction, no model
   or auth) gets no call at all; through 0.87.1 it was `preflightResult(false)`. The adapter drops the
   disposition: `SendOptions.onAccepted` stays `() => void` (quirk P15).
 - pi 1.0 `steer()`/`followUp()` resolve to a `QueuedInputDisposition` (`"queued" | "handled"`,
-  `agent-session.js:1680`); `PiHarnessSession.steer` drops it and stays `Promise<void>`.
+  `agent-session.js:1836`, `_queueUserInput`); `PiHarnessSession.steer` drops it and stays `Promise<void>`.
 - pi 1.0's built-in extensions (`builtin:codemode`, `builtin:tool-search`, `builtin:mcp`,
   `builtin:llama.cpp`, `<pi>/dist/extensions/index.js`) load only in the CLI (`<pi>/dist/main.js` adds them); SDK
   runtimes such as Sova's do not get them (`<pi>/docs/sdk.md` "codemode-mcp"), so no tool_search or
@@ -283,6 +288,39 @@ found so far (pi 1.0.3).
   Record goldens from a scratch dir with no context file in it or above it and `HOME` inside it, with every
   `SOVA_*` variable unset; `server/harness/pi/special-model-view.test.ts` fails a golden that names a real
   home path, a context file or a skill.
+- pi 1.2.0 fires `before_agent_start` for a run an extension's message starts too (`sendMessage` with
+  `triggerTurn` on an idle chat: a worker reporting back, the /team plan, explain): the event is a union on
+  `messageType`, `"user"` (with `prompt`, `images`) or `"custom"` (with `message`, no prompt). Sova's hooks
+  read it through `runPrompt` (`server/harness/pi/run-start.ts`), so the union stays in the adapter. Such a
+  run now builds its own prompt and takes what a run start gives: the global Overseer's run note and open
+  cards (§app.overseer/run-note), the mode engine's section and one-shot note (quirk P39). The same release
+  makes `isStreaming` true while that start step still runs, before the runtime takes the turn: wait on
+  Sova's own run event, never on the flag, for "the reply is being written".
+- pi 1.5.0 keeps the order of the tools that stay active and appends a newly activated one (#11495), so
+  `getActiveToolNames()` right after a mid-chat offer lists the new tool last; a reopen lists it where a
+  fresh chat has it, and neither changes a request's prompt or declared tools (quirks P22, P23).
+- pi 1.5.0's pi-ai no longer re-exports TypeBox and its `StringEnum` returns a plain object. pi's own
+  loader hands extensions a view with TypeBox's `Type` and a TypeBox `StringEnum`
+  (`<pi>/dist/core/extensions/pi-ai-extension-view.js`); an extension imported natively (quirk P26) gets
+  the real entry. `Type.Optional()` of a plain object writes TypeBox's marker into it as a key
+  (`"~optional": true`), which the model's provider would receive: an optional string enum goes through a
+  TypeBox schema (`pi-config/extensions/subagents/string-enum.ts`). `server/agent-loadouts.test.ts` and
+  `server/modes/modes-sova.golden.test.ts` fail on any `"~…"` key in a tool declaration.
+- pi 1.5.0 reworded its base prompt (preamble, tool list, rules, docs). The Claude Code provider cuts pi's
+  stock preamble and so holds a copy of it, in both wordings
+  (`PI_STOCK_PREAMBLES`, `pi-config/extensions/claude-code/provider/stream.ts`); its drift alarm fails when
+  the installed pi's preamble is neither.
+- pi 1.5.1 locks `auth.json` on the file it resolves to (#11655); through 1.5.0, and the terminal's older
+  pi, on the path as given. Login sync takes both when `auth.json` is a link to another file (quirk P48).
+- Since 1.0.3 pi added fields to what its events carry: `aborted` on `agent_settled`, `structuredContent`
+  on a tool's result, `durationMs` on `tool_execution_end`, tool results and replies, `totalFromProvider`
+  in a usage's cost, `argumentsError` on a tool call. Wire 1 is a fixed contract and drops each by the
+  place pi puts it (`withoutNewerFields`, `server/harness/pi/wire.ts`); its contract tests list those
+  places, taking the real-provider ones from pi-ai's own code since the faux provider sets none of them.
+  `durationMs` is a real clock: the golden recorders write it as 0.
+- The faux golden set (`server/harness/pi/golden/fixtures/faux`, its expected outputs and the wire-1
+  frames) is pinned at pi 1.0.3 on purpose and is not re-recorded at a pi bump; the live recordings are
+  (`server/harness/pi/golden/README.md`).
 
 ## When you change X, also update Y
 

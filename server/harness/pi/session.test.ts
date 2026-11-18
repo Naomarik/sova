@@ -151,6 +151,13 @@ describe("PiHarnessSession (§app.harness/session)", () => {
       assert.equal((harnessEventOf({ type, toolCallId: "c1/1", parentToolCallId: "c1" }) as { nested?: true }).nested, true, type);
       assert.equal("nested" in harnessEventOf({ type, toolCallId: "c1" }), false, type);
     }
+    // A tool call's start and end name the call and its tool (the tool-run record's timer).
+    const started = harnessEventOf({ type: "tool_execution_start", toolCallId: "c1", toolName: "agent_wait", args: {} });
+    assert.ok(started.type === "tool.start" && started.callId === "c1" && started.name === "agent_wait");
+    const ended = harnessEventOf({ type: "tool_execution_end", toolCallId: "c1", toolName: "agent_wait", isError: true });
+    assert.ok(ended.type === "tool.end" && ended.callId === "c1" && ended.name === "agent_wait");
+    const anon = harnessEventOf({ type: "tool_execution_end", isError: false });
+    assert.ok(anon.type === "tool.end" && !("callId" in anon) && !("name" in anon));
     const q = harnessEventOf({ type: "queue_update", steering: ["s"], followUp: [] });
     assert.ok(q.type === "queue" && q.steering[0] === "s" && q.followUp.length === 0);
     assert.ok((harnessEventOf({ type: "compaction_end", result: {} }) as { wrote?: boolean }).wrote === true);

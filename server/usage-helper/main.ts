@@ -15,6 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { defaultAgentDir, readDeviceId, usageRoot as usageRootOf, validUsageDay } from "../../pi-config/extensions/llm-inflight/usage-record";
 import { perfRoot } from "../perf-record";
+import { toolRunRoot } from "../tool-run-record";
 import { BadRequest, createService } from "./service";
 
 const SAVE_MS = 3_000;
@@ -35,14 +36,24 @@ const svc = createService({
   stateDir: path.join(stateRoot, "usage-ledger"),
   pricesPath: path.join(stateRoot, "model-prices.json"),
   perfRoot: perfRoot(agentDir),
+  toolRoot: toolRunRoot(agentDir),
   device: () => readDeviceId(agentDir),
   log,
 });
-const { ledger, prices } = svc;
+const { ledger, prices, attention } = svc;
 ledger.scanAll();
 ledger.indexAll();
 ledger.closeDays();
 ledger.flush();
+// Your time: every session's record read once; a gone session's hours are kept as it goes (attention.ts).
+const keepYourTime = () => {
+  try {
+    attention.refresh();
+  } catch (err) {
+    log(`your time's read failed: ${String(err)}`);
+  }
+};
+keepYourTime();
 // The catch-up's garbage, returned before following starts.
 (globalThis as { Bun?: { gc(sync: boolean): void } }).Bun?.gc(true);
 log(`caught up in ${Math.round(performance.now() - t0)} ms: ${ledger.stats.records} records, ${ledger.dayNames().length} days`);
@@ -122,6 +133,7 @@ const timers = [
   setInterval(() => {
     rewatch();
     for (const day of recentDays()) ledger.scanDay(day);
+    keepYourTime();
   }, SWEEP_MS),
   setInterval(() => {
     ledger.scanAll();

@@ -918,6 +918,7 @@ const FIXTURES: Record<string, Fixture> = {
   "models.favorite": { values: () => ({ ref: "zai/glm-5.3", favorite: true }), status: 200, oracle: async () => assert.match(readFileSync(join(agentDir, "model-favorites.json"), "utf8"), /glm-5\.3/) },
   "usage.costs": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.costs")!), {}), status: 200 },
   "usage.performance": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.performance")!), {}), status: 200 },
+  "usage.time": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.time")!), {}), status: 200 },
   "usage.today": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.today")!), {}), status: 200 },
   "usage.session": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.session")!), { sid: "no-such-sid" }), status: 200 },
   "usage.sessions": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.sessions")!), { sids: ["no-such-sid"] }), status: 200 },

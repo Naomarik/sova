@@ -287,6 +287,7 @@
     "GET /api/usage/performance": {"need":"sessions","is":"command","ids":["usage.performance"]},
     "GET /api/usage/prices": {"need":"sessions","is":"command","ids":["usage.prices"]},
     "GET /api/usage/session": {"need":"sessions","is":"command","ids":["usage.session"]},
+    "GET /api/usage/time": {"need":"sessions","is":"command","ids":["usage.time"]},
     "GET /api/usage/today": {"need":"sessions","is":"command","ids":["usage.today"]},
     "GET /api/visitor-logging": {"need":"sessions","is":"opted-out"},
     "GET /api/voice": {"need":"sessions","is":"opted-out"},

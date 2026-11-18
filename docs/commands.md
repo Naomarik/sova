@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 649 |
-| Routes a catalogue entry points at | 213 |
-| Catalogue entries | 284 |
+| Routes registered | 650 |
+| Routes a catalogue entry points at | 214 |
+| Catalogue entries | 285 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -249,6 +249,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `models.favorite` | Star Model | changes | `PUT /api/models/favorite` | sessions |
 | `usage.costs` | Usage Costs | looks | `GET /api/usage/costs` | sessions |
 | `usage.performance` | Usage Performance | looks | `GET /api/usage/performance` | sessions |
+| `usage.time` | Usage Time | looks | `GET /api/usage/time` | sessions |
 | `usage.today` | Usage Today | looks | `GET /api/usage/today` | sessions |
 | `usage.session` | Session Usage | looks | `GET /api/usage/session` | sessions |
 | `usage.sessions` | Sessions Usage | looks | `POST /api/usage/sessions` | admin |
@@ -1093,6 +1094,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/usage/prices/refresh` | admin | `usage.prices.refresh` |
 | `GET /api/usage/session` | sessions | `usage.session` |
 | `POST /api/usage/sessions` | admin | `usage.sessions` |
+| `GET /api/usage/time` | sessions | `usage.time` |
 | `GET /api/usage/today` | sessions | `usage.today` |
 | `POST /api/workers/resume` | sessions | `worker.resume` |
 | `POST /api/worktrees/remove` | sessions | `session.worktree.remove` |

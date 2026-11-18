@@ -1,0 +1,78 @@
+/* The Agents page's Time Spent tab (#/agents/time, TimeTab.tsx). It rides the Costs tab's card,
+   stats, chart, table and stacking rules (costs-tab.css, projects.css: tables stack under 560px of
+   the insights pane) and adds the two-figure chart, the section chips and the rows of label · bar ·
+   hours. Token values only. No accent on bars: agent hours are a light ink shade, your hours full
+   ink inside them; the accent is only on the selected tab and the pressed chips. */
+
+/* ---- The chart: an agents bar per day, your hours drawn inside it, centered ---- */
+.time-legend { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.time-key { display: inline-block; width: 9px; height: 9px; border-radius: 2px; }
+.time-key-agents { margin-left: var(--space-2); background: var(--color-border-strong); }
+.time-key-you { background: var(--color-ink); }
+.time-bar-slot { justify-content: center; }
+.time-bar-agents { position: absolute; left: 0; right: 0; bottom: 0; background: var(--color-border-strong); border-radius: var(--r-xs) var(--r-xs) 0 0; }
+.time-bar-you { position: absolute; left: 25%; right: 25%; bottom: 0; background: var(--color-ink); border-radius: 2px 2px 0 0; }
+
+/* ---- The section chips sit between the chart and the section they choose ---- */
+.time-sections { margin: 0; }
+
+/* ---- A section's rows: label, a bar against the list's longest row, the hours ---- */
+.time-h3 { margin: var(--space-2) 0 0; color: var(--color-ink-muted); }
+.time-lines { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.time-line {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 36px;
+}
+.time-line-label { min-width: 0; overflow-wrap: anywhere; }
+.time-line-track { display: block; height: 6px; border-radius: var(--r-full); background: var(--color-sunken); overflow: hidden; }
+.time-line-fill { display: block; height: 100%; min-width: 0; border-radius: var(--r-full); background: var(--color-ink-2); }
+.time-line-figure { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: var(--space-3); min-width: 6ch; text-align: right; }
+.time-line-count { color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); white-space: nowrap; }
+/* A row with parts opens: the whole label is the 44px target, the chevron turns when open. */
+.time-line-open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--tap-min);
+  margin: calc(var(--space-1) * -1) 0;
+  padding: 0 var(--space-1) 0 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.time-line-open:hover > span { text-decoration: underline; }
+.time-line-open:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.time-line-open > .icon { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.time-line-open[aria-expanded="true"] > .icon { transform: rotate(90deg); }
+/* The parts: their labels indented past the chevron, muted, at caption size; their bars line up with the row's. */
+.time-parts { color: var(--color-ink-muted); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.time-parts .time-line-label { padding-left: calc(var(--space-1) + 16px); }
+.time-parts .time-line { min-height: 28px; }
+.time-parts .time-line-fill { background: var(--color-ink-muted); }
+
+/* Waiting On Workers: apart from the Agents rows, under a divider, never one of them. */
+.time-apart { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding-top: var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
+
+/* The picked project's row in By Project. */
+.md .time-table tr.time-row-picked > :is(th, td) { background: var(--color-accent-tint); }
+
+/* On a phone the bar takes its own line under the label and figure. */
+@container insights (max-width: 559px) {
+  .time-line { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label figure" "bar bar"; gap: var(--space-1) var(--space-3); padding: var(--space-1) 0; }
+  .time-line > .time-line-label, .time-line > .time-line-open { grid-area: label; }
+  .time-line > .time-line-track { grid-area: bar; }
+  .time-line > .time-line-figure { grid-area: figure; }
+}
+
+/* The chart's readout: the highest bar, or the bar under the pointer or focus. A bar takes focus so a keyboard or a tap reads it too. */
+.time-chart-read { min-height: var(--lh-caption); font-variant-numeric: tabular-nums; }
+.time-bar-slot { cursor: default; border-radius: var(--r-xs) var(--r-xs) 0 0; }
+.time-bar-slot:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.time-bar-slot:focus { background: var(--color-sunken); }

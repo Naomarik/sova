@@ -290,6 +290,21 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "usage.time",
+    label: "Usage Time",
+    summary: "Your time beside agent time over a range, by day, project and session.",
+    effect: "looks",
+    params: {
+      range: { type: "string", description: "The range, such as 30d", in: "query" },
+      project: { type: "string", description: "Only this By project row (its key)", in: "query" },
+      tz: { type: "string", description: "The time zone (default UTC)", in: "query" },
+    },
+    route: { method: "GET", path: "/api/usage/time" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "usage.today",
     label: "Usage Today",
     summary: "Today's spending.",

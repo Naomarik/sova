@@ -39,6 +39,7 @@ import { rowsOf, rowsOfEntry } from "./transcript";
 import { isShellMessage, onWire, onWire1, rowFor, withRows, type ReplyLookup } from "./wire-rows";
 import { perfRecordOf, ReplyTimer, type ReplyOutcome } from "./reply-timing";
 import { appendPerfRecord, replyTimingOf, type PerfKind } from "./perf-record";
+import { appendToolRunRecord, ToolRunTimer } from "./tool-run-record";
 import { replyTimingsOf } from "./reply-facts";
 import type { ReplyTiming } from "../shared/harness-wire";
 import { producerId } from "../pi-config/extensions/llm-inflight/tracker.ts";
@@ -1259,6 +1260,17 @@ class ChatSession {
   private modeActionsRef: ModeActions | undefined;
   /** Times each reply as it streams (§app.insights/reply-timing); a new one per bind. */
   private replyTimer = new ReplyTimer();
+  /** Times each top-level tool call and writes its record when it ends (server/tool-run-record.ts);
+      a stopped turn, a rebind or the chat going away closes the calls still open. */
+  private toolRuns = new ToolRunTimer({
+    who: () => {
+      const sid = this.harness.id;
+      const who = resolveUsageAttribution(sid);
+      const sk = who.routed && PERF_KINDS_SET.has(who.kind) ? (who.kind as PerfKind) : undefined;
+      return { sid, ...(sk ? { sk } : {}), device: readDeviceId(agentRoot()), producer: producerId() };
+    },
+    write: (record) => void appendToolRunRecord(record, agentRoot()),
+  });
   /** This session's measured replies by entry id: one load at bind (the store, through the server)
       plus each reply measured here. A wire-2 row's `reply` fact reads it. */
   private replyTimings = new Map<string, ReplyTiming>();
@@ -2185,6 +2197,7 @@ class ChatSession {
     );
     this.unsubscribe?.();
     this.replyTimer = new ReplyTimer();
+    this.toolRuns.settle();
     void this.loadReplyTimings();
     // Through the driving session: one pi listener, registered here, after the stream guard and the
     // extensions, as before; each event arrives once, in pi's tick (P12 message-end-before-persist).
@@ -2204,6 +2217,10 @@ class ChatSession {
       // process), start the next session listing afresh (§app.session-list/listing-reuse). A call
       // another tool made (nested) doesn't: its caller's end does, once.
       if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
+      // Tool-running time: each top-level call's record as it ends; a call a stop left open ends with the run.
+      if (event.type === "tool.start" && !event.nested && event.callId) this.toolRuns.start(event.callId, event.name);
+      else if (event.type === "tool.end" && !event.nested && event.callId) this.toolRuns.end(event.callId);
+      else if (event.type === "run.settled") this.toolRuns.settle();
       // A subfolder's skills join the / menu once offered, and leave with the block (§chat.subfolder-skills/command).
       if (event.type === "run.settled" || event.type === "compaction.end") {
         this.refreshCommands();
@@ -4567,6 +4584,7 @@ class ChatSession {
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.workersTimer) clearInterval(this.workersTimer);
     this.unsubscribe?.();
+    this.toolRuns.settle();
     this.streamGuardOff?.();
     for (const p of this.pendingUi.values()) p.resolve(undefined);
     this.pendingUi.clear();

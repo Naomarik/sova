@@ -25,6 +25,11 @@ export interface PerfStored {
   model: string;
   responseModel?: string;
   timing: ReplyTiming;
+  /** ms epoch the request went out; `sentAt + endMs` is the reply's end (Time Spent's agent window). */
+  sentAt: number;
+  endMs: number;
+  /** The session's kind, when the record names it. */
+  kind?: "main" | "worker" | "overseer";
 }
 
 /** The answer to `session-timings`: one session's measured replies by entry id. `v` changes whenever
@@ -52,8 +57,9 @@ export function parsePerfLine(line: string): PerfStored | null {
   if (r.reasoning !== undefined) timing.reasoning = r.reasoning;
   if (r.tool.n > 0) timing.toolCalls = r.tool.n;
   if (r.thinking.n > 0) timing.thinkingParts = r.thinking.n;
-  const out: PerfStored = { key: r.key, ts: r.ts, sid: r.sid, entryId: r.entryId, provider: r.provider, model: r.model, timing: normalizeTiming(timing) };
+  const out: PerfStored = { key: r.key, ts: r.ts, sid: r.sid, entryId: r.entryId, provider: r.provider, model: r.model, timing: normalizeTiming(timing), sentAt: r.sentAt, endMs: r.endMs };
   if (r.responseModel !== undefined) out.responseModel = r.responseModel;
+  if (r.kind !== undefined) out.kind = r.kind;
   return out;
 }
 
@@ -94,6 +100,21 @@ export class PerfStore {
   /** Records read so far (tests, stats). */
   get size(): number {
     return this.byKey.size;
+  }
+
+  /** Bumped per record added: a cache over the records is good while it stands. */
+  get version(): number {
+    return this.seq;
+  }
+
+  /** The first measured reply's end (ms), or null. */
+  get firstAt(): number | null {
+    return this.first;
+  }
+
+  /** Every record, in no order (the Time Spent tab's agent time). */
+  records(): IterableIterator<PerfStored> {
+    return this.byKey.values();
   }
 
   /** Read what's new: the newest days always, every day at most once a minute (or `full`). */

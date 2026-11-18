@@ -5,8 +5,12 @@ import { Ledger } from "./ledger";
 import { createPriceBook, type PriceBook, type PriceBookOptions } from "./price-book";
 import { orgCosts, projectCost, type ProjectDeps, type ProjectScope } from "./project";
 import { PerfStore } from "./perf-store";
-import { foldCache, foldInputOf } from "./project-fold";
+import { foldCache, foldInputOf, projectFold } from "./project-fold";
 import { Queries } from "./query";
+import { AttentionStore } from "./attention";
+import { LabelStore } from "./labels";
+import { TimeQueries } from "./time";
+import { ToolRunStore } from "./tool-store";
 
 /**
  * The helper's world in one object: the price book, the ledger and the queries over it, wired so a
@@ -19,6 +23,14 @@ export interface ServiceOptions {
   pricesPath: string;
   /** The reply-timing store, `<agent dir>/usage/perf/v1` (perf-store.ts). */
   perfRoot?: string;
+  /** The tool-run store, `<agent dir>/usage/tools/v1` (server/tool-run-record.ts). */
+  toolRoot?: string;
+  /** Time Spent's records, `<state root>/attention` (server/time-spent.ts). */
+  attentionDir?: string;
+  /** Message labels, `<state root>/message-labels` (server/message-labels.ts). */
+  labelsDir?: string;
+  /** Your time's durable rollup (attention.ts), outside the ledger's snapshots: `<state root>/usage-time/you-v1.jsonl`. */
+  rollupPath?: string;
   device?: () => string | null;
   now?: () => number;
   log?: (line: string) => void;
@@ -30,6 +42,10 @@ export interface Service {
   prices: PriceBook;
   queries: Queries;
   perf: PerfStore;
+  tools: ToolRunStore;
+  attention: AttentionStore;
+  labels: LabelStore;
+  time: TimeQueries;
   /** One request, as the client sends it: `{op, ...}`. Throws a `BadRequest` on a bad one. */
   answer(req: Record<string, unknown>): Promise<unknown>;
 }
@@ -73,6 +89,22 @@ export function createService(opts: ServiceOptions): Service {
 
   const perf = new PerfStore({ root: opts.perfRoot ?? path.join(path.dirname(opts.usageRoot), "perf", "v1"), ...(opts.device ? { device: opts.device } : {}), ...(opts.now ? { now: opts.now } : {}) });
 
+  const stateRoot = path.dirname(opts.stateDir);
+  const tools = new ToolRunStore({ root: opts.toolRoot ?? path.join(path.dirname(opts.usageRoot), "tools", "v1"), ...(opts.now ? { now: opts.now } : {}) });
+  const attention = new AttentionStore({
+    dir: opts.attentionDir ?? path.join(stateRoot, "attention"),
+    rollupPath: opts.rollupPath ?? path.join(stateRoot, "usage-time", "you-v1.jsonl"),
+    place: (sid) => {
+      const o = ledger.owners.get(sid);
+      return o ? { cwd: o.cwd, project: o.project, kind: o.kind } : null;
+    },
+    ...(opts.now ? { now: opts.now } : {}),
+    log,
+  });
+  const labels = new LabelStore(opts.labelsDir ?? path.join(stateRoot, "message-labels"));
+  const time = new TimeQueries({ attention, perf, tools, labels, ledger, queries, device: opts.device ?? (() => null), now: opts.now ?? Date.now });
+  const noFold = projectFold({ projects: [], overseer: [] });
+
   const projectDeps: ProjectDeps = { ledger, queries, prices, device: opts.device ?? (() => null), now: opts.now ?? Date.now };
 
   // The By project rows' fold, kept across polls while the server sends the same projects.
@@ -107,6 +139,19 @@ export function createService(opts: ServiceOptions): Service {
         if (!USAGE_RANGES.includes(range)) throw new BadRequest(`range must be one of ${USAGE_RANGES.join(", ")}`);
         return perf.performance({ range, providers: strings(req.provider), models: strings(req.model), tz });
       }
+      case "time": {
+        const range = (req.range ?? "30d") as UsageRange;
+        if (!USAGE_RANGES.includes(range)) throw new BadRequest(`range must be one of ${USAGE_RANGES.join(", ")}`);
+        if (req.project !== undefined && req.project !== null && typeof req.project !== "string") throw new BadRequest("project must be a row key");
+        const fold = foldInputOf(req.fold);
+        return time.time({ range, project: typeof req.project === "string" && req.project ? req.project : null, tz, fold: fold ? folds(fold) : noFold, labels: req.labels === true });
+      }
+      // The server is deleting a session: its hours are kept now (attention.ts keep).
+      case "time-keep": {
+        if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");
+        attention.keep(req.sid);
+        return { ok: true };
+      }
       case "prices":
         return prices.info();
       case "refresh":
@@ -134,5 +179,5 @@ export function createService(opts: ServiceOptions): Service {
     }
   };
 
-  return { ledger, prices, queries, perf, answer };
+  return { ledger, prices, queries, perf, tools, attention, labels, time, answer };
 }

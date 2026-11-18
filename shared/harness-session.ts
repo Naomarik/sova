@@ -195,10 +195,11 @@ export type HarnessEvent = { frame(): HarnessFrame } & (
   | { type: "message.update"; role: "user" | "assistant" | "other"; handle: object | undefined; stream?: HarnessStreamDelta }
   /** Listeners run before the message's entry is written; one microtask later it is (persistedId). */
   | ({ type: "message.end"; reply?: HarnessReplySummary } & HarnessMessageEvent)
-  /** `nested`: a call another tool made (pi's parentToolCallId), which writes no entry of its own. */
-  | { type: "tool.start"; nested?: true }
+  /** `nested`: a call another tool made (pi's parentToolCallId), which writes no entry of its own. `callId` and
+      `name`: the call and its tool, when the harness names them. */
+  | { type: "tool.start"; nested?: true; callId?: string; name?: string }
   | { type: "tool.update"; nested?: true }
-  | { type: "tool.end"; nested?: true }
+  | { type: "tool.end"; nested?: true; callId?: string; name?: string }
   /** The agent's queue mirror changed: its texts now. */
   | { type: "queue"; steering: readonly string[]; followUp: readonly string[] }
   | { type: "compaction.start" }

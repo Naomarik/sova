@@ -29,7 +29,11 @@ export interface StoredLabel {
   /** Who answered: the chain's provider id and its model. */
   provider: string;
   model: string;
+  /** When it was labelled (ms). */
   at: number;
+  /** When the message was sent (ms): its press, for one that waited in the queue or a button's. Kept on labels stored
+      from the time-spent totals on; an older label has none, and its `at` stands in. */
+  sentAt?: number;
 }
 
 export interface SessionLabels {
@@ -90,7 +94,14 @@ export class MessageLabelStore {
       }
       const label = typeof l?.label === "string" ? (RENAMED[l.label] ?? l.label) : undefined;
       if (typeof l?.id === "string" && isLabel(label) && time(l.confidence))
-        out.labels.set(l.id, { label, confidence: l.confidence, provider: String(l.provider ?? ""), model: String(l.model ?? ""), at: time(l.at) ? l.at : 0 });
+        out.labels.set(l.id, {
+          label,
+          confidence: l.confidence,
+          provider: String(l.provider ?? ""),
+          model: String(l.model ?? ""),
+          at: time(l.at) ? l.at : 0,
+          ...(time(l.sentAt) ? { sentAt: l.sentAt } : {}),
+        });
       else if (typeof l?.id === "string" && time(l.pressedAt)) out.presses.set(l.id, l.pressedAt);
       else if (typeof l?.id === "string" && l.program === true) out.program.add(l.id);
       else if (time(l?.land)) out.lands.push(l.land);

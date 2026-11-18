@@ -97,10 +97,10 @@
       "role": "system",
       "content": "",
       "sections": {
-       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@25a2bb6c06d1e998",
+       "preamble": "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
+       "tools": "@4017e8cd5619ddfa",
        "rules": "@3f9185f8db1b8188",
-       "docs": "@0f5fabf6c3c47c4c",
+       "docs": "@7ac29a1ce1499f33",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@558b6ed7d55bf734"
       },
@@ -145,10 +145,10 @@
      "role": "system",
      "content": "",
      "sections": {
-      "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-      "tools": "@25a2bb6c06d1e998",
+      "preamble": "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
+      "tools": "@4017e8cd5619ddfa",
       "rules": "@3f9185f8db1b8188",
-      "docs": "@0f5fabf6c3c47c4c",
+      "docs": "@7ac29a1ce1499f33",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@558b6ed7d55bf734"
      },

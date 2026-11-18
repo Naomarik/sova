@@ -121,7 +121,7 @@ const prediction = (over: Record<string, unknown> = {}) =>
     base: { round: 0, arm: "A" },
   });
 const MODELS = { "zai_glm-5.3@low": { model: "zai/glm-5.3", effort: "low" } };
-const attempt = (over: Record<string, unknown> = {}, arm: Record<string, unknown> = {}, corpus?: Set<string>) =>
+const attempt = (over: Record<string, unknown> = {}, arm: Record<string, unknown> = {}, corpus?: unknown) =>
   rec.attemptLine({ campaign: "vis-dsl", round: 2, armId: "B", arm: { change: "Moves the guide rule to the first line", knobs: ["tool-description"], ...arm }, prediction: prediction(), models: MODELS, outcome: "carried", date: "2026-11-18", diff: null, ...over }, corpus);
 
 test("an attempt's line is built from named fields only: an arm's address and folders, and every case id, stay out of it", () => {
@@ -192,6 +192,14 @@ test("the check refuses anything private in any free text of a line, naming the 
     }
   }
   assert.match(rec.checkLine({ ...clean, text: undefined, files: [`${HOME}/x.ts`] })[0].what, /a home folder/);
+  // The campaign's own case ids, whatever their shape, are refused by name where one stands as a word; with no campaign only the shape is known.
+  const named = rec.corpusOf([], ["arrow-labels", "f07"]);
+  for (const over of [{ why: "like arrow-labels" }, { note: "Arrow-Labels again" }, { text: undefined, files: ["docs/arrow-labels.md"] }]) {
+    const field = Object.keys(over).pop()!;
+    assert.deepEqual(rec.checkLine({ ...clean, ...over }, named), [{ field, what: "holds a case id (arrow-labels)" }], field);
+    assert.deepEqual(rec.checkLine({ ...clean, ...over }), [], `${field}: no campaign`);
+  }
+  assert.deepEqual(rec.checkLine({ ...clean, why: "narrow-labels and arrow-labels-wide are other words" }, named), []);
   // What the patterns must leave alone: a path inside the repository, a version, a model with its effort, a percentile.
   for (const ok of ["server/home/index.ts and src/Users/list.tsx", "pinned at 1.0.3, then 2.11.14", "zai/glm-5.3@low ran it", "fewer than 7 words shared: draw the monthly revenue for the northern"]) assert.deepEqual(rec.checkLine({ ...clean, why: ok }, corpus), [], ok);
   // Shapes: nothing an arm or a case holds can ride along under another name.
@@ -263,7 +271,9 @@ test("a round is refused while a test chat could read the record: in an arm's fo
   const fenced = mk("arms", "holds", "sub");
   writeFileSync(join(fenced, ".git"), "gitdir: elsewhere\n");
 
-  const refused = (arm: Record<string, unknown>, cwd = clean) => rec.armRefusals({ B: arm }, { project, cwd });
+  // What git would say (the real question is asked in the integration file): only `tracked` still has the record in its HEAD commit.
+  const tracked = mk("arms", "tracked");
+  const refused = (arm: Record<string, unknown>, cwd = clean) => rec.armRefusals({ B: arm }, { project, cwd, tracks: (d: string) => d === tracked });
   assert.deepEqual(refused({ how: "sova", cwd: clean, agentDir: join(clean, ".agent") }), []);
   assert.deepEqual(refused({ how: "command", command: "true" }), [], "a command arm with no cwd runs where the runner does");
   assert.deepEqual(refused({ how: "sova", cwd: fenced }), [], "a repository of its own below a folder that holds one doesn't see it");
@@ -274,6 +284,7 @@ test("a round is refused while a test chat could read the record: in an arm's fo
     assert.match(r[0], /^arm B: .*\.sova[/\\]ab is there for its test chats to read/);
   }
   assert.match(refused({ how: "command", command: "true" }, holds)[0], /^arm B: /);
+  for (const arm of [{ how: "sova", cwd: tracked }, { how: "sova", cwd: clean, agentDir: join(tracked, ".agent") }]) assert.match(refused(arm)[0], /^arm B: the repository .* is in still has \.sova[/\\]ab in its HEAD commit/, "a delete left uncommitted hides nothing from git");
   for (const cwd of [project, campaign]) assert.match(refused({ how: "sova", cwd })[0], /^arm B: .* is inside the campaign's own worktree, where the record is written/);
   assert.deepEqual(rec.armRefusals({ B: { how: "sova", cwd: project } }, { project: null, cwd: clean }), [], "no project known, and no record there yet");
 });

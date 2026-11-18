@@ -7,7 +7,8 @@ What a subject has learned, kept after the campaign folder is gone. One file per
 - **Every attempt is kept.** Each candidate arm of each round gets a line, whether it was carried forward or dropped. A dropped attempt that scored below its base "made it worse", and says so when the record is shown.
 - **General words and counts only.** No text from a case, a reply or a real chat, no case id, no home folder, URL, IP address or email. A problem is named in the consultant's own general words ("skips the guide before drawing"), with how many cases it covered. `record.mjs add` builds a line from named fields only and refuses one the check catches.
 - **One name per problem.** A consultant picks one of the record's problem names when its change is aimed at the same failure, and writes a new one only when none fits. The record is shown grouped by problem.
-- **Who reads it.** The main chat at the first step, the case finder, every consultant before it proposes, and the landing reviewer. The grader never reads it, and no test chat ever sees it (`references/arms.md`).
+- **Who reads it.** The main chat at the first step, the case finder, every consultant before it proposes, and the landing reviewer. The grader never reads it.
+- **No test chat sees it.** Every arm's branch, master's arm too, removes `.sova/ab/` in a commit of its own that never lands, and a round refuses to start while an arm still holds the record in its folder or its HEAD commit (`references/arms.md`).
 - **How it is kept.** `record.mjs add` writes it in the campaign's own worktree after each round is scored, so nothing is lost while the worktree exists. At the last stop it is committed by explicit path on the campaign's own branch, which carries nothing else, and it lands with Land: a winner's branch is cut from that branch, so the record rides with it; a parked campaign lands the record alone. Never `git add -A`.
 
 ## A prediction
@@ -57,7 +58,7 @@ mayBreak: p03
  "confirm": [{"model": "zai/glm-5.3", "effort": "low", "cases": 10, "master": 40, "winner": 80}], "note": "..."}
 ```
 
-`verdict` is `land`, `cycle` or `park`; `master` the commit Round 0 ran; `rounds` how many rounds had candidates; `confirm` the confirm run's pass rates on the sealed cases, when there was one.
+`verdict` is `land`, `cycle` or `park`; `master` master's commit, the one Round 0's arm was cut from (its `base`; its `ref` when it has none); `rounds` how many rounds had candidates; `confirm` the confirm run's pass rates on the sealed cases, when there was one.
 
 ## The commands
 
@@ -75,7 +76,8 @@ mayBreak: p03
 A line is refused, naming its field, when a piece of its free text (`problem`, `change`, `why`, `note`, `text`, `files`) holds:
 
 - a home folder or absolute path (`/home/`, `/Users/`, `~/`, a drive letter), a URL, an IP address or an email address;
-- a token shaped like a case id (`f01`, `p12`, `s03`);
+- one of the campaign's case ids, standing as a word (case `arrow-labels`: "like arrow-labels" is refused), in `add`, `close` and `check --campaign`;
+- a token shaped like a case id (`f01`, `p12`, `s03`), with or without a campaign;
 - 8 or more words in a row that appear in one of the campaign's cases or saved replies.
 
 Its other fields must have their own shape (a date, a round number, a model name, a commit). `add` and `close` run the check before they write; a `text` it refuses is left out for `files` and `lines`, and the command says so.

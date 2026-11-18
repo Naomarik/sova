@@ -1,6 +1,6 @@
 # Run every test model on every arm
 
-Before the round, in every arm: remove `.sova/ab/` from its worktree and from the folder its chats run in (`references/arms.md`). The runner refuses to start, naming the arm, while one still holds it.
+Before the round, every arm's branch has a commit that removes `.sova/ab/` (`references/arms.md`): an arm cut from master needs one, an arm cut from another arm already has it. An uncommitted delete isn't enough, since git still shows the record. The runner refuses to start, naming the arm, while one still holds it in its folder or its HEAD commit.
 
 One runner per test model, at the same time. Each runs `node scripts/runner.mjs <campaign> --round <n> --models <its model>` and then `scripts/shoot.mjs` the same way.
 

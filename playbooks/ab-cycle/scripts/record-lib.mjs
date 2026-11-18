@@ -2,6 +2,7 @@
 // other scripts run at import): a round's prediction beside what it did (references/ledger.md), the
 // subject's record and its check (references/record.md), and the rule that no arm may hold the record
 // (references/arms.md). Node builtins only.
+import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
@@ -188,14 +189,19 @@ export function samplePredictionTable(slugs, label) {
 /** A text's words, lowercased, for the shared-words check. */
 export const words = (s) => String(s ?? "").toLowerCase().match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? [];
 
-/** Every run of SHARED_WORDS words in the campaign's cases and saved replies. */
-export function corpusOf(texts) {
+/**
+ * What a line may not repeat from a campaign: every run of SHARED_WORDS words in its cases and saved
+ * replies (`runs`), and its cases' own ids wherever one stands as a word (`ids`, one pattern; null: none).
+ */
+export function corpusOf(texts, caseIds = []) {
   const runs = new Set();
   for (const text of texts) {
     const w = words(text);
     for (let i = 0; i + SHARED_WORDS <= w.length; i++) runs.add(w.slice(i, i + SHARED_WORDS).join(" "));
   }
-  return runs;
+  const named = [...new Set(caseIds.filter((id) => typeof id === "string" && id.trim()).map((id) => id.trim()))].sort((a, b) => b.length - a.length);
+  const ids = named.length ? new RegExp(`(?<![\\p{L}\\p{N}_-])(?:${named.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?![\\p{L}\\p{N}_-])`, "giu") : null;
+  return { runs, ids };
 }
 
 const PRIVATE = [
@@ -206,14 +212,21 @@ const PRIVATE = [
   ["a token shaped like a case id", /\b[fps]\d{2,}\b/],
 ];
 
-/** What a piece of free text holds that a record may not: [] when it is clean. */
+/**
+ * What a piece of free text holds that a record may not: [] when it is clean. With a campaign's corpus
+ * (corpusOf) its real case ids are refused by name; the id-shaped pattern stays for a check with none.
+ */
 export function privateIn(text, corpus) {
   const s = String(text ?? "");
   const out = PRIVATE.filter(([, re]) => re.test(s)).map(([what]) => what);
-  if (corpus?.size) {
+  if (corpus?.ids) {
+    const found = [...new Set([...s.matchAll(corpus.ids)].map((m) => m[0].toLowerCase()))];
+    if (found.length) out.push(`a case id (${found.join(", ")})`);
+  }
+  if (corpus?.runs?.size) {
     const w = words(s);
     for (let i = 0; i + SHARED_WORDS <= w.length; i++)
-      if (corpus.has(w.slice(i, i + SHARED_WORDS).join(" "))) {
+      if (corpus.runs.has(w.slice(i, i + SHARED_WORDS).join(" "))) {
         out.push(`${SHARED_WORDS} or more words in a row from a case or a saved reply`);
         break;
       }
@@ -473,12 +486,22 @@ export function recordInSight(dir) {
   }
 }
 
+/** True when the repository `dir` sits in still has `.sova/ab` in its HEAD commit: a chat there reads it through git. */
+export function tracksRecord(dir) {
+  try {
+    return execFileSync("git", ["-C", dir, "ls-tree", "--full-tree", "--name-only", "HEAD", ".sova/ab"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() !== "";
+  } catch {
+    return false; // no repository, or no commit yet
+  }
+}
+
 /**
  * Why a round may not start: an arm whose folder (its cwd, its worktree, the folder holding its
- * agentDir) still holds the record, or sits inside the campaign's own worktree, where the record is
- * written. One line each, naming the arm. A rescore arm runs nothing, so it is never refused.
+ * agentDir) still holds the record, whose repository still has it in its HEAD commit (a delete left
+ * uncommitted hides nothing from git), or that sits inside the campaign's own worktree, where the
+ * record is written. One line each, naming the arm. A rescore arm runs nothing, so it is never refused.
  */
-export function armRefusals(arms, { project = null, cwd = process.cwd() } = {}) {
+export function armRefusals(arms, { project = null, cwd = process.cwd(), tracks = tracksRecord } = {}) {
   const out = [];
   const own = project ? real(project) : null;
   for (const [a, arm] of Object.entries(arms)) {
@@ -490,7 +513,8 @@ export function armRefusals(arms, { project = null, cwd = process.cwd() } = {}) 
         continue;
       }
       const held = recordInSight(dir);
-      if (held) out.push(`arm ${a}: ${join(held, RECORD_DIR)} is there for its test chats to read. Remove it in the arm before the round, as an uncommitted delete (references/arms.md).`);
+      if (held) out.push(`arm ${a}: ${join(held, RECORD_DIR)} is there for its test chats to read. Remove it before the round, in a commit on the arm's own branch (references/arms.md).`);
+      else if (tracks(dir)) out.push(`arm ${a}: the repository ${dir} is in still has ${RECORD_DIR} in its HEAD commit, so its test chats can read the record through git. Commit the removal on the arm's own branch (references/arms.md).`);
     }
   }
   return [...new Set(out)];

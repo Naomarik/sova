@@ -24,17 +24,23 @@ const put = (p: string, v: unknown) => {
   writeFileSync(p, typeof v === "string" ? v : `${JSON.stringify(v, null, 2)}\n`);
 };
 
-// The project: a repository whose master holds the text under test, and one experiment commit that changes it.
+// The project: a repository whose master holds the text under test and another subject's record, and one experiment
+// branch's commit that changes the text and, as every arm's branch does, no longer holds the record.
 const project = join(root, "project");
 mkdirSync(project, { recursive: true });
 git(project, "init", "-q");
 put(join(project, "tool.txt"), "Draws a chart.\nRead the guide when unsure.\n");
-git(project, "add", "tool.txt");
+put(join(project, ".sova", "ab", "older.jsonl"), "an earlier subject's record\n");
+git(project, "add", "tool.txt", ".sova/ab/older.jsonl");
 git(project, "commit", "-qm", "base");
 const master = git(project, "rev-parse", "HEAD");
 put(join(project, "tool.txt"), "Draws a chart.\nRead the guide first.\n");
+git(project, "rm", "-rq", ".sova/ab");
 git(project, "commit", "-qam", "guide first (experiment, never lands)");
 const changed = git(project, "rev-parse", "HEAD");
+// Master's arm runs master plus one commit of its own (the one that removes the record from the arm).
+git(project, "commit", "-q", "--allow-empty", "-m", "removes the record from the arm (experiment, never lands)");
+const removed = git(project, "rev-parse", "HEAD");
 
 // The campaign, in the project's ignored cache; each arm runs in a folder of its own outside the project.
 const campaign = join(project, ".cache", "ab", "demo");
@@ -55,13 +61,14 @@ put(
     { id: "p01", group: "pass", prompt: "Say hello", expect: "Doesn't break", check: { not: { contains: "broken" } } },
     { id: "p02", group: "pass", prompt: "Say goodbye", expect: "Doesn't break", check: { not: { contains: "broken" } } },
     { id: "s01", group: "sealed", prompt: "Held back", expect: "Reads the guide", check: { contains: "guide" } },
+    { id: "arrow-labels", group: "sealed", prompt: "Held back too", expect: "Reads the guide", check: { contains: "guide" } },
   ]
     .map((k) => JSON.stringify(k))
     .join("\n") + "\n",
 );
 // B fixes f01 and f02, leaves f03 and breaks p02; it expected f01 and f03, and thought p01 at risk.
 const B_REPLIES = "case {case} in f01|f02) echo 'I read the guide';; p02) echo 'broken';; *) echo 'plain';; esac";
-const arms0 = { A: { label: "master", baseline: true, how: "command", command: "echo plain", cwd: armDir("A"), ref: master } };
+const arms0 = { A: { label: "master", baseline: true, how: "command", command: "echo plain", cwd: armDir("A"), base: master, ref: removed } };
 const arms1 = {
   B: { label: "guide first", change: "Tells it to read the guide first", base: master, ref: changed, how: "command", command: B_REPLIES, cwd: armDir("B"), url: "http://127.0.0.1:4814", agentDir: join(armDir("B"), ".agent"), problem: "skips the guide before drawing", why: "A rule that says when unsure is read as optional", expectFix: ["f01", "f03"], mayBreak: ["p01"], knobs: ["wording"] },
   C: { label: "no change", change: "Rewords nothing that matters", base: master, ref: master, how: "command", command: "echo plain", cwd: armDir("C"), problem: "skips the guide before drawing", why: "A control with the same text" },
@@ -160,6 +167,12 @@ test("the commands refuse, and write nothing: a line repeating a case, a predict
   assert.equal(check.status, 1);
   assert.match(check.stderr, /vis-demo\.jsonl:4: note holds 8 or more words in a row from a case or a saved reply/);
   writeFileSync(record, before);
+  // A case's own id, whatever its shape: the campaign's ids reach the check.
+  put(join(campaign, "rounds", "1", "arms.json"), { ...arms1, C: { ...arms1.C, why: "The same slip as arrow-labels" } });
+  const named = run("record", "add", campaign, "--round", "1", "--outcome", "dropped", "--replace");
+  assert.equal(named.status, 1);
+  assert.match(named.stderr, /round 1, arm C isn't written:\n {2}why holds a case id \(arrow-labels\)/);
+  assert.equal(readFileSync(record, "utf8"), before);
 
   // A prediction naming a sealed case stops the scorer and the runner.
   put(join(campaign, "rounds", "1", "arms.json"), { ...arms1, B: { ...arms1.B, expectFix: ["f01", "s01"] } });
@@ -179,6 +192,21 @@ test("the commands refuse, and write nothing: a line repeating a case, a predict
   assert.equal(existsSync(join(campaign, "rounds", "2", "results")), false);
   rmSync(join(armDir("D"), ".sova"), { recursive: true });
   assert.equal(run("runner", campaign, "--round", "2").status, 0, "removed in the arm, the round runs");
+  // An arm cut from a master that holds the record, deleted there but not committed: git still shows it, so the round doesn't start until the removal is a commit.
+  const cut = armDir("cut");
+  git(cut, "init", "-q");
+  put(join(cut, ".sova", "ab", "x.jsonl"), before);
+  put(join(cut, "tool.txt"), "Draws a chart.\n");
+  git(cut, "add", "-A");
+  git(cut, "commit", "-qm", "master with a record");
+  rmSync(join(cut, ".sova"), { recursive: true });
+  put(join(campaign, "rounds", "4", "arms.json"), { E: { ...arms1.C, cwd: cut } });
+  const tracked = run("runner", campaign, "--round", "4");
+  assert.equal(tracked.status, 3);
+  assert.match(tracked.stderr, /round 4 doesn't start:\narm E: the repository .* is in still has \.sova[/\\]ab in its HEAD commit/);
+  assert.equal(git(cut, "show", "HEAD:.sova/ab/x.jsonl").length > 0, true, "what a test chat could have printed");
+  git(cut, "commit", "-qam", "removes the record from the arm (experiment, never lands)");
+  assert.equal(run("runner", campaign, "--round", "4").status, 0, "the removal committed on the arm's branch, the round runs");
   // Master's arm in the campaign's own worktree, where the record is written.
   put(join(campaign, "rounds", "3", "arms.json"), { A: { ...arms0.A, cwd: project } });
   const own = run("runner", campaign, "--round", "3");

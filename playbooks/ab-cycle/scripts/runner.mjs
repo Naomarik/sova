@@ -14,8 +14,9 @@
 //   rescore  no run: the results of round `from` (arm `fromArm`, default the same id) are copied in
 //
 // A round refuses to start (exit 3, naming the arm) when a test chat could read the subject's record:
-// an arm whose cwd or worktree still holds .sova/ab/, or that runs inside the campaign's own worktree,
-// where the record is written (references/arms.md). A prediction naming an id that isn't a case, or a
+// an arm whose cwd or worktree still holds .sova/ab/ or still has it in its HEAD commit (git shows an
+// uncommitted delete), or that runs inside the campaign's own worktree, where the record is written
+// (references/arms.md). A prediction naming an id that isn't a case, or a
 // sealed case, stops it the same way.
 import { spawn } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";

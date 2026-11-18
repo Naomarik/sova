@@ -20,7 +20,7 @@ Your plan (choices, cast, steps, stop points, cycle settings) is in the run bloc
 - **Test data stays out of Git.** The campaign folder is `<worktree>/.cache/ab/<campaign>/`: cases, replies, scores, charts and screenshots live there, never committed.
 - **The record outlives the campaign.** Each subject has a record in the project's repository, `.sova/ab/<name>.jsonl`: every attempt with its problem, its change and why, what it was expected to do and what it did, losing attempts too (`references/record.md`). Read it before anything else, add to it after every round, and offer to keep it at the last stop. It holds general words and counts only: never text from a case, a reply or a real chat.
 - **Every fix states what it expects.** A consultant names the cases its change should fix and the ones it might break; each round's report shows that beside what happened. A missed prediction is shown and recorded, never a reason to pick another winner: the winner is still the best pass rate, then cost.
-- **No test chat sees the record, and the grader never reads it.** Every arm, master's too, is its own worktree with `.sova/ab/` removed (`references/arms.md`); a round refuses to start otherwise.
+- **No test chat sees the record, and the grader never reads it.** Every arm, master's too, is its own worktree whose branch removes `.sova/ab/` in a commit that never lands (`references/arms.md`); a round refuses to start otherwise.
 - **Show what you measure before you run it.** The first stop shows a sample chart from `scripts/chart.mjs --sample` and the acceptance bars.
 - **Usage is part of the run.** Stop and say so when a provider nears the "warn me at" share, or a sign-in is missing where a helper runs.
 

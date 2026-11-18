@@ -14,7 +14,8 @@
 //
 // <campaign> is the campaign folder; its project is the worktree it sits in (<project>/.cache/ab/<campaign>/)
 // unless --project names it. A line is built from named fields only and checked before it is written:
-// no text from a case or a reply, no case id, no home folder, URL, IP address or email.
+// no text from a case or a reply, no case id (the campaign's own ids by name; with no campaign, any
+// token shaped like one), no home folder, URL, IP address or email.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -59,23 +60,27 @@ const names = (project) =>
     .sort();
 const linesOf = (file) => (existsSync(file) ? parseRecord(readFileSync(file, "utf8")).lines.map((x) => x.line) : []);
 
-/** Every case and saved reply of a campaign, as the runs of words a line may not repeat. */
+/** What a line may not repeat from a campaign: the runs of words of every case and saved reply, and every case's id. */
 function corpus(K) {
   const texts = [];
-  for (const k of K.cases()) texts.push(k.prompt, k.expect);
+  const cases = K.cases();
+  for (const k of cases) texts.push(k.prompt, k.expect);
   for (const n of listDir(join(K.W, "rounds")))
     for (const a of listDir(join(K.W, "rounds", n, "results")))
       for (const m of listDir(join(K.W, "rounds", n, "results", a)))
         for (const f of listDir(join(K.W, "rounds", n, "results", a, m))) if (f.endsWith(".json")) texts.push(readJson(join(K.W, "rounds", n, "results", a, m, f)).reply);
-  return corpusOf(texts.filter((t) => typeof t === "string"));
+  return corpusOf(texts.filter((t) => typeof t === "string"), cases.map((k) => k.id));
 }
 
-/** The arm's change as a diff from its base to its ref, or null when either isn't a commit this repository has. */
+/**
+ * The arm's change as a diff from its base to its ref, or null when either isn't a commit this repository
+ * has. The record's own folder is left out: every arm's branch removes it (references/arms.md).
+ */
 function diffOf(project, arm) {
   const commit = /^[0-9a-f]{7,40}$/;
   if (!commit.test(arm.base ?? "") || !commit.test(arm.ref ?? "")) return null;
   try {
-    return execFileSync("git", ["-C", project, "diff", "--no-color", "--no-ext-diff", "-U0", arm.base, arm.ref, "--"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024 });
+    return execFileSync("git", ["-C", project, "diff", "--no-color", "--no-ext-diff", "-U0", arm.base, arm.ref, "--", ".", ":(exclude).sova/ab"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 * 1024 * 1024 });
   } catch {
     return null;
   }
@@ -143,7 +148,9 @@ function doClose() {
   const { K, name, file, id } = open(pos[0]);
   if (!["land", "cycle", "park"].includes(opt.verdict)) die("--verdict is land, cycle or park", 3);
   const had = linesOf(file);
-  const master = Object.values(K.arms(0)).find((a) => a.baseline)?.ref;
+  // Master's commit: the one its arm was cut from (`base`); its `ref` is that plus the commit removing the record.
+  const arm0 = Object.values(K.arms(0)).find((a) => a.baseline);
+  const master = arm0?.base ?? arm0?.ref;
   let confirm;
   if (opt.confirm !== undefined) {
     const c = Number(opt.confirm);

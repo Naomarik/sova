@@ -41,7 +41,7 @@ collage.png, collage.html
 {"id": "s01", "group": "sealed", "prompt": "...", "expect": "..."}
 ```
 
-`group`: `fail` (fails on master today), `pass` (passes today: catches regressions), `sealed` (held back for the confirm run). `expect` is what a good reply does, in words, for the grader. `check` is optional; without one the grader judges.
+`group`: `fail` (fails on master today), `pass` (passes today: catches regressions), `sealed` (held back for the confirm run). `expect` is what a good reply does, in words, for the grader. `check` is optional; without one the grader judges. Give a case an id that isn't an ordinary word (`f01`, `arrow-labels`): the record's check refuses a case's id wherever it stands as a word.
 
 ### Checks
 
@@ -51,11 +51,13 @@ collage.png, collage.html
 
 ```json
 {
-  "A": { "label": "master", "baseline": true, "how": "sova", "url": "http://127.0.0.1:4813", "agentDir": "/abs/worktree/.agent", "cwd": "/abs/project", "ref": "<commit>" },
+  "A": { "label": "master", "baseline": true, "how": "sova", "url": "http://127.0.0.1:4813", "agentDir": "/abs/worktree/.agent", "cwd": "/abs/project", "base": "<commit>", "ref": "<commit>" },
   "B": { "label": "shorter tool text", "change": "Cuts the tool's description to its first rule", "base": "<commit>", "ref": "<commit>", "how": "sova", "url": "http://127.0.0.1:4814", "agentDir": "...", "cwd": "...",
          "problem": "greps before it asks the spec tool", "why": "The first rule is the only one a cheap model acts on", "expectFix": ["f01", "f02"], "mayBreak": ["p01"], "knobs": ["tool-description"] }
 }
 ```
+
+Master's arm has `base`, master's own commit, and `ref`, that commit plus the one that removes the record from the arm (`references/arms.md`).
 
 A candidate arm carries its consultant's prediction (`references/record.md`, "A prediction"): `problem` (the failure it is aimed at, in general words: one of the record's problem names, or a new one), `why`, `expectFix` (case ids expected to turn from fail to pass) and `mayBreak` (case ids that might turn from pass to fail), plus `knobs`, what this cycle allowed. An id that isn't a case, or is a sealed case, is refused by the runner and the scorer (exit 3, naming it). An arm with no `expectFix` has stated no prediction, and every report says so.
 

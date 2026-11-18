@@ -178,3 +178,8 @@ logged. Reasons: `ok`, `ok-ordinal-only`, `not-fullscreen`, `anchor-not-in-conte
 ```bash
 node test.mjs
 ```
+
+`transcript.test.mjs`, the end-to-end test of the terminal's full-screen jump, was removed in
+07e60f622: no Sova screen uses that jump, and the test reached into pi's private terminal code.
+`outline.test.ts` still covers the matching and locating rules (its tests at lines 221, 504, 534
+and 547).

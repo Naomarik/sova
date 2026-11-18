@@ -5,9 +5,9 @@
  * never on a remote target, so it answers in any project and in any folder. The host (Sova's mode engine) owns
  * when the tool is in the loadout: only while the chat is in Create, so a worker never has it.
  */
-import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { StringEnum } from "../subagents/string-enum.ts";
 import { CREATE_GUIDE_NAMES, createGuide, PLAYBOOK_SECTION_NAMES, sandboxNote } from "./create/guide.ts";
 
 export const CREATE_GUIDE_TOOL = "create_guide";
@@ -18,9 +18,8 @@ export const CREATE_GUIDE_DESCRIPTION =
 export const CREATE_GUIDE_PARAMETERS = Type.Object(
 	{
 		topic: StringEnum(CREATE_GUIDE_NAMES, { description: "The topic, as Create's table of contents lists it" }),
-		// Type.Unsafe: under a native import pi-ai 1.5's StringEnum is a plain object, and Type.Optional() of one
-		// writes TypeBox's marker ("~optional": true) into the schema the model's provider receives.
-		section: Type.Optional(Type.Unsafe<(typeof PLAYBOOK_SECTION_NAMES)[number]>(StringEnum(PLAYBOOK_SECTION_NAMES, { description: "With topic playbooks: one section of its contents page" }))),
+		// StringEnum is the subagents helper: a TypeBox schema, so Type.Optional() adds no "~optional" marker (P26).
+		section: Type.Optional(StringEnum(PLAYBOOK_SECTION_NAMES, { description: "With topic playbooks: one section of its contents page" })),
 	},
 	{ additionalProperties: false },
 );

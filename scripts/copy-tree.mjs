@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Make a folder an exact copy of another, as a clone where the file system has one, with the host's
 // own cp: GNU's `--reflink=auto`, or macOS's `-c` (server/project-services/copy-tree.ts). Sova's own
-// project.json setup step `node-modules` runs it, so a worktree copy works on both hosts:
+// project.json setup step `node-modules` runs it (through scripts/copy-node-modules.mjs, which then
+// matches the copy's packages to its lockfile), so a worktree copy works on both hosts:
 //
 //   node scripts/copy-tree.mjs <src> <dst>
 //

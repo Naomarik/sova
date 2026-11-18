@@ -892,6 +892,31 @@
       "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     }
   },
+  "§app.project-services/test-copy-packages": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.project-services/self-host",
+      "§app.project-services/create",
+      "§app.project-services/contract",
+      "§app.merge-queue/run",
+      "§app.merge-queue/blame"
+    ],
+    "code": [
+      ".sova/project.json",
+      "scripts/copy-node-modules.mjs",
+      "scripts/copy-tree.mjs",
+      "server/project-services/adopt.test.ts",
+      "server/project-services/copy-tree.integration.test.ts",
+      "server/merge-queue/run.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T20:23Z",
+      "source": "pi-session:01a1eee3-521d-72bd-a0fb-7f5a567de2eb#d17789ec"
+    },
+    "evidence": "verified"
+  },
   "§app.project-services/tool-offered": {
     "kind": "behavior",
     "authority": "accepted",

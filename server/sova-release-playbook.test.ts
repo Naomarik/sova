@@ -54,7 +54,9 @@ test("Sova's release settings and site target are in .sova/project.json, parse, 
   try {
     base = git(ROOT, "show", "5ea4b141f:.sova/project.json");
   } catch {}
-  if (base !== null) assert.equal(defHashOf(def), defHashOf(parseDefinition(base)));
+  // The `node-modules` setup step changed since (copy, then match the branch's packages): that moves the hash on purpose.
+  // Everything else hashed is still as it was at 5ea4b141f.
+  if (base !== null) assert.equal(defHashOf(def), defHashOf(parseDefinition(JSON.stringify({ ...JSON.parse(base), setup: JSON.parse(definitionText()).setup }))));
 });
 
 test("every sova-release.mjs subcommand Sova's definition names exists, and the release check passes on Sova's setup", async () => {

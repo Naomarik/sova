@@ -19,7 +19,7 @@ process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 
 const { modesExtension } = await import("../../harness/pi/modes");
 const { WEB_MODE_HOOK } = await import("../../../pi-config/extensions/mode/state.ts");
-const { MODE_WORKER_EVENT } = await import("../../../pi-config/extensions/mode/events.ts");
+const { MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT } = await import("../../../pi-config/extensions/mode/events.ts");
 
 export type Entry = { type: string; customType?: string; data?: unknown; content?: unknown; details?: unknown; message?: unknown };
 type Handler = (event: unknown, ctx: unknown) => unknown;
@@ -30,7 +30,7 @@ export type ClaudeModels = () => Promise<{ id: string; efforts: string[] }[]>;
 const noop = () => {};
 
 /** A pi as far as the engine uses it, on the chat's entries `entries`, in `cwd`, with launch flags `flags`. */
-export function fakePi(entries: Entry[], opts: { cwd?: string; flags?: Record<string, string>; claudeModels?: ClaudeModels; models?: unknown[]; tools?: string[] } = {}) {
+export function fakePi(entries: Entry[], opts: { cwd?: string; flags?: Record<string, string>; claudeModels?: ClaudeModels; models?: unknown[]; tools?: string[]; worker?: boolean } = {}) {
   const handlers = new Map<string, Handler[]>();
   const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> | void; getArgumentCompletions?: (prefix: string) => { value: string }[] | null }>();
   const listeners = new Map<string, ((data: unknown) => void)[]>();
@@ -82,6 +82,8 @@ export function fakePi(entries: Entry[], opts: { cwd?: string; flags?: Record<st
     ui: { notify: (text: string, level: string) => notes.push({ text, level }), setStatus: noop, setWidget: noop, theme: { fg: (_t: string, s: string) => s, bold: (s: string) => s, bg: (_t: string, s: string) => s } },
     modelRegistry: { getAvailable: () => opts.models ?? [] },
   };
+  // A worker's session: the subagents extension answers the engine's role question, as in a worker it does.
+  if (opts.worker) listeners.set(WORKER_ROLE_DISCOVER_EVENT, [() => (base.events as { emit: (n: string, d: unknown) => void }).emit(WORKER_ROLE_EVENT, { version: 1 })]);
   const handle = modesExtension(pi as never, { claudeModels: opts.claudeModels ?? (async () => []) });
   const fire = async (name: string, event: unknown = {}) => {
     let result: unknown;

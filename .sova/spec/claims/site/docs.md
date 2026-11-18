@@ -50,7 +50,10 @@ them, a project's own modes as one row), and links to the feature, extending and
 The major and minor modes side by side, the three major modes in the mode menu's words, switching
 them per chat from the composer's mode menu,
 the default for new sessions (memory's type with it; never Create, which is chosen per chat),
-strict, that Sova runs every chat's modes with no switch and with no pi mode extension linked (§chat.mode-menu/sova-runs-modes), a short memory section that
+strict, how replies read in every chat you talk to, whatever its modes (a short summary; a quick question's
+answer in a line or two and nothing more, anything bigger the full report after it; nothing folded; a mode's own shape wins, workers, a project's assistant, a hand-off, the merge queue's own chats and a release's chat keep theirs, a playbook
+run follows its playbook's report where it sets one; §chat.mode-menu/reply-shape),
+that Sova runs every chat's modes with no switch and with no pi mode extension linked (§chat.mode-menu/sova-runs-modes), a short memory section that
 links to its own page (§site.docs/memory), that a pi terminal has no modes (§chat.mode-menu/terminal), what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
@@ -108,8 +111,9 @@ mode.
 The align minor mode: when an alignment opens (Eager, the default, for any request that implies
 work; Careful, only when the user wants the product changed or the agent can't tell, questions
 answered in chat; on both, nothing built before a confirmed card and a go-ahead to a plan sketched
-in chat opens a card first), how each reply opens with a short part for the user and folds its
-working notes, what an alignment holds, answering it, Settings → Alignment (eagerness, writing
+in chat opens a card first), that a reply recording an alignment is a sentence or two naming the
+card while every other reply opens with a short summary and then gives the full report, nothing
+folded (§chat.mode-menu/reply-shape), what an alignment holds, answering it, Settings → Alignment (eagerness, writing
 style, Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
 viewer.
 

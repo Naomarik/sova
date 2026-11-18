@@ -197,5 +197,9 @@ test("Sova's own definition: hermetic copies on 4810 + 10 × slot, slot 0 adopts
   assert.equal(server.env.SOVA_PORT, "${ports.server.http}");
   assert.deepEqual([0, 1, 2, 18].map((s) => portsFor(def, s).server!.http), [4800, 4820, 4830, 4990]);
   assert.deepEqual(def.setup.map((s) => s.id), ["mise-trust", "node-modules", "agent-dir"]);
+  // One step copies the packages and matches them to the branch's list: it runs again when the list or its settings change.
+  const nm = def.setup.find((s) => s.id === "node-modules")!;
+  assert.deepEqual(nm.run, ["node", "scripts/copy-node-modules.mjs", "${main}/node_modules", "node_modules"]);
+  for (const f of ["pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json", "scripts/copy-tree.mjs", "scripts/copy-node-modules.mjs"]) assert.ok(nm.inputs.includes(f), `node-modules reads ${f}`);
   assert.equal(def.share?.allow, false);
 });

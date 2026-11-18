@@ -2,7 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ClaudeProtocolError, parseClaudeFrame, MCP_TOOL_PREFIX, toPiToolName } from "./types.ts";
-import { Type, type Tool } from "@earendil-works/pi-ai";
+import type { Tool } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 
 const tools: Tool[] = [{ name: "read", description: "", parameters: Type.Object({}) }];
 

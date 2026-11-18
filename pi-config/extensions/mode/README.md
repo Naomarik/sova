@@ -399,13 +399,16 @@ boundary. Clearing the writer tells the session to write its own draft and
 evidence. Align also changes the tool set (its `align` tool), which breaks the
 prefix on every provider and restarts the claude-code CLI regardless.
 
-The prompt is the same whoever started the turn. pi runs `before_agent_start`
-only for a turn the user's prompt starts; a turn an extension's message starts
-(`sendMessage(…, {triggerTurn: true})` — a subagent settling, a team question)
-skips it, and pi's own refresh before that turn's second request rebuilds the
-prompt from the session's *base* options, which know nothing of extension
-sections. Left alone, that patched the mode section out mid-turn and back in at
-the next user prompt, and the claude-code provider restarted its CLI (and
+The prompt is the same whoever started the turn. Through pi 1.1.0 pi ran
+`before_agent_start` only for a turn the user's prompt starts; a turn an
+extension's message starts (`sendMessage(…, {triggerTurn: true})` — a subagent
+settling, a team question) skipped it. From pi 1.2.0 the hook runs for such a
+turn too (`messageType: "custom"`), so the engine writes its section and takes
+its one-shot note there as on a user's turn. A run that starts with no hook (a
+queue's wake, `agent.continue()`) and every rebuild of the prompt between runs
+still build it from the session's *base* options, which know nothing of
+extension sections. Left alone, that patched the mode section out and back in
+at the next user prompt, and the claude-code provider restarted its CLI (and
 re-sent the whole history) at every switch. So the engine also keeps the
 block in the base options: they are reachable only through a command context
 (`ctx.getSystemPromptOptions`), which `/mode` and `/align` adopt (the quiet

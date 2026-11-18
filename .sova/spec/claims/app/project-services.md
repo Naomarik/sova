@@ -737,8 +737,10 @@ it, and the Overseers' `sova_project_verbs` is outside this rule.
   main folder, or a chat merges it in, every open chat of the project has the tool at its next message
   or step, without reopening.
 - **What arriving costs.** That one change costs one uncached message, and in a Claude Code chat one
-  condensed restart (§app.claude-code-provider/continuity). A project with setup sees no change: the
-  same tools, in the same order, the same prompt and no restart.
+  condensed restart (§app.claude-code-provider/continuity). The arriving tool is listed after the
+  chat's other tools until the chat reopens, where it takes the place a fresh chat gives it, with no
+  change to the request. A project with setup sees no change: the same tools, in the same order, the
+  same prompt and no restart.
 - **Once offered, kept.** A chat keeps the tool as long as it stays open, even when the definition
   disappears; it is judged again only when the chat reopens. A chat in strict mode when setup arrives
   keeps the tool after strict mode ends, with no second tool change (§chat.mode-menu/strict).

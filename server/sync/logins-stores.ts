@@ -1,22 +1,27 @@
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, unlinkSync, writeSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { piGetAuth, requireFromPi } from "../harness/pi/package";
 import type { EntryKind, StoreId } from "./logins-merge";
 
 /**
  * The two credential stores login sync reads and writes, each through its consumer's OWN lock:
  *
- * - pi `auth.json`: proper-lockfile's `auth.json.lock` directory, exactly as pi 0.87.1's
- *   `FileAuthStorageBackend` takes it (`realpath: false`). pi's sync path waits with `stale: 10s`
- *   and its async path holds with `stale: 30s` (so its mtime may lag 15s during a refresh, which
- *   has a 15s network timeout): we wait with 30s so we never steal a refresh in flight, and hold
- *   with a 2s update so pi's 10s waiter never steals ours.
+ * - pi `auth.json`: proper-lockfile's `<file>.lock` directory, as pi's `FileAuthStorageBackend`
+ *   takes it. Which file depends on the pi: through 1.5.0 (and the terminal's 0.87) the path as
+ *   given (`realpath: false`), from 1.5.1 the file it resolves to (#11655). The two differ only
+ *   when `auth.json` is itself a link to another file, and then we take both, the given path's
+ *   first, so a chat on either pi is held off (`PiAuthStore.lockSpecs`). pi's sync path waits with
+ *   `stale: 10s` and its async path holds with `stale: 30s` (so its mtime may lag 15s during a
+ *   refresh, which has a 15s network timeout): we wait with 30s so we never steal a refresh in
+ *   flight, and hold with a 2s update so pi's 10s waiter never steals ours.
  * - Claude Code `.credentials.json`: `<claudeDir>/.oauth_refresh.lock` then the legacy
  *   `<realpath claudeDir>.lock`, in Claude Code 2.1.282's order, both `stale: 60s, update: 5s`.
  *
  * Every write re-reads under the lock, changes only the entries it was asked to, and replaces the
  * file with tmp + fsync + rename at 0600, so a reader that ignores the lock never sees a torn file.
+ * Where pi's `auth.json` is a link, the file it points at is the one replaced (the temp file is made
+ * beside it), as pi's own write goes through the link: the link stays a link.
  * Nothing here runs at import: every path is passed in by the caller, and tests pass scratch dirs.
  */
 
@@ -254,6 +259,10 @@ abstract class FileStore implements CredentialStore {
     protected readonly options: FileStoreOptions = {},
   ) {}
   protected abstract lockSpecs(): LockSpec[];
+  /** The file a write replaces, asked under the locks `held`: the store's own path unless a store says otherwise. */
+  protected writeTarget(_held: readonly LockSpec[]): string {
+    return this.path;
+  }
   /** The syncable entries and local-only providers of a parsed file. */
   protected abstract classify(data: Record<string, unknown>): Pick<StoreSnapshot, "entries" | "localOnly">;
   /** Serialize the whole next file, in the consumer's own format. */
@@ -262,7 +271,8 @@ abstract class FileStore implements CredentialStore {
   protected abstract deleteWhenEmpty: boolean;
 
   async transact<T>(fn: (snap: StoreSnapshot) => { result: T; changes?: StoreChanges }): Promise<T> {
-    const locks = await acquireLocks(this.lockSpecs(), this.options.lockDeadlineMs);
+    const specs = this.lockSpecs();
+    const locks = await acquireLocks(specs, this.options.lockDeadlineMs);
     try {
       const parsed = readJsonObject(this.path, this.refuseSymlink);
       const snap: StoreSnapshot =
@@ -286,14 +296,46 @@ abstract class FileStore implements CredentialStore {
         }
       }
       if (!changed) return result;
+      const target = this.writeTarget(specs);
       if (locks.compromised()) throw new LockBusyError(`lock on ${this.path} was compromised; write abandoned`);
+      // The store's own path, not `target`: only a store that refuses a link deletes (Claude's), so the two are one.
       if (this.deleteWhenEmpty && Object.keys(next).length === 0) unlinkSync(this.path);
-      else writeFileAtomic(this.path, this.serialize(next));
+      else writeFileAtomic(target, this.serialize(next));
       return result;
     } finally {
       await locks.release();
     }
   }
+}
+
+/** The directory proper-lockfile makes for `file` (`<file>.lock`), by the real folder it lands in. */
+function lockDirOf(file: string): string {
+  let dir = dirname(file);
+  try {
+    dir = realpathSync(dir);
+  } catch {
+    // An unreadable folder: compared as written.
+  }
+  return join(dir, `${basename(file)}.lock`);
+}
+
+/**
+ * The file `path` names once its links are followed: its real path, or, where it is a link whose
+ * target is not there yet, where that link points (pi's first write creates the file there);
+ * `path` itself when it is no link or can't be read.
+ */
+function linkTarget(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    // Missing, or a link to a file that is.
+  }
+  try {
+    if (lstatSync(path).isSymbolicLink()) return resolve(dirname(path), readlinkSync(path));
+  } catch {
+    // No such path.
+  }
+  return path;
 }
 
 /** pi's `auth.json`: many providers, oauth + api_key, per pi 0.87.1's `ReadOnlyAuthStorage.load` rules. */
@@ -307,8 +349,27 @@ export class PiAuthStore extends FileStore {
   constructor(path: string, options?: FileStoreOptions) {
     super(path, options);
   }
+  /**
+   * The given path's lock (pi through 1.5.0, the terminal's pi) and, where `auth.json` is a link to
+   * another file, that file's too (pi 1.5.1+ locks the file it resolves to), in that order. They are
+   * one lock unless the two name different lock directories: a linked folder above a regular file
+   * resolves to the same directory entry, and taking it twice would wait on ourselves.
+   */
   protected lockSpecs(): LockSpec[] {
-    return [{ file: this.path, stale: 30_000, update: 2_000 }];
+    const given: LockSpec = { file: this.path, stale: 30_000, update: 2_000 };
+    const real = linkTarget(this.path);
+    return lockDirOf(real) === lockDirOf(this.path) ? [given] : [given, { ...given, file: real }];
+  }
+  /**
+   * Where `auth.json` is a link, the file it points at: pi writes through the link, so replacing the
+   * link itself would leave a regular file here and the shared file stale. Resolved again under the
+   * locks; a link that was pointed elsewhere since they were taken names a file whose lock we don't
+   * hold, and the write is abandoned (the next change event tries again).
+   */
+  protected writeTarget(held: readonly LockSpec[]): string {
+    const target = linkTarget(this.path);
+    if (!held.some((spec) => lockDirOf(spec.file) === lockDirOf(target))) throw new LockBusyError(`${this.path} now points at another file; write abandoned`);
+    return target;
   }
   protected classify(data: Record<string, unknown>) {
     const entries = new Map<string, StoreEntry>();

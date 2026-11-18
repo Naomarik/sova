@@ -46,16 +46,18 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  *   • `Agent.steeringQueue.messages` — the REAL queue. The loop drains it; a drained message is
  *     committed to the model.
  *   • `AgentSession._steeringMessages` (what `getSteeringMessages()` returns) — a MIRROR, spliced
- *     on `message_start` by `indexOf(messageText)` and ONLY `if (messageText)`
- *     (agent-session.js:564-576).
+ *     on `message_start` by `indexOf(messageText)`, the steering mirror first, whatever queue the
+ *     message came from (quirk P9).
  *
  * Reading the mirror gets two things wrong, both found by the reviewer's counterexamples and both
  * silent:
  *
- *   1. AN IMAGE-ONLY SEND NEVER LEAVES THE MIRROR. `messageText` is "" so the splice is skipped;
- *      the mirror keeps it for the session's life. A queue that waits for the mirror to empty
- *      waits for ever, and every later message is stranded. Sova can queue exactly that today —
- *      the protocol allows images with no text.
+ *   1. THE MIRROR IS KEYED BY TEXT, NEVER BY THE MESSAGE. A delivered message takes the entry of a
+ *      still-queued one with the same text (a follow-up's delivery empties the steering mirror
+ *      while the steer is still queued), and a text an input handler rewrote on the way in never
+ *      matches at all. Through pi 1.5.0 the splice also ran only `if (messageText)`, so an
+ *      image-only send (empty text) stayed in the mirror for the session's life and a queue that
+ *      waited for the mirror to empty waited for ever; pi 1.5.1 splices the empty text too.
  *   2. THE MIRROR SPLICES LATER THAN THE DRAIN. Between the loop taking a message and emitting
  *      `message_start` (prepareNextTurn, which can COMPACT) the mirror still lists it — so a
  *      Stop in that window would hand back, as cleared, a message already on its way to the model.
@@ -75,7 +77,7 @@ import type { QueueGoneReason, QueueItem, QueueRemoveRefusal } from "../shared/p
  *   • the mirror grows only on an enqueue, and pi announces each enqueue synchronously
  *     (`queue_update`), so growth seen during our own hand-off is our item being queued.
  * Neither reading trusts a non-zero mirror to mean anything, which is what makes them immune to
- * the entries it holds for ever.
+ * the entries it lists late, or under another message's text.
  *
  * WHAT IS NOT SOLVED, ON PURPOSE. A handed follow-up is never removed one by one (above). Extensions
  * queue follow-ups of their own (`pi.sendUserMessage(…, {deliverAs:"followUp"})` — wake-nudge, btw,
@@ -159,8 +161,8 @@ export interface SdkQueueView {
    *
    * Never read as truth about what is queued. It is read once, as a hand-off begins, as the
    * baseline for the `queue_update` totals that follow: growth from it during the hand-off is our
-   * own item being queued. The mirror's two defects — it lags the drain, and it keeps empty-text
-   * entries for ever — are both harmless to a comparison against our own earlier reading.
+   * own item being queued. The mirror's two defects — it lags the drain, and it is keyed by text,
+   * not by the message — are both harmless to a comparison against our own earlier reading.
    */
   mirrorTotal(): number;
   /**
@@ -171,7 +173,7 @@ export interface SdkQueueView {
    * LATER), so a mirror length of ZERO proves that kind's REAL queue is empty. That is what lets a
    * steer be handed over while an extension's follow-up is parked in the other queue — i.e. what
    * keeps a steer a steer. The reverse is never read: a non-zero mirror proves nothing, because of
-   * the empty-text and rewritten-text entries it can hold for ever.
+   * the drained and rewritten-text entries it can still hold.
    */
   mirrorFor(kind: QueueKind): number;
   /**
@@ -637,8 +639,8 @@ export class WebQueue {
       // Our handed items are gone from the SDK queue once that queue is empty again — a count, not a
       // text match, so three identical messages need no special case.
       if (this.handed.length) {
-        // Only an EMPTY REAL QUEUE proves delivery. The mirror lags the drain and keeps empty-text
-        // entries for ever, so waiting on it strands the queue (see the class comment).
+        // Only an EMPTY REAL QUEUE proves delivery. The mirror lags the drain and is keyed by text,
+        // so waiting on it can strand the queue (see the class comment).
         if (!this.sdkTookHanded()) {
           // OUR OWN item can be the one stranded: handed off as a steer, queued after the turn
           // ended, with no run to drain it. Waking is the only way it is ever delivered — and it
@@ -757,7 +759,7 @@ export class WebQueue {
   /**
    * Whether the SDK has taken every handed item: committed to the model, whether or not
    * `message_start` has been emitted yet. The only honest proof of delivery, and the one the mirror
-   * cannot give (it lags the drain, and an empty-text entry never leaves it at all). pi drains the
+   * cannot give (it lags the drain, and an entry leaves it by its text, not by its message). pi drains the
    * steering lane whole (P28 steer-all), so one answer covers every handed steer at once. False is
    * "still held, as far as can be told", never a claim: with something queued that cannot be pinned
    * on ours or anyone else's, they stay handed until it can.

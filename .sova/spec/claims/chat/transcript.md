@@ -658,8 +658,9 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
 
 Every runtime Sova hosts (ordinary chats, baton sessions and their wrap-up, the Overseer, a
 project's overseer, a design session) has its turn stopped once the model's stream passes a limit for its kind. A
-model that degenerates — endless whitespace inside a tool call is the case seen — otherwise costs
-the server more CPU with every piece it streams, until nothing else on it answers.
+model that degenerates — endless whitespace inside a tool call is the case seen — otherwise streams
+without end, and through pi 1.4 it cost the server more CPU with every piece it streamed, until
+nothing else on it answered.
 
 | Limit | Baton | Overseer | Project overseer | Ordinary chat | Design session |
 |---|---|---|---|---|---|
@@ -681,8 +682,11 @@ runaway reply there is capped: it can't write a line too long to read back or to
   (§chat.transcript/streaming), "Stopped the turn: {reason}." — e.g. "Stopped the turn: the model
   streamed 8,192 whitespace characters in a row into a tool call." The reply stays in the
   transcript as far as it got, ended as aborted. The server logs the stop.
-- Past a stop, the server keeps answering: in the stub reproduction a stopped runaway stalls it for
-  a fraction of a second, where the same stream unstopped stalls it for seconds at a time.
+- Past a stop, the server keeps answering: in the stub reproduction the stop cuts off the model's
+  connection, and the stopped runaway costs the server's main thread under a quarter of a second.
+  On pi 1.5 the same stream unstopped no longer stalls the server for seconds (pi parses a growing
+  tool call as it streams), so the guard is what ends it: with the limits raised it runs on to its
+  own end.
 
 ## §chat.transcript/live-watch — Live-watch (TUI-owned sessions, `/ws/watch`)
 

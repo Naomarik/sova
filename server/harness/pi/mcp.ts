@@ -21,13 +21,17 @@ import { addChatLine, type McpCheckRecord } from "../../mcp/store";
 import { cleanMcpEnv, ENV_ALLOW, Events, StdioServer, type JsonRpc, type Launch } from "../../mcp/transport";
 import { agentRoot, stateRoot } from "../../state-root";
 import type { PiExtensionAPI } from "./extension-types";
-import { addressValues, AddressServer, McpCallFailed, type AddressLaunch } from "./mcp-http";
+import { addressValues, AddressServer, McpCallFailed, McpSendGivenUp, type AddressLaunch, type McpSendOptions } from "./mcp-http";
 import { noteMcpTool } from "./mcp-tools";
 
 type McpTransport = ReturnType<McpTransportFactory>;
 
 /** A server's copy behind a SnapshotTransport: a command's process, or an address's session. */
-type McpUpstream = Pick<StdioServer, "start" | "send" | "close" | "onMessage" | "onError" | "onClose" | "stderr" | "sandboxed" | "values"> & { readonly pid: number | undefined };
+type McpUpstream = Pick<StdioServer, "start" | "close" | "onMessage" | "onError" | "onClose" | "stderr" | "sandboxed" | "values"> & {
+  readonly pid: number | undefined;
+  /** `options` is what pi's client hands a transport; an address server passes it to pi's HTTP client. */
+  send(message: JsonRpc, options?: McpSendOptions): Promise<void>;
+};
 
 /** The session entries: a chat's list, kept from its first message on, and a failure's note. */
 export const MCP_LIST_ENTRY = "sova-mcp-list";
@@ -131,7 +135,10 @@ export class SnapshotTransport extends Events {
     return value;
   }
 
-  async send(message: JsonRpc): Promise<void> {
+  /** `options.signal` (pi-mcp 1.2.0) aborts once pi's client no longer waits for this message's reply: a
+      request given up on while the server started, or while an address server renewed its sign-in, never
+      goes out, and is no failure of the server. */
+  async send(message: JsonRpc, options?: McpSendOptions): Promise<void> {
     if (message.method === "initialize") {
       this.initializeParams = message.params;
       const { protocolVersion, serverInfo, instructions } = this.record;
@@ -143,16 +150,18 @@ export class SnapshotTransport extends Events {
     const isRequest = message.method !== undefined && message.id !== undefined;
     if (!isRequest) {
       // A cancel or a reply to the server's own request: only a running server can want it.
-      await this.upstream?.send(message).catch(() => {});
+      await this.upstream?.send(message, options).catch(() => {});
       return;
     }
     const id = message.id as string | number;
     this.pending.add(id);
     try {
       const server = await this.running();
-      await server.send(message);
+      if (options?.signal?.aborted) throw new McpSendGivenUp("the request was given up while the server started");
+      await server.send(message, options);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
+      if (error instanceof McpSendGivenUp) return void this.pending.delete(id);
       if (error instanceof McpCallFailed) return this.lost(id, reason);
       this.pending.delete(id);
       this.fail(id, reason);

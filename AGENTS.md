@@ -1,6 +1,6 @@
 # Sova
 
-Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **1.0.3**).
+Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **1.5.2**).
 Single local user. Goals: list all sessions, view transcripts, chat in webapp-owned sessions,
 live-watch sessions open in the CLI/TUI, spawn new sessions.
 

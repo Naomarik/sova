@@ -19,7 +19,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 delete process.env.SOVA_CHAT_STATE_ROOT;
 
 const { projectVerbsOffered } = await import("./tools");
-const { atRegisteredPlace, offeredToolExtension } = await import("../served-tools");
+const { offeredToolExtension } = await import("../served-tools");
 const { playbookTurnText } = await import("../../shared/playbooks");
 const { renderBlock } = await import("../../shared/playbook-delivery");
 const { stateView } = await import("../harness/state-view");
@@ -135,9 +135,10 @@ function gate(answers: boolean[]) {
   const pi = {
     getActiveTools: () => [...tools],
     getAllTools: () => REGISTERED.map((name) => ({ name })),
+    // pi's rule (1.5.0): the tools that stay active keep their place, a newly active one is appended.
     setActiveTools: (next: string[]) => {
       sets.push(next);
-      tools = [...next];
+      tools = [...tools.filter((t) => next.includes(t)), ...next.filter((t) => !tools.includes(t))];
     },
     on: (event: string, fn: (event: unknown, ctx: unknown) => Promise<unknown>) => void hooks.set(event, [...(hooks.get(event) ?? []), fn]),
   };
@@ -175,16 +176,17 @@ test("not offered: removed once as the chat opens, then no more changes however 
   assert.equal(g.asked.length, 7, "asked as it opens, at each message, after each step");
 });
 
-test("arriving: after a step, in a fresh chat's place, one change only, and it stays when the rule says no again", async () => {
+test("arriving: after a step, after the chat's other tools, one change only, and it stays when the rule says no again", async () => {
   const g = gate([false, false, true]);
   await g.fire("session_start");
   await g.fire("before_agent_start", { prompt: "go" });
   await g.fire("turn_end");
-  assert.deepEqual(g.tools(), REGISTERED, "the same tools in the same order as a chat that had it from its start");
+  const arrived = [...REGISTERED.filter((t) => t !== "project_verbs"), "project_verbs"];
+  assert.deepEqual(g.tools(), arrived, "the same tools as a chat that had it from its start, the arrival last");
   assert.equal(g.sets.length, 2, "the removal at opening and the one arrival");
   await g.fire("turn_end");
   await g.fire("before_agent_start", { prompt: "the definition is gone" });
-  assert.deepEqual(g.tools(), REGISTERED);
+  assert.deepEqual(g.tools(), arrived);
   assert.equal(g.sets.length, 2);
 });
 
@@ -218,12 +220,4 @@ test("a tool the registry doesn't hold (a profile's removal) is never set", asyn
   } as never);
   await hooks[0]!({}, { cwd: base, sessionManager: { getSessionId: () => "s", getLeafId: () => null, getBranch: () => [], getSessionFile: () => "/x.jsonl" } });
   assert.equal(sets, 0);
-});
-
-test("atRegisteredPlace: before the first active tool registered after it, whatever else was added or is missing", () => {
-  const reg = ["read", "bash", "a", "t", "b", "c"];
-  assert.deepEqual(atRegisteredPlace(["read", "bash", "a", "b", "c"], "t", reg), ["read", "bash", "a", "t", "b", "c"]);
-  assert.deepEqual(atRegisteredPlace(["read", "c", "b"], "t", reg), ["read", "t", "c", "b"], "an appended later tool stays where it is");
-  assert.deepEqual(atRegisteredPlace(["read", "bash"], "t", reg), ["read", "bash", "t"], "nothing later is active");
-  assert.deepEqual(atRegisteredPlace(["read", "b", "a"], "t", reg), ["read", "t", "b", "a"], "an earlier tool appended late doesn't count");
 });

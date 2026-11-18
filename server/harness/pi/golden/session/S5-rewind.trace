@@ -64,6 +64,7 @@ A {"type":"rewound","id":"r1","entryId":"00000007","editorText":"two"}
 A {"type":"links","links":[]}
 B {"type":"links","links":[]}
 step dispose; reopen
+sdk abort []
 step attach A, B
 A {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scripted","thinking":"off","items":["00000001 info","00000002 info","00000005 user","00000006:0 assistant-text"]}
 A {"type":"queue","items":[]}
@@ -72,3 +73,4 @@ B {"type":"hello","isStreaming":false,"isCompacting":false,"model":"scripted/scr
 B {"type":"queue","items":[]}
 B {"type":"mode","mode":"normal","minorModes":[],"strict":false,"applies":"now","memory":{"type":"uniichat","size":128}}
 got leaf "00000009"
+sdk abort []

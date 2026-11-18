@@ -30,6 +30,7 @@ import { ModeEngine, REVIEW_FLAG, VISUALS_FLAG, type ModeSource } from "../../mo
 import type { ModeCtx, ModePort } from "../../modes/port";
 import type { PiExtensionAPI } from "./extension-types";
 import { ownSpecCore } from "./own-code";
+import { runPrompt } from "./run-start";
 
 /** The engine's handle on the runtime's bus, for the chat that hosts it (modesBridgeExtension). */
 export const MODES_ENGINE_EVENT = "sova:modes-engine";
@@ -205,7 +206,7 @@ export function modesExtension(pi: PiExtensionAPI, options: ModesExtensionOption
   pi.on("session_shutdown", async () => engine.shutdown());
   pi.on("before_agent_start", async (event, ctx) => {
     const sections = (event.systemPromptOptions as { sections?: Record<string, string> } | undefined)?.sections;
-    return engine.beforeAgentStart({ prompt: event.prompt, systemPrompt: event.systemPrompt, ...(sections ? { sections } : {}) }, ctxOf(ctx)) as never;
+    return engine.beforeAgentStart({ prompt: runPrompt(event), systemPrompt: event.systemPrompt, ...(sections ? { sections } : {}) }, ctxOf(ctx)) as never;
   });
   pi.on("agent_start", async (_event, ctx) => engine.agentStart(ctxOf(ctx)));
 

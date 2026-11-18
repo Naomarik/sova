@@ -373,8 +373,10 @@ the model that answered, marked ⚠ with the same `title`, never merged into eit
 
 The provider gives the Claude CLI the session's current system prompt (pi's system entries
 replayed, later ones folded into the first) in its `initialize` request, with one cut:
-pi's own stock preamble, the sentence that tells the model it is "an expert coding assistant
-operating inside pi", is left out. Only that exact text is cut, and only as a whole opening
+pi's own stock preamble, the sentence that tells the model what it is, is left out, in either of
+pi's wordings: "You are a coding assistant running inside pi…" (pi 1.5.0 on) or "an expert coding
+assistant operating inside pi…" (before it, for a chat still on an older pi). Only those exact texts
+are cut, and only as a whole opening
 paragraph of the prompt's `preamble` section (or of a prompt pi recorded as one flat text),
 wherever that section sits among the others; everything else goes in its order, byte for byte.
 Every other prompt arrives whole: a custom preamble (a SYSTEM.md, a baton or gathering

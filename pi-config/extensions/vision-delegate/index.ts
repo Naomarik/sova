@@ -153,8 +153,9 @@ export default function visionDelegate(pi: ExtensionAPI, options: { agentDir?: s
 		},
 	});
 
-	// before_agent_start fires once per user prompt with a live ctx.model: the
-	// authoritative gate. model_select only makes a /model switch show at once; a
+	// before_agent_start fires once per run a message starts (the user's prompt and,
+	// from pi 1.2.0, an extension's message with triggerTurn) with a live ctx.model:
+	// the authoritative gate. model_select only makes a /model switch show at once; a
 	// switch mid-run leaves the tool offered for the rest of that run, which is why
 	// execute still refuses on a vision model.
 	pi.on("before_agent_start", (_event, ctx) => gate(pi, ctx.model));

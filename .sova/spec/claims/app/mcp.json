@@ -128,7 +128,9 @@
       "server/chat-runtime/live-tail.ts",
       "server/chat-runtime/live-tail.test.ts",
       "server/harness/pi/mcp-http.ts",
-      "server/harness/pi/testing/mcp-http-stub.fixture.ts"
+      "server/harness/pi/testing/mcp-http-stub.fixture.ts",
+      "server/harness/pi/mcp.test.ts",
+      "server/harness/pi/mcp-tool-name.ts"
     ],
     "requires": [
       "§app/claude-code-provider",

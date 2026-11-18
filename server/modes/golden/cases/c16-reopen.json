@@ -120,10 +120,10 @@
       "role": "system",
       "content": "",
       "sections": {
-       "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-       "tools": "@14069dc67c42c871",
-       "rules": "@898a2a6e09208de2",
-       "docs": "@0f5fabf6c3c47c4c",
+       "preamble": "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
+       "tools": "@fd0a4437da3b242b",
+       "rules": "@fa7fa718e35207bb",
+       "docs": "@7ac29a1ce1499f33",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@70c1861b956d5153"
       },
@@ -179,10 +179,10 @@
      "role": "system",
      "content": "",
      "sections": {
-      "preamble": "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-      "tools": "@14069dc67c42c871",
-      "rules": "@898a2a6e09208de2",
-      "docs": "@0f5fabf6c3c47c4c",
+      "preamble": "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
+      "tools": "@fd0a4437da3b242b",
+      "rules": "@fa7fa718e35207bb",
+      "docs": "@7ac29a1ce1499f33",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@70c1861b956d5153"
      },
@@ -288,7 +288,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@7b61ccc4990a2ee1"
+       "tools": "@55716d4f4dbbed0f"
       },
       "toolsAdded": "@5234280a30e169f3"
      },
@@ -347,7 +347,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@7b61ccc4990a2ee1"
+      "tools": "@55716d4f4dbbed0f"
      },
      "toolsAdded": "@5234280a30e169f3"
     }
@@ -467,8 +467,8 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@de5e8b92a78c1467",
-       "rules": "@1dcdbbc00ab0b2ec"
+       "tools": "@ba82f93b54aea952",
+       "rules": "@2406478ee99055cc"
       }
      },
      {
@@ -517,8 +517,8 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@de5e8b92a78c1467",
-      "rules": "@1dcdbbc00ab0b2ec"
+      "tools": "@ba82f93b54aea952",
+      "rules": "@2406478ee99055cc"
      }
     }
    }
@@ -636,7 +636,7 @@
       "role": "system",
       "content": "",
       "sections": {
-       "tools": "@e9fc4e46be015fb7"
+       "tools": "@3e5c56731ebe2b8f"
       },
       "toolsRemoved": [
        {
@@ -704,7 +704,7 @@
      "role": "system",
      "content": "",
      "sections": {
-      "tools": "@e9fc4e46be015fb7"
+      "tools": "@3e5c56731ebe2b8f"
      },
      "toolsRemoved": [
       {

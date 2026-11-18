@@ -27,6 +27,25 @@
     },
     "evidence": "verified"
   },
+  "§app.chat-processes/cache-warming": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [],
+    "code": [
+      "server/harness/pi/cache-warming.ts",
+      "server/harness/pi/open.ts",
+      "server/harness/pi/chat-wiring.test.ts",
+      "server/harness/pi/contract.test.ts",
+      "server/harness/pi/quirks.ts",
+      "server/harness/pi/QUIRKS.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T17:09Z",
+      "source": "pi-session:01a1eee3-521d-72bd-a0fb-7f5a567de2eb#c8245611"
+    },
+    "evidence": "reviewed"
+  },
   "§app.chat-processes/code-generations": {
     "kind": "behavior",
     "authority": "accepted",
@@ -141,7 +160,14 @@
       "server/harness/pi/extension-deps.integration.test.ts",
       "server/harness/pi/quirks.ts",
       "server/harness/pi/QUIRKS.md",
-      "server/harness/pi/contract.test.ts"
+      "server/harness/pi/contract.test.ts",
+      "pi-config/extensions/subagents/string-enum.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/member.ts",
+      "pi-config/extensions/mode/create-guide-tool.ts",
+      "server/harness/pi/extension-schemas.test.ts",
+      "server/agent-loadouts.test.ts",
+      "server/modes/modes-sova.golden.test.ts"
     ],
     "requires": [
       "§app.chat-processes/code-generations"

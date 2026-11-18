@@ -42,7 +42,50 @@ export function withoutSignatures<T>(v: T): T {
     browser; message_end, turn_end and agent_end carry whole messages), and record_tour's supplied
     credentials (§app.tours/sites: every view of its arguments shows "[hidden]"). */
 export function toV1Event(event: any): unknown {
-  return hideTourCredentialsDeep(withoutSignatures(wireEvent(event)));
+  return hideTourCredentialsDeep(withoutSignatures(wireEvent(withoutNewerFields(event))));
+}
+
+const without = (o: any, key: string) => {
+  if (!o || typeof o !== "object" || !(key in o)) return o;
+  const { [key]: _dropped, ...rest } = o;
+  return rest;
+};
+
+/**
+ * Wire 1 is a fixed contract: older servers, peers and clients read its frames as pi 1.0.3 shaped them, so
+ * a field a later pi adds to an event stays out, by the place pi puts it (never by name at any depth: a
+ * tool's own `details` may hold the same word). pi 1.1.0 added `aborted` to `agent_settled`, the time a tool
+ * took (`durationMs`) to `tool_execution_end` and to its result message wherever an event carries one, and
+ * `structuredContent` to `tool_execution_end`'s result. Wire 2 is mapped from these frames by named fields
+ * (shared/wire-v1.ts), so it is unchanged too.
+ */
+function withoutNewerFields(event: any): any {
+  switch (event?.type) {
+    case "agent_settled":
+      return without(event, "aborted");
+    case "tool_execution_end": {
+      const e = without(event, "durationMs");
+      const result = without(e.result, "structuredContent");
+      return result === e.result ? e : { ...e, result };
+    }
+    case "message_start":
+    case "message_end": {
+      const message = without(event.message, "durationMs");
+      return message === event.message ? event : { ...event, message };
+    }
+    case "turn_end": {
+      const results: unknown[] | undefined = Array.isArray(event.toolResults) ? event.toolResults : undefined;
+      const toolResults = results?.map((m) => without(m, "durationMs"));
+      return toolResults?.some((m, i) => m !== results![i]) ? { ...event, toolResults } : event;
+    }
+    case "agent_end": {
+      const all: unknown[] | undefined = Array.isArray(event.messages) ? event.messages : undefined;
+      const messages = all?.map((m) => without(m, "durationMs"));
+      return messages?.some((m, i) => m !== all![i]) ? { ...event, messages } : event;
+    }
+    default:
+      return event;
+  }
 }
 
 /** A server's tool on a streaming frame, from the names the chat's own list registered (never guessed). */

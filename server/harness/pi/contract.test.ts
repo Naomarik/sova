@@ -213,6 +213,43 @@ describe("pi contract", () => {
     assert.equal(two.data, null);
   });
 
+  test("wire 1 stays as pi 1.0.3 shaped it: the fields pi added since (agent_settled's aborted, a tool's durationMs, a tool result's structuredContent) are in pi's events and in no wire-1 frame", async () => {
+    const { v1Frame } = await import("./wire.ts");
+    const { session, faux, events } = await scriptedSession();
+    faux.setResponses([fauxAssistantMessage([fauxText("calling"), fauxToolCall("echo", { text: "hi" })], { stopReason: "toolUse" }), fauxAssistantMessage("done")]);
+    await session.prompt("go");
+    await session.waitForIdle();
+    /** Where pi puts each newer field: every `<event type>: <path>` that holds one, over a list of events. */
+    const newer = (list: any[]) => {
+      const found = new Set<string>();
+      for (const e of list) {
+        if (e.type === "agent_settled" && "aborted" in e) found.add("agent_settled: aborted");
+        if (e.type === "tool_execution_end" && "durationMs" in e) found.add("tool_execution_end: durationMs");
+        if (e.type === "tool_execution_end" && e.result && "structuredContent" in e.result) found.add("tool_execution_end: result.structuredContent");
+        if ((e.type === "message_start" || e.type === "message_end") && e.message && "durationMs" in e.message) found.add(`${e.type}: message.durationMs`);
+        if (e.type === "turn_end" && (e.toolResults ?? []).some((m: any) => "durationMs" in m)) found.add("turn_end: toolResults[].durationMs");
+        if (e.type === "agent_end" && (e.messages ?? []).some((m: any) => "durationMs" in m)) found.add("agent_end: messages[].durationMs");
+      }
+      return [...found].sort();
+    };
+    const fromPi = newer(events);
+    assert.deepEqual(
+      fromPi.filter((f) => f !== "tool_execution_end: result.structuredContent"),
+      ["agent_end: messages[].durationMs", "agent_settled: aborted", "message_end: message.durationMs", "message_start: message.durationMs", "tool_execution_end: durationMs", "turn_end: toolResults[].durationMs"],
+      "the control: where pi puts them (a place added or gone: withoutNewerFields in wire.ts follows it)",
+    );
+    const frames = events.map((e) => JSON.parse(JSON.stringify(v1Frame(e))).event);
+    assert.deepEqual(newer(frames), [], "none reaches a wire-1 frame");
+    // Only by place: the same word in a tool's own details passes, and nothing else of the event is lost.
+    const end = events.find((e) => e.type === "tool_execution_end");
+    const kept = (v1Frame({ ...end, result: { ...end.result, structuredContent: { a: 1 }, details: { durationMs: 7, aborted: true } } }) as any).event;
+    const { durationMs: _took, ...rest } = end;
+    assert.deepEqual(kept, { ...rest, result: { ...end.result, details: { durationMs: 7, aborted: true } } });
+    const compaction = { type: "compaction_end", reason: "manual", result: undefined, aborted: true, willRetry: false };
+    assert.deepEqual((v1Frame(compaction) as any).event, compaction, "compaction_end's aborted is wire 1's own");
+    session.dispose();
+  });
+
   test("C3: a run, a steer, a retry and a compaction emit the events and fields bind() reads", async () => {
     const { session, faux, events } = await scriptedSession();
     let steered = false;

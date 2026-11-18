@@ -416,9 +416,9 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
 /* A card value the chat set: muted words beside it, as a choice's right-hand column. */
 .pb-from-chat { color: var(--color-ink-muted); font-size: var(--fs-caption); white-space: nowrap; }
 
-/* While a setup card's buttons are pinned the view is inside the card: Jump to Latest would cover a
-   line of it, so it isn't shown; the card's end is the pinned buttons. */
-.transcript-wrap[data-pb-pinned] > .jump-latest[data-shown] { visibility: hidden; pointer-events: none; }
+/* Jump to Latest never covers any part of a playbook's card in the conversation, a setup card or a
+   run's record: while its box would lie over one (lib/jump-cover marks the transcript), it isn't shown. */
+.transcript-wrap[data-pb-under-jump] > .jump-latest[data-shown] { visibility: hidden; pointer-events: none; }
 /* The gap between the strip (or its open card) and the message box is the page's own: nothing of
    the conversation passing behind the strip shows as a sliver under it. As wide as the strip, so it
    is no band. */

@@ -1,6 +1,6 @@
 // The playbook card's rules that keep one thing from covering another (§chat.playbooks/run-card,
-// run-strip), read from the stylesheet the page loads: while a setup card's buttons are pinned, Jump
-// to Latest isn't shown over the card; and the gap under a run's strip is the page's own, so nothing
+// run-strip), read from the stylesheet the page loads: while Jump to Latest would lie over a card
+// in the conversation (lib/jump-cover marks the transcript), it isn't shown; and the gap under a run's strip is the page's own, so nothing
 // of the conversation passing behind the strip shows under it.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -21,8 +21,8 @@ function rule(selector: string): Map<string, string> {
   return out;
 }
 
-test("while a setup card's buttons are pinned, Jump to Latest is neither seen nor pressed, even when it would show", () => {
-  const r = rule(".transcript-wrap[data-pb-pinned] > .jump-latest[data-shown]");
+test("while Jump to Latest would lie over a playbook's card, it is neither seen nor pressed, even when it would show", () => {
+  const r = rule(".transcript-wrap[data-pb-under-jump] > .jump-latest[data-shown]");
   assert.equal(r.get("visibility"), "hidden");
   assert.equal(r.get("pointer-events"), "none");
 });

@@ -58,6 +58,7 @@ import { announce, toast } from "../lib/ui-state";
 import { jumpToEntry } from "../lib/jump";
 import { watchPinnedBar } from "../lib/pinned-bar";
 import { cardLander, type CardLander, type LandingHost } from "../lib/card-lander";
+import { watchJumpCover } from "../lib/jump-cover";
 import { Markdown } from "./Markdown";
 import { ModelPickButton } from "./ModelPickButton";
 import { FromChat } from "./PlaybookFromChat";
@@ -639,6 +640,11 @@ export function PlaybookCard(props: {
     return now;
   });
   onMount(() => {
+    // Jump to Latest never covers any part of a card in the conversation, set up or started: it
+    // isn't shown while its box lies over this one (lib/jump-cover, PlaybookCard.css).
+    if (props.inline) onCleanup(watchJumpCover(card));
+  });
+  onMount(() => {
     if (!props.inline || !props.land) return;
     // The view goes to the card as it is drawn and while the opening lines above it settle, unless
     // the reader has taken the view since the chat opened (lib/card-lander; the chat's lander is
@@ -932,9 +938,7 @@ export function PlaybookCard(props: {
             // (a setup card is often taller than the screen), and the chat's floating controls lift above them.
             if (!props.inline) return;
             onMount(() => {
-              // While they are pinned the view is inside the card, and Jump to Latest would cover a
-              // line of it: it isn't shown then (PlaybookCard.css); the card's end is these buttons.
-              onCleanup(watchPinnedBar(foot, card, (pinned, wrap) => wrap?.toggleAttribute("data-pb-pinned", pinned)));
+              onCleanup(watchPinnedBar(foot, card));
             });
           }}
         >

@@ -25,9 +25,8 @@ function lift(wrap: HTMLElement, bar: HTMLElement, px: number | null): void {
   }
 }
 
-/** Watches `bar`, the bottom bar of `card`, until the returned function is called. `onPinned` hears
-    each time it becomes stuck above its card's end or stops being so, with the transcript it is in. */
-export function watchPinnedBar(bar: HTMLElement, card: HTMLElement, onPinned?: (pinned: boolean, wrap: HTMLElement | null) => void): () => void {
+/** Watches `bar`, the bottom bar of `card`, until the returned function is called. */
+export function watchPinnedBar(bar: HTMLElement, card: HTMLElement): () => void {
   const wrap = bar.closest<HTMLElement>(".transcript-wrap");
   let frame = 0;
   let was: boolean | null = null;
@@ -38,10 +37,7 @@ export function watchPinnedBar(bar: HTMLElement, card: HTMLElement, onPinned?: (
     const c = card.getBoundingClientRect();
     // Stuck: the bar sits above the card's own end.
     const now = f.height > 0 && c.bottom - f.bottom > 1;
-    if (now !== was) {
-      bar.toggleAttribute("data-pinned", now);
-      onPinned?.(now, wrap);
-    }
+    if (now !== was) bar.toggleAttribute("data-pinned", now);
     was = now;
     // The floating controls lift whenever the bar is in their band at the bottom of the chat, stuck
     // there or simply scrolled to it, so they never cover it.
@@ -65,7 +61,6 @@ export function watchPinnedBar(bar: HTMLElement, card: HTMLElement, onPinned?: (
     document.removeEventListener("scroll", soon, true);
     ro.disconnect();
     bar.removeAttribute("data-pinned");
-    if (was) onPinned?.(false, wrap);
     if (wrap) lift(wrap, bar, null);
   };
 }

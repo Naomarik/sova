@@ -128,7 +128,9 @@ describe("a lease never lapses while the reply to its holder is being written", 
       const tonyTok = c.links!.find((l) => l.personId === tony.id)!.token;
       const { chat, release } = await heldChat(c.path);
       says(chat, c.sessionId, maria.id, "two decisions, then a question");
-      await until(() => piSession(chat).isStreaming);
+      // The chart's own fact, not pi's flag: from pi 1.2.0 isStreaming is already true while the
+      // run's start step runs, before the runtime takes the turn.
+      await until(() => hostOf(org.id).data(`baton/${org.id}/${c.sessionId}`)?.["reply"] === "writing");
       // Her lease's time passes while the model is still answering her: its timer fires.
       now = t0 + 1300;
       hostOf(org.id).fireDue();

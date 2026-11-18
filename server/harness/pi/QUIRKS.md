@@ -86,7 +86,7 @@ Paths in "Where" are under `server/`.
 
 ### P1 open-writes-nothing
 
-Building a session on a branch with no messages (or no thinking entry) appends `model_change`/`thinking_level_change` through the session manager's own `appendModelChange`/`appendThinkingLevelChange` properties, so replacing them before construction defers those writes; Sova queues them until the first write and drops the one that restates the recorded model.
+Building a session on a branch with no messages (or no thinking entry) appends `model_change`/`thinking_level_change` through the session manager's own `appendModelChange`/`appendThinkingLevelChange` properties, so replacing them before construction defers those writes; Sova queues them until the first write and drops the one that restates the recorded model. pi 1.5.1 (#11451) also appends through the same two methods at a run's start, when the branch's last recorded thinking level (or virtual model) is not the live one, as after a rewind across a change. The methods are replaced only while a chat opens (`restoreAppends` puts them back once its runtime is built) and every hand-off flushes the queued appends first, so that append is pi's own ordinary write after Sova's, with no `entry_appended` (P13); a first prompt still writes one of each.
 
 Canary: `P1 open-writes-nothing: building a session on a message-less file appends model and thinking through the manager's instance methods`.
 
@@ -142,7 +142,7 @@ Canary: `P9 queue-one-bit: the mirror is spliced by text at message_start, so a 
 
 ### P10 leaf-is-last-line
 
-`navigateTree({summarize:false})` writes nothing and moves only the in-memory leaf, and `SessionManager.open` takes the file's last line as the leaf; a rewind therefore appends a marker so the move survives a reopen.
+`navigateTree({summarize:false})` writes nothing and moves only the in-memory leaf, and `SessionManager.open` takes the file's last line as the leaf; a rewind therefore appends a marker so the move survives a reopen. pi 1.5.1 (#9155) refuses `navigateTree` while a prompt is still in its preflight (its `input` handlers running) with "Wait for the current response to finish before navigating the session tree."; `rewindSession` returns that as an `internal` refusal with pi's sentence. After navigating, pi sets the active tools to those the new branch's transcript declares (1.3.0); Sova's own tool syncs run again at the next run start.
 
 Canary: `P10 leaf-is-last-line: navigateTree({summarize:false}) writes nothing and moves only the in-memory leaf; open() takes the last line as the leaf`.
 
@@ -232,7 +232,7 @@ Canary: `P27 headless-standins: pi-tui keeps its text, key and colour helpers ap
 
 ### P28 steer-all
 
-pi builds the agent's steering mode from `settingsManager.getSteeringMode()` when it creates a session (`createAgentSession`, `sdk.js`) and reads it again on every `AgentSession.reload()` (`syncQueueModesFromSettings`, right after `settingsManager.reload()` re-read settings.json). `steerAllAtOnce` replaces that getter on each runtime's own settings object (`servicesForCwd`), so the agent's steering queue (`PendingMessageQueue`) runs in `"all"` mode: every queued steer lands at the next step, each its own message, in the order queued, and a reload keeps it. `AgentSession.setSteeringMode` is never called: it saves into settings.json, which the user's terminal pi reads. Follow-ups keep pi's one-at-a-time. The web queue (`WebQueue.pumpOnce`) hands every waiting steer in behind the ones pi still holds, which only lands them together because of this mode.
+pi builds the agent's steering mode from `settingsManager.getSteeringMode()` when it creates a session (`createAgentSession`, `sdk.js`) and reads it again on every `AgentSession.reload()` (`syncQueueModesFromSettings`, right after `settingsManager.reload()` re-read settings.json). `steerAllAtOnce` replaces that getter on each runtime's own settings object (`servicesForCwd`), so the agent's steering queue (`PendingMessageQueue`) runs in `"all"` mode: every queued steer lands at the next step, each its own message, in the order queued, and a reload keeps it. `AgentSession.setSteeringMode` is never called: it saves into settings.json, which the user's terminal pi reads. Follow-ups keep pi's one-at-a-time. The web queue (`WebQueue.pumpOnce`) hands every waiting steer in behind the ones pi still holds, which only lands them together because of this mode. `AgentSession.reload()` refuses while a reply streams or a compaction runs (pi 1.5.1, #9222); Sova calls it nowhere outside the canary (a chat reloads by swapping its process), and the canary's reload runs idle.
 
 Canary: `P28 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode`.
 
@@ -292,7 +292,7 @@ Canary: `P38 api-key-login: the api-key login asks one secret prompt and stores 
 
 ### P39 base-prompt-sections
 
-A command context's `getSystemPromptOptions()` hands out the session's live base prompt options: the `sections` object in them builds the prompt of a turn no `before_agent_start` built (one an extension's message starts) and of a run's later requests. A tool change replaces the object. So the mode engine keeps the getter, adopted from the chat's command context at every bind (the replacement for `/mode sync`), and writes its `mode` section there again at every run start and every switch. The pi-config mode extension relied on the same through `/mode sync`; it is retired, and Sova's engine keeps `/mode sync`.
+A command context's `getSystemPromptOptions()` hands out the session's live base prompt options: the `sections` object in them builds the prompt wherever no `before_agent_start` built it: a run that starts without one (the web queue's wake, `agent.continue()`) and its later requests, and every read or rebuild of the prompt between runs. A tool change replaces the object. So the mode engine keeps the getter, adopted from the chat's command context at every bind (the replacement for `/mode sync`), and writes its `mode` section there again at every run start and every switch. The pi-config mode extension relied on the same through `/mode sync`; it is retired, and Sova's engine keeps `/mode sync`. Through pi 1.1.0 a turn an extension's message starts (`sendMessage` with `triggerTurn` on an idle chat) was such a run too. From 1.2.0 `before_agent_start` fires for it (`messageType: "custom"`, no `prompt`; Sova's hooks read the difference through `runPrompt`, harness/pi/run-start.ts), so the engine writes its section into that run's own options and takes its one-shot mode note there, as on a run the user's message starts.
 
 Canary: `P39 base-prompt-sections: a command context's getSystemPromptOptions() is the live base options, whose sections build the prompt, and a tool change replaces it`.
 

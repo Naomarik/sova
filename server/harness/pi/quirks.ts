@@ -539,7 +539,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P39",
     name: "base-prompt-sections",
     kind: "semantic",
-    relies: "A command context's getSystemPromptOptions() hands out the session's live base prompt options, whose `sections` object builds the prompt a turn no before_agent_start built (an extension's message) and a run's later requests; a tool change replaces that object. So the mode engine keeps the getter (adopted from the chat's command context at every bind) and writes its `mode` section there again at every run start and switch.",
+    relies: "A command context's getSystemPromptOptions() hands out the session's live base prompt options, whose `sections` object builds the prompt wherever no before_agent_start built it (a run the queue's wake starts with agent.continue() and its later requests, and every read or rebuild between runs; from pi 1.2.0 a run an extension's message starts gets a before_agent_start of its own); a tool change replaces that object. So the mode engine keeps the getter (adopted from the chat's command context at every bind) and writes its `mode` section there again at every run start and switch.",
     pi: ["ExtensionCommandContext.getSystemPromptOptions", "BuildSystemPromptOptions.sections", "AgentSession._baseSystemPromptOptions"],
     where: [
       { file: "server/harness/pi/modes.ts", symbol: "modeCtx" },

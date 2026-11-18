@@ -128,9 +128,12 @@ export function resolveRole(role: PlaybookMember, edits: PlaybookCardEdits, env:
 
 // ── the view ───────────────────────────────────────────────────────────────────────────────────
 
+/** The edit paths a chat set last (store.ts chatSet), an older bare choice id read as its path. */
+export const fromChatOf = (r: Pick<PlaybookRunRecord, "chatSet">): string[] => (r.chatSet ?? []).map((p) => (p.includes(".") ? p : `choices.${p}`));
+
 function choiceView(input: PlaybookInput, r: Pick<PlaybookRunRecord, "initial" | "edits" | "chatSet">, edits: PlaybookCardEdits): PlaybookChoiceView {
   const value = valueOf(edits, input);
-  const origin = r.edits.choices && input.id in r.edits.choices ? (r.chatSet?.includes(input.id) ? "chat" : "you") : (r.initial.origins[input.id] ?? "default");
+  const origin = r.edits.choices && input.id in r.edits.choices ? (fromChatOf(r).includes(`choices.${input.id}`) ? "chat" : "you") : (r.initial.origins[input.id] ?? "default");
   return {
     id: input.id,
     label: input.label,
@@ -243,6 +246,8 @@ export function runCard(r: PlaybookRunRecord, spec: PlaybookSpec, env: CardEnv):
   };
   view.startBlocked = r.aligning ? "Waiting for the alignment to be decided in the chat." : blocked(view, spec, edits, env);
   if (r.aligning) view.aligning = true;
+  const fromChat = fromChatOf(r);
+  if (fromChat.length) view.fromChat = fromChat;
   return { view, resolved };
 }
 

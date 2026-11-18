@@ -31,7 +31,9 @@ export interface PlaybookRunRecord {
   anchor?: PlaybookRunAnchor;
   /** Waiting on the alignment its playbook requires first (align-first.ts), since when; no card is drawn meanwhile. */
   aligning?: { since: string };
-  /** The choices a chat (or a script) set last, not the person's page: they read From the chat. */
+  /** The values a chat (or a script) set last, not the person's page, by edit path ("choices.<id>",
+      "roles.<id>.pick" / ".on" / ".note", "teams.<id>.note", "stops.<id>", "cycle.max" / ".askEvery" / ".until"):
+      they read From the chat. A bare id, from before paths, is a choice's. */
   chatSet?: string[];
   /** Words typed after /<id>. */
   text?: string;

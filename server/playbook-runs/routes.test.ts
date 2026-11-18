@@ -383,10 +383,11 @@ describe("a choice worked out with the chat", () => {
     assert.ok(note.startsWith(`This chat shows the card of the playbook "Chatty" (run ${v.id}), not started.`), note);
     assert.ok(note.includes("- The failure to fix [failure], text, several lines, required before Start: What goes wrong today"), note);
     assert.ok(note.includes("If the request is ambiguous about one of them and align mode is on, you may open an alignment first"), note);
-    assert.ok(note.includes(`run playbook.run.edit --run ${v.id} --json '{"revision": <its revision>, "edits": {"choices": {"<choice id>": <value>}}}'`), note);
-    assert.ok(!note.includes("[level]"), "only the choices the chat works out");
+    assert.ok(note.includes(`run playbook.run.edit --run ${v.id} --json '{"revision": <its revision>, "edits": {…}}'\`, where edits takes any of "choices": {"<choice id>": <value>}`), note);
+    assert.ok(!note.includes("[level]"), "only the choices the chat works out are listed as waiting on it");
     await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { failure: "x" } } }));
-    assert.equal(await playbookCardNote(c.id), `The card of the playbook "Chatty" (run ${v.id}) has every choice worked out with you filled now; the person checks the rest and presses Start.`, "filled: said once, so the earlier note doesn't stand");
+    const filled = (await playbookCardNote(c.id))!;
+    assert.ok(filled.includes("Every choice worked out with you is filled now.") && !filled.includes("[failure]"), "filled: told so, so the earlier note doesn't stand");
     await asPage(`/api/playbook-runs/${v.id}`, { method: "DELETE" });
     assert.equal(await playbookCardNote(c.id), null, "closed: nothing");
   });
@@ -411,5 +412,91 @@ describe("a choice worked out with the chat", () => {
     const other = (await (await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "trial" }, cwd: scratchAgentDir, path: c.path, after: "item-12" }))).json()) as PlaybookRunView;
     assert.equal(other.anchor?.after, "item-12");
     assert.equal((await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "chatty" }, cwd: scratchAgentDir, path: c.path, after: 5 }))).status, 400);
+  });
+});
+
+const { callerKeys } = await import("../caller-keys");
+const { canonicalPath } = await import("../paths");
+
+describe("the card's own chat sets any of its values", () => {
+  const dir = join(scratchAgentDir, "sova", "playbooks", "cycler");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "PLAYBOOK.md"), "---\ntitle: Cycler\ndescription: d\n---\nConduct it.\n");
+  writeFileSync(
+    join(dir, "playbook.json"),
+    JSON.stringify({
+      version: 1,
+      inputs: [{ id: "topic", label: "Topic", type: "text", ask: "always", required: true }],
+      teams: {
+        bench: {
+          goal: "Grade it",
+          members: {
+            grader: { label: "Grader", brief: "Grades blind", only: true, models: [{ model: "zai/glm-5.3", effort: "high" }, { model: "zai/glm-5.2", effort: "high" }] },
+            critic: { label: "Critic", brief: "Argues", optional: true, models: [{ model: "zai/glm-5.3", effort: "low" }] },
+          },
+        },
+      },
+      steps: [{ id: "rounds", label: "Rounds", repeat: { max: 3, askEvery: 1 }, steps: [{ id: "run", label: "Run", teams: ["bench"], stop: "optional" }] }],
+    }),
+  );
+  callerKeys.setLiveness(() => true);
+  const c = join(scratchAgentDir, "sessions", "--proj--", "2026-11-18T01-00-00-000Z_chat-own.jsonl");
+  writeFileSync(c, `${JSON.stringify({ type: "session", version: 3, id: "chat-own", timestamp: "2026-11-18T01:00:00.000Z", cwd: scratchAgentDir })}\n`);
+  const ownKey = callerKeys.issue(canonicalPath(c), "unit-own");
+  const otherKey = callerKeys.issue(canonicalPath(chatPath), "unit-other");
+  const asKey = (key: string) => (path: string, init: RequestInit) => app.request(path, { ...init, headers: { ...(init.headers as Record<string, string>), [CALLER_HEADER]: key, "x-sova-token": sovaToken() } }, { incoming: {} });
+  const own = asKey(ownKey);
+  const other = asKey(otherKey);
+  const openCard = async () => (await (await app.request("/api/playbook-runs", json({ playbook: { source: "user", id: "cycler" }, cwd: scratchAgentDir, path: c }))).json()) as PlaybookRunView;
+
+  test("a member's model, an optional member, a note, a stop and the cycle, each marked as the chat's; the card moves to it", async () => {
+    const v = await openCard();
+    store.changeRun(v.id, (x) => (x.anchor = { after: "item-1", at: "2026-01-01T00:00:00.000Z" }));
+    const res = await own(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { choices: { topic: "parsing" }, roles: { grader: { pick: { model: "zai/glm-5.2", effort: "high" }, note: "Be strict." }, critic: { on: true } }, teams: { bench: { note: "Cheap." } }, stops: { run: false }, cycle: { max: 2, until: "max" } } }));
+    assert.equal(res.status, 200, await res.clone().text());
+    const after = (await res.json()) as PlaybookRunView;
+    const grader = after.teams[0]!.members.find((m) => m.id === "grader")!;
+    assert.deepEqual([grader.resolved?.model, grader.note, after.teams[0]!.members.find((m) => m.id === "critic")!.on, after.teams[0]!.note, after.steps[0]!.stopOn, after.cycle?.max, after.cycle?.until], ["zai/glm-5.2", "Be strict.", true, "Cheap.", false, 2, "max"]);
+    assert.deepEqual(after.fromChat?.slice().sort(), ["choices.topic", "cycle.max", "cycle.until", "roles.critic.on", "roles.grader.note", "roles.grader.pick", "stops.run", "teams.bench.note"]);
+    assert.equal(after.choices[0]!.origin, "chat");
+    assert.ok(store.runById(v.id)!.anchor!.at > "2026-01-01T00:00:00.000Z");
+    const mine = (await (await asPage(`/api/playbook-runs/${v.id}`, patch({ revision: after.revision, edits: { stops: { run: true } } }))).json()) as PlaybookRunView;
+    assert.ok(!mine.fromChat!.includes("stops.run"), "the person's own change takes the mark away");
+  });
+
+  test("an only-these member takes only a model of its own list, from the chat as from the page", async () => {
+    const v = await openCard();
+    const res = await own(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { roles: { grader: { pick: { model: "ollama-cloud/qwen" } } } } }));
+    assert.equal(res.status, 400);
+    assert.deepEqual(await res.json(), { error: "Grader runs only on the models its playbook lists." });
+  });
+
+  test("another chat or a script fills in choices only; Start, My Defaults and Close Card stay the person's", async () => {
+    const v = await openCard();
+    for (const call of [other, asChat]) {
+      const res = await call(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { stops: { run: false } } }));
+      assert.equal(res.status, 403);
+      assert.deepEqual(await res.json(), { error: "Only the person, or the chat showing this card, changes its models, members, notes, stops and cycle settings. A script or another chat may fill in its choices. Nothing was changed." });
+    }
+    assert.equal((await own(`/api/playbook-runs/${v.id}/start`, json({ revision: v.revision }))).status, 403);
+    assert.equal((await own(`/api/playbook-runs/${v.id}/defaults`, json({ revision: v.revision }))).status, 403);
+    assert.equal((await own(`/api/playbook-runs/${v.id}`, { method: "DELETE" })).status, 403);
+    assert.equal(store.runById(v.id)!.state, "draft");
+  });
+
+  test("the chat is told what it can set on the card, and how", async () => {
+    const { playbookCardNote } = await import("./note");
+    const v = await openCard();
+    const note = (await playbookCardNote("chat-own"))!;
+    for (const want of [
+      `This chat shows the card of the playbook "Cycler" (run ${v.id}), not started.`,
+      "Put everything the person said when asking onto the card itself",
+      "- members (model and effort, a note, on/off if optional): grader (only: zai/glm-5.3, zai/glm-5.2); critic (list: zai/glm-5.3), optional",
+      "- team notes: bench",
+      "- optional stops (on or off): run",
+      '- the cycle: max, askEvery, until ("rule" or "max")',
+      `run playbook.run.edit --run ${v.id} --json`,
+    ])
+      assert.ok(note.includes(want), `missing: ${want}\n---\n${note}`);
   });
 });

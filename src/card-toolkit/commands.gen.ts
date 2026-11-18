@@ -4262,13 +4262,13 @@ export interface CommandParams {
     /** The run's id (pr_…) */
     "run": string;
   };
-  /** Fill in a card's choices before Start (the person's page also changes models, members, notes, stops and cycle settings). Names the revision it changes; a stale one is refused. (changes something; needs the card's owner trusted) */
+  /** Change a card before Start: anyone may fill in its choices; the chat showing the card, like the person's page, also sets its members' models and efforts, optional members, notes, optional stops and cycle settings. Names the revision it changes; a stale one is refused. (changes something; needs the card's owner trusted) */
   "playbook.run.edit": {
     /** The run's id (pr_…) */
     "run": string;
     /** The card's revision you are changing */
     "revision": number;
-    /** { choices: { <choice id>: value } } */
+    /** { choices?: { <choice id>: value }, roles?: { <member id>: { pick?: { model, effort? }, on?, note? } }, teams?: { <team id>: { note } }, stops?: { <step id>: boolean }, cycle?: { max?, askEvery?, until? } } */
     "edits": unknown;
   };
   /** This computer's MCP servers: each one's name, where it comes from, its state, tool count, tool names and last Check. Never a secret's value. (only looks; needs the card's owner trusted) */

@@ -14,7 +14,10 @@ import { statingOwnNumber } from "../wire-gate";
 import { answersKey, firstValues, readAnswers, saveAnswers } from "./answers";
 import { loadPlaybook, refOf } from "./env";
 import type { ContentsSection } from "./message";
-import { effectiveEdits } from "./plan";
+import { effectiveEdits, fromChatOf } from "./plan";
+import { showsToken, TOKEN_HEADER } from "../auth";
+import { CALLER_HEADER, callerKeys } from "../caller-keys";
+import { canonicalPath } from "../paths";
 import { projectKeyOf, realHost, RunRefused, startRun } from "./start";
 import { changeRun, createRun, draftsOf, oneRunRefusal, openDraftOf, runById, runHolding, runsOfChat } from "./store";
 import { runView } from "./view";
@@ -138,6 +141,26 @@ export function cleanEdits(spec: PlaybookSpec, sent: unknown): PlaybookCardEdits
   return out;
 }
 
+/** Every value an edit sets, by path (shared/playbook-run.ts PlaybookRunView.fromChat). */
+export function editPaths(e: PlaybookCardEdits): string[] {
+  const out: string[] = [];
+  for (const id of Object.keys(e.choices ?? {})) out.push(`choices.${id}`);
+  for (const [id, m] of Object.entries(e.roles ?? {})) for (const k of ["pick", "on", "note"] as const) if (k in m) out.push(`roles.${id}.${k}`);
+  for (const [id, t] of Object.entries(e.teams ?? {})) if ("note" in t) out.push(`teams.${id}.note`);
+  for (const id of Object.keys(e.stops ?? {})) out.push(`stops.${id}`);
+  for (const k of ["max", "askEvery", "until"] as const) if (e.cycle && k in e.cycle) out.push(`cycle.${k}`);
+  return out;
+}
+
+/** The request comes from the card's own chat: its key names the chat that shows the card (or conducts it). */
+function cardsOwnChat(c: Context, r: { shownIn?: { path: string }; started?: { chat: { path: string } } }): boolean {
+  if (!showsToken(c.req.header(TOKEN_HEADER))) return false;
+  const caller = callerKeys.callerOf(c.req.header(CALLER_HEADER));
+  if (!caller.startsWith("chat:")) return false;
+  const chat = canonicalPath(caller.slice("chat:".length));
+  return [r.shownIn?.path, r.started?.chat.path].some((p) => !!p && canonicalPath(p) === chat);
+}
+
 const fail = (c: Context, err: unknown) => {
   if (err instanceof RunRefused) return c.json({ error: err.message, ...err.extra }, err.status);
   return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
@@ -257,16 +280,17 @@ export function mountPlaybookRunRoutes(app: Hono, deps: PlaybookRunRouteDeps): v
       const chatOnes = Object.keys(edits.choices).map((id) => loaded.spec!.inputs.find((i) => i.id === id)!).filter((i) => i.ask === "chat");
       if (chatOnes.length) return c.json({ error: `${chatOnes[0]!.label} is worked out with the chat: ask it there. Nothing was changed.` }, 400);
     }
-    // A chat or a script fills in the playbook's own choices; models, roles, stops and cycles are the person's.
-    // The chat filling a choice brings the card down to where it did, under its last words.
-    const moves = notPage(c) && !!edits.choices && !r.aligning;
-    if (notPage(c) && (edits.roles || edits.teams || edits.stops || edits.cycle)) return c.json({ error: "Only the person changes a card's models, members, notes, stops and cycle settings, on the card in Sova's page. A chat may fill in its choices. Nothing was changed." }, 403);
+    // The card's own chat (the chat showing it) sets any of its values, as the page does; any other program fills
+    // in its choices only. The chat's change brings the card down to where it made it, under its last words.
+    const program = !!notPage(c);
+    if (program && (edits.roles || edits.teams || edits.stops || edits.cycle) && !cardsOwnChat(c, r)) return c.json({ error: "Only the person, or the chat showing this card, changes its models, members, notes, stops and cycle settings. A script or another chat may fill in its choices. Nothing was changed." }, 403);
+    const moves = program && !r.aligning;
     changeRun(r.id, (x) => {
       x.edits = mergeEdits(x.edits, edits);
       x.revision++;
-      // Who set each choice last: a chat's value reads From the chat, the person's own says nothing.
-      const set = new Set(x.chatSet ?? []);
-      for (const id of Object.keys(edits.choices ?? {})) notPage(c) ? set.add(id) : set.delete(id);
+      // Who set each value last: a chat's reads From the chat, the person's own says nothing.
+      const set = new Set(fromChatOf(x));
+      for (const path of editPaths(edits)) program ? set.add(path) : set.delete(path);
       if (set.size) x.chatSet = [...set];
       else delete x.chatSet;
       if (moves) x.anchor = { at: new Date().toISOString() };

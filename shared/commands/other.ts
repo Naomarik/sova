@@ -451,12 +451,12 @@ export const OTHER_ENTRIES: CommandEntry[] = [
   {
     id: "playbook.run.edit",
     label: "Change a Playbook Card",
-    summary: "Fill in a card's choices before Start (the person's page also changes models, members, notes, stops and cycle settings). Names the revision it changes; a stale one is refused.",
+    summary: "Change a card before Start: anyone may fill in its choices; the chat showing the card, like the person's page, also sets its members' models and efforts, optional members, notes, optional stops and cycle settings. Names the revision it changes; a stale one is refused.",
     effect: "changes",
     params: {
       run: { type: "string", description: "The run's id (pr_…)", in: "path", required: true },
       revision: { type: "integer", description: "The card's revision you are changing", in: "body", required: true },
-      edits: { type: "json", description: "{ choices: { <choice id>: value } }", in: "body", required: true },
+      edits: { type: "json", description: "{ choices?: { <choice id>: value }, roles?: { <member id>: { pick?: { model, effort? }, on?, note? } }, teams?: { <team id>: { note } }, stops?: { <step id>: boolean }, cycle?: { max?, askEvery?, until? } }", in: "body", required: true },
     },
     route: { method: "PATCH", path: "/api/playbook-runs/:run" },
     sessionKey: null,

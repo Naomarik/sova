@@ -174,6 +174,10 @@ export interface PlaybookRunView {
   startError?: string;
   /** The playbook's description can't be read now (a draft whose playbook.json broke). */
   error?: string;
+  /** The values the chat set last on this card, by edit path: "choices.<id>", "roles.<member id>.pick",
+      "roles.<member id>.on", "roles.<member id>.note", "teams.<team id>.note", "stops.<step id>", "cycle.max",
+      "cycle.askEvery", "cycle.until". Each reads From the chat until the person changes it on the card. */
+  fromChat?: string[];
   /** The playbook requires an alignment first, and the chat's isn't confirmed yet: the card isn't drawn. */
   aligning?: true;
   /** Where the card stands in its chat's conversation: after the item the page showed last when it was opened

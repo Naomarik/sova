@@ -68,8 +68,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-29T10:30Z",
-      "source": "pi-session:d5243096-4638-4e5a-b0a2-a6393cd8c7cb#2879ee9c"
+      "at": "2026-11-18T15:42Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
     }
   },
   "§app.insights/explanations-page": {
@@ -584,6 +584,144 @@
       "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#bbe646fd"
     }
   },
+  "§app.insights/time-tab": {
+    "kind": "behavior",
+    "requires": [
+      "§app.insights/time-tab-your-time",
+      "§app.insights/time-tab-agent-time",
+      "§app.insights/time-tab-tables",
+      "§app.insights/time-tab-messages",
+      "§app.insights/usage-page-and-agents-page",
+      "§app.insights/cost-history"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T15:41Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
+    },
+    "code": [
+      "server/usage-routes.ts",
+      "server/usage-helper/service.ts",
+      "server/usage-helper/time.ts",
+      "server/usage-helper/time.integration.test.ts",
+      "server/usage-helper/memory.integration.test.ts",
+      "shared/usage/time.ts",
+      "shared/commands/other.ts",
+      "shared/commands-ids.json",
+      "src/lib/insights.ts",
+      "src/lib/time-totals.ts",
+      "src/lib/time-totals.test.ts",
+      "src/components/TimeTab.tsx",
+      "src/time-tab.css",
+      "src/components/AgentsView.tsx",
+      "src/App.tsx",
+      "src/lib/api.ts"
+    ]
+  },
+  "§app.insights/time-tab-agent-time": {
+    "kind": "behavior",
+    "requires": [
+      "§app.insights/reply-timing",
+      "§app.insights/tool-run-timing"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T15:41Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
+    },
+    "code": [
+      "server/usage-helper/perf-store.ts",
+      "server/usage-helper/tool-store.ts",
+      "server/usage-helper/time.ts",
+      "server/usage-helper/time.test.ts",
+      "src/lib/time-totals.ts",
+      "src/lib/time-totals.test.ts",
+      "src/components/TimeTab.tsx"
+    ]
+  },
+  "§app.insights/time-tab-messages": {
+    "kind": "behavior",
+    "requires": [
+      "§app.message-labels/time-spent-tab",
+      "§app.message-labels/crediting",
+      "§app.message-labels/labelling"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T15:42Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
+    },
+    "code": [
+      "server/message-labels.ts",
+      "server/message-labeller.ts",
+      "server/message-labels.test.ts",
+      "server/usage-helper/labels.ts",
+      "server/usage-helper/time.ts",
+      "server/usage-helper/time.test.ts",
+      "server/usage-routes.ts",
+      "src/lib/time-totals.ts",
+      "src/lib/time-totals.test.ts",
+      "src/components/TimeTab.tsx"
+    ]
+  },
+  "§app.insights/time-tab-tables": {
+    "kind": "behavior",
+    "requires": [
+      "§app.insights/cost-by-project",
+      "§app.insights/usage-ledger",
+      "§app.insights/time-tab-your-time",
+      "§app.insights/time-tab-agent-time"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T15:41Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
+    },
+    "code": [
+      "server/usage-helper/query.ts",
+      "server/usage-helper/time.ts",
+      "server/usage-helper/time.test.ts",
+      "src/lib/time-totals.ts",
+      "src/lib/time-totals.test.ts",
+      "src/components/TimeTab.tsx"
+    ]
+  },
+  "§app.insights/time-tab-your-time": {
+    "kind": "behavior",
+    "requires": [
+      "§app.subagents-pane/time-spent-record",
+      "§app.subagents-pane/time-spent-counting",
+      "§app.insights/time-tab-agent-time"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T15:41Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
+    },
+    "code": [
+      "server/time-spent-replay.ts",
+      "server/time-spent.ts",
+      "server/time-spent.test.ts",
+      "server/sessions-index.ts",
+      "server/usage-helper/attention.ts",
+      "server/usage-helper/main.ts",
+      "server/usage-helper/time.ts",
+      "server/usage-helper/time.test.ts",
+      "src/lib/time-totals.ts",
+      "src/lib/time-totals.test.ts",
+      "src/components/TimeTab.tsx"
+    ]
+  },
   "§app.insights/token-velocity": {
     "kind": "behavior",
     "authority": "accepted",
@@ -626,6 +764,30 @@
     "kind": "behavior",
     "authority": "accepted",
     "evidence": "unreviewed"
+  },
+  "§app.insights/tool-run-timing": {
+    "kind": "behavior",
+    "requires": [
+      "§app.insights/reply-timing"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T15:41Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
+    },
+    "code": [
+      "server/tool-run-record.ts",
+      "server/tool-run-record.test.ts",
+      "server/chat-manager.ts",
+      "shared/harness-session.ts",
+      "server/harness/pi/session.ts",
+      "server/harness/pi/session.test.ts",
+      "server/harness/pi/tool-run-chat.test.ts",
+      "server/usage-helper/tool-store.ts",
+      "server/usage-helper/main.ts"
+    ]
   },
   "§app.insights/usage-burn": {
     "kind": "behavior",
@@ -822,8 +984,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-25T20:41Z",
-      "source": "pi-session:5e21b0e4-1ae9-4f78-a787-4425529986b0#90d2ad0b"
+      "at": "2026-11-18T15:42Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
     }
   },
   "§app.insights/usage-refresh": {

@@ -8,8 +8,9 @@ for word. The entries are:
 
 - **Pickers:** `targets.list`, `folders.list`, `cwds.list`, `files.list`.
 - **Models:** `models.favorite` stars or unstars one model, as the picker's star does.
-- **Usage ledger:** `usage.costs`, `usage.performance`, `usage.today`, `usage.session`,
-  `usage.sessions`, `usage.prices`, `usage.prices.refresh`.
+- **Usage ledger:** `usage.costs`, `usage.performance`, `usage.time` (the Agents page's Time Spent
+  tab, §app.insights/time-tab), `usage.today`, `usage.session`, `usage.sessions`, `usage.prices`,
+  `usage.prices.refresh`.
 - **Insights:** `insights.usage`, `insights.usage.history`, `insights.agents`,
   `insights.worktrees`, `insights.session.workers`, and `insights.usage.refresh`, which asks each
   provider for its usage again, as the sidebar's Refresh does.

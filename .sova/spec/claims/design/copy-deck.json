@@ -1,4 +1,13 @@
 {
+  "§design.copy-deck/agents-time-tab": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/lib/time-totals.ts",
+      "src/components/TimeTab.tsx"
+    ]
+  },
   "§design.copy-deck/composer": {
     "kind": "note",
     "authority": "accepted",
@@ -118,7 +127,8 @@
       "src/components/UsageOllama.tsx",
       "src/components/CostsTab.tsx",
       "src/components/CostBreakdown.tsx",
-      "src/lib/cost-history.ts"
+      "src/lib/cost-history.ts",
+      "src/components/AgentsView.tsx"
     ]
   },
   "§design.copy-deck/live-watch": {

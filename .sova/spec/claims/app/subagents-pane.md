@@ -272,8 +272,9 @@ it fades the same, and only then, everywhere.
 ## §app.subagents-pane/time-spent — Time Spent: what the tab shows
 
 Time Spent says how long you have been with this session and how long its agent has worked. It is
-the session pane's Time Spent tab (§app.subagents-pane/tabs) and appears nowhere else: not
-in the chat head, and not beside a message. Every session has it: one chatting here, one watched
+the session pane's Time Spent tab (§app.subagents-pane/tabs), and one session's figures appear
+nowhere else: not in the chat head, and not beside a message. The Agents page's Time Spent tab
+(§app.insights/time-tab) sums every session's on this computer, by day and by project. Every session has it: one chatting here, one watched
 from a TUI, an archived one, and one on another computer. How the seconds are counted is
 §app.subagents-pane/time-spent-counting; where they are kept is §app.subagents-pane/time-spent-record.
 
@@ -323,7 +324,7 @@ from a TUI, an archived one, and one on another computer. How the seconds are co
 - **Stated limits.** You can step back on screen when another device wins a moment; the record is
   right. A session deleted under an open pane can flip its word between Not Recording and Counting.
 - **Quiet.** The ticking announces nothing to assistive technology (§app.subagents-pane/accessibility).
-- **Not in this version.** Totals by day or by project, an attention track on the Timeline tab, times
+- **Not in this version.** An attention track on the Timeline tab, times
   per question, warnings, and a clear action. Nothing here asks "are you still there?" and nothing
   here tells the agent.
 
@@ -399,7 +400,9 @@ exactly one row.
   moment by moment, and the tab's figures are its sums. So a session on another computer shows the
   same You from any device.
 - **Until the session is deleted.** Archiving keeps it. Deleting the session removes it, however the
-  session is deleted, Clean Up included (§app.session-list/archive-cleanup). Nothing else clears it.
+  session is deleted, Clean Up included (§app.session-list/archive-cleanup); only its hours by day,
+  project folder and activity stay, with no name or text, in the Agents page's Time Spent totals
+  (§app.insights/time-tab-your-time). Nothing else clears it.
 - **Always on.** Settings has no switch for it. Message labels have a switch of their own
   (§app.message-labels/labelling), which never stops this record.
 - **Beside the session, never in it.** The record is never written to the session's file, so a session

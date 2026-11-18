@@ -67,8 +67,9 @@ in this document is sent or shown, except the tab's own figures.
   `sessions` grant (§mesh.peers/grants).
 - **Plain numbers.** Nothing on the tab flags, ranks or comments on a row, and no row is compared with
   another. The rows announce nothing to assistive technology as they tick.
-- **Left out.** Totals across sessions, charts, changing a label by hand, labels in the chat or on the
-  Timeline, alerts and old sessions. Nothing here reaches Needs you, the Overseer or a notification. A
+- **Left out.** Charts, changing a label by hand, labels in the chat or on the Timeline, alerts and old
+  sessions. Totals across sessions are on the Agents page's Time Spent tab
+  (§app.insights/time-tab-messages). Nothing here reaches Needs you, the Overseer or a notification. A
   public share page (§app.session-share/page) shows no label.
 - **Scripts.** Reading a session's Your Messages is in the catalogue (§app.commands/catalogue) as a look,
   with the session's record. Being listed doesn't open it to agents.
@@ -100,7 +101,8 @@ in this document is sent or shown, except the tab's own figures.
   was on and not labelled yet is asked about again once it is back on, and labels already stored stay.
   The Decisions gate (§app.decisions/privacy) applies to every check, so no check goes out for a worker's,
   an Overseer's or a baton session, a merge queue chat, or a session in an excluded folder.
-- **Stored beside the session.** Labels, each with its provider, the press times of messages that waited
+- **Stored beside the session.** Labels, each with its provider and, from the day the Agents page's
+  Time Spent tab shipped, the message's send time (§app.insights/time-tab-messages), the press times of messages that waited
   in the queue, Land presses, a hash of an offer button's words, which messages a program sent and the
   switch's moves are stored in
   `<stateRoot>/message-labels/`, never in the session's file.

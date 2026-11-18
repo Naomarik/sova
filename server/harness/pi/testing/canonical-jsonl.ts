@@ -9,6 +9,7 @@
 // - every uuid (session ids, org/person/offer ids) becomes 00000000-0000-7000-8000-00000000000N;
 // - every ISO timestamp (entry `timestamp`, data `at`, the header's) becomes 2000-01-01T00:00:00.000Z;
 // - every numeric `"timestamp":<ms>` (message timestamps) becomes the same count of digits, 1000…;
+// - every numeric `"durationMs":<ms>` (pi 1.1.0: how long a tool or a reply took, a real clock) becomes 0;
 // - each `paths` prefix (the test's temp dirs) becomes its placeholder, longest first;
 // - each `literals` value becomes its placeholder (ids a scenario mints that match none of the above);
 // - the bodies `elide` names become placeholders, the line's envelope (type, id, parentId, timestamp,
@@ -42,6 +43,7 @@ const ENTRY_ID = /"id":"([0-9a-f]{8})"/g;
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g;
 const MS = /"timestamp":(\d+)/g;
+const TOOK = /"durationMs":\d+/g;
 export const CANON_ISO = "2000-01-01T00:00:00.000Z";
 const SYSTEM_BODY = '"message":{"role":"system"';
 
@@ -122,6 +124,7 @@ export class Canonicalizer {
 
     out = out.replace(ISO, CANON_ISO);
     out = out.replace(MS, (_, ms: string) => `"timestamp":${"1".padEnd(ms.length, "0")}`);
+    out = out.replace(TOOK, '"durationMs":0');
     return out;
   }
 }

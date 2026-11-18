@@ -71,7 +71,7 @@ test("a user playbook with a shipped id replaces it, marked replacesSova; others
   const cat = await listPlaybooks(undefined, deps);
   assert.deepEqual(
     cat.playbooks.map((p) => [p.source, p.id]),
-    [["sova", "other"], ["user", "extra"], ["user", "brand"]],
+    [["user", "extra"], ["user", "brand"], ["sova", "other"]],
   );
   const brand = cat.playbooks.filter((p) => p.id === "brand");
   assert.equal(brand.length, 1, "the shipped copy is gone, not listed twice");
@@ -104,10 +104,24 @@ test("project playbooks are found under the cwd's .sova/marketing/playbooks", as
   drop(deps.shippedDir, "launch", fm({ title: "Shipped Launch" }, "s"));
   const cat = await listPlaybooks(cwd, deps);
   assert.deepEqual(cat.project, { state: "ok" });
-  assert.deepEqual(cat.playbooks.map((p) => [p.source, p.id]), [["sova", "launch"], ["project", "launch"]], "a project id replaces nothing");
+  assert.deepEqual(cat.playbooks.map((p) => [p.source, p.id]), [["project", "launch"], ["sova", "launch"]], "the project's first; a project id replaces nothing");
   const p = cat.playbooks.find((x) => x.source === "project")!;
   assert.equal(p.dir, join(cwd, ".sova", "marketing", "playbooks", "launch"));
   assert.equal(p.description, "Ship it");
+});
+
+test("the catalog's order is the dialog's: the project's, then the user's, then Sova's, each by title", async () => {
+  const deps = base();
+  const cwd = fresh("order");
+  drop(deps.shippedDir, "a-shipped", fm({ title: "A shipped" }, "s"));
+  drop(deps.userDir, "b-mine", fm({ title: "B mine" }, "u"));
+  drop(join(cwd, PROJECT_PLAYBOOKS), "z-proj", fm({ title: "Z proj" }, "p"));
+  drop(join(cwd, PROJECT_PLAYBOOKS), "c-proj", fm({ title: "C proj" }, "p"));
+  const cat = await listPlaybooks(cwd, deps);
+  assert.deepEqual(
+    cat.playbooks.map((p) => [p.source, p.id]),
+    [["project", "c-proj"], ["project", "z-proj"], ["user", "b-mine"], ["sova", "a-shipped"]],
+  );
 });
 
 test("a cwd without .sova is ok and empty", async () => {

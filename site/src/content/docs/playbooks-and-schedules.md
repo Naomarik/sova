@@ -9,7 +9,7 @@ A playbook is a recipe in plain Markdown that an agent follows: "audit this repo
 
 ## Running a playbook
 
-Open the composer's menu and pick **Playbooks**. The dialog lists three groups: the ones Sova ships, your own, and the ones that live in the current session's project. Pick one, add a line of your own if you like, and it goes into the chat as your message. The agent then does what the playbook says, in that chat.
+Open the composer's menu and pick **Playbooks**. The dialog lists the ones that live in the current session's project first, then your own, then the ones Sova ships, folded under a **Sova** row that opens with one press (it opens by itself when nothing is listed above it). Pick one, add a line of your own if you like, and it goes into the chat as your message. The agent then does what the playbook says, in that chat.
 
 A playbook can bring its own helper files, the way a skill does. A playbook written as a pi or Claude Code skill works as one too. Sova never runs a playbook's scripts itself: the agent runs them, under the session's own sandbox and permissions.
 

@@ -286,9 +286,9 @@ export const FOLDED_SETUP_PLAYBOOKS: readonly string[] = ["release-maker", "proj
 export const isListed = (p: PlaybookInfo): boolean => p.spec?.listed !== false;
 
 /**
- * The catalog, rescanned, one group after another and each sorted by title (then id): shipped
- * first, minus any the user replaced; then the user's; then the project's. A project playbook never replaces anything: it is
- * listed in its own group even when its id matches one above.
+ * The catalog, rescanned, one group after another and each sorted by title (then id): the project's
+ * first; then the user's; then the shipped ones, minus any the user replaced. A project playbook never
+ * replaces anything: it is listed in its own group even when its id matches a shipped one.
  */
 export async function listPlaybooks(cwd?: string, deps: PlaybooksDeps = {}): Promise<PlaybookCatalog> {
   const [shipped, user, project] = await Promise.all([
@@ -302,9 +302,9 @@ export async function listPlaybooks(cwd?: string, deps: PlaybooksDeps = {}): Pro
   // A playbook only Sova's own chats run (`listed: false`) is left out unless the caller asks for it.
   const shown = (p: PlaybookInfo) => deps.includeUnlisted || isListed(p);
   const playbooks = [
-    ...shipped.entries.filter((p) => !userIds.has(p.id) && shown(p)).sort(byTitle),
-    ...user.entries.filter(shown).sort(byTitle),
     ...project.entries.filter(shown),
+    ...user.entries.filter(shown).sort(byTitle),
+    ...shipped.entries.filter((p) => !userIds.has(p.id) && shown(p)).sort(byTitle),
   ];
   return { playbooks, project: project.state, ...(user.error ? { error: user.error } : {}) };
 }

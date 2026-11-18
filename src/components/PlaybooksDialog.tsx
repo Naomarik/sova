@@ -3,11 +3,16 @@ import { Portal } from "solid-js/web";
 import type { PlaybookCatalog, PlaybookInfo } from "../../shared/protocol";
 import { approveSchedule, fetchPlaybooks, revokeSchedule } from "../lib/api";
 import {
+  firstPlaybookIndex,
+  FOLD_TOGGLE_KEY,
+  FOLDED_GROUP,
+  foldStartsOpen,
   groupPlaybooks,
   noPlaybookDrafts,
   type PlaybookDrafts,
   playbookDraft,
   playbookDraftsEmpty,
+  playbookFocusOrder,
   playbookKey,
   playbookTurnText,
   projectNote,
@@ -31,7 +36,7 @@ const kept = new Map<string, PlaybookDrafts>();
 
 /**
  * The composer flyout's Playbooks dialog: one modal, two steps. Step 1 lists the catalog in three
- * groups (Sova, Yours, This project); step 2 shows the chosen playbook, its guidance, and a
+ * groups (This project, Yours, then Sova's, folded behind its heading row); step 2 shows the chosen playbook, its guidance, and a
  * textarea, and `Send Playbook` hands the whole turn to the chat's ordinary send path — so it is
  * judged by the model policy, acked, queued behind a running turn, and restored on refusal like
  * any other message.
@@ -104,7 +109,8 @@ export function PlaybooksDialog(props: {
       if (again) choose(again);
       // The first row, while nothing in the dialog has a better claim (the box itself, or <body>
       // after a Retry button that just went away).
-      else if (!chosen() && (!box || document.activeElement === box || !box.contains(document.activeElement))) queueMicrotask(() => focusRow(0));
+      else if (!chosen() && (!box || document.activeElement === box || !box.contains(document.activeElement)))
+        queueMicrotask(() => focusRow(firstPlaybookIndex(order())));
     } catch (err) {
       if (mine !== run) return;
       setError((err as Error).message);
@@ -153,8 +159,15 @@ export function PlaybooksDialog(props: {
     return c ? projectNote(c.project) : null;
   });
 
-  /** Step 1's rows in the order they're drawn, for arrow-key movement (a roving tabindex). */
-  const order = createMemo(() => groups().flatMap((g) => g.playbooks.map(playbookKey)));
+  /** Sova's section: the user's own press this opening (null: none yet), else the rule — folded
+      unless nothing is above it, or the opening came back to one of its playbooks. */
+  const [toggled, setToggled] = createSignal<boolean | null>(null);
+  const foldOpen = createMemo(() => toggled() ?? foldStartsOpen(groups(), restored?.last ?? null));
+  const toggleFold = () => setToggled(!foldOpen());
+
+  /** Step 1's rows in the order they're drawn, Sova's heading row among them, for arrow-key
+      movement (a roving tabindex); a folded section's rows are skipped. */
+  const order = createMemo(() => playbookFocusOrder(groups(), foldOpen()));
   const [active, setActive] = createSignal<string | null>(null);
   const focusRow = (index: number) => {
     const key = order()[index];
@@ -166,18 +179,24 @@ export function PlaybooksDialog(props: {
     const n = order().length;
     if (n === 0) return;
     const at = Math.max(0, order().indexOf(active() ?? ""));
+    const onToggle = order()[at] === FOLD_TOGGLE_KEY;
     const keys: Record<string, () => void> = {
       ArrowDown: () => focusRow((at + 1) % n),
       ArrowUp: () => focusRow((at - 1 + n) % n),
       Home: () => focusRow(0),
       End: () => focusRow(n - 1),
+      ...(onToggle ? { ArrowRight: () => setToggled(true), ArrowLeft: () => setToggled(false) } : {}),
     };
     const act = keys[e.key];
     if (!act) return;
     e.preventDefault();
     act();
   };
-  const tabStop = (key: string) => (active() ?? order()[0]) === key;
+  const tabStop = (key: string) => {
+    const o = order();
+    const current = active();
+    return (current && o.includes(current) ? current : o[firstPlaybookIndex(o)]) === key;
+  };
 
   const close = () => {
     leaving = true;
@@ -206,6 +225,8 @@ export function PlaybooksDialog(props: {
     queueMicrotask(() => textarea?.focus());
   };
   const back = () => {
+    // Back to one of Sova's playbooks opens its section first: a folded row can't take focus.
+    if (lastKey && foldStartsOpen(groups(), lastKey)) setToggled(true);
     setChosen(null);
     queueMicrotask(() => (lastKey && rows.get(lastKey)?.focus()) || undefined);
   };
@@ -287,67 +308,98 @@ export function PlaybooksDialog(props: {
                     <Show when={c().error}>
                       {(m) => <p class="text-caption text-muted">We couldn't read your playbooks folder, so yours aren't listed. {m()}</p>}
                     </Show>
+                    {/* Where this project's playbooks would have been: at the top. */}
+                    <Show when={note()}>{(m) => <p class="text-caption text-muted">{m()}</p>}</Show>
                     <Show when={groups().length > 0} fallback={<p class="text-muted">No playbooks yet.</p>}>
-                      <For each={groups()}>
-                        {(g) => (
-                          <div role="group" aria-labelledby={`playbooks-group-${g.key}`}>
-                            <h3 class="list-group-label" id={`playbooks-group-${g.key}`}>
-                              {g.label}
-                            </h3>
-                            <div class="list" onKeyDown={onListKeyDown}>
-                              <For each={g.playbooks}>
-                                {(p) => (
+                      <div class="playbooks-groups" onKeyDown={onListKeyDown}>
+                        <For each={groups()}>
+                          {(g) => (
+                            <div role="group" aria-labelledby={`playbooks-group-${g.key}`}>
+                              {/* Sova's heading is one full-width row that folds its section: a button
+                                  inside the heading, so it keeps its level and sits in the arrow-key order. */}
+                              <Show
+                                when={g.key === FOLDED_GROUP}
+                                fallback={
+                                  <h3 class="list-group-label" id={`playbooks-group-${g.key}`}>
+                                    {g.label}
+                                  </h3>
+                                }
+                              >
+                                <h3 class="playbooks-fold-head">
                                   <button
                                     type="button"
-                                    class="list-row list-row-interactive"
-                                    ref={(el) => rows.set(playbookKey(p), el)}
-                                    tabindex={tabStop(playbookKey(p)) ? 0 : -1}
-                                    onFocus={() => setActive(playbookKey(p))}
-                                    title={p.description || undefined}
-                                    onClick={() => choose(p)}
+                                    class="list-group-label playbooks-fold-toggle"
+                                    id={`playbooks-group-${g.key}`}
+                                    aria-expanded={foldOpen() ? "true" : "false"}
+                                    aria-controls="playbooks-fold-rows"
+                                    ref={(el) => rows.set(FOLD_TOGGLE_KEY, el)}
+                                    tabindex={tabStop(FOLD_TOGGLE_KEY) ? 0 : -1}
+                                    onFocus={() => setActive(FOLD_TOGGLE_KEY)}
+                                    onClick={toggleFold}
                                   >
-                                    {/* Two .list-line wrappers stack title over description
-                                        inside a <button>, where <p> isn't allowed. */}
-                                    <span class="list-main">
-                                      <span class="list-line">
-                                        <span class="list-title">{p.title}</span>
-                                      </span>
-                                      <Show when={p.description}>
-                                        <span class="list-line list-meta-row">
-                                          <span class="list-meta">{p.description}</span>
-                                        </span>
-                                      </Show>
-                                      {/* A description that doesn't parse: its exact fault. */}
-                                      <Show when={playbookCardError(p)}>
-                                        {(err) => (
-                                          <span class="list-line list-meta-row">
-                                            <span class="list-meta playbook-card-error">
-                                              <Icon name="attention" small /> {err()}
-                                            </span>
-                                          </span>
-                                        )}
-                                      </Show>
-                                      {/* Its schedule and state (§chat.schedules/where-shown). */}
-                                      <Show when={p.schedule}>
-                                        {(sch) => (
-                                          <span class="list-line list-meta-row">
-                                            <span class="list-meta playbook-schedule-line">
-                                              <Icon name="clock" small /> {scheduleLine(sch())}
-                                            </span>
-                                          </span>
-                                        )}
-                                      </Show>
-                                    </span>
-                                    <Icon name="chevron-right" small />
+                                    <Icon name="chevron-right" small class="icon-twist" />
+                                    <span>{g.label}</span>
                                   </button>
-                                )}
-                              </For>
+                                </h3>
+                              </Show>
+                              <div
+                                class="list"
+                                id={g.key === FOLDED_GROUP ? "playbooks-fold-rows" : undefined}
+                                hidden={g.key === FOLDED_GROUP && !foldOpen()}
+                              >
+                                <For each={g.playbooks}>
+                                  {(p) => (
+                                    <button
+                                      type="button"
+                                      class="list-row list-row-interactive"
+                                      ref={(el) => rows.set(playbookKey(p), el)}
+                                      tabindex={tabStop(playbookKey(p)) ? 0 : -1}
+                                      onFocus={() => setActive(playbookKey(p))}
+                                      title={p.description || undefined}
+                                      onClick={() => choose(p)}
+                                    >
+                                      {/* Two .list-line wrappers stack title over description
+                                          inside a <button>, where <p> isn't allowed. */}
+                                      <span class="list-main">
+                                        <span class="list-line">
+                                          <span class="list-title">{p.title}</span>
+                                        </span>
+                                        <Show when={p.description}>
+                                          <span class="list-line list-meta-row">
+                                            <span class="list-meta">{p.description}</span>
+                                          </span>
+                                        </Show>
+                                        {/* A description that doesn't parse: its exact fault. */}
+                                        <Show when={playbookCardError(p)}>
+                                          {(err) => (
+                                            <span class="list-line list-meta-row">
+                                              <span class="list-meta playbook-card-error">
+                                                <Icon name="attention" small /> {err()}
+                                              </span>
+                                            </span>
+                                          )}
+                                        </Show>
+                                        {/* Its schedule and state (§chat.schedules/where-shown). */}
+                                        <Show when={p.schedule}>
+                                          {(sch) => (
+                                            <span class="list-line list-meta-row">
+                                              <span class="list-meta playbook-schedule-line">
+                                                <Icon name="clock" small /> {scheduleLine(sch())}
+                                              </span>
+                                            </span>
+                                          )}
+                                        </Show>
+                                      </span>
+                                      <Icon name="chevron-right" small />
+                                    </button>
+                                  )}
+                                </For>
+                              </div>
                             </div>
-                          </div>
-                        )}
-                      </For>
+                          )}
+                        </For>
+                      </div>
                     </Show>
-                    <Show when={note()}>{(m) => <p class="text-caption text-muted">{m()}</p>}</Show>
                   </>
                 )}
               </Show>

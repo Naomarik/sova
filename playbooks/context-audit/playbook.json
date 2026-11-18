@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "listed": true,
+  "run": {
+    "where": "new-chat",
+    "worktree": "new",
+    "mode": "delegate",
+    "minorModes": ["align"],
+    "needs": ["project"]
+  },
+  "inputs": [
+    {
+      "id": "scope",
+      "label": "What to audit",
+      "help": "Empty: everything the project can load. Name folders or skills to read only those; the report says what was left out.",
+      "type": "list",
+      "ask": "always",
+      "required": false
+    },
+    {
+      "id": "personal",
+      "label": "Include your own files",
+      "help": "Your personal instruction file, skills, prompt commands and playbooks. They aren't on a branch, so they are reported, never fixed.",
+      "type": "toggle",
+      "ask": "optional",
+      "required": false,
+      "default": false
+    },
+    {
+      "id": "readers",
+      "label": "Investigators at most",
+      "help": "One per subject, sized to the project from its inventory: a small project gets one. Lower it to spend less.",
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 6,
+      "default": 4,
+      "ask": "optional",
+      "required": true
+    },
+    {
+      "id": "suspect",
+      "label": "Anything you already suspect",
+      "help": "A rule you think is stated twice, a skill you find slow: the investigators check it first.",
+      "type": "text",
+      "multiline": true,
+      "ask": "optional",
+      "required": false
+    }
+  ],
+  "teams": {
+    "read": {
+      "label": "Investigation",
+      "goal": "Collect the files of one subject each and read them against each other for contradictions and layout",
+      "members": {
+        "investigator": {
+          "label": "Investigator",
+          "brief": "Reads one subject across every file that touches it and lists each possible contradiction with both sides located",
+          "kind": "investigation",
+          "models": [
+            { "model": "claude-code/claude-opus-5-5", "effort": "medium" },
+            { "model": "claude-code/claude-fable-5-2", "effort": "medium" }
+          ],
+          "notes": "references/roles/investigator.md"
+        }
+      }
+    },
+    "challenge": {
+      "label": "Challenge",
+      "goal": "Keep only the contradictions the exact lines prove",
+      "members": {
+        "challenger": {
+          "label": "Challenger",
+          "brief": "Rereads both sides of each contradiction at their exact lines and confirms, downgrades or drops it",
+          "kind": "planning",
+          "models": [
+            { "model": "claude-code/claude-fable-5-2", "effort": "high" },
+            { "model": "claude-code/claude-opus-5-5", "effort": "high" }
+          ],
+          "notes": "references/roles/challenger.md"
+        }
+      }
+    },
+    "report": {
+      "label": "Report",
+      "goal": "Gather every finding into the chat report and answer the user's questions about it until the run ends",
+      "members": {
+        "writer": {
+          "label": "Report writer",
+          "brief": "Writes the report shown in the chat and stays available to answer questions about any finding",
+          "kind": "planning",
+          "models": [
+            { "model": "claude-code/claude-opus-5-5", "effort": "medium" },
+            { "model": "claude-code/claude-sonnet-5-5", "effort": "medium" }
+          ],
+          "notes": "references/roles/writer.md"
+        }
+      }
+    },
+    "fix": {
+      "label": "Fix",
+      "goal": "Apply only the fixes the user picked, on the run's branch, one commit per group",
+      "members": {
+        "fixer": {
+          "label": "Fixer",
+          "brief": "Moves and removes text exactly as picked, never rewording, and commits each group on its own",
+          "kind": "routine",
+          "models": [
+            { "model": "claude-code/claude-sonnet-5-5", "effort": "medium" },
+            { "model": "claude-code/claude-opus-5-5", "effort": "medium" }
+          ],
+          "notes": "references/roles/fixer.md"
+        }
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "inventory",
+      "label": "List what loads, and when",
+      "goal": "Every item the project can load, measured, with its references, orphans and repeats",
+      "phase": "phases/inventory.md"
+    },
+    {
+      "id": "read",
+      "label": "Read the files against each other",
+      "goal": "Contradictions with both sides located, each checked against its exact lines, and each skill's layout",
+      "phase": "phases/read.md",
+      "teams": ["read", "challenge"]
+    },
+    {
+      "id": "report",
+      "label": "Report in the chat",
+      "goal": "Counts by severity, then one sentence per issue, contradictions first",
+      "stop": "always",
+      "report": "table",
+      "phase": "phases/report.md",
+      "teams": ["report"]
+    },
+    {
+      "id": "decide",
+      "label": "You pick the fixes",
+      "goal": "One question per contradiction only you can settle, the mechanical fixes in groups, each layout as one yes or no",
+      "phase": "phases/decide.md",
+      "teams": ["report"]
+    },
+    {
+      "id": "fix",
+      "label": "Fix on the branch",
+      "goal": "Only what you picked, one commit per group, text moved and never reworded",
+      "phase": "phases/fix.md",
+      "teams": ["fix"]
+    },
+    {
+      "id": "recheck",
+      "label": "Check again",
+      "goal": "The numbers before and after, and every moved paragraph accounted for",
+      "stop": "always",
+      "report": "table",
+      "phase": "phases/recheck.md",
+      "teams": ["report"]
+    }
+  ],
+  "commands": ["project.context-files.get", "project.skills.get"]
+}

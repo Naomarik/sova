@@ -62,6 +62,19 @@ test("the real shipped catalog: brandmaker parses, and its body no longer carrie
   assert.ok(!b.body.includes("promptHint:"), "frontmatter stripped");
 });
 
+test("the real shipped catalog lists Context audit, with a valid playbook.json that opens its card", async () => {
+  const cat = await listPlaybooks(undefined, { userDir: join(fresh("nouser"), "absent") });
+  const c = cat.playbooks.find((p) => p.id === "context-audit");
+  assert.ok(c, "context-audit is shipped and listed");
+  assert.equal(c.title, "Context audit");
+  assert.equal(c.source, "sova");
+  assert.equal(c.specError, undefined);
+  assert.ok(c.spec, "its playbook.json parses");
+  assert.deepEqual(c.spec.steps.map((s) => s.id), ["inventory", "read", "report", "decide", "fix", "recheck"]);
+  assert.equal(c.spec.run.worktree, "new");
+  assert.match(c.body, /^# Context audit/);
+});
+
 test("a user playbook with a shipped id replaces it, marked replacesSova; others are simply added", async () => {
   const deps = base();
   drop(deps.shippedDir, "brand", fm({ title: "Shipped Brand" }, "shipped"));

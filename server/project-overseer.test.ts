@@ -11,6 +11,7 @@ import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerSettings } from "../shared/
 import { stateView } from "./harness/state-view";
 import { piRuntime, piSession } from "./harness/pi/testing/handle";
 import { linkPiConfigExtensions } from "./testing/agent-dir";
+import { REPLY_SHAPE_INSTRUCTIONS } from "../pi-config/extensions/mode/prompt.ts";
 import { MEMORY_TOOLS } from "../shared/memory";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-")));
@@ -1003,6 +1004,11 @@ describe("the org's About text in its prompt (§app.organizations/about)", async
     const prompt = po.renderProjectOverseerPrompt(project.id, []);
     const at = prompt.indexOf(HEAD);
     assert.ok(at > prompt.indexOf("## Tools"), "after the fixed prompt");
+    // It runs no modes, so the reply shape every chat a person talks to has (§chat.mode-menu/reply-shape) rides its
+    // own prompt: once, after its fixed rules, before the sections and the extra instructions.
+    const shape = prompt.indexOf(REPLY_SHAPE_INSTRUCTIONS);
+    assert.equal(prompt.split(REPLY_SHAPE_INSTRUCTIONS).length - 1, 1, "the reply shape, once");
+    assert.ok(shape > prompt.indexOf("## Tools") && shape < at, "after the fixed prompt, before the sections");
     assert.ok(at < prompt.indexOf(EXTRA), "before the extra instructions");
     assert.ok(prompt.indexOf("ABOUT-ONE") > at && prompt.indexOf("ABOUT-ONE") < prompt.indexOf(EXTRA));
     assert.match(prompt, /The operator wrote this about Aboutco, for you only\./);

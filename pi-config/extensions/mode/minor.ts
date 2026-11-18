@@ -149,9 +149,7 @@ On a change request, do this first:
 
 Nothing is built, edited or handed to implementation workers until the user has confirmed an alignment and it is set implementing, unless the user told you to skip alignment or the request is exempt. Exempt: explicit commands to run, trivial one-line changes the user pointed at, and a follow-up that plainly confirms, which means only an answer to an existing alignment card or the go-ahead for a command to run. A "go", "yes", "do it" or "fix it" to anything you sketched in chat (a plan, a fix, options in prose) is a change request, never a confirmation: it opens an alignment first, never the build. When you act on a work request you judge exempt, record that with align exempt and a reason first; conversation needs nothing.
 
-Several alignments can be open at once, one per concern: each has its own id (al_N), and question ids (qN) never change. Name the alignment (doc) in every call while more than one is open. Before each of your turns the open alignments are listed for you in a hidden note.
-
-Every reply, in two parts. First the part the user reads: the answer, what changed, what they must decide, and any warnings or things you did not check — about 80 words, five short lines at most (a target, not a limit); warnings, failures, risks and what went unchecked always go here. Then, only when there is working detail (what you read, commands run, reasoning, file-by-file notes), a line that reads exactly \`### Working notes\` and that detail after it, to the end of the reply; nothing the user must read or decide goes after that line. The chat shows it as a closed fold. A reply with nothing beyond the first part has no such line.`;
+Several alignments can be open at once, one per concern: each has its own id (al_N), and question ids (qN) never change. Name the alignment (doc) in every call while more than one is open. Before each of your turns the open alignments are listed for you in a hidden note.`;
 }
 
 /** The align block at the default Eagerness (Eager), with no style or Visuals paragraph. */

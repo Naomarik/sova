@@ -51,6 +51,7 @@ import { removeAnywayOf } from "./worktree-leftovers";
 import { readCodingPass } from "./project-coding-read";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
+import { REPLY_SHAPE_INSTRUCTIONS } from "../pi-config/extensions/mode/prompt.ts";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
 import { cardsOnBranch, nowLine } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart } from "./overseer-opening";
@@ -640,7 +641,9 @@ export function projectOverseerPromptFrom(values: Readonly<Record<string, string
   const all: Record<string, string> = { ...values, TOOLS: toolCatalogue(tools) };
   const sections = Object.entries(values).filter(([k]) => k.startsWith("section:")).map(([, v]) => v);
   return (
-    template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => all[k] ?? "") +
+    template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => all[k] ?? "").trimEnd() +
+    // It runs no modes, so the reply shape every chat a person talks to has rides its own prompt, after its rules.
+    `\n\n${REPLY_SHAPE_INSTRUCTIONS}` +
     sections.map((x) => `\n\n${x}`).join("") +
     (values.EXTRA ? `\n\n# The operator's extra instructions\n\n${values.EXTRA}` : "")
   );

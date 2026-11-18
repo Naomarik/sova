@@ -157,7 +157,8 @@ test("the trigger paragraph: Eager is master's (any prompt implying work, short 
 		assert.match(block, /a follow-up that plainly confirms, which means only an answer to an existing alignment card or the go-ahead for a command to run/, "the exemption, narrowed");
 		assert.match(block, /A "go", "yes", "do it" or "fix it" to anything you sketched in chat \(a plan, a fix, options in prose\) is a change request, never a confirmation: it opens an alignment first, never the build\./);
 		assert.match(block, /1\. Mark the run: call `align` with \{"op": "change_request"\}/, "the change-request mark is unchanged");
-		assert.match(block, /### Working notes/, "short replies and Working notes are unchanged");
+		assert.match(block, /Your reply is a sentence or two naming the alignment/, "a reply that opens an alignment keeps align's own shape");
+		assert.doesNotMatch(block, /### Working notes|80 words/, "the reply shape is no longer the align block's");
 		assert.doesNotMatch(block, /follow-ups that plainly confirm,/, "the old, wide exemption is gone");
 		assert.doesNotMatch(block, /only after the user has said/, "the branch's middle rule is gone");
 	}

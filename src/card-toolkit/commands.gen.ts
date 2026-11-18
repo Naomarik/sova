@@ -211,6 +211,7 @@ export type CommandId =
   | "models.favorite"
   | "usage.costs"
   | "usage.performance"
+  | "usage.time"
   | "usage.today"
   | "usage.session"
   | "usage.sessions"
@@ -4203,6 +4204,15 @@ export interface CommandParams {
     /** The time zone (default UTC) */
     "tz"?: string;
   };
+  /** Your time beside agent time over a range, by day, project and session. (only looks; needs the card's owner trusted) */
+  "usage.time": {
+    /** The range, such as 30d */
+    "range"?: string;
+    /** Only this By project row (its key) */
+    "project"?: string;
+    /** The time zone (default UTC) */
+    "tz"?: string;
+  };
   /** Today's spending. (only looks; needs the card's owner trusted) */
   "usage.today": {
     /** The time zone (default UTC) */
@@ -4862,6 +4872,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "models.favorite": "changes",
   "usage.costs": "looks",
   "usage.performance": "looks",
+  "usage.time": "looks",
   "usage.today": "looks",
   "usage.session": "looks",
   "usage.sessions": "looks",

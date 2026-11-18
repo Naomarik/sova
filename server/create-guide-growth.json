@@ -593,6 +593,7 @@
    "models.favorite": "models",
    "usage.costs": "scripts",
    "usage.performance": "scripts",
+   "usage.time": "scripts",
    "usage.today": "scripts",
    "usage.session": "scripts",
    "usage.sessions": "scripts",

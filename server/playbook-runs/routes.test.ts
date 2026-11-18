@@ -158,7 +158,7 @@ describe("a playbook card", () => {
     assert.equal((await app.request(`/api/playbook-runs/${v.id}`)).status, 200);
   });
 
-  test("a chat fills in choices; models, members, notes, stops and cycles are the person's", async () => {
+  test("a chat that isn't the card's own fills in choices; its edit of models, members, notes, stops and cycles is refused", async () => {
     const v = await open();
     const roles = await asChat(`/api/playbook-runs/${v.id}`, patch({ revision: v.revision, edits: { roles: { helper: { on: true } } } }));
     assert.equal(roles.status, 403);

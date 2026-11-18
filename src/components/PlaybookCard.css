@@ -399,6 +399,9 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
   animation: none;
 }
 .pb-inline > .pb-head:not(:has(> .pb-min)) { padding-inline-end: var(--space-4); }
+/* The state chip keeps its own width beside a long name (the name wraps instead), so it never runs
+   under Show Card. */
+.pb-inline > .pb-head { grid-template-columns: minmax(0, max-content) minmax(max-content, 1fr) max-content; }
 .pb-inline .pb-title { font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); white-space: normal; overflow-wrap: anywhere; }
 .pb-inline > .pb-body { flex: none; overflow: visible; overscroll-behavior: auto; }
 /* The setup card's buttons: pinned to the end of the view while the card is in view (lib/pinned-bar),
@@ -430,4 +433,14 @@ details[open] > .pb-more-summary .icon-twist { transform: rotate(90deg); }
   right: 0;
   height: var(--space-2);
   background: var(--color-bg);
+}
+
+/* A narrow card in the conversation: the state chip goes under the name, which then has the whole
+   line beside Show Card. */
+@container pb-card (max-width: 560px) {
+  .pb-inline > .pb-head {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-areas: "eyebrow min" "title min" "chip min";
+    row-gap: var(--space-1);
+  }
 }

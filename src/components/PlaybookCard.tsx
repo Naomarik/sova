@@ -105,8 +105,9 @@ export const PlaybookInlineContext = createContext<PlaybookInlineHost | null>(nu
 const INLINE_ATTR = "data-pb-inline";
 /** Room kept above a setup card brought to the top of the view. */
 const INLINE_GAP = 8;
-/** How long a chat that opens on its card keeps landing on it while what stands above settles. */
-const LAND_SETTLE_MS = 3000;
+/** How long a chat that opens on its card keeps landing on it while what stands above settles: the
+    opening lines can take seconds to be read in on a cold start. The reader's first input ends it sooner. */
+const LAND_SETTLE_MS = 10_000;
 /** What the reader does to a chat's view that makes it theirs: a wheel, a touch, a press, a key. */
 const READER_INPUT = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
 /** Each chat view's lander, by its transcript's box, from the chat's opening to its closing. */
@@ -138,7 +139,9 @@ function landingHost(wrap: HTMLElement): LandingHost {
 function landOnCard(el: HTMLElement): void {
   const view = el.closest<HTMLElement>(".transcript");
   if (!view) return el.scrollIntoView({ block: "nearest", behavior: "instant" });
-  const by = cardLanding(el.getBoundingClientRect(), view.getBoundingClientRect(), INLINE_GAP);
+  // A run's strip floats over the view's end (--pb-lift, set by PlaybookFloat: its height and the gap over it).
+  const strip = parseFloat(el.closest<HTMLElement>(".transcript-wrap")?.style.getPropertyValue("--pb-lift") ?? "") || 0;
+  const by = cardLanding(el.getBoundingClientRect(), view.getBoundingClientRect(), INLINE_GAP, strip);
   if (by) view.scrollTop += by;
 }
 

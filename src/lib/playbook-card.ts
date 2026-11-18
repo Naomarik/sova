@@ -536,12 +536,15 @@ export function footHint(hint: string, error: string | null | undefined): string
  * How far a conversation scrolls to land on a card standing in it (added to its scroll position):
  * a card taller than the view reads from its top; a shorter one is brought wholly into view by the
  * shortest way; one already whole in view doesn't move. `gap` is the room kept at the view's edge.
+ * `covered` is how much of the view's end something floats over (a run's strip): that part isn't
+ * in view, so nothing of the card lands under it.
  */
-export function cardLanding(card: { top: number; bottom: number }, view: { top: number; bottom: number }, gap: number): number {
+export function cardLanding(card: { top: number; bottom: number }, view: { top: number; bottom: number }, gap: number, covered = 0): number {
+  const end = view.bottom - Math.max(0, covered);
   const fromTop = card.top - view.top - gap;
-  if (card.bottom - card.top > view.bottom - view.top - 2 * gap) return fromTop;
+  if (card.bottom - card.top > end - view.top - 2 * gap) return fromTop;
   if (fromTop < 0) return fromTop;
-  const pastEnd = card.bottom - view.bottom + gap;
+  const pastEnd = card.bottom - end + gap;
   return pastEnd > 0 ? pastEnd : 0;
 }
 

@@ -38,3 +38,16 @@ test("the gap under the strip is filled with the page's own colour, exactly as t
   assert.equal(r.get("right"), "0");
   assert.equal(r.get("position"), "absolute");
 });
+
+test("the record's head: the state chip can't be squeezed under Show Card, and on a narrow card it goes under the name", () => {
+  // Beside the name the chip's column is never narrower than the chip.
+  assert.match(rule(".pb-inline > .pb-head").get("grid-template-columns") ?? "", /^minmax\(0, max-content\) minmax\(max-content, 1fr\) max-content$|^minmax\(0, 1fr\) max-content$/);
+  // Narrow: one of the card's container blocks gives the chip a row of its own, the button beside all three rows.
+  const narrow = [...css.matchAll(/@container pb-card \(max-width: 560px\) \{((?:[^{}]|\{[^{}]*\})*)\}/g)].map((m) => m[1]!).find((block) => block.includes(".pb-inline > .pb-head"));
+  assert.ok(narrow, "a narrow-card rule for the inline head");
+  const head = /\.pb-inline > \.pb-head\s*\{([^{}]*)\}/.exec(narrow)![1]!;
+  assert.match(head, /grid-template-areas:\s*"eyebrow min" "title min" "chip min"/);
+  assert.match(head, /grid-template-columns:\s*minmax\(0, 1fr\) max-content/);
+  // And the wide rule itself, as written before the narrow one.
+  assert.match(css, /\.pb-inline > \.pb-head \{ grid-template-columns: minmax\(0, max-content\) minmax\(max-content, 1fr\) max-content; \}/);
+});

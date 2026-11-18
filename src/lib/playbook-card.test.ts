@@ -573,3 +573,24 @@ test("landing on a card: a tall one from its top, a short one wholly into view b
     assert.equal(cardLanding({ top: card.top - by, bottom: card.bottom - by }, view, gap), 0, JSON.stringify(card));
   }
 });
+
+test("landing under a run's strip: the part of the view's end the strip floats over isn't in view, so no line of the card lands under it", () => {
+  const view = { top: 100, bottom: 700 };
+  const gap = 8;
+  const strip = 65;
+  // A folded record below the fold (a chat that only started a run): its end comes above the strip, not to the view's end.
+  assert.equal(cardLanding({ top: 900, bottom: 1011 }, view, gap, strip), 1011 - (700 - 65) + 8);
+  assert.equal(cardLanding({ top: 900, bottom: 1011 }, view, gap, strip) - cardLanding({ top: 900, bottom: 1011 }, view, gap), strip);
+  // Whole in the view's box, but its last line under the strip: it moves up by just that.
+  assert.equal(cardLanding({ top: 560, bottom: 671 }, view, gap, strip), 671 - 635 + 8);
+  // Clear of the strip already: it doesn't move.
+  assert.equal(cardLanding({ top: 400, bottom: 511 }, view, gap, strip), 0);
+  // What counts as taller than the view is taller than what the strip leaves of it.
+  assert.equal(cardLanding({ top: 900, bottom: 1440 }, view, gap, strip), 900 - 108);
+  assert.equal(cardLanding({ top: 900, bottom: 1400 }, view, gap, strip), 1400 - 635 + 8);
+  // No strip, or a nonsense figure, is the plain rule.
+  for (const none of [0, -5]) assert.equal(cardLanding({ top: 900, bottom: 1011 }, view, gap, none), cardLanding({ top: 900, bottom: 1011 }, view, gap));
+  // After landing, a second landing moves nothing.
+  const by = cardLanding({ top: 900, bottom: 1011 }, view, gap, strip);
+  assert.equal(cardLanding({ top: 900 - by, bottom: 1011 - by }, view, gap, strip), 0);
+});

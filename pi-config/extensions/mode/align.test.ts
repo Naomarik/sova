@@ -802,8 +802,10 @@ test("planSignal: the whole reply is judged; a findings report with no ask never
 	assert.equal(planSignal("**Summary**\n\n- The export drops forked rows.\n- Fix: walk the whole tree. Should I go ahead?\n\n## Findings\n- a\n\nLooked in: x."), "asks-decision", "an ask in the summary under a label");
 	assert.equal(planSignal("**Summary**\n\n- The export drops forked rows.\n- Nothing changed.\n\n## Findings\n- a\n\nLooked in: x."), null, "the same report asking nothing");
 	assert.equal(planSignal("Tests pass.\n\n- a\n- b\n\nShould I proceed with the merge?\n\nLooked in: the test log."), null, "a merge confirmation above the closing note");
-	// An old reply's heading sits below its ask: judged whole, the ask is the summary's.
-	assert.equal(planSignal("Plan:\n- a\n- b\n\nShould I go ahead?\n\n### Working notes\nRead the code. Nothing else."), null, "the plan's ask is neither the first nor the last paragraph");
+	// The summary runs to the report's first heading: a plan and its ask above it, an old reply's working notes included.
+	assert.equal(planSignal("Plan:\n- a\n- b\n\nShould I go ahead?\n\n### Working notes\nRead the code. Nothing else."), "asks-decision", "an ask above an old reply's heading");
+	assert.equal(planSignal("Plan:\n- a\n- b\n\nShould I go ahead?\n\n## Findings\n- x\n\nLooked in: y."), "asks-decision", "an ask above the report");
+	assert.equal(planSignal("Done; nothing changed.\n\n## Findings\n- The issue asks: should I go ahead with the rewrite?\n- x\n\nMore detail.\n\nLooked in: y."), null, "a question quoted inside the report is not the summary's");
 	assert.equal(planSignal("Should I go ahead with the plan below?\n\n### Working notes\nRead the code. Nothing else."), "asks-decision", "an ask in its first paragraph");
 });
 

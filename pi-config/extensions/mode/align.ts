@@ -1695,8 +1695,8 @@ function questionList(body: string): boolean {
  *   questions"), a go-ahead ("should I go ahead", "take my recommendations") or a choice ("which do
  *   you prefer", unless the user's own prompt asked a question and the options answer it) — never a
  *   merge, push or restart confirmation;
- * - a first paragraph (the reply's summary, which a full report may follow; the one after a lone
- *   label line such as "**Summary**") with such a question;
+ * - a summary with such a question: what comes before the report's first heading (below a lone
+ *   label line such as "**Summary**"), or with no heading the first paragraph alone;
  * - a list of two or more items with such words anywhere, closed by a go-ahead ask ("Go?", or one
  *   of the above);
  * - or, wherever it sits, a labelled list of questions (questionList).
@@ -1719,9 +1719,12 @@ export function planSignal(reply: string, context: PlanContext = {}): "markdown-
 		const anyDecisionWords = LABEL_ASK.test(body) || APPROVAL_ASK.test(body) || CHOICE_ASK.test(body);
 		if (items >= 2 && anyDecisionWords && BARE_GO.test(last) && !questionsOf(last).some((q) => RUN_CONFIRM.test(q))) return "list-then-decision";
 	}
-	// The summary: the first paragraph, or the one after a lone label line ("**Summary**", "## Summary").
-	const summary = paragraphs.length > 1 && isLabelLine(paragraphs[0]!) ? paragraphs[1]! : paragraphs[0];
-	if (summary !== undefined && decisionAsk(summary, context)) return "asks-decision";
+	// The summary: what comes before the report's first heading (below a lone label line such as
+	// "**Summary**" or "## Summary"); with no heading, the first paragraph alone.
+	const start = paragraphs.length > 1 && isLabelLine(paragraphs[0]!) ? 1 : 0;
+	const heading = paragraphs.findIndex((p, i) => i > start && /^#{1,6}\s/.test(p));
+	const summary = heading < 0 ? paragraphs.slice(start, start + 1) : paragraphs.slice(start, heading);
+	if (summary.some((p) => decisionAsk(p, context))) return "asks-decision";
 	return questionList(body) ? "question-list" : null;
 }
 

@@ -42,6 +42,8 @@ in a reply is folded away. Where a mode sets its own shape, that shape wins: a r
 [alignment](/docs/modes/align/) is a sentence or two naming the card. Workers report to the chat
 that started them, so their reports keep their own shape, and so do the chats that talk to the people
 you work with (a project's assistant and a hand-off), which keep their plain, non-technical answers.
+The merge queue's own chats (the merge thread and its reviewers) talk to Sova rather than to you, so
+they keep their own format too; a playbook's run chat follows the playbook's report where it sets one.
 
 ## Switch in the web app
 

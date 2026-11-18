@@ -26,7 +26,7 @@ import { registerVisGuideTool } from "../../../pi-config/extensions/mode/vis-gui
 import { policyDenial, readPolicy } from "../../../pi-config/extensions/subagents/policy.ts";
 import { pickEntryFor, restorePick } from "../../../pi-config/extensions/subagents/subagent-profiles.ts";
 import type { MinorMode } from "../../../pi-config/extensions/mode/minor.ts";
-import { ModeEngine, REVIEW_FLAG, VISUALS_FLAG, type ModeSource } from "../../modes/engine";
+import { ModeEngine, REPLY_SHAPE_OFF_FLAG, REVIEW_FLAG, VISUALS_FLAG, type ModeSource } from "../../modes/engine";
 import type { ModeCtx, ModePort } from "../../modes/port";
 import type { PiExtensionAPI } from "./extension-types";
 import { ownSpecCore } from "./own-code";
@@ -158,6 +158,7 @@ export function modesExtension(pi: PiExtensionAPI, options: ModesExtensionOption
   pi.registerFlag("major", { description: "Start in a mode: normal | delegate", type: "string" });
   pi.registerFlag(REVIEW_FLAG, { description: "Adversarial review of alignments", type: "boolean", default: false });
   pi.registerFlag(VISUALS_FLAG, { description: "Align visuals for this session: on | off (default: mode-align.json)", type: "string" });
+  pi.registerFlag(REPLY_SHAPE_OFF_FLAG, { description: "No reply shape in the mode section (the merge queue's own chats)", type: "boolean", default: false });
   pi.registerFlag("minor", { description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`, type: "string" });
   engine.listen();
 

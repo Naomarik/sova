@@ -5227,7 +5227,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
           },
       // The merge thread (its Sova profile): its sandbox On from its start, at the read-only level (its tools write only
       // in their tmp) and the main checkout it starts in never a writable root; the rest goes through the merge verbs.
-      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}) }),
+      // The merge queue's own chats (the thread, its reviewers) are machine-facing: no reply shape (§chat.mode-menu/reply-shape).
+      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}), ...(sovaNamedKind(snap) === "merge-thread" || sovaNamedKind(snap) === "merge-reviewer" ? { replyShapeOff: true } : {}) }),
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),

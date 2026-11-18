@@ -216,6 +216,14 @@ test("reply shape (§chat.mode-menu/reply-shape): a main chat's mode section car
   assert.match(worker ?? "", /# Minor mode: spec/, "the worker's modes reach it");
   assert.equal(count(worker), 0, "a worker never carries the reply shape");
   assert.doesNotMatch(worker ?? "", /# Replies/);
+  // The merge queue's own chats: Sova launches them with the flag, and their section is their mode blocks alone.
+  const queue = fakePi([], { flags: { "reply-shape-off": true as never } });
+  await queue.start();
+  assert.equal(await queue.prompt(), undefined, "Normal with nothing on: no section at all");
+  await inSova(async () => queue.mode("delegate"));
+  const queueSection = await queue.prompt();
+  assert.match(queueSection ?? "", /# Mode: delegate/);
+  assert.equal(count(queueSection), 0, "its blocks, never the reply shape");
 });
 
 // ── Re-read at each turn boundary ───────────────────────────────────────────────────────────────

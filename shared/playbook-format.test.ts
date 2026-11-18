@@ -2,7 +2,7 @@
 // at every level, every reference checked, the exact path and fault), the folder check, and input values.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { checkCycleSettings, checkInputValue, cycleOf, fillSlots, inputValueText, membersOf, parsePlaybookSpec, stepsOf, validatePlaybookFiles, type PlaybookSpec } from "./playbook-format";
+import { CHAT_FILLED_TYPES, INPUT_TYPES, isChatFilled, checkCycleSettings, checkInputValue, cycleOf, fillSlots, inputValueText, membersOf, parsePlaybookSpec, stepsOf, validatePlaybookFiles, type PlaybookSpec } from "./playbook-format";
 
 /** A description using every key the format has (the A/B cycle's shape, cut down). */
 const FULL = {
@@ -139,6 +139,9 @@ test("each fault is refused with its exact path and words", () => {
     ["until rule without one", (r) => delete r.steps[1].repeat.rule, `steps[1].repeat.until: "rule" needs the stop rule in "rule".`],
     ["optional stop off", (r) => (r.steps[0].startsOff = true), `steps[0].startsOff: needs "stop": "optional" (only an optional stop can start off).`],
     ["duplicate step id", (r) => (r.steps[1].steps[0].id = "measure"), `steps: the step id "measure" is used twice.`],
+    ["chat on a number", (r) => (r.inputs[1].ask = "chat"), `inputs[1].ask: "chat" is for a text or list choice; a short choice (number, toggle, choice, multi, models) stays on the card.`],
+    ["chat on models", (r) => (r.inputs[6].ask = "chat"), `inputs[6].ask: "chat" is for a text or list choice; a short choice (number, toggle, choice, multi, models) stays on the card.`],
+    ["unknown ask", (r) => (r.inputs[0].ask = "later"), `inputs[0].ask: must be one of "always", "once", "optional", "chat".`],
     ["choice default", (r) => (r.inputs[3].default = "c"), `inputs[3].default: must be one of the options' ids: "a", "b".`],
     ["number default", (r) => (r.inputs[1].default = 4), "inputs[1].default: must be from 1 to 3."],
     ["slot clash", (r) => (r.facts[0].id = "rivals"), `facts[0].id: "rivals" is used twice (inputs and facts share their names).`],
@@ -234,4 +237,21 @@ test("input values: what each type accepts, and the words a slot gets", () => {
 
 test("a goal's {{slots}} fill with your choices' words; a slot with no words stays as written", () => {
   assert.equal(fillSlots("Find {{ latest }} for {{target}} and {{x}}", { latest: "1.5.0", target: "pi" }), "Find 1.5.0 for pi and {{x}}");
+});
+
+test("rule: a choice worked out in the chat is a free-text one (text or list), with or without a default, required or not", () => {
+  const sample: Record<string, Record<string, unknown>> = {
+    text: {}, number: {}, toggle: {}, list: {}, models: {},
+    choice: { options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] },
+    multi: { options: [{ id: "a", label: "A" }, { id: "b", label: "B" }] },
+  };
+  for (const type of INPUT_TYPES) for (const required of [true, false]) for (const withDefault of [true, false]) {
+    const input = { id: "x", label: "X", type, ask: "chat", required, ...sample[type], ...(withDefault && (type === "text" || type === "list") ? { default: type === "text" ? "start" : ["start"] } : {}) };
+    const r = parsePlaybookSpec({ version: 1, inputs: [input] });
+    const allowed = (CHAT_FILLED_TYPES as readonly string[]).includes(type);
+    assert.equal(!("error" in r), allowed, `${type} required=${required} default=${withDefault}`);
+    if (!("error" in r)) assert.deepEqual([isChatFilled(r.inputs[0]!), r.inputs[0]!.required], [true, required]);
+  }
+  assert.deepEqual([...CHAT_FILLED_TYPES], ["text", "list"]);
+  assert.equal(isChatFilled(ok(FULL).inputs[0]!), false, "a card choice isn't the chat's");
 });

@@ -38,7 +38,8 @@ export interface PlaybookChoiceView {
   value: unknown;
   origin: PlaybookChoiceOrigin;
   required: boolean;
-  ask: "always" | "once" | "optional";
+  /** "chat": worked out with the main chat, which fills it; read-only on the card. */
+  ask: "always" | "once" | "optional" | "chat";
   eachCycle?: boolean;
   /** A text choice written over several lines. */
   multiline?: true;

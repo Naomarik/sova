@@ -87,9 +87,14 @@ export function refOfChoice(c: Pick<WorkerChoice, "backend" | "model">): string 
 export const INPUT_TYPES = ["text", "number", "toggle", "choice", "multi", "list", "models"] as const;
 export type InputType = (typeof INPUT_TYPES)[number];
 /** always: open on the card every run; once: a standing answer, asked the first time then folded;
-    optional: under More Options. */
-export const INPUT_ASKS = ["always", "once", "optional"] as const;
+    optional: under More Options; chat: worked out with the main chat, which fills it (the card shows
+    it read-only). */
+export const INPUT_ASKS = ["always", "once", "optional", "chat"] as const;
 export type InputAsk = (typeof INPUT_ASKS)[number];
+/** The types a choice worked out in the chat may have: free text. Short choices stay on the card. */
+export const CHAT_FILLED_TYPES = ["text", "list"] as const satisfies readonly InputType[];
+/** A choice the main chat fills during the conversation, read-only on the card. */
+export const isChatFilled = (input: { ask: InputAsk }): boolean => input.ask === "chat";
 
 export interface InputOption {
   id: string;
@@ -473,6 +478,8 @@ function parseInput(v: unknown, i: number): PlaybookInput {
   const type = oneOf(o.type, INPUT_TYPES, `${path}.type`);
   keysOnly(o, [...INPUT_BASE_KEYS, ...INPUT_TYPE_KEYS[type]], path);
   const help = optText(o.help, `${path}.help`, 400);
+  if (o.ask === "chat" && !(CHAT_FILLED_TYPES as readonly string[]).includes(type))
+    fail(`${path}.ask`, `"chat" is for a text or list choice; a short choice (number, toggle, choice, multi, models) stays on the card.`);
   const base = {
     id: id(o.id, `${path}.id`),
     label: text(o.label, `${path}.label`, 80),

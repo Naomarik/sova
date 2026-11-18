@@ -31,6 +31,11 @@ const JOB_ENDED_RE = /^Ended at (\d{4}-\d\d-\d\dT[\d:.]+Z)\.$/;
     `[ext_job x1] <Title> · <Label> finished: ok`, then `Reason: …` and the job's report. */
 export const EXT_JOB_TAG = "[ext_job";
 const EXT_JOB_TAG_RE = /^\[ext_job (x\d+)\] /;
+/** A playbook that requires an alignment first asks its chat to open it (§chat.playbooks/align-first,
+    server/playbook-runs/align-first.ts): `[playbook_align pr_…] The playbook "<title>" starts with an alignment.`,
+    then `Reason: …` and the instruction. Sova's note, never the person's message nor the chat's name. */
+export const PLAYBOOK_ALIGN_TAG = "[playbook_align";
+const PLAYBOOK_ALIGN_RE = /^\[playbook_align (pr_[a-z0-9]{12})\] /;
 const SCHEDULE_TAG_RE = /^\[schedule (s\d+)\] Scheduled run fired /;
 const LATE_RE = /^Late by (.+?) \(Sova was not running\)\.$/;
 const OVERDUE_RE = /^Overdue by (.+?) \(pi was not running\)\.$/;
@@ -51,6 +56,8 @@ export interface WakeInfo {
   endedAt?: number;
   /** An extension job's end, told to the Overseer (`[ext_job xN]`), not a wake_nudge. */
   extJob?: true;
+  /** A playbook asking its chat to open the alignment it requires (`[playbook_align pr_…]`); `id` is the run's. */
+  playbookAlign?: true;
   /** The playbook its block carried, and how (§chat.schedules/delivery). */
   playbook?: { id: string; load: Load };
 }
@@ -95,6 +102,13 @@ export function parseWakeNudge(text: string | null | undefined): WakeInfo | null
     if (reason) info.reason = reason[1];
     return info;
   }
+  const pa = PLAYBOOK_ALIGN_RE.exec(first);
+  if (pa) {
+    const info: WakeInfo = { id: pa[1]!, playbookAlign: true };
+    const reason = REASON_RE.exec((lines[1] ?? "").trim());
+    if (reason) info.reason = reason[1];
+    return info;
+  }
   const x = EXT_JOB_TAG_RE.exec(first);
   if (x) {
     const info: WakeInfo = { id: x[1]!, extJob: true };
@@ -122,6 +136,8 @@ export const wakeTitle = (nudge: WakeInfo): string =>
       ? "Tour sign-in"
       : nudge.extJob
         ? `Extension job ${nudge.id}`
+        : nudge.playbookAlign
+          ? "Playbook alignment"
         : nudge.schedule
           ? `Scheduled run ${nudge.id}`
           : `Wake nudge ${nudge.id}`;

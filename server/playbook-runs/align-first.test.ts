@@ -99,7 +99,7 @@ describe("a playbook that requires an alignment first", () => {
     assert.equal(v.startBlocked, "Waiting for the alignment to be decided in the chat.");
     assert.deepEqual(s.chat.switched, [{ minorModes: ["align"] }]);
     assert.equal(s.chat.sent.length, 1);
-    assert.ok(s.chat.sent[0]!.startsWith(`Before the card of the playbook "aligned" (run ${v.id}): this playbook starts with an alignment.`), s.chat.sent[0]);
+    assert.ok(s.chat.sent[0]!.startsWith(`[playbook_align ${v.id}] The playbook "aligned" starts with an alignment.\nReason: "aligned" starts with an alignment; its card waits for your decisions.\n`), s.chat.sent[0]);
     assert.ok(s.chat.sent[0]!.includes("- fails: What fails today?\n- fixed: What counts as fixed?\n- measure: What is measured, and how?\nThe person's words with the playbook: the read tool"));
     assert.equal(await playbookCardNote(s.id), s.chat.sent[0], "a compacted chat is still told");
 
@@ -142,7 +142,7 @@ describe("a playbook that requires an alignment first", () => {
     const v = await t.open("aligned", t.asChat);
     assert.equal(v.aligning, true);
     assert.deepEqual([t.chat.sent, t.chat.switched], [[], []]);
-    assert.ok((await playbookCardNote(t.id))!.startsWith("Before the card of the playbook"));
+    assert.ok((await playbookCardNote(t.id))!.startsWith("[playbook_align "));
   });
 
   test("a playbook without it opens its card at once, asking the chat nothing", async () => {
@@ -151,5 +151,26 @@ describe("a playbook that requires an alignment first", () => {
     assert.equal(v.aligning, undefined);
     assert.deepEqual([s.chat.sent, s.chat.switched], [[], []]);
     assert.equal(v.startBlocked, "Work out The failure with the chat first.");
+  });
+});
+
+describe("the request to open the alignment", () => {
+  test("is Sova's note in the thread, never the person's message, and never names the chat", async () => {
+    const s = setUp();
+    const v = await s.open("aligned");
+    const sent = s.chat.sent[0]!;
+    const { rowsOf } = await import("../transcript");
+    const [row] = rowsOf([{ kind: "user", id: "u1", parentId: null, blocks: [{ type: "text", text: sent }] } as unknown as HEntry]);
+    assert.equal(row!.kind, "wake", "drawn as Sova's row, not a You bubble");
+    assert.deepEqual([row!.wake?.playbookAlign, row!.wake?.id], [true, v.id]);
+    // The chat's name: neither the auto-title's input nor the list's own fallback takes it.
+    const path = join(scratchAgentDir, "sessions", "--proj--", "2026-11-18T00-10-00-000Z_chat-al-title.jsonl");
+    writeFileSync(path, [{ type: "session", version: 3, id: "chat-al-title", timestamp: "2026-11-18T00:10:00.000Z", cwd: scratchAgentDir }, { type: "message", id: "u1", parentId: null, timestamp: "2026-11-18T00:10:01.000Z", message: { role: "user", content: sent } }, { type: "message", id: "a1", parentId: "u1", timestamp: "2026-11-18T00:10:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "Opened al_1." }] } }].map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const { readTitleInput } = await import("../session-autotitle");
+    assert.deepEqual((await readTitleInput(path)).userMessages, []);
+    const { listSessions } = await import("../sessions-index");
+    const listed = (await listSessions()).find((r) => r.id === "chat-al-title");
+    assert.ok(listed, "the chat is listed");
+    assert.ok(!listed.title?.includes("playbook_align") && !listed.title?.includes("starts with an alignment"), JSON.stringify(listed.title));
   });
 });

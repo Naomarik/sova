@@ -1104,7 +1104,7 @@ export function resolveRegenerate(branch: readonly HEntry[], entryId: string): R
     // A tour's sign-in notice (`[tour_sign_in tN]`, §app.tours/sites) parses as a wake too, under its own name.
     const wake = parseWakeNudge(text);
     if (wake)
-      return { ok: false, reason: "wake", message: wake.tour ? "That reply answered a tour's sign-in notice, not a message you sent, so there is nothing to send again." : "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
+      return { ok: false, reason: "wake", message: wake.tour ? "That reply answered a tour's sign-in notice, not a message you sent, so there is nothing to send again." : wake.playbookAlign ? "That reply answered a playbook's request to open its alignment, not a message you sent, so there is nothing to send again." : "That reply answered a scheduled wake-up, not a message you sent, so there is nothing to send again." };
     // A partner's message over a link (kind "link", §mesh.links/transcript) is not the user's
     // either; replaying it would redeliver the partner's words as a fresh message.
     if (isLinkMessage(text))

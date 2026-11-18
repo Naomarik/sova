@@ -9,6 +9,7 @@ import type { HEntry } from "../../shared/harness";
 import type { PlaybookSpec } from "../../shared/playbook-format";
 import type { ChatModePatch } from "../../shared/chat-runtime";
 import { alignDocsIn } from "../align-state";
+import { PLAYBOOK_ALIGN_TAG } from "../../shared/wake";
 import { loadPlaybook } from "./env";
 import { changeRun, runById, runsOfChat, type PlaybookRunRecord } from "./store";
 
@@ -22,8 +23,11 @@ export interface AlignFirstHost {
 /** What the chat is asked: the alignment to open, its questions, and what happens on confirm. */
 export function alignMessage(r: Pick<PlaybookRunRecord, "id" | "text" | "playbook">, spec: PlaybookSpec): string {
   const qs = spec.align?.questions ?? [];
+  // Tagged as Sova's note (shared/wake.ts): drawn as a Sova row, never the person's message, never the chat's name.
   return [
-    `Before the card of the playbook "${r.playbook.title}" (run ${r.id}): this playbook starts with an alignment. Open one now with the align tool, with these questions in this order, each question's topic exactly its id; recommend an answer to each from what the person asked.`,
+    `${PLAYBOOK_ALIGN_TAG} ${r.id}] The playbook "${r.playbook.title}" starts with an alignment.`,
+    `Reason: "${r.playbook.title}" starts with an alignment; its card waits for your decisions.`,
+    `Open the alignment now with the align tool, with these questions in this order, each question's topic exactly its id; recommend an answer to each from what the person asked.`,
     ...qs.map((q) => `- ${q.id}: ${q.ask}`),
     ...(r.text ? [`The person's words with the playbook: ${r.text}`] : []),
     "Once the person has decided every question, Sova fills the card from the decisions and shows it; don't fill its choices yourself and don't start anything. If the alignment is dropped, the card shows with those choices for you to work out with the person.",

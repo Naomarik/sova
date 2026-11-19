@@ -36,7 +36,7 @@ const f = process.env.SOVA_MERGE_CHANGED;
 writeFileSync(${JSON.stringify(out)}, JSON.stringify({ picked: process.env.SOVA_MERGE_PICKED ?? null, changed: f ? readFileSync(f, "utf8").split("\\n").map((s) => s.trim()).filter(Boolean) : null }));
 `;
 
-async function trial(fx: Fixture, commit: string, branch: string) {
+async function trial(fx: Fixture, commit: string, branch: string, target?: { head: string }) {
   const runId = `mr_trial${Math.random().toString(36).slice(2, 8)}`;
   const runDir = join(fx.root, "runs", runId);
   mkdirSync(runDir, { recursive: true });
@@ -55,6 +55,7 @@ async function trial(fx: Fixture, commit: string, branch: string) {
     review: false,
     tryOnly: true,
     trialOf: branch,
+    ...(target ? { trialTarget: { def: parseDefinition(fx.fileAt(target.head, ".sova/project.json")!), head: target.head } } : {}),
     signal: new AbortController().signal,
     awaitReview: () => new Promise(() => {}),
   };
@@ -142,5 +143,39 @@ describe("a trial runs optional checks with no selection, as the queue picks the
     assert.equal(r.out.verdict, "failed");
     assert.match(r.out.why ?? "", /Strict group fails/);
     assert.equal(r.steps.get("check:ok")?.result, "passed");
+  });
+});
+
+describe("a dry run tells whose failure it is, as a landing does", () => {
+  const RED = `process.exit(process.argv.includes("--strict") || process.env.ALWAYS_RED === "1" ? 1 : 0);\n`;
+  const defOf = (run: string[], more: Record<string, unknown> = {}) => `${JSON.stringify({ version: 1, merge: { checks: [{ id: "unit", label: "Unit", run, ...more }] } }, null, 2)}\n`;
+
+  test("a changed check that fails on the target too is the target's; one that passes there is the branch's; a new one is the branch's alone", async () => {
+    const fx = new Fixture();
+    fixtures.push(fx);
+    fx.commitIn(fx.project, { "checks/unit.mjs": RED, "checks/always.mjs": "process.exit(1);\n", ".sova/project.json": defOf(["node", "checks/always.mjs"]) }, "checks");
+    const head = git(fx.project, ["rev-parse", fx.target]).trim();
+    // Red on both: the branch only lengthens its time limit, and the check fails on the target alone too.
+    const shared = fx.branch("setup/shared", { ".sova/project.json": defOf(["node", "checks/always.mjs"], { timeout: 900 }) });
+    const a = await trial(fx, shared.commit, shared.branch, { head });
+    assert.equal(a.out.verdict, "failed");
+    assert.equal(a.out.trialFailure?.whose, "master", JSON.stringify(a.out.trialFailure));
+    assert.match(a.out.trialFailure?.line ?? "", /Fails on .* too: not this branch's\.$/);
+    assert.equal(a.steps.get("rerun-master:unit")?.result, "failed", "the target's own check, on the target alone");
+
+    // The target's check passes on the target: the branch's stricter one is the branch's.
+    fx.commitIn(fx.project, { ".sova/project.json": defOf(["node", "checks/unit.mjs"]) }, "a green check");
+    const head2 = git(fx.project, ["rev-parse", fx.target]).trim();
+    const strict = fx.branch("setup/strict", { ".sova/project.json": defOf(["node", "checks/unit.mjs", "--strict"]) });
+    const b = await trial(fx, strict.commit, strict.branch, { head: head2 });
+    assert.equal(b.out.trialFailure?.whose, "branch", JSON.stringify(b.out.trialFailure));
+    assert.match(b.out.trialFailure?.line ?? "", /This branch's change breaks it\.$/);
+    assert.equal(b.steps.get("rerun-master:unit")?.result, "passed");
+
+    // A check the target doesn't declare: the branch's alone, never rerun on the target.
+    const added = fx.branch("setup/added", { ".sova/project.json": `${JSON.stringify({ version: 1, merge: { checks: [{ id: "unit", label: "Unit", run: ["node", "checks/unit.mjs"] }, { id: "new", label: "New", run: ["node", "checks/always.mjs"] }] } }, null, 2)}\n` });
+    const c = await trial(fx, added.commit, added.branch, { head: head2 });
+    assert.equal(c.out.trialFailure?.whose, "branch");
+    assert.equal(c.steps.get("rerun-master:new"), undefined);
   });
 });

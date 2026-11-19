@@ -448,6 +448,9 @@ export interface MergeEntry {
   fixOffer?: FixOffer;
   /** A setup branch's dry run at this entry's commit. Derived when the view is read. Additive. */
   dryRun?: BranchDryRun;
+  /** State unattributed, before any decision: the merge thread is ruling on whose failure it is (ruling.unattributed);
+   *  it waits in Needs you as "Waiting for the merge thread", never Land. Derived when the view is read. Additive. */
+  waitingRuling?: true;
   /** Its Land's dry run failed on the target too, or couldn't tell whose: it waits for the user (state unattributed)
    *  on that dry run (`run`) of `commit`. Land Anyway counts it passed; Try Again runs a new one. Additive. */
   dryRunHold?: { run: string; commit: string };
@@ -869,7 +872,7 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted" | "standing" | "decision" | "tries" | "failure" | "fixOffer" | "dryRun"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted" | "standing" | "decision" | "tries" | "failure" | "fixOffer" | "dryRun" | "waitingRuling"> & {
   project: string;
   /** The target this entry lands on. */
   target?: string;
@@ -883,7 +886,7 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
 
 /** A branch's entry as the session list carries it (protocol.ts SessionBranchQueue): its state, never a precomputed
  *  key, so a new state flows through, and the fields a row's words read. */
-export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled" | "redrafted" | "standing" | "decision">;
+export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled" | "redrafted" | "standing" | "decision" | "waitingRuling">;
 
 /** The session list's cut of a worktree row's queue entry. Pure. */
 export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
@@ -898,6 +901,7 @@ export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
   ...(q.redrafted ? { redrafted: true as const } : {}),
   ...(q.standing ? { standing: q.standing } : {}),
   ...(q.decision ? { decision: q.decision } : {}),
+  ...(q.waitingRuling ? { waitingRuling: true as const } : {}),
 });
 
 /**

@@ -43,8 +43,12 @@ export function buildView(a: {
   const waiting = queued.map((e, i) => ({ ...strip(e), position: i + 1, eta: { startsInMs: left + i * takes, takesMs: takes } }));
   const byNewest = (x: { updatedAt: string }, y: { updatedAt: string }) => y.updatedAt.localeCompare(x.updatedAt);
   const checking = a.q.entries.filter((e) => e.state === "checking").map((e) => ({ ...strip(e), eta: { startsInMs: 0, takesMs: takes } }));
-  // Can't tell whose failure is the user's once raised to them; while the merge thread rules first it isn't yet.
-  const needsYou = a.q.entries.filter((e) => (WAITING_FOR_USER.includes(e.state) && !(e.state === "unattributed" && e.ruling?.unattributed)) || e.state === "conflict").map(strip).sort(byNewest);
+  // Can't tell whose failure is the user's once raised to them; while the merge thread rules first it waits here too, as
+  // Waiting for the merge thread (never in no list, so its branch never reads Ready with Land meanwhile).
+  const needsYou = a.q.entries
+    .filter((e) => WAITING_FOR_USER.includes(e.state) || e.state === "conflict")
+    .map((e) => (e.state === "unattributed" && e.ruling?.unattributed ? { ...strip(e), waitingRuling: true as const } : strip(e)))
+    .sort(byNewest);
   const needsFix = sentBack(a.q.entries, a.settled);
   const recent: MergeLanded[] = a.q.entries
     .filter((e) => e.state === "landed")
@@ -160,6 +164,7 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     ...(e.failure ? { failure: e.failure } : {}),
     ...(e.fixOffer ? { fixOffer: e.fixOffer } : {}),
     ...(e.dryRun ? { dryRun: e.dryRun } : {}),
+    ...(e.waitingRuling ? { waitingRuling: true as const } : {}),
     ...(view.review ? { reviewKit: true } : {}),
   };
 }

@@ -89,7 +89,7 @@ async function routeAct<T>(call: () => Promise<LandingRouteResult<T>>): Promise<
 /** Run Dry Run / Run Dry Run Again on a branch's row (`project`: the project's id). Busy: it waits its turn. */
 export const runDryRun = (project: string, branch: string, commit: string) => routeAct(() => startDryRun(project, branch, commit));
 /** Stop Dry Run: the running one by its run, or one waiting for the merge copy by its id. */
-export const stopTheDryRun = (project: string, which: { run: string } | { waiting: string } | { branch: string; commit: string }) => routeAct(() => stopDryRun(project, which));
+export const stopTheDryRun = (project: string, which: { run: string } | { waiting: string }) => routeAct(() => stopDryRun(project, which));
 /** Fix: the failure's context to the branch's own chat; Fix in New Chat: a fresh chat with it (`newChat`). */
 export const fixIt = (project: string, body: { branch?: string; commit?: string; run?: string; check?: string; newChat?: boolean }) => routeAct(() => fixFailure(project, body));
 export const cancelEntry = (e: Pick<MergeEntry, "id">) => act(null, "merge.cancel", { entry: e.id });

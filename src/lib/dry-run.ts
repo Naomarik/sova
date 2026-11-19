@@ -284,4 +284,4 @@ export const landFirstLine = (commit: string, why: string): string => `A dry run
 export const runsFirst = (d: Pick<BranchDryRun, "state"> | undefined): boolean => !!d && d.state !== "passed";
 
 /** The waiting dry run's id for Stop Dry Run, when the branch's own state carries it (BranchDryRun.waiting). */
-export const waitingIdOf = (d: BranchDryRun | undefined): string | undefined => (d?.state === "waiting" ? (d as BranchDryRun & { waiting?: string }).waiting : undefined);
+export const waitingIdOf = (d: BranchDryRun | undefined): string | undefined => (d?.state === "waiting" ? d.waiting : undefined);

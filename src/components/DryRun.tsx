@@ -167,8 +167,8 @@ export function DryRunButton(props: {
   const label = () => (props.kind === "stop" ? "Stop Dry Run" : props.kind === "again" ? "Run Dry Run Again" : "Run Dry Run");
   const go = () => {
     if (props.kind === "stop") {
-      // A waiting one whose id the row doesn't carry is named by its branch and commit.
-      const which = props.run ? { run: props.run } : props.waiting ? { waiting: props.waiting } : { branch: props.branch, commit: props.commit };
+      const which = props.run ? { run: props.run } : props.waiting ? { waiting: props.waiting } : null;
+      if (!which) return props.press.setError("Sova is still reading this dry run: try again in a moment.");
       void props.press.press("stop", () => stopTheDryRun(props.projectId, which), stoppedToast(props.branch));
     } else void props.press.press("run", () => runDryRun(props.projectId, props.branch, props.commit), (v: { waiting?: { after: string } } | undefined) => (v?.waiting ? `The dry run of ${props.branch} waits for the merge copy: it starts after ${v.waiting.after}.` : startedToast(props.branch, props.commit)));
   };

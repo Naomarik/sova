@@ -551,6 +551,12 @@ function queueRowOf(w: QueueRowInput): QueueRow {
   const head = w.mergeStats?.head ?? r?.landing?.commit;
   if (!unset && dry?.state === "running" && (!head || dry.commit === head))
     return { ...quiet, ...truth, key: "checking", label: "Dry run running", tone: "accent", live: true, detail: short(dry.commit), action: "land" };
+  // Its head's dry run failed: that holds it up, so the row says so in place of Ready (Fix takes Land's place on the
+  // row). The branch's own failure needs a fix; one master shares, or can't place, needs you (§app.merge-queue/fix).
+  if (!unset && dry?.state === "failed" && (!head || dry.commit === head)) {
+    const theirs = dry.failure?.whose === "master" || dry.failure?.whose === "unclear";
+    return { ...quiet, ...truth, key: theirs ? "needs-you" : "needs-fix", label: dry.failure?.whose === "unclear" ? "Can't tell whose failure" : "Dry run failed", tone: theirs ? "warn" : "error", detail: short(dry.commit), action: "land" };
+  }
   return {
     ...quiet,
     ...truth,

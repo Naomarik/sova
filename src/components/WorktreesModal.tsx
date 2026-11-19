@@ -390,14 +390,14 @@ export function WorktreeQueueRow(props: {
           )}
         </Show>
         <Show when={dry()}>
-          {(d) => <DryRunLines dryRun={d()} target={target()} seeChecks={d().run && projectId() ? mergeRunHref(projectId()!, d().run!) : undefined} />}
+          {(d) => <DryRunLines dryRun={d()} target={target()} seeChecks={d().run && projectId() ? mergeRunHref(projectId()!, d().run!) : undefined} class="list-meta wt-queue-reason" />}
         </Show>
         <Show when={!dry() && failure()}>
           {(f) => (
             <>
               <p class="list-meta wt-queue-reason mq-failure">{failureLine(f(), target())}</p>
               <Show when={f().kind === "dry-run"}>
-                <DryRunWhat target={target()} class="list-meta" />
+                <DryRunWhat target={target()} class="list-meta wt-queue-reason" />
               </Show>
             </>
           )}

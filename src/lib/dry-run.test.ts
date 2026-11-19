@@ -165,3 +165,15 @@ test("a Land's dry run held for a failure master shares never reads 'can't tell 
   assert.equal(heldDryRunLabel({ failure: failure("master", { kind: "landing" }) }), null);
   assert.equal(heldDryRunLabel({}), null);
 });
+
+test("a worktree whose head's dry run failed reads it in place of Ready: a fix, or you when master shares it", async () => {
+  const { queueRow, headline } = await import("./merge-queue");
+  const row = (f: BranchFailure) =>
+    queueRow({ status: "active", exists: true, branch: "feat/play", readiness: { path: "/w", branch: "feat/play", state: "ready", landing: { state: "ready", commit: HEAD }, dryRun: dr("failed", { run: "mr_1", failure: f }) }, mergeServed: true as const, mergeProject: { target: "master", checks: "declared" } });
+  const own = row(failure("branch"));
+  assert.deepEqual([own.key, own.label, own.action], ["needs-fix", "Dry run failed", "land"]);
+  assert.equal(headline([own])?.text, "1 needs a fix");
+  const shared = row(failure("master"));
+  assert.deepEqual([shared.key, shared.label], ["needs-you", "Dry run failed"]);
+  assert.equal(row(failure("unclear")).label, "Can't tell whose failure");
+});

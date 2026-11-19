@@ -85,13 +85,23 @@ also update Y" list live in its guide: read the guide of every area your task to
   `pnpm test:int --changed` before asking to land. The merge queue runs the checks
   `.sova/project.json` declares (`merge`), `pnpm test` and `pnpm test:int -- --landing` among them
   (the everyday integration set plus the slow groups the branch triggers, `scripts/test-groups.mjs`),
+  and each changed user playbook's own `tests/` (`scripts/merge-checks/playbook-tests.mjs`),
   plus what the merge thread picks for the branch; a release runs every group. Verify on Bun (the
   runner's default, the user's runtime); Node only when the user asks.
 - Run Sova's tests only through the runner: `pnpm test <file>`, `pnpm test:int <file>` (an
   integration file), or the `project_verbs` `test` verb (`select: [<file>]`). Never a bare `bun test`,
   `node --test` or `tsx --test`, not even for one file: it skips the throwaway home, and one such run
-  wrote a test chat into the user's real sessions. A file's `// Run:` header naming another command is
-  stale. pi-config extension tests run as their guides say (testing guide).
+  wrote a test chat into the user's real sessions. The one exception: a playbook's own `tests/` folder
+  (below) runs as `node --test playbooks/<id>/tests/*.test.mjs`, never another path. A file's `// Run:`
+  header naming another command is stale. pi-config extension tests run as their guides say (testing guide).
+- A playbook a user starts in a chat (`playbooks/<id>/`, e.g. `ab-cycle`) keeps the tests of its own
+  scripts in its own `tests/` folder: plain `*.test.mjs` on `node:test`, importing only Node's
+  built-ins and `../scripts/`, nothing from Sova or `node_modules`. Each file makes itself safe on
+  import (`tests/scratch.mjs`: a throwaway root outside every repository, HOME and the agent dir in
+  it, git's search stopped there), since no runner does. Run them when you edit the playbook (the
+  merge queue runs them too when a branch changes it); Sova's test run never picks them up. System playbooks (merge queue, release, release maker, project
+  setup, project deploy, project verbs) are Sova: their tests, and every test of how Sova reads or
+  shows any playbook, stay in Sova's suite.
 - Write tests as the testing guide's "Writing tests" says: a rule over its edges where one exists,
   else one example per edge; each behaviour once, in the smallest harness; wait on events.
 - Never run the spec replay suite (`pi-config/extensions/spec/tests/replay`) while working: it is a

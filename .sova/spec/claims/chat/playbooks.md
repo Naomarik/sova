@@ -75,6 +75,17 @@ The layout is a convention, and every part of it is optional:
 
 Older playbooks name `phases/` and `templates/`; those keep working, since any relative path does.
 
+**A playbook you start keeps its own tests.** A playbook a user starts in a chat keeps the tests
+of its own scripts in its own `tests/` folder:
+
+- They need nothing from Sova: `node --test <playbook>/tests/*.test.mjs` runs them with nothing installed.
+- They run on their own whenever the playbook is edited, and the merge queue runs them when a
+  branch changes that playbook (§app.merge-queue/checks).
+- They stay out of Sova's main test run.
+- Sova's own system playbooks (the merge queue, release, release maker, project setup, project
+  deploy and project verbs) and the tests of how Sova lists, shows or sends any playbook stay in
+  Sova's tests.
+
 **Sova never runs a playbook's scripts.** Listing, sending, a schedule's fire and a wake only
 read the entry file. A script runs when the agent, following the entry, calls it with its own
 tools, under the session's own sandbox and permissions.
@@ -649,16 +660,45 @@ and show the result.
   script shared by every campaign, brief templates, a cost table against known prices, a noise and
   copy-effect check, and the ways an arm is made (a worktree with its own test copy of Sova, a
   prompt variant file, or a re-score of saved replies). Run output stays in the worktree's
-  ignored cache; experiment commits never land.
+  ignored cache and experiment commits never land; the subject's record (below) is the one thing
+  a campaign keeps.
 - **Rounds.** Master is the fixed baseline, "Round 0", in every chart; each cycle's winner is the
-  next cycle's base. Every cycle shows its chart.
+  next cycle's base. Every cycle shows its chart. Master's arm is always its own copy (master
+  plus one commit that only removes the record, so it behaves exactly as master), never the
+  campaign's own worktree.
+- **Predicted beside observed.** Each round's report shows, per arm, what its fix was expected to
+  fix and to risk beside what it did: expected fixes, unexpected fixes, expected breaks and
+  unexpected breaks. An arm with no prediction says so. A missed prediction is shown and recorded
+  only: the winner is still picked by pass rate, then cost.
+- **A record that outlives the campaign.** Each subject (such as "vis") has a record kept in the
+  project's repository, at `.sova/ab/<name>.jsonl`, and landed with Land: a winner's landing
+  carries it, and a parked campaign lands it alone. It holds every attempt, losing ones included:
+  the problem in general words, the change and why, the test models with their pass rates before
+  and after, expected and observed counts, whether it was carried or dropped, and its campaign
+  and round.
+- **No private text in the record.** It holds no real-chat text, case wording or case numbers,
+  and no machine details such as home folders or addresses; a check refuses such a line before
+  it is written. The check also refuses the campaign's own case names, whatever their style.
+- **Who reads the record.** A new campaign's first report says which record it continues and
+  what it holds. Consultants read it before proposing a change, and the landing reviewer before
+  its verdict; the grader never does. When a new test model fails, the recorded fixes are
+  re-tested before new ones are proposed.
+- **Test chats never see the record.** Each arm's copy removes it in a commit of its own that
+  never lands, so it is gone from the copy's files and its current commit; a round refuses to
+  start while any arm's copy still holds it, there or in its current commit.
+- **Its own tests.** The tests of its scripts sit in its own `tests/` folder
+  (§chat.playbooks/bundles), not in Sova's: `node --test playbooks/ab-cycle/tests/*.test.mjs` runs them
+  with nothing from Sova, and its entry file says so and that an edit to the playbook runs them.
+  Each test file works in a throwaway folder of its own, with a throwaway home and agent dir,
+  and refuses to run when that folder sits inside a Git repository.
 - **A screenshot collage.** Its report shows screenshots as one collage: each arm's result side
   by side per cycle, and the card at key moments. Its collage script builds that image.
 - **It requires an alignment first** (§chat.playbooks/align-first) on what fails today, what
-  counts as fixed, and how it's measured; their decisions fill those choices, which the card
-  shows read-only. Its run still stops to agree what is measured before the baseline.
-- **Choices** include what is under test, the test models, how many cycles run before it asks
-  you and the cap. Its runs never swap a test model for another, and its grader uses only the models listed for it.
+  counts as fixed, how it's measured, and which record the campaign continues (it lists the
+  project's existing records); their decisions fill those choices, which the card shows
+  read-only. Its run still stops to agree what is measured before the baseline.
+- **Choices** include what is under test, the record's name, the test models, how many cycles
+  run before it asks you and the cap. Its runs never swap a test model for another, and its grader uses only the models listed for it.
 
 ## §chat.playbooks/pi-upgrade — The pi upgrade playbook
 

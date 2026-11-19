@@ -6,9 +6,12 @@
 //   node chart.mjs <campaign> --sample        the shape of the charts with made-up numbers, for the first stop
 //
 // Higher is better everywhere: every number is the share of cases that passed, so 100% is the goal.
+// Under the table, Predicted vs observed: one row per candidate arm, what its fix was expected to fix
+// and to risk beside what it did (score.mjs total counts it). An arm that stated no prediction says so.
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { args, campaign, die, modelText, readJson, slug } from "./lib.mjs";
+import { predictionTable, samplePredictionTable } from "./record-lib.mjs";
 
 const { pos, opt } = args();
 if (!pos[0] || (opt.round === undefined && !opt.sample)) die("usage: chart.mjs <campaign> --round <n> | --sample", 3);
@@ -17,6 +20,11 @@ const models = K.models(opt.models);
 const q = (s) => `"${String(s).replace(/"/g, "'")}"`;
 const short = (m) => modelText(m).replace(/^[^/]+\//, "").replace(/^claude-/, "");
 const pct = (v) => (v === null || v === undefined ? "-" : `${v}%`);
+/** A model's folder name as the chart calls it. */
+const label = (s) => {
+  const m = models.find((x) => slug(x) === s);
+  return m ? short(m) : s;
+};
 
 /** One grouped bar chart: rows are the test models and All, series the columns given. */
 function bars(title, caption, columns) {
@@ -38,6 +46,8 @@ if (opt.sample) {
     "| Arm | Model | Passed | Rate | Cost | Avg time |",
     "|---|---|---|---|---|---|",
     ...models.map((m) => `| B | ${modelText(m)} | 8/10 | 80% | $0.01 | 20 s |`),
+    "",
+    samplePredictionTable(models.map(slug), label),
   ].join("\n");
   console.log(out);
   process.exit(0);
@@ -76,6 +86,10 @@ const table = ["| Arm | What changed | Model | Passed | Rate | Cost | Avg time |
 for (const [a, v] of Object.entries(scores.arms))
   for (const x of Object.values(v.models)) table.push(`| ${a}${v.baseline ? " (master)" : ""} | ${(v.change ?? "").replace(/\|/g, "/").slice(0, 80)} | ${modelText(x)} | ${x.pass}/${x.total} | ${pct(x.rate)} | ${x.cost === null ? "-" : `$${x.cost.toFixed(4)}`} | ${x.ms === null ? "-" : `${Math.round(x.ms / 1000)} s`} |`);
 parts.push(table.join("\n"));
+const predicted = Object.entries(scores.arms)
+  .filter(([, v]) => v.prediction)
+  .map(([a, v]) => ({ arm: a, prediction: v.prediction }));
+if (predicted.length) parts.push(predictionTable(predicted, label));
 if (scores.best) parts.push(`Best this round: **${scores.best}** (${scores.arms[scores.best]?.all.rate}% over every test model).`);
 
 const md = parts.join("\n\n");

@@ -89,6 +89,14 @@
       "required": true
     },
     {
+      "id": "record",
+      "label": "The record",
+      "help": "Worked out with the main chat before Start: the name of this subject's record, such as vis. Every attempt is kept there, so the next campaign on the same subject starts from it.",
+      "type": "text",
+      "ask": "chat",
+      "required": true
+    },
+    {
       "id": "testModels",
       "label": "Test models",
       "help": "Every case runs on each of these. Pick cheap ones: if they pass, costlier models will. The provider counts: ZAI's GLM isn't Ollama's.",
@@ -484,6 +492,11 @@
         "id": "measure",
         "ask": "What is measured, and how: a script check per case, a blind grader, or both?",
         "fills": "measure"
+      },
+      {
+        "id": "record",
+        "ask": "Which record does this campaign continue? List the project's records (the files in .sova/ab/) and recommend one, or a new short name such as vis.",
+        "fills": "record"
       }
     ]
   }

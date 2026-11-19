@@ -168,6 +168,12 @@
         "timeout": 900
       },
       {
+        "id": "playbook-tests",
+        "label": "Playbook tests",
+        "run": ["node", "scripts/merge-checks/playbook-tests.mjs"],
+        "timeout": 600
+      },
+      {
         "id": "spec-replay",
         "label": "Spec replay",
         "run": ["node", "scripts/merge-checks/spec-replay.mjs"],

@@ -30,9 +30,9 @@
     "authority": "accepted",
     "evidence": "reviewed",
     "agreed": {
-      "by": "user",
-      "at": "2026-11-17T19:28Z",
-      "source": "pi-session:01a1e98a-0191-73a5-b351-9401784d2b61#f2e1b5f9"
+      "by": "naomarik",
+      "at": "2026-11-19T07:11Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§app.commands/cli": {

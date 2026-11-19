@@ -378,8 +378,25 @@ sends problems back to the branch's chat by itself and the chat's checked fixes 
 up to three tries; the requests and the chat's Fixed, Needs you and Can't answers; each decision
 that waits for you (Behaviour differs, a question, Can't tell whose failure, Out of tries, a fix
 that needs your OK, Drafts changed) with its answers, from the card's buttons or the chat's message
-box; the Merge Queue tab; the merge thread and the queue's own chats; setting it up and
+box; the Merge Queue tab; dry runs of a branch that changes the project's pipeline settings, in a few
+lines linking to their own page (§site.docs/dry-runs); the merge thread and the queue's own chats;
+setting it up and
 Settings → Merge Queue, linking to its own page (§site.docs/merge-queue-settings); each run's page; the freeze while a release is open. Screenshots of the Merge Queue tab, a run's page and the branch's card in its chat, once captured.
+
+## §site.docs/dry-runs — Dry runs (`/docs/dry-runs/`)
+
+In Features after Merge queue, the in-app explainer's text in full (§app.merge-queue/dry-run-explainer):
+what a dry run is, why it differs from running the tests (a landing uses the main branch's checks, so a
+new or changed check is proved before it judges every branch after it), which branches need one and
+that each new commit needs a new one, and what it costs (only the new or changed checks and the setup
+steps; the merge copy is shared, so landings wait). Then what the user sees and does: the reason each
+branch's row gives ("Needs a dry run: adds the merge check …") and each state's words; that Land runs
+it first and then lands by itself; Run Dry Run, Run Dry Run Again and Stop Dry Run; a dry run shown on
+Checking now, the Dry runs tab, the branch's rows, the landing bar and its run page; the comparison
+with the main branch for a check that fails, and that a failure the main branch shares is never the
+branch's to fix: the dry run stops and asks you (Fix, Fix in New Chat, Run Dry Run Again, Land Anyway); Fix and Fix in New Chat, and that the chat explains and proposes, then waits for you;
+and that a restart shows a dry run stopped. Its words say "dry run", never "trial". A screenshot of
+Checking now during a dry run, once captured.
 
 ## §site.docs/merge-queue-settings — Merge queue settings (`/docs/merge-queue-settings/`)
 

@@ -377,11 +377,18 @@ Beside Queued, Checking and Landed (§chat.merge-queue/chat-card), the card read
   Queue** only: no Land, no re-land, no send-back. When the fix is checked it reads "Fix checked ·
   back in line" and moves on to Queued in place.
 - **Waiting for the merge thread** (in place), for a fix the merge thread can't check yet because it
-  isn't running or hasn't ruled (§app.merge-queue/standing-approval), or a conflict it hasn't judged
-  (§app.merge-queue/conflicts): the chat's answer, and Remove from Queue only. Once the thread is
+  isn't running or hasn't ruled (§app.merge-queue/standing-approval), a conflict it hasn't judged
+  (§app.merge-queue/conflicts), or a Can't tell whose failure it is still ruling on before any
+  question reaches the user (§app.merge-queue/needs-user: "Can't tell whose failure: the merge thread
+  is judging it; it asks you if it can't tell.", never Land Anyway or Try Again): the chat's answer,
+  and Remove from Queue only. Once the thread is
   back and has checked the fix it reads "Fix checked · back in line".
 - **Approved · waiting for a fix** (in place), for a finished branch the user landed while blocked
   (§app.merge-queue/approve): what blocks it, and Remove from Queue.
+- **Approved · dry run first** (in place), for a setup branch the user landed before a dry run of its
+  head passed (§app.project-setup/land-gate): its place, why it needs one, "Your Land stands: it lands
+  by itself once its dry run passes.", and Remove from Queue; while its dry run runs, "Dry run running ·
+  check {N} of {M}"; a failed one moves it to Back with the chat, as a failed check does.
 - **Paused: you stopped the chat** (in place), after Stop in the chat (§chat.merge-queue/requests):
   "Your next message lets the merge queue's requests through.", and Remove from Queue.
 - **Drafts changed** is a decision (§chat.merge-queue/decision), offering **Land** (a new approval

@@ -468,8 +468,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T21:21Z",
-      "source": "pi-session:4368877c-8704-42e1-8b6d-93f52ae7fb89#9680102b"
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§app.session-list/needs-you-dismiss": {
@@ -483,9 +483,9 @@
       "§app.notifications/delivery"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T01:40Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
       "server/needs-you-dismissed.ts",

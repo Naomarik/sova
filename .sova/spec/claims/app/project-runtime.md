@@ -324,9 +324,10 @@ raises the same item, banner and push, labelled "Project setup": "Project setup 
 setup on {branch}." (the banner's body and button are the Setup chat's own, read from its proposal,
 §app.project-setup/proposal), the item's body "Read it, then merge it into {target}." (with no valid setup at its head,
 "Project setup proposes changes on {branch}." with "Its branch has no valid setup: read its report."),
-and its button is the setup proposal's own (**Run Trial** with "Run a trial of
-{sha7} first: it lands only once its own checks pass." until a trial of the head passed, then Land or
-Merge Branch through the Setup chat's route; "Reading the setup proposal." while it is read). The Setup
+and its button is the setup proposal's own (on a project the queue serves, **Land**, which runs a dry
+run of the head first when none passed; on one it doesn't serve yet, **Run Dry Run** with "Run a dry
+run of {sha7} first: it merges only once its new checks pass." until a dry run of the head passed,
+then Merge Branch; each through the Setup chat's route; "Reading the setup proposal." while it is read). The Setup
 item goes as soon as its proposal does (§app.project-setup/proposal: its branch lands or merges, its
 worktree is removed, or the current Setup chat runs a turn), at the next read of Needs you; on a
 project the queue serves it stays while the approved branch waits in the queue, until it lands. The
@@ -334,21 +335,22 @@ same proposal read again keeps the time it was first listed.
 
 The state chip on a `playbook-review` row says where the proposal stands. On a Setup proposal it
 follows the same reading of the proposal as the row's button, so the two can't disagree, and it
-changes within about 5 seconds of a trial starting or ending. The first line that holds:
+changes within about 5 seconds of a dry run starting or ending. The first line that holds:
 
 | The Setup proposal | Chip | Tone |
 |---|---|---|
 | Still being read | Proposed | neutral |
 | Waiting in the merge queue | Queued | neutral |
 | The setup on its branch doesn't read | Blocked | warn |
-| A trial of its head is running | Running | accent |
-| No trial of its head yet | Your turn | warn |
-| The trial of its head failed | Failed | error |
-| The trial of its head didn't finish | Your turn | warn |
-| The trial of its head passed, and landing is refused | Blocked | warn |
-| The trial of its head passed, and Land or Merge Branch is on offer | Ready | success |
+| A dry run of its head is running | Running | accent |
+| No dry run of its head yet, on a project the queue serves (Land runs one first) | Ready | success |
+| No dry run of its head yet, on a project the queue doesn't serve | Your turn | warn |
+| The dry run of its head failed | Failed | error |
+| The dry run of its head was stopped or couldn't run | Your turn | warn |
+| The dry run of its head passed, and landing is refused | Blocked | warn |
+| The dry run of its head passed, and Land or Merge Branch is on offer | Ready | success |
 
-Ready is true only in the last line. A trial alone never takes the item away: the row stays listed
+Ready is true only where Land or Merge Branch is on offer. A dry run alone never takes the item away: the row stays listed
 while one runs, showing Running, and nothing else about what lists or what the Overseer counts
 changes. Any other `playbook-review` row shows Ready when it can be merged, and Blocked (warn) when
 it has nothing valid to merge (no hash, so no button).

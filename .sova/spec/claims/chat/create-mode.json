@@ -296,15 +296,12 @@
       "pi-config/extensions/mode/create/project.md",
       "server/create-guide-growth.json",
       "server/modes/golden/cases/c06-create.json",
-      "server/modes/golden/cases/c13-create-align-spec.json",
-      "server/modes/golden/store/9975a21f684a4236.json",
-      "server/modes/golden/store/1a09b733f6373d98.json",
-      "server/modes/golden/store/937c230a16a084d6.json"
+      "server/modes/golden/cases/c13-create-align-spec.json"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T06:58Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§chat.create-mode/sova-extensions": {

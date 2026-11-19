@@ -101,12 +101,16 @@
     "requires": [
       "§app.project-setup/trial",
       "§app.merge-queue/approve",
-      "§app.project-services/conform"
+      "§app.project-services/conform",
+      "§app.merge-queue/send-back",
+      "§chat.composer/land-confirm",
+      "§chat.worktrees/ready-to-land",
+      "§app.merge-queue/dry-runs"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T00:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
       "server/merge-queue/setup-branch.ts",
@@ -140,9 +144,9 @@
       "§app.project-runtime/review"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T04:37Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
       "playbooks/project-setup/PLAYBOOK.md",
@@ -180,9 +184,9 @@
       "§app.merge-queue/settings-save"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T04:37Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
       "playbooks/project-setup/references/examples/sova.md",
@@ -233,12 +237,17 @@
       "§app.merge-queue/run",
       "§app.merge-queue/checks",
       "§app.release/settings",
-      "§app.project-services/merge-verbs"
+      "§app.project-services/merge-verbs",
+      "§app.merge-queue/blame",
+      "§app.merge-queue/dry-runs",
+      "§app.merge-queue/send-back",
+      "§app.merge-queue/pausing",
+      "§app.project-setup/land-gate"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T21:09Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f2373ebf"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
       "playbooks/project-setup/PLAYBOOK.md",
@@ -271,8 +280,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-06T23:21Z",
-      "source": "pi-session:4f394f82-707c-4335-a9f0-dfacbbbe4a11#5709e705"
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
       "playbooks/project-setup/PLAYBOOK.md",
@@ -290,9 +299,9 @@
     "authority": "accepted",
     "evidence": "unreviewed",
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T04:35Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
       "server/projects/setup-chat.ts",

@@ -222,7 +222,12 @@
       "src/lib/merge-review-card.ts",
       "src/components/MergeReviewCard.tsx",
       "src/lib/branch-place.ts",
-      "src/components/BranchPlaceLine.tsx"
+      "src/components/BranchPlaceLine.tsx",
+      "src/lib/dry-run.ts",
+      "src/components/DryRun.tsx",
+      "server/merge-queue/fix.ts",
+      "server/merge-queue/setup-branch.ts",
+      "server/merge-queue/queue.ts"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {

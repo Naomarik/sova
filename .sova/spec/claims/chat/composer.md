@@ -852,11 +852,15 @@ that holds:
   question raised, can't tell whose failure, out of tries, a fix that needs your OK, drafts changed;
   §app.merge-queue/needs-user), or a request waiting for you to review it (§app.merge-queue/requests);
 - "1 needs a fix" / "{n} need a fix" (error dot): back with the chat, approved and waiting for a
-  fix, or paused by Stop (its chat fixes it; nothing for the user to press);
+  fix, or paused by Stop (its chat fixes it; nothing for the user to press), or a branch whose
+  head's dry run failed on its own change (one failing on the target too counts as needs you);
+- "1 waiting for the merge thread" (no dot): a Can't tell whose failure the merge thread is still
+  ruling on, before it reaches the user (§app.merge-queue/needs-user); its row reads **Waiting for
+  the merge thread** with Remove from Queue only, never Ready with Land;
 - "{n} ready" (success dot), counting only rows that read Ready: truly Ready to land
   (§chat.worktrees/ready-to-land), or Ready to merge where the queue doesn't serve the repository;
-- "1 checking";
-- "{n} queued";
+- "1 checking" (a dry run running counts as checking);
+- "{n} queued" (an approval whose dry run comes first counts as queued);
 - "{n} worktrees" (no dot).
 
 A chat with no worktrees has no control. At a narrow width the control shows the number alone, and
@@ -884,10 +888,14 @@ project), with its why, and that Land still takes the approval. Then comes one r
   the merge and on the target alone) · **Needs you** (the question and its choices) · **Out of
   tries** · **Drafts changed** · **Approved · waiting for a fix** · **Back with the chat** ("try
   {n} of 3", its reason, the chat's answer, and **See Why**) · **Waiting for the merge thread** (a
-  fix waiting for the thread to come back and check it) · **Paused: you stopped the chat** ·
+  fix waiting for the thread to come back and check it, or a Can't tell whose failure it is still
+  ruling on: Remove from Queue only) · **Paused: you stopped the chat** ·
   **Ready to merge** · **Waiting for your OK** · **Landing specs** · **Conflicts with
   {target}** · **In progress** · **Blocked** · **Stale** (each with the readiness reason,
-  §chat.worktrees/readiness) · **No reading** · **Drafts to land** ("Code landed · 2 spec drafts not
+  §chat.worktrees/readiness) · a setup branch's dry run state for its head, with its why, the
+  explainer's sentence and its **What's a dry run?** link: **Needs a dry run** · **Approved · dry run
+  first** · **Dry run running** · **Dry run passed** · **Dry run failed** · **Dry run stopped** ·
+  **Dry run couldn't run** (§app.merge-queue/dry-runs) · **No reading** · **Drafts to land** ("Code landed · 2 spec drafts not
   landed") · **Landed** ("as {sha}", "· not pushed" when it wasn't, and every note, named by its
   writer: "Merge thread: …", "You: …", "Flaky: …") · **Landed · cleaned up** · **Merged** · **Removed**.
   **Ready** only when the branch is truly Ready to land; a served Ready to merge or Waiting for your OK
@@ -918,6 +926,10 @@ project), with its why, and that Land still takes the approval. Then comes one r
     first: "Its spec drafts stay drafts in this worktree. Only the code lands.", then, last after a
     separator, **Discard Branch…** (§app.merge-queue/discard-branch) for a branch of a project on the
     Projects list, whose row then always shows the ▾;
+  - **Run Dry Run** (or **Run Dry Run Again**) beside Land on a setup branch whose head needs one,
+    or whose dry run stopped or couldn't run; **Stop Dry Run** on one whose dry run runs or waits; **Fix** in
+    Land's place, with **Fix in New Chat** first in its ▾ menu, on a row held up by a failure (a
+    failed dry run, Out of tries; §app.merge-queue/fix);
   - **Set Up Queue** on a Ready to merge row of a project on the Projects list whose merge setup
     isn't done, which opens its Merge Queue tab (§app.merge-queue/setup). A project whose definition doesn't parse keeps Land (never
     Set Up Queue), and the row reads "This project's .sova/project.json doesn't parse: {path:
@@ -978,8 +990,8 @@ column's right edge, never stretched to the column's width. Folded (narrower), t
 sit on their own line under the bullets, right-aligned. Land's confirmation is right-aligned under
 the row in both.
 
-Every row action (Land and its ▾, Accept, Land Anyway, Try Again, Answer in Chat, Remove
-from Queue, See Why, Set Up Queue, Review Changes) and both buttons of Land's confirmation
+Every row action (Land and its ▾, Fix and its ▾, Run Dry Run, Stop Dry Run, Accept, Land Anyway,
+Try Again, Answer in Chat, Remove from Queue, See Why, Set Up Queue, Review Changes) and both buttons of Land's confirmation
 are one size on every screen, a phone and a touch screen included: a small button's height (36px),
 only as wide as its label.
 
@@ -1023,7 +1035,10 @@ pushing the branch (§app.merge-queue/strategies) ends the line with what happen
 chat's rows and on the Merge Queue tab alike: "a pull request opens on
 GitHub once checks pass.", "a merge request opens on GitLab once checks pass.", "the branch is
 pushed once checks pass.". The confirmation's action takes focus when it opens. Only Land {n}
-Commits approves the branch, at the commit the row showed. Not Yet, or Escape, puts the row's
+Commits approves the branch, at the commit the row showed. On a setup branch whose head has no
+passing dry run, the line under "Land {branch}?" reads "A dry run of {sha} runs first: {why}. Once it
+passes, it lands by itself." in place of the line above, with the same buttons
+(§app.project-setup/land-gate). Not Yet, or Escape, puts the row's
 actions back and queues nothing. A decision's Land (Out of tries, a fix that needs your OK, Drafts
 changed) in the Worktrees modal opens the same confirmation first; on the queue card and the Merge
 Queue tab's Needs you it acts at once, as before. The ▾ menu stays as it was, a narrow tab distinct

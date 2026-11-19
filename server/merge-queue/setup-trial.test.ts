@@ -8,7 +8,7 @@ import { changedFilesOf, changedSections, dryRunMergeChecks, dryRunReasons, dryR
 import type { ProjectDef } from "../../shared/project-contract";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { makeRepo, untilAborted } from "./testing/queue-kit";
+import { makeRepo, sh, untilAborted } from "./testing/queue-kit";
 import { realGit } from "./guard";
 import { makeKit, until } from "./testing/queue-kit";
 
@@ -431,6 +431,71 @@ describe("merge.try and the land gate", () => {
       await assert.rejects(q.stopTrial({ waiting: e.entry.id, by: { kind: "operator" } }), /your Land's/);
     } finally {
       await k.done();
+    }
+  });
+
+  test("a waiting dry run whose branch moved on runs at the branch's head, never the older commit", async () => {
+    const k = makeKit();
+    try {
+      k.repo.branch("setup/h1", { ".sova/project.json": DEF_TEXT("true") });
+      const b = k.repo.branch("setup/h2", { ".sova/project.json": DEF_TEXT("true && true") });
+      let release: () => void = () => {};
+      const held = new Promise<void>((r) => (release = r));
+      k.run.set(async () => (await held, {}));
+      const q = await k.q();
+      await q.trial({ branch: "setup/h1", by: { kind: "operator" } });
+      const w = await q.trial({ branch: "setup/h2", by: { kind: "chat", session: "s-h" } });
+      assert.equal(w.waiting?.commit, b.head);
+      const c2 = k.repo.commitOn(b.path, { ".sova/project.json": DEF_TEXT("true || true") });
+      release();
+      const t = await until(() => q.trials().find((x) => x.branch === "setup/h2" && x.verdict === "passed"), "the waiting dry run's turn");
+      assert.equal(t.commit, c2, "it ran at the branch's head");
+      assert.equal(q.trials().filter((x) => x.branch === "setup/h2").length, 1, "no dry run of the older commit");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a waiting dry run that can't start tells the chat that asked for it why: rewritten, no longer a setup branch, or refused", async () => {
+    const said = {
+      rewritten: /won't start: the branch moved to [0-9a-f]{7}, a commit that doesn't follow it\./,
+      "no setup": /won't start: the branch moved on to [0-9a-f]{7}, which needs no dry run\./,
+      refused: /won't start: \.sova\/project\.json at 1234567 is invalid: bad\./,
+    };
+    for (const how of ["rewritten", "no setup", "refused"] as const) {
+      const woke: { sessions: string[]; text: string }[] = [];
+      const k = makeKit({ deps: { trialEnded: (_t, _r, _root, tell) => void woke.push(tell) } });
+      try {
+        k.repo.branch("setup/r1", { ".sova/project.json": DEF_TEXT("true") });
+        const b = k.repo.branch("setup/r2", { ".sova/project.json": DEF_TEXT("true && true") });
+        let release: () => void = () => {};
+        const held = new Promise<void>((r) => (release = r));
+        k.run.set(async () => (await held, {}));
+        const q = await k.q();
+        await q.trial({ branch: "setup/r1", by: { kind: "operator" } });
+        await q.trial({ branch: "setup/r2", by: { kind: "chat", session: "s-r" } });
+        if (how === "rewritten") {
+          // The branch reset onto the target and a new commit made: its old commit is no longer on it.
+          sh(b.path, "reset", "-q", "--hard", k.repo.target);
+          k.repo.commitOn(b.path, { ".sova/project.json": DEF_TEXT("true || true") });
+        } else if (how === "no setup") {
+          // A newer commit takes the setup change back out: the head changes no setup.
+          sh(b.path, "rm", "-q", ".sova/project.json");
+          sh(b.path, "commit", "-q", "-m", "back out the setup");
+        } else {
+          (q as unknown as { startTrial: () => Promise<never> }).startTrial = async () => {
+            throw new Error(".sova/project.json at 1234567 is invalid: bad");
+          };
+        }
+        release();
+        await until(() => (q.file.trialsWaiting?.length ?? 0) === 0 && !q.tryingNow() && woke.length > 0, "the wait ending");
+        assert.deepEqual(woke.map((x) => x.sessions), [["s-r"]], how);
+        assert.match(woke[0]!.text, said[how], how);
+        assert.doesNotMatch(woke[0]!.text, /\btrial\b/);
+        assert.equal(q.trials().filter((x) => x.branch === "setup/r2").length, 0, "nothing ran");
+      } finally {
+        await k.done();
+      }
     }
   });
 

@@ -3752,18 +3752,36 @@ export class ProjectQueue {
     // A dry run that waited for the copy goes first once it is free (§app.project-setup/trial).
     if (!this.q.release && this.q.trialsWaiting?.length) {
       const w = this.q.trialsWaiting[0]!;
-      const tip = await revParse(this.git, this.root, `refs/heads/${w.branch}`);
+      let why: string;
       try {
-        if (tip && (tip === w.commit || (await isAncestor(this.git, this.root, w.commit, tip)))) {
-          await this.startTrial({ branch: w.branch, commit: w.commit, by: w.by, checks: [] });
-          return;
+        const tip = await revParse(this.git, this.root, `refs/heads/${w.branch}`);
+        if (!tip) why = "the branch is gone";
+        else if (tip !== w.commit && !(await isAncestor(this.git, this.root, w.commit, tip))) why = `the branch moved to ${tip.slice(0, 7)}, a commit that doesn't follow it`;
+        else {
+          // The branch moved on: only a dry run of its head counts for it, so the head's runs, if it still needs one by
+          // the rule a Land's gate uses (a dry run asked of a commit that needed none runs at the head all the same).
+          if (tip !== w.commit) {
+            const head = await this.targetHead();
+            const was = head ? await this.dryRunNeeds(head, w.commit) : null;
+            const now = head ? await this.dryRunNeeds(head, tip) : null;
+            if (was?.setup && !now?.setup) why = `the branch moved on to ${tip.slice(0, 7)}, which needs no dry run`;
+          }
+          why ??= "";
+          if (!why) {
+            await this.startTrial({ branch: w.branch, commit: tip, by: w.by, checks: [] });
+            return;
+          }
         }
       } catch (err) {
-        this.log(`waiting dry run of ${w.branch} couldn't start: ${err instanceof Error ? err.message : err}`);
+        why = err instanceof Error ? err.message : String(err);
       }
-      this.q.trialsWaiting = this.q.trialsWaiting.filter((x) => x !== w);
+      this.log(`waiting dry run of ${w.branch} dropped: ${why}`);
+      this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((x) => x !== w);
       this.save();
       this.schedulePublish();
+      this.deps.trialMoved?.({ branch: w.branch, by: structuredClone(w.by) }, this.root);
+      this.tellWaitingEnded(w, why);
+      this.kickSoon();
     }
     if (this.q.paused) return;
     if (this.holdUntil > this.now()) return;

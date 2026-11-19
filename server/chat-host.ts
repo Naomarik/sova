@@ -44,7 +44,7 @@ import {
   takeOpeningChoice,
 } from "./chat-handle";
 import { type ChatSpecialKind, isNoAnswer, type ServerToolDecl, type SpecialSpec, type WorkerSpec } from "../shared/chat-runtime";
-import { type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
+import { answerOpenAsks, type HeldRequests, holdRequests, RemoteChatHandle, type RemoteHooks } from "./chat-handle-remote";
 import { awaitFrame, connectLink, type Link } from "./chat-runtime/link";
 import { crashSkip } from "./chat-runtime/crash";
 import { dropResume, type InflightMarker, markResume, pendingResumes, readInflight, takeInflight } from "./chat-runtime/inflight";
@@ -498,8 +498,19 @@ export class ChatHostRouter {
     if (this.remotes.get(h.path) === h) await sup.lost(id, "it stopped answering").catch(() => {});
   }
 
-  /** Send `open` on `link` and wait for its answer: the mirror, or its refusal thrown. */
+  /** Send `open` on `link` and wait for its answer: the mirror, or its refusal thrown. What the chat asks
+      while it opens that needs no handle (its MCP list) is answered meanwhile: no handle listens yet, and
+      its open waits on the answer. Stopped before a handle takes the link. */
   private async openOn(link: Link, path: string, sessionId: string, force: boolean, kind: OpenKind = null, built?: SpecialSpec, worker?: WorkerSpec): Promise<ChatRuntimeMirror> {
+    const stop = answerOpenAsks(link, path);
+    try {
+      return await this.sendOpen(link, path, sessionId, force, kind, built, worker);
+    } finally {
+      stop();
+    }
+  }
+
+  private async sendOpen(link: Link, path: string, sessionId: string, force: boolean, kind: OpenKind, built?: SpecialSpec, worker?: WorkerSpec): Promise<ChatRuntimeMirror> {
     const id = randomUUID();
     if (worker) {
       // A worker chat opens as its loadout says, served only project_verbs (a worker or team member, never a hidden chat).

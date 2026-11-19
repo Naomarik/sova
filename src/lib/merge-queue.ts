@@ -419,6 +419,11 @@ function queueRowOf(w: QueueRowInput): QueueRow {
     if (key === "needs-you") return { ...base, newer: undefined, key, label: "Needs you", tone: "warn", reason: e.reason, action: "none", answerInChat: true, remove: true };
     switch (e.state) {
       case "queued":
+        // A setup branch's Land: its dry run comes first (§app.project-setup/land-gate); running, it counts as checking.
+        if (e.standing?.phase === "dry-run")
+          return e.standing.run
+            ? { ...base, key: "checking", label: "Dry run running", tone: "accent", live: true, detail: short(e.commit), action: "none", remove: true }
+            : { ...base, key: "queued", label: e.position ? `Approved · dry run first · ${ordinal(e.position)}` : "Approved · dry run first", tone: "info", detail: short(e.commit), action: "none", remove: true };
         return {
           ...base,
           key: "queued",

@@ -1,4 +1,4 @@
-import { createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
+import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
 import { landConfirmWords, modalHead, queueRow, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
@@ -19,6 +19,9 @@ import { ReviewChangesButton } from "./ReviewChanges";
 import { paneScopedId, usePaneScope } from "../lib/pane-scope";
 import { DISCARD_LINE, discardMenuLine } from "../lib/discard-branch";
 import { createDiscard, DiscardConfirm, type Discard } from "./DiscardBranch";
+import { dryRunActions, dryRunChip, failureLine, landFirstLine, runsFirst, startedToast, waitingIdOf, type BranchDryRun } from "../lib/dry-run";
+import { runDryRun } from "../lib/merge-queue-client";
+import { DryRunButton, DryRunLines, DryRunWhat, FixSplit, usePress, type FixTarget } from "./DryRun";
 
 /** A tracked worktree with the queue's facts (SessionWorktreeInfo.queue, filled by the server). */
 export type QueueWorktree = SessionWorktreeInfo & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
@@ -301,6 +304,28 @@ export function WorktreeQueueRow(props: {
       ? void run("Land", () => answerEntry(e(), "land"), `Queued ${w().branch}.`)
       : void run("Land", () => land(w().path, { ...o, commit: shownCommit(w()) }), `Queued ${w().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
   const e = () => entry()!;
+  // A refusal belongs to the commit it was said for: a newer head reads afresh, never an older one's words
+  // (§chat.worktrees/newest-commit).
+  createEffect(on(() => shownCommit(w()), () => setError(null), { defer: true }));
+  /** The branch's dry run at its newest commit (the entry's, at the commit it pins, else the reading's at the head);
+      an older commit's is never the branch's current one. */
+  const dry = (): BranchDryRun | undefined => {
+    const q = w().queue;
+    if (q?.dryRun && q.dryRun.commit === q.commit && q.state !== "landed" && q.state !== "cancelled") return q.dryRun;
+    const r = w().readiness?.dryRun;
+    const head = shownCommit(w());
+    return r && (!head || r.commit === head) ? r : undefined;
+  };
+  const target = () => w().mergeProject?.target ?? w().queue?.target ?? "the target";
+  const failure = () => (w().queue?.failure && w().queue!.failure!.commit === w().queue!.commit ? w().queue!.failure : dry()?.failure);
+  const fixOffer = () => w().queue?.fixOffer ?? dry()?.fixOffer;
+  /** Land's place: Fix while a failure holds the branch up; else the dry run's own buttons beside the row's. */
+  const landsHere = () => buttons().includes("Land") && !row().decision;
+  const dryActs = () => (dry() ? dryRunActions(dry()!, landsHere()) : undefined);
+  const fixing = () => !!projectId() && (dryActs()?.primary === "fix" || (!!failure() && !dry()));
+  const press = usePress(() => props.onChanged?.());
+  const fixTarget = (): FixTarget => ({ projectId: projectId()!, target: target(), branch: w().branch, commit: w().queue?.commit ?? shownCommit(w()), failure: failure(), offer: fixOffer() });
+  const commitOf = () => w().queue?.commit ?? shownCommit(w()) ?? "";
 
   return (
     <li class="list-row wt-queue-row" classList={{ "wt-queue-asking": !!confirm.ask() }} data-branch={w().branch} data-state={row().key} ref={confirm.rowRef}>
@@ -329,6 +354,7 @@ export function WorktreeQueueRow(props: {
         <BranchPlaceLine row={w()} />
         <div class="wt-queue-facts">
           <QueueChip row={row()} />
+          <Show when={dry() && dryRunChip(dry()!).label !== row().label ? dry() : undefined}>{(d) => <QueueChip row={dryRunChip(d())} />}</Show>
           <Show when={row().detail}>{(d) => <span class="text-caption text-mono">{d()}</span>}</Show>
           {/* "3 commits · +40 −2 · 2d ago": the date is when the branch last changed, in full on hover. */}
           <Show when={row().size || row().when}>
@@ -361,6 +387,19 @@ export function WorktreeQueueRow(props: {
                 <a href={mergeRunHref(projectId()!, row().run!)}>See Why</a>
               </Show>
             </p>
+          )}
+        </Show>
+        <Show when={dry()}>
+          {(d) => <DryRunLines dryRun={d()} target={target()} seeChecks={d().run && projectId() ? mergeRunHref(projectId()!, d().run!) : undefined} />}
+        </Show>
+        <Show when={!dry() && failure()}>
+          {(f) => (
+            <>
+              <p class="list-meta wt-queue-reason mq-failure">{failureLine(f(), target())}</p>
+              <Show when={f().kind === "dry-run"}>
+                <DryRunWhat target={target()} class="list-meta" />
+              </Show>
+            </>
           )}
         </Show>
         <Show when={row().decision?.choices.length}>
@@ -397,10 +436,11 @@ export function WorktreeQueueRow(props: {
           )}
         </For>
         <Show when={error()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
+        <Show when={press.error()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
         <Show when={discard.partial()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
-      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} how={w().mergeProject?.how} place={placeOf(w())} drafts={onlyDrafts()} busy={busy()} onLand={doLand} discard={discard} />
+      <LandConfirms confirm={confirm} branch={w().branch} ahead={w().mergeStats?.ahead} target={w().mergeProject?.target} how={w().mergeProject?.how} place={placeOf(w())} drafts={onlyDrafts()} busy={busy()} onLand={doLand} discard={discard} firstLine={dry() && runsFirst(dry()) && !row().decision ? landFirstLine(dry()!.commit, dry()!.why) : undefined} />
       <Show when={confirm.ask() === "remove"}>
         <LandConfirmBox
           label={`Remove ${w().branch}`}
@@ -427,13 +467,39 @@ export function WorktreeQueueRow(props: {
             cwd={props.review!.cwd}
           />
         </Show>
+        {/* The dry run's own buttons: Stop while it runs or waits, Run Dry Run (Again) beside Land (§app.merge-queue/dry-runs). */}
+        <Show when={projectId() && dryActs()?.stop}>
+          <DryRunButton projectId={projectId()!} branch={w().branch} commit={commitOf()} kind="stop" run={dry()?.state === "running" ? dry()?.run : undefined} waiting={waitingIdOf(dry())} press={press} />
+        </Show>
+        <Show when={projectId() ? dryActs()?.run : undefined}>{(k) => <DryRunButton projectId={projectId()!} branch={w().branch} commit={commitOf()} kind={k()} press={press} />}</Show>
+        {/* A failure holds it up: Fix takes Land's place, Fix in New Chat first in its menu, then what it replaced
+            (§app.merge-queue/fix). */}
+        <Show when={fixing()}>
+          <FixSplit
+            fix={fixTarget()}
+            press={press}
+            items={(Item) => (
+              <>
+                <Show when={dry() && (dryActs()?.menu.includes("again") || dry()!.state === "failed") && !dryActs()?.run}>
+                  <Item label="Run Dry Run Again" aria={`Run the dry run of ${w().branch} again`} description="Runs its new or changed checks on this commit again." onRun={() => void press.press("run", () => runDryRun(projectId()!, w().branch, commitOf()), startedToast(w().branch, commitOf()))} />
+                </Show>
+                <Show when={buttons().includes("Land")}>
+                  <Item label="Land" aria={`Land ${w().branch}`} description="Asks first." onRun={() => confirm.open("land")} />
+                </Show>
+                <Show when={dryActs()?.menu.includes("land-anyway") && w().queue}>
+                  <Item label="Land Anyway" aria={`Land ${w().branch} anyway`} description={`The landing still runs ${target()}'s checks.`} onRun={() => void run("Land Anyway", () => answerEntry(e(), "land-anyway"), `Landing ${w().branch} anyway.`)} />
+                </Show>
+              </>
+            )}
+          />
+        </Show>
         {/* A decision's Land is its answer on the queue (out of tries, a fix that needs your OK, drafts changed). */}
-        <Show when={buttons().includes("Land") && row().decision}>
+        <Show when={buttons().includes("Land") && row().decision && !fixing()}>
           <button type="button" class="button button-sm button-primary" aria-label={`Land ${w().branch}`} disabled={busy()} onClick={() => confirm.open("land")}>
             Land
           </button>
         </Show>
-        <Show when={buttons().includes("Land") && !row().decision}>
+        <Show when={buttons().includes("Land") && !row().decision && !fixing()}>
           <LandSplit branch={w().branch} review={review()} busy={busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!onlyDrafts()} onDiscard={discard.target() ? openDiscard : undefined} discardWhy={discard.refused()} discardLine={discardMenuLine(discard.preview())} onMenuOpen={() => void discard.check()} />
         </Show>
         <Show when={buttons().includes("Set Up Queue")}>

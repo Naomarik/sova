@@ -411,3 +411,22 @@ test("the counter counts every segment: usual run, installing, no push, a check 
   assertCounter(between, {}, "check:build");
   assert.equal(runNow(run([], { checks }), undefined, NOW), "Starting");
 });
+
+test("a running dry run is the bar's running state: Dry run · {branch}, never Landing, its track only the steps it runs", () => {
+  const r = run([step("copy", "copy", "passed"), step("setup", "setup", "passed"), step("check:playbook", "check", "running")], { entry: "trial", branch: "feat/play", base: TIP });
+  const trialNow = {
+    trial: { run: "mr_1", commit: TIP, branch: "feat/play", verdict: "running" as const, by: { kind: "land" as const, entry: "me_9" }, startedAt: iso(60_000), needs: "adds the merge check Playbook tests" },
+    run: r,
+    progress: { at: 1, of: 2 },
+  };
+  const q = queue({ state: "running", trialNow, waiting: [entry({ id: "me_2", branch: "feat/next", position: 1 })] });
+  const bar = reduceLanding([proj({ queue: q })], NOW).bar!.top;
+  assert.equal(bar.title, "Dry run · feat/play");
+  assert.doesNotMatch(`${bar.title} ${bar.sub} ${bar.oneLine}`, /Landing/);
+  assert.equal(bar.sub, "check 1 of 2");
+  assert.deepEqual(bar.segments.map((s) => s.id), ["copy", "setup", "check:playbook"]);
+  assert.equal(bar.count?.text, "+1");
+  assert.ok(bar.lines.some((l) => l.text === "Nothing lands from a dry run."));
+  assert.ok(bar.peek.some((l) => l.text === "Needs a dry run: adds the merge check Playbook tests"));
+  assert.deepEqual(bar.actions.map((a) => a.label), ["Checks", "Queue"]);
+});

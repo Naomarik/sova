@@ -107,3 +107,15 @@ test("small words", () => {
   assert.doesNotMatch(JSON.stringify(e), /trial/i);
   assert.match(e.parts[0]!.body, /master's checks/);
 });
+
+test("a worktree row whose Land runs its dry run first reads Approved · dry run first, then Dry run running", async () => {
+  const { queueRow } = await import("./merge-queue");
+  const base = { status: "active" as const, exists: true, branch: "feat/play", readiness: undefined, mergeServed: true };
+  const waiting = queueRow({ ...base, queue: { state: "queued", commit: HEAD, position: 2, standing: { phase: "dry-run" } } });
+  assert.equal(waiting.key, "queued");
+  assert.equal(waiting.label, "Approved · dry run first · 2nd");
+  const running = queueRow({ ...base, queue: { state: "queued", commit: HEAD, position: 1, standing: { phase: "dry-run", run: "mr_1" } } });
+  assert.equal(running.key, "checking");
+  assert.equal(running.label, "Dry run running");
+  assert.equal(running.remove, true);
+});

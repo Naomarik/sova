@@ -179,3 +179,18 @@ test("a worktree whose head's dry run failed reads it in place of Ready: a fix, 
   assert.deepEqual([shared.key, shared.label], ["needs-you", "Dry run failed"]);
   assert.equal(row(failure("unclear")).label, "Can't tell whose failure");
 });
+
+test("the sessions pane's row never reads a branch whose newest commit's dry run failed as Ready", async () => {
+  const { rowBranchStatus } = await import("./branch-status");
+  const s = (d: BranchDryRun) => ({
+    branches: [{ path: "/w", branch: "feat/play", status: "active" as const, exists: true, mergeServed: true as const, mergeProject: { target: "master", checks: "declared" as const } }],
+    readiness: { trees: [{ path: "/w", branch: "feat/play", state: "ready" as const, landing: { state: "ready" as const, commit: HEAD }, dryRun: d }], since: 0 },
+  });
+  const own = rowBranchStatus(s(dr("failed", { run: "mr_1", failure: failure("branch") })))!;
+  assert.equal(own.kind, "fix");
+  assert.equal(own.text, "1 needs a fix");
+  assert.match(own.lines[1]!, /Dry run failed/);
+  assert.equal(rowBranchStatus(s(dr("failed", { run: "mr_1", failure: failure("master") })))!.kind, "you");
+  // An older commit's failure is not this head's: the head reads as itself.
+  assert.equal(rowBranchStatus(s(dr("failed", { commit: OLD, run: "mr_1", failure: failure("branch") })))!.kind, "ready");
+});

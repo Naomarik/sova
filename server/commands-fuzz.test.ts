@@ -314,6 +314,10 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.merge-queue.update-local-main": "a valid call needs the server's merge queue started on a git project with an origin, which the unit tier's app doesn't start",
   "project.merge-queue.discard-branch": "a valid call is the page's own click, which the fuzz's in-process caller never is; the act is driven in server/worktree-remove-discard*.test.ts",
   "project.merge-queue.request.publish": "a valid call needs a queue entry checked and waiting for its request's text, which the unit tier's app doesn't start",
+  "project.merge-queue.dry-run.start": "a valid call needs the server's merge queue started on a git project with a setup branch, which the unit tier's app doesn't start; driven in server/merge-queue/setup-trial.test.ts",
+  "project.merge-queue.dry-run.stop": "a valid call needs a dry run running or waiting in a started queue, which the unit tier's app doesn't start; driven in server/merge-queue/setup-trial.test.ts",
+  "project.merge-queue.fix": "a valid call needs a started queue with a failure holding a branch up and that branch's chat, which the unit tier's app doesn't start",
+  "project.merge-queue.fix.new-chat": "a valid call needs a started queue with a failure holding a branch up, and starts a coding chat, which the unit tier's app doesn't start",
   "project.merge-queue.land-how.set": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.merge-queue.land-how.clear": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.merge-queue.branch-summary.retry": "a valid call needs the server's merge queue started with a branch whose summary failed, which the unit tier's app doesn't start",
@@ -344,6 +348,9 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.setup.open": "a valid call starts the project's Setup chat, a coding session whose chat process starts",
   "project.setup.get": "a valid call reads the project's runtime, which runs the supervisor's status and git",
   "project.setup.merge": "the user's own page only: a valid call merges or lands a branch",
+  "project.verbs.open": "a valid call starts the project's Project verbs chat, a coding session whose chat process starts",
+  "project.verbs.chat.get": "a valid call reads the project's chat record and runs git in its worktree",
+  "project.verbs.chat.fresh": "the user's own page only: a valid call archives a chat and starts another",
 };
 
 /**
@@ -359,7 +366,7 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id.startsWith("project.verb.")) return [{ anchor: { project: join(outside, "no-project") }, refuse: true, kind: "refused" }];
   // An unknown project: refused before anything starts (a valid call would start a coding session's chat).
   if (c.id === "project.coding.start") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
-  if (c.id === "project.setup.open" || c.id === "project.setup.get" || c.id === "project.setup.merge") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
+  if (c.id === "project.setup.open" || c.id === "project.setup.get" || c.id === "project.setup.merge" || c.id.startsWith("project.verbs.")) return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }];
   // A real folder too, but only wrong-typed values: a string profile would start a chat.
   if (c.id === "session.create") return [{ anchor: { cwd: join(outside, "no-dir") }, refuse: true, kind: "refused" }, { anchor: { cwd: workDir() }, refuse: false, kind: "real", onlyWrongTypes: true }];
   if (c.id === "project.services.view") return [{ anchor: { pid: "no-such-project" }, refuse: false, kind: "real" }];

@@ -72,6 +72,7 @@ export function projectSessionLookup(builds?: EngineBuildsReader): ProjectSessio
           ...ref(c.projectId),
           kind: "coding",
           ...(buildStartedBy(c.row) === "operator" ? { operator: true as const } : {}),
+          ...(c.row.onboard ? { onboard: true as const } : {}),
           ...(merged ? { finished: true as const } : {}),
         };
       }

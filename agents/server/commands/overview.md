@@ -185,7 +185,10 @@ When a rule changes, change its test in the same change; a rule without a test i
   held chat's subagent profile); `GET`/`DELETE /api/projects/:pid/files/:id` (a download, and a
   delete no one asked for yet); `GET /api/projects/:pid/runtime` and `POST …/runtime/merge`;
   `POST /api/projects/:pid/held/:holdId/cancel` (cancels a held act, releases nothing);
-  `POST …/draft-specs/:sid/build` and `POST …/verbs/onboard` (both start model work).
+  `POST …/draft-specs/:sid/build` (it starts model work). `POST …/verbs/onboard` is a command now
+  (`project.verbs.open`, the Running Copies tab's Set Up with a Chat / Change Setup…, which opens the project's
+  standing Project verbs chat as `project.setup.open` opens its Setup chat), with `project.verbs.chat.get` and
+  `project.verbs.chat.fresh` (Start Fresh, the user's own page only).
 - **The areas left as is, by choice** (`§app.commands/opted-out`): every route under `/api/` in
   `OPTED_OUT` (`server/commands-inventory/scan.ts`): orgs, outreach, mesh, session-shares,
   public-links, previews, shares-overview, tours, voice, settings, claude, profiles, push, updates,

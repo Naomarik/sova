@@ -110,7 +110,7 @@
         "cwd": "<cwd>\n<ws:spec-tool>\n</cwd>",
         "mode": "@92c471f3b2af0035"
        },
-       "toolsAdded": "@fbddec40b8fdf282"
+       "toolsAdded": "@210dd30eb32c61db"
       },
       {
        "role": "user",
@@ -313,7 +313,7 @@
        "cwd": "<cwd>\n<ws:spec-tool>\n</cwd>",
        "mode": "@92c471f3b2af0035"
       },
-      "toolsAdded": "@9a85350e7590c36c"
+      "toolsAdded": "@db2d4a29648e6086"
      }
     }
    ],
@@ -433,7 +433,7 @@
         "cwd": "<cwd>\n<ws:spec-bash>\n</cwd>",
         "mode": "@92c471f3b2af0035"
        },
-       "toolsAdded": "@fbddec40b8fdf282"
+       "toolsAdded": "@210dd30eb32c61db"
       },
       {
        "role": "user",
@@ -635,7 +635,7 @@
        "cwd": "<cwd>\n<ws:spec-bash>\n</cwd>",
        "mode": "@92c471f3b2af0035"
       },
-      "toolsAdded": "@9a85350e7590c36c"
+      "toolsAdded": "@db2d4a29648e6086"
      }
     }
    ],
@@ -755,7 +755,7 @@
         "cwd": "<cwd>\n<ws:spec-none>\n</cwd>",
         "mode": "@92c471f3b2af0035"
        },
-       "toolsAdded": "@fbddec40b8fdf282"
+       "toolsAdded": "@210dd30eb32c61db"
       },
       {
        "role": "user",
@@ -912,7 +912,7 @@
        "cwd": "<cwd>\n<ws:spec-none>\n</cwd>",
        "mode": "@92c471f3b2af0035"
       },
-      "toolsAdded": "@9a85350e7590c36c"
+      "toolsAdded": "@db2d4a29648e6086"
      }
     }
    ],

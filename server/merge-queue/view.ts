@@ -31,16 +31,24 @@ export function buildView(a: {
   served?: boolean;
   /** Sent-back entries git says need no fix any more, by entry id (the queue reads them: settledFacts). */
   settled?: ReadonlyMap<string, Exclude<MergeSettled, "superseded">>;
+  /** A dry run holds the merge copy: what is left of it (ms), counted before every waiting entry. */
+  holdMs?: number;
+  /** A branch's dry run holds the merge copy: the queue reads running. */
+  trying?: boolean;
 }): MergeQueueView {
   const takes = a.takesMs ?? DEFAULT_TAKES_MS;
   const queued = a.q.entries.filter((e) => e.state === "queued").sort((x, y) => x.seq - y.seq);
   // What is left of the run checking now, then each entry ahead.
-  const left = a.current ? Math.max(0, takes - (a.now - Date.parse(a.current.startedAt))) : 0;
+  const left = (a.current ? Math.max(0, takes - (a.now - Date.parse(a.current.startedAt))) : 0) + (a.holdMs ?? 0);
   const waiting = queued.map((e, i) => ({ ...strip(e), position: i + 1, eta: { startsInMs: left + i * takes, takesMs: takes } }));
   const byNewest = (x: { updatedAt: string }, y: { updatedAt: string }) => y.updatedAt.localeCompare(x.updatedAt);
   const checking = a.q.entries.filter((e) => e.state === "checking").map((e) => ({ ...strip(e), eta: { startsInMs: 0, takesMs: takes } }));
-  // Can't tell whose failure is the user's once raised to them; while the merge thread rules first it isn't yet.
-  const needsYou = a.q.entries.filter((e) => (WAITING_FOR_USER.includes(e.state) && !(e.state === "unattributed" && e.ruling?.unattributed)) || e.state === "conflict").map(strip).sort(byNewest);
+  // Can't tell whose failure is the user's once raised to them; while the merge thread rules first it waits here too, as
+  // Waiting for the merge thread (never in no list, so its branch never reads Ready with Land meanwhile).
+  const needsYou = a.q.entries
+    .filter((e) => WAITING_FOR_USER.includes(e.state) || e.state === "conflict")
+    .map((e) => (e.state === "unattributed" && e.ruling?.unattributed ? { ...strip(e), waitingRuling: true as const } : strip(e)))
+    .sort(byNewest);
   const needsFix = sentBack(a.q.entries, a.settled);
   const recent: MergeLanded[] = a.q.entries
     .filter((e) => e.state === "landed")
@@ -51,7 +59,7 @@ export function buildView(a: {
       const r = entry.run ? a.readRun(entry.run) : null;
       return { entry, ...(r ? { run: { id: r.id, verdict: r.verdict, startedAt: r.startedAt, ...(r.endedAt ? { endedAt: r.endedAt } : {}), ...(r.noChecks ? { noChecks: true as const } : {}) } } : {}) };
     });
-  const state: MergeQueueView["state"] = a.q.paused ? "paused" : a.current ? "running" : "idle";
+  const state: MergeQueueView["state"] = a.q.paused ? "paused" : a.current || a.trying ? "running" : "idle";
   return {
     project: a.q.project,
     root: a.root,
@@ -153,6 +161,10 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     ...(e.standing ? { standing: e.standing } : {}),
     ...(e.decision && !e.decision.answered ? { decision: e.decision } : {}),
     ...(e.tries ? { tries: e.tries } : {}),
+    ...(e.failure ? { failure: e.failure } : {}),
+    ...(e.fixOffer ? { fixOffer: e.fixOffer } : {}),
+    ...(e.dryRun ? { dryRun: e.dryRun } : {}),
+    ...(e.waitingRuling ? { waitingRuling: true as const } : {}),
     ...(view.review ? { reviewKit: true } : {}),
   };
 }

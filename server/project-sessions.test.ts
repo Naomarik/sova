@@ -180,6 +180,11 @@ describe("a session's folder makes it the project's", () => {
     await seedBuild(engineOf(sovaP.id)!, sovaP.id, { sessionId: "44444444-4444-4444-8444-444444444444", kind: "coding", path });
     const theirs = projectSessionLookup().of(path, "44444444-4444-4444-8444-444444444444", sova);
     assert.deepEqual(theirs, { projectId: sovaP.id, projectName: "sova", kind: "coding" }, "the overseer's build carries no operator");
+    // A verb playbook's run (the Project verbs chat's) is tagged so; the builds above, being none, carry no tag.
+    const runPath = sessionIn(sova, "66666666-6666-4666-8666-666666666666");
+    await seedBuild(engineOf(sovaP.id)!, sovaP.id, { sessionId: "66666666-6666-4666-8666-666666666666", kind: "onboard", path: runPath });
+    const run = projectSessionLookup().of(runPath, "66666666-6666-4666-8666-666666666666", sova);
+    assert.deepEqual(run, { projectId: sovaP.id, projectName: "sova", kind: "coding", operator: true, onboard: true });
   });
 });
 

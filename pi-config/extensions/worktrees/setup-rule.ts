@@ -4,7 +4,7 @@
  * merge check requires it), or the files of the project's release playbook folder.
  *
  * The one home of the rule. Sova's merge queue imports it for its land gate and trials; the `worktree` tool asks it
- * before a plain merge (a setup branch is merged only from its Setup card, after a passing trial). Read from Git alone,
+ * before a plain merge (a setup branch is merged only from its Setup card, after a passing dry run). Read from Git alone,
  * at the two commits, never a worktree's files.
  *
  * Node builtins only (the extension runs in every chat) and nothing of Sova.

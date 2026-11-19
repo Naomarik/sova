@@ -123,9 +123,9 @@
       "§app.project-overseer/coding-worktrees"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T06:42Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-18T20:26Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.project-runtime/playbook": {
@@ -150,7 +150,12 @@
       "§chat.playbooks/bundles",
       "§app.project-services/contract",
       "§app.project-services/conform"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T20:26Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+    }
   },
   "§app.project-runtime/registry": {
     "kind": "behavior",
@@ -219,8 +224,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T21:21Z",
-      "source": "pi-session:4368877c-8704-42e1-8b6d-93f52ae7fb89#9680102b"
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§app.project-runtime/run-progress": {
@@ -263,9 +268,9 @@
       "§app.project-runtime/registry"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-18T20:26Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.project-runtime/software-card": {
@@ -289,9 +294,9 @@
       "§app.project-runtime/registry"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-16T16:31Z",
-      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
+      "by": "naomarik",
+      "at": "2026-11-18T20:26Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.project-runtime/standing": {

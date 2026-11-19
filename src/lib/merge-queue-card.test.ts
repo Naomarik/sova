@@ -35,6 +35,9 @@ test("each state's actions: none of them writes into the chat, and none is a Sen
   assert.deepEqual(cardActions(card({ state: "behaviour-differs", conflict: { verdict: "behaviour-differs", ours: "a", theirs: "b", proposal: "c", at: "2026-11-02T10:00:00Z" } as QueueCard["conflict"] })), ["accept", "remove"]);
   assert.deepEqual(cardActions(card({ state: "review-flagged" })), ["remove"], "review findings go back to the chat by themselves");
   assert.deepEqual(cardActions(card({ state: "unattributed" })), ["land-anyway", "try-again", "remove"]);
+  assert.deepEqual(cardActions(card({ state: "unattributed", waitingRuling: true })), ["remove"], "the merge thread rules first: nothing to answer yet");
+  assert.deepEqual(cardPill(card({ state: "unattributed", waitingRuling: true })), { label: "Waiting for the merge thread", tone: "info" });
+  assert.deepEqual(cardPill(card({ state: "unattributed" })), { label: "Can't tell whose failure", tone: "warn" });
   assert.deepEqual(cardActions(card({ state: "needs-fix" })), ["remove"], "every Needs a fix card: never left without a button");
   assert.deepEqual(cardActions(card({ state: "needs-fix", redrafted: true })), ["remove"], "its drafts fixed: it goes back in line by itself");
   assert.deepEqual(cardActions(card({ state: "with-chat", standing: { phase: "with-chat", try: 2, of: 3, why: "Unit tests failed" } })), ["remove"]);

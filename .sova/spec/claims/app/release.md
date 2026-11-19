@@ -436,7 +436,7 @@ Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
   (§app.project-setup/start). While the Setup chat works it shows in its place (its card, titled "Setup · {project}",
   with its state, "Working" or "{n} questions for you") with **Open Setup Chat**; a
   proposed setup branch shows what it proposes, its release settings and each step with its phase,
-  read from the branch, with its newest trial and **Land** (or **Merge Branch**), **Read Report**
+  read from the branch, with its newest dry run and **Land** (or **Merge Branch**), **Read Report**
   (§app.project-setup/proposal). A refused start shows its reason.
 - **Settings that don't read**: an error banner, "This project's release settings don't read.", with the
   problem; no release starts until it reads.
@@ -533,7 +533,7 @@ release create` without `--verify-tag`, resetting or forcing a branch, calls to 
 addresses and secret-looking values, and a built file inside the repository that git doesn't ignore;
 it can't see a git call hidden inside a wrapper function. The chat never cuts a release: it draws
 each step marked Sova, Before Publish, After Publish or Held for you (§app.project-setup/drawing),
-trial-runs the release-only checks with the merge checks (§app.project-setup/trial), and hands back
+proves the new or changed release-only checks with the merge checks in a dry run (§app.project-setup/trial), and hands back
 the branch to land (§app.project-setup/proposal).
 
 ## §app.release/sova — Sova's own release playbook

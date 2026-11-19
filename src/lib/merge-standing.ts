@@ -86,6 +86,9 @@ export function standingWords(f: StandingFacts): { label: string; tone: Standing
       return { label: "Back with the chat", tone: "info", detail: "Fix waits for the run checking now", answer: answerWords(s.answer) ?? undefined };
     case "paused":
       return { label: "Paused: you stopped the chat", tone: "neutral" };
+    case "dry-run":
+      // A setup branch's Land: its dry run comes first, then it lands by itself (§app.project-setup/land-gate).
+      return { label: "Approved · dry run first", tone: "info", detail: s.run ? "Dry run running" : undefined };
   }
   return null;
 }

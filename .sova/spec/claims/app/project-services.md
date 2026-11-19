@@ -761,12 +761,14 @@ answering the one result shape with its own `merge` key (§app.project-services/
   landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
   target) and `merge.logs` (a run, optionally one step and a line count).
 - **Setting it up**: `merge.setup` (a project's checks, one test command with its time and what
-  starts first, or no automated tests; a dry run tries them, and a save commits them), the
-  operator's only, from the routes and the CLI: no chat may call it, with or without a dry run
+  starts first, or no automated tests; a test run tries them, called **Test run of the checks** on
+  screen, and a save commits them), the
+  operator's only, from the routes and the CLI: no chat may call it, with or without a test run
   (§app.merge-queue/setup).
-- **Trying a setup**: `merge.try` (a branch, by default the caller's own, or a commit, and the
-  release check ids to run though unchanged): runs that commit's own proposed merge checks and
-  release-only checks in the merge copy, merging and saving nothing (§app.project-setup/trial).
+- **Dry runs**: `merge.try` (a branch, by default the caller's own, or a commit, and the release
+  check ids to run though unchanged): a dry run of that commit's new or changed merge checks and
+  release-only checks in the merge copy, merging and saving nothing; and a verb that stops a running
+  dry run (Stop Dry Run), by its id or the project's running one (§app.project-setup/trial).
 - **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the options
   without its specs and without review: §app.merge-queue/approve; on a finished branch blocked for
   something its chat can fix it records Approved · waiting for a fix; on Out of tries it is Land, a
@@ -816,7 +818,7 @@ The user's verbs are the operator's, and pass only on the user's own click in So
 proven click from another of their computers.
 
 The Land, Cancel, Remove from Queue, Pause, Resume, Accept, Land Anyway, Try Again, Start Fresh,
-Clear, Clear All and Run Trial actions are catalogue commands pointing at these verbs
+Clear, Clear All, Run Dry Run, Run Dry Run Again and Stop Dry Run actions are catalogue commands pointing at these verbs
 (§app/commands). Send Back, Land This Commit Again, Land Newest Commit and Send Answer are retired
 from every screen. Catalogue ids are append-only (§app.commands/catalogue): the verbs' entries
 (`project.verb.merge.answer`, `project.verb.merge.reply`) keep their ids, and an entry retired with
@@ -826,7 +828,8 @@ these actions keeps its id in the catalogue's retired list, never reused.
 
 **Callers.**
 - The operator (the routes, the CLI, the Land and Cancel controls) calls the user's verbs (add,
-  cancel, pause, resume, answer, reply, fresh, clear, setup), `merge.try` (Run Trial) and the reads,
+  cancel, pause, resume, answer, reply, fresh, clear, setup), `merge.try` (Run Dry Run), the stop verb
+  (Stop Dry Run) and the reads,
   and may write a note or hold the queue (`merge.hold`). Only the operator calls the user's verbs:
   no chat relays the user's answer with `merge.reply`, which a chat's script is refused; a question
   asked in a branch's chat is answered by the user's own next message there
@@ -850,7 +853,7 @@ these actions keeps its id in the catalogue's retired list, never reused.
   a merge thread's question, and it is never an approval.
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
 - Any chat, the project's Setup chat included (§app.project-setup/trust), calls `merge.try` for its
-  own project; `merge.setup` and every other user's verb is `forbidden` to it, as to every chat. The
+  own project, and the stop verb for a dry run it started; `merge.setup` and every other user's verb is `forbidden` to it, as to every chat. The
   Overseers' `merge.try` is `forbidden`.
 - Any other chat reads its own project's queue; anything else is `forbidden`.
 
@@ -1018,9 +1021,11 @@ The operator sees and drives every running copy from two places, both on this ho
   (§app.project-services/conform) from the newest passing stamp of the main checkout's current
   definition; with none, from the newest stamp of an older definition that has a reading, the line
   then starting "Measured {date} on an older definition: each copy took about …"; with neither, "Not
-  measured yet: Run Again on this tab's setup line measures it." (and still this machine's memory).
+  measured yet: the Project verbs chat on this tab's setup line measures it." (and still this machine's memory).
 - **The setup line** ends the copy-limit card: whether the project's services are set up, with
-  **Run Playbook** or **Run Again**, the live run's strip and a proposed run's review
+  **Set Up with a Chat** (with a short explanation of running copies while never set up) or
+  **Change Setup…**, both opening the project's one Project verbs chat, or the one sentence that
+  says why it can't start, the live run's strip and a proposed run's review
   (§app.project-runtime/software-card). The tab's other parts read as before whatever it says.
 - **Open**: while a copy has an entry and the entry's own service is ready, whatever the copy's
   state (Degraded or Starting included), Open is its row's first action and carries the row's one

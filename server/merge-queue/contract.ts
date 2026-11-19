@@ -40,6 +40,9 @@ export interface RunInput {
   /** The branch's spec drafts, copied at run start (after the queue checked their hash against the approval):
    *  `<draftsDir>/<name>/…`. Absent: none, or the approval said without specs. */
   draftsDir?: string;
+  /** A dry run of a bare commit (merge.try with no branch, so no worktree to read): its drafts are the ones committed
+   *  in it, read from the copy at that commit, never a folder's untracked ones. Ignored when `draftsDir` is given. */
+  draftsFromCommit?: true;
   /** The checks the merge thread added for this entry (merge.extend), on top of required + triggers. */
   picks: CheckPick[];
   /** A release entry: the release's own gating checks (its `release.checks`, captured at the release's start), run
@@ -49,10 +52,14 @@ export interface RunInput {
    *  Absent: none yet (pushes are held until the merge thread's interview writes it). */
   namesFile?: string;
   /** A dry run (merge.setup dryRun): reset to `base`, set up, run `project.def`'s checks there; no merge, no
-   *  docs, no reruns, no review. The entry is a stand-in (its branch is the target). */
+   *  reruns, no review. The entry is a stand-in (its branch is the target). A trial (`trialOf`) runs the landing's
+   *  docs step first, on `draftsDir` (or the commit's own drafts), and keeps nothing it made. */
   tryOnly?: true;
   /** A trial (merge.try) of this branch or commit: the try runs on it, not on the target, and its words say so. */
   trialOf?: string;
+  /** A dry run: the target's definition and head, so a check that fails again and the target also declares is run on
+   *  the target alone with the target's own definition of it (whose failure). Absent: no comparison. */
+  trialTarget?: { def: ProjectDef; head: string };
   /** Run the review step (the project declares a kit and the approval didn't skip it). */
   review: boolean;
   /** Aborted when the run is voided (master moved, cancelled, server stopping). */
@@ -123,6 +130,8 @@ export interface RunOutcome {
   noChecks?: true;
   /** The checks it ran, with sources. */
   checks: CheckPick[];
+  /** A dry run that failed (or couldn't run): what holds the branch up, its run id filled in by the queue. */
+  trialFailure?: Omit<import("../../shared/merge-queue").BranchFailure, "run">;
 }
 
 /** copy-checks' entry point: one run, start to verdict. Never throws for a red check: every outcome is a value

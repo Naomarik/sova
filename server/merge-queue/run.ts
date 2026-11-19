@@ -14,7 +14,7 @@
  */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { CheckPick, MergeNote, ReviewVerdict, RunStep, RunStepKind, StepResult } from "../../shared/merge-queue";
 import type { ProjectDef, StepDecl } from "../../shared/project-contract";
 import { render } from "../../shared/project-contract";
@@ -616,8 +616,9 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
 /**
  * A dry run (merge.setup dryRun; RunInput.tryOnly): the checks a project is about to declare, run on the target itself,
  * merging nothing. The copy reset to `base`, setup, then the checks `input.project.def` declares (the user's unsaved
- * answer), each failure run once more (a pass then is noted flaky). No docs, no review, no attribution: a red here is
- * the project's own, never a branch's. Outcome: passed (noChecks when "none"), failed with the failing step's label,
+ * answer), each failure run once more (a pass then is noted flaky). No review, no attribution: a red here is the
+ * project's own, never a branch's. A trial (merge.try, `trialOf`) of a branch or commit runs the landing's docs step
+ * after setup, before any check, and judges whose a red check is (trialWhose). Outcome: passed (noChecks when "none"), failed with the failing step's label,
  * machine or void.
  */
 async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise<RunOutcome> {
@@ -660,8 +661,39 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     if (failed.timedOut) return voided(`setup ${failed.failed.id} timed out`);
     const again = await runSetup({ def, scope, steps, idPrefix: "rerun-tip:setup:", labelPrefix: "Setup again: ", kind: "rerun-tip", fresh: true, signal });
     if (signal.aborted) return voided("aborted");
+    if (again && input.trialOf && input.trialTarget) {
+      // Setup failing on the commit and on the target too is the machine's: the dry run couldn't run, nobody blamed.
+      const t = input.trialTarget;
+      const mv = steps.start("rerun-master:copy", "rerun-master", `Copy to ${target} alone`);
+      let onTarget: Awaited<ReturnType<typeof runSetup>> | "unmoved" = "unmoved";
+      try {
+        await moveCopy({ path: copy, commit: t.head, log: mv.log, signal });
+        mv.end("passed", { detail: short(t.head) });
+        onTarget = await runSetup({ def: t.def, scope: { ...scope, tip: t.head, base: t.head }, steps, idPrefix: "rerun-master:setup:", labelPrefix: `Setup on ${target} alone: `, kind: "rerun-master", fresh: true, signal });
+      } catch (err) {
+        mv.end("failed", { detail: String(err instanceof Error ? err.message : err) });
+      }
+      if (signal.aborted) return voided("aborted");
+      if (onTarget) return out({ verdict: "machine", why: `setup (${again.failed.id}) fails on ${where} and on ${target} alone`, copy });
+      const line = `Setup (${again.failed.id}) fails at ${short(input.commit)}. This branch's change breaks it.`;
+      return out({ verdict: "failed", why: line, copy, trialFailure: { kind: "dry-run", commit: input.commit, whose: "branch", line, checks: [{ id: `setup:${again.failed.id}`, label: `Setup (${again.failed.id})`, step: again.step.id, whose: "branch" }] } });
+    }
     if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${where} (log: ${again.step.log})`, copy });
     notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun`, at: now() });
+  }
+  // A dry run of a branch or commit (§app.project-setup/trial): the landing's own docs step, before any check, so the
+  // checks judge the spec as it will be once the branch lands. The docs commit stays in the copy: nothing is kept.
+  if (input.trialOf) {
+    const own = input.draftsFromCommit && !input.draftsDir ? await committedDrafts(copy, input.runDir) : undefined;
+    const docs = await makeDocs({ input: own ? { ...input, draftsDir: own } : input, copy, steps, ident: await identityEnv(copy), deps, signal });
+    if (own) rmSync(own, { recursive: true, force: true });
+    if (signal.aborted) return voided("aborted");
+    if (docs.kind === "machine") return out({ verdict: "machine", why: docs.why, copy });
+    if (docs.kind === "refused") return out({ verdict: "failed", blame: "branch", cause: "drafts", why: docs.why, copy, trialFailure: { kind: "dry-run", commit: input.commit, whose: "branch", line: docs.why, checks: [{ id: "docs", label: "Spec docs", step: "docs", whose: "branch" }] } });
+    if (docs.kind === "made") {
+      scope.tip = docs.sha;
+      writeFileSync(changedFile, `${(await gitOut(copy, ["ls-tree", "-r", "--name-only", "HEAD"]).catch(() => "")).trim()}\n`);
+    }
   }
   const list = planChecks(def, input.picks, input.releaseChecks).map((c) => (input.trialOf ? { ...c, picked: true as const } : c));
   checksShown = picksOf(list);
@@ -683,6 +715,8 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       }
     }
     const red: string[] = [];
+    // A dry run's checks still red after their rerun, with what each named (for whose failure and the Fix line).
+    const reds: { check: PlannedCheck; step: string; tests: { file?: string; name?: string; message?: string }[]; named: string[]; first?: string }[] = [];
     for (const check of list) {
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source });
       const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, fresh: freshOf(def, { release: isReleaseRun(input) }), signal });
@@ -703,13 +737,94 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       } else {
         again.end("failed", { detail: r2.proc.code === 0 ? "the rerun ran no test" : `exit ${r2.proc.code}` });
         red.push(check.label);
+        const tests = (r2.report?.failures ?? r.report?.failures ?? (r2.failingFiles.length ? r2.failingFiles : r.failingFiles).map((file) => ({ file }))).slice(0, 50);
+        const first = firstOutputLine(r2.proc.out) ?? firstOutputLine(r.proc.out);
+        reds.push({ check, step: `rerun-tip:${check.id}`, tests, named: r2.failingFiles.length ? r2.failingFiles : namesOf(r2), ...(first ? { first } : {}) });
       }
+    }
+    if (red.length && input.trialOf) {
+      const failure = await trialWhose({ input, deps, copy, scope, steps, reds, signal });
+      if (signal.aborted) return voided("aborted");
+      return out({ verdict: "failed", why: failure.line, copy, trialFailure: failure });
     }
     if (red.length) return out({ verdict: "failed", why: `${red.join(", ")} fail${red.length === 1 ? "s" : ""} on ${where}`, copy });
     return out({ verdict: "passed", copy });
   } finally {
     await services?.down().catch(() => undefined);
   }
+}
+
+/**
+ * Whose a dry run's red checks are, as a landing tells it (§app.project-setup/trial): each one the target also declares
+ * runs on the target's head alone, in the same copy, with the target's own definition of it. Passing there: the
+ * branch's change breaks it; failing there with every name the branch's failed too (or naming none on either side):
+ * the target's too; failing with names the target hasn't: the branch's. A check the target doesn't have is the
+ * branch's alone; setup failing on the target, or a rerun that ran no test, can't tell.
+ */
+async function trialWhose(o: {
+  input: RunInput;
+  deps: RunDeps;
+  copy: string;
+  scope: CopyScope;
+  steps: Steps;
+  reds: { check: PlannedCheck; step: string; tests: { file?: string; name?: string; message?: string }[]; named: string[]; first?: string }[];
+  signal: AbortSignal;
+}): Promise<NonNullable<RunOutcome["trialFailure"]>> {
+  const { input, copy, steps, reds, signal } = o;
+  const target = input.project.target;
+  const t = input.trialTarget;
+  const checks: NonNullable<RunOutcome["trialFailure"]>["checks"] = reds.map((r) => ({ id: r.check.id, label: r.check.label, step: r.step, whose: "branch" as const, ...(r.tests.length ? { tests: r.tests } : {}) }));
+  const shared = t ? reds.filter((r) => Array.isArray(t.def.merge?.checks) && t.def.merge.checks.some((c) => c.id === r.check.id)) : [];
+  if (t && shared.length) {
+    const mv = steps.start("rerun-master:copy", "rerun-master", `Copy to ${target} alone`);
+    let moved = true;
+    try {
+      await moveCopy({ path: copy, commit: t.head, log: mv.log, signal });
+      mv.end("passed", { detail: short(t.head) });
+    } catch (err) {
+      mv.end("failed", { detail: String(err instanceof Error ? err.message : err) });
+      moved = false;
+    }
+    const baseScope: CopyScope = { ...o.scope, tip: t.head, base: t.head };
+    const setupFailed = moved && !signal.aborted ? await runSetup({ def: t.def, scope: baseScope, steps, idPrefix: "rerun-master:setup:", labelPrefix: `Setup on ${target} alone: `, kind: "rerun-master", signal }) : null;
+    for (const r of shared) {
+      const c = checks.find((x) => x.id === r.check.id)!;
+      if (signal.aborted) break;
+      if (!moved || setupFailed) {
+        c.whose = "unclear";
+        continue;
+      }
+      const planned = planChecks(t.def, [{ id: r.check.id, label: r.check.label, source: "picked", why: "whose failure" }]).find((x) => x.id === r.check.id);
+      if (!planned) continue;
+      const st = steps.start(`rerun-master:${r.check.id}`, "rerun-master", `${r.check.label} on ${target} alone`);
+      const rr = await runCheck({ def: t.def, scope: baseScope, check: { ...planned, picked: true as const }, stepId: `rerun-master:${r.check.id}`, logFile: st.file, fresh: freshOf(t.def, { rerun: true }), signal });
+      if (rr.proc.aborted || signal.aborted) {
+        st.end("failed", { detail: "aborted" });
+        break;
+      }
+      if (rr.proc.code === 0 && ranNothingIn(rr.report)) {
+        st.end("passed", { detail: `the run on ${target} ran no test: can't tell whose failure` });
+        c.whose = "unclear";
+      } else if (rr.proc.code === 0) {
+        st.end("passed", { detail: `passes on ${target}: the branch's` });
+        c.whose = "branch";
+      } else {
+        const onT = rr.failingFiles.length ? rr.failingFiles : namesOf(rr);
+        const mine = r.named.filter((n) => !onT.includes(n));
+        c.whose = r.named.length && onT.length && mine.length ? "branch" : r.named.length && !onT.length ? "unclear" : "master";
+        st.end("failed", { detail: c.whose === "master" ? `fails on ${target} too` : c.whose === "branch" ? `fails on ${target} too; ${mine.length} of ${r.named.length} only with the branch` : `fails on ${target} too, naming no tests: can't tell whose failure` });
+      }
+    }
+  }
+  const whose: "branch" | "master" | "unclear" = checks.some((c) => c.whose === "branch") ? "branch" : checks.some((c) => c.whose === "unclear") ? "unclear" : "master";
+  const lead = checks.find((c) => c.whose === whose) ?? checks[0]!;
+  const sha = short(input.commit);
+  const names = (lead.tests ?? []).map((x) => x.name ?? x.file).filter((x): x is string => !!x);
+  const first = reds.find((r) => r.check.id === lead.id)?.first;
+  const fails = names.length ? `${names.length} failing test${names.length === 1 ? "" : "s"} (${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""})` : (first ?? "it printed nothing");
+  const words = whose === "branch" ? "This branch's change breaks it." : whose === "master" ? `Fails on ${target} too: not this branch's.` : `Can't tell whose failure: it fails on ${target} alone too.`;
+  const more = checks.length > 1 ? ` (and ${checks.length - 1} more check${checks.length === 2 ? "" : "s"})` : "";
+  return { kind: "dry-run", commit: input.commit, whose, line: `${lead.label} fails at ${sha}${more}: ${fails}. ${words}`, checks };
 }
 
 /** The run's outcome with the review's verdict folded in. */
@@ -822,7 +937,8 @@ async function makeDocs(o: { input: RunInput; copy: string; steps: Steps; ident:
   const st = o.steps.start("docs", "docs", "Spec docs");
   // Only the branch's own drafts land: an untracked one it carries, or a tracked one it adds or changes. A tracked
   // draft the target already has (a project that commits its drafts) is never landed, changed or deleted here.
-  const names = await ownDrafts(o.copy, o.input.base, o.input.commit, snapshot);
+  // A dry run's base is the tried commit itself: the branch's own are told against the target's head, as at landing.
+  const names = await ownDrafts(o.copy, o.input.tryOnly ? (o.input.trialTarget?.head ?? o.input.base) : o.input.base, o.input.commit, snapshot);
   const others = snapshot.filter((n) => !names.includes(n));
   if (others.length) st.log(`not the branch's (tracked, unchanged by it): ${others.length} draft${others.length === 1 ? "" : "s"}${others.length <= 10 ? ` (${others.join(", ")})` : ""}\n`);
   if (!names.length) {
@@ -859,6 +975,22 @@ async function makeDocs(o: { input: RunInput; copy: string; steps: Steps; ident:
   }
 }
 
+/** A bare commit's dry run: the drafts committed in it (the copy is at that commit), copied out file by file so no
+ *  untracked draft of any folder rides along. undefined: it commits none. */
+async function committedDrafts(copy: string, runDir: string): Promise<string | undefined> {
+  const prefix = ".sova/spec/drafts/";
+  const files = (await gitProc(copy, ["ls-files", "-z", "--", prefix])).out.split("\0").filter((f) => f.startsWith(prefix));
+  if (!files.length) return undefined;
+  const dir = join(runDir, "drafts");
+  rmSync(dir, { recursive: true, force: true });
+  for (const f of files) {
+    const to = join(dir, f.slice(prefix.length));
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(join(copy, f), to);
+  }
+  return dir;
+}
+
 /** Of `snapshot`'s draft names, the branch's own: untracked in both the target and the pinned commit, or changed by
  *  the branch since its merge base with the target. */
 export async function ownDrafts(copy: string, base: string, commit: string, snapshot: readonly string[]): Promise<string[]> {
@@ -879,8 +1011,11 @@ export async function ownDrafts(copy: string, base: string, commit: string, snap
 
 async function landDrafts(o: { input: RunInput; copy: string; ident: Record<string, string>; signal: AbortSignal }, st: Step, names: string[], tool: string): Promise<{ kind: "none" } | { kind: "made"; sha: string } | { kind: "refused"; why: string } | { kind: "machine"; why: string }> {
   const a = o.input.entry.approval;
-  const by = a.by === "typed" ? "the user (land it, typed in the branch's chat)" : "the user (Land)";
-  const verification = `Made official by the merge queue: ${o.input.entry.branch} at ${short(o.input.commit)}, approved ${a.at.slice(0, 16).replace("T", " ")}; committed before the run's checks (run ${o.input.runId})`;
+  const dry = !!o.input.tryOnly;
+  const by = dry ? "the merge queue (a dry run, never landed)" : a.by === "typed" ? "the user (land it, typed in the branch's chat)" : "the user (Land)";
+  const verification = dry
+    ? `Made official in the merge copy for a dry run of ${o.input.trialOf ?? o.input.entry.branch} at ${short(o.input.commit)}: never landed, published or kept (run ${o.input.runId})`
+    : `Made official by the merge queue: ${o.input.entry.branch} at ${short(o.input.commit)}, approved ${a.at.slice(0, 16).replace("T", " ")}; committed before the run's checks (run ${o.input.runId})`;
   const argv = [process.execPath, tool, "land", "--commit", "HEAD", "--by", by, "--verification", verification, "--write", "--root", o.copy, "--json"];
   st.log(`$ ${argv.slice(1).join(" ")}\n`);
   const p = await runProc(argv, { cwd: o.copy, env: { ...process.env as Record<string, string> }, timeoutMs: 300_000, signal: o.signal, log: st.log });
@@ -915,7 +1050,8 @@ async function landDrafts(o: { input: RunInput; copy: string; ident: Record<stri
   const c = await gitProc(o.copy, [...NO_BACKGROUND_CLEANUP, "commit", "--no-verify", "-m", subject, "-m", String(j.commitMessage?.body || verification), "-m", `Sova-Spec-Landing: merge-queue ${o.input.runId}`], { env: o.ident, log: st.log });
   if (c.code !== 0) return (st.end("failed", { detail: tail(c.out) }), { kind: "machine", why: `committing the docs failed: ${tail(c.out)}` });
   const sha = await gitOut(o.copy, ["rev-parse", "HEAD"]);
-  keepLandedDrafts(o.input.runDir, o.copy, sha, names, st.log);
+  // A dry run lands nothing: no record for the branch folder's drafts.
+  if (!dry) keepLandedDrafts(o.input.runDir, o.copy, sha, names, st.log);
   st.end("passed", { detail: `${short(sha)}: ${subject}` });
   return { kind: "made", sha };
 }

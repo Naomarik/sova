@@ -32,7 +32,7 @@
   "description": "@92bd36452c3a5ac1",
   "parameters": {
    "type": "object",
-   "properties": "@ed12ed5c1a654f15",
+   "properties": "@e7455d0540dbd8bd",
    "required": [
     "verb"
    ],
@@ -58,6 +58,10 @@
     "query": {
      "type": "string",
      "description": "where: the words, path or name; map: a namespace"
+    },
+    "id": {
+     "type": "string",
+     "description": "A §id (toc, read, impact, map)"
     },
     "dir": {
      "type": "string",

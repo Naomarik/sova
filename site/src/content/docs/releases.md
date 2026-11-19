@@ -22,8 +22,8 @@ Releases are off until a project is set up for them. On the project page's **Rel
 version, its changelog, its remotes and checks) and asks you how it releases: the version rule, the
 notes, the channel, each step and who does it, the checks only a release runs, a live try-out, and
 what happens after publishing. It then proposes a release playbook and a `release` section of the
-project's `.sova/project.json` on a branch, which you review and **Land** once a trial of that
-commit has passed. [Release
+project's `.sova/project.json` on a branch, which you review and **Land**: its new or changed
+checks get a [dry run](/docs/dry-runs/) of that commit first. [Release
 settings](/docs/release-settings/) says what each holds.
 
 ## Start a release

@@ -21,6 +21,14 @@ function setup(o: { notPage?: string | null; dirty?: boolean; held?: boolean } =
       calls.push(`how ${how} ${where}`);
       return { state: "saved" };
     },
+    async trial(req) {
+      calls.push(`dry-run ${req.branch} ${req.commit}`);
+      return { waiting: { id: "tw_1", branch: req.branch, commit: req.commit, by: req.by, at: "t", after: "the landing of feat/x", needs: "adds the merge check Unit" } };
+    },
+    async stopTrial(req) {
+      calls.push(`stop ${req.run ?? req.waiting}`);
+      return {};
+    },
     async clearLandHowOverride() {
       if (o.held) throw new MergeFailure("invalid-request", "how it lands can't change while release v0.4.0 is open: change it after Publish or Abandon");
       calls.push("clear");

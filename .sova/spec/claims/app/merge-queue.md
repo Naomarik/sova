@@ -137,6 +137,12 @@ nothing blocks the approved commit and its drafts, Sova puts it in line by itsel
 commit, with no new Land. A new commit becomes the one that goes in line only as a fix the chat
 answered with, under the fix rules of §app.merge-queue/standing-approval.
 
+**A setup branch's dry run comes first.** Land on a setup branch whose head has no passing dry run
+is taken as **Approved · dry run first**: it joins the line, its dry run runs at its turn, and on a
+pass its landing run follows at once, with no new Land (§app.project-setup/land-gate). A dry run that
+fails on the branch's change sends it back to its chat with the Land standing
+(§app.merge-queue/send-back).
+
 **Real work keeps Land, whatever it reads.** Land is taken on a branch with something left
 (§chat.worktrees/nothing-left) whatever its row says: a conflict, a chat still working, questions still
 open. The row says that true state beside Land (§chat.composer/worktrees-control), and the approval goes
@@ -147,8 +153,8 @@ on as any other does.
   or `merge.add`: "Nothing to land: everything on this branch is already on {target}." ({target} is the project's: "… already on master." where it lands on
   master.) No check runs, nothing reaches the target and no entry or other record is made. It comes
   first: only what is about the project and not the branch comes before it (the target branch itself,
-  a repository the queue doesn't serve, an invalid or unset definition), so such a branch is never told
-  to run a trial, or that it is a scratch copy or has uncommitted files or a temporary commit. A branch
+  a repository the queue doesn't serve, an invalid or unset definition), so such a branch is never offered
+  a dry run, or told that it is a scratch copy or has uncommitted files or a temporary commit. A branch
   whose only leftovers are spec drafts is not refused: its approval lands just the drafts
   (§app.merge-queue/run), and an approval of it without its specs is refused with the same sentence. Such
   an approval keeps the temporary-commit refusal below. An answer of unknown is not nothing, and isn't refused here;
@@ -159,8 +165,6 @@ on as any other does.
 - a repository the queue doesn't serve (not on the Projects list, or its merge setup not done), with
   "not a project the merge queue serves: merge it into main from the chat", making no queue record
   (§app.merge-queue/served);
-- the project's setup branch at a commit with no passing trial: "This setup branch has no passing
-  trial at {sha7}: run a trial of it first." (§app.project-setup/land-gate);
 - while the target's `.sova/project.json` doesn't parse, any branch but one whose own commit carries
   a valid definition declaring checks: "The project's .sova/project.json is invalid: {path}:
   {message}. Fix it on the target, or land a branch that fixes it; nothing else lands until it
@@ -312,7 +316,8 @@ Every problem that is the branch's goes back to the branch's chat **by itself**,
 no wait for the user, unless it needs the user (§app.merge-queue/needs-user). The user's Land stands
 meanwhile (§app.merge-queue/standing-approval).
 
-**What goes back.** A failure proven the branch's (§app.merge-queue/blame); a conflict the merge
+**What goes back.** A failure proven the branch's (§app.merge-queue/blame), a landing's or, under the
+user's Land, a dry run's (§app.project-setup/trial); a conflict the merge
 thread rules the chat should fix (§app.merge-queue/conflicts); a blocking review's whole report
 (§app.merge-queue/review); spec drafts that don't fit at landing (§app.merge-queue/run); a setup or
 install failure that is the branch's; on a project that lands on its host, host checks failing,
@@ -368,7 +373,8 @@ that was already there when the user pressed Land (once).
 - **Out of tries**, the entry waits for the user: its card moves down as **Out of tries** with the
   reason ("Tried 3 times: Unit tests failed each time", "Failed the same way twice: …"), **Land**
   (try again: a new entry and standing approval at the branch's newest commit with 3 new tries, the
-  old entry ending "landed again by you") and **Remove from Queue**. Nothing more goes to the chat
+  old entry ending "landed again by you") and **Remove from Queue**; on the branch's rows Land gives its
+  place to **Fix**, with Fix in New Chat and Land in its menu (§app.merge-queue/fix). Nothing more goes to the chat
   for it. Exactly one notification is sent (§app.notifications/delivery), and it shows in the Merge
   Queue tab's Needs you and the landing bar.
 - The card shows the count while the entry is with its chat: "Back with the chat · try 2 of 3 · Unit
@@ -404,7 +410,14 @@ also fails on the target alone (§app.merge-queue/blame), the merge thread rules
 same 5 minutes a diagnosis waits (§app.merge-queue/send-back): from the logs it may find it the
 branch's (the chat fixes it) or try again, which counts no try. Only when it doesn't settle it does
 the entry wait for the user as **Can't tell whose failure · waiting for you**, with the check and
-its log, and exactly one notification is sent; once raised, only the user settles it:
+its log, and exactly one notification is sent. While the thread rules, before any question
+reaches the user, the entry shows under Needs you as **Waiting for the merge thread** (info), "Can't
+tell whose failure: the merge thread is judging it; it asks you if it can't tell.", with See Why,
+Review Changes and **Remove from Queue** only: never Ready with Land, and no Land, Land Anyway, Try
+Again, Fix or failure line until it is raised. It counts in neither the Needs you tab's count nor its
+warn colour, never takes the landing bar, and sends no notification; its branch's rows, the chat's
+queue card and the composer's worktrees control read the same ("1 waiting for the merge thread",
+§chat.composer/worktrees-control). Once raised, only the user settles it:
 - **Land Anyway** lands the tested commit, noted "Landed anyway: {why}". When the target has moved
   since the run, it is rerun first, and a rerun that still can't tell lands too.
 - **Try Again** puts the entry back in line at the same commit, to run every check afresh; it counts
@@ -464,7 +477,8 @@ own folder, so a failure at any step, the first included, has its log.
    landing to mark the branch's drafts with (§app.merge-queue/land, §app.merge-queue/publish);
    nothing reaches the branch's folder here. The step is skipped, with its reason, for a project
    with no spec, an approval without its specs, or a branch with no drafts of its own ("no spec
-   drafts of the branch's own").
+   drafts of the branch's own"). A dry run (§app.project-setup/trial) runs this step too, on its
+   own commit with the branch's drafts as they stand when it starts, and keeps nothing it made.
 6. **Checks.** The checks run on that commit, in order (§app.merge-queue/checks), with the review
    (§app.merge-queue/review) alongside them.
 7. **Reruns.** A red check is rerun to place the blame (§app.merge-queue/blame), always fresh: a
@@ -534,7 +548,8 @@ A paused queue starts no run until **Resume**.
 
 The checks come from the project's definition, read from the **target's** copy of it, never the
 branch's. A branch that changes the definition is checked with the target's list, and its own
-list takes effect once it lands.
+list takes effect once it lands; the checks it adds or changes are proved first, by its dry run
+(§app.project-setup/trial).
 
 **The definition's `merge` section** (§app.project-services/contract) declares the project's
 required checks. Each check has an id, a label, an argument list and an optional time limit, and
@@ -569,7 +584,7 @@ never "passed".
 A check the project marks optional runs only when the merge thread picks it (Sova's: `e2e`, one
 build and then each picked end-to-end walkthrough, and
 `integration-group`, one slow integration group per pick). An optional check that takes a selection
-and is given none (a trial picks every optional check with none, §app.project-setup/trial) never
+and is given none (a dry run picks every optional check it runs with none, §app.project-setup/trial) never
 fails for it: `e2e` reads "skipped: no walkthrough selected", and `integration-group` runs the slow
 groups a landing runs for the branch's changes since its merge base with the target, or reads
 "skipped: no slow group applies to this branch's changes" when there are none. A pick on a required check that would
@@ -589,7 +604,7 @@ reason and, for a check that takes one, its selection: the slow integration grou
 walkthroughs, it names (`merge.extend`'s `select`, §chat.merge-queue/thread). A pick of a check the
 project marks `needsSelect` (§app.project-services/contract) that names no selection is refused
 (`invalid-request`, saying `"<id>" (<label>) runs with a selection: send the pick's select (its
-groups, files or walkthroughs)`), and nothing that call names is added; a trial's picks
+groups, files or walkthroughs)`), and nothing that call names is added; a dry run's picks
 are Sova's own and still run with none (above). It can add checks,
 never drop the required ones. Picks count only if they arrive before
 the run's checks start; otherwise the run uses the required checks and their triggers alone.
@@ -623,8 +638,8 @@ retrying an entry on an unchanged target runs only what didn't pass.
 - **Always fresh.** The reruns that place the blame (§app.merge-queue/blame), every check of a
   release (§app.release/checks), and every check when the project turns reuse off (Settings →
   Merge Queue, "Reuse passes from identical code", on by default, §app.merge-queue/settings) run
-  every file, with `SOVA_FRESH=1`; a setup branch's trial and `merge.setup`'s dry run
-  (§app.project-setup/trial) follow the same rule. A fresh run still
+  every file, with `SOVA_FRESH=1`; a setup branch's dry run (§app.project-setup/trial)
+  and `merge.setup`'s own **Test run of the checks** (§app.merge-queue/setup) follow the same rule. A fresh run still
   keeps its passes. Setup and install steps get neither variable.
 
 **What a check sees.** It runs in the copy with the instance's own ports and variables, through an
@@ -730,8 +745,8 @@ run**.
   branch carries on, its other checks deciding as usual, so it lands when they pass. The queue
   doesn't pause, and nothing waits for the user.
 - **The flag.** "{check} is broken on {target}: no test ran ({first line it printed})" ("exit {code}"
-  in the brackets when it printed nothing but the runner's framing), so the user can start a chat
-  to fix the target. It shows on the run (§app.merge-queue/view), in the Merge Queue tab's Needs
+  in the brackets when it printed nothing but the runner's framing), with **Fix in New Chat**, which
+  starts a chat to fix it on a new branch from the target (§app.merge-queue/fix). It shows on the run (§app.merge-queue/view), in the Merge Queue tab's Needs
   you, in the landing's note as a Red on the target too note, on the strip's "Red on {target} alone:
   {check}", and as one push notification per check (§app.notifications/delivery). Finding it again
   in later runs updates the flag and sends no second notification.
@@ -1188,15 +1203,16 @@ form: the Setup chat is the only way to set the queue up, and there is no Initia
 The Setup chat reads the project, asks the user what it can't find, and proposes the queue's
 checks on a setup branch: listed checks, one test command with its time limit and what starts first,
 or "no automated tests" (`"checks": "none"`), with the way of landing suggested from `origin`
-(§app.merge-queue/strategies). It tries them for real on that branch's head in the merge copy
-(§app.project-setup/trial), and the branch can be merged only once such a trial of its head passed
+(§app.merge-queue/strategies). It proves them with a dry run of that branch's head in the merge copy
+(§app.project-setup/trial), and the branch can be merged only once such a dry run of its head passed
 (§app.project-setup/land-gate). Merge Branch merges it into the target, the main folder
 fast-forwarded, never forced, and refused while it has uncommitted changes
 (§app.project-runtime/merge); from then on the queue serves the project, and its branches land
 through it. A project with no `.sova/project.json` yet gets one on that branch.
 
 `merge.setup` stays as the operator's own verb (§app.project-services/merge-verbs): no chat may call
-it, with or without a dry run.
+it, with or without a test run. Its run of the checks before a save is called **Test run of the
+checks** on screen, never a dry run, which is only a setup branch's (§app.project-setup/trial).
 
 **A definition that doesn't parse is not "not set up".** Only a missing `.sova/project.json` (or one
 declaring neither checks nor a test command) is not set up. When the target's file is there but
@@ -1226,7 +1242,7 @@ there; {target} then moves to exactly that commit.", and what setting it up chan
 up, branches land here only through the queue.", with
 **Set Up with a Chat**, which opens the project's Setup chat (§app.merge-queue/setup,
 §app.project-setup/start). While a setup branch is proposed or the Setup chat is working, the tab
-shows the proposal, its newest trial and the chat's state in that banner's place
+shows the proposal, its newest dry run and the chat's state in that banner's place
 (§app.project-setup/proposal). **Held** and **Retired** (below) show under it as well, as two plain
 sections, since retirement covers every listed project. For a project it serves, it
 shows, top to bottom:
@@ -1276,9 +1292,10 @@ Under them, the same whatever tab is chosen:
 - **Checking now**: the branch, its commit and chat, "{target} {base} + this branch → testing
   {tip}",
   the current check ("check N of M") with a meter, when it started, how long it takes, how many
-  checks the merge thread added, and **View Checks**. With nothing checking, the card says so in its
-  place: "Nothing being checked", then what happens next (or the frozen line above while a release
-  holds the queue).
+  checks the merge thread added, and **View Checks**. While a dry run runs, the card shows it in a
+  landing's place, with **Stop Dry Run** (§app.merge-queue/dry-runs). With nothing checking and no
+  dry run running, the card says so in its place: "Nothing being checked", then what happens next
+  (or the frozen line above while a release holds the queue).
 - **Waiting**, a section that opens and closes. It starts closed each time the Merge Queue tab is
   opened or reloaded, a return from a run's page included, and the project page's **Refresh
   Project** and a page the browser restores from its back-forward cache close it too; switching
@@ -1292,28 +1309,33 @@ Under them, the same whatever tab is chosen:
   in ~N min · takes ~N min", newer commits not included, and **Remove from Queue**. A release's own
   entry reads **Release** as its chip; while a release holds the queue, the other entries show no
   estimate and say why they wait. While the merge thread holds new starts
-  (§app.merge-queue/empty), each waiting entry says "Waiting: Sova is restarting" instead.
+  (§app.merge-queue/empty), each waiting entry says "Waiting: Sova is restarting" instead. While a
+  dry run runs, the header says its entries start once it ends, and the estimates count its
+  remaining time (§app.merge-queue/dry-runs); an entry whose dry run comes first reads "Approved ·
+  dry run first" as its chip.
 
 **The status tabs.** Under Waiting, a strip of tabs, in this order: **Ready to land**, **Needs
 you**, **With its chat**, **Waiting on GitHub** (or **Waiting on GitLab**, or **Waiting on the host** for a project that
 only pushes its branches; only on a project that lands on its host, or while an entry still waits
-on one, §app.merge-queue/requests), **Held**, **Landed** and **Queue chats**. One tab shows at a time, under the strip; **Ready to land** is chosen
+on one, §app.merge-queue/requests), **Held**, **Landed**, **Dry runs** (§app.merge-queue/dry-runs) and
+**Queue chats**. One tab shows at a time, under the strip; **Ready to land** is chosen
 first. Each tab shows exactly the rows its section showed before the tabs (Ready to land was "Ready
 to land, not approved", Landed was "Recent", Queue chats was "History"), with the same contents and
 actions, nothing more and nothing fewer. A tab with nothing in it stays in the strip and, when
 chosen, says in one line what the queue is doing now, then what will show there ("The queue is
 idle. A branch shows here when it needs your decision."; the words: §design.copy-deck/merge-queue).
 The fact is the queue's live state: "The queue is idle.", "1 being checked.", "1 being checked,
-{n} waiting.", "{n} waiting.", "The queue is paused." or "The queue is paused with {n} waiting."
+{n} waiting.", "1 dry run running.", "1 dry run running, {n} waiting.", "{n} waiting.", "The queue is
+paused." or "The queue is paused with {n} waiting."
 An empty tab's panel can be reached with the keyboard (Tab from the strip focuses it, with the focus
 ring), so its line is read; a panel with rows is reached through its rows' own controls. Each tab's label carries its count ("Needs you ·
-2"), but for Landed, which has none; Needs you's counts its rows, the broken-check rows included,
-and is in the warn colour while it is above 0. Landed shows at most the newest 20.
+2"), but for Landed and Dry runs, which have none; Needs you's counts its rows, the broken-check rows included
+and the rows waiting for the merge thread's ruling left out, and is in the warn colour while it is above 0. Landed and Dry runs each show at most the newest 20.
 
 **The tab is in the address.** The chosen tab is part of the page's address, so a reload, Back and
 Forward, and a link copied from the page keep it: Ready to land is the plain
 `#/projects/<pid>/merge-queue`, and each other tab adds its word (`…/merge-queue/needs-you`,
-`with-its-chat`, `waiting-on-host`, `held`, `landed`, `queue-chats`). A run opened from a tab keeps the tab
+`with-its-chat`, `waiting-on-host`, `held`, `landed`, `dry-runs`, `queue-chats`). A run opened from a tab keeps the tab
 in its address (`…/merge-queue/needs-you/<run>`; from Ready to land, `…/merge-queue/<run>`), and
 its **Back to Queue** returns there. Coming back from a run's page (Back to Queue, the path's
 "Merge queue" or the browser's Back) scrolls the page so the tab strip is at its top, where the
@@ -1353,7 +1375,9 @@ The tabs' rows:
   drafts left is listed whatever its head's subject says, and though it landed at that commit; a branch removed from the queue shows here again;
   the list is read at most every 15 seconds, so that row may take that long to appear). Land on a
   row whose chip says it is blocked for something its chat can fix approves it as **Approved ·
-  waiting for a fix** (§app.merge-queue/approve).
+  waiting for a fix** (§app.merge-queue/approve). A setup branch's row also shows its dry run state
+  for its head, its why and its actions: Run Dry Run, Stop Dry Run, or Fix with Fix in New Chat
+  (§app.merge-queue/dry-runs, §app.merge-queue/fix).
   Each shows its chat and branch, then its chip, commit and "{n} commits ahead · +{a} −{d} ·
   {when}",
   and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…,
@@ -1391,8 +1415,16 @@ The tabs' rows:
     ("Choices: a · b"), "The merge queue's note to the chat isn't sent yet: it goes with your
     answer." and **Answer in Chat** ("can't be settled without you" when it came from a chat's "Can't");
   - **Can't tell whose failure · waiting for you**, with the check that failed on both sides, its
-    log, and Land Anyway and Try Again (§app.merge-queue/blame);
-  - **Out of tries**, with the reason and Land (§app.merge-queue/tries);
+    log, Land Anyway, Try Again and Fix in New Chat (§app.merge-queue/blame, §app.merge-queue/fix); a
+    dry run that can't tell waits here the same way, and so does a Land's dry run that fails on
+    {target} too, as **Dry run failed · waiting for you**, saying its failure once ("Fails on
+    {target} too: not this branch's"), with Fix and Run Dry Run Again beside it, and Fix in New Chat
+    and Land Anyway in Fix's ▾ menu (§app.project-setup/trial);
+  - **Waiting for the merge thread**, a Can't tell whose failure the merge thread is still ruling on
+    (§app.merge-queue/needs-user), with its line, See Why, Review Changes and Remove from Queue only;
+    it isn't counted in the tab's label;
+  - **Out of tries**, with the reason and Fix in Land's place, Land in its menu after Fix in New Chat
+    (§app.merge-queue/tries, §app.merge-queue/fix);
   - **A fix needs your OK**, a fix on top of your own work or too wide, with Land
     (§app.merge-queue/standing-approval);
   - **Drafts changed since you approved**, with Land and Remove from Queue;
@@ -1402,8 +1434,9 @@ The tabs' rows:
   - and, at the top, before the entries and apart from them, one row per test check broken on the
     target (§app.merge-queue/blame), which counts in the tab's label even with no entry: a **Broken
     on {target}** chip and when it was first found, "{check} is broken on {target}: no test ran
-    ({first line})", "Every branch skips it until it's fixed, and lands without it. Start a chat in
-    this project to fix it on {target}.", and **View the Log**, which opens the run that found it.
+    ({first line})", "Every branch skips it until it's fixed, and lands without it.", **Fix in New Chat**, which starts
+    a chat to fix it on a new branch from {target} (§app.merge-queue/fix), and **View the Log**, which
+    opens the run that found it.
     It asks nothing and holds nothing up.
 - **With its chat**: entries whose standing approval stands while their chat fixes something
   (§app.merge-queue/standing-approval), and branches **Approved · waiting for a fix**
@@ -1503,7 +1536,8 @@ card's, banners', Queue chats' and the run page's buttons are 44px tall; a row's
 Land's size. Nothing is offered only on hover.
 
 **The run page** (`…/merge-queue/<run>`) shows:
-- its path, "Merge queue › {branch}", led by a back arrow named **Back to Queue** that opens the
+- its path, "Merge queue › {branch}" (a dry run's adds "· Dry run" and says a dry run's words,
+  §app.merge-queue/dry-runs), led by a back arrow named **Back to Queue** that opens the
   tab on the status tab the run was opened from (44px square on a touch screen);
 - the branch and its verdict, the base, the branch's commit and the tested commit, when it started
   and how long it took, its chat, and how it was approved;
@@ -1521,9 +1555,8 @@ Land's size. Nothing is offered only on hover.
   on both sides, "Nobody is blamed. Land Anyway lands the commit it tested; Try Again checks it
   afresh.", Land Anyway, Try Again and Remove from Queue); a test check broken on the target (a warning banner per
   such check, "{check} is broken on {target}: no test ran ({first line})", with "Skipped for this
-  branch; it doesn't block. Every branch skips it until it's fixed on {target}: start a chat to fix
-  it
-  there.", beside the run's own verdict, §app.merge-queue/blame); stopped at a
+  branch; it doesn't block. Every branch skips it until it's fixed on {target}.", with **Fix in New
+  Chat** (§app.merge-queue/fix), beside the run's own verdict, §app.merge-queue/blame); stopped at a
   step, not the branch's fault (retried once, then paused, no chat told); stopped before it
   finished (nothing blamed); or passed, the target moved to exactly the tested commit;
 - for a red run, a "Whose failure is it?" block (machine or setup, already failing on the target,
@@ -1556,8 +1589,9 @@ to fit its panel counts as at its bottom, and keeps following as it grows past i
 stops following; scrolling back to the end resumes it.
 
 Every action here is a catalogue command: Land, Remove from Queue,
-Pause, Resume, Accept, Land Anyway, Try Again, Start Fresh, Clear and Clear All over
-the merge verbs (§app.project-services/merge-verbs), Update Local Main, Publish and a
+Pause, Resume, Accept, Land Anyway, Try Again, Start Fresh, Clear, Clear All, Run Dry Run, Run Dry
+Run Again and Stop Dry Run over the merge verbs (§app.project-services/merge-verbs), Fix and Fix in
+New Chat (§app.merge-queue/fix), Update Local Main, Publish and a
 branch summary's Try Again over the queue's own routes, which the merge thread can't call, and
 Restore over `session.worktree.restore` (§app.session-commands/sessions-sweep). Queue
 Settings and Open on GitHub only
@@ -1566,6 +1600,170 @@ from the session feed's merge-queue frames, at desktop and phone widths. The sam
 served
 project's, also drive the sidebar's landing bar, which opens this tab at an entry for the actions it
 doesn't take in place (§app.merge-queue/landing-bar).
+
+## §app.merge-queue/dry-runs — Dry runs, shown wherever the branch and the queue show
+
+A dry run (§app.project-setup/trial) is about one branch but holds the whole queue while it runs, so
+it shows both where the branch shows and where the queue shows, always with what it is and why.
+
+**One vocabulary.** A setup branch's dry run state for its **newest commit** is one of these chips,
+each with its line, the same on every screen below (the words: §design.copy-deck/merge-queue):
+- **Needs a dry run** (info): no dry run of the head yet, "Needs a dry run: {why}" ({why} the
+  branch's setup change, §app.project-setup/trial: "Needs a dry run: adds the merge check Playbook
+  tests");
+- **Approved · dry run first** (info): the user's Land stands and its dry run waits its turn, with its
+  place ("Approved · dry run first · 2nd") and "Your Land stands: it lands by itself once its dry run
+  passes.";
+- **Dry run waiting** (info): the operator's Run Dry Run waits for the merge copy and starts by
+  itself once it is free, "Dry run waiting · starts after {what holds the copy}" ("the landing of
+  {branch}", "the dry run of {branch}", "release {tag}"), never refused as busy
+  (§app.project-setup/trial);
+- **Dry run running** (accent, as Checking): "Dry run running · check {N} of {M}: {why}";
+- **Dry run passed** (success): "Dry run passed at {sha7}", then the branch reads as any other;
+- **Dry run failed** (error): the failure line (§app.merge-queue/fix), naming the failing check and
+  tests, the commit and whose failure it is; one that also fails on the target reads "Fails on
+  {target} too: not this branch's" and waits for the user (§app.project-setup/trial);
+- **Dry run stopped** (warn): "Dry run stopped by you" ("by {chat}", "by a Sova restart", "by a newer
+  dry run"; a plain "Dry run stopped" when nothing recorded who, never "by you" when nobody pressed
+  Stop), then "Run it again.", never "fix it";
+- **Dry run couldn't run** (warn): "Dry run couldn't run: {why}. That's the machine, not this branch:
+  run it again.";
+- **Can't tell whose failure** (warn), with its answers (§app.project-setup/trial).
+
+A dry run of an older commit is never shown as the branch's current one (§chat.worktrees/newest-commit).
+
+**What it is, beside every one.** Every dry-run chip and line carries one plain sentence, "A dry run
+checks the merge checks this branch adds or changes before they judge every branch after it.", and a
+**What's a dry run?** link that opens the explainer (§app.merge-queue/dry-run-explainer).
+
+**On the Merge Queue tab** (§app.merge-queue/view):
+- **Checking now** shows a running dry run in place of a landing, never "Nothing being checked" while
+  one runs: a **Dry run** chip, its chat and branch, "{branch} at {sha} · started by {who}" ({who}:
+  "you", "your Land", its chat's title), its why ("Needed: {why}", as the Dry runs tab and the landing
+  bar say it), "Runs this branch's new or changed checks on its own
+  commit. Nothing lands from a dry run; landings wait until it ends.", what it runs ("Runs {n} of {m}
+  checks: the ones this branch adds or changes.", or "Runs the setup steps only: it changes no
+  check."), the current check ("check N of
+  M") with a meter, when it started and how long it should take, **View Checks** and **Stop Dry Run**.
+- **Waiting** counts the dry run's remaining time in its estimates, and while one runs says its
+  entries start once it ends ("Waiting · 2 · they start once the dry run ends"). An entry approved
+  with a dry run first shows "Approved · dry run first" as its chip, in line order; a dry run the
+  operator's Run Dry Run left waiting shows there too, in line order, with its **Dry run waiting**
+  chip and line, its chat and branch, and **Stop Dry Run**.
+- An empty status tab's live fact names it: "1 dry run running." or "1 dry run running, {n} waiting."
+- The **Dry runs** tab, between Landed and Queue chats, lists the project's newest 20 dry runs, newest
+  first, the running one at the top: each with its chat and branch, its commit, who started it, its
+  result chip, when it ran and how long it took ("2h ago · took 4 min"), its why, and **View Checks**;
+  a running one also **Stop Dry Run**. Like Landed, its label has no count. Empty: "{fact} Each dry
+  run shows here."
+- The branch's **Ready to land** row shows its chip and line, with the actions below, and one state
+  chip only: the dry run's, unless it passed, then the chat's readiness chip.
+
+**On the branch's rows**: the Ready to land tab, the composer's worktrees control and its modal
+(§chat.composer/worktrees-control) and the session pane's Worktrees section (§chat.worktrees/pane)
+show the same chip and line, its sentence and link, and its actions:
+- Needs a dry run, Dry run stopped and Dry run couldn't run: **Land** (which runs the dry run first,
+  §app.project-setup/land-gate) and, beside it, **Run Dry Run** (**Run Dry Run Again** after one ran);
+- Dry run waiting or running: **Stop Dry Run** (cancelling a waiting one), and Land (which waits
+  for it);
+- Dry run failed, the branch's own: **Fix** in Land's place, its ▾ menu leading with **Fix in New
+  Chat**, then Run Dry Run Again and Land (§app.merge-queue/fix); failing on the target too, or Can't
+  tell whose failure: Fix with **Run Dry Run Again** beside it, and in the ▾ menu Fix in New Chat,
+  Land, and **Land Anyway** where a Land stands on it;
+- Dry run passed: Land, as on any branch.
+
+**The landing bar** reads a running dry run as its running state (§app.merge-queue/landing-bar-states):
+"Dry run · {branch}".
+
+**The run page** of a dry run (`…/merge-queue/<run>`, `…/merge-queue/dry-runs/<run>` when opened from
+the Dry runs tab, whose Back to Queue returns there) says **Dry run** in its head chip and path ("Merge
+queue › {branch} · Dry run"), who started it and why it was needed, and "Nothing lands from a dry run."
+in place of the landing's "Nothing has merged from this run" line; **Stop Dry Run** while it runs. Its
+verdicts are a dry run's: "Dry run passed. {branch} at {sha} can land." ("… lands now: your Land
+stands." when one does), the failure line (§app.merge-queue/fix) with Fix and Fix in New Chat, Can't
+tell whose failure with its answers, stopped (by whom) or couldn't run (the machine's). Its **Checks
+and why** lists every check, those it didn't run as **Not run (unchanged)**, and each it ran with the
+landing's tags, time, counts and Log; a check rerun on the target shows that run too. Its legend is
+the dry run's own: "Runs the checks this branch adds or changes; the rest show Not run (unchanged)."
+It says the commit ran "on its own (not merged with {target})". Its Spec docs step shows before the
+checks, as a landing's does: made, skipped with its reason, or failed with what doesn't fit.
+
+**Run Dry Run, Run Dry Run Again and Stop Dry Run** are the operator's own click in Sova's page
+(§app.access/your-click), refused to scripts, chats' tools and the Overseers with where to click; the
+chat that started a dry run may stop it with the merge verb (§app.project-services/merge-verbs). Each
+is a catalogue command (§app/commands). Run Dry Run while the copy is busy is never refused and
+its button never disabled: the dry run waits its turn, its chip and line reading Dry run waiting,
+and starts once the copy is free (§app.project-setup/trial); its toast says "Dry run of {branch}
+waiting · starts after {what holds the copy}.", else "Started a dry run of {branch} at {sha7}.", from
+every button and menu item that runs one. Stop Dry Run answers "Stopped the dry run of
+{branch}.", and on a waiting one cancels it before it starts. Each screen follows the dry run live, from the session feed's merge-queue frames.
+
+## §app.merge-queue/fix — Fix and Fix in New Chat on a held-up branch
+
+When a failure holds a branch up at its newest commit, its row says so in plain words and offers to
+fix it, rather than only to land it again.
+
+**When.** A branch is held up by a failure when its dry run of the head failed, fails on the target
+too, or can't tell whose failure it is (§app.project-setup/trial), or its landing waits as Out of tries or Can't tell whose
+failure (§app.merge-queue/needs-user). Its row (on the Merge Queue tab, in the worktrees modal and in
+the session pane) and its run page then show:
+- **the failure line**: the failing check, its failing tests (up to three, then "+{n} more") or what
+  it printed, the commit ("at {sha7}"), and whose it is: "This branch's change breaks it", "Fails on
+  {target} too: not this branch's", or "Can't tell whose failure: it fails on {target} alone too";
+- **Fix** where Land (or Run Dry Run Again) was, always the button, and in its ▾ menu **Fix in New
+  Chat** first, then the actions Fix took the place of (Run Dry Run Again, Land), then the menu's
+  usual items. A dry run that fails on a check the target also fails ("Fails on {target} too: not
+  this branch's") stops and asks the user: Fix with Run Dry Run Again beside it, and Fix in New Chat
+  and **Land Anyway** in the ▾ menu (§app.project-setup/trial). A Can't tell whose failure decision keeps its own Land Anyway and Try
+  Again beside it.
+
+**What Fix sends.** Fix sends the branch's own chat (§app.merge-queue/owner) the failure's whole
+context, as the user's message: what ran (a dry run or a landing) and on which commit, the failing
+check with its failing tests and their errors, where its logs are (the run page and each log's path),
+whose failure it is by the comparison with the target, and the branches it holds up (the line waiting
+behind it, the branches that skip a check broken on the target). It ends: "Explain what's wrong and
+propose how to fix it, then stop and wait for my guidance. Don't change any files before I answer.
+Until I answer, that holds over anything else this chat is told: no edits, no commits and no merges,
+not even of the target." The chat does exactly that: it diagnoses, proposes and waits, editing,
+committing and merging nothing until the user answers.
+Fix opens the chat. It is refused, nothing sent, while that chat is working ("{chat} is working: wait
+for its turn to end, then press Fix.") or open in a terminal ("{chat} is open in a terminal: Fix can't
+send to it from here."), and on a branch with no known chat ("No chat works on this branch: use Fix
+in New Chat."). A refused Fix is never a dead button: its refusal shows on hover and as a line under
+the row on press. Fix in New Chat's menu line says where it works ("Starts a chat with the failure, on
+a new branch from {target}." or "… on this branch."); the toasts are "Sent the failure to {chat}." and
+"Started a chat to fix {check} on {branch}." ("… on a new branch from {target}.").
+
+**Fix in New Chat** starts a fresh coding chat of the project with that same context as its first
+message, ending the same way, and opens it: for a failure the target shares, or a check broken on the
+target, on a new branch cut from the target's newest commit; for the branch's own failure, on this
+branch, in its worktree, refused like Fix while the branch's chat there is working or open in a
+terminal. It is also on the Needs you tab's **Broken on {target}** row and the run page's broken-check
+banner (§app.merge-queue/broken-check), on a new branch from the target.
+
+**Once fixed**, the row goes back by itself: a newer commit on the branch is read afresh (Needs a dry
+run, or its landing state), so the button returns to Land or Run Dry Run Again; a dry run that passes
+on Try Again ends the hold too. Nothing is landed or approved by Fix or Fix in New Chat. Both are the
+operator's own click (§app.access/your-click) and catalogue commands (§app/commands).
+
+## §app.merge-queue/dry-run-explainer — What's a dry run?
+
+Every **What's a dry run?** link (§app.merge-queue/dry-runs) opens a short explainer over the screen:
+a dialog with room, a bottom sheet on a phone, closed by Close, Escape or the scrim, focus back on the
+link. In four short parts, in plain words (the words: §design.copy-deck/merge-queue):
+- **what it is**: a run of the merge checks a branch adds or changes, on its exact commit, in the merge
+  copy; nothing lands from it and nothing is saved;
+- **why it differs from running the tests**: a landing is checked with {target}'s checks, never the
+  branch's own, so a branch can't weaken the checks judging it; so a new or changed check never runs
+  while its branch lands, and the dry run proves it works before it judges every branch after it.
+  Running the tests checks the code; a dry run checks the checks;
+- **which branches need one**: only those that change the project's pipeline settings (merge checks,
+  release checks or playbook, deploy targets, or a service a merge check needs), and each new commit
+  of one;
+- **what it costs**: only the new or changed checks and the setup steps run, so it is usually short;
+  it uses the one merge copy, so landings wait while it runs; Land runs it first, then lands by itself.
+
+It ends with **Dry runs in the docs**, the same text as a docs page (§site.docs/dry-runs).
 
 ## §app.merge-queue/discard-branch — Discard Branch…: a branch you won't land, gone with its folder and chat
 
@@ -1867,8 +2065,9 @@ Its states are §app.merge-queue/landing-bar-states; its detail, its actions and
 collapsed forms are §app.merge-queue/landing-bar-detail.
 
 **Which state wins.** One bar shows one state, in this order: a release that needs you; a landing
-that needs you (only while nothing runs; while a landing runs it shows only in the detail); a release
-in progress; a running landing; a paused queue; then just landed or published.
+that needs you (only while nothing runs; while a landing or a dry run runs it shows only in the
+detail); a release in progress; a running landing or dry run; a paused queue; then just landed or
+published.
 
 **About a minute.** Just landed, Pull request opened, Pushed and Published each stay **about a minute**,
 for every landing and release, a landing with a note too; then the bar goes. They go at once when the
@@ -1904,10 +2103,16 @@ shows to about two lines in the hover card and in full in the detail:
   adds mid-run adds its segment and {M} grows by one. The review runs beside the checks, so it is never a segment; its state is in
   the detail. A project that opens a pull or merge request, or only pushes the
   branch, shows its own steps the same way (§app.merge-queue/strategies).
+- **Dry run** (a dry run running, §app.merge-queue/dry-runs): "Dry run · {branch}", sub line
+  "check {N} of {M} · ~{n} min left", the track one segment per step it runs (copy, setup, then each
+  check it runs), and the count "+{n}" for the entries waiting for it. The hover card and the detail
+  add its why, who started it and "Nothing lands from a dry run."; the detail's links are **Branch
+  Chat**, **Checks** (its run page) and **Queue**. It never reads Landing.
 - **Needs you** (warn tone): an entry waiting for the user's decision (Behaviour differs, a
   question the merge thread or the chat raised, Can't tell whose failure, Out of tries, a fix that
   needs your OK, Drafts changed since you approved, Review the request; §app.merge-queue/needs-user),
-  its branch and one line of why, in the tab's words. An entry back with its chat is never one. A conflict the merge thread is judging is not one: at most the detail
+  its branch and one line of why, in the tab's words. An entry back with its chat is never one, nor one
+waiting for the merge thread's ruling on whose failure it is (§app.merge-queue/needs-user). A conflict the merge thread is judging is not one: at most the detail
   says "{branch} · conflict being judged". While a landing runs, a waiting entry does not take the bar
   and adds nothing to it (no chip, no count): it appears only in the detail. With nothing running,
   the waiting entry takes the bar, with the warn icon.

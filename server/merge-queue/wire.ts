@@ -29,7 +29,6 @@ import { projectKey } from "./store";
 import { sessionsChanged } from "../list-generation";
 import { LandingNotes, SERVED_FILE_NAME, ServedRule, servedKey, servedRule, setServedRule, type SetupOf, startServedWriter } from "./served";
 import type { ProjectOf } from "../project-root";
-import { trialEndedText } from "./setup-branch";
 import { gitRefsStamp } from "../worktrees";
 
 /**
@@ -381,7 +380,8 @@ let bareSettingsOf: ((root: string) => Promise<import("../../shared/merge-queue-
 /** A listed project's settings while the queue doesn't serve it, made without a queue (settings.ts bareSettings);
  *  null while the queue isn't started or its target has no commit. */
 /** The gate's answer when it can't read what it needs: never a quiet pass. */
-export const TRIAL_UNREADABLE = "Sova can't confirm a passing trial of this branch now: try again in a moment.";
+export { TRIAL_UNREADABLE } from "./setup-branch";
+import { TRIAL_UNREADABLE } from "./setup-branch";
 
 /**
  * Why a branch head can't merge or land yet as a setup branch (setup-branch.ts): it changes the project's setup and no
@@ -906,24 +906,47 @@ export async function startMergeQueue(
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
     },
-    // A trial's end reaches the chat that started it, as a request on its merge queue chat queue (between turns).
-    trialEnded: (t, run, root) => {
-      if (t.by.kind !== "chat" || !t.by.session) return;
-      const session = t.by.session;
-      void (async () => {
-        const path = await sessionPath(session);
-        if (!path) return;
-        (await import("../merge-readiness")).rereadReadiness(path);
-        await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run), undefined, { kind: "trial", ...(t.branch ? { branch: t.branch, place: placeLabel(root, served.everyProject()) } : {}) });
-      })().catch((err) => console.warn(`[merge-queue] trial note to ${session}: ${err instanceof Error ? err.message : err}`));
+    // A dry run's end reaches the chat that started it, and the branch's chat when a Land waits on it, as a note on its
+    // merge queue chat queue (between turns).
+    trialEnded: (t, _run, root, tell) => {
+      for (const session of tell.sessions)
+        void (async () => {
+          const path = await sessionPath(session);
+          if (!path) return;
+          (await import("../merge-readiness")).rereadReadiness(path);
+          await (await import("./wake")).sendQueueWake(path, tell.text, undefined, { kind: "trial", ...(t.branch ? { branch: t.branch, place: placeLabel(root, served.everyProject()) } : {}) });
+        })().catch((err) => console.warn(`[merge-queue] dry run note to ${session}: ${err instanceof Error ? err.message : err}`));
     },
+    fixOffer: async (o) => (await import("./fix-live")).liveFixOffer(o),
+    // A dry run moved (started, ended, began or stopped waiting): the branch's owner chat and the chat that started it
+    // read their readiness again now, so their open pages follow it (the slow poll alone lags by minutes).
+    trialMoved: ({ branch, by }, root) =>
+      void (async () => {
+        const sessions = new Set<string>();
+        if (by.kind === "chat" && by.session) sessions.add(by.session);
+        const wt = (await worktreesOf(realGit, root).catch(() => [])).find((x) => x.branch === branch && canonical(x.path) !== canonical(root));
+        const owner = wt ? await worktreeOwnerOf(wt.path).catch(() => null) : null;
+        const id = owner?.session;
+        if (id) sessions.add(id);
+        const { rereadReadiness } = await import("../merge-readiness");
+        for (const s of sessions) {
+          const path = await sessionPath(s);
+          if (path) rereadReadiness(path);
+        }
+      })().catch((err) => console.warn(`[merge-queue] dry run readiness re-read for ${branch}: ${err instanceof Error ? err.message : err}`)),
     // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
     // The chat's own newest check run, as its last readiness reading saw it (never a fresh read): a failing one keeps a
     // fix out of line (§app.merge-queue/standing-approval), in the words Ready to land uses.
-    chatCheckFailing: async (session) => {
+    chatCheckFailing: async (session, worktree) => {
       const [{ listedSession }, { readinessChecksOf }, { lastCheckWords }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
       const path = (await listedSession(session))?.path;
-      const c = path ? readinessChecksOf(path)?.lastCheck : undefined;
+      const read = path ? readinessChecksOf(path) : undefined;
+      // The run that blocks this tree now (a failing one with no newer evidence, §chat.worktrees/newest-commit).
+      if (read?.blocking && worktree) {
+        const b = read.blocking[canonical(worktree)] ?? read.blocking[worktree];
+        return b ? lastCheckWords(b) : null;
+      }
+      const c = read?.lastCheck;
       return c && !c.ok ? lastCheckWords(c) : null;
     },
     newestReading: async (worktree, tip) => {
@@ -1054,6 +1077,27 @@ export async function startMergeQueue(
       const queue = (await q.peek(p.root)) ?? (await q.get(p.root));
       const target = await queue.targetHead();
       return target ? queue.setupUntried(target, head) : null;
+    },
+    // The commit a tree's branch was at when a check ran: its newest commit made by then.
+    commitAt: async (dir, at) => {
+      const r = await realGit(["log", "-1", `--before=@${Math.floor(at / 1000)}`, "--format=%H", "HEAD"], dir);
+      return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null;
+    },
+    // Newer evidence than a failing check run: a passing dry run or merge queue run of a later commit of the branch.
+    passedAfter: async (dir, branch, commit, kind) => {
+      const p = await projectOf(dir);
+      if (p.state !== "ok" || !p.git || !served.isListed(p.root)) return false;
+      const queue = (await q.peek(p.root)) ?? (await q.get(p.root));
+      return queue.passedAfter(branch, commit, kind);
+    },
+    // A setup branch's dry run state at its head, with Fix on a failure (§chat.worktrees/newest-commit).
+    dryRunAt: async (dir, branch, head, session) => {
+      const p = await projectOf(dir);
+      if (p.state !== "ok" || !p.git || !served.isListed(p.root)) return null;
+      const queue = (await q.peek(p.root)) ?? (await q.get(p.root));
+      const dr = await queue.dryRunOf(branch, head);
+      if (dr?.failure) dr.fixOffer = await (await import("./fix-live")).liveFixOffer({ root: p.root, branch, worktree: dir, ...(session ? { session } : {}), shared: dr.failure.whose !== "branch" }).catch(() => undefined);
+      return dr;
     },
     readyToLand: (t) =>
       void projectOf(t.path)

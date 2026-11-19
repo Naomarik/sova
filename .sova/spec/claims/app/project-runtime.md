@@ -93,18 +93,65 @@ Project verbs playbook: this host offers neither Claude Code Opus 5.5 nor openai
 Pick a model to run it with." It counts like a coding session against the
 project's limits, and the operator merges its branch; nothing else does.
 
+**One standing chat.** Each project has at most one open chat per verb playbook, the Project verbs
+chat for `project-verbs`, kept as the Setup chat is (§app.project-setup/chat): it remembers what it
+learned across refinements, and it stays open after it proposes and after it ends with "No change".
+The operator's Set Up with a Chat or Change Setup… (§app.project-runtime/software-card) starts it
+when there is none and otherwise opens it, sending nothing; each message the operator types in it is
+a refinement (§app.project-runtime/playbook). An overseer's start (`sova_project_verbs` `onboard`)
+while the chat is open and idle is delivered to it as its next message, the playbook's turn plus the
+why, and never archives it; while the chat is working, waits on the operator's answers or holds a
+proposal not merged it is refused (below).
+
+**One worktree and branch for its life.** The chat keeps the worktree and branch it started on and
+reuses them for every proposal. After its branch merges (Merge Branch, or a Land through the merge
+queue, §app.project-runtime/merge) it carries on in that same worktree and branch, merging the
+project's target into it first, as the Setup chat does. Only when its worktree was removed or its
+build retired can it not go on there: it is then no longer the project's Project verbs chat, and the
+next press (or an overseer's start) starts a new chat on a new branch from the target's newest
+commit, told the earlier chats' paths, as a Start Fresh carries them.
+
+**Start Fresh…** in the chat's head (where the Overseer's Clear sits in its own,
+§app.overseer/head-layout) replaces it, only on the operator's own press, after a confirm: with a
+branch holding commits beyond the target, "This chat is archived and a new one starts now; what it
+learned goes with it. Its proposal on {branch} stays open, and the new chat carries on in that
+branch.", with none "This chat is archived and a new one starts now, on a new branch; what it
+learned goes with it.", with **Cancel** and **Start Fresh**. Confirmed, the chat is archived, a new
+one starts with the playbook's turn, told the earlier chats' paths, and opens, and the toast says
+"Started a fresh Project verbs chat." It is an operator act of Sova's own page and a command of the
+commands catalogue, never an overseer's or a chat's: neither Overseer's `sova_project_verbs` offers
+it, and nothing else archives the chat for a start. While the chat's worktree has uncommitted edits
+the press is refused instead of asking to confirm: "The Project verbs chat's worktree has edits not
+committed: commit or discard them in that chat, then Start Fresh." While the chat is working it is
+disabled, with "The Project verbs chat is working: wait for its turn to end (or stop it), then
+Start Fresh." under it. A branch with commits beyond the project's target stays: the new chat carries on in
+the same worktree, branch and proposal, and is told the old chat's path. One with none ends with
+the old chat: Sova removes the empty worktree and branch and the new chat starts on a new branch.
+Archiving the chat any other way does the same, and the next press starts a new chat (on the kept
+branch and proposal, when there is one). No path leaves the operator to remove a worktree by hand.
+
 It needs the power `onboard` when the overseer starts it on its own, and it is refused when the project is
-archived, when the project's folder is not on this host ("{name}'s folder is on {target}: the
-playbook runs only on a local folder." or "{name}'s folder {root} is missing on this host."), when
-the playbook is missing ("No playbook \"project-verbs\" is listed for {name}."), while a run
-is already live ("The Project verbs playbook is already running: \"{title}\"."), and so while an
-earlier setup run's chat is still open, read from the project's builds even when the run's region
-lost it: working, waiting on alignment questions, or holding commits not merged counts as live;
-ended with no change, its chat neither archived nor its worktree removed, it holds a start too, as
-"The last setup run, \"{title}\", ended with no change but its chat is still open: open that chat to
-carry on, or archive it to start over."; and, for an
-unattended overseer, while the software is registered and current ("The project's software is
-registered and current: the playbook has nothing to do.").
+archived ("{name} is archived. Unarchive it first."), when the project's folder is not on this host
+("{name}'s folder is on {target}: the playbook runs only on a local folder." or "{name}'s folder
+{root} is missing on this host."), for `project-verbs` only, when the folder can't hold a branch
+("Running copies are set up on a branch: {name}'s folder isn't a Git repository.", "…: the
+repository has no commits yet.", "…: its checkout is on a detached HEAD."; never a refusal of the
+Setup chat, deploy or release), when the playbook is missing ("No playbook \"project-verbs\" is
+listed for {name}."), for an overseer's start while the chat is working ("The Project verbs playbook
+is already running: \"{title}\"."), read from the project's builds even when the run's region lost
+it, or while it waits on the operator's answers to its alignment questions ("The Project verbs chat
+waits on the user's answers in \"{title}\": a start reaches it once they are answered.", as
+§app.project-runtime/verb-playbooks keeps those answers the operator's), or while its proposal
+awaits the operator's review, proposed and not merged ("The Project verbs chat's proposal on
+{branch} waits on the user's review: a start reaches it once it is merged."), so an overseer never
+changes a proposal the operator hasn't reviewed, while the operator's own message in the chat
+still can; and, for an unattended
+overseer, while the software is registered and current ("The project's software is registered and
+current: the playbook has nothing to do."). A chat that ended with no change, or whose branch was
+merged, still open, refuses nothing: the button opens it, and an overseer's start is its next
+message. The archived, host
+and Git refusals are read for the setup line before any press (`can.onboardWhy`), from the same
+rule as the start, so the line and a press say the same sentence.
 
 `playbook` (optional, default `project-verbs`) names another verb playbook the project's folder lists
 (§app.project-runtime/verb-playbooks); the run's title is then "{its title}: {project}", and every
@@ -115,7 +162,12 @@ The run's region moves idle → running → proposed (its branch has commits and
 idle (merged, or its worktree removed); a run that ended with no commits returns to idle with the
 result "no change". A turn that ends while the session has open alignment questions waiting on the
 operator (§chat.alignment/session-mark) moves it to waiting instead, whatever its branch holds, and
-the next turn (the operator's answer) moves it back to running. The registry's feed (the Recent list's, §app.project-runtime/standing) says
+the next turn (the operator's answer) moves it back to running. In the standing chat, a turn that
+starts after the run ended (a refinement the operator typed, or an overseer's start delivered to
+it) moves the region from idle back to running: after "No change", as that turn starts; after its
+branch was merged, once the turn's new commits show, since a merged branch reads as merged before
+it reads as working, so the region rejoins when the refinement's first commit is seen and goes to
+proposed. The registry's feed (the Recent list's, §app.project-runtime/standing) says
 "The Project verbs playbook was started{: why}.", "The Project verbs playbook could not start.",
 "The Project verbs playbook finished with no change.", "The Project verbs playbook proposes a
 definition on {branch}: read it, then merge it." ("… proposes a deploy recipe on {branch}: …" for a playbook
@@ -192,7 +244,11 @@ the next message. Its frontmatter says `proposes: definition` (§app.project-run
 
 A run that finds nothing to change commits nothing and ends "No change: the contract matches the
 project." A rerun with nothing changed therefore leaves the branch and the definition byte for
-byte as they were. It never merges, pushes, touches the main checkout or its running
+byte as they were. Its playbook text tells it that it is a standing chat
+(§app.project-runtime/onboard): it stays open after a proposal or "No change", and treats each new
+message from the operator as a refinement to do even when nothing in the project changed (the test
+runner, a setup step, a service, a port), changing only what the message names and keeping the
+rest as step 3 does; it ends "No change" only when the message asks for nothing it can change. It never merges, pushes, touches the main checkout or its running
 processes, starts anything outside the verbs, or runs deploy or production tasks.
 Its contract reference names every key the parse accepts, `adopt` included (a slot-0 unit the
 operator already runs, §app.project-services/adopt), which a project it onboards almost never needs.
@@ -205,16 +261,29 @@ one line saying whether the project's services are set up, read from the registr
 "checked {time}" (when its definition was proven, else registered) where there is one, then the
 line's buttons.
 
-- **Registered**: "Services set up" (success), and **Run Again**.
-- **Unregistered**: "Not set up yet" (warn), and **Run Playbook**.
+- **Registered**: "Services set up" (success), and **Change Setup…**.
+- **Unregistered**: "Not set up yet" (warn), and **Set Up with a Chat**. Above the line, while the
+  project was never set up, "Running copies aren't set up yet" and "A chat reads the project, writes
+  how it runs and how its tests run, and proposes it on a branch for you to merge."
 - **Conforming**: "Checking the services" (info).
-- **Stale**: "Out of date" (warn), **Run Again**, and under it "Changed since: {paths}".
-- **Failed**: "Setup failed" (error), **Run Again**, and under it "Failed at {check}: {detail}"
+- **Stale**: "Out of date" (warn), **Change Setup…**, and under it "Changed since: {paths}".
+- **Failed**: "Setup failed" (error), **Change Setup…**, and under it "Failed at {check}: {detail}"
   (or the definition's error).
 
-Run Playbook and Run Again (`POST /api/projects/:pid/verbs/onboard`, §app.project-runtime/onboard)
-show only while the statechart would take them, and not while the project is archived; started,
-"The Project verbs playbook started on {branch}." Under the line, each orphan, "{service} still
+Set Up with a Chat and Change Setup… are the one way in to the project's standing Project verbs
+chat (§app.project-runtime/onboard): the first press starts it (`POST
+/api/projects/:pid/verbs/onboard`), with no note box, and says "The Project verbs playbook started
+on {branch}."; every press after opens that chat at once, whatever it last did (working, waiting
+on answers, proposed, merged, or ended with "No change"), and sends nothing: you say what to refine
+by typing in it. Once that chat's worktree was removed or its build retired, the next press starts
+a new chat on a new branch, told the earlier chats (§app.project-runtime/onboard). Wherever the button can't start or open the chat, it is not offered and the line
+says why in one sentence, before any press, the same sentence a press would answer (`can.onboardWhy`,
+from the same refusal as the start): archived ("{name} is archived. Unarchive it first."), the
+folder on another machine or missing ("{name}'s folder is on {target}: the playbook runs only on a
+local folder." / "{name}'s folder {root} is missing on this host."), or no Git ("Running copies are
+set up on a branch: {name}'s folder isn't a Git repository." / "…: the repository has no commits
+yet." / "…: its checkout is on a detached HEAD."). The button is never hidden without its
+sentence. Under the line, each orphan, "{service} still
 runs in {copy}, no longer declared." with an **Orphan** chip (warn); while a playbook run is live,
 its strip (§app.project-runtime/run-progress); while one is proposed, **Merge Branch** or **Land**
 (§app.project-runtime/merge) on the line and its review (§app.project-runtime/run-report) under it.
@@ -255,9 +324,10 @@ raises the same item, banner and push, labelled "Project setup": "Project setup 
 setup on {branch}." (the banner's body and button are the Setup chat's own, read from its proposal,
 §app.project-setup/proposal), the item's body "Read it, then merge it into {target}." (with no valid setup at its head,
 "Project setup proposes changes on {branch}." with "Its branch has no valid setup: read its report."),
-and its button is the setup proposal's own (**Run Trial** with "Run a trial of
-{sha7} first: it lands only once its own checks pass." until a trial of the head passed, then Land or
-Merge Branch through the Setup chat's route; "Reading the setup proposal." while it is read). The Setup
+and its button is the setup proposal's own (on a project the queue serves, **Land**, which runs a dry
+run of the head first when none passed; on one it doesn't serve yet, **Run Dry Run** with "Run a dry
+run of {sha7} first: it merges only once its new checks pass." until a dry run of the head passed,
+then Merge Branch; each through the Setup chat's route; "Reading the setup proposal." while it is read). The Setup
 item goes as soon as its proposal does (§app.project-setup/proposal: its branch lands or merges, its
 worktree is removed, or the current Setup chat runs a turn), at the next read of Needs you; on a
 project the queue serves it stays while the approved branch waits in the queue, until it lands. The
@@ -265,21 +335,22 @@ same proposal read again keeps the time it was first listed.
 
 The state chip on a `playbook-review` row says where the proposal stands. On a Setup proposal it
 follows the same reading of the proposal as the row's button, so the two can't disagree, and it
-changes within about 5 seconds of a trial starting or ending. The first line that holds:
+changes within about 5 seconds of a dry run starting or ending. The first line that holds:
 
 | The Setup proposal | Chip | Tone |
 |---|---|---|
 | Still being read | Proposed | neutral |
 | Waiting in the merge queue | Queued | neutral |
 | The setup on its branch doesn't read | Blocked | warn |
-| A trial of its head is running | Running | accent |
-| No trial of its head yet | Your turn | warn |
-| The trial of its head failed | Failed | error |
-| The trial of its head didn't finish | Your turn | warn |
-| The trial of its head passed, and landing is refused | Blocked | warn |
-| The trial of its head passed, and Land or Merge Branch is on offer | Ready | success |
+| A dry run of its head is running | Running | accent |
+| No dry run of its head yet, on a project the queue serves (Land runs one first) | Ready | success |
+| No dry run of its head yet, on a project the queue doesn't serve | Your turn | warn |
+| The dry run of its head failed | Failed | error |
+| The dry run of its head was stopped or couldn't run | Your turn | warn |
+| The dry run of its head passed, and landing is refused | Blocked | warn |
+| The dry run of its head passed, and Land or Merge Branch is on offer | Ready | success |
 
-Ready is true only in the last line. A trial alone never takes the item away: the row stays listed
+Ready is true only where Land or Merge Branch is on offer. A dry run alone never takes the item away: the row stays listed
 while one runs, showing Running, and nothing else about what lists or what the Overseer counts
 changes. Any other `playbook-review` row shows Ready when it can be merged, and Blocked (warn) when
 it has nothing valid to merge (no hash, so no button).
@@ -333,7 +404,9 @@ data resource with its Sensitive chip, whether copies can be shared ("Shares {en
 "Never shared", or "Shares nothing"), the entry point ("Opens at {endpoint}{path}", or "No entry
 point"), and the conformance ("Conformance passed (suite v{n})" with the measured memory of
 each service, or "Conformance failed at {check}: {detail}", or "No conformance of this definition
-yet"). For a run whose playbook proposes `deploy`, the registry's read of the proposal also carries the
+yet"), the tests ("Tests: {run} · smoke: {selectors}", the command as one line, or "No test
+command"), and the setup steps ("Setup steps: {id}, {id}, …" in the order they run, or "No setup
+steps"). For a run whose playbook proposes `deploy`, the registry's read of the proposal also carries the
 branch's deploy recipe as Sova renders it: for each target, in the order they run, every credential
 check, plan step, build step, step and rollback step as an argv with this host's `${host.…}` values in
 place (a name this host lacks shown unset, never guessed), its verify and its rollback; the setup

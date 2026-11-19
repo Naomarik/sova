@@ -266,7 +266,7 @@ test("the file's facts: tracked trees, a check's result, the last reply; a later
   const { scan, facts } = await r.readReadinessScan(path, size, null);
   assert.equal(scan.found, true);
   assert.equal(facts?.trees[0]?.branch, "feat/agents-row-dropdown");
-  assert.deepEqual(facts?.lastCheck, { at: Date.parse("2026-09-29T19:41:00.000Z"), ok: true });
+  assert.deepEqual(facts?.lastCheck, { at: Date.parse("2026-09-29T19:41:00.000Z"), ok: true, what: "test run", kind: "test run" }, "a passing run keeps its command's kind");
   assert.equal(facts?.lastReply?.text.includes("Shall I record the spec update"), true);
   // Appended: the user answers. Read incrementally from where the last read stopped.
   const more = chain([user("yes, merge", "2026-09-29T19:50:00.000Z")]);
@@ -563,7 +563,7 @@ test("routine readiness calls no retired spec-observation hook and keeps its ord
       const old = await r.computeReadiness(row, facts);
       assert.ok(old, c.label); assert.equal(old.trees[0]?.state, c.expected, c.label);
       const checks = structuredClone(r.readinessChecksOf(path));
-      assert.deepEqual(checks, { ...(c.check ? { lastCheck: c.check } : {}), heads: { "/wt/agents-row-dropdown": 5 } });
+      assert.deepEqual(checks, { ...(c.check ? { lastCheck: c.check } : {}), heads: { "/wt/agents-row-dropdown": 5 }, blocking: c.check && !c.check.ok ? { "/wt/agents-row-dropdown": c.check } : {} });
       const oldRow = { ...row, readiness: old }, attention = r.readinessItems(oldRow), restarts = r.restartItems([oldRow]);
       if (c.expected === "ready" || c.expected === "waiting-approval") assert.equal(attention.length, 1, "the attention comparison has a positive baseline");
       if (c.restart) assert.equal(restarts.length, 1, "the restart comparison has a positive baseline");
@@ -580,6 +580,56 @@ test("routine readiness calls no retired spec-observation hook and keeps its ord
       }
     }
   } finally { servedReset(); }
+});
+
+test("a failing check run blocks until newer evidence: a newer run of its kind, or a passing dry run or queue run of a later commit; a commit alone proves nothing", async () => {
+  type C = { at: number; ok: boolean; what?: string; failed?: string; kind?: string };
+  // As the scan keeps them: a run's kind is its command's, a passing one's too (it names nothing else).
+  const failed: C = { at: 3, ok: false, what: "test run", failed: "1 failing test", kind: "test run" };
+  const cases: { label: string; checks: C[]; passedLater?: boolean; expected: ReadinessState }[] = [
+    { label: "fail, then a commit: still blocks", checks: [failed], expected: "in-progress" },
+    { label: "fail, a commit, then a passing rerun: clears", checks: [{ at: 7, ok: true, what: "test run", kind: "test run" }], expected: "ready" },
+    { label: "fail, a commit, then a passing dry run of the new head: clears", checks: [failed], passedLater: true, expected: "ready" },
+    { label: "tests fail, a commit, then a passing typecheck: still blocks", checks: [failed, { at: 7, ok: true, what: "typecheck", kind: "typecheck" }], expected: "in-progress" },
+  ];
+  try {
+    for (const c of cases) {
+      servedReset();
+      const path = sessionFile([]), row = summary(path);
+      const newest = [...c.checks].sort((a, b) => a.at - b.at).at(-1)!;
+      const facts: FileFacts = { trees: [tracked() as FileFacts["trees"][number]], merges: [], lastCheck: newest, checks: c.checks };
+      // The run at 3 was at the old commit; the head ("fixture-head", made at 5) is newer.
+      const status = { path: "/wt/agents-row-dropdown", source: "session" as const, exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no" as const, ahead: 1, behind: 0, dirty: false, head: "fixture-head", headAt: 5 };
+      let asked: string | null = null;
+      r.configureReadiness({
+        insights: { treeStatus: async () => status },
+        git: fakeGit({ "rev-parse --show-toplevel": { stdout: "/fixture/server\n" }, "symbolic-ref": { stdout: "master\n" }, "merge-base --is-ancestor": { code: 0 }, "diff --name-only": { stdout: "server/index.ts\n" } }),
+        asksUser: () => undefined,
+        commitAt: async (_dir, at) => (at < 5 ? "old-commit" : "fixture-head"),
+        passedAfter: async (_dir, _branch, commit, kind) => ((asked = commit), assert.equal(kind, "test run", "asked for evidence of the same kind"), !!c.passedLater),
+        now: () => 0,
+        processStart: 0,
+      });
+      const got = await r.computeReadiness(row, facts);
+      assert.equal(got?.trees[0]?.state, c.expected, c.label);
+      if (c.expected === "in-progress") {
+        assert.match(got?.trees[0]?.why ?? "", /this chat's last test run at old-com failed: 1 failing test/, `${c.label}: it names its commit`);
+        assert.equal(got?.trees[0]?.lastCheck?.commit, "old-commit");
+      }
+      if (c.passedLater) assert.equal(asked, "old-commit", "newer evidence is asked about the run's own commit");
+    }
+  } finally {
+    servedReset();
+  }
+});
+
+test("a check command's kind is what it runs, whatever its result", () => {
+  assert.equal(r.checkKindOf("pnpm test server/a.test.ts"), "test run");
+  assert.equal(r.checkKindOf("pnpm run typecheck"), "typecheck");
+  assert.equal(r.checkKindOf("npx tsc --noEmit"), "typecheck");
+  assert.equal(r.checkKindOf("pnpm run build"), "build");
+  assert.equal(r.checkKindOf("cargo test"), "test run");
+  assert.equal(r.checkKindOf("pnpm run lint"), "check run");
 });
 
 function barrier() {
@@ -1669,7 +1719,8 @@ test("a failed check run in the session file carries what it named into the read
   const result = JSON.stringify({ type: "message", id: "a2", parentId: "a1", timestamp: "2026-11-05T10:01:00.000Z", message: { role: "toolResult", toolCallId: "call_1", toolName: "bash", isError: true, content: [{ type: "text", text: "run-tests (bun): 3 files (unit), 9 pass, 1 fail, 0 skip, 1 failing files, 2 s\n  FAIL server/x.test.ts\n" }] } });
   const entries = [r.scanLine(call, ids), r.scanLine(result, ids)].filter((e): e is NonNullable<typeof e> => !!e);
   const facts = r.factsOf(entries);
-  assert.deepEqual(facts.lastCheck, { at: Date.parse("2026-11-05T10:01:00.000Z"), ok: false, what: "test run", failed: "1 failing file, server/x.test.ts" });
+  assert.deepEqual(facts.lastCheck, { at: Date.parse("2026-11-05T10:01:00.000Z"), ok: false, what: "test run", failed: "1 failing file, server/x.test.ts", kind: "test run" });
+  assert.deepEqual(facts.checks, [facts.lastCheck], "kept as the newest of its kind");
 });
 
 test("a file untouched 30+ days keeps its answer but not its stored lines; grown, it is read from the start once and answers as a full read does", async () => {

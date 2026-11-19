@@ -138,6 +138,13 @@ export function projectArchived(projectId: string): boolean {
 
 /** "{project} is archived. Unarchive it first.": every new start in an archived project. */
 export const archivedRefusal = (name: string) => `${name} is archived. Unarchive it first.`;
+
+/** The project's archived refusal (its name, else its id), or null while it isn't archived; an unknown project throws
+    readProject's 404. */
+export function projectArchivedWhy(projectId: string): string | null {
+  const p = readProject(projectId);
+  return projectArchived(projectId) ? archivedRefusal(p.name || p.id) : null;
+}
 /** Its overseer's: Run Now, a message to it, its start. */
 export const archivedOverseerRefusal = (name: string) => `${name} is archived. Unarchive it to use its overseer.`;
 

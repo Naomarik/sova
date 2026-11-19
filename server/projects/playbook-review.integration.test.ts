@@ -191,8 +191,11 @@ test("a run whose turn ends on open alignment questions waits, never proposed, a
   assert.equal(v.playbook?.questions, 2);
   assert.equal(playbookReviewOf(pid), null, "waiting is not proposed: no playbook-review item");
   assert.ok(v.feed.some((f) => f.line === "The Project verbs playbook waits on your answers in its session."), JSON.stringify(v.feed));
+  // The press opens the waiting run's chat (the project's standing Project verbs chat), starting no second run.
   const again = await app.request(`/api/projects/${pid}/verbs/onboard`, json("POST", {}));
-  assert.equal(again.status, 409, "a waiting run is live: no second run");
+  assert.equal(again.status, 200, await again.clone().text());
+  assert.deepEqual([((await again.json()) as { sessionId: string; reopened: boolean }).reopened], [true]);
+  assert.equal((await read()).playbook?.sessionId, sid2, "no second run");
   await host.act(b2, "turn/started", {}, SYSTEM);
   assert.equal((await until((x) => x.playbookState === "running")).playbookState, "running", "the answer resumes it");
   await host.act(b2, "turn/ended", {}, SYSTEM);
@@ -258,7 +261,7 @@ test("a deploy-setup run proposes its deploy recipe: its own hash and its render
     const shown = git(root, "rev-parse", branch3);
     const untried = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: r.deployHash, commit: shown }));
     assert.equal(untried.status, 409);
-    assert.match(((await untried.json()) as { error: string }).error, /no passing trial at/);
+    assert.match(((await untried.json()) as { error: string }).error, /no passing dry run at/);
     const q = await queues.get(root);
     await q.trial({ branch: branch3, by: { kind: "operator" } });
     await q.tryingNow();

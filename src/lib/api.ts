@@ -128,7 +128,7 @@ import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { UsagePerformance } from "../../shared/usage/perf";
 import type { UsageTime } from "../../shared/usage/time";
 import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
-import type { ProjectRuntimeView } from "../../shared/project-runtime";
+import type { ProjectRuntimeView, VerbsChatOpened, VerbsChatStatus } from "../../shared/project-runtime";
 import type { ArchiveCopies, ProjectIconInfo, ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch, ProjectWorktrees } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
@@ -1653,6 +1653,28 @@ export async function runReleaseVerb(project: string, verb: `release.${string}`,
     throw err;
   }
 }
+/** A dry run or Fix route's answer: its body, or the refusal's words (400/403/404/409 carry {error: {code, message}}). */
+export type LandingRouteResult<T> = { ok: true; value: T } | { ok: false; error: { code?: string; message: string } };
+async function landingRoute<T>(project: string, path: string, body: Record<string, unknown>): Promise<LandingRouteResult<T>> {
+  try {
+    return { ok: true, value: await request<T>(`/api/merge-queue/projects/${encodeURIComponent(project)}/${path}`, jsonInit("POST", body)) };
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status === 0) throw err;
+    const b = err.body as { error?: { code?: string; message?: string } | string; message?: string } | undefined;
+    const e = b?.error;
+    const message = typeof e === "string" ? e : (e?.message ?? b?.message ?? err.message);
+    return { ok: false, error: { ...(typeof e === "object" && e?.code ? { code: e.code } : {}), message } };
+  }
+}
+/** Run Dry Run / Run Dry Run Again (the operator's click): it starts, or waits its turn for the merge copy. */
+export const startDryRun = (project: string, branch: string, commit: string) =>
+  landingRoute<{ trial?: import("../../shared/merge-queue").MergeTrial; run?: import("../../shared/merge-queue").MergeRun; waiting?: import("../../shared/merge-queue").MergeTrialWaiting }>(project, "dry-run", { branch, commit });
+/** Stop Dry Run: a running one by its run, or a waiting one by its id. */
+export const stopDryRun = (project: string, which: { run: string } | { waiting: string }) =>
+  landingRoute<{ trial?: import("../../shared/merge-queue").MergeTrial; waiting?: import("../../shared/merge-queue").MergeTrialWaiting }>(project, "dry-run/stop", which);
+/** Fix (the branch's own chat) or Fix in New Chat (`newChat`): the failure's whole context as the chat's message. */
+export const fixFailure = (project: string, body: { branch?: string; commit?: string; run?: string; check?: string; newChat?: boolean }) =>
+  landingRoute<{ session: string; path: string; branch?: string; worktree?: string }>(project, "fix", body);
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[]; reviews?: import("../../shared/merge-queue").ReviewCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** Every project's queue and releases in one quick read: the landing bar's starting picture (page open, reconnect). */
@@ -1678,7 +1700,11 @@ export const mergeSetupProposal = (projectId: string, hash: string, commit: stri
   request<{ queued: boolean; setup: import("../../shared/setup-chat").SetupStatus }>(`${projectPath(projectId)}/setup/merge`, jsonInit("POST", { hash, commit }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
+  request<VerbsChatOpened>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
+/** The project's standing Project verbs chat (§app.project-runtime/onboard), as its head reads it. */
+export const getVerbsChat = (projectId: string) => request<VerbsChatStatus>(`${projectPath(projectId)}/verbs/chat`);
+/** Start Fresh on the Project verbs chat: archived, and a new one started (the user's own press). */
+export const freshVerbsChat = (projectId: string) => request<VerbsChatOpened>(`${projectPath(projectId)}/verbs/chat/fresh`, jsonInit("POST", {}));
 
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 

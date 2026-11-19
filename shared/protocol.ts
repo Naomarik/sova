@@ -4258,6 +4258,9 @@ export interface SessionProject {
   /** `coding` only: the operator started it (New Session in the project's folder, or New Coding Session), not the
       project's overseer. Absent from an older server: read as the overseer's. */
   operator?: true;
+  /** `coding` only: a verb playbook's run (its build's kind `onboard`, §app.project-runtime/onboard), such as the
+      project's Project verbs chat, whose head reads that chat. Safe by absence. */
+  onboard?: true;
   /** A cleared (not the current) overseer conversation, or a build git says is merged. */
   finished?: true;
   /** The project is archived. */
@@ -5308,6 +5311,13 @@ export interface WorktreeReadiness {
   landing?: WorktreeLanding;
   /** This worktree changes automatic cleanup and no rehearsal passed at its head today: Land reads Rehearsal needed, disabled (§app.merge-queue/approve). */
   rehearsal?: true;
+  /** A setup branch: its dry run at its head (never an older commit's as current). `landing` stays while one is
+      needed: Land runs it first. Additive. */
+  dryRun?: import("./merge-queue").BranchDryRun;
+  /** The chat's newest check run (test run, typecheck, build) as readiness read it, with the branch head it ran at
+      (`commit`, when known). One at an older commit than the head never blocks the head: `why` names its commit.
+      Additive. */
+  lastCheck?: { commit?: string; at: number; ok: boolean; what?: string; failed?: string };
   /** The shared answer (§chat.worktrees/nothing-left): "nothing" left to land, or only spec "drafts" not proved landed.
       Absent: work is left, or it can't tell. */
   left?: "nothing" | "drafts";

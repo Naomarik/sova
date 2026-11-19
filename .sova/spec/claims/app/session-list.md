@@ -786,8 +786,8 @@ organization sessions (§app.session-list/ordinary-surfaces), which wait in the 
 region's own Needs you (§app.session-list/organizations). A registered project's own session (its
 overseer's conversations and its builds, which live in its project's block) joins only for a
 proposal waiting on you, a `playbook-review` item such as its Setup chat's
-(§app.project-runtime/review), with that proposal's button (on a Setup proposal Run Trial, then Land
-or Merge Branch); its other items, a
+(§app.project-runtime/review), with that proposal's button (on a Setup proposal Land, or Run Dry Run
+then Merge Branch); its other items, a
 failed turn included, stay in its project's block. **The Overseer's count still includes
 them, deliberately**: the Overseer reads the whole digest, like the org and project pages, so its
 "{a} need you" can be higher than this region's count by the org sessions waiting on you. The digest, not the
@@ -869,7 +869,7 @@ new.
   button, its own tab stop beside the link, and pressing one doesn't navigate: **Dismiss** on a chat's
   row (§app.session-list/needs-you-dismiss) and, on a line of their own under the title, **Merge Branch** on a proposed
   playbook run (`playbook-review`, §app.project-runtime/review; on a Setup proposal, the proposal's own
-  button: Run Trial, then Land or Merge Branch), which acts at once and says a refusal's
+  button: Land, or Run Dry Run then Merge Branch), which acts at once and says a refusal's
   reason, and **Cancel** on a held act (§app.project-overseer/holds).
 - **Not a session row.** A row here has none of a session row's marks or gestures: no rail,
   unread dot, time, model, context ring or merge badge, no press-and-hold, lift or drag, and no menu; a
@@ -909,13 +909,13 @@ it shows what it showed before.
        row's right when Merge Branch takes its line. Tab order: link, ×, Merge Branch. -->
   <button class="button button-icon button-ghost ny-dismiss" type="button"
           aria-label="Dismiss {the chat's title}" title="Dismiss">…close…</button>
-  <div class="ny-acts">…Merge Branch or Run Trial…</div>
+  <div class="ny-acts">…Merge Branch, Land or Run Dry Run…</div>
 </li>
 ```
 
 - **Which rows.** Every row of a chat, in the global Needs you and the Organizations region's, above
   "Maybe waiting on you" and under it: a chat with a dialog, an error or a proposal included (its Merge
-  Branch or Run Trial stays), and the open chat's row too.
+  Branch, Land or Run Dry Run stays), and the open chat's row too.
 - **Which don't.** A row of no session has no Dismiss: a deploy, a release, WhatsApp sending, an owner's
   request, a held act, a conflict, a stakeholder, a message not sent. Each stays until what it says no
   longer holds.

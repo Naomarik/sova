@@ -3,7 +3,7 @@ import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } fro
 import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, needsYouOf, withItsChat } from "../lib/merge-queue";
+import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, WAITING_RULING_LINE, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, needsYouOf, withItsChat } from "../lib/merge-queue";
 import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision, STANDING_LINE, standingWords, answeredInChat, type DecisionAction } from "../lib/merge-standing";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
@@ -24,6 +24,9 @@ import { BranchSummaryView } from "./BranchSummary";
 import type { DiffScope, WorktreeReadiness } from "../../shared/protocol";
 import { ReviewChangesButton } from "./ReviewChanges";
 import { heldCount, heldHasContent, HeldList, RetiredList, RetirementLists, RetirementOff } from "./RetirementLists";
+import { DRY_RUN_NOW_LINE, dryRunActions, dryRunChip, dryRunFact, failureLine, landFirstLine, runsFirst, scopeWords, tookWords, heldDryRunLabel, nth, trialChip, trialLine, waitingIdOf, whoStarted, type BranchDryRun } from "../lib/dry-run";
+import { DryRunButton, DryRunLines, DryRunWhat, FixNewChatButton, FixSplit, runDryRunPress, usePress, type FixTarget } from "./DryRun";
+import type { MergeTrial, MergeTrialWaiting } from "../../shared/merge-queue";
 
 /** How often the tab reads the queue while it shows (a run's steps move by the second). */
 const POLL_MS = 4000;
@@ -463,9 +466,10 @@ function scrollerOf(el: HTMLElement): HTMLElement | null {
  * The live fact an empty tab's line starts with (the design system's empty state: the fact, then what will show
  * there): what the queue is doing now.
  */
-export function queueFact(v: MergeQueueView): string {
+export function queueFact(v: Pick<MergeQueueView, "waiting" | "state" | "current" | "trialNow">): string {
   const n = v.waiting.length;
   if (v.state === "paused") return n ? `The queue is paused with ${n} waiting.` : "The queue is paused.";
+  if (v.trialNow && !v.current) return dryRunFact(n);
   if (v.current) return n ? `1 being checked, ${n} waiting.` : "1 being checked.";
   return n ? `${n} waiting.` : "The queue is idle.";
 }
@@ -511,6 +515,8 @@ function hostOf(v: MergeQueueView): string | null {
 function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, chatOf: ChatOf | undefined, treesOf: TreesOf | undefined, onChanged: () => void): QueueTabDef[] {
   const ready = () => v().ready ?? [];
   const needsCount = () => (v().heads.targetBroken ?? []).length + needsYouOf(v()).length;
+  // A Land the merge thread is still ruling on shows here, but asks nothing of you yet: the count leaves it out.
+  const needsYours = () => needsCount() - needsYouOf(v()).filter((e) => e.waitingRuling).length;
   const tabs: (QueueTabDef | null)[] = [
     {
       id: "ready",
@@ -526,7 +532,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       },
       panel: () => (
         <ul class="list mq-list">
-          <For each={v().ready}>{(r) => <ReadyRow projectId={projectId} root={v().root} target={v().target} how={v().settings?.how?.effective} ready={r} review={v().review} chatOf={chatOf} treesOf={treesOf} onChanged={onChanged} />}</For>
+          <For each={v().ready}>{(r) => <ReadyRow projectId={projectId} root={v().root} target={v().target} how={v().settings?.how?.effective} ready={r} review={v().review} waitingId={(v().trialsWaiting ?? []).find((w) => w.branch === r.branch)?.id} chatOf={chatOf} treesOf={treesOf} onChanged={onChanged} />}</For>
         </ul>
       ),
     },
@@ -534,10 +540,10 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       id: "needs-you",
       label: "Needs you",
       get count() {
-        return needsCount();
+        return needsYours();
       },
       get warn() {
-        return needsCount() > 0;
+        return needsYours() > 0;
       },
       get rows() {
         return needsCount();
@@ -547,7 +553,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       },
       panel: () => (
         <ul class="list mq-list">
-          <For each={v().heads.targetBroken ?? []}>{(b) => <BrokenRow projectId={projectId} target={v().target} broken={b} />}</For>
+          <For each={v().heads.targetBroken ?? []}>{(b) => <BrokenRow projectId={projectId} target={v().target} broken={b} offer={v().heads.targetBrokenFix?.[b.check]} />}</For>
           <For each={needsYouOf(v())}>
             {(e) =>
               isRequestState(e.state) ? (
@@ -640,6 +646,24 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       ),
     },
     {
+      id: "dry-runs",
+      label: "Dry runs",
+      // At most the newest 20 are kept: a count would read as all of them.
+      count: null,
+      get rows() {
+        return (v().trials ?? []).length + (v().trialsWaiting ?? []).length;
+      },
+      get empty() {
+        return `${queueFact(v())} Each dry run shows here.`;
+      },
+      panel: () => (
+        <ul class="list mq-list" aria-label="Dry runs">
+          <For each={v().trialsWaiting ?? []}>{(w) => <DryRunWaitingRow projectId={projectId} view={v()} waiting={w} chatOf={chatOf} />}</For>
+          <For each={dryRunsShown(v())}>{(t) => <DryRunRow projectId={projectId} view={v()} trial={t} chatOf={chatOf} />}</For>
+        </ul>
+      ),
+    },
+    {
       id: "queue-chats",
       label: "Queue chats",
       get count() {
@@ -655,6 +679,79 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
     },
   ];
   return tabs.filter((t): t is QueueTabDef => !!t);
+}
+
+/** The Dry runs tab's rows: the newest 20, newest first, the running one at the top. */
+const dryRunsShown = (v: MergeQueueView): MergeTrial[] => {
+  const all = v.trials ?? [];
+  return [...all.filter((t) => t.verdict === "running"), ...all.filter((t) => t.verdict !== "running")].slice(0, 20);
+};
+
+/** One dry run on the Dry runs tab: its chat and branch, its chip, commit, who started it, when and how long, its why,
+ *  what came of it, View Checks (on the dry run's own run page, whose Back to Queue returns here) and, running, Stop. */
+function DryRunRow(props: { projectId: string; view: MergeQueueView; trial: MergeTrial; chatOf?: ChatOf }) {
+  const t = () => props.trial;
+  const branch = () => t().branch ?? short(t().commit);
+  const session = () => dryRunSession(props.view, t());
+  const title = (id: string) => props.chatOf?.(id)?.title;
+  const chip = () => trialChip(t());
+  const line = () => trialLine(t(), props.view.target, title);
+  const took = () => tookWords(t().startedAt, t().endedAt);
+  const press = usePress();
+  return (
+    <li class="list-row mq-row" classList={{ "mq-tap": !!session() }} data-branch={branch()} data-state={`dry-run-${t().verdict}`} onClick={rowOpens(() => session() && chatHref(props.projectId, session()!, props.chatOf))}>
+      <div class="list-main">
+        <RowHead projectId={props.projectId} branch={branch()} session={session()} chatOf={props.chatOf} />
+        <p class="mq-facts">
+          <QueueChip row={chip()} />
+          <span class="text-mono text-muted">{short(t().commit)}</span>
+          <span>
+            started by {whoStarted(t().by, title)} · {relativeTime(t().startedAt)}
+            {took() ? ` · ${took()}` : ""}
+          </span>
+        </p>
+        <Show when={t().needs}>{(w) => <p class="list-meta">Needed: {w()}</p>}</Show>
+        <Show when={line()}>{(l) => <p class="list-meta">{l()}</p>}</Show>
+        <Show when={press.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
+      </div>
+      <div class="button-row mq-row-act">
+        <a class="button button-sm button-ghost" href={mergeRunHref(props.projectId, t().run, "dry-runs")} aria-label={`View checks for the dry run of ${branch()}`} onClick={(e) => e.stopPropagation()}>
+          View Checks
+        </a>
+        <Show when={t().verdict === "running"}>
+          <DryRunButton projectId={props.projectId} branch={branch()} commit={t().commit} kind="stop" run={t().run} press={press} />
+        </Show>
+      </div>
+    </li>
+  );
+}
+
+/** A dry run waiting for the merge copy (Run Dry Run pressed while it was busy): what it waits for, and Stop Dry Run. */
+function DryRunWaitingRow(props: { projectId: string; view: MergeQueueView; waiting: MergeTrialWaiting; chatOf?: ChatOf }) {
+  const w = () => props.waiting;
+  const session = () => dryRunSession(props.view, w());
+  const title = (id: string) => props.chatOf?.(id)?.title;
+  const press = usePress();
+  return (
+    <li class="list-row mq-row" classList={{ "mq-tap": !!session() }} data-branch={w().branch} data-state="dry-run-waiting" onClick={rowOpens(() => session() && chatHref(props.projectId, session()!, props.chatOf))}>
+      <div class="list-main">
+        <RowHead projectId={props.projectId} branch={w().branch} session={session()} chatOf={props.chatOf} />
+        <p class="mq-facts">
+          <QueueChip row={{ label: "Dry run waiting", tone: "info" }} />
+          <span class="text-mono text-muted">{short(w().commit)}</span>
+          <span>
+            started by {whoStarted(w().by, title)} · {relativeTime(w().at)}
+          </span>
+        </p>
+        <p class="list-meta">Dry run waiting · starts after {w().after}</p>
+        <Show when={w().needs}>{(n) => <p class="list-meta">Needed: {n()}</p>}</Show>
+        <Show when={press.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
+      </div>
+      <div class="button-row mq-row-act">
+        <DryRunButton projectId={props.projectId} branch={w().branch} commit={w().commit} kind="stop" waiting={w().id} press={press} />
+      </div>
+    </li>
+  );
 }
 
 /** A landing: its chip, its commit, when and whether it was pushed, its summary, review and notes, Review Changes and
@@ -716,15 +813,23 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
     <Show
       when={cur()}
       fallback={
-        <p class="mq-empty text-caption">
-          {props.view.release
-            ? props.view.waiting.length
-              ? `${props.view.waiting.length} waiting for ${holdName(props.view.release)}: they start once it's published or abandoned.`
-              : `Nothing being checked. A branch you land now waits for ${holdName(props.view.release)}.`
-            : props.view.waiting.length
-              ? `${props.view.waiting.length} waiting. The next one starts in a moment.`
-              : "Nothing being checked. A branch starts as soon as you press Land."}
-        </p>
+        // A dry run holds the merge copy: it takes a landing's place, never "Nothing being checked" (§app.merge-queue/dry-runs).
+        <Show
+          when={props.view.trialNow}
+          fallback={
+            <p class="mq-empty text-caption">
+              {props.view.release
+                ? props.view.waiting.length
+                  ? `${props.view.waiting.length} waiting for ${holdName(props.view.release)}: they start once it's published or abandoned.`
+                  : `Nothing being checked. A branch you land now waits for ${holdName(props.view.release)}.`
+                : props.view.waiting.length
+                  ? `${props.view.waiting.length} waiting. The next one starts in a moment.`
+                  : "Nothing being checked. A branch starts as soon as you press Land."}
+            </p>
+          }
+        >
+          {(t) => <DryRunNow projectId={props.view.project} view={props.view} now={t()} chatOf={props.chatOf} />}
+        </Show>
       }
     >
       {(r) => {
@@ -783,6 +888,69 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
   );
 }
 
+/** The branch's session for a dry run: the chat that started it, else the branch's row's or entry's chat. */
+function dryRunSession(v: MergeQueueView, t: Pick<MergeTrial, "by" | "branch">): string | undefined {
+  if (t.by.kind === "chat" && t.by.session) return t.by.session;
+  const b = t.branch;
+  if (!b) return undefined;
+  return v.ready?.find((r) => r.branch === b)?.session ?? [...v.waiting, ...v.checking, ...v.needsYou, ...v.needsFix].find((e) => e.branch === b)?.session;
+}
+
+/** Checking now while a branch's dry run holds the merge copy: what it is and why, who started it, check N of M, View
+ *  Checks and Stop Dry Run (§app.merge-queue/dry-runs). */
+function DryRunNow(props: { projectId: string; view: MergeQueueView; now: NonNullable<MergeQueueView["trialNow"]>; chatOf?: ChatOf }) {
+  const runHref = useRunHref();
+  const t = () => props.now.trial;
+  const r = () => props.now.run;
+  const branch = () => t().branch ?? short(t().commit);
+  const session = () => dryRunSession(props.view, t());
+  const title = (id: string) => props.chatOf?.(id)?.title;
+  const press = usePress();
+  const p = () => props.now.progress;
+  const cur = () => runProgress(r());
+  return (
+    <div class="mq-card mq-dry-run-now" classList={{ "mq-tap": !!session() }} role="group" aria-label="Checking now · Dry run" data-branch={branch()} data-dry-run="running" onClick={rowOpens(() => session() && chatHref(props.projectId, session()!, props.chatOf))}>
+      <div class="spread">
+        <div class="cluster">
+          <h3 class="text-heading-s">Checking now</h3>
+          <QueueChip row={{ label: "Dry run", tone: "accent", live: true }} />
+        </div>
+        <div class="button-row mq-row-act">
+          <a class="button button-sm" href={runHref(props.projectId, r().id)} onClick={(e) => e.stopPropagation()}>
+            View Checks
+          </a>
+          <DryRunButton projectId={props.projectId} branch={branch()} commit={t().commit} kind="stop" run={r().id} press={press} />
+        </div>
+      </div>
+      <RowHead projectId={props.projectId} branch={branch()} session={session()} chatOf={props.chatOf} class="mq-card-title" />
+      <p class="mq-facts">
+        <span>
+          {branch()} at <span class="text-mono">{short(t().commit)}</span> · started by {whoStarted(t().by, title)}
+        </span>
+      </p>
+      <Show when={t().needs}>{(w) => <p class="text-caption">Needed: {w()}</p>}</Show>
+      <p class="text-caption">{DRY_RUN_NOW_LINE}</p>
+      <Show when={scopeWords(t())}>{(w) => <p class="text-caption text-muted">{w()}</p>}</Show>
+      <p class="text-caption mq-now">
+        {cur().label}
+        {p().of ? ` · check ${p().at} of ${p().of}` : ""}
+      </p>
+      <div class="meter">
+        <div class="meter-track" role="img" aria-label={`check ${p().at} of ${p().of}`}>
+          <div class="meter-fill" style={{ width: `${p().of ? Math.round((100 * Math.max(0, p().at - 1)) / p().of) : 0}%` }} />
+        </div>
+      </div>
+      <p class="text-caption text-muted">Started {relativeTime(r().startedAt)}</p>
+      <DryRunWhat target={props.view.target} />
+      <Show when={press.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
+    </div>
+  );
+}
+
+/** Waiting's head: while a dry run holds the copy, its entries start once it ends. */
+const waitingWords = (v: MergeQueueView): string =>
+  v.trialNow && !v.current && v.waiting.length ? `Waiting · ${v.waiting.length} · they start once the dry run ends` : waitingHead(v.waiting);
+
 function Waiting(props: { projectId: string; view: MergeQueueView; refreshed?: () => number; chatOf?: ChatOf; onChanged(): void }) {
   // Closed each time it is shown: whether it was open is never kept. The page's Refresh and a page restored from the
   // browser's back-forward cache close it too; the queue's own live reads keep it as it is.
@@ -794,11 +962,11 @@ function Waiting(props: { projectId: string; view: MergeQueueView; refreshed?: (
   return (
     <div class="stack-2 mq-waiting">
       {/* With nothing in line, a plain line: nothing to open. */}
-      <Show when={props.view.waiting.length > 0} fallback={<h3 class="mq-waiting-head mq-waiting-none">{waitingHead(props.view.waiting)}</h3>}>
+      <Show when={props.view.waiting.length > 0} fallback={<h3 class="mq-waiting-head mq-waiting-none">{waitingWords(props.view)}</h3>}>
       <h3 class="mq-waiting-head">
         <button type="button" class="mq-waiting-toggle" aria-expanded={open() ? "true" : "false"} aria-controls="mq-waiting-rows" onClick={() => setOpen(!open())}>
           <Icon name="chevron-right" small class="mq-twist" />
-          <span>{waitingHead(props.view.waiting)}</span>
+          <span>{waitingWords(props.view)}</span>
         </button>
       </h3>
       </Show>
@@ -813,7 +981,7 @@ function Waiting(props: { projectId: string; view: MergeQueueView; refreshed?: (
                   <div class="list-main">
                     <RowHead projectId={props.projectId} branch={e.branch} session={e.session} chatOf={props.chatOf} />
                     <p class="mq-facts">
-                      <QueueChip row={e.release ? { label: "Release", tone: "accent" } : { label: `In line · ${e.position ?? "?"}`, tone: "neutral" }} />
+                      <QueueChip row={e.release ? { label: "Release", tone: "accent" } : e.standing?.phase === "dry-run" ? { label: e.position ? `Approved · dry run first · ${nth(e.position)}` : "Approved · dry run first", tone: "info" } : { label: `In line · ${e.position ?? "?"}`, tone: "neutral" }} />
                       <span class="text-mono text-muted">{short(e.commit)}</span>
                       <span>
                         approved {relativeTime(e.approval.at)} · {e.approval.by === "typed" ? "typed in its chat" : "Land button"}
@@ -833,6 +1001,7 @@ function Waiting(props: { projectId: string; view: MergeQueueView; refreshed?: (
                     <Show when={e.release ? null : e.reason}>
                       {(why) => <p class="list-meta">{why()}</p>}
                     </Show>
+                    <Show when={e.dryRun}>{(d) => <DryRunLines dryRun={d()} target={props.view.target} chatTitle={(id) => props.chatOf?.(id)?.title} />}</Show>
                     <Show when={e.newerCommits}>
                       <p class="list-meta">
                         {e.newerCommits} newer commit{e.newerCommits === 1 ? "" : "s"} not included
@@ -857,6 +1026,30 @@ function Waiting(props: { projectId: string; view: MergeQueueView; refreshed?: (
   );
 }
 
+/** A held-up entry's Fix in place of its Land (§app.merge-queue/fix): Fix, its ▾ with Fix in New Chat, then what Fix
+ *  took the place of (`land`: a decision's Land), Run Dry Run Again on a dry run's failure, and Land Anyway when its
+ *  Land's dry run fails on the target too. */
+function EntryFix(props: { projectId: string; target: string; entry: MergeEntry; press: ReturnType<typeof usePress>; chatOf?: ChatOf; onAgain?(): void; onLand?(): void; onLandAnyway?(): void }) {
+  const e = () => props.entry;
+  return (
+    <FixSplit
+      fix={{ projectId: props.projectId, target: props.target, branch: e().branch, commit: e().commit, failure: e().failure, offer: e().fixOffer, chatTitle: (id) => props.chatOf?.(id)?.title }}
+      press={props.press}
+      items={(Item) => (
+        <>
+          <Show when={props.onAgain}>{(f) => <Item label="Run Dry Run Again" aria={`Run the dry run of ${e().branch} again`} description="Runs its new or changed checks on this commit again." onRun={() => f()()} />}</Show>
+          <Show when={props.onLand}>{(f) => <Item label="Land" aria={`Land ${e().branch}`} description="Lands the commit it waits at." onRun={() => f()()} />}</Show>
+          <Show when={props.onLandAnyway}>{(f) => <Item label="Land Anyway" aria={`Land ${e().branch} anyway`} description={`The landing still runs ${props.target}'s checks.`} onRun={() => f()()} />}</Show>
+        </>
+      )}
+    />
+  );
+}
+
+/** A Land's dry run that fails on the target too, or can't tell whose: Run Dry Run Again beside Fix (its Try Again),
+ *  Land Anyway in Fix's menu (§app.project-setup/trial). */
+const heldOnDryRun = (e: MergeEntry): boolean => !!e.dryRunHold && e.dryRunHold.commit === e.commit;
+
 /** An entry that waits for you: a decision (its question, its choices, its answers on the queue, Answer in Chat when
  *  it is answered in words), or a state that waits from before decisions; or a conflict the merge thread is judging.
  *  Remove from Queue on each. No row has a text box, a Send Back or a re-land. */
@@ -865,9 +1058,13 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
   const act = useAct(props.onChanged);
   const runHref = useRunHref();
   const answer = (a: MergeAnswer, done: string) => void act.run(a, () => answerEntry(e(), a), done);
+  const fixPress = usePress(props.onChanged);
   const decision = () => openDecision(e());
   /** The answers on the queue: the decision's, else the state's own. Remove from Queue always last. */
+  // The merge thread rules on whose failure it is first: nothing to answer yet, only Remove from Queue.
+  const ruling = () => !!e().waitingRuling;
   const actions = (): DecisionAction[] => {
+    if (ruling()) return ["remove"];
     const d = decision();
     if (d) return decisionActions(d);
     switch (e().state) {
@@ -885,8 +1082,11 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
     const d = decision();
     return d ? answeredInChat(d) : e().state === "behaviour-differs" || e().state === "needs-user";
   };
-  const chip = (): { label: string; tone: "warn" } => {
+  const chip = (): { label: string; tone: "warn" | "info" } => {
+    if (ruling()) return { label: "Waiting for the merge thread", tone: "info" };
     const d = decision();
+    const held = heldDryRunLabel(e());
+    if (held) return { label: held, tone: "warn" };
     if (d) return { label: d.kind === "needs-you" ? `Needs you · ${e().branch}` : `${DECISION_LABEL[d.kind]} · waiting for you`, tone: "warn" };
     switch (e().state) {
       case "behaviour-differs":
@@ -984,7 +1184,11 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
         <Show when={!decision() && e().state === "review-flagged"}>
           <p class="list-meta">{e().review?.text ?? e().reason ?? "The review found something that blocks it."}</p>
         </Show>
-        <Show when={e().state === "unattributed" || decision()?.kind === "unattributed"}>
+        {/* A Land's held dry run says its failure once, in the question; Fix and its menu answer it. */}
+        <Show when={ruling()}>
+          <p class="list-meta">{WAITING_RULING_LINE}</p>
+        </Show>
+        <Show when={!ruling() && (e().state === "unattributed" || decision()?.kind === "unattributed") && !heldOnDryRun(e())}>
           <p class="list-meta">{unattributedWhy(e().reason, props.target)} Land Anyway lands the commit it tested; Try Again checks it afresh.</p>
           <UnclearChecks projectId={props.projectId} unclear={e().unclear} target={props.target} class="list-meta" />
         </Show>
@@ -994,12 +1198,27 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
         <Show when={!decision() && (e().state === "conflict" || e().state === "needs-user")}>
           <p class="list-meta">{e().reason ?? "The merge thread is judging the conflict. The line moves on meanwhile."}</p>
         </Show>
+        <Show when={!ruling() && !heldOnDryRun(e()) && e().failure}>{(f) => <p class="list-meta mq-failure">{failureLine(f(), props.target)}</p>}</Show>
+        <Show when={e().failure?.kind === "dry-run"}>
+          <DryRunWhat target={props.target} class="list-meta" />
+        </Show>
         <Show when={props.view}>{(pv) => <ReviewerLinks projectId={props.projectId} view={pv()} run={e().run} />}</Show>
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
+        <Show when={fixPress.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
       <div class="button-row mq-row-act">
         <QueueReview projectId={props.projectId} branch={e().branch} scope={{ kind: "queue", project: props.projectId, entry: e().id }} session={e().session} chatOf={props.chatOf} />
-        <For each={actions().filter((a) => a !== "remove")}>
+        {/* A failure holds it up: Fix takes Land's place, Land moves into its menu (§app.merge-queue/fix). */}
+        <Show when={!ruling() && e().failure}>
+          <Show when={heldOnDryRun(e())}>
+            <button type="button" class="button button-sm" aria-label={`Run the dry run of ${e().branch} again`} disabled={!!act.busy()} onClick={(ev) => { ev.stopPropagation(); doAct("try-again"); }}>
+              Run Dry Run Again
+            </button>
+          </Show>
+          <EntryFix projectId={props.projectId} target={props.target} entry={e()} press={fixPress} chatOf={props.chatOf} onLand={actions().includes("land") ? () => doAct("land") : undefined} onLandAnyway={heldOnDryRun(e()) && actions().includes("land-anyway") ? () => doAct("land-anyway") : undefined} />
+        </Show>
+        {/* Fix took Land's place; a Land's held dry run moves Land Anyway into Fix's menu and Try Again beside it. */}
+        <For each={actions().filter((a) => a !== "remove" && !(e().failure && a === "land") && !(e().failure && heldOnDryRun(e()) && (a === "land-anyway" || a === "try-again")))}>
           {(a) => (
             <button
               type="button"
@@ -1041,9 +1260,10 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
 
 /** A test check broken on the target (heads.targetBroken): every branch skips it meanwhile, so the user starts a chat
  *  to fix it there. It leaves once a later run of that check runs tests again. */
-function BrokenRow(props: { projectId: string; target: string; broken: TargetBroken }) {
+function BrokenRow(props: { projectId: string; target: string; broken: TargetBroken; offer?: import("../../shared/merge-queue").FixOffer }) {
   const b = () => props.broken;
   const runHref = useRunHref();
+  const press = usePress();
   return (
     <li class="list-row mq-row" data-state="target-broken" data-check={b().check}>
       <div class="list-main">
@@ -1052,9 +1272,11 @@ function BrokenRow(props: { projectId: string; target: string; broken: TargetBro
           <span class="text-muted">{relativeTime(b().at)}</span>
         </p>
         <p class="list-meta">{sentence(b().why)}</p>
-        <p class="list-meta text-muted">Every branch skips it until it's fixed, and lands without it. Start a chat in this project to fix it on {props.target}.</p>
+        <p class="list-meta text-muted">Every branch skips it until it's fixed, and lands without it.</p>
+        <Show when={press.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
       <div class="button-row mq-row-act">
+        <FixNewChatButton fix={{ projectId: props.projectId, target: props.target, offer: props.offer, check: { id: b().check, label: b().label, run: b().run } }} press={press} />
         <a class="button button-sm button-ghost" href={runHref(props.projectId, b().run)} aria-label={`View the log of ${b().label} on ${props.target}`}>
           View the Log
         </a>
@@ -1071,6 +1293,7 @@ function WithChatRow(props: { projectId: string; entry: MergeEntry; view: MergeQ
   const act = useAct(props.onChanged);
   const runHref = useRunHref();
   const words = (): { label: string; tone: "info" | "warn" | "neutral" | "error"; detail?: string; answer?: string } => standingWords(e()) ?? { label: "Needs a fix", tone: "error" };
+  const fixPress = usePress(props.onChanged);
   return (
     <li class="list-row mq-row" classList={{ "mq-tap": !!e().session }} data-branch={e().branch} data-state={e().state} onClick={rowOpens(() => e().session && chatHref(props.projectId, e().session!, props.chatOf))}>
       <div class="list-main">
@@ -1090,12 +1313,26 @@ function WithChatRow(props: { projectId: string; entry: MergeEntry; view: MergeQ
             </p>
           )}
         </Show>
+        <Show when={e().failure}>{(f) => <p class="list-meta mq-failure">{failureLine(f(), props.view.target)}</p>}</Show>
+        <Show when={e().dryRun && e().dryRun!.commit === e().commit ? e().dryRun : undefined}>{(d) => <DryRunWhat target={props.view.target} />}</Show>
         <p class="list-meta text-muted">{STANDING_LINE}</p>
         <ReviewerLinks projectId={props.projectId} view={props.view} run={e().run} />
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
+        <Show when={fixPress.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
       <div class="button-row mq-row-act">
         <QueueReview projectId={props.projectId} branch={e().branch} scope={{ kind: "queue", project: props.projectId, entry: e().id }} session={e().session} chatOf={props.chatOf} />
+        <Show when={e().failure}>
+          <EntryFix
+            projectId={props.projectId}
+            target={props.view.target}
+            entry={e()}
+            press={fixPress}
+            chatOf={props.chatOf}
+            onAgain={e().dryRun && e().dryRun!.commit === e().commit ? () => runDryRunPress(fixPress, props.projectId, e().branch, e().commit) : undefined}
+            onLandAnyway={e().failure?.whose === "master" && e().dryRun?.land ? () => void act.run("land-anyway", () => answerEntry(e(), "land-anyway"), `Landing ${e().branch} anyway.`) : undefined}
+          />
+        </Show>
         <Show when={e().run}>
           {(r) => (
             <a class="button button-sm button-ghost" href={runHref(props.projectId, r())} onClick={(ev) => ev.stopPropagation()}>
@@ -1122,7 +1359,7 @@ function WithChatRow(props: { projectId: string; entry: MergeEntry; view: MergeQ
 }
 
 /** A branch ready to land that nobody approved yet: Review Changes, and Land with its ▾. Land names the row's chat. */
-function ReadyRow(props: { projectId: string; root: string; target?: string; how?: LandHow; ready: MergeReady; review: boolean; chatOf?: ChatOf; treesOf?: TreesOf; onChanged(): void }) {
+function ReadyRow(props: { projectId: string; root: string; target?: string; how?: LandHow; ready: MergeReady; review: boolean; waitingId?: string; chatOf?: ChatOf; treesOf?: TreesOf; onChanged(): void }) {
   const r = () => props.ready;
   const act = useAct(props.onChanged);
   const confirm = createLandConfirm();
@@ -1139,12 +1376,21 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
   // not approved, by git's reading of the branch).
   const chip = () => readyRowChip(r(), r().session ? props.treesOf?.(r().session!) : undefined);
   const when = () => headWhen(r().headAt);
+  // A setup branch's dry run at this head (§app.merge-queue/dry-runs): its chip, line and actions; never an older one's.
+  const dry = (): BranchDryRun | undefined => (r().dryRun && r().dryRun!.commit === r().commit ? r().dryRun : undefined);
+  const dryActs = () => (dry() ? dryRunActions(dry()!) : undefined);
+  const press = usePress(props.onChanged);
+  const target = () => props.target ?? "the target";
+  const fixTarget = (): FixTarget => ({ projectId: props.projectId, target: target(), branch: r().branch, commit: r().commit, failure: dry()?.failure, offer: dry()?.fixOffer, chatTitle: (id) => props.chatOf?.(id)?.title });
   return (
     <li class="list-row mq-row mq-row-grid" classList={{ "mq-tap": !!r().session, "wt-queue-asking": !!confirm.ask() }} data-branch={r().branch} data-state="ready" ref={confirm.rowRef} onClick={rowOpens(() => r().session && chatHref(props.projectId, r().session!, props.chatOf))}>
       <div class="list-main">
         <RowHead projectId={props.projectId} branch={r().branch} session={r().session} archived={r().sessionArchived} chatOf={props.chatOf} />
         <p class="mq-facts">
-          <QueueChip row={chip()} title={chip().title} />
+          {/* One state chip: a dry run that hasn't passed at this head stands in for the chat's readiness. */}
+          <Show when={dry() && dry()!.state !== "passed" ? dry() : undefined} fallback={<QueueChip row={chip()} title={chip().title} />}>
+            {(d) => <QueueChip row={dryRunChip(d())} title={d().why} />}
+          </Show>
           <span class="text-mono text-muted">{short(r().commit)}</span>
           <span>
             {readyFactsWords(r())}
@@ -1162,15 +1408,46 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
           </span>
         </p>
         <BranchSummaryView summary={r().summary} projectId={props.projectId} branch={r().branch} />
+        <Show when={dry()}>
+          {(d) => <DryRunLines dryRun={d()} target={target()} chatTitle={(id) => props.chatOf?.(id)?.title} seeChecks={d().run ? mergeRunHref(props.projectId, d().run!) : undefined} />}
+        </Show>
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
+        <Show when={press.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
         <Show when={discard.partial()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
       {/* A confirm replaces the row's actions while it is open. */}
-      <LandConfirms confirm={confirm} branch={r().branch} ahead={r().ahead} target={props.target} how={props.how} drafts={r().draftsOnly} busy={!!act.busy()} onLand={doLand} discard={discard} />
+      <LandConfirms confirm={confirm} branch={r().branch} ahead={r().ahead} target={props.target} how={props.how} drafts={r().draftsOnly} busy={!!act.busy()} onLand={doLand} discard={discard} firstLine={dry() && runsFirst(dry()) ? landFirstLine(r().commit, dry()!.why) : undefined} />
       <Show when={!confirm.ask()}>
         <div class="mq-row-act">
           <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, branch: r().branch }} session={r().session} chatOf={props.chatOf} />
-          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} onDiscard={openDiscard} discardWhy={discard.refused()} discardLine={discardMenuLine(discard.preview())} onMenuOpen={() => void discard.check()} />
+          <Show when={dryActs()?.stop}>
+            <DryRunButton projectId={props.projectId} branch={r().branch} commit={r().commit} kind="stop" run={dry()?.state === "running" ? dry()?.run : undefined} waiting={dry()?.state === "waiting" ? (waitingIdOf(dry()) ?? props.waitingId) : undefined} press={press} />
+          </Show>
+          <Show when={dryActs()?.run}>{(k) => <DryRunButton projectId={props.projectId} branch={r().branch} commit={r().commit} kind={k()} press={press} />}</Show>
+          <Show
+            when={dryActs()?.primary === "fix"}
+            fallback={
+              <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} draftsOnly={!!r().draftsOnly} onDiscard={openDiscard} discardWhy={discard.refused()} discardLine={discardMenuLine(discard.preview())} onMenuOpen={() => void discard.check()} />
+            }
+          >
+            <FixSplit
+              fix={fixTarget()}
+              press={press}
+              onMenuOpen={() => void discard.check()}
+              items={(Item) => (
+                <>
+                  <Show when={dryActs()!.menu.includes("again")}>
+                    <Item label="Run Dry Run Again" aria={`Run the dry run of ${r().branch} again`} description="Runs its new or changed checks on this commit again." onRun={() => runDryRunPress(press, props.projectId, r().branch, r().commit)} />
+                  </Show>
+                  <Show when={dryActs()!.menu.includes("land")}>
+                    <Item label="Land" aria={`Land ${r().branch}`} description="Asks first. A dry run runs first; it lands once it passes." onRun={() => confirm.open("land")} />
+                  </Show>
+                  <div class="popover-sep" role="separator" />
+                  <Item label="Discard Branch…" aria={`Discard ${r().branch}`} description={discardMenuLine(discard.preview()) ?? undefined} disabled={discard.refused() ?? undefined} onRun={openDiscard} />
+                </>
+              )}
+            />
+          </Show>
         </div>
       </Show>
     </li>

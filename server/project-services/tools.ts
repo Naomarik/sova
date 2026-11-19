@@ -136,7 +136,7 @@ const COPIES_HELP =
   "In the turn the user's click on a sova_card card opens, and only for a row whose chosen label names the act: teardown or reset of a copy you did not start while its conversation is still working (items.copies), and stop-leftover {project, port} of a leftover process (items.leftovers; Sova checks it is still the same process). A typed yes never answers such a card. A teardown keeps a folder's uncommitted edits in that folder (its worktree step says kept): tell them so. A project's main copy (slot 0) and stopping a shared service are never yours.";
 
 const ONBOARD_HELP =
-  " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you.";
+  " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you. While the project's Project verbs chat is open and idle, the playbook's turn and your why go to that chat as its next message instead; while it works, waits on the user's answers or holds a proposal not merged, onboard is refused. Starting it fresh is the user's alone.";
 
 /** The playbook's start for a verb tool (the Overseers'): the text the model reads and the details. */
 export type OnboardRun = (why: string, params: Record<string, unknown>) => Promise<{ text: string; details: Record<string, unknown> }>;

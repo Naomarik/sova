@@ -235,7 +235,8 @@
       "§app.merge-queue/view",
       "§app.merge-queue/approve",
       "§app.merge-queue/strategies",
-      "§chat.worktrees/place"
+      "§chat.worktrees/place",
+      "§app.project-setup/land-gate"
     ],
     "code": [
       "src/components/WorktreesModal.tsx",
@@ -248,9 +249,9 @@
       "src/components/ProjectSessionsTab.tsx"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-10T12:12Z",
-      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§chat.composer/memory-status": {
@@ -413,12 +414,14 @@
       "§app.merge-queue/owner",
       "§app.merge-queue/branch-summary",
       "§chat.worktrees/place",
-      "§chat.worktrees/nothing-left"
+      "§chat.worktrees/nothing-left",
+      "§app.merge-queue/dry-runs",
+      "§app.merge-queue/fix"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-10T12:12Z",
-      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
       "src/components/WorktreesControl.tsx",

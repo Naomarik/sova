@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { basename } from "node:path";
 import type { MergeRun, MergeTrial } from "../../shared/merge-queue";
 import { CONTRACT_FILE } from "../../shared/project-contract";
 import type { RuntimeRunReview } from "../../shared/project-runtime";
@@ -10,7 +10,7 @@ import { attentionChanged } from "../attention-memo";
 import { OrgError } from "../org-error";
 import type { Envelope } from "../org-envelope";
 import { realGit } from "../project-services/engine";
-import { stateRoot } from "../state-root";
+import { chatRecordStore, historyLine, type ChatRecord } from "./chat-record";
 import { SETUP_PLAYBOOK_ID } from "./onboard";
 import { playbookDirsIn } from "../../shared/playbooks";
 import { PLAYBOOK_ENTRIES } from "../../shared/protocol";
@@ -40,48 +40,16 @@ export interface SetupCurrent {
   worktree?: string;
 }
 
-interface ProjectRecord {
-  current?: SetupCurrent;
-  history: SetupHistoryItem[];
-}
+const store = chatRecordStore<SetupCurrent, SetupHistoryItem>("setup-chats.json");
 
-const HISTORY_MAX = 20;
-
-const recordFile = (): string => join(stateRoot(), "setup-chats.json");
-
-function readAll(): Record<string, ProjectRecord> {
-  try {
-    const raw = JSON.parse(readFileSync(recordFile(), "utf8")) as Record<string, ProjectRecord>;
-    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeAll(all: Record<string, ProjectRecord>): void {
-  const file = recordFile();
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(all, null, 2)}\n`, { mode: 0o600 });
-  renameSync(tmp, file);
-}
-
-export function setupRecordOf(projectId: string): ProjectRecord {
-  const r = readAll()[projectId];
-  return { ...(r?.current ? { current: r.current } : {}), history: Array.isArray(r?.history) ? r.history : [] };
-}
-
-function saveRecord(projectId: string, r: ProjectRecord): void {
-  const all = readAll();
-  all[projectId] = { ...(r.current ? { current: r.current } : {}), history: r.history.slice(-HISTORY_MAX) };
-  writeAll(all);
-}
+export const setupRecordOf = (projectId: string): ChatRecord<SetupCurrent, SetupHistoryItem> => store.of(projectId);
+const saveRecord = store.save;
 
 /** Every session file that is or was a project's Setup chat (the current one, and each one Start Fresh or an end
  *  replaced): Needs you never brings one back once it is archived. */
 export function setupChatPaths(): Set<string> {
   const out = new Set<string>();
-  for (const r of Object.values(readAll())) {
+  for (const r of Object.values(store.all())) {
     if (r?.current?.path) out.add(r.current.path);
     for (const h of Array.isArray(r?.history) ? r.history : []) if (h?.path) out.add(h.path);
   }
@@ -141,7 +109,7 @@ export function setupContext(f: SetupContextFacts): string {
   }
   out.push("## Earlier setup chats");
   if (!f.history.length) out.push("None: this is the project's first Setup chat.");
-  for (const h of [...f.history].reverse()) out.push(`- ${h.path} (started ${h.startedAt}, ${h.why === "fresh" ? "closed by Start Fresh" : "ended"} ${h.endedAt}${h.branch ? `, branch ${h.branch}` : ""})`);
+  for (const h of [...f.history].reverse()) out.push(historyLine(h));
   out.push("");
   out.push("## The user's note", f.why?.trim() || "None.");
   if (f.from) out.push("", `They came from ${FROM_WORDS[f.from]}.`);
@@ -373,7 +341,7 @@ export interface SetupMergeDeps {
 
 /**
  * Merge Branch on the Setup chat's proposal, the operator's alone: refused unless `hash` is the head's and `commit`
- * the head; then the land gate (a passing trial of that head). A project the queue serves gets Land: the operator's
+ * the head; then the land gate (a passing dry run of that head; on a served project, Land runs it first). A project the queue serves gets Land: the operator's
  * approval of that exact commit, landed by the queue; never a move of the target here. Otherwise the build's worktree
  * is merged, as Merge Branch on any run. Answers whether it was queued.
  */
@@ -386,9 +354,13 @@ export async function mergeSetup(projectId: string, hash: string, commit: string
   if (!cur || !open) throw new OrgError(NO_SETUP_PROPOSAL, 409);
   if (!open.read.hash || open.read.hash !== hash) throw new OrgError(SETUP_CHANGED_SINCE, 409);
   if (commit && commit !== open.read.commit) throw new OrgError(SETUP_BRANCH_MOVED, 409);
-  const untried = await (await import("../merge-queue/wire")).setupUntriedAt(root, open.read.commit);
-  if (untried) throw new OrgError(untried, 409);
+  const wire = await import("../merge-queue/wire");
+  const untried = await wire.setupUntriedAt(root, open.read.commit);
+  // Can't tell: refused, never let through. A project the queue serves takes Land, which runs the dry run first
+  // (§app.project-setup/land-gate); Merge Branch, with no line to wait in, refuses a head with no passing dry run.
+  if (untried === wire.TRIAL_UNREADABLE || untried === (await import("../merge-queue/setup-branch")).SETUP_UNREADABLE) throw new OrgError(untried, 409);
   if (await deps.land(projectId, root, cur.run, open.read.commit)) return { queued: true };
+  if (untried) throw new OrgError(untried, 409);
   await deps.merge(projectId, cur.run);
   return { queued: false };
 }
@@ -493,4 +465,4 @@ export async function openSetup(projectId: string, input: OpenSetupInput, deps: 
 }
 
 /** Tests: the record file. */
-export const setupRecordFileForTest = recordFile;
+export const setupRecordFileForTest = store.file;

@@ -474,7 +474,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   started a gathering session or offer, **Sessions the overseer started**, listing them.
 - **Running Copies** (once Branches): the project's running copies on this host, In use and Can
   go, each opening its app where the project declares an entry; the line saying whether its
-  services are set up, with Run Playbook or Run Again; **Free Up Slots**; **Previews**; the shared
+  services are set up, with Set Up with a Chat or Change Setup… (the project's Project verbs chat),
+  or why it can't start; **Free Up Slots**; **Previews**; the shared
   services; and the **Recent** list (§app.project-services/services-ui,
   §app.project-services/free-up-slots, §mesh.public/preview-card).
 - **Deploy**: the Deploy panel at full width (§app.project-runtime/deploy-panel).

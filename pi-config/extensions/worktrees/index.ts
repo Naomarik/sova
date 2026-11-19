@@ -98,9 +98,9 @@ export function queueServes(mainRoot: string, env: NodeJS.ProcessEnv = process.e
 }
 
 /** A setup branch where no merge queue serves the repo: it is merged from its Setup card alone. */
-export const SETUP_BRANCH_REFUSED = "This branch changes the project's setup: press Merge Branch on its Setup card, which needs a passing trial first. Nothing was merged.";
+export const SETUP_BRANCH_REFUSED = "This branch changes the project's setup: press Merge Branch on its Setup card, which needs a passing dry run first. Nothing was merged.";
 /** Git couldn't tell whether the branch changes the project's setup: refused (fail closed). */
-export const SETUP_UNCONFIRMED = "Sova can't confirm whether this branch changes the project's setup, so nothing was merged. If it does, press Merge Branch on its Setup card, which needs a passing trial first.";
+export const SETUP_UNCONFIRMED = "Sova can't confirm whether this branch changes the project's setup, so nothing was merged. If it does, press Merge Branch on its Setup card, which needs a passing dry run first.";
 
 export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = {}) {
 	const git = options.git ?? runGit;
@@ -120,7 +120,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 	}
 
 	/** Where no merge queue serves the repo, a setup branch (setup-rule.ts) is merged only from its Setup card, which
-	    needs a passing trial first; this refuses it, and refuses when Git can't tell (fail closed). */
+	    needs a passing dry run first; this refuses it, and refuses when Git can't tell (fail closed). */
 	async function refuseSetupBranch(path: string, branch: string, target: string): Promise<void> {
 		const change = await setupChangeOf(git, path, target, branch).catch(() => null);
 		if (!change) throw new Error(SETUP_UNCONFIRMED);

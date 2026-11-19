@@ -536,9 +536,7 @@ test("routine readiness calls no retired spec-observation hook and keeps its ord
     { label: "checks passed", expected: "ready", check: { at: 3, ok: true } },
     { label: "no check seen", expected: "ready" },
     { label: "waiting for OK", expected: "waiting-approval", check: { at: 3, ok: true }, asks: true },
-    { label: "last check failed", expected: "in-progress", check: { at: 6, ok: false } },
-    // A failing run before the head commit was made no longer counts for the head (§chat.worktrees/newest-commit).
-    { label: "a failed check at an older commit", expected: "ready", check: { at: 3, ok: false } },
+    { label: "last check failed", expected: "in-progress", check: { at: 3, ok: false } },
     { label: "three dirty files", expected: "in-progress", status: { dirty: true, dirtyCount: 3, dirtyFiles: ["src/a.ts", "src/b.ts", "src/c.ts"] } },
     { label: "open alignment", expected: "blocked", row: { align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } } },
     { label: "stale merged branch", expected: "stale", status: { merged: "ancestor", dirty: true } },
@@ -565,7 +563,7 @@ test("routine readiness calls no retired spec-observation hook and keeps its ord
       const old = await r.computeReadiness(row, facts);
       assert.ok(old, c.label); assert.equal(old.trees[0]?.state, c.expected, c.label);
       const checks = structuredClone(r.readinessChecksOf(path));
-      assert.deepEqual(checks, { ...(c.check ? { lastCheck: c.check } : {}), heads: { "/wt/agents-row-dropdown": 5 } });
+      assert.deepEqual(checks, { ...(c.check ? { lastCheck: c.check } : {}), heads: { "/wt/agents-row-dropdown": 5 }, blocking: c.check && !c.check.ok ? { "/wt/agents-row-dropdown": c.check } : {} });
       const oldRow = { ...row, readiness: old }, attention = r.readinessItems(oldRow), restarts = r.restartItems([oldRow]);
       if (c.expected === "ready" || c.expected === "waiting-approval") assert.equal(attention.length, 1, "the attention comparison has a positive baseline");
       if (c.restart) assert.equal(restarts.length, 1, "the restart comparison has a positive baseline");
@@ -582,6 +580,46 @@ test("routine readiness calls no retired spec-observation hook and keeps its ord
       }
     }
   } finally { servedReset(); }
+});
+
+test("a failing check run blocks until newer evidence: a newer run of its kind, or a passing dry run or queue run of a later commit; a commit alone proves nothing", async () => {
+  type C = { at: number; ok: boolean; what?: string; failed?: string };
+  const failed: C = { at: 3, ok: false, what: "test run", failed: "1 failing test" };
+  const cases: { label: string; checks: C[]; passedLater?: boolean; expected: ReadinessState }[] = [
+    { label: "fail, then a commit: still blocks", checks: [failed], expected: "in-progress" },
+    { label: "fail, a commit, then a passing rerun: clears", checks: [{ ...failed, at: 7, ok: true }], expected: "ready" },
+    { label: "fail, a commit, then a passing dry run of the new head: clears", checks: [failed], passedLater: true, expected: "ready" },
+    { label: "tests fail, a commit, then a passing typecheck: still blocks", checks: [failed, { at: 7, ok: true, what: "typecheck" }], expected: "in-progress" },
+  ];
+  try {
+    for (const c of cases) {
+      servedReset();
+      const path = sessionFile([]), row = summary(path);
+      const newest = [...c.checks].sort((a, b) => a.at - b.at).at(-1)!;
+      const facts: FileFacts = { trees: [tracked() as FileFacts["trees"][number]], merges: [], lastCheck: newest, checks: c.checks };
+      // The run at 3 was at the old commit; the head ("fixture-head", made at 5) is newer.
+      const status = { path: "/wt/agents-row-dropdown", source: "session" as const, exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no" as const, ahead: 1, behind: 0, dirty: false, head: "fixture-head", headAt: 5 };
+      let asked: string | null = null;
+      r.configureReadiness({
+        insights: { treeStatus: async () => status },
+        git: fakeGit({ "rev-parse --show-toplevel": { stdout: "/fixture/server\n" }, "symbolic-ref": { stdout: "master\n" }, "merge-base --is-ancestor": { code: 0 }, "diff --name-only": { stdout: "server/index.ts\n" } }),
+        asksUser: () => undefined,
+        commitAt: async (_dir, at) => (at < 5 ? "old-commit" : "fixture-head"),
+        passedAfter: async (_dir, _branch, commit) => ((asked = commit), !!c.passedLater),
+        now: () => 0,
+        processStart: 0,
+      });
+      const got = await r.computeReadiness(row, facts);
+      assert.equal(got?.trees[0]?.state, c.expected, c.label);
+      if (c.expected === "in-progress") {
+        assert.match(got?.trees[0]?.why ?? "", /this chat's last test run at old-com failed: 1 failing test/, `${c.label}: it names its commit`);
+        assert.equal(got?.trees[0]?.lastCheck?.commit, "old-commit");
+      }
+      if (c.passedLater) assert.equal(asked, "old-commit", "newer evidence is asked about the run's own commit");
+    }
+  } finally {
+    servedReset();
+  }
 });
 
 function barrier() {

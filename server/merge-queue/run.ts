@@ -701,7 +701,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     }
     const red: string[] = [];
     // A dry run's checks still red after their rerun, with what each named (for whose failure and the Fix line).
-    const reds: { check: PlannedCheck; step: string; tests: { file?: string; name?: string; message?: string }[]; named: string[] }[] = [];
+    const reds: { check: PlannedCheck; step: string; tests: { file?: string; name?: string; message?: string }[]; named: string[]; first?: string }[] = [];
     for (const check of list) {
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source });
       const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, fresh: freshOf(def, { release: isReleaseRun(input) }), signal });
@@ -723,7 +723,8 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         again.end("failed", { detail: r2.proc.code === 0 ? "the rerun ran no test" : `exit ${r2.proc.code}` });
         red.push(check.label);
         const tests = (r2.report?.failures ?? r.report?.failures ?? (r2.failingFiles.length ? r2.failingFiles : r.failingFiles).map((file) => ({ file }))).slice(0, 50);
-        reds.push({ check, step: `rerun-tip:${check.id}`, tests, named: r2.failingFiles.length ? r2.failingFiles : namesOf(r2) });
+        const first = firstOutputLine(r2.proc.out) ?? firstOutputLine(r.proc.out);
+        reds.push({ check, step: `rerun-tip:${check.id}`, tests, named: r2.failingFiles.length ? r2.failingFiles : namesOf(r2), ...(first ? { first } : {}) });
       }
     }
     if (red.length && input.trialOf) {
@@ -751,7 +752,7 @@ async function trialWhose(o: {
   copy: string;
   scope: CopyScope;
   steps: Steps;
-  reds: { check: PlannedCheck; step: string; tests: { file?: string; name?: string; message?: string }[]; named: string[] }[];
+  reds: { check: PlannedCheck; step: string; tests: { file?: string; name?: string; message?: string }[]; named: string[]; first?: string }[];
   signal: AbortSignal;
 }): Promise<NonNullable<RunOutcome["trialFailure"]>> {
   const { input, copy, steps, reds, signal } = o;
@@ -804,7 +805,8 @@ async function trialWhose(o: {
   const lead = checks.find((c) => c.whose === whose) ?? checks[0]!;
   const sha = short(input.commit);
   const names = (lead.tests ?? []).map((x) => x.name ?? x.file).filter((x): x is string => !!x);
-  const fails = names.length ? `${names.length} failing test${names.length === 1 ? "" : "s"} (${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""})` : "it fails";
+  const first = reds.find((r) => r.check.id === lead.id)?.first;
+  const fails = names.length ? `${names.length} failing test${names.length === 1 ? "" : "s"} (${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""})` : (first ?? "it printed nothing");
   const words = whose === "branch" ? "This branch's change breaks it." : whose === "master" ? `Fails on ${target} too: not this branch's.` : `Can't tell whose failure: it fails on ${target} alone too.`;
   const more = checks.length > 1 ? ` (and ${checks.length - 1} more check${checks.length === 2 ? "" : "s"})` : "";
   return { kind: "dry-run", commit: input.commit, whose, line: `${lead.label} fails at ${sha}${more}: ${fails}. ${words}`, checks };

@@ -325,6 +325,9 @@ export interface FileFacts {
   trees: TrackedWorktree[];
   merges: MergeCard[];
   lastCheck?: LastCheck;
+  /** The newest check run of each kind ("test run", "typecheck", "build", "check run"), oldest first. Absent: read
+      before it was kept; `lastCheck` alone then stands for its kind. */
+  checks?: LastCheck[];
   /** The branch's last word is this reply (no user prompt after it). */
   lastReply?: { id: string; at: number; text: string };
   /** The newest replies that ended a turn, oldest first (at most REPLIES_KEPT): a queue landing's follow-up check
@@ -446,6 +449,7 @@ export function factsOf(branch: readonly ScanEntry[]): FileFacts {
   const set = stateViewOf(branch).latest(WORKTREES)?.data;
   const merges: MergeCard[] = [];
   let lastCheck: FileFacts["lastCheck"];
+  const byKind = new Map<string, LastCheck>();
   let lastReply: FileFacts["lastReply"];
   const replies: NonNullable<FileFacts["replies"]> = [];
   for (const e of branch) {
@@ -458,9 +462,13 @@ export function factsOf(branch: readonly ScanEntry[]): FileFacts {
       for (const c of merges) c.reply ??= reply;
     }
     if (e.userPrompt) lastReply = undefined;
-    if (e.check) lastCheck = { at: e.at ?? 0, ok: e.check.ok, ...(e.check.what ? { what: e.check.what } : {}), ...(e.check.failed ? { failed: e.check.failed } : {}) };
+    if (e.check) {
+      lastCheck = { at: e.at ?? 0, ok: e.check.ok, ...(e.check.what ? { what: e.check.what } : {}), ...(e.check.failed ? { failed: e.check.failed } : {}) };
+      byKind.delete(lastCheck.what ?? "check run");
+      byKind.set(lastCheck.what ?? "check run", lastCheck);
+    }
   }
-  return { trees: set?.trees ?? [], merges, ...(lastCheck ? { lastCheck } : {}), ...(lastReply ? { lastReply } : {}), ...(replies.length ? { replies } : {}) };
+  return { trees: set?.trees ?? [], merges, ...(lastCheck ? { lastCheck, checks: [...byKind.values()] } : {}), ...(lastReply ? { lastReply } : {}), ...(replies.length ? { replies } : {}) };
 }
 
 /** How far a file's read got (the marker search, then its compact entries). */
@@ -580,7 +588,7 @@ export interface ReadinessDeps {
   /** What a tree's readiness rests on besides the session, read without Git (WorktreeInsights.quietStamp):
       "gone" for a missing folder, null when it can't be read. */
   treeStamp?: (dir: string, together?: Map<string, unknown>) => string | null;
-  /** A served tree's branch at `head` that changes the project's setup without a passing trial of that commit: why it
+  /** A served tree's branch at `head` that changes the project's setup without a passing dry run of that commit: why it
       can't land yet (server/merge-queue/setup-branch.ts); null when it isn't a setup branch or its trial passed. */
   setupUntried?: (dir: string, head: string) => Promise<string | null>;
   /** A served tree's setup branch: its dry run state at `head` (never an older commit's), with Fix on a failure;
@@ -588,6 +596,9 @@ export interface ReadinessDeps {
   dryRunAt?: (dir: string, branch: string, head: string, session?: string) => Promise<import("../shared/merge-queue").BranchDryRun | null>;
   /** The commit a branch was at when (ms) a check ran: its newest commit made by then; null when Git can't tell. */
   commitAt?: (dir: string, at: number) => Promise<string | null>;
+  /** A passing dry run or merge queue run of a later commit of `branch` than `commit` (newer evidence than a check
+      run at `commit`, §chat.worktrees/newest-commit). */
+  passedAfter?: (dir: string, branch: string, commit: string) => Promise<boolean>;
   /** The Git inputs a tree's readiness reads, as stat stamps (worktrees.ts gitInputsStamp): the
       session feed's readiness watch compares them (checkReadinessInputs). */
   inputsStamp?: (dir: string, baseBranch?: string) => string | null;
@@ -884,17 +895,29 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
   const writes = publishChecks();
   const trees: WorktreeReadiness[] = [];
   const heads: Record<string, number> = {};
+  const blockingByTree: Record<string, LastCheck> = {};
   const blocked: { path: string; branch: string; commit: string; blockers: LandingBlocker[]; conflicts?: { base: string; files: number } }[] = [];
   for (const t of own) {
     const tf = await treeFacts(t, [s.cwd, ...own.map((o) => o.path).filter((p) => p !== t.path)]);
     if (tf.headAt) heads[t.path] = tf.headAt;
-    // The chat's newest check run names the commit it ran at; a failing one at an older commit than the head stops
-    // counting once that newer commit exists (§chat.worktrees/newest-commit).
-    const lc = sf.lastCheck;
-    const older = !!lc && !!tf.headAt && lc.at < tf.headAt;
-    const lcCommit = lc ? (older ? ((await deps.commitAt?.(t.path, lc.at).catch(() => null)) ?? undefined) : tf.head) : undefined;
-    const lastCheck = lc ? { ...lc, ...(lcCommit ? { commit: lcCommit } : {}), ...(older ? { older: true as const } : {}) } : undefined;
-    const tsf: SessionFacts = lastCheck && !(older && !lastCheck.ok) ? { ...sf, lastCheck } : older && !lc!.ok ? (({ lastCheck: _l, ...rest }) => rest)(sf) : sf;
+    // The chat's check runs, the newest of each kind, each naming the commit it ran at. A failing one keeps blocking
+    // until newer evidence: a newer run of the same kind (the newest of a kind is the one kept), or a passing dry run or
+    // merge queue run of a later commit of the branch; commits alone prove nothing (§chat.worktrees/newest-commit).
+    const kinds = facts.checks ?? (facts.lastCheck ? [facts.lastCheck] : []);
+    let blocking: LastCheck | undefined;
+    for (const c of [...kinds].filter((x) => !x.ok).sort((a, b) => b.at - a.at)) {
+      const at = (await deps.commitAt?.(t.path, c.at).catch(() => null)) ?? undefined;
+      const cleared = !!at && !!tf.head && at !== tf.head && !!tf.branch && !!(await deps.passedAfter?.(t.path, tf.branch, at).catch(() => false));
+      if (!cleared) {
+        blocking = { ...c, ...(at ? { commit: at } : {}) };
+        break;
+      }
+    }
+    const newest = facts.lastCheck;
+    const newestAt = newest && !blocking && newest.ok ? ((await deps.commitAt?.(t.path, newest.at).catch(() => null)) ?? undefined) : undefined;
+    const lastCheck: LastCheck | undefined = blocking ?? (newest?.ok ? { ...newest, ...(newestAt ? { commit: newestAt } : {}) } : newest ? { at: newest.at, ok: true, ...(newest.what ? { what: newest.what } : {}) } : undefined);
+    if (blocking) blockingByTree[t.path] = blocking;
+    const tsf: SessionFacts = lastCheck ? { ...sf, lastCheck } : (({ lastCheck: _l, ...rest }) => rest)(sf);
     const r = treeReadiness(tf, tsf);
     // Landing reads the tree as if it had no conflict: a conflict doesn't block the Land, the merge thread judges it in
     // line (al_3 q7). The row's own state still says it conflicts until it has a landing.
@@ -952,7 +975,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
       ...(landing ? { landing } : {}),
       ...(dryRun ? { dryRun } : {}),
-      ...(lastCheck ? { lastCheck: { ...(lastCheck.commit ? { commit: lastCheck.commit } : {}), at: lastCheck.at, ok: lastCheck.ok, ...(lastCheck.what ? { what: lastCheck.what } : {}), ...(lastCheck.failed ? { failed: lastCheck.failed } : {}) } } : {}),
+      ...(blocking || newest?.ok ? { lastCheck: { ...(lastCheck!.commit ? { commit: lastCheck!.commit } : {}), at: lastCheck!.at, ok: lastCheck!.ok, ...(lastCheck!.what ? { what: lastCheck!.what } : {}), ...(lastCheck!.failed ? { failed: lastCheck!.failed } : {}) } } : {}),
       ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const, ...(await removeFieldsOf(t.path)) }) : {}),
     });
   }
@@ -972,7 +995,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
   const followUp = queued && (!newest || queued.at > newest.at) ? followUpFor(s.id, `mq:${queued.id}`) : newest ? followUpFor(s.id, newest.id) : undefined;
   const lastReplyAt = reply?.at ?? (Date.parse(s.lastActiveAt) || 0);
   if (publishChecks()) {
-    checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
+    checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads, blocking: blockingByTree });
     blockedBySession.set(s.path, blocked);
   }
   const r = sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
@@ -1446,7 +1469,7 @@ async function nudgeSpecs(s: SessionSummary, value: SessionReadiness): Promise<v
 }
 
 /** Read a session's readiness again soon (Sova's try of its drafts has answered). */
-/** Read a session's readiness again now (a fact outside Git moved: a trial of its branch ended). */
+/** Read a session's readiness again now (a fact outside Git moved: a dry run of its branch ended). */
 export function rereadReadiness(path: string): void {
   requeue(path);
 }
@@ -1551,6 +1574,8 @@ export function pruneReadiness(listed: readonly SessionSummary[]): void {
     readiness read saw them (sova_session's Merge line, §app.overseer/session-truth). */
 export interface ReadinessChecks {
   lastCheck?: LastCheck;
+  /** Tree path → the chat's check run that blocks it now (its failing run with no newer evidence), when one does. */
+  blocking?: Record<string, LastCheck>;
   /** Tree path → its newest commit's time (ms). */
   heads: Record<string, number>;
 }

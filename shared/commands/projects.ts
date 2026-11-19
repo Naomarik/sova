@@ -417,7 +417,7 @@ const PROJECTS_SWEEP: CommandEntry[] = [
     model: { type: "string", description: "Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra", in: "body" },
     thinking: { type: "string", description: "Its thinking level", in: "body" },
   }),
-  changes("project.setup.merge", "Merge Setup Branch", "Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: refused unless that head has a passing trial. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/setup/merge", {
+  changes("project.setup.merge", "Merge Setup Branch", "Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: on a project the queue serves Land runs a dry run of that head first; Merge Branch refuses a head with no passing dry run. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/setup/merge", {
     pid,
     hash: { type: "string", description: "The proposal's hash as shown", in: "body", required: true },
     commit: { type: "string", description: "The branch head shown (Land pins it)", in: "body" },

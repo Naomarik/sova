@@ -3877,7 +3877,7 @@ export interface CommandParams {
     /** Its thinking level */
     "thinking"?: string;
   };
-  /** Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: refused unless that head has a passing trial. The user's own page only: a chat, an Overseer or a script is refused. (changes something; needs the card's owner trusted) */
+  /** Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: on a project the queue serves Land runs a dry run of that head first; Merge Branch refuses a head with no passing dry run. The user's own page only: a chat, an Overseer or a script is refused. (changes something; needs the card's owner trusted) */
   "project.setup.merge": {
     /** The project's id */
     "pid": string;

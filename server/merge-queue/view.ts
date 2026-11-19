@@ -33,6 +33,8 @@ export function buildView(a: {
   settled?: ReadonlyMap<string, Exclude<MergeSettled, "superseded">>;
   /** A dry run holds the merge copy: what is left of it (ms), counted before every waiting entry. */
   holdMs?: number;
+  /** A branch's dry run holds the merge copy: the queue reads running. */
+  trying?: boolean;
 }): MergeQueueView {
   const takes = a.takesMs ?? DEFAULT_TAKES_MS;
   const queued = a.q.entries.filter((e) => e.state === "queued").sort((x, y) => x.seq - y.seq);
@@ -53,7 +55,7 @@ export function buildView(a: {
       const r = entry.run ? a.readRun(entry.run) : null;
       return { entry, ...(r ? { run: { id: r.id, verdict: r.verdict, startedAt: r.startedAt, ...(r.endedAt ? { endedAt: r.endedAt } : {}), ...(r.noChecks ? { noChecks: true as const } : {}) } } : {}) };
     });
-  const state: MergeQueueView["state"] = a.q.paused ? "paused" : a.current ? "running" : "idle";
+  const state: MergeQueueView["state"] = a.q.paused ? "paused" : a.current || a.trying ? "running" : "idle";
   return {
     project: a.q.project,
     root: a.root,

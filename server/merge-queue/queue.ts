@@ -27,6 +27,7 @@ import {
   type MergeRun,
   type MergeTrial,
   type MergeTrialNow,
+  ordinal,
   type MergeTrialWaiting,
   type BranchDryRun,
   type BranchFailure,
@@ -439,7 +440,15 @@ export class ProjectQueue {
       }
       voided = true;
     }
-    if (voided) this.save();
+    if (voided) {
+      this.save();
+      // The chat that started one is told (its turn may have ended waiting for the wake); a Land's reruns by itself.
+      for (const t of this.q.trials ?? []) {
+        if (t.stopped?.by !== "restart" || t.by.kind !== "chat" || !t.by.session || t.endedAt !== t.stopped.at) continue;
+        const run = this.store.readRun(t.run);
+        if (run) this.deps.trialEnded?.(structuredClone(t), run, this.root, { sessions: [t.by.session], text: trialEndedText(t, run, { target: this.q.target }) });
+      }
+    }
     // Entries with their chats are looked at again: a fix the merge thread wasn't told of, a block that went away.
     if (this.q.entries.some((e) => e.state === "with-chat" || !!e.fix)) this.armFixTimer();
   }
@@ -702,6 +711,7 @@ export class ProjectQueue {
       origin,
       settled,
       holdMs: this.trialLeftMs(),
+      trying: !!this.trying?.trial,
     });
     await this.attachDryRuns(v, ready, head);
     // Why each was sent back (an entry from before it was kept: inferred once), and which may land again as they are.
@@ -761,7 +771,7 @@ export class ProjectQueue {
     const landed = this.q.entries.filter((e) => e.state === "landed").sort((a, b) => (b.landed?.at ?? b.updatedAt).localeCompare(a.landed?.at ?? a.updatedAt));
     const keep = new Set(landed.slice(0, recentMax).map((e) => e.id));
     const q = { ...this.q, entries: this.q.entries.filter((e) => e.state !== "landed" || keep.has(e.id)) };
-    const v = buildView({ q, root: this.root, current: this.current?.run ?? null, checks: d.checks, review: d.review, head, takesMs: takes, now: this.now(), readRun: (id) => this.store.readRun(id), holdMs: this.trialLeftMs() });
+    const v = buildView({ q, root: this.root, current: this.current?.run ?? null, checks: d.checks, review: d.review, head, takesMs: takes, now: this.now(), readRun: (id) => this.store.readRun(id), holdMs: this.trialLeftMs(), trying: !!this.trying?.trial });
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
     const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
@@ -1520,8 +1530,10 @@ export class ProjectQueue {
         if (open.state === "queued") {
           open.commit = commit;
           open.approval = approval;
-          if (dryRunFirst) open.standing = { phase: "dry-run" };
-          else if (open.standing?.phase === "dry-run") delete open.standing;
+          if (dryRunFirst) {
+            open.standing = { phase: "dry-run", ...(this.trying?.trial?.commit === commit ? { run: this.trying.trial.run } : {}) };
+            this.supersedeTrials(branch, commit);
+          } else if (open.standing?.phase === "dry-run") delete open.standing;
           if (req.session) open.session = req.session;
           if (wt) open.worktree = wt;
           open.updatedAt = this.iso();
@@ -1572,15 +1584,7 @@ export class ProjectQueue {
         e.standing = { phase: "waiting-fix", why: blocked };
         e.reason = blocked;
       } else if (dryRunFirst) e.standing = { phase: "dry-run", ...(this.trying?.trial?.commit === commit ? { run: this.trying.trial.run } : {}) };
-      // A Land supersedes the branch's dry run of another commit (running, or waiting its turn): its own runs at its turn.
-      if (dryRunFirst) {
-        const cur = this.trying?.trial;
-        if (cur && this.trying && cur.branch === branch && cur.commit !== commit && !this.trying.stop) {
-          this.trying.stop = { by: "superseded", at: this.iso() };
-          this.trying.ac.abort();
-        }
-        if (this.q.trialsWaiting?.some((w) => w.branch === branch)) this.q.trialsWaiting = this.q.trialsWaiting.filter((w) => w.branch !== branch);
-      }
+      if (dryRunFirst) this.supersedeTrials(branch, commit);
       this.q.entries.push(e);
       // Approved again while checking: the newer commit goes first.
       if (open && this.current?.entry === open.id && !blocked) this.toFront(e);
@@ -3241,6 +3245,43 @@ export class ProjectQueue {
     return (this.q.trialsWaiting ?? []).map((w) => ({ ...structuredClone(w), after }));
   }
 
+  /** A Land of `branch` at `commit` supersedes the branch's dry run of another commit, running (stopped as superseded:
+   *  its chat is told the Land runs its own) or waiting its turn (dropped). A dry run of `commit` itself is adopted. */
+  private supersedeTrials(branch: string, commit: string): void {
+    const cur = this.trying?.trial;
+    if (cur && this.trying && cur.branch === branch && cur.commit !== commit && !this.trying.stop) {
+      this.trying.stop = { by: "superseded", at: this.iso() };
+      this.trying.ac.abort();
+    }
+    const w = (this.q.trialsWaiting ?? []).filter((x) => x.branch === branch);
+    if (!w.length) return;
+    this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((x) => x.branch !== branch);
+    for (const x of w) this.tellWaitingEnded(x, x.commit === commit ? "taken by your Land, which runs it at its turn in line" : `superseded by your Land of ${commit.slice(0, 7)}, which runs its own dry run`);
+  }
+
+  /** The chat that asked for a waiting dry run is told it won't start (stopped, or taken by a Land). */
+  private tellWaitingEnded(w: MergeTrialWaiting, how: string): void {
+    if (w.by.kind !== "chat" || !w.by.session) return;
+    const text = `The dry run of ${w.branch} at ${w.commit.slice(0, 7)} that waited for the merge copy won't start: ${how}. Nothing ran and nothing failed.`;
+    const trial: MergeTrial = { run: "", commit: w.commit, branch: w.branch, verdict: "void", by: w.by, startedAt: w.at, stopped: { by: "operator", at: this.iso() } };
+    const run: MergeRun = { id: "", entry: "trial", project: this.id, branch: w.branch, base: w.commit, commit: w.commit, steps: [], checks: [], verdict: "void", startedAt: w.at };
+    this.deps.trialEnded?.(trial, run, this.root, { sessions: [w.by.session], text });
+  }
+
+  /** A passing dry run, or a passing merge queue run, of a commit of `branch` later than `commit` (one descending from
+   *  it): newer evidence than a check run at `commit` (§chat.worktrees/newest-commit). */
+  async passedAfter(branch: string, commit: string): Promise<boolean> {
+    const later = new Set<string>();
+    for (const t of this.q.trials ?? []) if (t.branch === branch && t.verdict === "passed" && t.commit !== commit) later.add(t.commit);
+    for (const e of this.q.entries) {
+      if (e.branch !== branch || e.commit === commit) continue;
+      const run = e.run ? this.store.readRun(e.run) : null;
+      if (e.state === "landed" || run?.verdict === "passed") later.add(e.commit);
+    }
+    for (const c of later) if (await isAncestor(this.git, this.root, commit, c)) return true;
+    return false;
+  }
+
   /**
    * A setup branch's dry run state at `commit` (its newest, the caller's head), or null when the commit isn't a setup
    * branch's (or Git can't tell). Never an older commit's as current: that one is only `older`.
@@ -3302,7 +3343,12 @@ export class ProjectQueue {
       if (this.current || this.trying || this.landing || this.q.release || land) {
         if (!branch) throw new MergeFailure("busy", "a landing or a dry run is using the merge copy now: try again when it ends (name the branch to have it wait its turn)");
         const needs = dryRunWhyLine((head ? await this.dryRunNeeds(head, commit) : null)?.reasons ?? []);
-        if (land) return { waiting: { id: land.id, branch, commit, by, at: land.approval.at, after: this.holdsCopyWords(), needs } };
+        if (land) {
+          // That dry run is the Land's: it runs at its turn in line, never a second one.
+          const pos = this.withPosition(land).position;
+          this.kickSoon();
+          return { waiting: { id: land.id, branch, commit, by, at: land.approval.at, after: `its turn in line (Approved · dry run first${pos ? ` · ${ordinal(pos)}` : ""})`, needs } };
+        }
         const list = (this.q.trialsWaiting ?? []).filter((w) => w.branch !== branch);
         const was = (this.q.trialsWaiting ?? []).find((w) => w.branch === branch);
         const w: MergeTrialWaiting = { id: was?.id ?? newId("tw"), branch, commit, by: req.by, at: was?.at ?? this.iso(), after: "", needs };
@@ -3522,11 +3568,13 @@ export class ProjectQueue {
       const mayStop = (b: TrialBy) => req.by.kind === "operator" || (b.kind === "chat" && !!req.by.session && b.session === req.by.session);
       if (req.waiting) {
         const w = (this.q.trialsWaiting ?? []).find((x) => x.id === req.waiting);
+        if (!w && this.entry(req.waiting)) throw new MergeFailure("invalid-request", "That dry run is your Land's: it runs at its turn in line. Remove from Queue takes the Land back.");
         if (!w) throw new MergeFailure("not-found", `no dry run ${req.waiting} is waiting`);
         if (!mayStop(w.by)) throw new MergeFailure("forbidden", "a chat stops only a dry run it started");
         this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((x) => x !== w);
         this.save();
         this.schedulePublish();
+        if (req.by.kind === "operator") this.tellWaitingEnded(w, "the user stopped it before it started");
         return { waiting: { ...w, after: "" } };
       }
       const cur = this.trying?.trial;

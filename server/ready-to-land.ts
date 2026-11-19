@@ -51,8 +51,6 @@ export interface LastCheck {
   failed?: string;
   /** The branch head it ran at, when known (§chat.worktrees/newest-commit). */
   commit?: string;
-  /** It ran before the head commit was made: it no longer counts for the head. */
-  older?: true;
 }
 
 const listed = (xs: readonly string[], n = 3) => `${xs.slice(0, n).join(", ")}${xs.length > n ? `, +${xs.length - n} more` : ""}`;
@@ -80,8 +78,7 @@ export function checkFailureOf(output: string): { what: string; failed?: string 
 }
 
 /** Whose run failed and what it names: "this chat's last test run failed: 1 failing file, server/a.test.ts". */
-export const lastCheckWords = (c: Pick<LastCheck, "what" | "failed" | "commit" | "older">): string =>
-  `this chat's last ${c.what ?? "check run"}${c.commit ? ` at ${c.commit.slice(0, 7)}${c.older ? ", an older commit," : ""}` : ""} failed${c.failed ? `: ${c.failed}` : ""}`;
+export const lastCheckWords = (c: Pick<LastCheck, "what" | "failed" | "commit">): string => `this chat's last ${c.what ?? "check run"}${c.commit ? ` at ${c.commit.slice(0, 7)}` : ""} failed${c.failed ? `: ${c.failed}` : ""}`;
 
 /** "yes": the latest turn outcome says the work is done; "no": it doesn't, or there is none for the
     last reply; "off": no outcome is ever recorded for this session (attention off, or its folder

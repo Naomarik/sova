@@ -147,7 +147,7 @@ describe("a trial runs optional checks with no selection, as the queue picks the
 });
 
 describe("a dry run tells whose failure it is, as a landing does", () => {
-  const RED = `process.exit(process.argv.includes("--strict") || process.env.ALWAYS_RED === "1" ? 1 : 0);\n`;
+  const RED = `process.exit(process.argv.includes("--strict") ? 1 : 0);\n`;
   const defOf = (run: string[], more: Record<string, unknown> = {}) => `${JSON.stringify({ version: 1, merge: { checks: [{ id: "unit", label: "Unit", run, ...more }] } }, null, 2)}\n`;
 
   test("a changed check that fails on the target too is the target's; one that passes there is the branch's; a new one is the branch's alone", async () => {

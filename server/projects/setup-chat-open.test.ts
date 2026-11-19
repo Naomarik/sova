@@ -174,8 +174,13 @@ describe("Merge Branch on the Setup proposal (mergeSetup)", () => {
       // A commit after the trial (a script the hash doesn't cover): the page still shows the tried head.
       const newer = commitIn(wt, { "scripts/check.sh": "exit 1\n" }, "after the trial");
       await assert.rejects(mergeSetup(a.id, proposal.hash, head, l.deps), (e: Error) => e.message === SETUP_BRANCH_MOVED);
-      await assert.rejects(mergeSetup(a.id, proposal.hash, newer, l.deps), /no passing dry run at/, "the new head needs its own trial");
-      assert.deepEqual([l.calls.land, l.calls.merge], [[], []], "nothing merged or landed so far");
+      await assert.rejects(mergeSetup(a.id, proposal.hash, newer, l.deps), /no passing dry run at/, "the new head needs its own dry run");
+      assert.deepEqual(l.calls.merge, [], "nothing merged so far");
+      assert.deepEqual(l.calls.land, [head, newer], "Land was only asked, and the queue doesn't serve it: refused");
+      // Served: Land is taken with no passing dry run of the head; the queue runs one first (§app.project-setup/land-gate).
+      served = true;
+      assert.deepEqual(await mergeSetup(a.id, proposal.hash, newer, l.deps), { queued: true });
+      l.calls.land.length = 0;
       await q.trial({ branch: first.worktree!.branch, by: { kind: "operator" } });
       await q.tryingNow();
       served = false;

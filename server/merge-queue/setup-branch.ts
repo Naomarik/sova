@@ -155,7 +155,7 @@ export function untriedWhy(trials: readonly MergeTrial[] | undefined, commit: st
   if (t.verdict === "running") return `This setup branch's dry run at ${head} is still running: it merges once that passes.`;
   if (t.verdict === "void") return `This setup branch's dry run at ${head} was stopped by ${stoppedByWords(t.stopped)}: nothing failed. Run it again.`;
   if (t.verdict === "machine") return `This setup branch's dry run at ${head} couldn't run (${t.why ?? "the machine"}): that's the machine, not this branch. Run it again.`;
-  return `This setup branch's dry run at ${head} failed: ${t.failure?.line ?? t.why ?? "a check failed"}.`;
+  return `This setup branch's dry run at ${head} failed: ${(t.failure?.line ?? t.why ?? "a check failed").replace(/\.$/, "")}.`;
 }
 
 const seconds = (ms: number): string => (ms >= 60_000 ? `${Math.round(ms / 60_000)} min` : `${Math.max(1, Math.round(ms / 1000))} s`);

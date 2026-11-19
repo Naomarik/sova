@@ -31,7 +31,10 @@ export async function liveFixOffer(o: { root: string; branch: string; worktree?:
     session = ownerId(await worktreeOwnerOf(o.worktree).catch(() => null))?.session;
   }
   const chat = await fixChatState(session);
-  return fixOfferOf(chat, o.shared, o.shared ? o.branch : null);
+  // A failure the target shares starts its new chat on a new branch from the target, which must be readable.
+  const { mergeQueues } = await import("./wire");
+  const target = o.shared ? ((await mergeQueues()?.peek(o.root))?.target ?? null) : null;
+  return fixOfferOf(chat, o.shared, target);
 }
 
 export async function liveFix(projectId: string, req: { branch: string; commit: string; run: string; newChat: boolean; check?: string }): Promise<FixAnswer> {

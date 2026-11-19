@@ -925,10 +925,12 @@ export async function startMergeQueue(
       const [{ listedSession }, { readinessChecksOf }, { lastCheckWords }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
       const path = (await listedSession(session))?.path;
       const read = path ? readinessChecksOf(path) : undefined;
+      // The run that blocks this tree now (a failing one with no newer evidence, §chat.worktrees/newest-commit).
+      if (read?.blocking && worktree) {
+        const b = read.blocking[canonical(worktree)] ?? read.blocking[worktree];
+        return b ? lastCheckWords(b) : null;
+      }
       const c = read?.lastCheck;
-      // A failing run at an older commit than the branch head no longer counts (§chat.worktrees/newest-commit).
-      const headAt = worktree ? read?.heads?.[canonical(worktree)] ?? read?.heads?.[worktree] : undefined;
-      if (c && headAt && c.at < headAt) return null;
       return c && !c.ok ? lastCheckWords(c) : null;
     },
     newestReading: async (worktree, tip) => {
@@ -1064,6 +1066,13 @@ export async function startMergeQueue(
     commitAt: async (dir, at) => {
       const r = await realGit(["log", "-1", `--before=@${Math.floor(at / 1000)}`, "--format=%H", "HEAD"], dir);
       return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null;
+    },
+    // Newer evidence than a failing check run: a passing dry run or merge queue run of a later commit of the branch.
+    passedAfter: async (dir, branch, commit) => {
+      const p = await projectOf(dir);
+      if (p.state !== "ok" || !p.git || !served.isListed(p.root)) return false;
+      const queue = (await q.peek(p.root)) ?? (await q.get(p.root));
+      return queue.passedAfter(branch, commit);
     },
     // A setup branch's dry run state at its head, with Fix on a failure (§chat.worktrees/newest-commit).
     dryRunAt: async (dir, branch, head, session) => {

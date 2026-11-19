@@ -316,7 +316,7 @@ describe("merge.try and the land gate", () => {
       k.repo.branch("setup/r", { ".sova/project.json": DEF_TEXT("true") });
       k.run.set(untilAborted);
       const q = await k.q();
-      const r = await q.trial({ branch: "setup/r", by: { kind: "operator" } });
+      const r = await q.trial({ branch: "setup/r", by: { kind: "chat", session: "s-chat" } });
       runId = r.trial!.run;
       file = join(q.store.dir, "queue.json");
       snapshot = readFileSync(file, "utf8");
@@ -331,7 +331,8 @@ describe("merge.try and the land gate", () => {
       repo.done();
       throw err;
     }
-    const k2 = makeKit({ repo });
+    const woke: { sessions: string[]; text: string }[] = [];
+    const k2 = makeKit({ repo, deps: { trialEnded: (_t, _r, _root, tell) => void woke.push(tell) } });
     try {
       const q2 = await k2.q();
       const t = q2.trials().find((x) => x.run === runId)!;
@@ -339,6 +340,9 @@ describe("merge.try and the land gate", () => {
       assert.equal(t.stopped?.by, "restart");
       assert.equal(q2.store.readRun(runId)?.verdict, "void");
       assert.equal((await q2.view()).trialNow, undefined, "never running from a saved record");
+      assert.equal(woke.length, 1, "the chat that started it is told");
+      assert.deepEqual(woke[0]!.sessions, ["s-chat"]);
+      assert.match(woke[0]!.text, /was stopped by a Sova restart: nothing failed/);
     } finally {
       await k2.done();
       repo.done();
@@ -356,6 +360,54 @@ describe("merge.try and the land gate", () => {
       }
       assert.equal(k.repo.head(), before);
       assert.equal(k.run.inputs.length, 0, "nothing ran in the merge copy");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("Land again at a newer commit while queued supersedes its dry run of the older one; a chat's press of the Land's commit is that dry run", async () => {
+    const k = makeKit();
+    try {
+      const b = k.repo.branch("setup/again", { ".sova/project.json": DEF_TEXT("true") });
+      const q = await k.q();
+      await q.pause("hold", "operator");
+      const first = await q.add({ branch: "setup/again", by: "land-button" });
+      assert.equal(first.entry.standing?.phase, "dry-run");
+      // The chat's dry run of that commit: the Land waits on it, so it is the Land's, never a second one.
+      const chats = await q.trial({ branch: "setup/again", commit: b.head, by: { kind: "chat", session: "s-chat" } });
+      assert.ok(chats.waiting, "no second dry run");
+      assert.match(chats.waiting!.after, /its turn in line \(Approved · dry run first · 1st\)/);
+      // A's dry run runs until it is stopped; every other run passes.
+      k.run.set(async (input) => (input.commit === b.head ? untilAborted(input) : {}));
+      await q.resume();
+      await until(() => q.trials().find((t) => t.commit === b.head && t.verdict === "running"), "A's dry run");
+      const next = k.repo.commitOn(b.path, { ".sova/project.json": DEF_TEXT("true && true") });
+      const again = await q.add({ branch: "setup/again", by: "land-button" });
+      assert.equal(again.entry.commit, next);
+      assert.equal(again.entry.standing?.phase, "dry-run");
+      const old = await until(() => q.trials().find((t) => t.commit === b.head && t.verdict !== "running"), "A's dry run stopped");
+      assert.equal(old.stopped?.by, "superseded");
+      await until(() => q.trials().find((t) => t.commit === next && t.verdict === "passed"), "B's own dry run");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("Stop on a waiting dry run tells the chat that asked for it; a Land's own dry run isn't stopped from the wait", async () => {
+    const woke: { sessions: string[]; text: string }[] = [];
+    const k = makeKit({ deps: { trialEnded: (_t, _r, _root, tell) => void woke.push(tell) } });
+    try {
+      k.repo.branch("setup/x1", { ".sova/project.json": DEF_TEXT("true") });
+      k.repo.branch("setup/x2", { ".sova/project.json": DEF_TEXT("true && true") });
+      k.run.set(untilAborted);
+      const q = await k.q();
+      await q.trial({ branch: "setup/x1", by: { kind: "operator" } });
+      const w = await q.trial({ branch: "setup/x2", by: { kind: "chat", session: "s-two" } });
+      await q.stopTrial({ waiting: w.waiting!.id, by: { kind: "operator" } });
+      assert.deepEqual(woke.map((x) => x.sessions), [["s-two"]]);
+      assert.match(woke[0]!.text, /won't start: the user stopped it before it started/);
+      const e = await q.add({ branch: "setup/x2", by: "land-button" });
+      await assert.rejects(q.stopTrial({ waiting: e.entry.id, by: { kind: "operator" } }), /your Land's/);
     } finally {
       await k.done();
     }

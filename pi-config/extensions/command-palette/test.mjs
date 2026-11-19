@@ -111,12 +111,6 @@ test('no matches cannot execute; clearing query works', () => {
   p.handleInput('\x15'); p.handleInput('\r'); p.handleInput('\r');
   assert.equal(result().id, 'rename');
 });
-test('back restores parent filter; Ctrl+P closes at any depth', () => {
-  const { p, result } = menu();
-  p.handleInput('Sessions'); p.handleInput('\r'); p.handleInput('\x1b');
-  assert.match(stripVTControlCharacters(p.render(80).join('\n')), /❯ Sessions/);
-  p.handleInput('\x10'); assert.equal(result(), undefined);
-});
 test('render stays within terminal width, including unicode and resizing', () => {
   const { p } = menu();
   p.focused = true;

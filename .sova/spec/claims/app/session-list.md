@@ -1493,17 +1493,21 @@ same toasts.
   scrolls, and a tap still opens the session. The phone's own long-press menu never shows over a
   row. The row gains no ⋯ button.
 - **Its heading.** The session's title, on one line, cut short when long.
-- **Its rows**, in two groups: the title's (Rename…, Use Gist as Title, Reset to Original Title)
+- **Its rows**, in two groups: the title's (Rename…, Regenerate Title, Reset to Original Title)
   and the session's (Move to Group…, Copy Path, Archive or Unarchive). A row that can't apply to
   this session is left out or disabled, and a disabled row says why on its second line.
   - **Rename…** turns the menu into a title field holding the current title, without closing it:
     Enter saves it to Sova's title store (§app.session-list/session-titles), Escape cancels, an
     empty field goes back to the original title, and a value equal to the title it opened with
     changes nothing, as the board's Rename… does.
-  - **Use Gist as Title** shows the gist under its label and makes it the title, cut to the title
-    limit; disabled with "No gist yet." or "The gist is already the title." **Reset to Original
-    Title** shows the original title under its label and clears the rename; disabled with "Not
-    renamed." Both as the board's ⋯ has them.
+  - **Regenerate Title** reads "A short name from what the session became." on its second line
+    and does what an open session's Regenerate title does (§app.session-list/auto-titles): the
+    menu closes, a toast says "Regenerating title…", and the session is named again by the title
+    call; when it ends, a toast says "Renamed to “{title}”." with Undo, or "Couldn't regenerate
+    the title." with the reason, the title kept. While a regenerate of this session runs, the row
+    is disabled and reads "Regenerating title…". **Reset to Original Title** shows the original
+    title under its label and clears the rename; disabled with "Not renamed." Both as the
+    board's ⋯ has them.
   - A chat Sova names itself (§app.session-list/fixed-names) has none of these three rows.
   - **Move to Group…** turns the menu into the list of places: No group, then each group in its
     creation order with the row's current one checked, then New Group…. Picking a group files the
@@ -1564,8 +1568,8 @@ title store (§app.session-list/session-titles) as an `auto` title. Never into t
 `.jsonl`, and **never over an explicit title** automatically: a title a user or the Overseer set,
 or any title stored before provenance existed, is never replaced by the sweep or by the section
 button. Only two presses go further: **Shorten long titles** may replace a long Overseer or
-pre-provenance title (never a typed one), and an open session's **Regenerate title** may replace
-whatever title that one session has.
+pre-provenance title (never a typed one), and **Regenerate title** (an open session's head, a
+sidebar row's menu, the Agents board's ⋯) may replace whatever title that one session has.
 
 **A title is a short label.** The sidebar row's title line holds about 32 characters, and the
 summary line sits right under it (§app.session-list/content-rules, "Row line 2"). So a title is
@@ -1588,9 +1592,11 @@ a status (merged, shipped, restart). Rows that would otherwise look alike are to
 **Four ways in.** A background **sweep**, on by default and switched off in Settings → Summaries
 (§app.settings-dialog/summaries), names sessions as they settle. A **Name sessions** button on
 section heads names a section's unnamed rows on demand, whether the sweep is on or not. A one-shot
-**Shorten long titles** in the same Settings section renames long titles. A **Regenerate title**
-button in an open session's head renames that one session. All use the same title call and the
-same race-safe writer (`server/session-autotitle.ts`).
+**Shorten long titles** in the same Settings section renames long titles. **Regenerate title**,
+a button in an open session's head and a row in a session's menus (the sidebar row's,
+§app.session-list/row-menu, and the Agents board's ⋯, §app.insights/team-cards), renames that
+one session. All use the same title call and the same race-safe writer
+(`server/session-autotitle.ts`).
 
 **The title call.** A primary and an optional fallback from Settings, in order, each obeying the
 model policy's global switch like the summary line: a model turned off in Settings → Models is
@@ -1613,10 +1619,14 @@ rules alone (the label rules above, sentence case, never name the app, with thre
   one is at most its first 1500 characters, then ` […] `, then at most its last 500, each part
   trimmed inward to a word boundary when one lies within 40 characters of its cut, never splitting
   a surrogate pair;
-- or, with no summary line (the button only), its first 3 user messages instead: the first as that
-  same excerpt, the second and third at most 600 characters each.
+- or, with no summary line (Regenerate title only), its first 3 user messages instead: the first as that
+  same excerpt, the second and third at most 600 characters each;
+- on Regenerate title only, and only when the session has a stored title (read when the call
+  starts), last, that stored title on one line, labelled as the current title being replaced, with
+  the ask for a different one; a session with no stored title adds nothing.
 
-**The session's current title is never in it**, whatever set it. On pi the call is
+**The session's current title is never in it** otherwise, whatever set it: the sweep, Name
+sessions and Shorten long titles never send it. On pi the call is
 `completeSimple` with that system prompt and one user message, temperature 0 and no reasoning
 unless the row's effort asks for it; on Claude Code it is `claude -p` in an empty temporary
 folder with `--system-prompt`, no tools, no setting sources, no MCP servers, no session
@@ -1693,16 +1703,26 @@ answers `{results}` like the auto-title route, with one more reason, `short` (by
 came, the session's title was no longer one it may shorten). A dry run calls no model and lists them as
 `would-name`. Archived sessions are included; subagents' own sessions and Overseer files are not.
 
-**Regenerate title.** An open session's head (the single-session view, on desktop and phone) has
+**Regenerate title.** It is in three places, each doing the same: a row in the sidebar row's menu
+(§app.session-list/row-menu) and in the Agents board's ⋯ (§app.insights/team-cards), between
+Rename… and Reset to Original Title, and a button in an open session's head. The head (the
+single-session view, on desktop and phone) has
 a quiet ghost icon button (`refresh`), labelled and titled "Regenerate title", at the start of the
 open session's path line, before the path; never between the title and the context gauge. It is
 sized to the path line's small text (a caption-sized icon) and never makes that line taller or
-gives way when the path is truncated, so the title keeps the head's full width. It is not on sidebar rows or
-on a workspace pane's head. A press sends the regenerate form for that session to its own host;
-while it runs the button is disabled, `aria-busy`, and titled "Regenerating title…". When a title
-comes back the list is fetched again and the head shows it; when none does, the title stays as it
-was and a toast says "Couldn't regenerate the title." with the reason. No undo: a title the user
-doesn't like is renamed like any other.
+gives way when the path is truncated, so the title keeps the head's full width. It is not on a
+workspace pane's head. A press of the button or the menu row sends the regenerate form for that
+session to its own host. While it runs, wherever it was started, the head's button is disabled,
+`aria-busy`, and titled "Regenerating title…", and the session's menu rows are disabled and read
+"Regenerating title…"; a second press for that session while one runs does nothing. A press from
+a menu closes the menu. Every press shows one toast for that session, read aloud too, that says
+"Regenerating title…" and is then replaced by the outcome. When a title comes back the list is
+fetched again, the head and the rows show it, and the toast says "Renamed to “{title}”." with
+**Undo** for about 6 seconds, which puts back the name the session had: its previous stored title
+(an Overseer's title back as the Overseer's, any other as the user's), or, when none was stored,
+its first-message name again. Undo then toasts "Title back to “{previous title}”.", or, when the
+write fails, "Couldn't undo the new title." with the reason. When no title comes back, the title
+stays as it was and the toast says "Couldn't regenerate the title." with the reason.
 
 **Mesh.** Each host names its own sessions, with its own settings, models and keys. The button
 splits a section's rows by host and sends each peer's rows to that peer
@@ -1742,7 +1762,7 @@ the chat (cleared, pruned, or kept under another state root) does it read the ge
   not a rename by the user or by the Overseer (§app.session-list/session-titles), and not an alias
   (§app.overseer/session-names).
 - **Nothing offers to.** On such a chat the Agents board's ⋯ and the sidebar row's menu have no
-  Rename…, Use Gist as Title or Reset to Original Title (§app.insights/team-cards,
+  Rename…, Regenerate Title or Reset to Original Title (§app.insights/team-cards,
   §app.session-list/row-menu), and an open chat's head has no Regenerate
   title. Every other way is refused (409 from the title route), nothing stored, with one plain
   sentence: "An overseer keeps its own name.", "The merge queue's chats keep the names Sova gives

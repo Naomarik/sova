@@ -1924,8 +1924,9 @@ Sova that aren't archived. An archived session is in it only while it is open in
   insight, the Timeline can't rewind ("Only a chat open in Sova can rewind."), and a row's jump
   says the message isn't in the transcript on screen.
 - **⋯ menu.** Session Details (Close Session Details while that row's pane is open), Open
-  Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
-  cut to the title limit; off, with the reason, when there's none or it already is the title),
+  Subagents (opens the session with its pane on the Agents tab), Rename…, Regenerate Title ("A short name from what
+  the session became.": the title call, as an open session's head does it, with its toasts and
+  Undo, §app.session-list/auto-titles; off, reading "Regenerating title…", while one runs),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
   "No group"), Archive or Unarchive, Copy Path. After them, for a session on this host, comes
   what extensions add to the menu (§app.extensions/session-menu).

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dryRunActions, dryRunChip, dryRunLine, failureLine, explainerWords, landFirstLine, nth, olderNote, runsFirst, scopeWords, stoppedBy, testsWords, trialChip, trialLine, whoStarted, type BranchDryRun, type BranchFailure } from "./dry-run";
+import { dryRunActions, dryRunChip, dryRunLine, failureLine, explainerWords, landFirstLine, nth, olderNote, heldDryRunLabel, runsFirst, scopeWords, stoppedBy, testsWords, trialChip, trialLine, whoStarted, type BranchDryRun, type BranchFailure } from "./dry-run";
 
 const HEAD = "a1b2c3d4e5f6a7b8c9d0";
 const OLD = "0f9e8d7c6b5a49382716";
@@ -157,4 +157,11 @@ test("the queue reads Running, never Idle, while a dry run holds the merge copy"
   const trialNow = { trial: { run: "mr_1", commit: HEAD, verdict: "running" as const, by: { kind: "operator" as const }, startedAt: "x" }, run: {} as never, progress: { at: 1, of: 1 } };
   assert.equal(queueStateChip({ state: "idle", checks: "declared", trialNow }).label, "Running");
   assert.equal(queueStateChip({ state: "idle", checks: "declared" }).label, "Idle");
+});
+
+test("a Land's dry run held for a failure master shares never reads 'can't tell whose'", () => {
+  assert.equal(heldDryRunLabel({ failure: failure("master") }), "Dry run failed · waiting for you");
+  assert.equal(heldDryRunLabel({ failure: failure("unclear") }), null);
+  assert.equal(heldDryRunLabel({ failure: failure("master", { kind: "landing" }) }), null);
+  assert.equal(heldDryRunLabel({}), null);
 });

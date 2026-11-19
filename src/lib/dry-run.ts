@@ -285,3 +285,8 @@ export const runsFirst = (d: Pick<BranchDryRun, "state"> | undefined): boolean =
 
 /** The waiting dry run's id for Stop Dry Run, when the branch's own state carries it (BranchDryRun.waiting). */
 export const waitingIdOf = (d: BranchDryRun | undefined): string | undefined => (d?.state === "waiting" ? d.waiting : undefined);
+
+/** A held-up entry's chip when its Land's dry run failed on a check the target fails too: the queue holds it as a
+    decision ("can't tell whose" by kind), but the screens say what it is, never "can't tell". Null otherwise. */
+export const heldDryRunLabel = (e: { failure?: Pick<BranchFailure, "kind" | "whose"> }): string | null =>
+  e.failure?.kind === "dry-run" && e.failure.whose === "master" ? "Dry run failed · waiting for you" : null;

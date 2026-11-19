@@ -9,6 +9,7 @@ import { readinessChip } from "./worktrees";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
 import { requestChip, requestReason } from "./merge-queue-requests";
 import { DECISION_LABEL, STANDING_LINE, answeredInChat, decisionActions, openDecision, standingWords, type CardDecision, type StandingFacts } from "./merge-standing";
+import { heldDryRunLabel } from "./dry-run";
 
 export type { MergeEntry, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo };
 export { ordinal };
@@ -401,7 +402,7 @@ function queueRowOf(w: QueueRowInput): QueueRow {
         ...base,
         newer: undefined,
         key,
-        label: DECISION_LABEL[dec.kind] ?? "Needs you",
+        label: heldDryRunLabel(auto) ?? DECISION_LABEL[dec.kind] ?? "Needs you",
         tone: "warn",
         reason: `${dec.question}${dec.cantSettle ? " · can't be settled without you" : ""}`,
         action: (one ?? "none") as RowAction,

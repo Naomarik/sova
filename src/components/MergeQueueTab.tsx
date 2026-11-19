@@ -24,7 +24,7 @@ import { BranchSummaryView } from "./BranchSummary";
 import type { DiffScope, WorktreeReadiness } from "../../shared/protocol";
 import { ReviewChangesButton } from "./ReviewChanges";
 import { heldCount, heldHasContent, HeldList, RetiredList, RetirementLists, RetirementOff } from "./RetirementLists";
-import { DRY_RUN_NOW_LINE, dryRunActions, dryRunChip, dryRunFact, failureLine, landFirstLine, runsFirst, scopeWords, startedToast, tookWords, nth, trialChip, trialLine, waitingIdOf, whoStarted, type BranchDryRun } from "../lib/dry-run";
+import { DRY_RUN_NOW_LINE, dryRunActions, dryRunChip, dryRunFact, failureLine, landFirstLine, runsFirst, scopeWords, startedToast, tookWords, heldDryRunLabel, nth, trialChip, trialLine, waitingIdOf, whoStarted, type BranchDryRun } from "../lib/dry-run";
 import { DryRunButton, DryRunLines, DryRunWhat, FixNewChatButton, FixSplit, usePress, type FixTarget } from "./DryRun";
 import type { MergeTrial, MergeTrialWaiting } from "../../shared/merge-queue";
 
@@ -1079,6 +1079,8 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
   };
   const chip = (): { label: string; tone: "warn" } => {
     const d = decision();
+    const held = heldDryRunLabel(e());
+    if (held) return { label: held, tone: "warn" };
     if (d) return { label: d.kind === "needs-you" ? `Needs you · ${e().branch}` : `${DECISION_LABEL[d.kind]} · waiting for you`, tone: "warn" };
     switch (e().state) {
       case "behaviour-differs":
@@ -1176,7 +1178,8 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
         <Show when={!decision() && e().state === "review-flagged"}>
           <p class="list-meta">{e().review?.text ?? e().reason ?? "The review found something that blocks it."}</p>
         </Show>
-        <Show when={e().state === "unattributed" || decision()?.kind === "unattributed"}>
+        {/* A Land's held dry run says its failure once, in the question; Fix and its menu answer it. */}
+        <Show when={(e().state === "unattributed" || decision()?.kind === "unattributed") && !heldOnDryRun(e())}>
           <p class="list-meta">{unattributedWhy(e().reason, props.target)} Land Anyway lands the commit it tested; Try Again checks it afresh.</p>
           <UnclearChecks projectId={props.projectId} unclear={e().unclear} target={props.target} class="list-meta" />
         </Show>
@@ -1186,7 +1189,10 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
         <Show when={!decision() && (e().state === "conflict" || e().state === "needs-user")}>
           <p class="list-meta">{e().reason ?? "The merge thread is judging the conflict. The line moves on meanwhile."}</p>
         </Show>
-        <Show when={e().failure}>{(f) => <p class="list-meta mq-failure">{failureLine(f(), props.target)}</p>}</Show>
+        <Show when={!heldOnDryRun(e()) && e().failure}>{(f) => <p class="list-meta mq-failure">{failureLine(f(), props.target)}</p>}</Show>
+        <Show when={e().failure?.kind === "dry-run"}>
+          <DryRunWhat target={props.target} class="list-meta" />
+        </Show>
         <Show when={props.view}>{(pv) => <ReviewerLinks projectId={props.projectId} view={pv()} run={e().run} />}</Show>
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
         <Show when={fixPress.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>

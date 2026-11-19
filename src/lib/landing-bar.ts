@@ -2,6 +2,7 @@
 // urgent project, its step track, and the detail lines and actions its expansion shows. Pure: no Solid, no DOM. The
 // shapes are the queue's (shared/merge-queue.ts) and the release's (shared/release.ts); the store that feeds this is
 // lib/landing-bar-store.ts, the drawing components/LandingBar.tsx.
+import { heldDryRunLabel } from "./dry-run";
 import { WAITING_FOR_USER, entryStateWords, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../../shared/merge-queue";
 import type { ReleaseRecord, ReleaseStep } from "../../shared/release";
 import type { LandingQueueCut, LandingReleaseCut } from "../../shared/merge-queue";
@@ -266,7 +267,7 @@ const conflictsOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) 
 /** One needs-you entry, in the Merge Queue tab's words: branch, then one line of why. */
 const needsLine = (e: MergeEntry, pid: string): LandingLine => {
   const d = openDecision(e);
-  if (d) return { text: `${e.branch} · ${DECISION_LABEL[d.kind]}: ${stripDot(d.question)}`, tone: "warn", href: queueHref(pid, e.run) };
+  if (d) return { text: `${e.branch} · ${heldDryRunLabel(e)?.replace(/ · waiting for you$/, "") ?? DECISION_LABEL[d.kind]}: ${stripDot(d.question)}`, tone: "warn", href: queueHref(pid, e.run) };
   return { text: `${e.branch} · ${stripDot(entryStateWords(e))}${e.reason ? `: ${stripDot(e.reason)}` : ""}`, tone: "warn", href: queueHref(pid, e.run) };
 };
 
@@ -386,7 +387,7 @@ function mergeNeedsBar(p: LandingProjectInput, q: LandingQueueCut, needs: MergeE
     kind: "merge-needs",
     tone: "warn",
     icon: "alert-circle",
-    title: stripDot(entryStateWords(e)),
+    title: stripDot(heldDryRunLabel(e) ?? entryStateWords(e)),
     sub: `${e.branch}${e.reason ? ` · ${stripDot(e.reason)}` : ""}`,
     ...(rest > 0 ? { count: { text: `+${rest}`, label: `${rest} more need${rest === 1 ? "s" : ""} you` } } : {}),
     segments: [],

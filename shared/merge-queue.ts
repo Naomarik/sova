@@ -595,7 +595,7 @@ export interface MergeTrial {
   startedAt: string;
   endedAt?: string;
   /** Verdict void: who or what stopped it (the user's Stop Dry Run, a Sova restart, a newer dry run of the branch). */
-  stopped?: { by: "operator" | "restart" | "superseded"; at: string };
+  stopped?: { by: "operator" | "chat" | "restart" | "superseded"; session?: string; at: string };
   /** Why the branch needed it, from its setup change at the start: "adds the merge check Playbook tests". */
   needs?: DryRunWhy;
   /** The merge and release checks it runs (the ones the branch adds or changes), known at its start. */
@@ -657,8 +657,12 @@ export interface BranchDryRun {
   fixOffer?: FixOffer;
   /** An older commit's dry run, only for "(at an older commit)": it never sets `state`. */
   older?: { commit: string; verdict: MergeTrial["verdict"] };
-  /** The user's Land stands and runs it first: that entry's id. */
+  /** The user's Land stands and runs it first: that entry's id. Land Anyway is offered (merge.answer land-anyway on that
+   *  entry) exactly when `land` is set, `state` is "failed" and `failure.whose` is "master". */
   land?: string;
+  /** waiting: what holds the merge copy now, in words (MergeTrialWaiting.after), and its place among waiting dry runs (1…). */
+  after?: string;
+  position?: number;
 }
 
 // ---- the queue ----------------------------------------------------------------------------------
@@ -793,11 +797,15 @@ export type LandingQueueCut = Pick<MergeQueueView, "project" | "root" | "target"
 
 /** A dry run waiting for the merge copy (Run Dry Run pressed while it was busy). Stop Dry Run cancels it. */
 export interface MergeTrialWaiting {
+  /** "tw_…": Stop Dry Run cancels it by this id. A branch waits at most once (asking again re-pins its commit). */
+  id: string;
   branch: string;
   commit: string;
   by: TrialBy;
   at: string;
   after: string;
+  /** Why the branch needs it (as BranchDryRun.why). */
+  needs: DryRunWhy;
 }
 
 /** The dry run running now: its record, its run (steps live) and how far it is. */

@@ -549,10 +549,13 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       return { changed: r.changed, report: { hold: r.hold, view: await viewOf() } };
     }
     case "merge.try": {
+      // No branch, commit or checkout named: the caller's own branch (its one worktree in this project).
+      const own = !req.branch && !req.commit && !req.checkout && caller.kind === "session" ? caller.own.filter((p) => p !== q.root) : [];
+      if (own.length > 1) throw new MergeFailure("invalid-request", `name the branch to dry-run: this chat has ${own.length} worktrees`);
       const r = await q.trial({
         ...(req.branch ? { branch: req.branch } : {}),
         ...(req.commit ? { commit: req.commit } : {}),
-        ...(req.checkout ? { checkout: req.checkout } : {}),
+        ...(req.checkout ? { checkout: req.checkout } : own.length === 1 ? { checkout: own[0]! } : {}),
         ...(req.checks ? { checks: req.checks } : {}),
         by: caller.kind === "operator" && !caller.fromChat ? { kind: "operator" } : { kind: "chat", ...(sessionId(caller) ? { session: sessionId(caller)! } : {}) },
       });

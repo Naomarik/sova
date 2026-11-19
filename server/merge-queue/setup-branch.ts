@@ -164,7 +164,7 @@ const seconds = (ms: number): string => (ms >= 60_000 ? `${Math.round(ms / 60_00
  *  its result, each check's result and time, and how to read a log. Never told to fix a failure the target shares,
  *  one that can't be told, a stopped dry run or a machine's. `land`: the Land that stopped it runs its own at that
  *  commit. Pure. */
-export function trialEndedText(t: MergeTrial, run: MergeRun, opts: { target?: string; land?: { commit: string } } = {}): string {
+export function trialEndedText(t: MergeTrial, run: MergeRun, opts: { target?: string; land?: { commit: string }; landWaits?: boolean } = {}): string {
   const branch = t.branch ?? "the commit";
   const what = `${branch} at ${t.commit.slice(0, 7)}`;
   const target = opts.target ?? "the target";
@@ -189,5 +189,7 @@ export function trialEndedText(t: MergeTrial, run: MergeRun, opts: { target?: st
   if (t.verdict === "passed") lines.push("Land is offered on this branch at this exact commit; a new commit needs a new dry run.");
   else if (t.verdict === "void" || t.verdict === "machine") lines.push("Run it again with merge.try when the merge copy is free; nothing of the branch's needs changing for it.");
   else if (t.failure?.whose === "master" || t.failure?.whose === "unclear") lines.push("It isn't this branch's to fix: the user decides on the branch's row (Fix, Fix in New Chat, Run Dry Run Again or Land Anyway).");
+  // With no Land waiting on it, this is a note: nothing to answer, nothing asked (a Land's failure comes as its own request).
+  if (!opts.landWaits) lines.push("This is a note, not a request: there is nothing to answer with merge.respond. Tell your user what it found and end your turn; change nothing for it unless they ask.");
   return lines.join("\n");
 }

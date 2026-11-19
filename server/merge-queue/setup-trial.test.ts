@@ -98,6 +98,8 @@ describe("a setup branch (pure rules)", () => {
     assert.doesNotMatch(shared, /\btrial\b|Fix what failed/);
     const stopped = trialEndedText(t({ verdict: "void", stopped: { by: "operator", at: "" } }), run, { target: "master" });
     assert.match(stopped, /was stopped by you: nothing failed\. It needs a new dry run before it lands\./);
+    assert.match(stopped, /This is a note, not a request: there is nothing to answer with merge\.respond\./, "no Land waits: a note");
+    assert.doesNotMatch(trialEndedText(t({}), run, { target: "master", landWaits: true }), /This is a note/, "a Land's own: its request says what to do");
     const superseded = trialEndedText(t({ verdict: "void", stopped: { by: "superseded", at: "" } }), run, { target: "master", land: { commit: "d".repeat(40) } });
     assert.match(superseded, /Land runs its own dry run of setup\/x at ddddddd.*no need to start another/);
     assert.doesNotMatch(superseded, /run it again/i);
@@ -198,6 +200,20 @@ describe("merge.try and the land gate", () => {
       const dr = await q.dryRunOf("setup/checks", next);
       assert.equal(dr?.state, "needed");
       assert.equal(dr?.older?.commit, b.head, "the older commit's pass is only history");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("merge.try with nothing named dry-runs the caller's own branch (its one worktree)", async () => {
+    const { k, call } = setup();
+    try {
+      const b = k.repo.branch("setup/mine", { ".sova/project.json": DEF_TEXT("true") });
+      const r = await call("merge.try", { project: k.repo.root }, { kind: "session", id: "own-chat", root: k.repo.root, own: [b.path] });
+      assert.equal(r.ok, true, r.error?.message);
+      assert.equal(r.merge?.trial?.branch, "setup/mine");
+      assert.equal(r.merge?.trial?.commit, b.head);
+      await (await k.q()).tryingNow();
     } finally {
       await k.done();
     }

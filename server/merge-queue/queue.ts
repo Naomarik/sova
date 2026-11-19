@@ -3569,7 +3569,7 @@ export class ProjectQueue {
       }
     }
     this.save();
-    const text = trialEndedText(t, run, { target: this.q.target, ...(landCommit ? { land: { commit: landCommit } } : {}) });
+    const text = trialEndedText(t, run, { target: this.q.target, ...(landCommit ? { land: { commit: landCommit } } : {}), landWaits: lands.length > 0 });
     if (tell.size && !(t.verdict === "void" && t.stopped?.by === "restart")) this.deps.trialEnded?.(structuredClone(t), structuredClone(run), this.root, { sessions: [...tell], text });
   }
 

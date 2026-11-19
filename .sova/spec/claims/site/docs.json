@@ -981,6 +981,12 @@
       "§app.insights/usage-burn",
       "§app.insights/usage-refresh",
       "§app.insights/sidebar-foot",
+      "§app.insights/time-tab",
+      "§app.insights/time-tab-your-time",
+      "§app.insights/time-tab-agent-time",
+      "§app.insights/tool-run-timing",
+      "§app.insights/time-tab-tables",
+      "§app.insights/time-tab-messages",
       "§site.docs/frame"
     ],
     "authority": "accepted",

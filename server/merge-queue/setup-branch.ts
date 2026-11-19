@@ -186,7 +186,8 @@ export function trialEndedText(t: MergeTrial, run: MergeRun, opts: { target?: st
   for (const s of run.steps.filter((x) => x.kind === "check" || x.kind === "setup" || x.kind === "rerun-tip" || x.kind === "rerun-master")) lines.push(`- ${s.label}: ${s.result}, ${seconds(s.ms)}${s.detail ? ` (${s.detail})` : ""} · merge.logs {run: "${run.id}", step: "${s.id}"}`);
   for (const c of t.skipped ?? []) lines.push(`- ${c.label}: not run (unchanged merge check; it runs in the landing)`);
   for (const c of t.notRun ?? []) lines.push(`- ${c.label}: not run (unchanged release check; name it in checks to run it)`);
-  if (t.verdict === "passed") lines.push("Land is offered on this branch at this exact commit; a new commit needs a new dry run.");
+  if (t.verdict === "passed" && opts.landWaits) lines.push(`The user's Land stands: ${what} lands now by itself; nothing to do. Never ask them to land it.`);
+  else if (t.verdict === "passed") lines.push("Land is offered on this branch at this exact commit; a new commit needs a new dry run.");
   else if (t.verdict === "void" || t.verdict === "machine") lines.push("Run it again with merge.try when the merge copy is free; nothing of the branch's needs changing for it.");
   else if (t.failure?.whose === "master" || t.failure?.whose === "unclear") lines.push("It isn't this branch's to fix: the user decides on the branch's row (Fix, Fix in New Chat, Run Dry Run Again or Land Anyway).");
   // With no Land waiting on it, this is a note: nothing to answer, nothing asked (a Land's failure comes as its own request).

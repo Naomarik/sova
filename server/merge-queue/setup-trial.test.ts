@@ -100,6 +100,10 @@ describe("a setup branch (pure rules)", () => {
     assert.match(stopped, /was stopped by you: nothing failed\. It needs a new dry run before it lands\./);
     assert.match(stopped, /This is a note, not a request: there is nothing to answer with merge\.respond\./, "no Land waits: a note");
     assert.doesNotMatch(trialEndedText(t({}), run, { target: "master", landWaits: true }), /This is a note/, "a Land's own: its request says what to do");
+    const landed = trialEndedText(t({ verdict: "passed" }), run, { target: "master", landWaits: true });
+    assert.match(landed, /The user's Land stands: setup\/x at ccccccc lands now by itself; nothing to do\./, "a Land's pass: it lands by itself");
+    assert.doesNotMatch(landed, /Land is offered/);
+    assert.match(trialEndedText(t({ verdict: "passed" }), run, { target: "master" }), /Land is offered on this branch at this exact commit/);
     const superseded = trialEndedText(t({ verdict: "void", stopped: { by: "superseded", at: "" } }), run, { target: "master", land: { commit: "d".repeat(40) } });
     assert.match(superseded, /Land runs its own dry run of setup\/x at ddddddd.*no need to start another/);
     assert.doesNotMatch(superseded, /run it again/i);

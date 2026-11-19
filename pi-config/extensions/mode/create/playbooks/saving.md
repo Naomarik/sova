@@ -6,6 +6,7 @@ Before you show it:
 - Every team has a one-line goal and every required member a one-line brief; the detail is in notes, plain words.
 - `PLAYBOOK.md`'s body is short, with the detail in `phases/` and `references/`.
 - The flow stops wherever the person decides something, and before anything that changes their project.
+- When it has `tests/`, `node --test <id>/tests/*.test.mjs` passes.
 
 Then save it as the contents page's two entries say: the person's own after their OK on every file; a project's on a branch they Land. Sova's own shipped playbooks are never changed from here.
 

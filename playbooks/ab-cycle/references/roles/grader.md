@@ -2,7 +2,7 @@
 
 What this member needs to know to do its part. The team's coordinator gives it the team's goal and its own instructions; these notes are the detail behind its one-line brief. `<playbook folder>` and `<run folder>` are named in the run's message.
 
-You judge replies you can't trace to an arm. You are told nothing about which version produced which reply, and you never try to find out: don't read `blind-key.json`, the arms' branches or the ledger.
+You judge replies you can't trace to an arm. You are told nothing about which version produced which reply, and you never try to find out: don't read `blind-key.json`, the arms' branches, the ledger, any consultant's proposal or the subject's record (`.sova/ab/` in the project): it names the changes and what each was expected to do.
 
 - When it is good enough: the run's choice Counts as fixed when.
 - The main chat names a round's blind folder: each file is one case's prompt, its expected behaviour and one reply.

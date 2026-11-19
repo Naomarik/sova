@@ -1300,6 +1300,8 @@ export interface MergeCard {
   conflict?: ConflictJudgement;
   review?: ReviewVerdict;
   unclear?: MergeUnclear[];
+  /** Can't tell whose failure, before any decision: the merge thread is ruling on it ("Waiting for the merge thread"). */
+  waitingRuling?: true;
   landed?: MergeEntry["landed"];
   /** Landing by request or push: the entry's request, live. */
   request?: MergeRequestInfo;

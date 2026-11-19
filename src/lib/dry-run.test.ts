@@ -139,3 +139,15 @@ test("Land's confirm says a dry run runs first on every state but passed", () =>
   assert.equal(runsFirst(dr("passed")), false);
   assert.equal(runsFirst(undefined), false);
 });
+
+test("a worktree whose head's dry run runs counts as checking, and keeps Land", async () => {
+  const { queueRow } = await import("./merge-queue");
+  const readiness = { path: "/w", branch: "feat/play", state: "ready" as const, landing: { state: "ready" as const, commit: HEAD }, dryRun: dr("running", { run: "mr_1" }) };
+  const row = queueRow({ status: "active", exists: true, branch: "feat/play", readiness, mergeServed: true as const, mergeProject: { target: "master", checks: "declared" } });
+  assert.equal(row.key, "checking");
+  assert.equal(row.label, "Dry run running");
+  assert.equal(row.action, "land");
+  // An older commit's running dry run is not this head's.
+  const old = queueRow({ status: "active", exists: true, branch: "feat/play", readiness: { ...readiness, dryRun: dr("running", { commit: OLD }) }, mergeServed: true as const, mergeProject: { target: "master", checks: "declared" } });
+  assert.equal(old.key, "ready");
+});

@@ -545,6 +545,11 @@ function queueRowOf(w: QueueRowInput): QueueRow {
   if (invalid)
     return { ...quiet, ...truth, reason: invalidWords(invalid), action: "land" };
   const unset = w.mergeProject?.checks === "unset";
+  // A dry run of its head running now counts as checking (§chat.composer/worktrees-control); Land stays (it waits).
+  const dry = r?.dryRun;
+  const head = w.mergeStats?.head ?? r?.landing?.commit;
+  if (!unset && dry?.state === "running" && (!head || dry.commit === head))
+    return { ...quiet, ...truth, key: "checking", label: "Dry run running", tone: "accent", live: true, detail: short(dry.commit), action: "land" };
   return {
     ...quiet,
     ...truth,

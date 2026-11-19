@@ -52,7 +52,7 @@ export function needsYouRows(
   digest: Pick<AttentionDigest, "items" | "newestListed"> | undefined,
   sessions: readonly SessionSummary[],
   /** Sessions listed only for a proposal waiting on you (a `playbook-review` item): a project's own Setup chat, which
-      the region otherwise leaves to its project's block, keeps its Merge Branch / Run Trial row here; its other items
+      the region otherwise leaves to its project's block, keeps its Merge Branch / Land / Run Dry Run row here; its other items
       (a failed turn) stay with its project. */
   reviewsOf: readonly SessionSummary[] = [],
 ): NeedsYouRow[] {

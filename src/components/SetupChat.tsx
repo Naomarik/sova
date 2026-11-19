@@ -13,10 +13,11 @@ import { DeployRecipeSteps } from "./ProjectDeployPanel";
 import { ReleaseSetupSteps } from "./ReleasesTab";
 import type { MergeSetupReview } from "../../shared/project-runtime";
 import { Banner, Chip, Icon } from "./ui";
+import { DryRunWhat } from "./DryRun";
 import { QueueChip } from "./WorktreesModal";
 import { ReviewChangesButton } from "./ReviewChanges";
 
-/** The chat's state moves by the minute; a trial's checks by the second while one runs. */
+/** The chat's state moves by the minute; a dry run's checks by the second while one runs. */
 const POLL_MS = 5000;
 
 export type SetupPoll = Poll<Awaited<ReturnType<typeof getSetupChat>>>;
@@ -24,7 +25,7 @@ export type SetupPoll = Poll<Awaited<ReturnType<typeof getSetupChat>>>;
 /** One read of a project's Setup chat, shared by every surface of its page through the page cache. */
 export function createSetupPoll(projectId: string): SetupPoll {
   const poll = createPoll(() => getSetupChat(projectId), POLL_MS, { cacheKey: `project:${projectId}:setup` });
-  // A Land, Merge Branch, trial or Start Fresh anywhere on the page: every read of that project's setup follows at once
+  // A Land, Merge Branch, dry run or Start Fresh anywhere on the page: every read of that project's setup follows at once
   // (the banner, the tabs, a Needs-you row), with the answer the action returned when it has one.
   createEffect(
     on(setupChanged, (c) => {
@@ -222,8 +223,8 @@ function SetupChatLine(props: { projectId: string; chat: SetupChatView; poll: Se
 
 /**
  * The Setup chat's proposal, read from its branch (never the chat's words): the services, the merge checks, the
- * release settings and steps, the deploy recipe, each proposed check's trial result, then Land (a served project,
- * once a trial of the branch's head passed) or Merge Branch, and Read Report.
+ * release settings and steps, the deploy recipe, each proposed check's dry-run result, then Land (a served project:
+ * it runs the dry run of the branch's head first when none passed) or Merge Branch, and Read Report.
  */
 export function SetupProposalCard(props: { projectId: string; chat: SetupChatView; proposal: SetupProposal; onDone(): void }) {
   const p = () => props.proposal;
@@ -288,12 +289,12 @@ export function SetupProposalCard(props: { projectId: string; chat: SetupChatVie
             <>
               <ReleaseSetupSteps setup={r()} />
               <Show when={t()?.checks.some((c) => c.kind === "release")}>
-                <p class="project-card-note">Release checks, trial-run on the branch</p>
+                <p class="project-card-note">Release checks, proved by the dry run on the branch</p>
                 <ul class="deploy-steps setup-checks">
                   <For each={t()!.checks.filter((c) => c.kind === "release")}>{(c) => <CheckRow projectId={props.projectId} name={c.name} command={c.command} proposal={p()} kind="release" />}</For>
                 </ul>
               </Show>
-              <p class="project-card-note">Tag, push, publish and after-publish steps are drawn only; the trial never runs them.</p>
+              <p class="project-card-note">Tag, push, publish and after-publish steps are drawn only; the dry run never runs them.</p>
             </>
           )}
         </Show>
@@ -328,7 +329,7 @@ export function SetupProposalCard(props: { projectId: string; chat: SetupChatVie
         })()}
       </Section>
       <p class="text-caption setup-trial-line" role="status">
-        <Show when={trialLine(p())} fallback={<span class="text-muted">No trial yet. A trial runs the proposed checks on the branch in the merge copy; it saves and merges nothing.</span>}>
+        <Show when={trialLine(p())} fallback={<span class="text-muted">No dry run yet. A dry run runs the new or changed checks on the branch in the merge copy; it saves and merges nothing.</span>}>
           {(l) => (
             <>
               <span>{l()}</span>
@@ -341,6 +342,7 @@ export function SetupProposalCard(props: { projectId: string; chat: SetupChatVie
           )}
         </Show>
       </p>
+      <DryRunWhat target={p().target} />
       <div class="deploy-actions">
         <SetupLandButton projectId={props.projectId} proposal={p()} onDone={props.onDone} />
         <ReviewChangesButton
@@ -365,7 +367,7 @@ export function SetupProposalCard(props: { projectId: string; chat: SetupChatVie
   );
 }
 
-/** A trial chip's tone as the Chip takes it: neutral is no tone. */
+/** A dry-run chip's tone as the Chip takes it: neutral is no tone. */
 const toneOf = (t: "success" | "error" | "accent" | "neutral") => (t === "neutral" ? undefined : t);
 
 function Section(props: { title: string; children: JSX.Element }) {
@@ -377,7 +379,7 @@ function Section(props: { title: string; children: JSX.Element }) {
   );
 }
 
-/** One proposed check with its command and its trial result: "{label} · {time}", its chip, View Log. */
+/** One proposed check with its command and its dry-run result: "{label} · {time}", its chip, View Log. */
 function CheckRow(props: { projectId: string; name: string; id?: string; command?: string; limit?: number; optional?: boolean; requires?: string[]; proposal: SetupProposal; kind: "merge" | "release" }) {
   const res = () => props.proposal.trial?.checks.find((c) => c.kind === props.kind && (c.name === props.name || (!!props.id && c.name === props.id)));
   return (
@@ -420,8 +422,9 @@ function CheckRow(props: { projectId: string; name: string; id?: string; command
 }
 
 /**
- * Land (a project the queue serves: the branch joins the queue at the commit the card read) or Merge Branch (one it
- * doesn't), once a trial of that exact commit passed. Until then Run Trial stands in their place, with why.
+ * Land (a project the queue serves: the branch joins the queue at the commit the card read, and its dry run runs first
+ * when none of that commit passed, with Run Dry Run beside it) or Merge Branch (one it doesn't serve), once a dry run of
+ * that exact commit passed. Until then Run Dry Run (or Run Dry Run Again) stands in Merge Branch's place, with why.
  */
 export function SetupLandButton(props: { projectId: string; proposal: SetupProposal; onDone(): void; queue?: ProjectQueue }) {
   const p = () => props.proposal;
@@ -435,11 +438,13 @@ export function SetupLandButton(props: { projectId: string; proposal: SetupPropo
   const label = () => {
     const a = st().action;
     if (busy()) return a === "land" ? "Landing…" : a === "merge" ? "Merging…" : "Starting…";
-    return a === "land" ? "Land" : a === "merge" ? "Merge Branch" : "Run Trial";
+    return a === "land" ? "Land" : a === "merge" ? "Merge Branch" : st().again ? "Run Dry Run Again" : "Run Dry Run";
   };
-  const go = async () => {
-    if (busy() || !st().can) return;
-    const action = st().action;
+  /** No dry run of the head passed yet: Land runs one first, and Run Dry Run sits beside it. */
+  const headPassed = () => !!p().trial && p().trial!.commit === p().commit && p().trial!.state === "passed";
+  const go = async (only?: "trial") => {
+    if (busy() || (!only && !st().can)) return;
+    const action = only ?? st().action;
     setBusy(true);
     setError(null);
     try {
@@ -449,7 +454,7 @@ export function SetupLandButton(props: { projectId: string; proposal: SetupPropo
         if (!root) throw new Error("The project's queue isn't read yet. Try again in a moment.");
         const no = refusal(await trySetupBranch(root, p().branch, p().commit));
         if (no) throw new Error(no);
-        done = `Started a trial of ${p().commit.slice(0, 7)}.`;
+        done = `Started a dry run of ${p().commit.slice(0, 7)}.`;
         noteSetupChanged(props.projectId);
       } else {
         if (!p().hash) throw new Error("The proposal has nothing valid to merge. Read its report.");
@@ -479,10 +484,10 @@ export function SetupLandButton(props: { projectId: string; proposal: SetupPropo
           <button
             type="button"
             class={`button button-sm${st().action === "trial" || st().action === "wait" ? "" : " button-primary"}`}
-            aria-label={st().action === "land" ? `Land ${p().branch}` : st().action === "merge" ? `Merge Branch ${p().branch}` : `Run Trial of ${p().branch}`}
+            aria-label={st().action === "land" ? `Land ${p().branch}` : st().action === "merge" ? `Merge Branch ${p().branch}` : `${label()} of ${p().branch}`}
             aria-disabled={busy() || !st().can ? "true" : undefined}
             aria-describedby={st().why ? whyId : undefined}
-            title={st().action === "land" ? `Queues ${p().branch}: checked on ${p().target} first, then ${p().target} moves to it.` : st().action === "trial" ? "Runs the branch's own checks in the merge copy. Nothing is saved or merged." : undefined}
+            title={st().action === "land" ? `Queues ${p().branch}: checked on ${p().target} first, then ${p().target} moves to it.` : st().action === "trial" ? "Runs the branch's new or changed checks in the merge copy. Nothing is saved or merged." : undefined}
             onClick={() => void go()}
           >
             {label()}
@@ -499,6 +504,12 @@ export function SetupLandButton(props: { projectId: string; proposal: SetupPropo
           );
         }}
       </Show>
+      {/* A served project's Land runs the dry run first; Run Dry Run beside it runs it alone (§app.project-setup/proposal). */}
+      <Show when={!queued() && st().action === "land" && st().can && !headPassed()}>
+        <button type="button" class="button button-sm" aria-label={`Run Dry Run of ${p().branch}`} title="Runs the branch's new or changed checks in the merge copy. Nothing is saved or merged." aria-disabled={busy() ? "true" : undefined} onClick={() => void go("trial")}>
+          {p().trial && p().trial!.commit === p().commit ? "Run Dry Run Again" : "Run Dry Run"}
+        </button>
+      </Show>
       <Show when={!queued() && st().why}>
         {(w) => (
           <span class="text-caption text-muted" id={whyId}>
@@ -513,7 +524,8 @@ export function SetupLandButton(props: { projectId: string; proposal: SetupPropo
 
 /**
  * The project page's banner while the Setup chat proposes a setup: what it proposes and on which branch, then the
- * proposal card's own button (Run Trial with its reason until a trial of the head passed, then Land or Merge Branch)
+ * proposal card's own button (Land, which runs the dry run first; or Run Dry Run with its reason until a dry run of the
+ * head passed, then Merge Branch)
  * and Read Report. Read from the Setup read, never the runtime view.
  */
 export function SetupProposalBanner(props: { projectId: string; poll: SetupPoll }) {
@@ -526,7 +538,7 @@ export function SetupProposalBanner(props: { projectId: string; poll: SetupPoll 
             tone="warn"
             icon="branch"
             title={`Project setup proposes the project's setup on ${x().proposal.branch}.`}
-            body={landState(x().proposal).action === "trial" || landState(x().proposal).action === "wait" ? `Read it before it reaches ${x().proposal.target}.` : x().proposal.served ? `Read it, then land it: it's checked on ${x().proposal.target} first.` : `Read it, then merge it into ${x().proposal.target}.`}
+            body={landState(x().proposal).action === "trial" || landState(x().proposal).action === "wait" || !(x().proposal.trial?.commit === x().proposal.commit && x().proposal.trial?.state === "passed") ? `Read it before it reaches ${x().proposal.target}.` : x().proposal.served ? `Read it, then land it: it's checked on ${x().proposal.target} first.` : `Read it, then merge it into ${x().proposal.target}.`}
             action={
               <span class="playbook-banner-actions">
                 <Show when={x().chat.path}>

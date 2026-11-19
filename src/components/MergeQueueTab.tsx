@@ -515,6 +515,8 @@ function hostOf(v: MergeQueueView): string | null {
 function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, chatOf: ChatOf | undefined, treesOf: TreesOf | undefined, onChanged: () => void): QueueTabDef[] {
   const ready = () => v().ready ?? [];
   const needsCount = () => (v().heads.targetBroken ?? []).length + needsYouOf(v()).length;
+  // A Land the merge thread is still ruling on shows here, but asks nothing of you yet: it never warns.
+  const needsWarn = () => needsCount() - needsYouOf(v()).filter((e) => e.waitingRuling).length > 0;
   const tabs: (QueueTabDef | null)[] = [
     {
       id: "ready",
@@ -541,7 +543,7 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
         return needsCount();
       },
       get warn() {
-        return needsCount() > 0;
+        return needsWarn();
       },
       get rows() {
         return needsCount();

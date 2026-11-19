@@ -48,7 +48,7 @@ export async function liveFix(projectId: string, req: { branch: string; commit: 
   const broken = req.check ? view.heads.targetBroken?.find((b) => b.check === req.check && b.run === req.run) : undefined;
   const ctx = broken
     ? { failure: { kind: "landing" as const, run: broken.run, commit: view.heads.target, whose: "master" as const, line: `${broken.why}. Every branch skips it until it's fixed on ${q.target}.`, checks: [{ id: broken.check, label: broken.label, step: broken.step, whose: "master" as const }] }, branch: q.target, holdsUp: ["every branch (they skip it meanwhile)"] as string[], session: undefined as string | undefined, worktree: undefined as string | undefined }
-    : q.fixContext(req.run);
+    : await q.fixContext(req.run);
   if (!ctx) throw new MergeFailure("not-found", `no failure of ${req.run} holds a branch up now`);
   if (!broken && (ctx.branch !== req.branch || ctx.failure.commit !== req.commit)) throw new MergeFailure("invalid-request", "That failure is no longer the branch's newest: look again.");
   const run = q.store.readRun(req.run);
@@ -59,7 +59,7 @@ export async function liveFix(projectId: string, req: { branch: string; commit: 
     return { label: c.label, path: st ? join(runDir, st.log) : runDir, tail: st ? stepLog(runDir, st, 40) : [] };
   });
   const runPage = `#/projects/${encodeURIComponent(projectId)}/merge-queue/${req.run}`;
-  const text = fixText({ failure: ctx.failure, branch: ctx.branch, target: q.target, runPage, run, logs, holdsUp: ctx.holdsUp });
+  const text = fixText({ failure: ctx.failure, branch: ctx.branch, target: q.target, runPage, run, logs, holdsUp: ctx.holdsUp, newChat: req.newChat });
   const shared = ctx.failure.whose !== "branch";
   let session = ctx.session;
   if (!session && ctx.worktree) {

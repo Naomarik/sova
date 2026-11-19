@@ -783,6 +783,12 @@ export class ProjectQueue {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, recentMax)
       .map(({ seq: _seq, ...rest }) => structuredClone(rest) as MergeEntry);
+    // Each held entry's failure, read from the records alone (no Git): the bar says what holds it as the tab does.
+    for (const e of [...v.checking, ...v.waiting, ...v.needsYou]) {
+      const t = e.dryRunHold ? (this.q.trials ?? []).find((x) => x.run === e.dryRunHold!.run) : undefined;
+      const failure = t?.failure ?? this.landingFailure(e);
+      if (failure) e.failure = structuredClone(failure);
+    }
     return {
       project: v.project,
       root: v.root,
@@ -865,13 +871,16 @@ export class ProjectQueue {
    * What Fix sends about run `runId`: the failure (a dry run's, or a landing's held up by it), its branch and entry, and
    * the branches it holds up (the line behind it). null: no failure of that run holds anything up.
    */
-  fixContext(runId: string): { failure: BranchFailure; branch: string; entry?: MergeEntry; session?: string; worktree?: string; holdsUp: string[] } | null {
+  async fixContext(runId: string): Promise<{ failure: BranchFailure; branch: string; entry?: MergeEntry; session?: string; worktree?: string; holdsUp: string[] } | null> {
     const line = this.queued().map((e) => e.branch);
     const t = (this.q.trials ?? []).find((x) => x.run === runId);
     if (t?.failure && t.branch) {
       const e = this.q.entries.find((x) => x.branch === t.branch && x.commit === t.commit && ENTRY_OPEN.includes(x.state));
-      const session = e?.session ?? (t.by.kind === "chat" ? t.by.session : undefined);
-      return { failure: structuredClone(t.failure), branch: t.branch, ...(e ? { entry: this.withPosition(e) } : {}), ...(session ? { session } : {}), ...(e?.worktree ? { worktree: e.worktree } : {}), holdsUp: line.filter((b) => b !== t.branch) };
+      // The branch's own chat and folder: its entry's, else its worktree's owner (the rule the Ready rows show).
+      const worktree = e?.worktree ?? (await worktreesOf(this.git, this.root).catch(() => [])).find((w) => w.branch === t.branch && w.path !== this.root)?.path;
+      const owner = !e?.session && worktree ? ownerId(await this.deps.ownerOf?.(this.root, t.branch, worktree).catch(() => null))?.session : undefined;
+      const session = e?.session ?? owner ?? (t.by.kind === "chat" ? t.by.session : undefined);
+      return { failure: structuredClone(t.failure), branch: t.branch, ...(e ? { entry: this.withPosition(e) } : {}), ...(session ? { session } : {}), ...(worktree ? { worktree } : {}), holdsUp: line.filter((b) => b !== t.branch) };
     }
     const e = this.q.entries.find((x) => x.run === runId);
     const failure = e ? this.landingFailure(this.withPosition(e)) : undefined;

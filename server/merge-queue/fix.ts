@@ -7,6 +7,8 @@ import type { BranchFailure, FixOffer, MergeRun } from "../../shared/merge-queue
 
 /** The seeded message's last line: what the chat does, and doesn't, before the user answers. */
 export const FIX_ENDING = "Explain what's wrong and propose how to fix it, then stop and wait for my guidance. Don't change any files before I answer.";
+/** Fix in New Chat: a coding chat is also told to commit and merge its target before it ends its turn; this waits. */
+export const FIX_NEW_CHAT_HOLD = "Until I answer, that holds over anything else this chat is told: no edits, no commits and no merges, not even of the target.";
 
 export const fixWorking = (chat: string): string => `${chat} is working: wait for its turn to end, then press Fix.`;
 export const fixLive = (chat: string): string => `${chat} is open in a terminal: Fix can't send to it from here.`;
@@ -14,6 +16,8 @@ export const FIX_NO_CHAT = "No chat works on this branch: use Fix in New Chat.";
 
 /** The failure's whole context, as the message Fix sends. Pure. */
 export function fixText(o: {
+  /** A fresh chat's first message: it adds FIX_NEW_CHAT_HOLD after the ending. */
+  newChat?: boolean;
   failure: BranchFailure;
   branch: string;
   target: string;
@@ -41,6 +45,7 @@ export function fixText(o: {
   lines.push("", `Whose: ${whose}`);
   lines.push(`It holds up: ${o.holdsUp.length ? o.holdsUp.join(", ") : `${o.branch} only`}`);
   lines.push("", FIX_ENDING);
+  if (o.newChat) lines.push(FIX_NEW_CHAT_HOLD);
   return lines.join("\n");
 }
 

@@ -451,4 +451,26 @@ describe("merge.try and the land gate", () => {
       await k.done();
     }
   });
+
+  test("every dry run's start, end and wait reach the rows that read it (an operator's too), not only the chat that asked", async () => {
+    const moved: string[] = [];
+    const k = makeKit({ deps: { trialMoved: (o) => void moved.push(`${o.branch} ${o.by.kind}`) } });
+    try {
+      k.repo.branch("setup/op", { ".sova/project.json": DEF_TEXT("true") });
+      k.repo.branch("setup/later", { ".sova/project.json": DEF_TEXT("true && true") });
+      let release: () => void = () => {};
+      const held = new Promise<void>((r) => (release = r));
+      k.run.set(async () => (await held, {}));
+      const q = await k.q();
+      await q.trial({ branch: "setup/op", by: { kind: "operator" } });
+      assert.deepEqual(moved, ["setup/op operator"], "at its start");
+      await q.trial({ branch: "setup/later", by: { kind: "operator" } });
+      assert.deepEqual(moved.at(-1), "setup/later operator", "when one begins waiting");
+      release();
+      await until(() => q.trials().find((t) => t.branch === "setup/op" && t.verdict === "passed"), "its end");
+      await until(() => moved.filter((m) => m === "setup/op operator").length >= 2, "at its end");
+    } finally {
+      await k.done();
+    }
+  });
 });

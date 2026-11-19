@@ -918,6 +918,22 @@ export async function startMergeQueue(
         })().catch((err) => console.warn(`[merge-queue] dry run note to ${session}: ${err instanceof Error ? err.message : err}`));
     },
     fixOffer: async (o) => (await import("./fix-live")).liveFixOffer(o),
+    // A dry run moved (started, ended, began or stopped waiting): the branch's owner chat and the chat that started it
+    // read their readiness again now, so their open pages follow it (the slow poll alone lags by minutes).
+    trialMoved: ({ branch, by }, root) =>
+      void (async () => {
+        const sessions = new Set<string>();
+        if (by.kind === "chat" && by.session) sessions.add(by.session);
+        const wt = (await worktreesOf(realGit, root).catch(() => [])).find((x) => x.branch === branch && canonical(x.path) !== canonical(root));
+        const owner = wt ? await worktreeOwnerOf(wt.path).catch(() => null) : null;
+        const id = owner?.session;
+        if (id) sessions.add(id);
+        const { rereadReadiness } = await import("../merge-readiness");
+        for (const s of sessions) {
+          const path = await sessionPath(s);
+          if (path) rereadReadiness(path);
+        }
+      })().catch((err) => console.warn(`[merge-queue] dry run readiness re-read for ${branch}: ${err instanceof Error ? err.message : err}`)),
     // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
     // The chat's own newest check run, as its last readiness reading saw it (never a fresh read): a failing one keeps a
     // fix out of line (§app.merge-queue/standing-approval), in the words Ready to land uses.

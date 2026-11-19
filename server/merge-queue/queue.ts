@@ -209,6 +209,9 @@ export interface QueueDeps {
   /** A dry run (merge.try) ended: the chats named are told, with `text` (wire.ts): the one that started it and the
    *  branch's chat when a Land waits on it. */
   trialEnded?: (trial: MergeTrial, run: MergeRun, root: string, tell: { sessions: string[]; text: string }) => void;
+  /** A dry run of `branch` started, ended or began waiting: the chats whose rows read it (the branch's owner, the one
+   *  that started it) read their readiness again now, so an open page follows it (wire.ts). */
+  trialMoved?: (o: { branch: string; by: TrialBy }, root: string) => void;
   /** Fix / Fix in New Chat on a failure holding `branch` up (wire.ts: the branch's chat's state). `shared`: the target
    *  shares it, so Fix in New Chat works on a new branch from the target. */
   fixOffer?: (o: { root: string; branch: string; worktree?: string; session?: string; shared: boolean }) => Promise<FixOffer>;
@@ -3386,6 +3389,7 @@ export class ProjectQueue {
         this.q.trialsWaiting = list;
         this.save();
         this.schedulePublish();
+        this.deps.trialMoved?.({ branch, by: structuredClone(req.by) }, this.root);
         return { waiting: { ...w, after: this.holdsCopyWords() } };
       }
       return this.startTrial({ ...(branch ? { branch } : {}), commit, by, checks: req.checks ?? [] });
@@ -3518,12 +3522,14 @@ export class ProjectQueue {
           if (!this.stopped) this.afterTrial(t, run);
         }
         this.trying = null;
+        if (branch && !this.stopped) this.deps.trialMoved?.({ branch, by: structuredClone(o.by) }, this.root);
         this.schedulePublish();
         this.kickSoon();
       });
     })();
     this.trying = { run, ac, done, trial };
     this.schedulePublish();
+    if (branch) this.deps.trialMoved?.({ branch, by: structuredClone(o.by) }, this.root);
     return { trial: structuredClone(trial), run: structuredClone(run) };
   }
 
@@ -3602,6 +3608,7 @@ export class ProjectQueue {
         this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((x) => x !== w);
         this.save();
         this.schedulePublish();
+        this.deps.trialMoved?.({ branch: w.branch, by: structuredClone(w.by) }, this.root);
         if (req.by.kind === "operator") this.tellWaitingEnded(w, "the user stopped it before it started");
         return { waiting: { ...w, after: "" } };
       }

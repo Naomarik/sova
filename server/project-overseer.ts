@@ -950,9 +950,10 @@ function toolHost(rt: Rt): PoToolHost {
       return softwareLines(await readRuntime(projectId, { observe: false }));
     },
     async onboard(why) {
-      // The Project verbs playbook (§app.project-runtime/onboard): its level, checks, limits and hold are the statechart's.
-      const { startOnboard, onboardAnswer } = await import("./projects/runtime");
-      return onboardAnswer(await startOnboard(projectId, why ? { why } : {}, envelope()));
+      // The Project verbs playbook (§app.project-runtime/onboard): a new run's level, checks, limits and hold are the
+      // statechart's; with the project's Project verbs chat open and idle, its turn is that chat's next message.
+      const { overseerOnboard } = await import("./projects/runtime-routes");
+      return overseerOnboard(projectId, why, envelope());
     },
     async turnOffPreview(id) {
       // Never held, at any level: it only takes something away. Only this project's.

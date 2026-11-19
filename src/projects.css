@@ -378,6 +378,11 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 /* "checked 2h ago" stays on one line: where the row is too narrow, the action wraps under it instead. */
 .services-setup-when { flex: 1 0 auto; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .services-setup-line > .button { min-height: var(--tap-min); }
+/* Never set up: what running copies are, above the line (§app.project-runtime/software-card). */
+.services-setup-unset { display: flex; flex-direction: column; gap: var(--space-1); }
+.services-setup-unset > p { margin: 0; }
+/* The Project verbs chat's head: why Start Fresh… waits while it works (§app.project-runtime/onboard). */
+.verbs-fresh-why { margin: 0; padding: var(--space-1) var(--space-4); border-bottom: var(--stroke-thin) solid var(--color-border); }
 .services-orphan { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 /* The groups: a side column (name, count, Free Up Slots) beside the group's list; stacked at folded width. */
 .services-groups { display: flex; flex-direction: column; }

@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { listPlaybooks } from "../playbooks";
+import * as PW from "../project-worktrees";
 import { noOnboardModel, onboardModels, ONBOARD_PLAYBOOK_ID, onboardInvalid, onboardModel, onboardStartFrom, type OnboardFacts } from "./onboard";
 import { linkedPlaybook } from "../../shared/playbooks";
 
@@ -43,6 +44,16 @@ test("refusals: a remote folder, then a missing one, then no playbook", () => {
   assert.match(refused.invalid ?? "", /No playbook/);
 });
 
+test("no Git refuses the Project verbs playbook only, with each reason in its own words, before the playbook check", () => {
+  const { NOT_GIT, NO_COMMITS, DETACHED } = PW;
+  assert.equal(onboardInvalid(facts({ noGit: NOT_GIT })), "Running copies are set up on a branch: Motors's folder isn't a Git repository.");
+  assert.equal(onboardInvalid(facts({ noGit: NO_COMMITS })), "Running copies are set up on a branch: the repository has no commits yet.");
+  assert.equal(onboardInvalid(facts({ noGit: DETACHED, playbook: null })), "Running copies are set up on a branch: its checkout is on a detached HEAD.");
+  // The folder's host refusals come first; any other verb playbook (the Setup chat, deploy, release) never hears of Git.
+  assert.match(onboardInvalid(facts({ noGit: NOT_GIT, remote: "vps" })) ?? "", /is on vps/);
+  for (const id of ["project-setup", "project-deploy", "release-maker"]) assert.equal(onboardInvalid(facts({ noGit: NOT_GIT, playbookId: id, playbook: { ...PLAYBOOK, proposes: "deploy" } })), null, id);
+});
+
 test("the first prompt is the playbook's turn plus the why; the title names the project", () => {
   const s = onboardStartFrom(facts(), { why: "  bb.edn gained a worker  " }, ["claude-code-cli/claude-opus-5-5"]);
   assert.equal(s.invalid, undefined);
@@ -60,6 +71,10 @@ test("the shipped catalog lists project-verbs for any folder, with its PLAYBOOK.
   assert.equal(p.source, "sova");
   assert.equal(p.title, "Project verbs");
   assert.match(p.body, /At most 6 conform runs/);
+  // A standing chat (§app.project-runtime/playbook): each new message is a refinement, only what it names changes.
+  assert.match(p.body, /Each new message from the operator is a refinement to do, even when nothing in the project changed/);
+  assert.match(p.body, /Change only what the message names/);
+  assert.match(p.body, /end "No change" only when the message asks for nothing you can change/);
   assert.equal(p.proposes, "definition", "a verb playbook: its frontmatter says what it proposes");
 });
 

@@ -285,7 +285,10 @@
     "playbook.run.list",
     "playbook.run.get",
     "playbook.run.edit",
-    "usage.time"
+    "usage.time",
+    "project.verbs.open",
+    "project.verbs.chat.get",
+    "project.verbs.chat.fresh"
   ],
   "retired": [
     "settings.agents.get",

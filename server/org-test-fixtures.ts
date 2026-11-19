@@ -108,7 +108,8 @@ export async function seedBuild(
   projectId: string,
   b: {
     sessionId: string;
-    kind: BuildKind;
+    /** `onboard`: a verb playbook's run, the operator's. */
+    kind: BuildKind | "onboard";
     path?: string;
     title?: string;
     via?: "overseer";

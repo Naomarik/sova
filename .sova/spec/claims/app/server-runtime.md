@@ -154,7 +154,10 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   list of settings, the stand-in `claude`, the tier guard, the temp-root refusal), so it runs
   against the caller's real home and agent dir. Nothing refuses a bare run: it is a rule, not a
   wall, and a test run bare anyway still writes nothing into the real agent dir
-  (§app.server-runtime/test-agent-fence).
+  (§app.server-runtime/test-agent-fence). The one exception is a playbook's own `tests/` folder
+  (§chat.playbooks/bundles): `node --test <playbook>/tests/*.test.mjs` is how those run, since they need
+  nothing from Sova and keep to throwaway folders of their own; the runner's patterns never match
+  them, so they stay out of both tiers.
 
 - **The unit tier** is every test file the runner's patterns match except `*.integration.test.ts`:
   in-process tests. They may run Git (Sova's own org store is a Git repository), but no other

@@ -446,7 +446,11 @@ model (with where a model's cost went) and project tables, top sessions, the pri
 Prices, and that it counts this computer only; today's spend in the Agents page's head. A project's
 Cost tab: the total as of its count, who started what, the most expensive sessions, the breakdown by
 kind and model, and its notes. A session's Usage tab: its spend, by model and where (main thread,
-side calls, subagents). The Usage page: one card per provider, each window's share used, reset, pace,
+side calls, subagents). The Agents page's Time Spent tab: range and project, the four headline
+figures (You, Agents, Agent Hours Per Your Hour, While You Were Away), hours per day, Your Time,
+Your Messages, Agent Time with Waiting On Workers apart, By Project and Top Sessions, that it counts
+this computer only from the day each kind of time was first recorded, and that a deleted session
+keeps its hours. The Usage page: one card per provider, each window's share used, reset, pace,
 run-out and last week, a Claude account's logins, a balance for prepaid credit, how it stays fresh
 and Refresh Usage; the glance at the foot of the session list. Screenshots, from the live app with
 real figures: the Costs tab's top, its By model table, a Claude account's limits and a project's

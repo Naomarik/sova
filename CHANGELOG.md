@@ -4,6 +4,71 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.17.0 — 2026-11-19
+
+Public links that work with no setup, a Time Spent tab, dry runs for branches that change the merge
+checks, one switch per context file and skill, and a calmer server under load. 58 commits on the
+main line since v0.16.0 (30 merged branches). The highlights:
+
+- **Public links on Cloudflare Free.** With no public address set, every link Sova makes (session
+  shares, hand-offs, tours, previews) goes out through a free Cloudflare Quick Tunnel, with no
+  account. The first one needs your one-time **Turn On** in Settings → Public links (or on the
+  prompt a share screen shows); until then a link is made but isn't public yet. Each previewed app
+  gets its own tunnel, and a tunnel that is up but not yet reachable says it is still coming online.
+  When a Free address changes, the Shares page and the Share sheet name the sent links that no
+  longer open, with **Copy New Link**. Settings → Public links has one list of where links open, in
+  sections; picking **Off** there now turns sharing off entirely (the Share buttons hide). An
+  Account token you paste replaces the live one only once its check passes.
+- **Time Spent tab.** The Agents page has a new **Time Spent** tab: your own time and messages, the
+  agents' time (time waiting on workers shown apart), by project and top sessions, over a range you
+  pick. Tool runs are timed from now on, and a deleted session's hours stay in the totals.
+- **Dry runs.** A branch that changes the project's merge checks, release checks, deploy targets or
+  a service a check needs gets a dry run: its new checks run on its exact commit in the merge copy,
+  and nothing lands. It shows wherever the branch and the queue show (**Needs a dry run**, **Dry run
+  running**, **Dry run passed**…), with a **What's a dry run?** explainer. A Land on such a branch
+  runs its dry run first and lands by itself once it passes.
+- **Context files and skills: one switch per item.** Approve and Disallow are gone: each context
+  file and skill is one switch, kept per folder, on the setup card, the project's Context Files and
+  Skills cards and a folder's list, with a switch per group and **Undo**. Settings → General's
+  switch is now **New context files and skills start on** (on by default); off, an item you haven't
+  set stays off, marked **New**, and nothing ever holds Send. A chat no longer picks up context
+  files at or above your home folder, and skills and instructions in subfolders are found only
+  inside a git repository or a Sova project.
+- **Playbook cards.** The chat showing a playbook's card can set its values (members' models and
+  efforts, optional members, notes, stops), each marked **From the chat**. A chat opens on its card,
+  and Jump to Latest never covers it.
+- **Running Copies.** **Set Up with a Chat** and **Change Setup…** open one standing Project verbs
+  chat per project, with **Start Fresh…** in its head. A copy's row offers Start, Stop, Logs and
+  Teardown; Apply and Reset leave the page. Archiving a project waits for its running copies.
+- **Lookbook.** A redesigned Setup card: an editable request, one row per model with its own effort,
+  Hide and Show for providers, and your chat can change the open card. The Creative Director reads
+  each saved page and can look at one view at one width; on a phone the chat folds to a bar.
+- **A calmer server.** When every core is busy, Sova's server now gets the larger share of the CPU
+  over the agents. Settings → General has a new **Limit agents' CPU** switch, off by default, to cap
+  all agents together at a number of cores.
+- **Project page and sessions.** Sidebar session rows have a right-click (or touch-and-hold) menu. A
+  ready branch's name on the Sessions tab opens its Worktrees row in a popover, and Ready to land
+  lists New Coding Session branches. Dropped and done alignments fold to one line and show on the
+  Timeline. A press outside a context menu closes it at once.
+- **Smaller changes.** Chats' replies follow one shape: a quick question gets a line or two, a bigger
+  job a short summary then the full report. The composer's **+** lists only this chat's four
+  actions; **Ctrl/⌘+K** goes back to the browser, and undo is **Rewind** in the Timeline. Sova runs
+  every chat's modes itself, so the Experimental "Sova runs chat modes" switch is gone, and the
+  plain pi terminal has no modes. Sova runs on pi 1.5.2. A project's config for Sova's own chats
+  (merge queue, release, review, request, project setup) moves from `.sova/playbooks/` to
+  `.sova/playbook-config/`; the old folders are still read until v0.18.0.
+
+**What you may need to do:** To use public links, press **Turn On** once in Settings → Public links.
+If you had saved Off there before, it now reads as Free; pick **Off** again to keep sharing off. If
+a project keeps its merge-queue, release, review, request or project-setup files in
+`.sova/playbooks/`, move them to `.sova/playbook-config/` before v0.18.0. If you used Ctrl/⌘+K for
+Sova's command list, use the composer's **+** instead.
+
+Going back to `v0.16.0` (`SOVA_REF=v0.16.0`) hasn't been tested on this release. v0.16.0 doesn't
+know the agents' CPU limit (a limit you set stays until logout or reboot), the Time Spent records or
+the Free tunnel's Turn On, and doesn't read `.sova/playbook-config/`: a project whose config lives
+only there loses it until you copy it back to `.sova/playbooks/`.
+
 ## v0.16.0 — 2026-11-12
 
 Lookbooks that use your design skills and pasted screenshots, a recall tool for memory chats, one

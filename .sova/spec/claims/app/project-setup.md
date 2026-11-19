@@ -57,7 +57,17 @@ new chat starts on a new setup branch. Archiving the Setup chat any other way do
 no commits beyond the target its run ends and the empty worktree and branch are removed; with commits,
 the branch and its proposal stay, and the next Set Up with a Chat or Change Setup starts a new chat on
 that same branch and proposal, never refusing it as already running. No path leaves the user to
-remove a worktree by hand. An archived Setup chat, current or replaced, lists nothing in Needs you,
+remove a worktree by hand.
+
+**A chat whose instructions moved starts fresh by itself.** When the open Setup chat's playbook
+folder, the one its first message names, no longer exists (a chat started before Sova's own
+playbooks moved to `system-playbooks/`, §chat.playbooks/system-playbooks), Set Up with a Chat and
+Change Setup don't reopen it: they take Start Fresh's path without asking, archiving it and starting
+a new Setup chat that carries on in the same worktree, setup branch and proposal when it has commits
+beyond the target and is told the old chat's path, refused the same way while the old chat is
+working.
+
+An archived Setup chat, current or replaced, lists nothing in Needs you,
 not even a failed turn or worker (§app.overseer/attention-digest); an open one's failures still show.
 
 **Its model** is the one the project's setup asks for, else claude-code's current Opus in Sova's
@@ -88,9 +98,12 @@ running.
 
 ## §app.project-setup/context — What the chat knows when it starts
 
-Its first message is Sova's setup playbook (`playbooks/project-setup/`, §chat.playbooks), then which
+Its first message is Sova's setup playbook (`system-playbooks/project-setup/`, Sova's own,
+§chat.playbooks/system-playbooks), then which
 part the user came from. The playbook has it read the project's own setup notes when the project
-has them (its `.sova/playbooks/project-setup/PLAYBOOK.md`), which win where the two differ, never
+has them (its `.sova/playbook-config/project-setup/PLAYBOOK.md`, else, for a project set up before
+the move, its old `.sova/playbooks/project-setup/PLAYBOOK.md` until 0.18.0,
+§chat.playbooks/playbook-config), which win where the two differ, never
 over what the chat may not do (§app.project-setup/trust). The playbook gives it the whole
 picture before it reads a file:
 - what every part of `.sova/project.json` means and what it accepts: services and data, test,
@@ -334,7 +347,8 @@ Nothing was merged.", and refuse too when Git can't tell (§chat.worktrees/tool)
 A **setup branch** is any branch of the project whose changes since its merge base with the target
 touch the `merge`, `release` or `deploy` sections of `.sova/project.json`, or files in the release
 playbook folder (the one `release.playbook` names, read from both the branch's and the target's
-definition, and `.sova/playbooks/release/`), or
+definition, `.sova/playbook-config/release/`, and its old place `.sova/playbooks/release/` while that
+is still read, §chat.playbooks/playbook-config), or
 that add, remove or change a service a merge check requires (in the branch's merge section or the
 target's): the Setup chat's, and any other chat's that changes the same things. A branch that changes
 only other services is not one: conformance covers it (§app.project-services/conform). It

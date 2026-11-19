@@ -572,7 +572,7 @@
       "server/spec-draft-writer.ts",
       "server/conversation-draft.ts",
       "server/spec-tool-fake.ts",
-      ".sova/playbooks/release/scripts/docs-drift.mjs",
+      ".sova/playbook-config/release/scripts/docs-drift.mjs",
       "scripts/sim/lib/lookup-probe.ts",
       "pi-config/extensions/spec/core/README.md",
       "pi-config/extensions/spec/README.md",

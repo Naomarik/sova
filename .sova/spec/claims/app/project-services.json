@@ -169,13 +169,13 @@
       "server/project-services/copy-tree.integration.test.ts",
       "shared/project-slots.ts",
       "server/project-services/def-hash.ts",
-      "playbooks/project-verbs/references/contract.md",
-      "playbooks/project-verbs/scripts/project-verbs.mjs",
+      "system-playbooks/project-verbs/references/contract.md",
+      "system-playbooks/project-verbs/scripts/project-verbs.mjs",
       "server/project-services/no-services.integration.test.ts",
       "server/merge-queue/checks.ts",
       "server/merge-queue/checks.test.ts",
       "shared/project-contract-release.test.ts",
-      "playbooks/project-setup/references/definition.md"
+      "system-playbooks/project-setup/references/definition.md"
     ],
     "agreed": {
       "by": "user",
@@ -219,8 +219,8 @@
       "server/project-services/engine.ts",
       "server/project-services/engine.test.ts",
       "server/project-services/engine.integration.test.ts",
-      "playbooks/project-verbs/scripts/project-verbs.mjs",
-      "playbooks/project-verbs/references/contract.md",
+      "system-playbooks/project-verbs/scripts/project-verbs.mjs",
+      "system-playbooks/project-verbs/references/contract.md",
       "server/project-services/def-hash.ts",
       "shared/project-contract-release.test.ts"
     ],
@@ -665,7 +665,7 @@
       "server/project-services/share.integration.test.ts",
       "server/project-services/slots.test.ts",
       "shared/project-contract-release.test.ts",
-      "playbooks/project-verbs/references/contract.md"
+      "system-playbooks/project-verbs/references/contract.md"
     ],
     "agreed": {
       "by": "user",

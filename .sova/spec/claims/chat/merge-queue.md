@@ -16,8 +16,9 @@ decision, answered from the chat's message box (§chat.merge-queue/decision).
 
 ## §chat.merge-queue/thread — What the merge thread does
 
-**Its playbook.** Sova ships a method playbook (`playbooks/merge-queue/`), which the thread always
-follows. A project may add its own `.sova/playbooks/merge-queue/PLAYBOOK.md`. The thread reads it
+**Its playbook.** Sova ships a method playbook (`system-playbooks/merge-queue/`, one of Sova's own,
+§chat.playbooks/system-playbooks), which the thread always follows. A project may add its own
+`.sova/playbook-config/merge-queue/PLAYBOOK.md` (§chat.playbooks/playbook-config). The thread reads it
 after the method, and where the two differ, the project's wins. Both are playbook folders
 (§chat.playbooks/bundles). What is worth a note on a landing is what the project's playbook says.
 - Sova's says: server, shared or pi-config code, dependency or lockfile changes, migrations or
@@ -269,7 +270,8 @@ hour's grace. Questions still open stay open across it (§chat.merge-queue/asks)
 `PLAYBOOK.md` and everything under its `references/`, Sova's method and the project's alike. When
 it changed since the thread last read it, the next event's message starts with one line: "The
 playbook changed since you read it: read {method PLAYBOOK.md} and {project PLAYBOOK.md} again
-first, with the references they name." Everything else (the branch, the queue, the logs) it reads
+first, with the references they name. The method's scripts are in {method scripts folder}.", as a
+new thread's first message says. Everything else (the branch, the queue, the logs) it reads
 fresh at each event, as before: its memory is for history, never for the queue's current state,
 nor for how to do a step: each event's message names the guide pages to read again now (Read as you
 go, §chat.merge-queue/thread).
@@ -720,7 +722,7 @@ Merge Queue tab's Needs you (§app.merge-queue/view) and in the landing bar
 
 ## §chat.merge-queue/sova-restart — Sova's merge thread restarts Sova after landings
 
-Sova's own project playbook (`.sova/playbooks/merge-queue/`, its "When the queue is idle") has
+Sova's own project playbook (`.sova/playbook-config/merge-queue/`, its "When the queue is idle") has
 Sova's merge thread restart Sova after landings that change what its server runs, so new server code
 goes live without the operator pressing Restart Sova. The thread does it through one merge verb Sova
 runs for it, `merge.restart {project}`, never a script or command of its own

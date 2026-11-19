@@ -329,7 +329,7 @@
       "server/merge-queue/copy.ts",
       "server/merge-queue/run.integration.test.ts",
       "server/merge-queue/thread.ts",
-      "playbooks/merge-queue/references/conflicts.md",
+      "system-playbooks/merge-queue/references/conflicts.md",
       "shared/project-contract.ts"
     ]
   },
@@ -776,7 +776,7 @@
       "server/merge-queue/rulings.ts",
       "server/merge-queue/rulings.test.ts",
       "server/merge-queue/thread.ts",
-      "playbooks/merge-queue/PLAYBOOK.md",
+      "system-playbooks/merge-queue/PLAYBOOK.md",
       "server/merge-queue/notices.ts",
       "shared/merge-queue.ts",
       "server/merge-queue/view.ts",
@@ -924,7 +924,7 @@
       "src/lib/merge-queue.ts",
       "src/lib/merge-queue.test.ts",
       "server/merge-queue/queue-settings.test.ts",
-      "playbooks/merge-queue/references/names.md"
+      "system-playbooks/merge-queue/references/names.md"
     ]
   },
   "§app.merge-queue/request-kit": {
@@ -938,14 +938,14 @@
     "code": [
       "server/merge-queue/hosts/request-kit.ts",
       "server/merge-queue/request-kit.test.ts",
-      ".sova/playbooks/request/PLAYBOOK.md",
-      ".sova/playbooks/request/scripts/check.mjs",
+      ".sova/playbook-config/request/PLAYBOOK.md",
+      ".sova/playbook-config/request/scripts/check.mjs",
       "server/merge-queue/strategy-run.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T11:30Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.merge-queue/requests": {
@@ -1019,9 +1019,9 @@
       "server/worktree-cleanup.test.ts",
       "server/app.ts",
       "server/merge-queue/scenarios-conflicts.integration.test.ts",
-      "playbooks/merge-queue/PLAYBOOK.md",
-      "playbooks/merge-queue/references/conflicts.md",
-      "playbooks/merge-queue/scripts/conflict-hunks.mjs",
+      "system-playbooks/merge-queue/PLAYBOOK.md",
+      "system-playbooks/merge-queue/references/conflicts.md",
+      "system-playbooks/merge-queue/scripts/conflict-hunks.mjs",
       "server/worktree-targeted-removal.test.ts",
       "server/merge-queue/resolve-content.ts",
       "server/merge-queue/resolve-content.test.ts",
@@ -1042,13 +1042,13 @@
       "§app.merge-queue/review-report"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-08T22:59Z",
-      "source": "pi-session:1e2d4212-e8f2-4d90-95f6-538201cbd3f1#5cf517d3"
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     },
     "code": [
-      ".sova/playbooks/review/PLAYBOOK.md",
-      ".sova/playbooks/review/references/checklist.md",
+      ".sova/playbook-config/review/PLAYBOOK.md",
+      ".sova/playbook-config/review/references/checklist.md",
       "server/merge-queue/playbooks.test.ts",
       "server/merge-queue/review-step.ts",
       "server/merge-queue/reviewer.ts",
@@ -1074,7 +1074,8 @@
       "server/merge-queue/queue-review.test.ts",
       "server/merge-queue/testing/scenario-kit.ts",
       "server/merge-queue/review-record.ts",
-      "server/merge-queue/thread.ts"
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/settings-edit.ts"
     ]
   },
   "§app.merge-queue/review-report": {
@@ -1289,12 +1290,14 @@
       "server/merge-queue/wire.ts",
       "shared/commands/projects.ts",
       "shared/commands-ids.json",
-      "server/merge-queue/settings-routes.test.ts"
+      "server/merge-queue/settings-routes.test.ts",
+      "server/merge-queue/settings-edit.ts",
+      "server/merge-queue/settings-edit.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.merge-queue/settings-save": {
@@ -1392,7 +1395,7 @@
       "server/merge-queue/scenarios-standing.integration.test.ts",
       "server/merge-queue/wire.ts",
       "server/merge-queue/thread.ts",
-      "playbooks/merge-queue/references/fixes.md"
+      "system-playbooks/merge-queue/references/fixes.md"
     ]
   },
   "§app.merge-queue/strategies": {

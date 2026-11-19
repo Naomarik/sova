@@ -157,7 +157,8 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   (§app.server-runtime/test-agent-fence). The one exception is a playbook's own `tests/` folder
   (§chat.playbooks/bundles): `node --test <playbook>/tests/*.test.mjs` is how those run, since they need
   nothing from Sova and keep to throwaway folders of their own; the runner's patterns never match
-  them, so they stay out of both tiers.
+  them, so they stay out of both tiers. Sova's own playbooks (`system-playbooks/`,
+  §chat.playbooks/system-playbooks) keep none: their tests run in the runner.
 
 - **The unit tier** is every test file the runner's patterns match except `*.integration.test.ts`:
   in-process tests. They may run Git (Sova's own org store is a Git repository), but no other
@@ -200,7 +201,7 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   the groups run and skipped, the lane count and an estimate from the recorded file times: their
   sum over the lanes, never less than the longest file) and runs nothing. Plain `pnpm test:int`
   still runs the whole tier, every group included, and a release runs it so
-  (`.sova/playbooks/release/references/checks.md`): there is no other catch-up run of the groups
+  (`.sova/playbook-config/release/references/checks.md`): there is no other catch-up run of the groups
   landings skip.
 - **Counts for the caller.** When `SOVA_OUT` names a file, the runner writes its result there as
   JSON when it ends: `passed`, `failed`, `errors`, `skipped`, `failures` (`[{name, message?,
@@ -390,3 +391,22 @@ Typecheck then reads Skipped with those words (§app.merge-queue/checks); inside
 never marks Build skipped. `--fresh` or `SOVA_FRESH=1` runs it and still keeps a pass; a pass is kept
 only when the checkout didn't change while it ran, and a check started from inside a test just
 runs. The rest of Build always runs, since the walkthroughs and the server use what it makes.
+
+## §app.server-runtime/migrations — Code that keeps an old place working lives in `migrations/`, with a version to go
+
+Code that keeps an old place or an old shape working after a move is temporary, and lives in one
+place: the top-level `migrations/` folder, one subfolder per migration (`migrations/<id>/`) holding
+all of its code, and `migrations/manifest.json`, a list of `{id, what, since, removeIn, paths}`: what
+it keeps working, the version it came in, the version it goes in, and the files that reach it.
+Sova's code reaches a migration through one small import at each place that needs it, so retiring
+one is deleting its subfolder, its manifest entry and those imports. A unit test in Sova's test run
+fails once `package.json`'s version reaches any entry's `removeIn`, so a migration past its version
+can't stay unnoticed. The folder's README says how, it is cleared out of Git every so often, and
+AGENTS.md's layout names it.
+
+The first two come with the move of Sova's own playbooks, since 0.16.0, each with `removeIn` 0.18.0
+(proposed): `playbook-config-old-place`, which reads a project's `.sova/playbooks/{merge-queue,
+release,review,request,project-setup}` while its `.sova/playbook-config/` folder is absent
+(§chat.playbooks/playbook-config), and `system-playbooks-old-paths`, which reads the old folder
+`<Sova repo>/playbooks/<id>/` a chat's first message names as `system-playbooks/<id>/` for the six
+that moved (§chat.playbooks/system-playbooks).

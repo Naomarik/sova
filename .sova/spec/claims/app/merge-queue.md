@@ -886,7 +886,8 @@ Sova restarts itself once the queue is idle", or "regenerated the lockfile". Sov
 ## §app.merge-queue/review — The optional review step
 
 A project may declare a **review kit** in its definition's `merge` section. It is a skill-shaped
-folder (instructions and references), such as `.sova/playbooks/review/`.
+folder (instructions and references), usually `.sova/playbook-config/review/` (`.sova/playbooks/review/`
+for a project set up before the move, §chat.playbooks/playbook-config).
 It is never loaded into an ordinary chat: it isn't under the skills folders or in any skill path,
 and only the review step opens it. A project with no kit has no review step.
 
@@ -2346,7 +2347,8 @@ queue uses."
 - How it lands (§app.merge-queue/strategies);
 - push on or off;
 - review on or off: off takes the kit's folder out of the definition, and on puts it back, offered
-  only while that folder is on the target;
+  only while that folder is on the target (§chat.playbooks/playbook-config), else hinting "Turning
+  it on needs the review folder on the target: .sova/playbook-config/review.";
 - each check's time limit (at most 30 min), whether it reruns failed files, and whether it always
   runs or only when the merge thread picks it;
 - reuse of passes from identical code on or off;
@@ -2724,7 +2726,8 @@ chat sees neither tool's config (§chat.sandbox/what-on-enforces).
 ## §app.merge-queue/request-kit — The request skill folder
 
 A project may declare a **request kit** in its definition's `merge` section (`merge.request`, such
-as `.sova/playbooks/request/`). It is a skill-shaped folder, like the review kit
+as `.sova/playbook-config/request/`, or `.sova/playbooks/request/` for a project set up before the move,
+§chat.playbooks/playbook-config). It is a skill-shaped folder, like the review kit
 (§app.merge-queue/review): `PLAYBOOK.md`, its instructions on how to write a request's title and
 description; `references/` (templates, examples); and `scripts/check*.mjs`, its own checks, run in
 name order. It is never a registered skill and is in no skills folder. A named folder that is

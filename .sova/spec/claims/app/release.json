@@ -133,19 +133,19 @@
       "§app.project-setup/proposal"
     ],
     "code": [
-      "playbooks/release-maker/PLAYBOOK.md",
-      "playbooks/release-maker/references/release.md",
-      "playbooks/release-maker/scripts/release-maker.mjs",
-      "playbooks/project-verbs/references/contract.md",
-      "playbooks/project-verbs/scripts/project-verbs.mjs",
+      "system-playbooks/release-maker/PLAYBOOK.md",
+      "system-playbooks/release-maker/references/release.md",
+      "system-playbooks/release-maker/scripts/release-maker.mjs",
+      "system-playbooks/project-verbs/references/contract.md",
+      "system-playbooks/project-verbs/scripts/project-verbs.mjs",
       "server/projects/release-proposal.ts",
       "server/playbooks.ts",
       "server/projects/onboard.ts",
       "server/release-playbooks.test.ts",
       "server/project-services/release-maker.integration.test.ts",
       "src/components/ReleasesTab.tsx",
-      "playbooks/project-setup/references/questions.md",
-      "playbooks/release-maker/playbook.json"
+      "system-playbooks/project-setup/references/questions.md",
+      "system-playbooks/release-maker/playbook.json"
     ],
     "agreed": {
       "by": "naomarik",
@@ -181,16 +181,16 @@
       "§app.release/steps"
     ],
     "code": [
-      "playbooks/release/PLAYBOOK.md",
-      "playbooks/release/scripts/release.mjs",
+      "system-playbooks/release/PLAYBOOK.md",
+      "system-playbooks/release/scripts/release.mjs",
       "server/release-playbooks.test.ts",
       "server/playbooks-release.integration.test.ts",
       "server/sova-release-playbook.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-04T20:51Z",
-      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.release/power": {
@@ -322,9 +322,9 @@
       "shared/project-contract.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-13T20:59Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.release/sova": {
@@ -336,21 +336,21 @@
       "§app.release/settings"
     ],
     "code": [
-      ".sova/playbooks/release/PLAYBOOK.md",
-      ".sova/playbooks/release/release.json",
-      ".sova/playbooks/release/scripts/sova-release.mjs",
+      ".sova/playbook-config/release/PLAYBOOK.md",
+      ".sova/playbook-config/release/release.json",
+      ".sova/playbook-config/release/scripts/sova-release.mjs",
       ".sova/project.json",
-      ".sova/playbooks/release/references/checks.md",
-      ".sova/playbooks/release/references/docs.md",
+      ".sova/playbook-config/release/references/checks.md",
+      ".sova/playbook-config/release/references/docs.md",
       "server/sova-release-playbook.test.ts",
       "server/sova-release-playbook.integration.test.ts",
       "site/README.md",
-      ".sova/playbooks/release/scripts/docs-drift.mjs"
+      ".sova/playbook-config/release/scripts/docs-drift.mjs"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T16:06Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
+      "by": "naomarik",
+      "at": "2026-11-19T04:09Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5fbb134e"
     }
   },
   "§app.release/start": {
@@ -378,8 +378,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-04T20:51Z",
-      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.release/steps": {

@@ -14,17 +14,18 @@ The dialog fetches once each time it opens.
 
 | Group | `source` | Folder | Notes |
 |---|---|---|---|
-| **Sova** | `sova` | `playbooks/` at the Sova repo root | Shipped with Sova |
-| **Yours** | `user` | `~/.pi/agent/sova/playbooks/` | Your own. An id that matches a shipped one **replaces** it: the shipped entry is dropped and yours carries `replacesSova: true`. The interface deliberately **does not render** that flag: the row already sits under the Yours heading, so a marker would only repeat it. The field exists in the data, asserted in `server/playbooks.test.ts` |
-| **This project** | `project` | `<project root>/.sova/playbooks/`, then `<project root>/.sova/marketing/playbooks/` | The session's project (§chat.profiles/projects): a worktree or subfolder reads its main checkout's. An id in both folders is listed once, from `.sova/playbooks/`. It never replaces anything. It is always its own group, even when an id matches one above |
+| **Sova** | `sova` | `playbooks/` at the Sova repo root | Shipped with Sova: the playbooks you start yourself. Sova's own playbooks, the ones only Sova starts, are in `system-playbooks/` beside it and never in this list (§chat.playbooks/system-playbooks) |
+| **Yours** | `user` | `~/.pi/agent/sova/playbooks/` | Your own. An id that matches one in `playbooks/` **replaces** it: the shipped entry is dropped and yours carries `replacesSova: true`. The interface deliberately **does not render** that flag: the row already sits under the Yours heading, so a marker would only repeat it. The field exists in the data, asserted in `server/playbooks.test.ts`. An id that matches one of Sova's own playbooks replaces nothing: it is listed here like any other of yours |
+| **This project** | `project` | `<project root>/.sova/playbooks/`, then `<project root>/.sova/marketing/playbooks/` | The session's project (§chat.profiles/projects): a worktree or subfolder reads its main checkout's. An id in both folders is listed once, from `.sova/playbooks/`. It never replaces anything. It is always its own group, even when an id matches one above. What a project adds to Sova's own chats is in `.sova/playbook-config/`, never listed (§chat.playbooks/playbook-config) |
 
-A playbook only Sova's own chats run is not listed: in the catalog, the Playbooks dialog and the
-`/` rows it is hidden (§chat.playbooks/unlisted). That covers `project-setup`, which only the Setup
-chat's own start sends, `release-maker` and `project-deploy`, its release and deploy halves, which
-run only inside it (§app/project-setup), and the recipes of the merge queue, the release, review
-and request.
+No playbook only Sova's own chats run is listed: the catalog, the Playbooks dialog and the `/` rows
+leave out everything in `system-playbooks/` (the merge thread's and the release chat's methods,
+`project-setup` with its release and deploy halves `release-maker` and `project-deploy`, and
+`project-verbs`, §chat.playbooks/system-playbooks) and everything in a project's
+`.sova/playbook-config/` (§chat.playbooks/playbook-config). Any other playbook whose description says
+`listed: false` is hidden too (§chat.playbooks/unlisted).
 
-**The grammar is the same in all three folders.** A playbook is a directory `<id>/` whose
+**The grammar is the same in every folder.** A playbook is a directory `<id>/` whose
 **entry file** is either `PLAYBOOK.md` or `SKILL.md`, plus whatever other files its entry tells
 the agent to read (§chat.playbooks/bundles). One file is the whole entry: Sova's keys go in its
 frontmatter either way, so a folder written as a pi or Claude Code skill is also a playbook.
@@ -373,10 +374,76 @@ the chat's own model. A model Settings → Models turns off is skipped.
 
 ## §chat.playbooks/unlisted — Recipes only Sova's chats run are not listed
 
-A playbook whose description says `listed: false` is left out of the Playbooks dialog and the `/`
-rows. It is still found where Sova itself looks for it: the Setup chat still starts from
-`project-setup`, and the merge queue, release, review and request chats still read their own
-recipes. Since the dialog doesn't list it, it isn't offered for scheduling there either.
+A playbook of yours or a project's whose description says `listed: false` is left out of the
+Playbooks dialog and the `/` rows. It is still found where Sova itself looks for it: a project's
+merge queue, release, review and request folders still kept in its old place (§chat.playbooks/playbook-config)
+say so, and their chats still read them, as the Setup chat still reads the project's setup notes
+there. Since the dialog doesn't list it, it isn't offered for
+scheduling there either. Sova's own playbooks need no such flag: their folder keeps them out,
+whatever their own description says (§chat.playbooks/system-playbooks).
+
+## §chat.playbooks/system-playbooks — Sova's own playbooks are in `system-playbooks/`
+
+The six playbooks only Sova starts ship in `system-playbooks/` at the Sova repo root, beside
+`playbooks/`, which keeps only the ones you start (A/B cycle, Brandmaker, Marketing, Spec review):
+
+| Playbook | Folder | Started by |
+|---|---|---|
+| Merge thread's method | `system-playbooks/merge-queue/` | Sova, when a branch is queued (§chat.merge-queue/thread) |
+| Release method | `system-playbooks/release/` | Sova, when a release starts (§app.release/playbook) |
+| Project setup | `system-playbooks/project-setup/` | Sova, from Set Up with a Chat or Change Setup (§app.project-setup/context) |
+| Release playbook maker | `system-playbooks/release-maker/` | Sova, inside the Setup chat (§app.release/maker) |
+| Project deploy | `system-playbooks/project-deploy/` | Sova, inside the Setup chat (§app.project-runtime/deploy-playbook) |
+| Project verbs | `system-playbooks/project-verbs/` | Sova, from the project's Running Copies tab (§app.project-runtime/onboard) |
+
+- **Never listed.** Nothing in `system-playbooks/` is in the Playbooks dialog or the `/` rows, nor
+  offered for scheduling, whatever its own description says: the folder decides, never a flag.
+  Project verbs, listed in the dialog until the move, is no longer there.
+- **Started only from what Sova ships.** Sova finds each by its id in its own `system-playbooks/` and
+  nowhere else. A playbook of yours or a project's with the same id is just another playbook, listed
+  under Yours or This project like any other, and replaces nothing Sova runs. A project adjusts
+  Sova's own chats through its config folders (§chat.playbooks/playbook-config).
+- **Side by side.** The six read each other's pages and scripts as neighbouring folders
+  (`../project-verbs/…`) and Sova's shared code at the same depth as before, so they move together.
+- **Chats started before the move keep their instructions and tools.** Wherever Sova reads the
+  playbook folder a chat's first message names (whether it may use the project verbs, which
+  playbook a run follows, the merge thread's method), an old folder `<Sova repo>/playbooks/<id>/` of
+  one of the six is read as `<Sova repo>/system-playbooks/<id>/`. A Setup chat started before the
+  move gets a fresh Setup chat on its next Change Setup (§app.project-setup/chat), and the merge
+  thread is told the new folder, scripts included, on its next event (§chat.merge-queue/thread).
+  The old folders are read this way until a later version (§app.server-runtime/migrations).
+- **Their tests stay in Sova's test run**, in Sova's own test folders, pointed at the new folder.
+
+## §chat.playbooks/playbook-config — A project's config for Sova's own chats is in `.sova/playbook-config/`
+
+What a project adds to Sova's own chats lives in its `.sova/playbook-config/`, one folder each,
+never among the playbooks you start:
+
+| Folder | Read by |
+|---|---|
+| `.sova/playbook-config/merge-queue/` | the merge thread, after Sova's method (§chat.merge-queue/thread) |
+| `.sova/playbook-config/release/` | the release chat: the usual `release.playbook` (§app.release/settings) |
+| `.sova/playbook-config/review/` | the merge queue's review step: the usual review kit (§app.merge-queue/review) |
+| `.sova/playbook-config/request/` | requests: the usual request kit (§app.merge-queue/request-kit) |
+| `.sova/playbook-config/project-setup/` | the Setup chat: the project's own setup notes (§app.project-setup/context) |
+
+Nothing in `.sova/playbook-config/` is listed in the Playbooks dialog or the `/` rows, so a
+project's `.sova/playbooks/` holds only playbooks you start. A new setup writes these folders here,
+and the definition's defaults name them: turning review on in Settings → Merge Queue adds
+`.sova/playbook-config/review`, and the Setup chat's release half writes the release playbook to
+`.sova/playbook-config/release` (§app.release/maker). The Setup chat's references and Sova's
+contributor guide teach this place. Sova's own repository keeps its folders here, and its
+`.sova/project.json` names them.
+
+**The old place is still read, until a later version.** A project set up before the move keeps
+working untouched: where `.sova/playbook-config/<x>/` is absent, Sova reads `.sova/playbooks/<x>/`
+for `merge-queue`, `release`, `review`, `request` and `project-setup`, both for what Sova's chats read
+there (the merge thread's additions, the Setup chat's setup notes) and for a default the definition
+doesn't name (turning review on with only the old folder on the target adds
+`.sova/playbooks/review`). A definition that names a folder, old or new, is read as named. This
+lasts from 0.16.0 until a later version (0.18.0 proposed), tracked as `playbook-config-old-place`
+in Sova's migrations (§app.server-runtime/migrations); by then a project moves its folders, and the
+definition's paths, on a setup branch.
 
 ## §chat.playbooks/run-card — The playbook card
 
@@ -748,8 +815,9 @@ Decided with the design and not in this release:
 - **One modal, never stacked.** Step 2 replaces step 1 inside the same `.modal`.
 - **Sending is the chat's send.** There is no separate endpoint or queue, and no special bubble.
   The one difference is the frame type: always `prompt`, never `steer`.
-- **Overrides are whole, and only Yours can make one.** A user playbook with a shipped id
-  replaces the shipped one outright. A project playbook replaces nothing.
+- **Overrides are whole, and only Yours can make one.** A user playbook with the id of one in
+  `playbooks/` replaces it outright; one with the id of Sova's own playbooks replaces nothing
+  (§chat.playbooks/system-playbooks). A project playbook replaces nothing.
 - **The header line is not optional.** Without it, a body beginning with `/` would run as a
   command.
 - **Typed text is never silently dropped, and never crosses playbooks.** It is kept per

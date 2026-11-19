@@ -82,9 +82,9 @@ software was registered ({paths}). Run the Project verbs playbook to bring it up
 overseer's `sova_project_verbs` verb `onboard`) starts the Project verbs playbook as a coding
 session of kind `onboard` in its own worktree and branch, the way a build starts
 (§app.project-overseer/coding-worktrees), titled "Project verbs: {project}", whose first prompt is
-the playbook's turn plus the why (§chat.playbooks/what-gets-sent). The playbook is the one with id
-`project-verbs` the project's folder lists, a user playbook of that id replacing the shipped one
-as everywhere (§chat.playbooks). Its model is the one asked for (with its thinking, medium unless
+the playbook's turn plus the why (§chat.playbooks/what-gets-sent). The playbook is Sova's own
+`system-playbooks/project-verbs/`, found there and nowhere else: a playbook of yours or the
+project's with the id `project-verbs` replaces nothing (§chat.playbooks/system-playbooks). Its model is the one asked for (with its thinking, medium unless
 given). Otherwise it is chosen from the models this host offers (the model picker's list), never a
 ref outside it: claude-code's current Opus in Sova's catalog (`claude-opus-5-5`,
 §app.claude-code-provider/catalog) if listed, else openai-codex `gpt-6-astra`, each at medium
@@ -153,7 +153,8 @@ message. The archived, host
 and Git refusals are read for the setup line before any press (`can.onboardWhy`), from the same
 rule as the start, so the line and a press say the same sentence.
 
-`playbook` (optional, default `project-verbs`) names another verb playbook the project's folder lists
+`playbook` (optional, default `project-verbs`) names another verb playbook: one of Sova's own by its
+id, from `system-playbooks/` only, else one the project's folder lists
 (§app.project-runtime/verb-playbooks); the run's title is then "{its title}: {project}", and every
 sentence below names it by its title. The session starts in this computer's default mode with align
 on beside it (§app.project-overseer/coding-mode).
@@ -176,9 +177,9 @@ its session.", "The Project verbs playbook's branch was merged." and "The Projec
 
 ## §app.project-runtime/playbook — The Project verbs playbook
 
-`playbooks/project-verbs/` is a Sova playbook (§chat.playbooks), so every project lists it. It
-works in a worktree on its own branch: started by `verbs/onboard` it already is one; started from
-the Playbooks dialog in the main checkout, it cuts one first. It reads the project at HEAD, never
+`system-playbooks/project-verbs/` is one of Sova's own playbooks, never listed
+(§chat.playbooks/system-playbooks). It works in a worktree on its own branch, which `verbs/onboard`
+cuts for it. It reads the project at HEAD, never
 the main checkout's uncommitted edits. Its driver `scripts/project-verbs.mjs` only reads
 (`inspect`, `plan`, `check`, `ram`) and canonically formats the definition (`fmt`, 2-space JSON
 in the contract's key order), exiting 0 when all is well, 1 when it found something to act on and
@@ -461,7 +462,7 @@ can be planned.
 
 ## §app.project-runtime/deploy-playbook — The Project deploy playbook
 
-`playbooks/project-deploy/` holds the deploy half of the project's Setup chat
+`system-playbooks/project-deploy/` (§chat.playbooks/system-playbooks) holds the deploy half of the project's Setup chat
 (§app/project-setup): nothing starts it on its own any more: `verbs/onboard` naming it opens the
 Setup chat, the Playbooks dialog and every other list of playbooks leave it out, and Set Up Deploy
 is gone

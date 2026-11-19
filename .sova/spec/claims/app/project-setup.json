@@ -10,9 +10,9 @@
       "§app.project-overseer/coding-worktrees"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T22:14Z",
-      "source": "pi-session:b406e4de-b015-4dbb-b201-14ab20b5da44#2b9be4c7"
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     },
     "code": [
       "server/projects/setup-chat.ts",
@@ -39,16 +39,16 @@
       "§app.project-services/contract"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T04:36Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     },
     "code": [
-      "playbooks/project-setup/PLAYBOOK.md",
-      "playbooks/project-setup/references/definition.md",
-      "playbooks/project-setup/references/behaviour.md",
-      "playbooks/project-setup/references/investigate.md",
-      "playbooks/project-setup/references/targets.md",
+      "system-playbooks/project-setup/PLAYBOOK.md",
+      "system-playbooks/project-setup/references/definition.md",
+      "system-playbooks/project-setup/references/behaviour.md",
+      "system-playbooks/project-setup/references/investigate.md",
+      "system-playbooks/project-setup/references/targets.md",
       "server/projects/setup-chat.ts",
       "server/projects/setup-playbook.test.ts"
     ]
@@ -66,10 +66,10 @@
       "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     },
     "code": [
-      "playbooks/project-setup/PLAYBOOK.md",
-      "playbooks/project-setup/references/drawing.md",
-      "playbooks/project-setup/scripts/project-setup.mjs",
-      "playbooks/project-setup/references/examples/clojure-vps.md"
+      "system-playbooks/project-setup/PLAYBOOK.md",
+      "system-playbooks/project-setup/references/drawing.md",
+      "system-playbooks/project-setup/scripts/project-setup.mjs",
+      "system-playbooks/project-setup/references/examples/clojure-vps.md"
     ]
   },
   "§app.project-setup/investigate": {
@@ -87,11 +87,11 @@
       "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
     },
     "code": [
-      "playbooks/project-setup/PLAYBOOK.md",
-      "playbooks/project-setup/references/investigate.md",
-      "playbooks/project-setup/references/questions.md",
-      "playbooks/project-setup/references/targets.md",
-      "playbooks/project-setup/scripts/project-setup.mjs"
+      "system-playbooks/project-setup/PLAYBOOK.md",
+      "system-playbooks/project-setup/references/investigate.md",
+      "system-playbooks/project-setup/references/questions.md",
+      "system-playbooks/project-setup/references/targets.md",
+      "system-playbooks/project-setup/scripts/project-setup.mjs"
     ]
   },
   "§app.project-setup/land-gate": {
@@ -149,9 +149,9 @@
       "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
-      "playbooks/project-setup/PLAYBOOK.md",
-      "playbooks/project-setup/scripts/project-setup.mjs",
-      "playbooks/project-setup/references/definition.md",
+      "system-playbooks/project-setup/PLAYBOOK.md",
+      "system-playbooks/project-setup/scripts/project-setup.mjs",
+      "system-playbooks/project-setup/references/definition.md",
       "server/projects/playbook-review.ts",
       "server/projects/runtime.ts",
       "shared/playbook-review.ts",
@@ -189,7 +189,7 @@
       "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
-      "playbooks/project-setup/references/examples/sova.md",
+      "system-playbooks/project-setup/references/examples/sova.md",
       "src/components/SetupChat.tsx"
     ]
   },
@@ -250,8 +250,8 @@
       "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#b79a3263"
     },
     "code": [
-      "playbooks/project-setup/PLAYBOOK.md",
-      "playbooks/project-setup/references/behaviour.md",
+      "system-playbooks/project-setup/PLAYBOOK.md",
+      "system-playbooks/project-setup/references/behaviour.md",
       "server/merge-queue/queue.ts",
       "server/merge-queue/run.ts",
       "server/merge-queue/routes.ts",
@@ -284,8 +284,8 @@
       "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
-      "playbooks/project-setup/PLAYBOOK.md",
-      "playbooks/project-setup/references/behaviour.md",
+      "system-playbooks/project-setup/PLAYBOOK.md",
+      "system-playbooks/project-setup/references/behaviour.md",
       "server/merge-queue/routes.ts",
       "server/merge-queue/setup-trust.test.ts",
       "server/merge-queue/review-step.ts",

@@ -35,7 +35,9 @@ working tree. It holds a pointer to the playbook plus only the facts Sova acts o
 wording can never change what Publish pushes:
 
 - `playbook` (required): the folder of the project's release playbook, relative to the checkout,
-  never the checkout itself; it holds the manifest `release.json` (§app.release/manifest).
+  never the checkout itself; it holds the manifest `release.json` (§app.release/manifest). It is
+  usually `.sova/playbook-config/release` (`.sova/playbooks/release` for a project set up before the
+  move, §chat.playbooks/playbook-config).
 - `tag` (default `v${version}`): the numbered tag's pattern, holding `${version}` exactly once and no
   other variable, and making a valid tag name.
 - `scheme`: `semver` (the default: X.Y.Z with an optional `-pre`), `calver` (YYYY.MM, an optional .DD
@@ -202,7 +204,8 @@ Otherwise it:
 4. Starts the **release chat** there, on the `release-thread` profile (it never owns a branch the
    queue lands), titled "Release {tag} of {project}" ("Release (version not picked yet) of {project}"
    until the version is picked). Its first message names the plan step by step, says to follow Sova's
-   release method and the project's playbook (the project's winning where they differ, Sova's gates
+   release method, named by its full folder (`<Sova repo>/system-playbooks/release`, so it resolves
+   from any project's release worktree), and the project's playbook (the project's winning where they differ, Sova's gates
    always), never to push, tag or move a branch, and how to report. Whoever starts it (the operator
    from the tab or the CLI, or the release power), two optional sections follow:
    - **The ask**: an overseer's or the Project Assistant's pending `release.request`, in a section of
@@ -494,7 +497,8 @@ isn't a numbered release … deploy a release instead (the latest is {tag})", or
 
 ## §app.release/playbook — Sova's release method and a project's playbook
 
-`playbooks/release/` is Sova's general release method, shipped with Sova; a project's own release
+`system-playbooks/release/` is Sova's general release method, shipped with Sova as one of its own
+playbooks (§chat.playbooks/system-playbooks), never replaced by a playbook of the same name; a project's own release
 playbook (the folder `release.playbook` names) adds what is particular to it, and wins where they
 differ, while Sova's gates always apply. The method says: the queue is frozen and Publish and Withdraw
 are Sova's; the chat reports each step only through its own `release.step` and `release.notes`, never a
@@ -518,14 +522,14 @@ Releases are set up, and changed, by the project's Setup chat (§app/project-set
 **Set Up with a Chat** (or **Change Setup**) on the Releases tab. There is no Set Up Releases run of
 its own any more: `verbs/onboard {playbook: "release-maker"}` opens the Setup chat too, and the
 Playbooks dialog and every other list of playbooks leave `release-maker` out, so nothing runs it
-alone. `playbooks/release-maker/` holds the chat's release half: it reads the project
+alone. `system-playbooks/release-maker/` holds the chat's release half: it reads the project
 (version tags, files holding a version, a changelog, release scripts and tag-triggered automation,
 remotes, ignored build folders, the merge checks and deploy targets), then, before writing anything,
 asks the user how the project releases (the version rule, the notes and their audience, the channel,
 each step in order and who does it, release-only checks, a live try-out, after-publish steps, where
 built files go). It writes the `release` section and the project's playbook folder (`PLAYBOOK.md`,
 `release.json`, scripts) on the setup branch, every line traced to an answer; with no answer to
-change them it starts from the defaults: `{playbook, tag: "v${version}", scheme: "semver", channels:
+change them it starts from the defaults: `{playbook: ".sova/playbook-config/release", tag: "v${version}", scheme: "semver", channels:
 ["stable"], commit: true}` and the steps version, notes, bump, commit. Its driver
 `scripts/release-maker.mjs` has `candidates`, `init` (the starter, never over an existing setup),
 `fmt` and `check`, which refuses push, tag-creating and update-ref commands (in argv form too), `gh
@@ -538,7 +542,7 @@ the branch to land (§app.project-setup/proposal).
 
 ## §app.release/sova — Sova's own release playbook
 
-Sova's `.sova/playbooks/release/` is its project release playbook in this form: `release.json` plans
+Sova's `.sova/playbook-config/release/` is its project release playbook in this form: `release.json` plans
 version, notes, bump, stamps, docs and commit before the checks; try-live (held: the operator's Apply on the live server, then a health check; Sova's merge thread never restarts Sova while a release is open, nor for its commit, §chat.merge-queue/sova-restart) before Publish;
 release-page (the notes out, `gh release create --verify-tag`) and outside-checks (held) after Publish;
 and release-page-withdrawn after a Withdraw. The **docs** step runs in every release unless the operator's Release Note
@@ -560,4 +564,7 @@ passes on them. Both sections sit outside the definition's hash, so adding them 
 conformance proof of Sova's copies standing. The `site` target's `video` step copies the hero videos from the folder in this
 host's `SOVA_SITE_VIDEO_DIR` value, an env credential of the target; a deploy never ships the site
 without its hero video: with that value unset the plan fails its credential check, and a folder that
-misses a video fails the step.
+misses a video fails the step. Since the move to `.sova/playbook-config/`, the `site` target can't be
+redeployed or rolled back to 0.16.0 or an older release: a deploy runs the newest settings' steps in a
+checkout of the deployed commit (§app.project-services/deploy), and those releases keep Sova's release
+scripts at `.sova/playbooks/release/scripts/`, so that deploy is refused; later releases are unaffected.

@@ -843,12 +843,13 @@ export function stepDetail(s: Pick<RunStep, "id" | "kind" | "result" | "detail">
 export const invalidWords = (invalid: string): string => `This project's .sova/project.json doesn't parse: ${invalid.trim().replace(/[.]$/, "")}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses.`;
 
 /** The queue's state chip. */
-export function queueStateChip(v: Pick<MergeQueueView, "state" | "checks"> & Partial<Pick<MergeQueueView, "invalid">>): { label: string; tone: Tone; live?: boolean } {
+export function queueStateChip(v: Pick<MergeQueueView, "state" | "checks"> & Partial<Pick<MergeQueueView, "invalid" | "trialNow">>): { label: string; tone: Tone; live?: boolean } {
   // A definition that doesn't parse reads "unset" too: it is said as what it is, never "Not set up".
   if (v.invalid) return { label: "Definition invalid", tone: "error" };
   if (v.checks === "unset") return { label: "Not set up", tone: "warn" };
   if (v.state === "paused") return { label: "Paused", tone: "warn" };
-  if (v.state === "running") return { label: "Running", tone: "accent", live: true };
+  // A dry run holds the merge copy: the queue is running, never idle (§app.merge-queue/dry-runs).
+  if (v.state === "running" || v.trialNow) return { label: "Running", tone: "accent", live: true };
   return { label: "Idle", tone: "neutral" };
 }
 

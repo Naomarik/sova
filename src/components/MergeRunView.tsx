@@ -91,13 +91,23 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               </Show>
             </div>
             <p class="text-caption">
-              <span class="text-mono">
-                {props.view.target} {short(r().base)}
-              </span>{" "}
-              + <span class="text-mono">{short(r().commit)}</span>
-              <Show when={r().tip}>
-                {" "}
-                → tested commit <span class="text-mono">{short(r().tip)}</span>
+              {/* A dry run merges nothing: it runs on the branch's own commit. */}
+              <Show
+                when={!isDry()}
+                fallback={
+                  <>
+                    {r().branch} at <span class="text-mono">{short(r().commit)}</span>, merged with nothing
+                  </>
+                }
+              >
+                <span class="text-mono">
+                  {props.view.target} {short(r().base)}
+                </span>{" "}
+                + <span class="text-mono">{short(r().commit)}</span>
+                <Show when={r().tip}>
+                  {" "}
+                  → tested commit <span class="text-mono">{short(r().tip)}</span>
+                </Show>
               </Show>{" "}
               · started {relativeTime(r().startedAt)}
               <Show when={r().endedAt}> · took {clock(Date.parse(r().endedAt!) - Date.parse(r().startedAt))}</Show>
@@ -286,7 +296,7 @@ function DryRunVerdict(props: { projectId: string; run: MergeRun; trial?: MergeT
         <Banner
           tone={t()?.failure?.whose === "branch" ? "error" : "warn"}
           title={t()?.failure ? failureLine(t()!.failure!, props.target) : `Dry run failed at ${short(r().commit)}.`}
-          body={`${NOTHING_LANDS}${t()?.failure?.whose === "master" ? " It waits for you: the branch isn't blamed." : ""}`}
+          body={`${NOTHING_LANDS}${t()?.failure?.whose === "master" || t()?.failure?.whose === "unclear" ? (t()?.by.kind === "land" ? " Your Land waits for you: the branch isn't blamed." : " The branch isn't blamed.") : ""}`}
           action={
             <Show when={t()?.failure}>
               {(f) => <FixSplit fix={{ projectId: props.projectId, target: props.target, branch: r().branch, commit: r().commit, failure: f(), offer: props.offer }} press={press} />}

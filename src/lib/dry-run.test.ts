@@ -151,3 +151,10 @@ test("a worktree whose head's dry run runs counts as checking, and keeps Land", 
   const old = queueRow({ status: "active", exists: true, branch: "feat/play", readiness: { ...readiness, dryRun: dr("running", { commit: OLD }) }, mergeServed: true as const, mergeProject: { target: "master", checks: "declared" } });
   assert.equal(old.key, "ready");
 });
+
+test("the queue reads Running, never Idle, while a dry run holds the merge copy", async () => {
+  const { queueStateChip } = await import("./merge-queue");
+  const trialNow = { trial: { run: "mr_1", commit: HEAD, verdict: "running" as const, by: { kind: "operator" as const }, startedAt: "x" }, run: {} as never, progress: { at: 1, of: 1 } };
+  assert.equal(queueStateChip({ state: "idle", checks: "declared", trialNow }).label, "Running");
+  assert.equal(queueStateChip({ state: "idle", checks: "declared" }).label, "Idle");
+});

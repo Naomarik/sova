@@ -2033,6 +2033,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .dry-run-what { margin: 0; }
 .dry-run-link { font-size: inherit; }
 @media (pointer: coarse) { .dry-run-link { min-height: var(--tap-min); } }
+.dry-run-explainer .modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
 .dry-run-explainer .modal-body h3 { margin: var(--space-2) 0 0; }
 .dry-run-explainer .modal-body p { margin: 0; }
 .dry-run-explainer .modal-foot { justify-content: space-between; }

@@ -140,8 +140,14 @@ test("every copy string is written: no placeholder left in the frozen contract",
   for (const text of all) assert.ok(!/^[A-Z-]+$/.test(text) && !/PENDING|TODO/.test(text), text);
 });
 
-test("session shares: /s/, /api/s/ and its image route are allowed, GET only; nothing else under /s", () => {
-  const ok = [`/s/${TOKEN}`, `/api/s/${TOKEN}`, `/api/s/${TOKEN}/img/0`, `/api/s/${TOKEN}/img/7`, `/api/s/${TOKEN}/img/99999`];
+test("the share page's own policy is unchanged by designs: they are framed by its frame-src 'self', never by a looser page", async () => {
+  const { PAGE_CSP } = await import("./share/routes");
+  assert.equal(PAGE_CSP, "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+});
+
+test("session shares: /s/, /api/s/, its image and design document routes are allowed, GET only; nothing else under /s", () => {
+  const designs = ["page", "still", "tile", "tile-still"].flatMap((k) => [`/api/s/${TOKEN}/d/A/1/${k}`, `/api/s/${TOKEN}/d/ZZZZ/9999/${k}`]);
+  const ok = [`/s/${TOKEN}`, `/api/s/${TOKEN}`, `/api/s/${TOKEN}/img/0`, `/api/s/${TOKEN}/img/7`, `/api/s/${TOKEN}/img/99999`, ...designs];
   for (const p of ok) assert.equal(edge.shareMayReach("GET", p), true, p);
   const no: [string, string][] = [
     ["POST", `/api/s/${TOKEN}`],
@@ -154,6 +160,25 @@ test("session shares: /s/, /api/s/ and its image route are allowed, GET only; no
     ["GET", `/s/${TOKEN}/x`],
     ["GET", `/s/assets/index.js`],
     ["GET", `/api/s/${TOKEN}/img/1%2e`],
+    // A design document: a letter label, a version from 1, a known kind, GET only; never a still, a
+    // page being written, a lookbook id, a lower-case or dotted label, or anything after the kind.
+    ["POST", `/api/s/${TOKEN}/d/A/1/page`],
+    ["PUT", `/api/s/${TOKEN}/d/A/1/page`],
+    ["GET", `/api/s/${TOKEN}/d/A/0/page`],
+    ["GET", `/api/s/${TOKEN}/d/A/01/page`],
+    ["GET", `/api/s/${TOKEN}/d/A/10000/page`],
+    ["GET", `/api/s/${TOKEN}/d/a/1/page`],
+    ["GET", `/api/s/${TOKEN}/d/AAAAA/1/page`],
+    ["GET", `/api/s/${TOKEN}/d/A/1/raw`],
+    ["GET", `/api/s/${TOKEN}/d/A/1/pending`],
+    ["GET", `/api/s/${TOKEN}/d/A/still/1`],
+    ["GET", `/api/s/${TOKEN}/d/A/1`],
+    ["GET", `/api/s/${TOKEN}/d/A/1/page/x`],
+    ["GET", `/api/s/${TOKEN}/d/lb1/A/1/page`],
+    ["GET", `/api/s/${TOKEN}/d/../1/page`],
+    ["GET", `/api/s/${TOKEN}/d/A/1/pag%65`],
+    ["GET", `/api/s/${TOKEN}/design/A/1`],
+    ["GET", `/s/${TOKEN}/design/A`],
   ];
   for (const [m, p] of no) assert.equal(edge.shareMayReach(m, p), false, `${m} ${p}`);
 });

@@ -32,6 +32,16 @@ export const designPageCsp = (nonce: string) => `default-src 'none'; script-src 
 /** The shell's policy. A nested frame's required policy must fit within its parent's, so it is the same. */
 export const DESIGN_SHELL_CSP = DESIGN_PAGE_CSP;
 
+/**
+ * A shared page's shell policy (§chat.design-mode/prototype-frame on a share): the same, except that its one frame
+ * may be a `blob:` document. The share serves its shell from an address under the link, and a `srcdoc` page would
+ * inherit that address as its base URL, where its script could read the link; a `blob:` page's address and base are
+ * its own blob URL. Only the shell's own frame-src changes: the page's policy still allows it no frame at all.
+ */
+export const DESIGN_SHARE_SHELL_CSP = DESIGN_PAGE_CSP.replace("frame-src 'none'", "frame-src blob:");
+/** The outer frame of a shared design page (its `csp` attribute is the shell's own policy). */
+export const DESIGN_SHARE_SHELL_ATTRS = { sandbox: "allow-scripts allow-forms", csp: DESIGN_SHARE_SHELL_CSP, referrerpolicy: "no-referrer" } as const;
+
 /** A page being written: no scripts anywhere. */
 export const DESIGN_STREAM_CSP = `default-src 'none'; ${STYLES}; ${NETWORK_REST}`;
 
@@ -107,8 +117,13 @@ export function designPageDoc(html: string, opts: { motion: boolean }): DesignPa
   return { head: `<!doctype html>${head(designPageCsp(DESIGN_NONCE_SLOT))}<script nonce="${DESIGN_NONCE_SLOT}">${SEAL_SCRIPT}${hold}</script>${style}`, page: html };
 }
 
-/** The shell that holds a finished page: it makes the page's frame and tells the page if it ever navigates. */
-export function designShellDoc(doc: DesignPageDoc): string {
+/** The shell that holds a finished page: it makes the page's frame and tells the page if it ever navigates.
+    `share`: a shared page's shell (served from an address under the link): the page goes in as a `blob:` document,
+    never `srcdoc`, so nothing in it can read the shell's address (DESIGN_SHARE_SHELL_CSP). */
+export function designShellDoc(doc: DesignPageDoc, opts: { share?: boolean } = {}): string {
+  const load = opts.share
+    ? `f.src = URL.createObjectURL(new Blob([html], { type: "text/html" }));`
+    : `f.srcdoc = html;`;
   const shell = `(() => {
   const f = document.createElement("iframe");
   for (const [k, v] of Object.entries(${JSON.stringify(DESIGN_PAGE_ATTRS)})) f.setAttribute(k, v);
@@ -124,10 +139,11 @@ export function designShellDoc(doc: DesignPageDoc): string {
   // The page says when it has drawn, fonts settled; it can only hurry or delay its own picture.
   addEventListener("message", (e) => { if (e.source === f.contentWindow && e.data && e.data[${JSON.stringify(DESIGN_FRAME_MESSAGE)}] === 1 && e.data.op === "drawn") up("drawn"); });
   // The nonce goes into Sova's own head only: the page's text never passes through this replace.
-  f.srcdoc = ${JSON.stringify(doc.head)}.split(${JSON.stringify(DESIGN_NONCE_SLOT)}).join(Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, "0")).join("")) + ${JSON.stringify(doc.page)};
+  const html = ${JSON.stringify(doc.head)}.split(${JSON.stringify(DESIGN_NONCE_SLOT)}).join(Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => b.toString(16).padStart(2, "0")).join("")) + ${JSON.stringify(doc.page)};
+  ${load}
   document.body.append(f);
 })();`.replace(/<\//g, "<\\/");
-  return `<!doctype html><html><head>${head(DESIGN_SHELL_CSP)}<style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#fff}</style></head><body><script>${shell}</script></body></html>`;
+  return `<!doctype html><html><head>${head(opts.share ? DESIGN_SHARE_SHELL_CSP : DESIGN_SHELL_CSP)}<style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#fff}</style></head><body><script>${shell}</script></body></html>`;
 }
 
 /** The start of a page being written, as the server sends it: the text so far, with no motion. A half-written last tag is the parser's to drop. */

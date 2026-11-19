@@ -94,6 +94,8 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: new RegExp(`^/s/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/s/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/s/${TOKEN}/img/(?:0|[1-9][0-9]{0,4})$`) },
+  // A shown Lookbook design's walled document (§app.session-share/lookbook-serving).
+  { method: "GET", re: new RegExp(`^/api/s/${TOKEN}/d/[A-Z]{1,4}/[1-9][0-9]{0,3}/(?:page|still|tile|tile-still)$`) },
 ];
 
 /** The strict routes, read-only (tests hold every one routing to its kind). */
@@ -166,6 +168,9 @@ export const REQUESTS_PER_MINUTE = 60;
     the page's 60 a minute. */
 export const IMAGE_REQUESTS_PER_MINUTE = 240;
 export const TOUR_IMAGE_REQUESTS_PER_MINUTE = 240;
+/** A session share's design documents have a per-address bucket of their own too: a block's tiles
+    and versions must not use up the page's 60 a minute. */
+export const DESIGN_REQUESTS_PER_MINUTE = 240;
 /** A request's headers must arrive within this, and its whole body within REQUEST_TIMEOUT_MS
     (else 408): a 16 KB body needs no more, and a slow client can't hold a socket for Node's
     default five minutes. A photo upload alone has UPLOAD_TIMEOUT_MS (a phone on mobile data). */
@@ -179,6 +184,7 @@ export const FILE_UPLOAD_TIMEOUT_MS = 300_000;
 const UPLOAD_PATH = new RegExp(`^/api/(?:h/${TOKEN}/image|i/${TOKEN}/assistant/image)$`);
 const FILE_PATH = new RegExp(`^/api/h/${TOKEN}/file$`);
 const IMAGE_PATH = new RegExp(`^/api/(?:h/${TOKEN}/img/|i/${TOKEN}/assistant/img/)`);
+export const SESSION_DESIGN_PATH = new RegExp(`^/api/s/${TOKEN}/d/`);
 export const TOUR_IMAGE_PATH = new RegExp(`^/api/(?:t/${TOKEN}|h/${TOKEN}/tours/${TOUR_HANDLE}|i/${TOKEN}/c/k_[a-z2-9]{8}/tours/${TOUR_HANDLE})/assets/${TOUR_FILE}$`);
 /** A forward-only request's body cap and whole-request time: the largest any share route allows
     (the file upload's), since the gateway never knows what a newer host's new route takes. */
@@ -457,6 +463,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
   const perAddress = new RateLimiter(REQUESTS_PER_MINUTE);
   const perAddressImages = new RateLimiter(IMAGE_REQUESTS_PER_MINUTE);
   const perAddressTourImages = new RateLimiter(TOUR_IMAGE_REQUESTS_PER_MINUTE);
+  const perAddressDesigns = new RateLimiter(DESIGN_REQUESTS_PER_MINUTE);
   const perPreview = new RateLimiter(PREVIEW_LIMITS.requestsPerMinute);
   const preview = opts.preview;
   const strict = opts.mayReach ?? shareMayReach;
@@ -594,7 +601,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       failed("client")(err);
       return;
     }
-    if ((TOUR_IMAGE_PATH.test(url.pathname) ? perAddressTourImages : IMAGE_PATH.test(url.pathname) ? perAddressImages : perAddress).limited(client)) {
+    if ((TOUR_IMAGE_PATH.test(url.pathname) ? perAddressTourImages : IMAGE_PATH.test(url.pathname) ? perAddressImages : SESSION_DESIGN_PATH.test(url.pathname) ? perAddressDesigns : perAddress).limited(client)) {
       tooMany(res, PAGE_SHELL.test(url.pathname));
       return;
     }

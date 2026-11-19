@@ -71,6 +71,9 @@ export const OWNER_GETS_PER_MINUTE = OWNER_READS_PER_MINUTE;
 /** Sliding one-minute window of Owner page reads per token; true when this one is over the limit. */
 export const ownerTokenLimited = (token: string, now = Date.now()): boolean => ownerReadTokenLimited(token, now);
 
+/** A session share's design document (§app.session-share/lookbook-serving): the one framable API answer. */
+export const SESSION_DESIGN_DOC_PATH = /^\/api\/s\/[A-Za-z0-9_-]{43}\/d\/[A-Z]{1,4}\/[1-9][0-9]{0,3}\/(?:page|still|tile|tile-still)$/;
+
 const SECURITY_HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",
   // The token is in the URL: never send it anywhere as a referrer.
@@ -104,8 +107,9 @@ export function createShareApp(): Hono {
   ensureFilesSweep();
   app.use("*", async (c, next) => {
     await next();
-    // The frame host alone may be framed, by its own host (frameHostHeaders): every other answer, never.
-    const framable = c.req.path === FRAME_HOST_PATH && c.res.status === 200;
+    // The frame host and a session share's design documents alone may be framed, by their own host
+    // (frameHostHeaders, designDocumentHeaders): every other answer, never.
+    const framable = (c.req.path === FRAME_HOST_PATH || SESSION_DESIGN_DOC_PATH.test(c.req.path)) && c.res.status === 200;
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!(framable && k === "X-Frame-Options")) c.header(k, v);
   });
 

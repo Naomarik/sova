@@ -1,14 +1,18 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { HOP_LOST_CLOSE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
 import {
   SESSION_SHARE_GONE_CLOSE,
   type SessionShareClientMessage,
   type SessionShareImageRef,
   type SessionShareItem,
+  type SessionShareLookbook,
   type SessionShareServerMessage,
   type SessionShareView,
 } from "../../shared/session-share";
 import { earlierLine, ShareViewKeeper, type ShareAnswer } from "../lib/share-slice";
+import { createOpenDesign, DesignOverlay, LookbookBlock } from "./Lookbook";
+import { DesignPage } from "./DesignPage";
+import { designHash, findDesign, parseDesignHash, parseDesignQuery, placeLookbooks, shareDesignUrls, type DesignAddress, type DesignUrls } from "./lookbook-model";
 import { SESSION_VIS_KINDS } from "./markdown";
 import { LinkedText, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
@@ -21,6 +25,8 @@ import "./session-share.css";
  */
 
 const TOKEN = /^\/s\/([A-Za-z0-9_-]{43})\/?$/.exec(location.pathname)?.[1] ?? null;
+/** `?design=<label>[&v=<n>]`: one design on its own page (Open in New Tab), not the conversation. */
+const DESIGN = parseDesignQuery(location.search);
 const storage = (): Storage | null => {
   try {
     return sessionStorage;
@@ -29,7 +35,7 @@ const storage = (): Storage | null => {
   }
 };
 
-type Problem = { title: string; body: string };
+export type Problem = { title: string; body: string };
 const GONE: Problem = { title: "This link is no longer active.", body: "It was turned off, or the session isn't shared anymore. Ask the person who sent it for a new one." };
 const EXPIRED: Problem = { title: "This link has expired.", body: "Ask the person who sent it for a new one." };
 const UNKNOWN: Problem = { title: "This link doesn't open a shared session.", body: "Check that you copied the whole link, or ask the person who sent it for a new one." };
@@ -97,7 +103,38 @@ export function SessionThread(props: {
   imageUrl(n: number): string;
   onEarlier?(): void;
   earlierState?: "busy" | string | null;
+  /** Where its designs are drawn from; absent: no Lookbook shows (an older caller). */
+  designs?: DesignUrls;
+  /** Keep the open design in the page's address (the share page only, never inside the app). */
+  remember?: boolean;
 }) {
+  const placed = createMemo(() => (props.designs ? placeLookbooks(props.view) : { top: [], after: new Map() }));
+  const open = createOpenDesign(!!props.remember, () => parseDesignHash(location.hash), {
+    push: (a) => history.pushState(history.state, "", `${location.pathname}${location.search}${designHash(a)}`),
+    replace: (a) => history.replaceState(history.state, "", `${location.pathname}${location.search}${a ? designHash(a) : ""}`),
+    back: () => history.back(),
+  });
+  const shown = createMemo(() => {
+    const a = open.open();
+    if (!a || !props.designs) return null;
+    const hit = findDesign(props.view.lookbooks, a.label);
+    if (!hit || (a.v && !hit.design.versions.some((x) => x.n === a.v))) return null;
+    return { at: a, lookbook: hit.lookbook, urls: props.designs };
+  });
+  // A version no longer shared (an address kept from before Update to Now) opens its block instead.
+  createEffect(() => {
+    const a = open.open();
+    if (!a?.v || shown() || !props.designs) return;
+    const hit = findDesign(props.view.lookbooks, a.label);
+    if (!hit) return;
+    open.close();
+    queueMicrotask(() => document.getElementById(`lookbook-${hit.lookbook.id}`)?.scrollIntoView({ block: "start" }));
+  });
+  const blocks = (list: readonly SessionShareLookbook[] | undefined) => (
+    <Show when={props.designs && list?.length}>
+      <For each={list}>{(lb) => <LookbookBlock lookbook={lb} urls={props.designs!} onOpen={(a: DesignAddress) => open.show(a)} />}</For>
+    </Show>
+  );
   return (
     <section class="share-thread ss-thread" aria-label="Conversation">
       <Show when={props.view.before !== undefined && props.onEarlier}>
@@ -125,7 +162,19 @@ export function SessionThread(props: {
         <Show when={earlierLine(props.view)}>
           <p class="ss-note ss-earlier-line">Earlier messages aren't part of this share.</p>
         </Show>
-        <For each={props.view.items}>{(it) => <Item item={it} imageUrl={props.imageUrl} />}</For>
+        {blocks(placed().top)}
+        <For each={props.view.items}>
+          {(it) => (
+            <>
+              <Item item={it} imageUrl={props.imageUrl} />
+              {blocks(placed().after.get(it.n))}
+            </>
+          )}
+        </For>
+      </Show>
+      {/* Not keyed: a push or a move changes what it shows, never closes it. */}
+      <Show when={shown()}>
+        {(o) => <DesignOverlay lookbook={o().lookbook} at={o().at} urls={o().urls} onMove={(a) => open.show(a)} onBack={() => open.close()} />}
       </Show>
     </section>
   );
@@ -155,16 +204,23 @@ export function SessionShareHead(props: { view: SessionShareView | null }) {
 
 // ---- the page -----------------------------------------------------------------------------------
 
-export function SessionShareApp() {
+/** What a share page reads: the view as the keeper holds it, the page's problem, and whether the
+    host is offline, kept current by its socket. The conversation and a design's own page both use it. */
+export interface SessionFeed {
+  view(): SessionShareView | null;
+  problem(): Problem | null;
+  offline(): boolean;
+  earlier(): "busy" | string | null;
+  /** Show Earlier; "ok", "none" or "failed" as the keeper said. */
+  showEarlier(keepPlace: boolean): Promise<string>;
+}
+
+function createSessionFeed(opts: { onView?(v: SessionShareView, first: boolean): void }): SessionFeed {
   const VISIT = visitTab(storage());
   const [view, setView] = createSignal<SessionShareView | null>(null);
   const [problem, setProblem] = createSignal<Problem | null>(TOKEN ? null : UNKNOWN);
   const [offline, setOffline] = createSignal(false);
   const [earlier, setEarlier] = createSignal<"busy" | string | null>(null);
-  const imageUrl = (n: number) => `/api/s/${TOKEN}/img/${n}`;
-
-  /** Near the bottom when a live push lands: stay there, so new messages come into view. */
-  const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
 
   /** One read, with no effect of its own: the keeper decides whether its answer still acts. */
   const read = async (before?: number): Promise<ShareAnswer> => {
@@ -183,10 +239,9 @@ export function SessionShareApp() {
   // whole, its gone or offline state included, so a late wider slice never returns over a push.
   const keeper = new ShareViewKeeper(TOKEN ? read : async () => ({ kind: "failed" }), {
     view: (v) => {
-      const pin = view() !== null && atBottom();
+      const first = view() === null;
+      opts.onView?.(v, first);
       setView(v);
-      document.title = v.title;
-      if (pin) queueMicrotask(() => window.scrollTo(0, document.documentElement.scrollHeight));
     },
     problem: (a) => setProblem(a.kind === "gone" ? gone(a.why) : a.kind === "unknown" ? UNKNOWN : BUSY),
     offline: setOffline,
@@ -195,15 +250,16 @@ export function SessionShareApp() {
     if (TOKEN) await keeper.newest();
   };
 
-  const showEarlier = async () => {
-    if (view()?.before === undefined || earlier() === "busy") return;
+  const showEarlier = async (keepPlace: boolean): Promise<string> => {
+    if (view()?.before === undefined || earlier() === "busy") return "none";
     setEarlier("busy");
     const doc = document.documentElement;
     const fromBottom = doc.scrollHeight - window.scrollY;
     const r = await keeper.earlier();
     setEarlier(r === "failed" ? "Couldn't load earlier messages. Try again." : null);
     // Keep the reader's place: what they were reading stays under their eyes.
-    if (r === "ok") queueMicrotask(() => window.scrollTo(0, doc.scrollHeight - fromBottom));
+    if (r === "ok" && keepPlace) queueMicrotask(() => window.scrollTo(0, doc.scrollHeight - fromBottom));
+    return r;
   };
 
   let socket: WebSocket | null = null;
@@ -256,25 +312,52 @@ export function SessionShareApp() {
     document.removeEventListener("visibilitychange", onVisibility);
     socket?.close();
   });
+  return { view, problem, offline, earlier, showEarlier };
+}
+
+/** A dead, unknown or busy link's whole page. */
+export function ProblemPage(props: { problem: Problem }) {
+  return (
+    <div class="empty share-empty">
+      <p class="empty-title">{props.problem.title}</p>
+      <p class="empty-body">{props.problem.body}</p>
+    </div>
+  );
+}
+
+export function SessionShareApp() {
+  return TOKEN && DESIGN ? <DesignPageApp token={TOKEN} at={DESIGN} /> : <ConversationApp />;
+}
+
+/** One design on its own page, under the share link: the same wall, and it dies with the link. */
+function DesignPageApp(props: { token: string; at: DesignAddress }) {
+  const feed = createSessionFeed({});
+  return <DesignPage token={props.token} first={props.at} feed={feed} urls={shareDesignUrls(props.token)} />;
+}
+
+function ConversationApp() {
+  /** Near the bottom when a live push lands: stay there, so new messages come into view. */
+  const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
+  const feed = createSessionFeed({
+    onView: (v, first) => {
+      const pin = !first && atBottom();
+      document.title = v.title;
+      if (pin) queueMicrotask(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    },
+  });
+  const imageUrl = (n: number) => `/api/s/${TOKEN}/img/${n}`;
+  const designs = TOKEN ? shareDesignUrls(TOKEN) : undefined;
 
   return (
     <main class="share">
-      <Show
-        when={!problem()}
-        fallback={
-          <div class="empty share-empty">
-            <p class="empty-title">{problem()!.title}</p>
-            <p class="empty-body">{problem()!.body}</p>
-          </div>
-        }
-      >
-        <SessionShareHead view={view()} />
-        <Show when={offline()}>
+      <Show when={!feed.problem()} fallback={<ProblemPage problem={feed.problem()!} />}>
+        <SessionShareHead view={feed.view()} />
+        <Show when={feed.offline()}>
           <p class="share-note" role="status">
             {OFFLINE}
           </p>
         </Show>
-        <Show when={view()}>{(v) => <SessionThread view={v()} imageUrl={imageUrl} onEarlier={() => void showEarlier()} earlierState={earlier()} />}</Show>
+        <Show when={feed.view()}>{(v) => <SessionThread view={v()} imageUrl={imageUrl} onEarlier={() => void feed.showEarlier(true)} earlierState={feed.earlier()} designs={designs} remember />}</Show>
       </Show>
     </main>
   );

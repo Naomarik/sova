@@ -101,6 +101,28 @@
 /* A recipient action's failure: its own line across the row, under the buttons. */
 .share-recipient-error { flex-basis: 100%; margin: 0; }
 
+/* ---- A preview's designs: every version, small, read before anything is shared ---- */
+.share-designs { display: flex; flex-direction: column; gap: var(--space-3); max-height: 360px; overflow-y: auto; }
+.share-designs-group-label { margin: 0 0 var(--space-1); }
+.share-design-tiles { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+/* 160px wide, 16:10: the top of a 1280 × 800 page at an eighth of its size. */
+.share-design-tile { width: 160px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.share-design-pic {
+  position: relative;
+  width: 160px;
+  height: 100px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-sunken);
+}
+.share-design-tile-failed .share-design-pic { border-color: var(--status-error); border-style: dashed; }
+.share-design-scale { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.share-design-frame { position: absolute; top: 0; left: 0; width: 1280px; height: 800px; border: 0; background: #fff; transform: scale(0.125); transform-origin: top left; }
+.share-design-name,
+.share-design-model { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-design-letter { font-weight: var(--fw-semibold); color: var(--color-ink); }
+
 /* ---- Project page · Previews card ---- */
 .previews-row { flex-direction: column; align-items: stretch; gap: var(--space-2); }
 .previews-row .list-main { min-width: 0; }

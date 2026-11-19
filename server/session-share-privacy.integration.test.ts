@@ -14,6 +14,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
+import { randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
@@ -21,6 +22,8 @@ import { WebSocket } from "ws";
 import type { SessionShareView } from "../shared/session-share";
 import { formatLinkMessage } from "../shared/link-message";
 import { until } from "./test-wait";
+import { SESSION_SHARE_DESIGN_KINDS } from "../shared/session-share";
+import { LB, LB_AFTER_CUT, LB_OTHER_SESSION_ID, LB_RUN, LB_SESSION_ID, LB_SHOWN, writeLookbookChat } from "./session-share-lookbook.test.helper";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-session-share-leak-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -494,5 +497,192 @@ describe("a kept preview link never reaches a session share (§app.session-share
   test("no part of the label anywhere: a cut never leaves its first characters", () => {
     const head = LABEL.slice(0, 12);
     for (const [label, body] of [...bodies, ["view", JSON.stringify(view)] as [string, string]]) assert.ok(!body.includes(head), `a kept link (or its start) in ${label}`);
+  });
+});
+
+/** A listener of its own, every request its own address: the per-address limits (shared by this
+    file's other reads) don't apply, and the per-token ones still do. */
+async function ownListener(): Promise<number> {
+  const own = createShareServer({ client: () => randomUUID() });
+  after(() => (own.close(), own.closeAllConnections()));
+  await new Promise<void>((r) => own.listen(0, "127.0.0.1", r));
+  return (own.address() as AddressInfo).port;
+}
+
+describe("a share's Lookbooks through the share listener: shell, /api/s, design documents, frames (§app.session-share/lookbook, /never)", async () => {
+  const fx = writeLookbookChat(join(root, "agent"));
+  const { setDesignCut } = await import("./session-share-design-cuts");
+  const { changeDesign, writePage } = await import("./design/store");
+  const port = await ownListener();
+  const base = `http://127.0.0.1:${port}`;
+  const iso = (s: number) => new Date(Date.UTC(2026, 8, 30, 0, 0, s)).toISOString();
+  const shares = (["snapshot", "live"] as const).map((mode) => {
+    const { share, tokens } = createShare({ sessionId: LB_SESSION_ID, sessionPath: fx.sessionPath, title: "Lookbook", mode, cut: mode === "snapshot" ? { entryId: fx.cut, at: fx.cutAt } : null, days: 30, labels: [`Lb ${mode}`], anyone: false });
+    // The snapshot was taken between A's second and third versions (as the operator's preview pins it).
+    if (mode === "snapshot") setDesignCut(share.id, fx.cut, iso(15));
+    return { mode, share, token: tokens[0]!.token };
+  });
+  const barred = (mode: "snapshot" | "live"): [string, string][] => [...Object.entries(LB), ...(mode === "snapshot" ? Object.entries(LB_AFTER_CUT) : [])];
+  const lbNever = [LB_SESSION_ID, LB_OTHER_SESSION_ID, LB_RUN, "run_mkq7x", fx.sessionPath, '"status"', '"removed"', '"usage"', '"cost"'];
+  const shown = (mode: "snapshot" | "live") => [...LB_SHOWN.A[mode].map((n) => `A/${n}`), ...LB_SHOWN.B[mode].map((n) => `B/${n}`), ...(mode === "live" ? ["G/1"] : [])];
+  const docPaths = (token: string) => ["A", "B", "C", "D", "E", "F", "G", "H", "I"].flatMap((l) => [1, 2, 3, 4].flatMap((n) => SESSION_SHARE_DESIGN_KINDS.map((k) => `/api/s/${token}/d/${l}/${n}/${k}`)));
+
+  type Answer = { mode: "snapshot" | "live"; path: string; status: number; headers: Headers; body: string };
+  const answers: Answer[] = [];
+  for (const { mode, token } of shares)
+    for (const p of [`/s/${token}`, `/s/${token}?design=A&v=2`, `/api/s/${token}`, ...docPaths(token)]) {
+      const res = await fetch(base + p);
+      answers.push({ mode, path: p, status: res.status, headers: res.headers, body: await res.text() });
+    }
+  const frames: [string, "snapshot" | "live", string][] = [];
+  for (const { mode, share, token } of shares) {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/s?token=${token}`);
+    ws.on("message", (d) => frames.push([`${mode} frame`, mode, String(d)]));
+    await new Promise<void>((ok, fail) => (ws.once("open", () => ok()), ws.once("error", fail)));
+    await new Promise((r) => setTimeout(r, 50));
+    await pushShareView(share.id);
+    await until(() => frames.some(([, m]) => m === mode), `the ${mode} frame`);
+    ws.close();
+  }
+
+  test("control: the view lists the shown designs and the documents of exactly those versions answer", () => {
+    for (const mode of ["snapshot", "live"] as const) {
+      const view = JSON.parse(answers.find((a) => a.mode === mode && /^\/api\/s\/[^/]+$/.test(a.path))!.body) as SessionShareView;
+      assert.deepEqual(view.lookbooks?.flatMap((lb) => lb.designs.flatMap((d) => d.versions.map((v) => `${d.label}/${v.n}`))), shown(mode), `${mode}: the view's versions (the snapshot's design cut holds A3 back)`);
+      const ok = answers.filter((a) => a.mode === mode && a.path.includes("/d/") && a.status === 200).map((a) => a.path.split("/d/")[1]);
+      assert.deepEqual(ok, shown(mode).flatMap((lv) => SESSION_SHARE_DESIGN_KINDS.map((k) => `${lv}/${k}`)), `${mode}: documents of the shown versions only`);
+      for (const a of answers.filter((x) => x.mode === mode && x.path.includes("/d/") && x.status !== 200)) assert.equal(a.status, 404, a.path);
+      assert.ok(frames.some(([, m, f]) => m === mode && f.includes(LB_SHOWN.A.style)), `${mode}: the pushed frame carries the Lookbook`);
+    }
+    assert.ok(answers.some((a) => a.path.endsWith("/d/A/2/page") && a.body.includes(LB_SHOWN.A.pages[2])));
+    assert.ok(answers.find((a) => a.path.endsWith("?design=A&v=2"))!.status === 200, "the design's own page is the share page's shell");
+  });
+
+  test("a design document is walled by its headers: sandboxed, Google Fonts only, framed by its own host only, never cached or referred", () => {
+    for (const a of answers.filter((x) => x.path.includes("/d/") && x.status === 200)) {
+      const kind = a.path.split("/").at(-1)!;
+      const csp = a.headers.get("content-security-policy") ?? "";
+      assert.match(csp, kind === "page" || kind === "tile" ? /^sandbox allow-scripts allow-forms;/ : /^sandbox;/, `${a.path}: ${csp}`);
+      assert.ok(!/allow-same-origin|allow-top-navigation|allow-popups/.test(csp), `${a.path}: no sandbox escape`);
+      assert.match(csp, /frame-ancestors 'self'/);
+      assert.match(csp, /connect-src 'none'/);
+      // A running page's shell frames the page itself, from a blob: address (so the page's base is no
+      // address of the share's); nothing else, and a still frames nothing.
+      const frameSrc = /(?:^|;\s*)frame-src ([^;]*)/.exec(csp)?.[1]?.trim();
+      assert.equal(frameSrc, kind === "page" || kind === "tile" ? "blob:" : "'none'", `${a.path}: frame-src ${frameSrc}`);
+      // By hand, whole: the share's shell policy is the app's design wall with only its frame-src opened to blob:.
+      const wall = (frame: string) => `default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline' https://fonts.googleapis.com; img-src data: blob:; media-src data: blob:; font-src data: https://fonts.gstatic.com; connect-src 'none'; frame-src ${frame}; worker-src 'none'; form-action 'none'; base-uri 'none'`;
+      if (kind === "page" || kind === "tile") assert.equal(csp, `sandbox allow-scripts allow-forms; ${wall("blob:")}; frame-ancestors 'self'`);
+      // Its page, inside, keeps the app's own policy: no frame of any kind.
+      if (kind === "page" || kind === "tile") assert.ok(a.body.includes("frame-src 'none'") && !a.body.includes("srcdoc ="), `${a.path}: the page inside frames nothing, and goes in by blob:`);
+      if (kind === "still" || kind === "tile-still") assert.ok(!/script-src/.test(csp) && /^sandbox;/.test(csp), `${a.path}: a still runs no script`);
+      assert.match(csp, /form-action 'none'/);
+      assert.ok(!/script-src 'self'/.test(csp) && !csp.includes(", "), `${a.path}: one policy, not the share page's beside it: ${csp}`);
+      // Every network source the policy names is Google Fonts.
+      for (const host of csp.match(/https?:\/\/[^\s;]+/g) ?? []) assert.ok(["https://fonts.googleapis.com", "https://fonts.gstatic.com"].includes(host), `${a.path}: ${host}`);
+      assert.equal(a.headers.get("x-frame-options"), "SAMEORIGIN", a.path);
+      assert.equal(a.headers.get("x-content-type-options"), "nosniff", a.path);
+      assert.equal(a.headers.get("cache-control"), "no-store", a.path);
+      assert.equal(a.headers.get("referrer-policy"), "no-referrer", a.path);
+      assert.match(a.headers.get("content-type") ?? "", /^text\/html/);
+    }
+    for (const a of answers.filter((x) => !(x.path.includes("/d/") && x.status === 200) && !x.path.startsWith("/s/"))) assert.equal(a.headers.get("x-frame-options"), "DENY", `${a.path} (${a.status}) is never framable`);
+  });
+
+  test("no marker, id or excluded field in the shell, any /api/s answer, any design document or any frame", () => {
+    for (const { mode, path, body } of [...answers, ...frames.map(([path, mode, body]) => ({ mode, path, body }))]) {
+      for (const [field, mark] of barred(mode)) assert.ok(!body.includes(mark), `${field} leaked in ${mode} ${path}`);
+      for (const x of lbNever) assert.ok(!body.includes(x), `${x} leaked in ${mode} ${path}`);
+    }
+  });
+
+  test("Follow live: a design's new finished version reaches an open page without a reload; a page being written never does", async () => {
+    const live = shares.find((s) => s.mode === "live")!;
+    const got: string[] = [];
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/s?token=${live.token}`);
+    ws.on("message", (d) => got.push(String(d)));
+    await new Promise<void>((ok, fail) => (ws.once("open", () => ok()), ws.once("error", fail)));
+    await new Promise((r) => setTimeout(r, 50));
+    try {
+      const mark = "VISIBLE-LB-PAGE-B2";
+      writePage(LB_SESSION_ID, "B", 2, `<!doctype html><h1>${mark}</h1>`);
+      changeDesign(LB_SESSION_ID, "B", (d) => {
+        d.versions.push({ n: 2, at: new Date().toISOString(), chars: 30, by: "refine" });
+        d.live = { version: 3, chars: 10 };
+      });
+      await until(() => got.some((f) => (JSON.parse(f) as { view?: SessionShareView }).view?.lookbooks?.some((lb) => lb.designs.some((d) => d.label === "B" && d.versions.some((v) => v.n === 2)))), "the pushed view with B2");
+      const res = await fetch(`${base}/api/s/${live.token}/d/B/2/page`);
+      assert.equal(res.status, 200);
+      assert.ok((await res.text()).includes(mark));
+      assert.equal((await fetch(`${base}/api/s/${live.token}/d/B/3/page`)).status, 404, "the page being written is no version");
+      const snap = shares.find((s) => s.mode === "snapshot")!;
+      assert.equal((await fetch(`${base}/api/s/${snap.token}/d/B/2/page`)).status, 404, "a snapshot never gets a version finished after its cut");
+      // A change to the store that changes nothing shown (the page being written grows, its chat's
+      // cost moves) sends nothing: past the push's debounce and its build, no new frame.
+      const { setPendingPage } = await import("./design/store");
+      const { LIVE_DEBOUNCE_MS } = await import("./share/session-live");
+      const seen = got.length;
+      setPendingPage(LB_SESSION_ID, "B", "<!doctype html><h1>still writing</h1>");
+      changeDesign(LB_SESSION_ID, "B", (d) => {
+        d.live = { version: 3, chars: 900 };
+        d.usage = { input: 1, output: 2, cost: 3 };
+      });
+      await new Promise((r) => setTimeout(r, LIVE_DEBOUNCE_MS + 750));
+      assert.equal(got.length, seen, "no push for a change that shows nothing new");
+    } finally {
+      ws.close();
+    }
+  });
+});
+
+describe("a dead link serves no design (§app.session-share/lookbook, /link)", async () => {
+  const fx = writeLookbookChat(join(root, "agent"));
+  const { revokeRecipient, stopShare, relinkRecipient } = await import("./session-shares");
+  const { copyFileSync, unlinkSync } = await import("node:fs");
+  const port = await ownListener();
+  const base = `http://127.0.0.1:${port}`;
+  const mint = (sessionPath = fx.sessionPath, now = Date.now(), days: 1 | 30 = 30) => {
+    const { share, tokens } = createShare({ sessionId: LB_SESSION_ID, sessionPath, title: "Lookbook", mode: "live", cut: null, days, labels: ["Dee"], anyone: false }, now);
+    return { share, token: tokens[0]!.token, rid: tokens[0]!.recipientId };
+  };
+  const doc = (token: string) => `/api/s/${token}/d/A/1/page`;
+  const opens = async (token: string) => (await fetch(base + doc(token))).status === 200;
+
+  const revoked = mint();
+  const stopped = mint();
+  const relinked = mint();
+  const goneCopy = join(root, "agent", "sessions", "2026-09-30T00-00-00-000Z_lb-copy.jsonl");
+  copyFileSync(fx.sessionPath, goneCopy);
+  const gone = mint(goneCopy);
+  test("control: each link serves the design while it is live", async () => {
+    for (const l of [revoked, stopped, relinked, gone]) assert.ok(await opens(l.token), "live: A/1 answers");
+  });
+
+  test("revoked, stopped, relinked (the old link), expired, unknown, and its session gone: no design document, no Lookbook, no socket", async () => {
+    revokeRecipient(revoked.share.id, revoked.rid);
+    stopShare(stopped.share.id);
+    relinkRecipient(relinked.share.id, relinked.rid);
+    unlinkSync(goneCopy);
+    const expired = mint(fx.sessionPath, Date.now() - 2 * 86_400_000, 1);
+    const dead: [string, string][] = [["revoked", revoked.token], ["stopped", stopped.token], ["relinked", relinked.token], ["expired", expired.token], ["unknown", "Q".repeat(43)], ["session gone", gone.token]];
+    for (const [why, token] of dead) {
+      for (const kind of SESSION_SHARE_DESIGN_KINDS) {
+        const res = await fetch(`${base}/api/s/${token}/d/A/1/${kind}`);
+        const body = await res.text();
+        assert.ok([404, 410].includes(res.status), `${why} ${kind}: ${res.status}`);
+        assert.ok(!body.includes("VISIBLE-LB-PAGE") && !body.includes("<html") && !body.includes(LB_SHOWN.A.style), `${why} ${kind}: nothing of the design`);
+      }
+      // Its own design page (Open in New Tab) is the bare shell, which carries nothing of any share.
+      const tab = await fetch(`${base}/s/${token}?design=A&v=1`);
+      assert.equal(await tab.text(), readFileSync(join(process.env.SOVA_SHARE_DIST!, "index.html"), "utf8"), `${why}: the design page is the shell, nothing more`);
+      const view = await fetch(`${base}/api/s/${token}`);
+      const vb = await view.text();
+      assert.ok([404, 410].includes(view.status) && !vb.includes(LB_SHOWN.A.style), `${why}: the view is the dead answer`);
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/s?token=${token}`);
+      ws.on("error", () => {});
+      const status = await new Promise<number>((ok) => (ws.on("unexpected-response", (_q, r) => ok(r.statusCode ?? 0)), ws.on("open", () => ok(101)), ws.on("close", () => ok(-1))));
+      ws.terminate();
+      assert.ok([404, 410].includes(status), `${why}: socket refused (${status})`);
+    }
   });
 });

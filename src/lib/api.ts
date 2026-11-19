@@ -1653,6 +1653,28 @@ export async function runReleaseVerb(project: string, verb: `release.${string}`,
     throw err;
   }
 }
+/** A dry run or Fix route's answer: its body, or the refusal's words (400/403/404/409 carry {error: {code, message}}). */
+export type LandingRouteResult<T> = { ok: true; value: T } | { ok: false; error: { code?: string; message: string } };
+async function landingRoute<T>(project: string, path: string, body: Record<string, unknown>): Promise<LandingRouteResult<T>> {
+  try {
+    return { ok: true, value: await request<T>(`/api/merge-queue/projects/${encodeURIComponent(project)}/${path}`, jsonInit("POST", body)) };
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status === 0) throw err;
+    const b = err.body as { error?: { code?: string; message?: string } | string; message?: string } | undefined;
+    const e = b?.error;
+    const message = typeof e === "string" ? e : (e?.message ?? b?.message ?? err.message);
+    return { ok: false, error: { ...(typeof e === "object" && e?.code ? { code: e.code } : {}), message } };
+  }
+}
+/** Run Dry Run / Run Dry Run Again (the operator's click): it starts, or waits its turn for the merge copy. */
+export const startDryRun = (project: string, branch: string, commit: string) =>
+  landingRoute<{ trial?: import("../../shared/merge-queue").MergeTrial; run?: import("../../shared/merge-queue").MergeRun; waiting?: import("../../shared/merge-queue").MergeTrialWaiting }>(project, "dry-run", { branch, commit });
+/** Stop Dry Run: a running one by its run, or a waiting one by its id. */
+export const stopDryRun = (project: string, which: { run: string } | { waiting: string }) =>
+  landingRoute<{ trial?: import("../../shared/merge-queue").MergeTrial; waiting?: import("../../shared/merge-queue").MergeTrialWaiting }>(project, "dry-run/stop", which);
+/** Fix (the branch's own chat) or Fix in New Chat (`newChat`): the failure's whole context as the chat's message. */
+export const fixFailure = (project: string, body: { branch?: string; commit?: string; run?: string; check?: string; newChat?: boolean }) =>
+  landingRoute<{ session: string; path: string; branch?: string; worktree?: string }>(project, "fix", body);
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[]; reviews?: import("../../shared/merge-queue").ReviewCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** Every project's queue and releases in one quick read: the landing bar's starting picture (page open, reconnect). */

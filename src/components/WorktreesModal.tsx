@@ -158,8 +158,11 @@ export type LandConfirmKind = "land" | "specs" | "remove" | "discard";
 export type LandConfirm = ReturnType<typeof createLandConfirm>;
 
 /** The open confirm, if any, for a row whose Land runs `onLand`. */
-export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; place?: string; drafts?: number; busy: boolean; onLand(o?: LandOptions): void; discard?: Discard }) {
-  const words = () => landConfirmWords(props.branch, props.ahead, props.target, props.how, props.place, props.drafts);
+export function LandConfirms(props: { confirm: LandConfirm; branch: string; ahead?: number; target?: string; how?: LandHow; place?: string; drafts?: number; busy: boolean; onLand(o?: LandOptions): void; discard?: Discard; /** A setup branch whose head has no passing dry run: the line says it runs first (§app.project-setup/land-gate). */ firstLine?: string }) {
+  const words = () => {
+    const w = landConfirmWords(props.branch, props.ahead, props.target, props.how, props.place, props.drafts);
+    return props.firstLine ? { ...w, line: props.firstLine } : w;
+  };
   return (
     <Switch>
       <Match when={props.confirm.ask() === "land"}>

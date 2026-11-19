@@ -10,6 +10,8 @@ import { Banner, Icon } from "./ui";
 import { type ChatOf, FromChat } from "./MergeQueueTab";
 import { ReviewerLinks } from "./MergeQueueChats";
 import { QueueChip, UnclearChecks } from "./WorktreesModal";
+import { failureLine, NOTHING_LANDS, stoppedBy, trialChip, whoStarted, type FixOffer, type MergeTrial } from "../lib/dry-run";
+import { DryRunButton, DryRunWhat, FixNewChatButton, FixSplit, usePress } from "./DryRun";
 
 const RUN_POLL_MS = 3000;
 /** An open log of a step (or run) still running is read again this often. */
@@ -37,6 +39,17 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
     onCleanup(() => clearInterval(t));
   });
   const [allLogs, setAllLogs] = createSignal(false);
+  // A setup branch's dry run (entry "trial"), never a landing: its own words (§app.merge-queue/dry-runs). merge.setup's
+  // own run (entry "setup") is the Test run of the checks.
+  const trial = createMemo((): MergeTrial | undefined => {
+    const r = run();
+    if (!r || r.entry !== "trial") return undefined;
+    return props.view.trialNow?.trial.run === r.id ? props.view.trialNow.trial : props.view.trials?.find((t) => t.run === r.id);
+  });
+  const isDry = () => run()?.entry === "trial";
+  const isTestRun = () => run()?.entry === "setup";
+  const title = (id: string) => props.chatOf?.(id)?.title;
+  const press = usePress();
   const entry = () => {
     const r = run();
     const v = props.view;
@@ -52,6 +65,12 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
         <a href={mergeQueueTabHref(props.projectId, props.from)}>Merge queue</a>
         <span aria-hidden="true"> › </span>
         <span>{run()?.branch ?? props.runId}</span>
+        <Show when={isDry()}>
+          <span> · Dry run</span>
+        </Show>
+        <Show when={isTestRun()}>
+          <span> · Test run of the checks</span>
+        </Show>
       </nav>
       <Show when={run()} fallback={<p class="orgs-empty">{read.error() ? `Couldn't read this run. ${read.error() instanceof Error ? (read.error() as Error).message : String(read.error())}` : "Reading the run."}</p>}>
         {(r) => (
@@ -61,7 +80,15 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               <h2 class="orgs-h2 text-mono" id="mq-run-title">
                 {r().branch}
               </h2>
-              <QueueChip row={r().verdict === "waiting" && entry()?.state === "unattributed" ? { label: "Can't tell whose failure · waiting for you", tone: "warn" } : verdictChip(r())} />
+              <Show
+                when={isDry()}
+                fallback={<QueueChip row={r().verdict === "waiting" && entry()?.state === "unattributed" ? { label: "Can't tell whose failure · waiting for you", tone: "warn" } : verdictChip(r())} />}
+              >
+                <QueueChip row={{ label: "Dry run", tone: "accent", ...(r().verdict === "running" ? { live: true } : {}) }} />
+                <Show when={r().verdict !== "running"}>
+                  <QueueChip row={trialChip(trial() ?? { verdict: r().verdict === "passed" ? "passed" : r().verdict === "machine" ? "machine" : r().verdict === "void" || r().verdict === "cancelled" ? "void" : "failed" })} />
+                </Show>
+              </Show>
             </div>
             <p class="text-caption">
               <span class="text-mono">
@@ -75,7 +102,18 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               · started {relativeTime(r().startedAt)}
               <Show when={r().endedAt}> · took {clock(Date.parse(r().endedAt!) - Date.parse(r().startedAt))}</Show>
             </p>
-            <Show when={entry()}>
+            <Show when={isDry() && trial()}>
+              {(t) => (
+                <>
+                  <p class="text-caption text-muted">
+                    Started by {whoStarted(t().by, title)}
+                    {t().needs ? ` · needed: ${t().needs}` : ""}
+                  </p>
+                  <DryRunWhat target={props.view.target} />
+                </>
+              )}
+            </Show>
+            <Show when={!isDry() && entry()}>
               {(e) => (
                 <p class="text-caption text-muted">
                   <FromChat projectId={props.projectId} entry={e()} chatOf={props.chatOf} /> · approved {relativeTime(e().approval.at)} by {e().approval.by === "typed" ? "your message in its chat" : "your Land"}
@@ -85,6 +123,9 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
             <ReviewerLinks projectId={props.projectId} view={props.view} run={r().id} />
             </div>
             <div class="button-row mq-run-actions">
+              <Show when={isDry() && r().verdict === "running"}>
+                <DryRunButton projectId={props.projectId} branch={r().branch} commit={r().commit} kind="stop" run={r().id} press={press} />
+              </Show>
               <button type="button" class="button button-sm" aria-expanded={allLogs() ? "true" : "false"} aria-controls="mq-run-all-logs" onClick={() => setAllLogs(!allLogs())}>
                 <Icon name="terminal" small />
                 {allLogs() ? "Hide Logs" : "View Logs"}
@@ -101,7 +142,10 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
             <Show when={allLogs()}>
               <AllLogs run={r()} />
             </Show>
-            <Verdict run={r()} target={props.view.target} unattributed={entry()?.state === "unattributed"} />
+            <Show when={press.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
+            <Show when={isDry()} fallback={<Verdict projectId={props.projectId} run={r()} target={props.view.target} unattributed={entry()?.state === "unattributed"} brokenFix={props.view.heads.targetBrokenFix} />}>
+              <DryRunVerdict projectId={props.projectId} run={r()} trial={trial()} target={props.view.target} title={title} offer={fixOfferOf(props.view, r())} />
+            </Show>
             <Show when={entry()?.state === "unattributed" && (entry()!.run ?? r().id) === r().id && entry()}>
               {(e) => <Unattributed projectId={props.projectId} entry={e()} target={props.view.target} />}
             </Show>
@@ -143,6 +187,18 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               <ol class="mq-steps mq-run-steps">
                 <For each={r().steps}>{(s) => <StepRow run={r()} step={s} now={now} />}</For>
               </ol>
+              {/* A dry run's checks it left out: unchanged, they run in the landing. */}
+              <Show when={[...(trial()?.skipped ?? []), ...(trial()?.notRun ?? [])].length}>
+                <ul class="mq-steps mq-not-run" aria-label="Not run (unchanged)">
+                  <For each={[...(trial()?.skipped ?? []), ...(trial()?.notRun ?? [])]}>
+                    {(c) => (
+                      <li class="mq-step">
+                        <span class="mq-step-label">{c.label}</span> <QueueChip row={{ label: "Not run (unchanged)", tone: "neutral" }} />
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
             </div>
           </>
         )}
@@ -198,8 +254,55 @@ function Unattributed(props: { projectId: string; entry: MergeEntry; target: str
   );
 }
 
+/** A dry run's verdict, in a dry run's words: running, passed (and whether a Land goes on), the failure line with Fix
+ *  and Fix in New Chat, stopped (by whom) or couldn't run (the machine's). Nothing lands from a dry run. */
+/** The branch's Fix offer for this dry run, from its row (the Ready to land row or its entry). */
+function fixOfferOf(v: MergeQueueView, r: MergeRun): FixOffer | undefined {
+  const row = v.ready?.find((x) => x.branch === r.branch && x.dryRun?.run === r.id);
+  if (row?.dryRun?.fixOffer) return row.dryRun.fixOffer;
+  const e = [...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].find((x) => x.branch === r.branch && (x.dryRun?.run === r.id || x.failure?.run === r.id));
+  return e?.fixOffer ?? e?.dryRun?.fixOffer;
+}
+
+function DryRunVerdict(props: { projectId: string; run: MergeRun; trial?: MergeTrial; target: string; title(id: string): string | undefined; offer?: FixOffer }) {
+  const r = () => props.run;
+  const t = () => props.trial;
+  const press = usePress();
+  const verdict = () => t()?.verdict ?? r().verdict;
+  return (
+    <>
+      <Show when={verdict() === "running"}>
+        <p class="text-caption mq-nothing">{NOTHING_LANDS}</p>
+      </Show>
+      <Show when={verdict() === "passed"}>
+        <Banner tone="success" title={`Dry run passed. ${r().branch} at ${short(r().commit)} ${t()?.by.kind === "land" ? "lands now: your Land stands." : "can land."}`} body={NOTHING_LANDS} />
+      </Show>
+      <Show when={verdict() === "failed"}>
+        <Banner
+          tone={t()?.failure?.whose === "branch" ? "error" : "warn"}
+          title={t()?.failure ? failureLine(t()!.failure!, props.target) : `Dry run failed at ${short(r().commit)}.`}
+          body={`${NOTHING_LANDS}${t()?.failure?.whose === "master" ? " It waits for you: the branch isn't blamed." : ""}`}
+          action={
+            <Show when={t()?.failure}>
+              {(f) => <FixSplit fix={{ projectId: props.projectId, target: props.target, branch: r().branch, commit: r().commit, failure: f(), offer: props.offer }} press={press} />}
+            </Show>
+          }
+        />
+      </Show>
+      <Show when={verdict() === "void" || verdict() === "cancelled"}>
+        <Banner tone="warn" title={`Dry run stopped ${stoppedBy(t()?.stopped, props.title)}. Nothing failed.`} body="Run it again: the branch needs a new dry run before it lands." />
+      </Show>
+      <Show when={verdict() === "machine"}>
+        <Banner tone="warn" title={`Dry run couldn't run${t()?.why || r().why ? `: ${sentence(t()?.why ?? r().why).replace(/[.]$/, "")}` : ""}.`} body="That's the machine, not this branch: run it again. Nothing was blamed." />
+      </Show>
+      <Show when={press.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
+    </>
+  );
+}
+
 /** The verdict banner and, for a red run, whose failure it is. */
-function Verdict(props: { run: MergeRun; target: string; /** Its own banner says it: no generic line above it. */ unattributed?: boolean }) {
+function Verdict(props: { projectId: string; run: MergeRun; target: string; /** Its own banner says it: no generic line above it. */ unattributed?: boolean; brokenFix?: Record<string, FixOffer> }) {
+  const press = usePress();
   const r = () => props.run;
   const rows = () => attribution(r());
   const failedStep = () => r().steps.find((s) => s.result === "failed" && (s.kind === "check" || s.kind === "setup" || s.kind === "install" || s.kind === "review"));
@@ -228,7 +331,18 @@ function Verdict(props: { run: MergeRun; target: string; /** Its own banner says
       </Show>
       {/* A test check broken on the target: skipped for this branch, flagged until a later run of it runs tests. */}
       <For each={r().steps.filter((s) => s.broken)}>
-        {(s) => <Banner tone="warn" title={sentence(s.detail)} body={`Skipped for this branch; it doesn't block. Every branch skips it until it's fixed on ${props.target}: start a chat to fix it there.`} />}
+        {(s) => {
+          // The step's check: "rerun-master:<id>" (or the check step's own id).
+          const check = s.id.replace(/^[^:]*:/, "");
+          return (
+            <Banner
+              tone="warn"
+              title={sentence(s.detail)}
+              body={`Skipped for this branch; it doesn't block. Every branch skips it until it's fixed on ${props.target}.`}
+              action={<FixNewChatButton fix={{ projectId: props.projectId, target: props.target, offer: props.brokenFix?.[check], check: { id: check, label: s.label, run: props.run.id } }} press={press} />}
+            />
+          );
+        }}
       </For>
       <Show when={rows()}>
         {(list) => (

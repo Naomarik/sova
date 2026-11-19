@@ -96,7 +96,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
                 when={!isDry()}
                 fallback={
                   <>
-                    {r().branch} at <span class="text-mono">{short(r().commit)}</span>, merged with nothing
+                    {r().branch} at <span class="text-mono">{short(r().commit)}</span>, on its own (not merged with {props.view.target})
                   </>
                 }
               >

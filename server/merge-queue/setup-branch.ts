@@ -183,7 +183,11 @@ export function trialEndedText(t: MergeTrial, run: MergeRun, opts: { target?: st
           ? `The dry run of ${what} couldn't run: ${t.why ?? "the merge copy couldn't run it"}: the machine, not this branch. Nothing was saved or merged.`
           : `The dry run of ${what} failed: ${first ? first.label : (t.why ?? "a check")} · ${whose}. Nothing was saved or merged.`;
   const lines = [head];
-  for (const s of run.steps.filter((x) => x.kind === "check" || x.kind === "setup" || x.kind === "rerun-tip" || x.kind === "rerun-master")) lines.push(`- ${s.label}: ${s.result}, ${seconds(s.ms)}${s.detail ? ` (${s.detail})` : ""} · merge.logs {run: "${run.id}", step: "${s.id}"}`);
+  for (const s of run.steps.filter((x) => x.kind === "check" || x.kind === "setup" || x.kind === "rerun-tip" || x.kind === "rerun-master")) {
+    // A step cut off by the stop or the restart was stopped, never failed.
+    const stopped = s.detail === "aborted";
+    lines.push(`- ${s.label}: ${stopped ? "stopped" : s.result}, ${seconds(s.ms)}${s.detail && !stopped ? ` (${s.detail})` : ""} · merge.logs {run: "${run.id}", step: "${s.id}"}`);
+  }
   for (const c of t.skipped ?? []) lines.push(`- ${c.label}: not run (unchanged merge check; it runs in the landing)`);
   for (const c of t.notRun ?? []) lines.push(`- ${c.label}: not run (unchanged release check; name it in checks to run it)`);
   if (t.verdict === "passed" && opts.landWaits) lines.push(`The user's Land stands: ${what} lands now by itself; nothing to do. Never ask them to land it.`);

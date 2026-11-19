@@ -96,7 +96,8 @@ describe("a setup branch (pure rules)", () => {
     const shared = trialEndedText(t({ failure: { kind: "dry-run", run: "mr_1", commit: "c".repeat(40), whose: "master", line: "x", checks: [{ id: "u", label: "Unit", step: "s", whose: "master" }] } }), run, { target: "master" });
     assert.match(shared, /^The dry run of setup\/x at ccccccc failed: Unit · fails on master too: not this branch's\./);
     assert.doesNotMatch(shared, /\btrial\b|Fix what failed/);
-    const stopped = trialEndedText(t({ verdict: "void", stopped: { by: "operator", at: "" } }), run, { target: "master" });
+    const stopped = trialEndedText(t({ verdict: "void", stopped: { by: "operator", at: "" } }), { ...(run as object), steps: [{ id: "check:smoke", kind: "check", label: "Smoke tests", result: "failed", ms: 5000, log: "l", detail: "aborted" }] } as never, { target: "master" });
+    assert.match(stopped, /- Smoke tests: stopped, 5 s · merge\.logs/, "a step the stop cut off reads stopped, never failed");
     assert.match(stopped, /was stopped by you: nothing failed\. It needs a new dry run before it lands\./);
     assert.match(stopped, /This is a note, not a request: there is nothing to answer with merge\.respond\./, "no Land waits: a note");
     assert.doesNotMatch(trialEndedText(t({}), run, { target: "master", landWaits: true }), /This is a note/, "a Land's own: its request says what to do");

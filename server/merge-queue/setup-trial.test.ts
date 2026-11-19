@@ -473,4 +473,41 @@ describe("merge.try and the land gate", () => {
       await k.done();
     }
   });
+
+  test("a normal restart (Sova stops, then starts) tells the chat that started the dry run once, from the next server", async () => {
+    const repo = makeRepo();
+    const k = makeKit({ repo });
+    let runId = "";
+    try {
+      k.repo.branch("setup/graceful", { ".sova/project.json": DEF_TEXT("true") });
+      k.run.set(untilAborted);
+      const q = await k.q();
+      runId = (await q.trial({ branch: "setup/graceful", by: { kind: "chat", session: "s-grace" } })).trial!.run;
+      await k.queues.stop();
+      assert.equal(q.trials().find((t) => t.run === runId)?.stopped?.by, "restart", "the stopping server ends it");
+    } catch (err) {
+      await k.done();
+      repo.done();
+      throw err;
+    }
+    const woke: { sessions: string[]; text: string }[] = [];
+    const k2 = makeKit({ repo, deps: { trialEnded: (_t, _r, _root, tell) => void woke.push(tell) } });
+    try {
+      const q2 = await k2.q();
+      assert.equal(q2.trials().find((t) => t.run === runId)?.verdict, "void");
+      assert.equal(woke.length, 1, "told by the next server");
+      assert.deepEqual(woke[0]!.sessions, ["s-grace"]);
+      assert.match(woke[0]!.text, /was stopped by a Sova restart: nothing failed/);
+      assert.equal(q2.file.trialWakes, undefined, "told once");
+    } finally {
+      await k2.done();
+    }
+    const k3 = makeKit({ repo, deps: { trialEnded: () => assert.fail("never told twice") } });
+    try {
+      await k3.q();
+    } finally {
+      await k3.done();
+      repo.done();
+    }
+  });
 });

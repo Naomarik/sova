@@ -445,14 +445,18 @@ export class ProjectQueue {
       }
       voided = true;
     }
-    if (voided) {
-      this.save();
-      // The chat that started one is told (its turn may have ended waiting for the wake); a Land's reruns by itself.
+    // The chat that started one is told (its turn may have ended waiting for the wake); a Land's reruns by itself. Both a
+    // crash's (voided just now) and a stop's (the stopping server owed it) are told once.
+    const owed = new Set(this.q.trialWakes ?? []);
+    if (voided || owed.size) {
       for (const t of this.q.trials ?? []) {
-        if (t.stopped?.by !== "restart" || t.by.kind !== "chat" || !t.by.session || t.endedAt !== t.stopped.at) continue;
+        const now = voided && t.stopped?.by === "restart" && t.endedAt === t.stopped.at;
+        if ((!now && !owed.has(t.run)) || t.by.kind !== "chat" || !t.by.session) continue;
         const run = this.store.readRun(t.run);
         if (run) this.deps.trialEnded?.(structuredClone(t), run, this.root, { sessions: [t.by.session], text: trialEndedText(t, run, { target: this.q.target }) });
       }
+      delete this.q.trialWakes;
+      this.save();
     }
     // Entries with their chats are looked at again: a fix the merge thread wasn't told of, a block that went away.
     if (this.q.entries.some((e) => e.state === "with-chat" || !!e.fix)) this.armFixTimer();
@@ -3518,6 +3522,8 @@ export class ProjectQueue {
           if (t.verdict === "failed" && out.trialFailure) t.failure = { ...out.trialFailure, run: runId };
           else if (t.verdict === "failed") t.failure = { kind: "dry-run", run: runId, commit, whose: "branch", line: `${run.why} at ${commit.slice(0, 7)}. This branch's change breaks it.`, checks: [] };
           if (t.verdict === "machine") t.failure = { kind: "dry-run", run: runId, commit, whose: "machine", line: `Dry run couldn't run: ${run.why}. That's the machine, not this branch: run it again.`, checks: [] };
+          // Sova is stopping: the chat that started it hears of it from the next server, once it is up.
+          if (this.stopped && t.verdict === "void" && t.by.kind === "chat" && t.by.session) this.q.trialWakes = [...new Set([...(this.q.trialWakes ?? []), t.run])];
           this.save();
           if (!this.stopped) this.afterTrial(t, run);
         }

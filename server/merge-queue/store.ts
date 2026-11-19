@@ -82,6 +82,9 @@ export interface QueueFile {
   trials?: import("../../shared/merge-queue").MergeTrial[];
   /** Dry runs asked for while the merge copy was busy, in the order they start (one per branch). */
   trialsWaiting?: import("../../shared/merge-queue").MergeTrialWaiting[];
+  /** Dry runs (by run) a stopping server ended: their starting chats are told at the next load (the wake may not reach
+   *  them while Sova goes down). */
+  trialWakes?: string[];
   /** A release holds the queue: only its entries land, nothing is pushed (queue.ts freezeForRelease). */
   release?: import("../../shared/merge-queue").MergeReleaseHold & { checks?: import("../../shared/project-contract").MergeCheckDecl[] };
 }

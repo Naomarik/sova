@@ -6,7 +6,8 @@ import type { Caller } from "../project-services/engine";
 import { merger } from "./routes";
 import { changedFilesOf, changedSections, dryRunMergeChecks, dryRunReasons, dryRunWhyLine, releaseFolders, trialEndedText, trialReleaseChecks, untriedWhy } from "./setup-branch";
 import type { ProjectDef } from "../../shared/project-contract";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { draftsHash } from "../spec-drafts-state";
 import { join } from "node:path";
 import { makeRepo, sh, untilAborted } from "./testing/queue-kit";
 import { realGit } from "./guard";
@@ -578,6 +579,79 @@ describe("merge.try and the land gate", () => {
     } finally {
       await k3.done();
       repo.done();
+    }
+  });
+});
+
+describe("a dry run carries the branch's own spec drafts (§app.project-setup/trial)", () => {
+  /** A drafts folder Git doesn't see (as Sova's projects ignore it) and a draft `name` in `wt` whose claim reads `text`. */
+  const draftIn = (k: ReturnType<typeof makeKit>, wt: string, name: string, text: string) => {
+    writeFileSync(join(k.repo.root, ".git", "info", "exclude"), ".sova/spec/drafts/\n");
+    const dir = join(wt, ".sova", "spec", "drafts", name, "spec", "claims", "b");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${name}.md`), text);
+  };
+  /** What a dry run's docs step was handed: each draft's claim text, by name; null: no drafts folder. */
+  const handed = (dir: string | undefined) => (dir && existsSync(dir) ? Object.fromEntries(readdirSync(dir).map((n) => [n, readFileSync(join(dir, n, "spec", "claims", "b", `${n}.md`), "utf8")])) : null);
+
+  test("as they stand at its start, from the branch's folder; a bare commit's only from that commit; a Land without its specs none; the copy dropped when it ends", async () => {
+    const k = makeKit({ deps: { draftsHash } });
+    try {
+      const b = k.repo.branch("setup/docs", { ".sova/project.json": DEF_TEXT("true") });
+      draftIn(k, b.path, "mine", "edited now\n");
+      const seen: { handed: Record<string, string> | null; fromCommit: boolean; dir?: string }[] = [];
+      k.run.set((input) => {
+        if (input.tryOnly) seen.push({ handed: handed(input.draftsDir), fromCommit: !!input.draftsFromCommit, ...(input.draftsDir ? { dir: input.draftsDir } : {}) });
+        return {};
+      });
+      const q = await k.q();
+      await q.trial({ branch: "setup/docs", by: { kind: "operator" } });
+      await q.tryingNow();
+      assert.deepEqual(seen[0], { handed: { mine: "edited now\n" }, fromCommit: false, dir: seen[0]!.dir });
+      assert.equal(existsSync(seen[0]!.dir!), false, "the run's drafts copy is dropped when it ends");
+      // No branch named: no folder to read, only what the commit holds (the run reads it from the copy).
+      await q.trial({ commit: b.head, by: { kind: "operator" } });
+      await q.tryingNow();
+      assert.deepEqual(seen[1], { handed: null, fromCommit: true });
+      // A Land without its specs: its dry run makes no docs either, as its landing wouldn't.
+      const c = k.repo.branch("setup/bare", { ".sova/project.json": DEF_TEXT("true && true") });
+      draftIn(k, c.path, "theirs", "left out\n");
+      const landed = await q.add({ branch: "setup/bare", by: "land-button", withoutSpecs: true });
+      await until(async () => ((await k.entry(landed.entry.id)).state === "landed" ? true : null), "the landing");
+      assert.equal(seen.length, 3, "the Land ran its own dry run");
+      assert.deepEqual(seen[2], { handed: null, fromCommit: false });
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a Land's dry run that failed on its drafts runs again at the same commit once the chat fixes only the drafts and the thread checks it", async () => {
+    const k = makeKit({ deps: { draftsHash, thread: (ev) => ev.kind === "fix" } });
+    try {
+      const b = k.repo.branch("setup/misfit", { ".sova/project.json": DEF_TEXT("true") });
+      draftIn(k, b.path, "mine", "no note yet\n");
+      const tries: { commit: string; handed: Record<string, string> | null }[] = [];
+      const why = "your spec drafts don't fit, so nothing was made official: §b/mine no-note";
+      k.run.set((input) => {
+        if (!input.tryOnly) return {};
+        tries.push({ commit: input.commit, handed: handed(input.draftsDir) });
+        if (tries.length > 1) return {};
+        return { verdict: "failed", blame: "branch", cause: "drafts", why, trialFailure: { kind: "dry-run", commit: input.commit, whose: "branch", line: why, checks: [{ id: "docs", label: "Spec docs", step: "docs", whose: "branch" }] } };
+      });
+      const q = await k.q();
+      const { entry } = await q.add({ branch: "setup/misfit", by: "land-button", session: "s1" });
+      const back = await until(async () => ((await k.entry(entry.id)).state === "with-chat" ? k.entry(entry.id) : null), "back with its chat");
+      assert.equal(back.approval.standing, true, "the Land stands");
+      const rq = back.requests!.at(-1)!;
+      assert.match(rq.text, /your spec drafts don't fit/);
+      assert.equal(tries.length, 1);
+      draftIn(k, b.path, "mine", "noted now\n");
+      await q.respond(rq.id, "s1", { answer: "fixed", drafts: true });
+      await q.fixRuling(entry.id, rq.id, true, "");
+      await until(async () => ((await k.entry(entry.id)).state === "landed" ? true : null), "the landing");
+      assert.deepEqual(tries, [{ commit: b.head, handed: { mine: "no note yet\n" } }, { commit: b.head, handed: { mine: "noted now\n" } }], "the same commit, with the drafts as fixed");
+    } finally {
+      await k.done();
     }
   });
 });

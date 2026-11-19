@@ -2737,7 +2737,10 @@ export class ProjectQueue {
     // Again, a fix), never a rerun by itself. A restart's stop doesn't hold it: in line it runs again.
     if (dryRun && e.approval.dryRunWaived !== commit) {
       const t = trialOf(this.q.trials, commit);
-      if (t && (t.verdict === "failed" || t.verdict === "machine" || (t.verdict === "void" && (t.stopped?.by === "operator" || t.stopped?.by === "chat")))) {
+      // A dry run that failed on its spec drafts, with the drafts changed since the Land pinned them (a drafts-only fix):
+      // it runs again at its turn, at the same commit, as a landing's drafts fix does. Their fit is checked below.
+      const draftsFixed = t?.verdict === "failed" && (drafts?.hash ?? null) !== (e.approval.drafts?.hash ?? null) && !!t.failure?.checks.some((c) => c.step === "docs");
+      if (t && !draftsFixed && (t.verdict === "failed" || t.verdict === "machine" || (t.verdict === "void" && (t.stopped?.by === "operator" || t.stopped?.by === "chat")))) {
         const head = await this.targetHead();
         if (head && (await this.dryRunNeeds(head, commit))?.setup) return t.verdict === "void" ? `Dry run stopped by ${stoppedByWords(t.stopped)}: nothing failed. Run it again.` : (t.failure?.line ?? untriedWhy(this.q.trials, commit) ?? "its dry run didn't pass");
       }
@@ -3442,6 +3445,24 @@ export class ProjectQueue {
     const runId = newId("mr");
     const runDir = this.store.runDir(runId);
     mkdirSync(runDir, { recursive: true });
+    // The branch's own spec drafts as they stand now, by a Land's rule (branchDrafts), made into docs in the copy before
+    // any check. No worktree to read (a bare commit): the drafts committed in it. A Land without its specs: none.
+    const landEntry = o.by.kind === "land" ? this.entry(o.by.entry) : undefined;
+    let draftsDir: string | undefined;
+    let draftsFromCommit = false;
+    if (!landEntry?.approval.withoutSpecs) {
+      const wt = branch ? (landEntry?.worktree && existsSync(landEntry.worktree) ? landEntry.worktree : (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path) : undefined;
+      if (wt) {
+        const drafts = await this.branchDrafts(wt, commit);
+        if (drafts) {
+          draftsDir = join(runDir, "drafts");
+          for (const n of drafts.names) {
+            const from = join(wt, ".sova", "spec", "drafts", n);
+            if (existsSync(from)) cpSync(from, join(draftsDir, n), { recursive: true });
+          }
+        }
+      } else draftsFromCommit = true;
+    }
     const label = branch ?? commit.slice(0, 7);
     const why = needs?.setup ? dryRunWhyLine(needs.reasons) : undefined;
     const run: MergeRun = { id: runId, entry: "trial", project: this.id, branch: label, base: commit, commit, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: `Dry run of ${label}${why ? `: ${why}` : ""}` };
@@ -3483,6 +3504,7 @@ export class ProjectQueue {
       review: false,
       tryOnly: true,
       trialOf: label,
+      ...(draftsDir ? { draftsDir } : draftsFromCommit ? { draftsFromCommit: true as const } : {}),
       ...(onTarget && head ? { trialTarget: { def: onTarget, head } } : {}),
       ...(releaseRun.length ? { releaseChecks: releaseRun } : {}),
       signal: ac.signal,
@@ -3506,6 +3528,8 @@ export class ProjectQueue {
       } catch (err) {
         out = { verdict: "machine", why: err instanceof Error ? err.message : String(err), notes: [], checks: [] };
       }
+      // The drafts copy is read only inside the run (its docs step).
+      dropRunDrafts(runDir);
       const stop = this.trying?.run.id === runId ? this.trying.stop : undefined;
       run.verdict = out.verdict === "passed" ? "passed" : out.verdict === "void" || stop ? "void" : out.verdict === "machine" ? "machine" : "failed";
       run.why = run.verdict === "passed" ? `the new or changed checks pass on ${label} at ${commit.slice(0, 7)}` : run.verdict === "void" ? `stopped by ${stoppedByWords(stop ?? { by: "restart", at: this.iso() })}` : (out.why ?? "a check failed");

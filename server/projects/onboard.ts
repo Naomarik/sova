@@ -7,6 +7,7 @@ import { listModels } from "../models";
 import { FOLDED_SETUP_PLAYBOOKS, listPlaybooks } from "../playbooks";
 import { OrgError } from "../org-error";
 import { readProject } from "./spaces";
+import { gitRootOf, NOT_GIT } from "../project-worktrees";
 import { latestClaude } from "../../pi-config/extensions/claude-code/catalog.ts";
 
 /**
@@ -67,13 +68,19 @@ export interface OnboardFacts {
   /** The verb playbook asked for (default project-verbs). */
   playbookId?: string;
   playbook: Pick<PlaybookInfo, "title" | "dir" | "body" | "proposes"> | null;
+  /** project-verbs only: why its folder can't hold a branch (server/project-worktrees.ts gitRootOf's tail); absent: it can. */
+  noGit?: string;
 }
+
+/** The no-Git refusal of the Project verbs playbook: running copies are set up on a branch. Pure. */
+export const noGitWhy = (name: string, tail: string): string => `Running copies are set up on a branch: ${tail === NOT_GIT ? `${name}'s folder isn't a Git repository.` : tail}`;
 
 /** The host's refusal sentence, or null when the playbook can start. Pure. */
 export function onboardInvalid(f: OnboardFacts): string | null {
   if (f.remote) return `${f.name}'s folder is on ${f.remote}: the playbook runs only on a local folder.`;
   if (!f.rootExists) return `${f.name}'s folder ${f.root} is missing on this host.`;
   const id = f.playbookId ?? ONBOARD_PLAYBOOK_ID;
+  if (id === ONBOARD_PLAYBOOK_ID && f.noGit) return noGitWhy(f.name, f.noGit);
   if (!f.playbook) return `No playbook "${id}" is listed for ${f.name}.`;
   if (!f.playbook.proposes) return `${id} is not a verb playbook: its PLAYBOOK.md says no proposes:.`;
   return null;
@@ -100,7 +107,10 @@ export async function onboardFacts(projectId: string, playbookId = ONBOARD_PLAYB
   const remote = defaultRemoteOf(p.root);
   const local = !remote && !!p.root;
   const catalog = local && existsSync(p.root) ? await listPlaybooks(p.root, { includeUnlisted: true }) : null;
+  // Only the Project verbs playbook needs a branch to work on (never the Setup chat, deploy or release).
+  const repo = playbookId === ONBOARD_PLAYBOOK_ID && local && existsSync(p.root) ? await gitRootOf(p.root) : null;
   return {
+    ...(repo && "reason" in repo ? { noGit: repo.reason } : {}),
     name: p.name || p.id,
     root: p.root,
     remote: remote ? remote.target : null,
@@ -110,13 +120,51 @@ export async function onboardFacts(projectId: string, playbookId = ONBOARD_PLAYB
   };
 }
 
+let offeredForTest: (() => Promise<string[] | null>) | null = null;
+/** Tests: what this host's model picker lists (null: the real list again). */
+export function setOfferedRefsForTest(f: (() => Promise<string[] | null>) | null): void {
+  offeredForTest = f;
+  refusalMemo.clear();
+}
+
 /** The refs this host's model picker lists (credentials configured); null when they can't be read. */
 async function offeredRefs(): Promise<string[] | null> {
+  if (offeredForTest) return offeredForTest();
   try {
     return (await listModels()).map((m) => m.ref);
   } catch {
     return null;
   }
+}
+
+/** Why a start with these facts and this model choice is refused, or null: the host's refusal, else no model. The one
+    rule a press and the setup line's reason read (onboardRefusal). Pure. */
+export const startRefusal = (facts: OnboardFacts, choice: ModelChoice | null): string | null => onboardInvalid(facts) ?? (choice ? null : noOnboardModel());
+
+/** Why a start of the playbook on `projectId` would be refused now, or null: the same sentence a press answers
+    (onboardStart), read before any press for the setup line. */
+export async function onboardRefusal(projectId: string, input: { model?: string | null; thinking?: string | null; playbook?: string | null } = {}): Promise<string | null> {
+  const id = resolvePlaybookId(input.playbook?.trim() || ONBOARD_PLAYBOOK_ID);
+  const facts = await onboardFacts(projectId, id);
+  return startRefusal(facts, onboardModel(input, input.model?.trim() ? null : await offeredRefs()));
+}
+
+/** How long the setup line's reason is kept: the registry is read on every poll, and the reason lists this host's
+    models and asks Git for the folder's repository. A press always reads it fresh (onboardStart). */
+export const ONBOARD_REFUSAL_TTL_MS = 10_000;
+const refusalMemo = new Map<string, { at: number; why: Promise<string | null> }>();
+
+/** onboardRefusal(projectId) as the setup line reads it, the same answer kept for ONBOARD_REFUSAL_TTL_MS (one read in
+    flight is shared; a failed read is not kept). */
+export function onboardRefusalCached(projectId: string, now: number = Date.now()): Promise<string | null> {
+  const hit = refusalMemo.get(projectId);
+  if (hit && now - hit.at < ONBOARD_REFUSAL_TTL_MS) return hit.why;
+  const why = onboardRefusal(projectId);
+  refusalMemo.set(projectId, { at: now, why });
+  why.catch(() => {
+    if (refusalMemo.get(projectId)?.why === why) refusalMemo.delete(projectId);
+  });
+  return why;
 }
 
 /** The run's first prompt, title and model from the facts, or why it can't start. Pure. */
@@ -125,7 +173,7 @@ export function onboardStartFrom(facts: OnboardFacts, input: { why?: string | nu
   const label = facts.playbook?.title || "Project verbs";
   const who = { playbookId: facts.playbookId ?? ONBOARD_PLAYBOOK_ID, label, proposes: facts.playbook?.proposes ?? "definition" };
   const title = input.title?.trim() || onboardTitle(facts.name, label);
-  const invalid = onboardInvalid(facts) ?? (choice ? null : noOnboardModel());
+  const invalid = startRefusal(facts, choice);
   if (invalid || !facts.playbook || !choice) return { prompt: "", title, model: choice?.model ?? "", thinking: choice?.thinking ?? ONBOARD_THINKING, ...who, invalid: invalid ?? "" };
   // The host's own context (the Setup chat's project, current setup and earlier chats) follows the playbook's turn.
   const turn = playbookTurnText(facts.playbook, input.context?.trim() ? "" : (input.why ?? ""));

@@ -4,12 +4,13 @@
     "authority": "accepted",
     "evidence": "unreviewed",
     "requires": [
-      "§chat.playbooks/description-file"
+      "§chat.playbooks/description-file",
+      "§chat.playbooks/bundles"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-16T19:29Z",
-      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+      "by": "naomarik",
+      "at": "2026-11-18T20:21Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     },
     "code": [
       "playbooks/ab-cycle/PLAYBOOK.md",
@@ -29,6 +30,7 @@
       "playbooks/ab-cycle/references/cost.md",
       "playbooks/ab-cycle/references/ledger.md",
       "playbooks/ab-cycle/references/noise.md",
+      "playbooks/ab-cycle/references/record.md",
       "playbooks/ab-cycle/references/roles/bench.md",
       "playbooks/ab-cycle/references/roles/builder.md",
       "playbooks/ab-cycle/references/roles/consultant.md",
@@ -39,9 +41,14 @@
       "playbooks/ab-cycle/scripts/chart.mjs",
       "playbooks/ab-cycle/scripts/collage.mjs",
       "playbooks/ab-cycle/scripts/lib.mjs",
+      "playbooks/ab-cycle/scripts/record-lib.mjs",
+      "playbooks/ab-cycle/scripts/record.mjs",
       "playbooks/ab-cycle/scripts/runner.mjs",
       "playbooks/ab-cycle/scripts/score.mjs",
-      "playbooks/ab-cycle/scripts/shoot.mjs"
+      "playbooks/ab-cycle/scripts/shoot.mjs",
+      "playbooks/ab-cycle/tests/scratch.mjs",
+      "playbooks/ab-cycle/tests/scripts.test.mjs",
+      "playbooks/ab-cycle/tests/commands.test.mjs"
     ]
   },
   "§chat.playbooks/align-first": {
@@ -104,7 +111,12 @@
     "requires": [
       "§chat.playbooks/where-playbooks-come-from",
       "§chat.playbooks/what-gets-sent"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T20:21Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+    }
   },
   "§chat.playbooks/card-setters": {
     "kind": "behavior",

@@ -2021,9 +2021,10 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       (exec) => act("sova_project_verbs", (params, toolCallId, call) => exec(toolCallId, params, call.signal, undefined, call.ctx)) as LooseExec,
       // onboard: the Project verbs playbook on a registered project, for the user (§app.project-runtime/onboard)
       async (why, params) => {
-        const { projectByPath, startOnboard, onboardAnswer } = await import("./projects/runtime");
+        const { projectByPath } = await import("./projects/runtime");
+        const { overseerOnboard } = await import("./projects/runtime-routes");
         const pid = await projectByPath(typeof params.project === "string" ? params.project : "");
-        return onboardAnswer(await startOnboard(pid, why ? { why } : {}, operatorEnvelopeOf(pid, { kind: "operator", via: "overseer", overseerId: host.overseerId() })));
+        return overseerOnboard(pid, why, operatorEnvelopeOf(pid, { kind: "operator", via: "overseer", overseerId: host.overseerId() }));
       },
       // Any project's copies and leftover processes, after the user's click on a card listing them (§app.overseer/copies).
       host.confirmedClicks

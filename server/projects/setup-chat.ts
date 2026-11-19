@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { basename } from "node:path";
 import type { MergeRun, MergeTrial } from "../../shared/merge-queue";
 import { CONTRACT_FILE } from "../../shared/project-contract";
 import type { RuntimeRunReview } from "../../shared/project-runtime";
@@ -10,7 +10,7 @@ import { attentionChanged } from "../attention-memo";
 import { OrgError } from "../org-error";
 import type { Envelope } from "../org-envelope";
 import { realGit } from "../project-services/engine";
-import { stateRoot } from "../state-root";
+import { chatRecordStore, historyLine, type ChatRecord } from "./chat-record";
 import { SETUP_PLAYBOOK_ID } from "./onboard";
 import { projectArchived, readProject } from "./spaces";
 
@@ -38,48 +38,16 @@ export interface SetupCurrent {
   worktree?: string;
 }
 
-interface ProjectRecord {
-  current?: SetupCurrent;
-  history: SetupHistoryItem[];
-}
+const store = chatRecordStore<SetupCurrent, SetupHistoryItem>("setup-chats.json");
 
-const HISTORY_MAX = 20;
-
-const recordFile = (): string => join(stateRoot(), "setup-chats.json");
-
-function readAll(): Record<string, ProjectRecord> {
-  try {
-    const raw = JSON.parse(readFileSync(recordFile(), "utf8")) as Record<string, ProjectRecord>;
-    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeAll(all: Record<string, ProjectRecord>): void {
-  const file = recordFile();
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(all, null, 2)}\n`, { mode: 0o600 });
-  renameSync(tmp, file);
-}
-
-export function setupRecordOf(projectId: string): ProjectRecord {
-  const r = readAll()[projectId];
-  return { ...(r?.current ? { current: r.current } : {}), history: Array.isArray(r?.history) ? r.history : [] };
-}
-
-function saveRecord(projectId: string, r: ProjectRecord): void {
-  const all = readAll();
-  all[projectId] = { ...(r.current ? { current: r.current } : {}), history: r.history.slice(-HISTORY_MAX) };
-  writeAll(all);
-}
+export const setupRecordOf = (projectId: string): ChatRecord<SetupCurrent, SetupHistoryItem> => store.of(projectId);
+const saveRecord = store.save;
 
 /** Every session file that is or was a project's Setup chat (the current one, and each one Start Fresh or an end
  *  replaced): Needs you never brings one back once it is archived. */
 export function setupChatPaths(): Set<string> {
   const out = new Set<string>();
-  for (const r of Object.values(readAll())) {
+  for (const r of Object.values(store.all())) {
     if (r?.current?.path) out.add(r.current.path);
     for (const h of Array.isArray(r?.history) ? r.history : []) if (h?.path) out.add(h.path);
   }
@@ -139,7 +107,7 @@ export function setupContext(f: SetupContextFacts): string {
   }
   out.push("## Earlier setup chats");
   if (!f.history.length) out.push("None: this is the project's first Setup chat.");
-  for (const h of [...f.history].reverse()) out.push(`- ${h.path} (started ${h.startedAt}, ${h.why === "fresh" ? "closed by Start Fresh" : "ended"} ${h.endedAt}${h.branch ? `, branch ${h.branch}` : ""})`);
+  for (const h of [...f.history].reverse()) out.push(historyLine(h));
   out.push("");
   out.push("## The user's note", f.why?.trim() || "None.");
   if (f.from) out.push("", `They came from ${FROM_WORDS[f.from]}.`);
@@ -475,4 +443,4 @@ export async function openSetup(projectId: string, input: OpenSetupInput, deps: 
 }
 
 /** Tests: the record file. */
-export const setupRecordFileForTest = recordFile;
+export const setupRecordFileForTest = store.file;

@@ -286,11 +286,14 @@
     "playbook.run.get",
     "playbook.run.edit",
     "usage.time",
-    "project.verb.merge.stop-try",
+    "project.verbs.open",
+    "project.verbs.chat.get",
+    "project.verbs.chat.fresh",
     "project.merge-queue.dry-run.start",
     "project.merge-queue.dry-run.stop",
     "project.merge-queue.fix",
-    "project.merge-queue.fix.new-chat"
+    "project.merge-queue.fix.new-chat",
+    "project.verb.merge.stop-try"
   ],
   "retired": [
     "settings.agents.get",

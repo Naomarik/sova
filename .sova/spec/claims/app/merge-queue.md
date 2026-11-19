@@ -559,6 +559,10 @@ never "passed".
 - the spec replay, when the spec engine changed;
 - statecharts tests, when statecharts changed;
 - the build;
+- the own tests of each playbook a user starts that the branch changes, when it has a `tests/`
+  folder (§chat.playbooks/bundles), run before it lands; playbooks the branch doesn't change are
+  not run, a changed one without a `tests/` folder is named in the check's notes, and a branch
+  that changes none, or only ones without a `tests/` folder, skips the check and says so;
 - the spec check and census, with the running Sova's own spec tools, as the Docs step;
 - the leak scan over what would be pushed (§app.merge-queue/push).
 

@@ -151,6 +151,9 @@ export type CommandId =
   | "project.setup.get"
   | "project.setup.open"
   | "project.setup.merge"
+  | "project.verbs.open"
+  | "project.verbs.chat.get"
+  | "project.verbs.chat.fresh"
   | "project.icon.get"
   | "project.icon.upload"
   | "project.icon.letters"
@@ -3886,6 +3889,33 @@ export interface CommandParams {
     /** The branch head shown (Land pins it) */
     "commit"?: string;
   };
+  /** Open the project's Project verbs chat (Set Up with a Chat, or Change Setup… once set up): the one it has, sending nothing, else a new one on its own branch. Refused, with why, while the project is archived, its folder is elsewhere or missing, or it has no Git. playbook: another verb playbook the project lists runs as its own run. (changes something; needs the card's owner trusted) */
+  "project.verbs.open": {
+    /** The project's id */
+    "pid": string;
+    /** A note for a new chat: what to set up or change (an open chat is opened as it is) */
+    "why"?: string;
+    /** Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra */
+    "model"?: string;
+    /** Its thinking level */
+    "thinking"?: string;
+    /** Another verb playbook's id (default project-verbs) */
+    "playbook"?: string;
+  };
+  /** A project's Project verbs chat as its head reads it: its session, branch, whether it works, its commits beyond the target, its edits not committed, and its earlier chats. (only looks; needs the card's owner trusted) */
+  "project.verbs.chat.get": {
+    /** The project's id */
+    "pid": string;
+  };
+  /** Start Fresh on the project's Project verbs chat: archive it and start a new one (carrying on its branch and proposal when the branch holds commits). Refused while it works or its worktree has edits not committed. The user's own page only: a chat, an Overseer or a script is refused. (changes something; needs the card's owner trusted) */
+  "project.verbs.chat.fresh": {
+    /** The project's id */
+    "pid": string;
+    /** The new chat's model (provider/model) */
+    "model"?: string;
+    /** Its thinking level */
+    "thinking"?: string;
+  };
   /** What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder). (only looks; needs the card's owner trusted) */
   "project.icon.get": {
     /** The project's id */
@@ -4934,6 +4964,9 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.setup.get": "looks",
   "project.setup.open": "changes",
   "project.setup.merge": "changes",
+  "project.verbs.open": "changes",
+  "project.verbs.chat.get": "looks",
+  "project.verbs.chat.fresh": "changes",
   "project.icon.get": "looks",
   "project.icon.upload": "changes",
   "project.icon.letters": "changes",

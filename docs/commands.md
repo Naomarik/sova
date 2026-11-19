@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 653 |
-| Routes a catalogue entry points at | 217 |
-| Catalogue entries | 290 |
+| Routes registered | 655 |
+| Routes a catalogue entry points at | 220 |
+| Catalogue entries | 293 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -32,7 +32,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 21 |
-| Pending (not yet a command) | 23 |
+| Pending (not yet a command) | 22 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 13 |
 | Hand-written tool specs | 155 |
@@ -189,6 +189,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.setup.get` | Show Setup Chat | looks | `GET /api/projects/:pid/setup` | sessions |
 | `project.setup.open` | Set Up with a Chat | changes | `POST /api/projects/:pid/setup` | admin |
 | `project.setup.merge` | Merge Setup Branch | changes | `POST /api/projects/:pid/setup/merge` | admin |
+| `project.verbs.open` | Set Up Running Copies | changes | `POST /api/projects/:pid/verbs/onboard` | admin |
+| `project.verbs.chat.get` | Show Project Verbs Chat | looks | `GET /api/projects/:pid/verbs/chat` | sessions |
+| `project.verbs.chat.fresh` | Start Fresh Project Verbs Chat | changes | `POST /api/projects/:pid/verbs/chat/fresh` | admin |
 | `project.icon.get` | Show Project Icon | looks | `GET /api/projects/:pid/icon/info` | sessions |
 | `project.icon.upload` | Upload Project Icon | changes | `PUT /api/projects/:pid/icon` | admin |
 | `project.icon.letters` | Use Project Letters | changes | `PATCH /api/projects/:pid/icon` | admin |
@@ -357,7 +360,6 @@ class, leaves it, and a new route never joins it.
 | `GET /api/projects/:pid/runtime` | sessions |
 | `POST /api/projects/:pid/runtime/merge` | admin |
 | `POST /api/projects/:pid/services/:verb` | admin |
-| `POST /api/projects/:pid/verbs/onboard` | admin |
 | `GET /api/sessions/by-id/:id` | sessions |
 | `POST /api/sessions/connect` | sessions |
 | `GET /api/sessions/git` | sessions |
@@ -1028,6 +1030,9 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/projects/:pid/skills` | sessions | `project.skills.get` |
 | `PUT /api/projects/:pid/skills` | admin | `project.skills.set` |
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
+| `GET /api/projects/:pid/verbs/chat` | sessions | `project.verbs.chat.get` |
+| `POST /api/projects/:pid/verbs/chat/fresh` | admin | `project.verbs.chat.fresh` |
+| `POST /api/projects/:pid/verbs/onboard` | admin | `project.verbs.open` |
 | `GET /api/projects/glance` | sessions | `project.glance` |
 | `POST /api/push/test` | admin | `push.test` |
 | `POST /api/sandbox` | sessions | `session.sandbox.set` |

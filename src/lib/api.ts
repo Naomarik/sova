@@ -128,7 +128,7 @@ import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { UsagePerformance } from "../../shared/usage/perf";
 import type { UsageTime } from "../../shared/usage/time";
 import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
-import type { ProjectRuntimeView } from "../../shared/project-runtime";
+import type { ProjectRuntimeView, VerbsChatOpened, VerbsChatStatus } from "../../shared/project-runtime";
 import type { ArchiveCopies, ProjectIconInfo, ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch, ProjectWorktrees } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
@@ -1700,7 +1700,11 @@ export const mergeSetupProposal = (projectId: string, hash: string, commit: stri
   request<{ queued: boolean; setup: import("../../shared/setup-chat").SetupStatus }>(`${projectPath(projectId)}/setup/merge`, jsonInit("POST", { hash, commit }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
-  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
+  request<VerbsChatOpened>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));
+/** The project's standing Project verbs chat (§app.project-runtime/onboard), as its head reads it. */
+export const getVerbsChat = (projectId: string) => request<VerbsChatStatus>(`${projectPath(projectId)}/verbs/chat`);
+/** Start Fresh on the Project verbs chat: archived, and a new one started (the user's own press). */
+export const freshVerbsChat = (projectId: string) => request<VerbsChatOpened>(`${projectPath(projectId)}/verbs/chat/fresh`, jsonInit("POST", {}));
 
 // ---- a project's overseer (§app/project-overseer) ---------------------------------------------------
 

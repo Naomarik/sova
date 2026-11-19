@@ -18,6 +18,9 @@ Your plan (choices, cast, steps, stop points, cycle settings) is in the run bloc
 - **The winner becomes the next cycle's base**; the losing change is reverted. The campaign's ledger records it.
 - **Experiment, never lands.** Every arm commit's message ends with `(experiment, never lands)`. Landing a winner is separate work, after the last stop point, on the user's word.
 - **Test data stays out of Git.** The campaign folder is `<worktree>/.cache/ab/<campaign>/`: cases, replies, scores, charts and screenshots live there, never committed.
+- **The record outlives the campaign.** Each subject has a record in the project's repository, `.sova/ab/<name>.jsonl`: every attempt with its problem, its change and why, what it was expected to do and what it did, losing attempts too (`references/record.md`). Read it before anything else, add to it after every round, and offer to keep it at the last stop. It holds general words and counts only: never text from a case, a reply or a real chat.
+- **Every fix states what it expects.** A consultant names the cases its change should fix and the ones it might break; each round's report shows that beside what happened. A missed prediction is shown and recorded, never a reason to pick another winner: the winner is still the best pass rate, then cost.
+- **No test chat sees the record, and the grader never reads it.** Every arm, master's too, is its own worktree whose branch removes `.sova/ab/` in a commit that never lands (`references/arms.md`); a round refuses to start otherwise.
 - **Show what you measure before you run it.** The first stop shows a sample chart from `scripts/chart.mjs --sample` and the acceptance bars.
 - **Usage is part of the run.** Stop and say so when a provider nears the "warn me at" share, or a sign-in is missing where a helper runs.
 
@@ -28,13 +31,16 @@ Your plan (choices, cast, steps, stop points, cycle settings) is in the run bloc
 | Script | Does |
 |---|---|
 | `scripts/runner.mjs` | runs every case on every test model in every arm of a round, resumable |
-| `scripts/score.mjs` | checks, blinds and unblinds, and totals a round (pass rate, cost, time) into its scores and the ledger |
-| `scripts/chart.mjs` | the round's chart and table, as a Sova `vis` block, master first |
+| `scripts/score.mjs` | checks, blinds and unblinds, and totals a round (pass rate, cost, time, each prediction beside what it did) into its scores and the ledger |
+| `scripts/chart.mjs` | the round's chart and table, as a Sova `vis` block, master first, and the table Predicted vs observed |
+| `scripts/record.mjs` | the subject's record: shows it, adds a round's attempts, closes a campaign, checks nothing private is in it |
 | `scripts/shoot.mjs` | screenshots of each arm's replies, for the collage |
 | `scripts/collage.mjs` | one image: each arm side by side per cycle |
 
-`references/arms.md` says how an arm is made (its own worktree and test copy of Sova, a prompt variant file, or a re-score of saved replies). `references/noise.md` is the noise and copy-effect check. `references/cost.md` prices a round.
+The scripts' tests are in `tests/` (Node only, nothing installed): `node --test tests/*.test.mjs` from this folder. Run them after any edit here; a branch that edits this playbook runs them before it lands.
+
+`references/arms.md` says how an arm is made (its own worktree and test copy of Sova, a prompt variant file, or a re-score of saved replies). `references/record.md` is the record's shape, rules and commands. `references/noise.md` is the noise and copy-effect check. `references/cost.md` prices a round.
 
 ## When you stop
 
-At every stop point: the chart, the ledger's rows so far, what changed and what you recommend, then end your turn and wait. The last report adds the collage and the cost table, and offers: land the winner (separate work, spec drafts first), another cycle, or park it with its branches listed.
+At every stop point: the chart with its Predicted vs observed table, the ledger's rows so far, what changed and what you recommend, then end your turn and wait. The first report also says which record the campaign continues and what it holds. The last report adds the collage, the cost table and the lines this campaign added to the record, and offers: land the winner (separate work, spec drafts first), another cycle, or park it with its branches listed. Each of the three keeps the record.

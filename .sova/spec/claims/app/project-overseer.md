@@ -524,7 +524,9 @@ user row.
   `copiesRun`: `sova_project_verbs` create, up, apply, test and conform; `copiesReset`: its reset and
   teardown (always: its `down`, `revoke`, status, logs and doctor; `share`: its `share`, held; above).
   `onboard`: its `onboard {why}`, the project's `verbs/onboard`
-  act, which starts the Project verbs playbook (§app.project-runtime/onboard): counted and held like
+  act, which starts the Project verbs playbook (§app.project-runtime/onboard; while the project's
+  Project verbs chat is open and idle, its turn and why are that chat's next message instead, never
+  archiving it, Start Fresh being the user's alone; refused while that chat is working, waits on the user's answers, or holds a proposal not merged): counted and held like
   a coding session's start, and refused for an unattended overseer while the project's software is
   registered and current. The overseer may start it when the Software standing is unregistered,
   stale or failed; with `onboard` Off it raises a card instead; it never merges. `markMerged`:

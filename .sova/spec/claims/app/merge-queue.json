@@ -266,9 +266,9 @@
       "§app.server-runtime/test-tiers"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-13T20:59Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
+      "by": "naomarik",
+      "at": "2026-11-18T20:21Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     },
     "code": [
       "server/merge-queue/checks.ts",
@@ -276,6 +276,7 @@
       ".sova/project.json",
       "scripts/merge-checks/lib.mjs",
       "scripts/merge-checks/ext-suites.mjs",
+      "scripts/merge-checks/playbook-tests.mjs",
       "scripts/merge-checks/spec-replay.mjs",
       "scripts/merge-checks/statecharts.mjs",
       "scripts/merge-checks/spec.mjs",

@@ -4258,6 +4258,9 @@ export interface SessionProject {
   /** `coding` only: the operator started it (New Session in the project's folder, or New Coding Session), not the
       project's overseer. Absent from an older server: read as the overseer's. */
   operator?: true;
+  /** `coding` only: a verb playbook's run (its build's kind `onboard`, §app.project-runtime/onboard), such as the
+      project's Project verbs chat, whose head reads that chat. Safe by absence. */
+  onboard?: true;
   /** A cleared (not the current) overseer conversation, or a build git says is merged. */
   finished?: true;
   /** The project is archived. */

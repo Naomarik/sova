@@ -111,6 +111,9 @@ export function expandArgs(argv, cwd) {
 /** The pi-config extensions a change touches, by folder name, sorted. */
 export const changedExtensions = (changed) => [...new Set(changed.map((p) => /^pi-config\/extensions\/([^/]+)\//.exec(p)?.[1]).filter(Boolean))].sort();
 
+/** The playbooks a user starts that a change touches (`playbooks/<id>/…`; Sova's own live elsewhere), by id, sorted. */
+export const changedPlaybooks = (changed) => [...new Set(changed.map((p) => /^playbooks\/([^/]+)\//.exec(p)?.[1]).filter(Boolean))].sort();
+
 /** A changed file that makes the spec replay suite run (a landing gate, never run while working). */
 export const touchesSpecReplay = (file) =>
   /^pi-config\/extensions\/spec\/(?:core|tests\/replay)\//.test(file) || file === "pi-config/extensions/mode/spec-guard.ts";

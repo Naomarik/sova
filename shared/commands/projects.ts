@@ -422,6 +422,20 @@ const PROJECTS_SWEEP: CommandEntry[] = [
     hash: { type: "string", description: "The proposal's hash as shown", in: "body", required: true },
     commit: { type: "string", description: "The branch head shown (Land pins it)", in: "body" },
   }),
+  // The standing Project verbs chat (§app.project-runtime/onboard): Set Up with a Chat / Change Setup… on Running Copies.
+  changes("project.verbs.open", "Set Up Running Copies", "Open the project's Project verbs chat (Set Up with a Chat, or Change Setup… once set up): the one it has, sending nothing, else a new one on its own branch. Refused, with why, while the project is archived, its folder is elsewhere or missing, or it has no Git. playbook: another verb playbook the project lists runs as its own run.", "POST", "/api/projects/:pid/verbs/onboard", {
+    pid,
+    why: { type: "string", description: "A note for a new chat: what to set up or change (an open chat is opened as it is)", in: "body" },
+    model: { type: "string", description: "Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra", in: "body" },
+    thinking: { type: "string", description: "Its thinking level", in: "body" },
+    playbook: { type: "string", description: "Another verb playbook's id (default project-verbs)", in: "body" },
+  }),
+  looks("project.verbs.chat.get", "Show Project Verbs Chat", "A project's Project verbs chat as its head reads it: its session, branch, whether it works, its commits beyond the target, its edits not committed, and its earlier chats.", "/api/projects/:pid/verbs/chat"),
+  changes("project.verbs.chat.fresh", "Start Fresh Project Verbs Chat", "Start Fresh on the project's Project verbs chat: archive it and start a new one (carrying on its branch and proposal when the branch holds commits). Refused while it works or its worktree has edits not committed. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/verbs/chat/fresh", {
+    pid,
+    model: { type: "string", description: "The new chat's model (provider/model)", in: "body" },
+    thinking: { type: "string", description: "Its thinking level", in: "body" },
+  }),
   // A project's icon (§app.projects/icon): kept on this host only.
   looks("project.icon.get", "Show Project Icon", "What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder).", "/api/projects/:pid/icon/info"),
   {

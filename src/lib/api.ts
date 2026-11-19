@@ -1670,7 +1670,7 @@ async function landingRoute<T>(project: string, path: string, body: Record<strin
 export const startDryRun = (project: string, branch: string, commit: string) =>
   landingRoute<{ trial?: import("../../shared/merge-queue").MergeTrial; run?: import("../../shared/merge-queue").MergeRun; waiting?: import("../../shared/merge-queue").MergeTrialWaiting }>(project, "dry-run", { branch, commit });
 /** Stop Dry Run: a running one by its run, or a waiting one by its id. */
-export const stopDryRun = (project: string, which: { run: string } | { waiting: string }) =>
+export const stopDryRun = (project: string, which: { run: string } | { waiting: string } | { branch: string; commit: string }) =>
   landingRoute<{ trial?: import("../../shared/merge-queue").MergeTrial; waiting?: import("../../shared/merge-queue").MergeTrialWaiting }>(project, "dry-run/stop", which);
 /** Fix (the branch's own chat) or Fix in New Chat (`newChat`): the failure's whole context as the chat's message. */
 export const fixFailure = (project: string, body: { branch?: string; commit?: string; run?: string; check?: string; newChat?: boolean }) =>

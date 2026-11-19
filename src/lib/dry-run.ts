@@ -56,9 +56,12 @@ export function whoStarted(by: TrialBy | undefined, chatTitle?: (session: string
   return (by.session && chatTitle?.(by.session)) || "its chat";
 }
 
-/** Who stopped it: "by you", "by {chat}", "by a Sova restart", "by a newer dry run". */
+/** Who stopped it: "by you", "by {chat}", "by a Sova restart", "by a newer dry run"; "" when nothing recorded who
+    (a dry run saved before stops were recorded, or one aborted): never "by you" when nobody pressed Stop. */
 export function stoppedBy(stopped: MergeTrial["stopped"] | undefined, chatTitle?: (session: string) => string | undefined): string {
   switch (stopped?.by) {
+    case "operator":
+      return "by you";
     case "chat":
       return `by ${(stopped.session && chatTitle?.(stopped.session)) || "its chat"}`;
     case "restart":
@@ -66,9 +69,13 @@ export function stoppedBy(stopped: MergeTrial["stopped"] | undefined, chatTitle?
     case "superseded":
       return "by a newer dry run";
     default:
-      return "by you";
+      return "";
   }
 }
+const stoppedWords = (stopped: MergeTrial["stopped"] | undefined, chatTitle?: (session: string) => string | undefined): string => {
+  const by = stoppedBy(stopped, chatTitle);
+  return by ? `Dry run stopped ${by}` : "Dry run stopped";
+};
 
 /** "1st", "2nd", "3rd", "11th". */
 export const nth = (n: number): string => {
@@ -78,7 +85,7 @@ export const nth = (n: number): string => {
 };
 
 /** A row's dry-run chip: the state's word and tone (a dot and the word, never hue alone). */
-export function dryRunChip(d: Pick<BranchDryRun, "state" | "land">): { label: string; tone: Tone; live?: true } {
+export function dryRunChip(d: Pick<BranchDryRun, "state" | "land"> & Partial<Pick<BranchDryRun, "failure">>): { label: string; tone: Tone; live?: true } {
   switch (d.state) {
     case "needed":
       return d.land ? { label: "Approved · dry run first", tone: "info" } : { label: "Needs a dry run", tone: "info" };
@@ -89,7 +96,7 @@ export function dryRunChip(d: Pick<BranchDryRun, "state" | "land">): { label: st
     case "passed":
       return { label: "Dry run passed", tone: "success" };
     case "failed":
-      return { label: "Dry run failed", tone: "error" };
+      return d.failure?.whose === "unclear" ? { label: "Can't tell whose failure", tone: "warn" } : { label: "Dry run failed", tone: "error" };
     case "stopped":
       return { label: "Dry run stopped", tone: "warn" };
     case "machine":
@@ -126,7 +133,7 @@ export function dryRunLine(
     case "failed":
       return { text: d.failure ? failureLine(d.failure, target) : `Dry run failed at ${sha7(d.commit)}.`, ...extra };
     case "stopped":
-      return { text: `Dry run stopped ${stoppedBy(d.stopped, chatTitle)}. Run it again.`, ...extra };
+      return { text: `${stoppedWords(d.stopped, chatTitle)}. Run it again.`, ...extra };
     case "machine": {
       const w = d.failure?.line ? stripDot(d.failure.line.replace(/^Dry run couldn't run:\s*/i, "")) : "the merge copy couldn't be made ready";
       return { text: `Dry run couldn't run: ${w}. That's the machine, not this branch: run it again.`, ...extra };
@@ -201,8 +208,9 @@ export function dryRunActions(d: Pick<BranchDryRun, "state" | "run" | "land" | "
     case "running":
       return { primary: "land", stop: true, menu: [] };
     case "failed": {
-      // A failure master shares stops and asks: Fix, Fix in New Chat, Run Dry Run Again, Land Anyway in the menu.
-      if (d.failure?.whose === "master") return { primary: "fix", run: "again", menu: ["fix-new-chat", ...(land ? (["land"] as const) : []), ...(d.land ? (["land-anyway"] as const) : [])] };
+      // A failure master shares, or one that can't be placed, stops and asks: Fix, Run Dry Run Again beside it, and
+      // in the menu Fix in New Chat, the Land it took the place of and Land Anyway where a Land stands on it.
+      if (d.failure?.whose === "master" || d.failure?.whose === "unclear") return { primary: "fix", run: "again", menu: ["fix-new-chat", ...(land ? (["land"] as const) : []), ...(d.land ? (["land-anyway"] as const) : [])] };
       return { primary: "fix", menu: ["fix-new-chat", "again", ...(land ? (["land"] as const) : [])] };
     }
     case "passed":
@@ -230,7 +238,7 @@ export function trialChip(t: Pick<MergeTrial, "verdict" | "failure">): { label: 
 export function trialLine(t: MergeTrial, target: string, chatTitle?: (session: string) => string | undefined): string | null {
   if (t.verdict === "failed" && t.failure) return failureLine(t.failure, target);
   if (t.verdict === "machine") return `Dry run couldn't run${t.why ? `: ${stripDot(t.why)}` : ""}. That's the machine, not this branch.`;
-  if (t.verdict === "void") return `Stopped ${stoppedBy(t.stopped, chatTitle)}.`;
+  if (t.verdict === "void") return `${stoppedWords(t.stopped, chatTitle)}.`;
   return null;
 }
 
@@ -273,7 +281,7 @@ export const dryRunFact = (waiting: number): string => (waiting ? `1 dry run run
 export const landFirstLine = (commit: string, why: string): string => `A dry run of ${sha7(commit)} runs first: ${stripDot(why)}. Once it passes, it lands by itself.`;
 
 /** The state lets Land's confirm say a dry run comes first. */
-export const runsFirst = (d: Pick<BranchDryRun, "state"> | undefined): boolean => !!d && d.state !== "passed" && d.state !== "failed";
+export const runsFirst = (d: Pick<BranchDryRun, "state"> | undefined): boolean => !!d && d.state !== "passed";
 
 /** The waiting dry run's id for Stop Dry Run, when the branch's own state carries it (BranchDryRun.waiting). */
 export const waitingIdOf = (d: BranchDryRun | undefined): string | undefined => (d?.state === "waiting" ? (d as BranchDryRun & { waiting?: string }).waiting : undefined);

@@ -269,6 +269,11 @@ function DryRunVerdict(props: { projectId: string; run: MergeRun; trial?: MergeT
   const t = () => props.trial;
   const press = usePress();
   const verdict = () => t()?.verdict ?? r().verdict;
+  // The machine's own words; a run's label ("Trial of …", from before dry runs) is never a reason.
+  const machineWhy = () => {
+    const w = t()?.why ?? r().why;
+    return w && !/^trial of /i.test(w) ? sentence(w).replace(/[.]$/, "") : "";
+  };
   return (
     <>
       <Show when={verdict() === "running"}>
@@ -293,7 +298,7 @@ function DryRunVerdict(props: { projectId: string; run: MergeRun; trial?: MergeT
         <Banner tone="warn" title={`Dry run stopped ${stoppedBy(t()?.stopped, props.title)}. Nothing failed.`} body="Run it again: the branch needs a new dry run before it lands." />
       </Show>
       <Show when={verdict() === "machine"}>
-        <Banner tone="warn" title={`Dry run couldn't run${t()?.why || r().why ? `: ${sentence(t()?.why ?? r().why).replace(/[.]$/, "")}` : ""}.`} body="That's the machine, not this branch: run it again. Nothing was blamed." />
+        <Banner tone="warn" title={`Dry run couldn't run${machineWhy() ? `: ${machineWhy()}` : ""}.`} body="That's the machine, not this branch: run it again. Nothing was blamed." />
       </Show>
       <Show when={press.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
     </>

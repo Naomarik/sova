@@ -324,7 +324,7 @@ export function WorktreeQueueRow(props: {
   const dryActs = () => (dry() ? dryRunActions(dry()!, landsHere()) : undefined);
   const fixing = () => !!projectId() && (dryActs()?.primary === "fix" || (!!failure() && !dry()));
   const press = usePress(() => props.onChanged?.());
-  const fixTarget = (): FixTarget => ({ projectId: projectId()!, target: target(), branch: w().branch, commit: w().queue?.commit ?? shownCommit(w()), failure: failure(), offer: fixOffer() });
+  const fixTarget = (): FixTarget => ({ projectId: projectId()!, target: target(), branch: w().branch, commit: w().queue?.commit ?? shownCommit(w()), failure: failure(), offer: fixOffer(), chatTitle: () => w().mergeOwner?.title });
   const commitOf = () => w().queue?.commit ?? shownCommit(w()) ?? "";
 
   return (

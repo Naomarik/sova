@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dryRunActions, dryRunChip, dryRunLine, failureLine, explainerWords, landFirstLine, nth, olderNote, scopeWords, stoppedBy, testsWords, trialChip, whoStarted, type BranchDryRun, type BranchFailure } from "./dry-run";
+import { dryRunActions, dryRunChip, dryRunLine, failureLine, explainerWords, landFirstLine, nth, olderNote, runsFirst, scopeWords, stoppedBy, testsWords, trialChip, trialLine, whoStarted, type BranchDryRun, type BranchFailure } from "./dry-run";
 
 const HEAD = "a1b2c3d4e5f6a7b8c9d0";
 const OLD = "0f9e8d7c6b5a49382716";
@@ -118,4 +118,24 @@ test("a worktree row whose Land runs its dry run first reads Approved · dry run
   assert.equal(running.key, "checking");
   assert.equal(running.label, "Dry run running");
   assert.equal(running.remove, true);
+});
+
+test("a stop nobody recorded is a plain stop, never 'by you'", () => {
+  assert.equal(stoppedBy(undefined), "");
+  assert.equal(dryRunLine(dr("stopped"), "master").text, "Dry run stopped. Run it again.");
+  assert.equal(trialLine({ run: "mr_1", commit: HEAD, verdict: "void", by: { kind: "operator" }, startedAt: "x" }, "master"), "Dry run stopped.");
+  assert.equal(stoppedBy({ by: "operator", at: "x" }), "by you");
+});
+
+test("a failure that can't be placed reads the same on the row and the tab, and asks like one master shares", () => {
+  const d = dr("failed", { run: "mr_1", land: "e1", failure: failure("unclear") });
+  assert.equal(dryRunChip(d).label, trialChip({ verdict: "failed", failure: failure("unclear") }).label);
+  assert.equal(dryRunChip(d).label, "Can't tell whose failure");
+  assert.deepEqual(dryRunActions(d, false), { primary: "fix", run: "again", menu: ["fix-new-chat", "land-anyway"] });
+});
+
+test("Land's confirm says a dry run runs first on every state but passed", () => {
+  for (const s of ["needed", "waiting", "running", "failed", "stopped", "machine"] as const) assert.equal(runsFirst(dr(s)), true, s);
+  assert.equal(runsFirst(dr("passed")), false);
+  assert.equal(runsFirst(undefined), false);
 });

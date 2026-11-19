@@ -167,8 +167,8 @@ export function DryRunButton(props: {
   const label = () => (props.kind === "stop" ? "Stop Dry Run" : props.kind === "again" ? "Run Dry Run Again" : "Run Dry Run");
   const go = () => {
     if (props.kind === "stop") {
-      const which = props.run ? { run: props.run } : props.waiting ? { waiting: props.waiting } : null;
-      if (!which) return props.press.setError("Sova hasn't read this dry run yet: try again in a moment.");
+      // A waiting one whose id the row doesn't carry is named by its branch and commit.
+      const which = props.run ? { run: props.run } : props.waiting ? { waiting: props.waiting } : { branch: props.branch, commit: props.commit };
       void props.press.press("stop", () => stopTheDryRun(props.projectId, which), stoppedToast(props.branch));
     } else void props.press.press("run", () => runDryRun(props.projectId, props.branch, props.commit), (v: { waiting?: { after: string } } | undefined) => (v?.waiting ? `The dry run of ${props.branch} waits for the merge copy: it starts after ${v.waiting.after}.` : startedToast(props.branch, props.commit)));
   };
@@ -201,6 +201,8 @@ export interface FixTarget {
   offer?: FixOffer;
   /** A check broken on the target (no branch): Fix in New Chat only. */
   check?: { id: string; label: string; run: string };
+  /** A chat's title by its id: Fix's toast names the chat it sent to. */
+  chatTitle?: (session: string) => string | undefined;
 }
 
 /** Fix and Fix in New Chat's presses: each opens the chat it sent to. A refusal is said under the row. */
@@ -214,7 +216,10 @@ export function createFix(t: () => FixTarget, press: ReturnType<typeof usePress>
   const open = (v: { path: string } | undefined) => {
     if (v?.path) location.hash = projectSessionHref(t().projectId, v.path);
   };
-  const chatName = () => "its chat";
+  const chatName = () => {
+    const o = t().offer;
+    return (o?.chat.ok && t().chatTitle?.(o.chat.session)) || "its chat";
+  };
   return {
     fix: () => {
       const no = fixWhyNot(t().offer);
@@ -223,7 +228,7 @@ export function createFix(t: () => FixTarget, press: ReturnType<typeof usePress>
         announce(no);
         return;
       }
-      void press.press("fix", () => fixIt(t().projectId, body(false)), fixToast(chatName()), open);
+      void press.press("fix", () => fixIt(t().projectId, body(false)), () => fixToast(chatName()), open);
     },
     newChat: () => {
       const no = newChatWhyNot(t().offer);
@@ -238,9 +243,9 @@ export function createFix(t: () => FixTarget, press: ReturnType<typeof usePress>
   };
 }
 
-/** Fix in Land's place, with its ▾: Fix in New Chat first, then `items` (the action Fix took the place of, Land Anyway,
-    then the menu's usual items). Fix is never a dead button: refused now, it says why on press and on hover. A failure
-    the target shares makes Fix in New Chat the button (`newChatFirst`). */
+/** Fix in Land's place, in every case, with its ▾: Fix in New Chat first, then `items` (the action Fix took the place
+    of, Land Anyway, then the menu's usual items). Fix is never a dead button: refused now, it says why on press and on
+    hover. */
 export function FixSplit(props: { fix: FixTarget; press: ReturnType<typeof usePress>; items?: (Item: (p: ActionMenuItemProps) => JSX.Element) => JSX.Element; onMenuOpen?(): void }) {
   const f = createFix(() => props.fix, props.press);
   const branch = () => props.fix.branch ?? props.fix.check?.label ?? "it";

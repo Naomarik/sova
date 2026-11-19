@@ -109,7 +109,10 @@ export type MergeStanding =
   /** A fix arrived while the entry's run is checking: it waits for that run to end. */
   | { phase: "waiting-run"; answer?: MergeChatAnswer }
   /** Stop in the chat: no request goes through until the user's next message. */
-  | { phase: "paused" };
+  | { phase: "paused" }
+  /** Approved · dry run first: a setup branch's dry run of this commit runs at its turn in line, then it lands
+   *  (`run` while it runs). The entry stays queued meanwhile. */
+  | { phase: "dry-run"; run?: string };
 
 /** A checked fix the standing approval carried: its commit (absent: drafts only) and the drafts it re-pinned. */
 export interface MergeFix {
@@ -435,6 +438,13 @@ export interface MergeEntry {
     /** Can't tell whose failure, not yet raised to the user: the thread rules first (within RULING_WAIT_MS). */
     unattributed?: { run: string; at: string };
   };
+  /** A failure holding it up (sent back for checks, can't tell whose, out of tries, its dry run failed): the Fix line and
+   *  context. Derived when the view is read. Additive. */
+  failure?: BranchFailure;
+  /** Fix / Fix in New Chat on that failure. Derived when the view is read. Additive. */
+  fixOffer?: FixOffer;
+  /** A setup branch's dry run at this entry's commit. Derived when the view is read. Additive. */
+  dryRun?: BranchDryRun;
   /** needs-fix only, derived when the view is read (never stored): sent back for its drafts, its drafts changed since
    *  (since the hand-back; for an entry from before that was kept, since the approval pinned them), and Sova's docs
    *  check of them finds no problem. Land comes back at the same commit. */
@@ -580,12 +590,76 @@ export interface MergeTrial {
   why?: string;
   /** Release checks the trial left out: unchanged against the target's release section and not named for it. */
   notRun?: { id: string; label: string }[];
-  /** Who started it: the operator, or a chat (its session id). */
-  by: { kind: "operator" } | { kind: "chat"; session?: string };
+  /** Who started it: the operator, a chat (its session id), or the user's Land (the entry it lands once it passes). */
+  by: TrialBy;
   startedAt: string;
   endedAt?: string;
+  /** Verdict void: who or what stopped it (the user's Stop Dry Run, a Sova restart, a newer dry run of the branch). */
+  stopped?: { by: "operator" | "restart" | "superseded"; at: string };
+  /** Why the branch needed it, from its setup change at the start: "adds the merge check Playbook tests". */
+  needs?: DryRunWhy;
+  /** The merge and release checks it runs (the ones the branch adds or changes), known at its start. */
+  ran?: { id: string; label: string }[];
+  /** The merge checks it leaves out: unchanged against the target, they run in the landing. */
+  skipped?: { id: string; label: string }[];
+  /** Verdict failed or machine: what holds the branch up (the Fix line and context). */
+  failure?: BranchFailure;
 }
 export const MERGE_TRIALS_KEPT = 20;
+
+/** Who started a dry run. `land`: the user's Land started it; that entry lands by itself once it passes. */
+export type TrialBy = { kind: "operator" } | { kind: "chat"; session?: string } | { kind: "land"; entry: string };
+
+/** Why a branch needs a dry run, from its setup change, one line with no leading capital ("adds the merge check
+ *  Playbook tests", "changes the release step Site build", "changes the deploy targets"). */
+export type DryRunWhy = string;
+
+/** A failure holding a branch up, a dry run's or a landing's: the plain line beside Fix, and Fix's context. */
+export interface BranchFailure {
+  kind: "dry-run" | "landing";
+  /** The run (mr_…): View Checks. */
+  run: string;
+  /** The commit the run was at (full sha). */
+  commit: string;
+  /** Whose it is: the branch's change, master's too, can't tell, or the machine (nothing of the branch's ran). */
+  whose: "branch" | "master" | "unclear" | "machine";
+  /** One plain line: "Playbook tests fails on master too: not this branch's", "This branch's change breaks Playbook
+   *  tests", "Dry run couldn't run: …". */
+  line: string;
+  /** Each failing check, with its failing tests (as the run named them). */
+  checks: { id: string; label: string; step: string; whose: "branch" | "master" | "unclear"; tests?: { file?: string; name?: string; message?: string }[] }[];
+}
+
+/** Fix and Fix in New Chat on a failure, each with why not when it can't now. */
+export interface FixOffer {
+  /** Fix: the failure's context sent to the branch's own chat. Refused while it works or is open in a terminal. */
+  chat: { ok: true; session: string } | { ok: false; why: string };
+  /** Fix in New Chat: a fresh chat on a new branch from the target (a failure the target shares) or on this branch. */
+  newChat: { ok: boolean; why?: string; on: "new-branch" | "this-branch" };
+}
+
+/** A branch's dry run at its NEWEST commit (never an older commit's as current). */
+export interface BranchDryRun {
+  /** The branch head the row is about. */
+  commit: string;
+  /** waiting: asked for (Run Dry Run, or Land's) and waits for the merge copy (MergeQueueView.trialsWaiting). */
+  state: "needed" | "waiting" | "running" | "passed" | "failed" | "stopped" | "machine";
+  /** Why it needs one (always). */
+  why: DryRunWhy;
+  /** The dry run at this commit (absent when none ran): View Checks. */
+  run?: string;
+  by?: TrialBy;
+  /** Running: check N of M (1-based). */
+  progress?: { at: number; of: number };
+  stopped?: MergeTrial["stopped"];
+  /** Failed or machine. */
+  failure?: BranchFailure;
+  fixOffer?: FixOffer;
+  /** An older commit's dry run, only for "(at an older commit)": it never sets `state`. */
+  older?: { commit: string; verdict: MergeTrial["verdict"] };
+  /** The user's Land stands and runs it first: that entry's id. */
+  land?: string;
+}
 
 // ---- the queue ----------------------------------------------------------------------------------
 
@@ -633,6 +707,8 @@ export interface MergeQueueHeads {
   pushWhy?: string;
   /** Checks red on the target alone, by label. */
   targetRed?: string[];
+  /** Fix / Fix in New Chat on each broken-target check (by check id): a chat on a new branch from the target. Additive. */
+  targetBrokenFix?: Record<string, FixOffer>;
   /** Test checks broken on the target (no test ran on the merge, the tip or the target alone, same exit each time):
    *  skipped for every branch meanwhile, shown in the tab's Needs you until a later run of that check runs tests. */
   targetBroken?: TargetBroken[];
@@ -696,6 +772,11 @@ export interface MergeQueueView {
   tryRun?: MergeRun;
   /** merge.try: the setup branches' trials, newest first (at most MERGE_TRIALS_KEPT), each pinned to its commit. */
   trials?: MergeTrial[];
+  /** The branch's dry run holding the merge copy now (Checking now, the landing bar): absent when none runs. */
+  trialNow?: MergeTrialNow;
+  /** Dry runs asked for while the merge copy was busy, in the order they start: each starts once the copy is free.
+   *  `after`: what holds the copy now, in words ("the landing of feat/x", "the dry run of feat/y"). */
+  trialsWaiting?: MergeTrialWaiting[];
   /** A release holds the queue (the freeze banner): only its entries land and nothing is pushed until it is
    *  published or abandoned. */
   release?: MergeReleaseHold;
@@ -708,7 +789,24 @@ export interface MergeQueueView {
 
 /** A project's queue as the landing bar starts from it (GET /api/merge-queue/landing-summary): the view's fields the bar
  *  reads, `recent` and `waitingOnHost` cut to the newest few. A whole MergeQueueView (the `merge_queue` feed frame) is one too. */
-export type LandingQueueCut = Pick<MergeQueueView, "project" | "root" | "target" | "state" | "paused" | "invalid" | "served" | "current" | "checking" | "waiting" | "needsYou" | "recent" | "waitingOnHost" | "release" | "reviewing" | "heads" | "at">;
+export type LandingQueueCut = Pick<MergeQueueView, "project" | "root" | "target" | "state" | "paused" | "invalid" | "served" | "current" | "checking" | "waiting" | "needsYou" | "recent" | "waitingOnHost" | "release" | "reviewing" | "heads" | "trialNow" | "trialsWaiting" | "at">;
+
+/** A dry run waiting for the merge copy (Run Dry Run pressed while it was busy). Stop Dry Run cancels it. */
+export interface MergeTrialWaiting {
+  branch: string;
+  commit: string;
+  by: TrialBy;
+  at: string;
+  after: string;
+}
+
+/** The dry run running now: its record, its run (steps live) and how far it is. */
+export interface MergeTrialNow {
+  trial: MergeTrial;
+  run: MergeRun;
+  /** Check N of M (1-based; `at` is the check running now, or `of` once all ran). */
+  progress: { at: number; of: number };
+}
 
 /** A project's releases as the landing bar starts from them: the open record and the last one (steps without their
  *  `detail`), with Publish's gates and the quiet watch. `project` is the root, as in ReleaseView; a whole ReleaseView
@@ -755,7 +853,7 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted" | "standing" | "decision" | "tries"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted" | "standing" | "decision" | "tries" | "failure" | "fixOffer" | "dryRun"> & {
   project: string;
   /** The target this entry lands on. */
   target?: string;
@@ -874,6 +972,8 @@ export interface MergeReady {
   left?: { whole: LeftAnswer; code: LeftAnswer };
   /** This branch changes automatic cleanup and no rehearsal passed at this commit today: Land reads Rehearsal needed, disabled (§app.merge-queue/approve). Additive. */
   rehearsal?: true;
+  /** A setup branch: its dry run at this commit (Land runs it first when it hasn't passed). Additive. */
+  dryRun?: BranchDryRun;
 }
 
 /** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */

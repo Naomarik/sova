@@ -7,8 +7,9 @@ import type { BranchFailure, FixOffer, MergeRun } from "../../shared/merge-queue
 
 /** The seeded message's last line: what the chat does, and doesn't, before the user answers. */
 export const FIX_ENDING = "Explain what's wrong and propose how to fix it, then stop and wait for my guidance. Don't change any files before I answer.";
-/** Fix in New Chat: a coding chat is also told to commit and merge its target before it ends its turn; this waits. */
-export const FIX_NEW_CHAT_HOLD = "Until I answer, that holds over anything else this chat is told: no edits, no commits and no merges, not even of the target.";
+/** After the ending, in both Fix and Fix in New Chat: a coding chat is also told to commit and merge its target before
+ *  it ends its turn; this waits for the user. */
+export const FIX_HOLD = "Until I answer, that holds over anything else this chat is told: no edits, no commits and no merges, not even of the target.";
 
 export const fixWorking = (chat: string): string => `${chat} is working: wait for its turn to end, then press Fix.`;
 export const fixLive = (chat: string): string => `${chat} is open in a terminal: Fix can't send to it from here.`;
@@ -16,8 +17,6 @@ export const FIX_NO_CHAT = "No chat works on this branch: use Fix in New Chat.";
 
 /** The failure's whole context, as the message Fix sends. Pure. */
 export function fixText(o: {
-  /** A fresh chat's first message: it adds FIX_NEW_CHAT_HOLD after the ending. */
-  newChat?: boolean;
   failure: BranchFailure;
   branch: string;
   target: string;
@@ -44,8 +43,7 @@ export function fixText(o: {
   const whose = f.whose === "branch" ? "This branch's change breaks it." : f.whose === "master" ? `Fails on ${o.target} too: not this branch's.` : f.whose === "unclear" ? `Can't tell whose failure: it fails on ${o.target} alone too.` : "The machine's: nothing of the branch's ran.";
   lines.push("", `Whose: ${whose}`);
   lines.push(`It holds up: ${o.holdsUp.length ? o.holdsUp.join(", ") : `${o.branch} only`}`);
-  lines.push("", FIX_ENDING);
-  if (o.newChat) lines.push(FIX_NEW_CHAT_HOLD);
+  lines.push("", FIX_ENDING, FIX_HOLD);
   return lines.join("\n");
 }
 

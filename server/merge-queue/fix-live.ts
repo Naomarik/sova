@@ -59,7 +59,7 @@ export async function liveFix(projectId: string, req: { branch: string; commit: 
     return { label: c.label, path: st ? join(runDir, st.log) : runDir, tail: st ? stepLog(runDir, st, 40) : [] };
   });
   const runPage = `#/projects/${encodeURIComponent(projectId)}/merge-queue/${req.run}`;
-  const text = fixText({ failure: ctx.failure, branch: ctx.branch, target: q.target, runPage, run, logs, holdsUp: ctx.holdsUp, newChat: req.newChat });
+  const text = fixText({ failure: ctx.failure, branch: ctx.branch, target: q.target, runPage, run, logs, holdsUp: ctx.holdsUp });
   const shared = ctx.failure.whose !== "branch";
   let session = ctx.session;
   if (!session && ctx.worktree) {

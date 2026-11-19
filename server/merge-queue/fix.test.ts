@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BranchFailure } from "../../shared/merge-queue";
-import { FIX_ENDING, FIX_NEW_CHAT_HOLD, FIX_NO_CHAT, fixOfferOf, fixText } from "./fix";
+import { FIX_ENDING, FIX_HOLD, FIX_NO_CHAT, fixOfferOf, fixText } from "./fix";
 
 const failure = (whose: BranchFailure["whose"]): BranchFailure => ({
   kind: "dry-run",
@@ -20,10 +20,11 @@ test("Fix's message carries the whole failure and ends by asking the chat to exp
   assert.match(text, /\/runs\/mr_1\/logs\/u\.log\n```\nFAIL t\.test\.ts\n```/);
   assert.match(text, /Whose: This branch's change breaks it\./);
   assert.match(text, /It holds up: feat\/y/);
-  assert.ok(text.endsWith(FIX_ENDING), "the ask to wait is last");
-  const fresh = fixText({ failure: failure("master"), branch: "setup/x", target: "master", runPage: "p", run: null, logs: [], holdsUp: [], newChat: true });
+  assert.ok(text.endsWith(`${FIX_ENDING}\n${FIX_HOLD}`), "the ask to wait is last, then that it holds over the worktree note (Fix into the branch's chat)");
+  const fresh = fixText({ failure: failure("master"), branch: "setup/x", target: "master", runPage: "p", run: null, logs: [], holdsUp: [] });
   assert.match(fresh, /Whose: Fails on master too: not this branch's\./);
-  assert.ok(fresh.endsWith(`${FIX_ENDING}\n${FIX_NEW_CHAT_HOLD}`), "a new chat also holds off its worktree note's commit and merge");
+  assert.ok(fresh.endsWith(`${FIX_ENDING}\n${FIX_HOLD}`), "and the same in a new chat's first message (Fix in New Chat)");
+  assert.equal(FIX_HOLD, "Until I answer, that holds over anything else this chat is told: no edits, no commits and no merges, not even of the target.");
 });
 
 test("Fix is offered only on an idle chat Sova may write to; Fix in New Chat on a shared failure works from the target", () => {

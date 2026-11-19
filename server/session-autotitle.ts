@@ -74,8 +74,10 @@ export const CLAUDE_TITLE_BUDGET_USD = 0.05;
 
 // ── Input ─────────────────────────────────────────────────────────────────────────────────────
 
-/** What a title is made from. Never the session's current title. */
+/** What a title is made from. The session's current title only as `replacingTitle` (a regenerate). */
 export interface TitleInput {
+  /** Regenerate only: the stored title being replaced, so the model gives a different one. */
+  replacingTitle?: string;
   /** The first 3 user messages that are the user's own words (not a wake nudge or a link message). */
   userMessages: string[];
   /** The last topic-outline snapshot's `overall` line (the sidebar's summary line), if any. */
@@ -181,10 +183,16 @@ export async function readTitleInput(path: string): Promise<TitleInput> {
  * row already shows (not to be copied whole, though its subject may be shared), the topics in
  * order (headings are the subjects, their first bullets secondary recent details), then the first
  * message as the opening intent (firstRequestExcerpt). Without one: the first 3 user messages, the
- * first as the same excerpt, the others ≤600 characters. Pure; its argument has no field for the
- * current title, so none can reach the model.
+ * first as the same excerpt, the others ≤600 characters. With `replacingTitle` (regenerate only),
+ * one last labelled line names the title being replaced and asks for a different one; without it
+ * the prompt is unchanged. Pure.
  */
 export function buildTitlePrompt(input: TitleInput): string {
+  const body = buildTitleBody(input);
+  return input.replacingTitle ? `${body}\n\nCURRENT TITLE (being replaced; give a different one): ${oneLine(input.replacingTitle)}` : body;
+}
+
+function buildTitleBody(input: TitleInput): string {
   if (input.summaryLine) {
     const lines = ["SUMMARY LINE (already shown under the title; don't just copy it, though the title may share its subject):", input.summaryLine];
     if (input.topics.length) {
@@ -402,7 +410,7 @@ export async function nameSession(path: string, mode: NameMode, deps: NameDeps, 
   if (opts.dryRun) return { outcome: "would-name" };
   // The title's model call is the session's one-shot in the usage ledger.
   const result = await withUsageContext({ owner: s!.id, ...(s!.cwd ? { cwd: s!.cwd } : {}), purpose: "title", kind: "oneshot" }, () =>
-    titleFromChain(deps.settings(), buildTitlePrompt(input), deps),
+    titleFromChain(deps.settings(), buildTitlePrompt(mode === "regenerate" && seen?.title ? { ...input, replacingTitle: seen.title } : input), deps),
   );
   if ("failure" in result) return { outcome: "skipped", reason: result.failure, detail: result.detail, backoff: result.backoff };
   const written = replacing

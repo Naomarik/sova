@@ -3,21 +3,20 @@
 // DOM-free at import, so the rules run under `pnpm test`; components/SessionContextMenu.tsx draws it.
 
 import type { SessionSummary } from "../../shared/protocol";
-import { gistTitle } from "./agents-board";
+import { REGENERATE_TITLE_DESC, REGENERATING_LABEL } from "./auto-title";
 import { type ArchiveDrag, archiveTileReason } from "./drag-archive";
 import type { DropTiles } from "./drag-overlay";
-import { summaryLineOf } from "./summary-row";
 
 // ---- what the menu offers ---------------------------------------------------------------------
 
 /** The menu's rows for one session. A `disabled` string is the reason the row can't run; "" runs. */
 export interface RowMenuModel {
-  /** Rename…, Use Gist as Title and Reset to Original Title; null for a chat Sova names itself,
+  /** Rename…, Regenerate Title and Reset to Original Title; null for a chat Sova names itself,
       which keeps its name (the Agents board's rule): no title rows at all. */
   title: {
-    /** The title the gist would give, shown under its row; null when there is none to give. */
-    gist: string | null;
-    gistDisabled: string;
+    /** Regenerate Title's second line, and why it can't run: "" runs (the session's own regenerate isn't in flight). */
+    regenerateDesc: string;
+    regenerateDisabled: string;
     /** The title it had before it was renamed, shown under Reset's row. */
     original: string | undefined;
     resetDisabled: string;
@@ -31,15 +30,19 @@ export interface RowMenuModel {
 /**
  * The rows `s` gets. `drag` is the row's archive drag as the drop panel decides it (busy as the row
  * shows it), `tiles` the drop panel's tiles for it: the menu refuses exactly what the panel refuses,
- * in the panel's words.
+ * in the panel's words. `regenerating`: this session's Regenerate Title is in flight (lib/auto-title).
  */
-export function rowMenuOf(s: Pick<SessionSummary, "title" | "originalTitle" | "fixedName" | "archived" | "outlineGist" | "outlineNow">, drag: ArchiveDrag, tiles: Pick<DropTiles, "groupNote">): RowMenuModel {
-  const gist = gistTitle(s);
+export function rowMenuOf(
+  s: Pick<SessionSummary, "title" | "originalTitle" | "fixedName" | "archived">,
+  drag: ArchiveDrag,
+  tiles: Pick<DropTiles, "groupNote">,
+  regenerating = false,
+): RowMenuModel {
   const title = s.fixedName
     ? null
     : {
-        gist,
-        gistDisabled: gist ? "" : summaryLineOf(s as SessionSummary) ? "The gist is already the title." : "No gist yet.",
+        regenerateDesc: REGENERATE_TITLE_DESC,
+        regenerateDisabled: regenerating ? REGENERATING_LABEL : "",
         original: s.originalTitle,
         resetDisabled: s.originalTitle === undefined ? "Not renamed." : "",
       };

@@ -17,6 +17,7 @@ const { RowMenu } = await importSsr(new URL("../components/SessionRowMenu.tsx", 
 const { ExtensionsContext } = await import("./reply-place");
 const { isSovaName, SESSION_MENU_NAMES } = await import("./menu-place");
 const mesh = await import("./mesh");
+const { setRegeneratingTitle } = await import("./auto-title");
 type ExtensionInfo = import("../../shared/protocol").ExtensionInfo;
 type BoardRow = import("./agents-board").BoardRow;
 type SessionSummary = import("../../shared/protocol").SessionSummary;
@@ -60,27 +61,53 @@ const drawMenu = (props: Record<string, unknown>, extensions?: ExtensionInfo[]):
 
 const CASES: Record<string, Record<string, unknown>> = {
   plain: { row: row(session()), ctx: ctx(), archive: { label: "Archive", blocked: null } },
-  "renamed, with a gist, details open": {
-    row: row(session({ title: "Mine", originalTitle: "Fix the build", outlineGist: "Repairs CI" })),
+  "renamed, details open": {
+    row: row(session({ title: "Mine", originalTitle: "Fix the build" })),
     ctx: ctx("/state/sessions/a.jsonl"),
     archive: { label: "Unarchive", blocked: null },
   },
-  "archive blocked": { row: row(session({ outlineGist: "Fix the build" })), ctx: ctx(), archive: { label: "Archive", blocked: "A TUI has it open." } },
+  "archive blocked": { row: row(session()), ctx: ctx(), archive: { label: "Archive", blocked: "A TUI has it open." } },
   "no archive": { row: row(session()), ctx: ctx(), archive: null },
+  "regenerating its title": { row: row(session()), ctx: ctx(), archive: { label: "Archive", blocked: null }, regenerating: true },
+};
+
+/** A case drawn, with its session's Regenerate Title in flight when the case says so. */
+const drawCase = (props: Record<string, unknown>): string => {
+  const path = (props.row as BoardRow).session.path;
+  if (props.regenerating) setRegeneratingTitle(path, true);
+  try {
+    return drawMenu(props);
+  } finally {
+    setRegeneratingTitle(path, false);
+  }
 };
 
 test("Sova's own items in the session ⋯ menu are drawn exactly as before", () => {
-  const got = Object.fromEntries(Object.entries(CASES).map(([name, props]) => [name, drawMenu(props)]));
+  const got = Object.fromEntries(Object.entries(CASES).map(([name, props]) => [name, drawCase(props)]));
   if (process.env.WRITE_MENU_SNAPSHOT === "1") writeFileSync(SNAPSHOT, `${JSON.stringify(got, null, 2)}\n`);
   const want = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as Record<string, string>;
   assert.deepEqual(Object.keys(got), Object.keys(want));
   for (const name of Object.keys(want)) assert.equal(got[name], want[name], name);
 });
 
+test("Regenerate Title: its line says what it does, and while its session's run is in flight it is disabled and says so", () => {
+  const idle = drawCase(CASES.plain!);
+  assert.match(idle, /<span class="popover-item-label">Regenerate Title<\/span><span class="popover-item-desc">A short name from what the session became.<\/span>/);
+  const busy = drawCase(CASES["regenerating its title"]!);
+  assert.match(busy, /aria-label="Regenerate the title of “Fix the build”" aria-disabled="true" title="Regenerating title…">/);
+  assert.match(busy, /<span class="popover-item-label">Regenerate Title<\/span><span class="popover-item-desc">Regenerating title…<\/span>/);
+  setRegeneratingTitle("/state/sessions/other.jsonl", true);
+  try {
+    assert.equal(drawCase(CASES.plain!), idle, "another session's run leaves this row alone");
+  } finally {
+    setRegeneratingTitle("/state/sessions/other.jsonl", false);
+  }
+});
+
 test("the snapshot holds every item, in order", () => {
   const html = drawMenu(CASES.plain!);
   const labels = [...html.matchAll(/<span class="popover-item-label">([^<]*)<\/span>/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ["Session Details", "Open Subagents", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path"]);
+  assert.deepEqual(labels, ["Session Details", "Open Subagents", "Rename…", "Regenerate Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path"]);
   const groups = [...html.matchAll(/role="group" aria-label="([^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(groups, ["Open", "Title", "Organize"]);
 });
@@ -117,7 +144,7 @@ test("a session on another host shows no extension rows: an extension is this ho
 
 test("extension rows come after every one of Sova's items, one group per extension, headed by its title", () => {
   const html = drawMenu(CASES.plain!, [tickets, notes]);
-  assert.deepEqual(labels(html), ["Session Details", "Open Subagents", "Rename…", "Use Gist as Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path", "File Issue", "Pin Note"]);
+  assert.deepEqual(labels(html), ["Session Details", "Open Subagents", "Rename…", "Regenerate Title", "Reset to Original Title", "Move to Group…", "Archive", "Copy Path", "File Issue", "Pin Note"]);
   const groups = [...html.matchAll(/role="group" aria-label="([^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(groups, ["Open", "Title", "Organize"], "Sova's groups, named by aria-label");
   // Each extension group is named by its visible heading.
@@ -168,7 +195,7 @@ test("an extension entry named like one of Sova's items is left out of the menu"
 test("a chat Sova names itself (fixedName) has no title actions; every other item stays", () => {
   const plain = drawMenu({ row: row(session()), ctx: ctx(), archive: { label: "Archive", blocked: null } });
   const fixed = drawMenu({ row: row(session({ title: "Overseer · Portal", fixedName: "project-overseer" })), ctx: ctx(), archive: { label: "Archive", blocked: null } });
-  for (const label of ["Rename…", "Use Gist as Title", "Reset to Original Title"]) {
+  for (const label of ["Rename…", "Regenerate Title", "Reset to Original Title"]) {
     assert.ok(plain.includes(label), `an ordinary chat offers ${label}`);
     assert.equal(fixed.includes(label), false, `no ${label}`);
   }

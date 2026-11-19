@@ -9,15 +9,15 @@ const row = (over: Partial<SessionSummary> = {}) => ({ title: "Fix the build", a
 const ARCHIVES: ArchiveDrag = { kind: "archive" };
 const NO_NOTE = { groupNote: null };
 
-test("rowMenuOf: a self-named chat has no title rows; Gist and Reset say why they can't run", () => {
+test("rowMenuOf: a self-named chat has no title rows; Regenerate waits on its own run, Reset says why it can't run", () => {
   assert.equal(rowMenuOf(row({ fixedName: "overseer" as SessionSummary["fixedName"] }), ARCHIVES, NO_NOTE).title, null);
+  assert.equal(rowMenuOf(row({ fixedName: "overseer" as SessionSummary["fixedName"] }), ARCHIVES, NO_NOTE, true).title, null);
   const plain = rowMenuOf(row(), ARCHIVES, NO_NOTE).title!;
-  assert.equal(plain.gistDisabled, "No gist yet.");
-  assert.equal(plain.resetDisabled, "Not renamed.");
-  const renamed = rowMenuOf(row({ originalTitle: "first words", outlineGist: "Ship the menu" }), ARCHIVES, NO_NOTE).title!;
-  assert.deepEqual([renamed.gist, renamed.gistDisabled, renamed.original, renamed.resetDisabled], ["Ship the menu", "", "first words", ""]);
-  const same = rowMenuOf(row({ title: "Ship the menu", outlineGist: "Ship the menu" }), ARCHIVES, NO_NOTE).title!;
-  assert.equal(same.gistDisabled, "The gist is already the title.");
+  assert.deepEqual([plain.regenerateDesc, plain.regenerateDisabled, plain.resetDisabled], ["A short name from what the session became.", "", "Not renamed."]);
+  const renamed = rowMenuOf(row({ originalTitle: "first words" }), ARCHIVES, NO_NOTE).title!;
+  assert.deepEqual([renamed.original, renamed.resetDisabled], ["first words", ""]);
+  const running = rowMenuOf(row(), ARCHIVES, NO_NOTE, true).title!;
+  assert.equal(running.regenerateDisabled, "Regenerating title…");
 });
 
 test("rowMenuOf: Archive and Move to Group refuse exactly what the drop panel refuses, in its words", () => {

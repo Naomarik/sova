@@ -152,7 +152,7 @@ import type {
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../../shared/team-defaults";
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
-import type { BackgroundJob } from "../../shared/protocol";
+import type { BackgroundJob, SessionTitleSource } from "../../shared/protocol";
 import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { TIME_SPENT_READ_ROUTE, type TimeSpentRecord } from "../../shared/time-spent";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
@@ -714,11 +714,11 @@ export const setSessionArchived = (path: string, archived: boolean) =>
  * message) comes back. Sova's own store — the session's .jsonl is never written, so a session
  * open in a TUI can be renamed too.
  */
-export const setSessionTitle = (path: string, title: string | null) =>
+export const setSessionTitle = (path: string, title: string | null, source?: SessionTitleSource) =>
   request<SessionSummary>("/api/sessions/title", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path, title }),
+    body: JSON.stringify(source ? { path, title, source } : { path, title }),
   });
 
 /** The sidebar's user-made groups, in creation order. */

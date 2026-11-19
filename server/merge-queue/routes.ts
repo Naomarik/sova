@@ -243,7 +243,7 @@ function result(verb: AnyVerb, root: string | null, ok: boolean, changed: boolea
 }
 
 /** merge.setup's refusal to every caller but the user's own page: a chat proposes its setup on a branch instead. */
-export const SETUP_IS_THE_USERS = "only the user saves the checks, from their own page: a chat proposes the setup on its branch and runs a trial with merge.try";
+export const SETUP_IS_THE_USERS = "only the user saves the checks, from their own page: a chat proposes the setup on its branch and runs a dry run with merge.try";
 
 /** The operator's route called by a process a chat runs (its `x-sova-caller` key): never the user's act, whatever it
     asks (§app.access/your-click). Land, the answers, Remove from Queue and Cancel come only from the user's own click in
@@ -272,7 +272,7 @@ export const CARD_IS_NOT_THE_USERS =
   "a card's commands never act as the user on the merge queue: landing, answering, removing from the queue and the queue's other acts come only from Sova's own controls in the page or the user's own word in the branch's chat. Nothing was done";
 
 /** The verbs a project on the Projects list may call before its merge setup is done. */
-const SETUP_VERBS: readonly MergeVerb[] = ["merge.status", "merge.setup", "merge.try"];
+const SETUP_VERBS: readonly MergeVerb[] = ["merge.status", "merge.setup", "merge.try", "merge.stop-try"];
 
 type Gated = ProjectQueue | { bare: string };
 
@@ -351,11 +351,12 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   if (reads && caller.kind !== "conform") return;
   // A trial saves and merges nothing: any chat on its own project may run one (the setup chat does); never merge.setup.
   // Never the merge thread or a run's reviewer: neither sets anything up.
-  if (verb === "merge.try") {
-    if (sid && deps.isThreadChat?.(root, sid)) throw new MergeFailure("forbidden", "the merge thread never sets anything up: it runs no trial");
-    if (sid && deps.isReviewerChat?.(sid)) throw new MergeFailure("forbidden", "a run's reviewer runs no trial");
+  if (verb === "merge.try" || verb === "merge.stop-try") {
+    if (sid && deps.isThreadChat?.(root, sid)) throw new MergeFailure("forbidden", "the merge thread never sets anything up: it runs no dry run");
+    if (sid && deps.isReviewerChat?.(sid)) throw new MergeFailure("forbidden", "a run's reviewer runs no dry run");
+    // A chat stops only a dry run it started (the queue checks it is the one).
     if (caller.kind === "session") return;
-    throw new MergeFailure("forbidden", "only the user or a chat on this project runs a trial");
+    throw new MergeFailure("forbidden", verb === "merge.try" ? "only the user or a chat on this project runs a dry run" : "only the user, or the chat that started it, stops a dry run");
   }
   // No chat relays the user's answer to a thread question, not even the chat it was asked in: Sova takes the user's own
   // next message there as the answer (server/merge-queue/channel.ts takeHeldNote), so no model can answer for them.
@@ -555,7 +556,11 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
         ...(req.checks ? { checks: req.checks } : {}),
         by: caller.kind === "operator" && !caller.fromChat ? { kind: "operator" } : { kind: "chat", ...(sessionId(caller) ? { session: sessionId(caller)! } : {}) },
       });
-      return { changed: true, report: { trial: r.trial, run: r.run } };
+      return { changed: true, report: { ...(r.trial ? { trial: r.trial } : {}), ...(r.run ? { run: r.run } : {}), ...(r.waiting ? { waiting: r.waiting } : {}) } };
+    }
+    case "merge.stop-try": {
+      const r = await q.stopTrial({ ...(req.run ? { run: req.run } : {}), by: caller.kind === "operator" && !caller.fromChat ? { kind: "operator" } : { kind: "chat", ...(sessionId(caller) ? { session: sessionId(caller)! } : {}) } });
+      return { changed: true, report: { ...(r.trial ? { trial: r.trial } : {}), ...(r.waiting ? { waiting: r.waiting } : {}) } };
     }
     case "merge.live": {
       if (!deps.restart) throw new MergeFailure("unsupported", "this server can't say what it runs");

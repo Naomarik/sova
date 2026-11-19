@@ -17,6 +17,7 @@ import { removeGate } from "./cleanup-switch";
 import { type AncestorCheck, draftProofVia, type DraftsHash, draftsHash, draftsLeft } from "./spec-drafts-state";
 import { queueReadingAt } from "./nothing-left";
 import { previewDocs, previewOf } from "./docs-preview";
+import { SETUP_UNREADABLE as UNREADABLE_SETUP, TRIAL_UNREADABLE as UNREADABLE_DRY_RUN } from "./merge-queue/setup-branch";
 export { previewOf };
 import { blockedNoteText, checkFailureOf, type DocsPreview, docsNudgeText, type Finished, type LastCheck, lastCheckWords, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
@@ -582,6 +583,11 @@ export interface ReadinessDeps {
   /** A served tree's branch at `head` that changes the project's setup without a passing trial of that commit: why it
       can't land yet (server/merge-queue/setup-branch.ts); null when it isn't a setup branch or its trial passed. */
   setupUntried?: (dir: string, head: string) => Promise<string | null>;
+  /** A served tree's setup branch: its dry run state at `head` (never an older commit's), with Fix on a failure;
+      null when it isn't a setup branch (server/merge-queue/queue.ts dryRunOf). */
+  dryRunAt?: (dir: string, branch: string, head: string, session?: string) => Promise<import("../shared/merge-queue").BranchDryRun | null>;
+  /** The commit a branch was at when (ms) a check ran: its newest commit made by then; null when Git can't tell. */
+  commitAt?: (dir: string, at: number) => Promise<string | null>;
   /** The Git inputs a tree's readiness reads, as stat stamps (worktrees.ts gitInputsStamp): the
       session feed's readiness watch compares them (checkReadinessInputs). */
   inputsStamp?: (dir: string, baseBranch?: string) => string | null;
@@ -882,13 +888,21 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
   for (const t of own) {
     const tf = await treeFacts(t, [s.cwd, ...own.map((o) => o.path).filter((p) => p !== t.path)]);
     if (tf.headAt) heads[t.path] = tf.headAt;
-    const r = treeReadiness(tf, sf);
+    // The chat's newest check run names the commit it ran at; a failing one at an older commit than the head stops
+    // counting once that newer commit exists (§chat.worktrees/newest-commit).
+    const lc = sf.lastCheck;
+    const older = !!lc && !!tf.headAt && lc.at < tf.headAt;
+    const lcCommit = lc ? (older ? ((await deps.commitAt?.(t.path, lc.at).catch(() => null)) ?? undefined) : tf.head) : undefined;
+    const lastCheck = lc ? { ...lc, ...(lcCommit ? { commit: lcCommit } : {}), ...(older ? { older: true as const } : {}) } : undefined;
+    const tsf: SessionFacts = lastCheck && !(older && !lastCheck.ok) ? { ...sf, lastCheck } : older && !lc!.ok ? (({ lastCheck: _l, ...rest }) => rest)(sf) : sf;
+    const r = treeReadiness(tf, tsf);
     // Landing reads the tree as if it had no conflict: a conflict doesn't block the Land, the merge thread judges it in
     // line (al_3 q7). The row's own state still says it conflicts until it has a landing.
-    const rLand = tf.conflicts ? treeReadiness({ ...tf, conflicts: 0 }, sf) : r;
+    const rLand = tf.conflicts ? treeReadiness({ ...tf, conflicts: 0 }, tsf) : r;
     // Only where the merge queue serves the repo: elsewhere a finished branch is merged by its chat (al_1).
     const servedHere = landingOn && (deps.served ? await deps.served(t.path).catch(() => false) : true);
     let landing: WorktreeReadiness["landing"];
+    let dryRun: WorktreeReadiness["dryRun"];
     // Drafts that aren't official: a landing's, or a merged tree's that didn't make it (§chat.worktrees/readiness).
     const unofficial = tf.readable && (landingOn || tf.merged) ? await deps.drafts(t.path) : undefined;
     if (servedHere) {
@@ -905,15 +919,17 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       // The chat's own reason it can't land its drafts: its Can't answer to Sova's drafts request at this head.
       const specsWhy = tf.head ? deps.landing.cantWhy(s.id, t.path, tf.head) : undefined;
       landing = landingOf(tf, rLand.state, finished, heldHere, docs, specsWhy);
-      // A setup branch is offered Land only once a trial of its exact head passed (§app.project-setup/land-gate).
-      const untried = tf.head && landingLive(tf, rLand.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => null) : null;
-      if (untried) landing = undefined;
+      // A setup branch reads Ready to land with no passing dry run: Land runs it first (§app.project-setup/land-gate).
+      // Only when Sova can't tell whether it is one does Land wait (fail closed).
+      const untried = tf.head && landingLive(tf, rLand.state) && deps.setupUntried ? await deps.setupUntried(t.path, tf.head).catch(() => UNREADABLE_SETUP) : null;
+      if (untried === UNREADABLE_SETUP || untried === UNREADABLE_DRY_RUN) landing = undefined;
+      dryRun = tf.head && tf.branch && !tf.merged && deps.dryRunAt ? ((await deps.dryRunAt(t.path, tf.branch, tf.head, s.id).catch(() => null)) ?? undefined) : undefined;
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
       // The commit the user approved is the queue's now, and with nothing left there is nothing to fix: no note (a real
       // new commit past an approval or a landing is told as any other).
       const leaveAlone = !!tf.head && !!deps.approvedAt?.(t.path, tf.branch, tf.head);
       if (!landing && finished === "yes" && tf.head && !leaveAlone) {
-        const blockers = [...(landingBlockers(tf, sf) ?? []), ...(untried ? [{ kind: "trial" as const, text: "no passing trial of its head", fix: "run a trial of its head (merge.try) and land it once that passes" }] : [])];
+        const blockers = landingBlockers(tf, tsf) ?? [];
         if (blockers.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers, ...(tf.conflicts ? { conflicts: { base: tf.base ?? "its base", files: tf.conflicts } } : {}) });
       }
       if (writes) {
@@ -935,6 +951,8 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
       ...(landing ? { landing } : {}),
+      ...(dryRun ? { dryRun } : {}),
+      ...(lastCheck ? { lastCheck: { ...(lastCheck.commit ? { commit: lastCheck.commit } : {}), at: lastCheck.at, ok: lastCheck.ok, ...(lastCheck.what ? { what: lastCheck.what } : {}), ...(lastCheck.failed ? { failed: lastCheck.failed } : {}) } } : {}),
       ...(tf.readable && (tf.merged || hasNoCommits(tf)) ? (unofficial?.length ? { left: "drafts" as const, draftsLeft: unofficial.length } : { left: "nothing" as const, ...(await removeFieldsOf(t.path)) }) : {}),
     });
   }

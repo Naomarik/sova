@@ -26,6 +26,12 @@ import {
   type MergeReady,
   type MergeRun,
   type MergeTrial,
+  type MergeTrialNow,
+  type MergeTrialWaiting,
+  type BranchDryRun,
+  type BranchFailure,
+  type FixOffer,
+  type TrialBy,
   MERGE_TRIALS_KEPT,
   NOTE_MAX,
   type PauseInfo,
@@ -73,7 +79,7 @@ import { PROJECT_PLAYBOOK } from "./thread";
 import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
 import { commitResolution } from "./resolve-content";
 import { dropRunDrafts } from "./run-logs";
-import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
+import { changedServices, dryRunMergeChecks, dryRunReasons, dryRunWhyLine, isSetupChange, requiredServices, SETUP_UNREADABLE, setupChangeOf, stoppedByWords, trialEndedText, trialOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
 export const scratchRefusal = (what: string): string =>
@@ -197,8 +203,12 @@ export interface QueueDeps {
   /** The chat's own newest check run fails (Ready to land's "the session's newest check run isn't failing"): its
    *  words ("this chat's last test run failed: …"), else null. Absent: not read. */
   chatCheckFailing?: (session: string, worktree: string | undefined) => Promise<string | null>;
-  /** A trial (merge.try) ended: the chat that started it is told (wire.ts). */
-  trialEnded?: (trial: MergeTrial, run: MergeRun, root: string) => void;
+  /** A dry run (merge.try) ended: the chats named are told, with `text` (wire.ts): the one that started it and the
+   *  branch's chat when a Land waits on it. */
+  trialEnded?: (trial: MergeTrial, run: MergeRun, root: string, tell: { sessions: string[]; text: string }) => void;
+  /** Fix / Fix in New Chat on a failure holding `branch` up (wire.ts: the branch's chat's state). `shared`: the target
+   *  shares it, so Fix in New Chat works on a new branch from the target. */
+  fixOffer?: (o: { root: string; branch: string; worktree?: string; session?: string; shared: boolean }) => Promise<FixOffer>;
   /** Wake the merge thread; false: none was asked. */
   thread?: WakeThread;
   /** The chat that owns a branch, when the approval named none (Land on the Merge Queue tab); null: no known chat. */
@@ -317,7 +327,7 @@ type Entry = QueueFile["entries"][number];
  *  with no selection: a check that takes one runs bare (exported for the trial tests, which run these real picks). */
 export function optionalPicks(def: ProjectDef): CheckPick[] {
   const checks = def.merge?.checks;
-  return Array.isArray(checks) ? checks.filter((c) => c.optional).map((c) => ({ id: c.id, label: c.label, source: "picked" as const, why: "a trial runs every proposed check" })) : [];
+  return Array.isArray(checks) ? checks.filter((c) => c.optional).map((c) => ({ id: c.id, label: c.label, source: "picked" as const, why: "a dry run runs every check it keeps" })) : [];
 }
 
 export class ProjectQueue {
@@ -410,6 +420,26 @@ export class ProjectQueue {
     for (const e of [...this.q.entries].filter((x) => x.state === "landed" && x.landed?.via === "host").sort((a, b) => a.landed!.at.localeCompare(b.landed!.at))) {
       if (!this.q.hostPins?.[e.branch]?.includes(e.commit)) this.keepHostPin(e.branch, e.commit);
     }
+    // A dry run is running only while this server runs it: one the records still call running stopped with the last
+    // server (§app.project-setup/trial), and so did its run.
+    let voided = false;
+    for (const t of this.q.trials ?? []) {
+      if (t.verdict !== "running") continue;
+      const at = this.iso();
+      t.verdict = "void";
+      t.why = "stopped by a Sova restart";
+      t.stopped = { by: "restart", at };
+      t.endedAt ??= at;
+      const run = this.store.readRun(t.run);
+      if (run && run.verdict === "running") {
+        run.verdict = "void";
+        run.why = "stopped by a Sova restart";
+        run.endedAt ??= at;
+        this.store.writeRun(run);
+      }
+      voided = true;
+    }
+    if (voided) this.save();
     // Entries with their chats are looked at again: a fix the merge thread wasn't told of, a block that went away.
     if (this.q.entries.some((e) => e.state === "with-chat" || !!e.fix)) this.armFixTimer();
   }
@@ -671,7 +701,9 @@ export class ProjectQueue {
       readRun: (id) => this.store.readRun(id),
       origin,
       settled,
+      holdMs: this.trialLeftMs(),
     });
+    await this.attachDryRuns(v, ready, head);
     // Why each was sent back (an entry from before it was kept: inferred once), and which may land again as they are.
     for (const e of v.needsFix) {
       const cause = this.causeOf(e);
@@ -714,7 +746,7 @@ export class ProjectQueue {
     // What retirement did here, as it last wrote it: no git (§chat.worktrees/retirement).
     // Switched off (../cleanup-switch.ts): the ledger only, never the saved list.
     const retirement = viewWhileOff(retirementViewOf(this.root, pendingWhileOff()));
-    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}) };
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...this.trialFields(), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}) };
   }
 
   /**
@@ -729,7 +761,7 @@ export class ProjectQueue {
     const landed = this.q.entries.filter((e) => e.state === "landed").sort((a, b) => (b.landed?.at ?? b.updatedAt).localeCompare(a.landed?.at ?? a.updatedAt));
     const keep = new Set(landed.slice(0, recentMax).map((e) => e.id));
     const q = { ...this.q, entries: this.q.entries.filter((e) => e.state !== "landed" || keep.has(e.id)) };
-    const v = buildView({ q, root: this.root, current: this.current?.run ?? null, checks: d.checks, review: d.review, head, takesMs: takes, now: this.now(), readRun: (id) => this.store.readRun(id) });
+    const v = buildView({ q, root: this.root, current: this.current?.run ?? null, checks: d.checks, review: d.review, head, takesMs: takes, now: this.now(), readRun: (id) => this.store.readRun(id), holdMs: this.trialLeftMs() });
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
     const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
@@ -758,8 +790,100 @@ export class ProjectQueue {
       ...(hold ? { release: structuredClone(hold) } : {}),
       ...(reviewing ? { reviewing } : {}),
       heads: v.heads,
+      ...this.trialFields(),
       at: v.at,
     };
+  }
+
+  /** The view's dry-run fields: the one running now, and those waiting for the copy. */
+  private trialFields(): Pick<MergeQueueView, "trialNow" | "trialsWaiting"> {
+    const now = this.trialNowView();
+    const waiting = this.trialsWaitingView();
+    return { ...(now ? { trialNow: now } : {}), ...(waiting.length ? { trialsWaiting: waiting } : {}) };
+  }
+
+  /** What is left of the running dry run (ms), for the waiting estimates: its own past length (the newest ended dry
+   *  runs' median), less what it ran. 0 when none runs. */
+  private trialLeftMs(): number {
+    const t = this.trying?.trial;
+    if (!t) return 0;
+    const lengths = (this.q.trials ?? [])
+      .filter((x) => x.endedAt && x.verdict !== "void" && x.run !== t.run)
+      .slice(0, 5)
+      .map((x) => Date.parse(x.endedAt!) - Date.parse(x.startedAt))
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b);
+    const takes = lengths.length ? lengths[Math.floor(lengths.length / 2)]! : 5 * 60_000;
+    return Math.max(0, takes - (this.now() - Date.parse(t.startedAt)));
+  }
+
+  /**
+   * Each row's dry run (a setup branch's, at the row's commit), its failure and Fix offer: Ready rows at their head,
+   * entries at their commit; a landing failure (Can't tell whose, Out of tries) on its entry too.
+   */
+  private async attachDryRuns(v: MergeQueueView, ready: MergeReady[], head: string): Promise<void> {
+    if (!head) return;
+    for (const r of ready) {
+      const dr = await this.dryRunOf(r.branch, r.commit, head).catch(() => null);
+      if (!dr) continue;
+      if (dr.failure && this.deps.fixOffer) dr.fixOffer = await this.deps.fixOffer({ root: this.root, branch: r.branch, worktree: r.worktree, ...(r.session ? { session: r.session } : {}), shared: dr.failure.whose !== "branch" }).catch(() => undefined);
+      r.dryRun = dr;
+    }
+    const entries = [...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix];
+    for (const e of entries) {
+      if (e.settled) continue;
+      const dr = await this.dryRunOf(e.branch, e.commit, head).catch(() => null);
+      if (dr) e.dryRun = dr;
+      const failure = dr?.failure ?? this.landingFailure(e);
+      if (!failure) continue;
+      e.failure = failure;
+      if (this.deps.fixOffer) {
+        const offer = await this.deps.fixOffer({ root: this.root, branch: e.branch, ...(e.worktree ? { worktree: e.worktree } : {}), ...(e.session ? { session: e.session } : {}), shared: failure.whose !== "branch" }).catch(() => undefined);
+        if (offer) {
+          e.fixOffer = offer;
+          if (e.dryRun) e.dryRun.fixOffer = offer;
+        }
+      }
+    }
+    if (this.deps.fixOffer && v.heads.targetBroken?.length) {
+      const offer = await this.deps.fixOffer({ root: this.root, branch: this.q.target, shared: true }).catch(() => undefined);
+      if (offer) v.heads.targetBrokenFix = Object.fromEntries(v.heads.targetBroken.map((b) => [b.check, offer]));
+    }
+  }
+
+  /**
+   * What Fix sends about run `runId`: the failure (a dry run's, or a landing's held up by it), its branch and entry, and
+   * the branches it holds up (the line behind it). null: no failure of that run holds anything up.
+   */
+  fixContext(runId: string): { failure: BranchFailure; branch: string; entry?: MergeEntry; session?: string; worktree?: string; holdsUp: string[] } | null {
+    const line = this.queued().map((e) => e.branch);
+    const t = (this.q.trials ?? []).find((x) => x.run === runId);
+    if (t?.failure && t.branch) {
+      const e = this.q.entries.find((x) => x.branch === t.branch && x.commit === t.commit && ENTRY_OPEN.includes(x.state));
+      const session = e?.session ?? (t.by.kind === "chat" ? t.by.session : undefined);
+      return { failure: structuredClone(t.failure), branch: t.branch, ...(e ? { entry: this.withPosition(e) } : {}), ...(session ? { session } : {}), ...(e?.worktree ? { worktree: e.worktree } : {}), holdsUp: line.filter((b) => b !== t.branch) };
+    }
+    const e = this.q.entries.find((x) => x.run === runId);
+    const failure = e ? this.landingFailure(this.withPosition(e)) : undefined;
+    if (!e || !failure) return null;
+    return { failure, branch: e.branch, entry: this.withPosition(e), ...(e.session ? { session: e.session } : {}), ...(e.worktree ? { worktree: e.worktree } : {}), holdsUp: line.filter((b) => b !== e.branch) };
+  }
+
+  /** A landing's failure holding its entry up (Can't tell whose failure, Out of tries), from its run's failed checks. */
+  private landingFailure(e: MergeEntry): BranchFailure | undefined {
+    const unclear = e.state === "unattributed" && !e.dryRunHold;
+    if (!unclear && e.decision?.kind !== "out-of-tries") return undefined;
+    const run = e.run ? this.store.readRun(e.run) : null;
+    if (!run || run.entry === "trial") return undefined;
+    const failed = run.steps.filter((x) => x.kind === "check" && x.result === "failed");
+    if (!failed.length) return undefined;
+    const whose = unclear ? ("unclear" as const) : ("branch" as const);
+    const checks = failed.map((x) => ({ id: x.id.replace(/^check:/, ""), label: x.label, step: x.id, whose, ...(x.failures?.length ? { tests: x.failures.map((f) => ({ ...(f.file ? { file: f.file } : {}), ...(f.name ? { name: f.name } : {}), ...(f.message ? { message: f.message } : {}) })) } : {}) }));
+    const lead = checks[0]!;
+    const names = (lead.tests ?? []).map((x) => x.name ?? x.file).filter((x): x is string => !!x);
+    const fails = names.length ? `${names.length} failing test${names.length === 1 ? "" : "s"} (${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""})` : (failed[0]!.detail ?? "it fails");
+    const words = unclear ? `Can't tell whose failure: it fails on ${this.q.target} alone too.` : "This branch's change breaks it.";
+    return { kind: "landing", run: run.id, commit: e.commit, whose, line: `${lead.label} fails at ${e.commit.slice(0, 7)}${checks.length > 1 ? ` (and ${checks.length - 1} more)` : ""}: ${fails}. ${words}`, checks };
   }
 
   /** The view is read again and published (a branch summary started, was written or failed). */
@@ -1325,9 +1449,11 @@ export class ProjectQueue {
       if (/^temp\b/i.test(subject)) throw new MergeFailure("invalid-request", `${branch}'s head is a TEMP commit ("${subject.slice(0, 60)}"): it isn't finished`);
       // Before the trial gate: a queue copy is never landed, so "run a trial" would be the wrong thing to tell anyone.
       if (wt && (await this.queueOwned(wt))) throw new MergeFailure("invalid-request", scratchRefusal(branch));
-      // A setup branch is checked by the target's checks, not its own: it lands only once a trial of this exact commit passed.
+      // A setup branch is checked by the target's checks, not its own: it lands only once a dry run of this exact commit
+      // passed. Under the user's Land it is taken, never refused for it: Approved · dry run first, the dry run at its turn.
       const untried = await this.setupUntried(head, commit);
-      if (untried) throw new MergeFailure("invalid-request", untried);
+      if (untried && (untried === SETUP_UNREADABLE || req.by === "release")) throw new MergeFailure("invalid-request", untried);
+      const dryRunFirst = !!untried && req.by !== "release";
       if (wt && commit === tip) {
         const st = await this.git(statusArgs("--porcelain"), wt);
         const n = st.stdout.split("\n").filter(Boolean).length;
@@ -1394,6 +1520,8 @@ export class ProjectQueue {
         if (open.state === "queued") {
           open.commit = commit;
           open.approval = approval;
+          if (dryRunFirst) open.standing = { phase: "dry-run" };
+          else if (open.standing?.phase === "dry-run") delete open.standing;
           if (req.session) open.session = req.session;
           if (wt) open.worktree = wt;
           open.updatedAt = this.iso();
@@ -1434,7 +1562,7 @@ export class ProjectQueue {
       };
       // Land on a finished branch blocked only for what its chat can fix (conflicts, its failing check, drafts that
       // don't fit): Approved · waiting for a fix. It joins the line by itself once nothing blocks it (al_3 q7).
-      const blocked = approval.standing && wt ? await this.fixBlocked(e, commit, approval.drafts) : null;
+      const blocked = approval.standing && wt ? await this.fixBlocked(e, commit, approval.drafts, false) : null;
       // Already conflicting at the Land: it goes in line for the merge thread to judge, and sending it back for that
       // conflict counts no try (it is the wait Land on a blocked branch is, not a failed try).
       if (approval.standing && (await this.git(["merge-tree", "--write-tree", "--name-only", "--no-messages", head, commit], this.root)).code === 1) e.approval.conflictAtLand = true;
@@ -1443,6 +1571,15 @@ export class ProjectQueue {
         e.approval.blocked = true;
         e.standing = { phase: "waiting-fix", why: blocked };
         e.reason = blocked;
+      } else if (dryRunFirst) e.standing = { phase: "dry-run", ...(this.trying?.trial?.commit === commit ? { run: this.trying.trial.run } : {}) };
+      // A Land supersedes the branch's dry run of another commit (running, or waiting its turn): its own runs at its turn.
+      if (dryRunFirst) {
+        const cur = this.trying?.trial;
+        if (cur && this.trying && cur.branch === branch && cur.commit !== commit && !this.trying.stop) {
+          this.trying.stop = { by: "superseded", at: this.iso() };
+          this.trying.ac.abort();
+        }
+        if (this.q.trialsWaiting?.some((w) => w.branch === branch)) this.q.trialsWaiting = this.q.trialsWaiting.filter((w) => w.branch !== branch);
       }
       this.q.entries.push(e);
       // Approved again while checking: the newer commit goes first.
@@ -2195,6 +2332,29 @@ export class ProjectQueue {
         this.kickSoon();
         return e;
       }
+      if (answer === "try-again" && e.state === "unattributed" && e.dryRunHold) {
+        // A new dry run of the same commit, at its turn in line; the Land stands.
+        this.answerDecision(e, "try-again");
+        delete e.dryRunHold;
+        delete e.reason;
+        e.standing = { phase: "dry-run" };
+        this.toFront(e);
+        this.save();
+        this.kickSoon();
+        return e;
+      }
+      if (answer === "land-anyway" && e.state === "unattributed" && e.dryRunHold) {
+        // The dry run counts as passed for that commit: the landing goes on, still checked with the target's checks.
+        this.answerDecision(e, "land-anyway");
+        e.approval.dryRunWaived = e.dryRunHold.commit;
+        e.notes.push({ kind: "master-red", text: `Landed anyway: its dry run ${e.reason ?? "failed on the target too"}`.slice(0, NOTE_MAX), at: this.iso() });
+        delete e.dryRunHold;
+        delete e.reason;
+        this.toFront(e);
+        this.save();
+        this.kickSoon();
+        return e;
+      }
       if (answer === "try-again") {
         if (e.state !== "unattributed") throw new MergeFailure("invalid-request", `Try Again answers a failure no one can be blamed for; ${e.branch} is ${e.state}`);
         // Not the branch's: back in line at the same commit, every check afresh, counting no try.
@@ -2548,9 +2708,18 @@ export class ProjectQueue {
    * What keeps the commit from going back in line by itself (Land's refusals, and what Ready to land checks itself:
    * conflicts with the target, the chat's own failing check run, drafts that don't fit), in words; null when nothing.
    */
-  private async fixBlocked(e: Pick<Entry, "branch" | "worktree" | "session" | "approval">, commit: string, drafts: { hash: string; names: string[] } | undefined): Promise<string | null> {
+  private async fixBlocked(e: Pick<Entry, "branch" | "worktree" | "session" | "approval">, commit: string, drafts: { hash: string; names: string[] } | undefined, dryRun = true): Promise<string | null> {
     const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
     if (!tip) return `${e.branch} is gone`;
+    // Its dry run of this commit failed, couldn't run or was stopped by a person: it waits for a new one (Run Dry Run
+    // Again, a fix), never a rerun by itself. A restart's stop doesn't hold it: in line it runs again.
+    if (dryRun && e.approval.dryRunWaived !== commit) {
+      const t = trialOf(this.q.trials, commit);
+      if (t && (t.verdict === "failed" || t.verdict === "machine" || (t.verdict === "void" && (t.stopped?.by === "operator" || t.stopped?.by === "chat")))) {
+        const head = await this.targetHead();
+        if (head && (await this.dryRunNeeds(head, commit))?.setup) return t.verdict === "void" ? `Dry run stopped by ${stoppedByWords(t.stopped)}: nothing failed. Run it again.` : (t.failure?.line ?? untriedWhy(this.q.trials, commit) ?? "its dry run didn't pass");
+      }
+    }
     const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
     if (wt && commit === tip) {
       const st = await this.git(statusArgs("--porcelain"), wt);
@@ -2832,7 +3001,7 @@ export class ProjectQueue {
     });
   }
 
-  private trying: { run: MergeRun; ac: AbortController; done: Promise<void> } | null = null;
+  private trying: { run: MergeRun; ac: AbortController; done: Promise<void>; trial?: MergeTrial; stop?: NonNullable<MergeTrial["stopped"]> } | null = null;
   private lastTry: string | null = null;
 
   /**
@@ -2891,7 +3060,7 @@ export class ProjectQueue {
         const runId = newId("mr");
         const runDir = this.store.runDir(runId);
         mkdirSync(runDir, { recursive: true });
-        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "A dry run of the checks on the target" };
+        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "A test run of the checks on the target" };
         this.store.writeRun(run);
         const ac = new AbortController();
         const stand: MergeEntry = { id: "setup", project: this.id, target: this.q.target, branch: this.q.target, commit: head, approval: { by: "land-button", at: this.iso(), commit: head }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
@@ -2997,7 +3166,7 @@ export class ProjectQueue {
     });
   }
 
-  /** Why `commit` can't land without a trial (a setup branch with no passing trial of that exact commit), or null. */
+  /** Why `commit` can't land without a dry run (a setup branch with no passing dry run of that exact commit), or null. */
   async setupUntried(head: string, commit: string): Promise<string | null> {
     const change = await setupChangeOf(this.git, this.root, head, commit);
     // Git can't tell whether it changes the setup: it waits, as a setup branch would (fail closed).
@@ -3010,109 +3179,362 @@ export class ProjectQueue {
     return structuredClone(this.q.trials ?? []);
   }
 
+  private needsCache = new Map<string, { setup: boolean; reasons: string[]; services: string[] }>();
+  /** Whether `commit` is a setup branch's against the target's `head`, why (its reasons) and the services a merge check
+   *  needs that it changes; null when Git can't tell. Kept per pair of commits (they never change). */
+  async dryRunNeeds(head: string, commit: string): Promise<{ setup: boolean; reasons: string[]; services: string[] } | null> {
+    const key = `${head}:${commit}`;
+    const hit = this.needsCache.get(key);
+    if (hit) return hit;
+    const change = await setupChangeOf(this.git, this.root, head, commit);
+    if (!change) return null;
+    let out = { setup: false, reasons: [] as string[], services: [] as string[] };
+    if (isSetupChange(change)) {
+      const raw = async (c: string): Promise<Record<string, unknown> | null> => {
+        const r = await this.git(["show", `${c}:.sova/project.json`], this.root);
+        try {
+          return r.code === 0 ? (JSON.parse(r.stdout) as Record<string, unknown>) : null;
+        } catch {
+          return null;
+        }
+      };
+      const defAt = async (c: string) => (await this.deps.definitionAt(this.root, c).catch(() => ({ def: null }))).def ?? null;
+      const [ra, rb, da, db] = await Promise.all([raw(head), raw(commit), defAt(head), defAt(commit)]);
+      const required = new Set([...requiredServices(ra), ...requiredServices(rb)]);
+      const services = changedServices(ra, rb).filter((n) => required.has(n));
+      out = { setup: true, reasons: dryRunReasons(db, da, { sections: change.sections.filter((x) => x !== "services"), services, playbook: change.files.length > 0 }), services };
+    }
+    if (this.needsCache.size > 200) this.needsCache.clear();
+    this.needsCache.set(key, out);
+    return out;
+  }
+
+  /** What holds the merge copy now, in words (a waiting dry run's "starts after …"). */
+  private holdsCopyWords(): string {
+    if (this.current) return `the landing of ${this.entry(this.current.entry)?.branch ?? this.current.run.branch}`;
+    if (this.trying) return this.trying.trial ? `the dry run of ${this.trying.trial.branch ?? this.trying.run.branch}` : "the test run of the checks";
+    if (this.q.release) return `the release ${this.releaseName()}`;
+    if (this.landing) return "a landing";
+    return "the run checking now";
+  }
+
+  /** The running dry run's check N of M (1-based). */
+  private trialProgress(): { at: number; of: number } {
+    const t = this.trying?.trial;
+    const run = this.trying?.run;
+    if (!t || !run) return { at: 0, of: 0 };
+    const of = t.ran?.length ?? run.checks.length;
+    const done = run.steps.filter((x) => x.kind === "check" && x.result !== "running" && x.result !== "pending").length;
+    return { at: Math.min(of, done + 1), of };
+  }
+
+  /** The dry run running now, as the view carries it. */
+  private trialNowView(): MergeTrialNow | null {
+    const t = this.trying?.trial;
+    if (!t || !this.trying) return null;
+    return { trial: structuredClone(t), run: structuredClone(this.trying.run), progress: this.trialProgress() };
+  }
+
+  /** The dry runs waiting for the copy, each with what holds it now. */
+  private trialsWaitingView(): MergeTrialWaiting[] {
+    const after = this.holdsCopyWords();
+    return (this.q.trialsWaiting ?? []).map((w) => ({ ...structuredClone(w), after }));
+  }
+
   /**
-   * merge.try: a trial of a setup branch's head (or any commit) in the merge copy. The copy is reset to that commit,
-   * nothing is merged and nothing saved; the checks are that commit's own definition's (its merge checks and the
-   * services they require, then its release checks). It answers at once and runs on in the background (merge.logs
-   * reads its run). Refused while a landing, a run or another trial holds the copy, or while a release holds the queue.
+   * A setup branch's dry run state at `commit` (its newest, the caller's head), or null when the commit isn't a setup
+   * branch's (or Git can't tell). Never an older commit's as current: that one is only `older`.
    */
-  trial(req: { branch?: string; commit?: string; checkout?: string; checks?: string[]; by: MergeTrial["by"] }): Promise<{ trial: MergeTrial; run: MergeRun }> {
+  async dryRunOf(branch: string, commit: string, head?: string): Promise<BranchDryRun | null> {
+    const h = head || (await this.targetHead());
+    if (!h) return null;
+    const n = await this.dryRunNeeds(h, commit);
+    if (!n?.setup) return null;
+    const why = dryRunWhyLine(n.reasons);
+    const t = trialOf(this.q.trials, commit);
+    const old = (this.q.trials ?? []).find((x) => x.branch === branch && x.commit !== commit);
+    const entry = this.q.entries.find((e) => e.branch === branch && e.commit === commit && ENTRY_OPEN.includes(e.state) && !!e.approval.standing);
+    const base: BranchDryRun = { commit, why, state: "needed", ...(old ? { older: { commit: old.commit, verdict: old.verdict } } : {}), ...(entry ? { land: entry.id } : {}) };
+    const by = (x: MergeTrial) => ({ run: x.run, by: structuredClone(x.by) });
+    if (t?.verdict === "running") return { ...base, ...by(t), state: "running", ...(this.trying?.trial?.run === t.run ? { progress: this.trialProgress() } : {}) };
+    const w = (this.q.trialsWaiting ?? []).findIndex((x) => x.branch === branch && x.commit === commit);
+    if (w >= 0) return { ...base, state: "waiting", by: structuredClone(this.q.trialsWaiting![w]!.by), after: this.holdsCopyWords(), position: w + 1, waiting: this.q.trialsWaiting![w]!.id };
+    if (entry?.approval.dryRunWaived === commit) return { ...base, state: "passed" };
+    if (!t) return base;
+    if (t.verdict === "passed") return { ...base, ...by(t), state: "passed" };
+    if (t.verdict === "void") {
+      // A restart's stop of the dry run a Land waits on: it runs again by itself at its turn.
+      if (entry && entry.state === "queued" && t.stopped?.by !== "operator" && t.stopped?.by !== "chat") return { ...base, ...by(t) };
+      return { ...base, ...by(t), state: "stopped", ...(t.stopped ? { stopped: structuredClone(t.stopped) } : {}) };
+    }
+    return { ...base, ...by(t), state: t.verdict === "machine" ? "machine" : "failed", ...(t.failure ? { failure: structuredClone(t.failure) } : {}) };
+  }
+
+  /**
+   * merge.try (and Run Dry Run): a dry run of a setup branch's head (or any commit) in the merge copy, of the checks it
+   * adds or changes, merging and saving nothing. Answers at once: the dry run started (merge.logs reads its run); the
+   * one already running at that commit (a second press or a Land never races it); or, while the copy is busy, the dry
+   * run waiting its turn (it starts once the copy is free, one per branch: asking again re-pins its commit).
+   */
+  trial(req: { branch?: string; commit?: string; checkout?: string; checks?: string[]; by: TrialBy }): Promise<{ trial?: MergeTrial; run?: MergeRun; waiting?: MergeTrialWaiting }> {
     return this.serial(async () => {
-      if (this.current || this.trying || this.landing) throw new MergeFailure("busy", "a landing or a run is using the merge copy now: try again when it ends");
       let branch = req.branch?.replace(/^refs\/heads\//, "");
       if (!branch && !req.commit && req.checkout) {
         const r = await this.git(["symbolic-ref", "--quiet", "--short", "HEAD"], req.checkout);
         if (r.code === 0 && r.stdout.trim()) branch = r.stdout.trim();
       }
-      if (!branch && !req.commit) throw new MergeFailure("invalid-request", "name the branch or the commit to try");
+      if (!branch && !req.commit) throw new MergeFailure("invalid-request", "name the branch or the commit to dry-run");
       const commit = req.commit ? await revParse(this.git, this.root, req.commit) : await revParse(this.git, this.root, `refs/heads/${branch}`);
       if (!commit) throw new MergeFailure("not-found", req.commit ? `no commit ${req.commit} in ${this.root}` : `no branch ${branch} in ${this.root}`);
       if (branch && req.commit) {
         const tip = await revParse(this.git, this.root, `refs/heads/${branch}`);
         if (tip && commit !== tip && !(await isAncestor(this.git, this.root, commit, tip))) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} isn't on ${branch}`);
       }
-      const shown = await this.git(["show", `${commit}:.sova/project.json`], this.root);
-      if (shown.code !== 0) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} has no .sova/project.json: there is nothing to try`);
-      let def: ProjectDef;
-      try {
-        def = parseDefinition(shown.stdout);
-      } catch (err) {
-        throw new MergeFailure("invalid-request", `.sova/project.json at ${commit.slice(0, 7)} is invalid: ${err instanceof Error ? err.message : err}`);
+      const def = await this.trialDef(commit, req.checks ?? []);
+      void def;
+      // The one running at this commit answers (a second press, a chat's merge.try of what a Land runs).
+      const cur = this.trying?.trial;
+      if (cur && this.trying && cur.commit === commit) return { trial: structuredClone(cur), run: structuredClone(this.trying.run) };
+      // A Land of this commit waiting on its dry run: this is that dry run, never a second one.
+      const land = branch ? this.q.entries.find((e) => e.branch === branch && e.commit === commit && e.state === "queued" && e.standing?.phase === "dry-run") : undefined;
+      const by: TrialBy = land ? { kind: "land", entry: land.id } : req.by;
+      const head = (await this.targetHead()) ?? "";
+      if (this.current || this.trying || this.landing || this.q.release || land) {
+        if (!branch) throw new MergeFailure("busy", "a landing or a dry run is using the merge copy now: try again when it ends (name the branch to have it wait its turn)");
+        const needs = dryRunWhyLine((head ? await this.dryRunNeeds(head, commit) : null)?.reasons ?? []);
+        if (land) return { waiting: { id: land.id, branch, commit, by, at: land.approval.at, after: this.holdsCopyWords(), needs } };
+        const list = (this.q.trialsWaiting ?? []).filter((w) => w.branch !== branch);
+        const was = (this.q.trialsWaiting ?? []).find((w) => w.branch === branch);
+        const w: MergeTrialWaiting = { id: was?.id ?? newId("tw"), branch, commit, by: req.by, at: was?.at ?? this.iso(), after: "", needs };
+        const i = (this.q.trialsWaiting ?? []).findIndex((x) => x.branch === branch);
+        if (i >= 0) list.splice(i, 0, w);
+        else list.push(w);
+        this.q.trialsWaiting = list;
+        this.save();
+        this.schedulePublish();
+        return { waiting: { ...w, after: this.holdsCopyWords() } };
       }
-      // No merge checks declared: the trial is the copy and the setup alone, as "no automated tests" is.
-      if (this.deps.checksOf(def) === "unset") def = { ...def, merge: { ...(def.merge ?? {}), checks: "none" } } as ProjectDef;
-      // Release checks are long: a trial runs those new or changed against the target's release section, and the ones
-      // named for it; the rest are reported not run (unchanged).
-      const onTarget = (await this.declared()).def?.release?.checks ?? [];
-      const { run: releaseRun, notRun } = trialReleaseChecks(def.release?.checks ?? [], onTarget, req.checks ?? []);
-      const unknown = (req.checks ?? []).filter((id) => !(def.release?.checks ?? []).some((c) => c.id === id) && !(Array.isArray(def.merge?.checks) && def.merge.checks.some((c) => c.id === id)));
-      if (unknown.length) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} declares no check ${unknown.map((u) => `"${u}"`).join(", ")}`);
-      const runId = newId("mr");
-      const runDir = this.store.runDir(runId);
-      mkdirSync(runDir, { recursive: true });
-      const label = branch ?? commit.slice(0, 7);
-      const run: MergeRun = { id: runId, entry: "trial", project: this.id, branch: label, base: commit, commit, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: `Trial of ${label}` };
-      this.store.writeRun(run);
-      const trial: MergeTrial = { run: runId, commit, ...(branch ? { branch } : {}), verdict: "running", by: req.by, startedAt: run.startedAt, ...(notRun.length ? { notRun: notRun.map((c) => ({ id: c.id, label: c.label })) } : {}) };
-      this.q.trials = [trial, ...(this.q.trials ?? []).filter((t) => t.run !== runId)].slice(0, MERGE_TRIALS_KEPT);
-      this.save();
-      const ac = new AbortController();
-      const stand: MergeEntry = { id: "trial", project: this.id, target: this.q.target, branch: label, commit, approval: { by: "land-button", at: this.iso(), commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
-      const input: RunInput = {
-        runId,
-        entry: stand,
-        project: { id: this.id, root: this.root, target: this.q.target, def },
-        base: commit,
-        commit,
-        runDir,
-        // A trial runs every proposed check, the optional ones too.
-        picks: optionalPicks(def),
-        review: false,
-        tryOnly: true,
-        trialOf: label,
-        ...(releaseRun.length ? { releaseChecks: releaseRun } : {}),
-        signal: ac.signal,
-        awaitReview: () => Promise.reject(new Error("no review in a trial")),
-      };
-      const hooks = {
-        step: (st: RunStep) => {
-          const i = run.steps.findIndex((x) => x.id === st.id);
-          if (i >= 0) run.steps[i] = { ...st };
-          else run.steps.push({ ...st });
-          this.store.writeRun(run);
-        },
-        checks: (list: CheckPick[]) => void (run.checks = list),
-        copy: (path: string) => void (run.copy = path),
-      };
-      const done = (async () => {
-        let out: RunOutcome;
-        try {
-          out = await this.deps.runMerge(input, hooks);
-        } catch (err) {
-          out = { verdict: "machine", why: err instanceof Error ? err.message : String(err), notes: [], checks: [] };
-        }
-        run.verdict = out.verdict === "passed" ? "passed" : out.verdict === "void" ? "void" : out.verdict === "machine" ? "machine" : "failed";
-        run.why = out.verdict === "passed" ? `the proposed checks pass on ${label} at ${commit.slice(0, 7)}` : (out.why ?? "a check failed");
-        run.endedAt = this.iso();
-        if (out.noChecks) run.noChecks = true;
+      return this.startTrial({ ...(branch ? { branch } : {}), commit, by, checks: req.checks ?? [] });
+    });
+  }
+
+  /** The commit's definition as a dry run reads it; refused when it has none or it doesn't parse, or names a check it
+   *  doesn't declare. */
+  private async trialDef(commit: string, named: readonly string[]): Promise<ProjectDef> {
+    const shown = await this.git(["show", `${commit}:.sova/project.json`], this.root);
+    if (shown.code !== 0) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} has no .sova/project.json: there is nothing to dry-run`);
+    let def: ProjectDef;
+    try {
+      def = parseDefinition(shown.stdout);
+    } catch (err) {
+      throw new MergeFailure("invalid-request", `.sova/project.json at ${commit.slice(0, 7)} is invalid: ${err instanceof Error ? err.message : err}`);
+    }
+    const unknown = named.filter((id) => !(def.release?.checks ?? []).some((c) => c.id === id) && !(Array.isArray(def.merge?.checks) && def.merge.checks.some((c) => c.id === id)));
+    if (unknown.length) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} declares no check ${unknown.map((u) => `"${u}"`).join(", ")}`);
+    return def;
+  }
+
+  /** Start a dry run now (the copy is free; the caller is inside serial). */
+  private async startTrial(o: { branch?: string; commit: string; by: TrialBy; checks: readonly string[] }): Promise<{ trial: MergeTrial; run: MergeRun }> {
+    const { branch, commit } = o;
+    let def = await this.trialDef(commit, o.checks);
+    if (branch) this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((w) => w.branch !== branch);
+    // No merge checks declared: the dry run is the copy and the setup alone, as "no automated tests" is.
+    if (this.deps.checksOf(def) === "unset") def = { ...def, merge: { ...(def.merge ?? {}), checks: "none" } } as ProjectDef;
+    const declared = await this.declared();
+    const onTarget = declared.def;
+    const head = declared.head || (await this.targetHead()) || "";
+    const needs = head ? await this.dryRunNeeds(head, commit) : null;
+    // Only the merge checks it adds or changes (or whose required service it changes) run; the rest run in the landing.
+    const trimmed = dryRunMergeChecks(def, onTarget, needs?.services ?? []);
+    for (const id of o.checks) {
+      const c = trimmed.notRun.find((x) => x.id === id);
+      if (c) {
+        trimmed.notRun = trimmed.notRun.filter((x) => x !== c);
+        trimmed.run.push(c);
+      }
+    }
+    if (Array.isArray(def.merge?.checks)) def = { ...def, merge: { ...def.merge, checks: def.merge.checks.filter((c) => trimmed.run.includes(c)) } };
+    // Release checks are long: those new or changed against the target's release section, and the ones named for it.
+    const { run: releaseRun, notRun } = trialReleaseChecks(def.release?.checks ?? [], onTarget?.release?.checks ?? [], o.checks);
+    const runId = newId("mr");
+    const runDir = this.store.runDir(runId);
+    mkdirSync(runDir, { recursive: true });
+    const label = branch ?? commit.slice(0, 7);
+    const why = needs?.setup ? dryRunWhyLine(needs.reasons) : undefined;
+    const run: MergeRun = { id: runId, entry: "trial", project: this.id, branch: label, base: commit, commit, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: `Dry run of ${label}${why ? `: ${why}` : ""}` };
+    this.store.writeRun(run);
+    const ran = [...(Array.isArray(def.merge?.checks) ? def.merge.checks : []), ...releaseRun].map((c) => ({ id: c.id, label: c.label }));
+    const trial: MergeTrial = {
+      run: runId,
+      commit,
+      ...(branch ? { branch } : {}),
+      verdict: "running",
+      by: o.by,
+      startedAt: run.startedAt,
+      ...(why ? { needs: why } : {}),
+      ran,
+      ...(trimmed.notRun.length ? { skipped: trimmed.notRun.map((c) => ({ id: c.id, label: c.label })) } : {}),
+      ...(notRun.length ? { notRun: notRun.map((c) => ({ id: c.id, label: c.label })) } : {}),
+    };
+    this.q.trials = [trial, ...(this.q.trials ?? []).filter((t) => t.run !== runId)].slice(0, MERGE_TRIALS_KEPT);
+    // A Land waiting on it reads it as its own.
+    if (o.by.kind === "land") {
+      const e = this.entry(o.by.entry);
+      if (e) {
+        e.standing = { phase: "dry-run", run: runId };
+        e.updatedAt = this.iso();
+      }
+    }
+    this.save();
+    const ac = new AbortController();
+    const stand: MergeEntry = { id: "trial", project: this.id, target: this.q.target, branch: label, commit, approval: { by: "land-button", at: this.iso(), commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
+    const input: RunInput = {
+      runId,
+      entry: stand,
+      project: { id: this.id, root: this.root, target: this.q.target, def },
+      base: commit,
+      commit,
+      runDir,
+      // A dry run runs every proposed check it keeps, the optional ones too.
+      picks: optionalPicks(def),
+      review: false,
+      tryOnly: true,
+      trialOf: label,
+      ...(onTarget && head ? { trialTarget: { def: onTarget, head } } : {}),
+      ...(releaseRun.length ? { releaseChecks: releaseRun } : {}),
+      signal: ac.signal,
+      awaitReview: () => Promise.reject(new Error("no review in a dry run")),
+    };
+    const hooks = {
+      step: (st: RunStep) => {
+        const i = run.steps.findIndex((x) => x.id === st.id);
+        if (i >= 0) run.steps[i] = { ...st };
+        else run.steps.push({ ...st });
         this.store.writeRun(run);
-        await this.serial(async () => {
-          const t = (this.q.trials ?? []).find((x) => x.run === runId);
-          if (t) {
-            t.verdict = run.verdict === "passed" ? "passed" : run.verdict === "void" ? "void" : run.verdict === "machine" ? "machine" : "failed";
-            t.why = run.why;
-            t.endedAt = run.endedAt;
-            this.save();
-            if (t.verdict !== "void") this.deps.trialEnded?.(structuredClone(t), structuredClone(run), this.root);
-          }
-          this.trying = null;
-          this.schedulePublish();
-          this.kickSoon();
-        });
-      })();
-      this.trying = { run, ac, done };
-      this.schedulePublish();
-      return { trial: structuredClone(trial), run: structuredClone(run) };
+        this.schedulePublish();
+      },
+      checks: (list: CheckPick[]) => void (run.checks = list),
+      copy: (path: string) => void (run.copy = path),
+    };
+    const done = (async () => {
+      let out: RunOutcome;
+      try {
+        out = await this.deps.runMerge(input, hooks);
+      } catch (err) {
+        out = { verdict: "machine", why: err instanceof Error ? err.message : String(err), notes: [], checks: [] };
+      }
+      const stop = this.trying?.run.id === runId ? this.trying.stop : undefined;
+      run.verdict = out.verdict === "passed" ? "passed" : out.verdict === "void" || stop ? "void" : out.verdict === "machine" ? "machine" : "failed";
+      run.why = run.verdict === "passed" ? `the new or changed checks pass on ${label} at ${commit.slice(0, 7)}` : run.verdict === "void" ? `stopped by ${stoppedByWords(stop ?? { by: "restart", at: this.iso() })}` : (out.why ?? "a check failed");
+      run.endedAt = this.iso();
+      if (out.noChecks) run.noChecks = true;
+      this.store.writeRun(run);
+      await this.serial(async () => {
+        const t = (this.q.trials ?? []).find((x) => x.run === runId);
+        if (t) {
+          t.verdict = run.verdict === "passed" ? "passed" : run.verdict === "void" ? "void" : run.verdict === "machine" ? "machine" : "failed";
+          t.why = run.why;
+          t.endedAt = run.endedAt;
+          if (t.verdict === "void") t.stopped = stop ?? { by: "restart", at: run.endedAt! };
+          if (t.verdict === "failed" && out.trialFailure) t.failure = { ...out.trialFailure, run: runId };
+          else if (t.verdict === "failed") t.failure = { kind: "dry-run", run: runId, commit, whose: "branch", line: `${run.why} at ${commit.slice(0, 7)}. This branch's change breaks it.`, checks: [] };
+          if (t.verdict === "machine") t.failure = { kind: "dry-run", run: runId, commit, whose: "machine", line: `Dry run couldn't run: ${run.why}. That's the machine, not this branch: run it again.`, checks: [] };
+          this.save();
+          if (!this.stopped) this.afterTrial(t, run);
+        }
+        this.trying = null;
+        this.schedulePublish();
+        this.kickSoon();
+      });
+    })();
+    this.trying = { run, ac, done, trial };
+    this.schedulePublish();
+    return { trial: structuredClone(trial), run: structuredClone(run) };
+  }
+
+  /**
+   * A dry run ended (inside serial): the Lands waiting on it go on (a pass: in line to land), go back to the chat (the
+   * branch's own failure, as a failed check does), wait for the user (a failure the target shares, or can't tell), or
+   * wait stopped (stopped by a person, or the machine's); and the chats are told.
+   */
+  private afterTrial(t: MergeTrial, run: MergeRun): void {
+    const tell = new Set<string>();
+    if (t.by.kind === "chat" && t.by.session) tell.add(t.by.session);
+    const mine = (e: Entry) => e.branch === t.branch && e.commit === t.commit;
+    const lands = this.q.entries.filter((e) => mine(e) && ((e.state === "queued" && e.standing?.phase === "dry-run") || (t.by.kind === "land" && e.id === t.by.entry && e.state === "queued")));
+    let landCommit: string | undefined;
+    if (t.verdict === "void" && t.stopped?.by === "superseded") landCommit = this.q.entries.find((e) => e.branch === t.branch && e.state === "queued" && e.standing?.phase === "dry-run")?.commit;
+    for (const e of lands) if (e.session) tell.add(e.session);
+    if (t.verdict === "passed") {
+      // A Land held on this commit's dry run (waiting the user's answer, or stopped/couldn't run) goes on now.
+      for (const e of this.q.entries.filter((x) => mine(x) && x.approval.standing)) {
+        if (e.state === "unattributed" && e.dryRunHold) {
+          delete e.dryRunHold;
+          if (e.decision && !e.decision.answered) delete e.decision;
+          delete e.reason;
+          this.toFront(e);
+        } else if (e.state === "with-chat" && e.standing?.phase === "waiting-fix") this.armFixTimer(0);
+        if (e.standing?.phase === "dry-run") delete e.standing;
+      }
+    } else if (t.verdict === "void" && t.stopped && t.stopped.by !== "restart" && t.stopped.by !== "superseded") {
+      for (const e of lands) this.holdOnTrial(e, t, `Dry run stopped by ${stoppedByWords(t.stopped)}: nothing failed. Run it again.`);
+    } else if (t.verdict === "machine") {
+      for (const e of lands) this.holdOnTrial(e, t, t.failure?.line ?? `Dry run couldn't run: ${t.why}. That's the machine, not this branch: run it again.`);
+    } else if (t.verdict === "failed") {
+      const shared = t.failure?.whose === "master" || t.failure?.whose === "unclear";
+      for (const e of lands) {
+        if (shared) {
+          e.dryRunHold = { run: t.run, commit: t.commit };
+          e.run = t.run;
+          if (!e.runs.includes(t.run)) e.runs.push(t.run);
+          delete e.standing;
+          const line = t.failure!.line;
+          this.raiseDecision(e, { kind: "unattributed", question: `${e.branch}'s dry run at ${t.commit.slice(0, 7)}: ${line} Fix it in a new chat, run the dry run again, or land it anyway (its landing still runs ${this.q.target}'s checks).`, choices: [], raisedBy: "queue", actions: ["land-anyway", "try-again"], run: t.run }, "unattributed", line);
+        } else this.holdOnTrial(e, t, t.failure?.line ?? `Dry run failed at ${t.commit.slice(0, 7)}: ${t.why}`, true);
+      }
+    }
+    this.save();
+    const text = trialEndedText(t, run, { target: this.q.target, ...(landCommit ? { land: { commit: landCommit } } : {}) });
+    if (tell.size && !(t.verdict === "void" && t.stopped?.by === "restart")) this.deps.trialEnded?.(structuredClone(t), structuredClone(run), this.root, { sessions: [...tell], text });
+  }
+
+  /** A Land waiting on a dry run that didn't pass: out of line with its chat (the Land standing), with why; the
+   *  branch's own failure is sent to the chat as a request. The caller is inside serial and saves. */
+  private holdOnTrial(e: Entry, t: MergeTrial, why: string, send = false): void {
+    e.state = "with-chat";
+    this.setPhase(e, { phase: "waiting-fix", why });
+    e.reason = why;
+    e.run = t.run;
+    if (!e.runs.includes(t.run)) e.runs.push(t.run);
+    e.updatedAt = this.iso();
+    if (send) this.request(e, "blocked", blockedText(e, `its dry run at ${t.commit.slice(0, 7)} failed: ${why} (merge.logs {run: "${t.run}"})`), {});
+    this.armFixTimer();
+  }
+
+  /**
+   * Stop Dry Run: the running dry run (by its run, or the project's running one) stops at once, freeing the copy; or a
+   * waiting one (by its id) leaves the wait. Nothing is blamed; the branch needs a new dry run. A chat may stop only one
+   * it started.
+   */
+  stopTrial(req: { run?: string; waiting?: string; by: { kind: "operator" } | { kind: "chat"; session?: string } }): Promise<{ trial?: MergeTrial; waiting?: MergeTrialWaiting }> {
+    return this.serial(async () => {
+      const mayStop = (b: TrialBy) => req.by.kind === "operator" || (b.kind === "chat" && !!req.by.session && b.session === req.by.session);
+      if (req.waiting) {
+        const w = (this.q.trialsWaiting ?? []).find((x) => x.id === req.waiting);
+        if (!w) throw new MergeFailure("not-found", `no dry run ${req.waiting} is waiting`);
+        if (!mayStop(w.by)) throw new MergeFailure("forbidden", "a chat stops only a dry run it started");
+        this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((x) => x !== w);
+        this.save();
+        this.schedulePublish();
+        return { waiting: { ...w, after: "" } };
+      }
+      const cur = this.trying?.trial;
+      if (!cur || !this.trying || (req.run && cur.run !== req.run)) throw new MergeFailure("not-found", req.run ? `the dry run ${req.run} isn't running` : "no dry run is running");
+      if (!mayStop(cur.by)) throw new MergeFailure("forbidden", "a chat stops only a dry run it started");
+      this.trying.stop = { by: req.by.kind, ...(req.by.kind === "chat" && req.by.session ? { session: req.by.session } : {}), at: this.iso() };
+      this.trying.ac.abort();
+      return { trial: { ...structuredClone(cur), stopped: structuredClone(this.trying.stop) } };
     });
   }
 
@@ -3238,6 +3660,22 @@ export class ProjectQueue {
     // A settings card held for the branch just checked, then a settings save, go before the next branch starts on the target.
     await this.quietCards();
     if (this.q.pendingSave) await this.applyPendingSave();
+    // A dry run that waited for the copy goes first once it is free (§app.project-setup/trial).
+    if (!this.q.release && this.q.trialsWaiting?.length) {
+      const w = this.q.trialsWaiting[0]!;
+      const tip = await revParse(this.git, this.root, `refs/heads/${w.branch}`);
+      try {
+        if (tip && (tip === w.commit || (await isAncestor(this.git, this.root, w.commit, tip)))) {
+          await this.startTrial({ branch: w.branch, commit: w.commit, by: w.by, checks: [] });
+          return;
+        }
+      } catch (err) {
+        this.log(`waiting dry run of ${w.branch} couldn't start: ${err instanceof Error ? err.message : err}`);
+      }
+      this.q.trialsWaiting = this.q.trialsWaiting.filter((x) => x !== w);
+      this.save();
+      this.schedulePublish();
+    }
     if (this.q.paused) return;
     if (this.holdUntil > this.now()) return;
     if (this.held()) return;
@@ -3298,6 +3736,20 @@ export class ProjectQueue {
         }
         base = f.sha;
       }
+      // A setup branch with no passing dry run of its commit: its dry run runs at its turn, then (on a pass) its landing.
+      if (!e.release && e.approval.dryRunWaived !== e.commit) {
+        const n = await this.dryRunNeeds(head, e.commit);
+        if (n?.setup && trialOf(this.q.trials, e.commit)?.verdict !== "passed") {
+          try {
+            await this.startTrial({ branch: e.branch, commit: e.commit, by: { kind: "land", entry: e.id }, checks: [] });
+          } catch (err) {
+            this.holdOnTrial(e, { run: e.run ?? "", commit: e.commit, verdict: "machine", by: { kind: "land", entry: e.id }, startedAt: this.iso() }, `Dry run couldn't run: ${err instanceof Error ? err.message : err}. That's the machine, not this branch: run it again.`);
+            this.save();
+          }
+          return;
+        }
+      }
+      if (e.standing?.phase === "dry-run") delete e.standing;
       await this.startRun(e, base, own ?? undefined, head);
       return;
     }

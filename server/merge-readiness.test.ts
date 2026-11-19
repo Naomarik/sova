@@ -536,7 +536,9 @@ test("routine readiness calls no retired spec-observation hook and keeps its ord
     { label: "checks passed", expected: "ready", check: { at: 3, ok: true } },
     { label: "no check seen", expected: "ready" },
     { label: "waiting for OK", expected: "waiting-approval", check: { at: 3, ok: true }, asks: true },
-    { label: "last check failed", expected: "in-progress", check: { at: 3, ok: false } },
+    { label: "last check failed", expected: "in-progress", check: { at: 6, ok: false } },
+    // A failing run before the head commit was made no longer counts for the head (§chat.worktrees/newest-commit).
+    { label: "a failed check at an older commit", expected: "ready", check: { at: 3, ok: false } },
     { label: "three dirty files", expected: "in-progress", status: { dirty: true, dirtyCount: 3, dirtyFiles: ["src/a.ts", "src/b.ts", "src/c.ts"] } },
     { label: "open alignment", expected: "blocked", row: { align: { openDocs: 1, openQuestions: 1, questionDocs: 1 } } },
     { label: "stale merged branch", expected: "stale", status: { merged: "ancestor", dirty: true } },

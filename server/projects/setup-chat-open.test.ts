@@ -166,7 +166,7 @@ describe("Merge Branch on the Setup proposal (mergeSetup)", () => {
     const queues = new MergeQueues({ base: join(tmp, `mq-${n}`), runMerge: stand2.run, checksOf, definitionAt: (r, ref) => definitionAt(r, ref), notify: () => {}, thread: () => false, publish: () => {}, draftsHash: () => undefined, retryDelayMs: 40, watchMs: 25, conflictWaitMs: 60_000, log: () => {} });
     setMergeQueuesForTest(queues);
     try {
-      await assert.rejects(mergeSetup(a.id, proposal.hash, head, l.deps), /no passing trial at/);
+      await assert.rejects(mergeSetup(a.id, proposal.hash, head, l.deps), /no passing dry run at/);
       const q = await queues.get(a.root);
       await q.trial({ branch: first.worktree!.branch, by: { kind: "operator" } });
       await q.tryingNow();
@@ -174,7 +174,7 @@ describe("Merge Branch on the Setup proposal (mergeSetup)", () => {
       // A commit after the trial (a script the hash doesn't cover): the page still shows the tried head.
       const newer = commitIn(wt, { "scripts/check.sh": "exit 1\n" }, "after the trial");
       await assert.rejects(mergeSetup(a.id, proposal.hash, head, l.deps), (e: Error) => e.message === SETUP_BRANCH_MOVED);
-      await assert.rejects(mergeSetup(a.id, proposal.hash, newer, l.deps), /no passing trial at/, "the new head needs its own trial");
+      await assert.rejects(mergeSetup(a.id, proposal.hash, newer, l.deps), /no passing dry run at/, "the new head needs its own trial");
       assert.deepEqual([l.calls.land, l.calls.merge], [[], []], "nothing merged or landed so far");
       await q.trial({ branch: first.worktree!.branch, by: { kind: "operator" } });
       await q.tryingNow();

@@ -31,11 +31,13 @@ export function buildView(a: {
   served?: boolean;
   /** Sent-back entries git says need no fix any more, by entry id (the queue reads them: settledFacts). */
   settled?: ReadonlyMap<string, Exclude<MergeSettled, "superseded">>;
+  /** A dry run holds the merge copy: what is left of it (ms), counted before every waiting entry. */
+  holdMs?: number;
 }): MergeQueueView {
   const takes = a.takesMs ?? DEFAULT_TAKES_MS;
   const queued = a.q.entries.filter((e) => e.state === "queued").sort((x, y) => x.seq - y.seq);
   // What is left of the run checking now, then each entry ahead.
-  const left = a.current ? Math.max(0, takes - (a.now - Date.parse(a.current.startedAt))) : 0;
+  const left = (a.current ? Math.max(0, takes - (a.now - Date.parse(a.current.startedAt))) : 0) + (a.holdMs ?? 0);
   const waiting = queued.map((e, i) => ({ ...strip(e), position: i + 1, eta: { startsInMs: left + i * takes, takesMs: takes } }));
   const byNewest = (x: { updatedAt: string }, y: { updatedAt: string }) => y.updatedAt.localeCompare(x.updatedAt);
   const checking = a.q.entries.filter((e) => e.state === "checking").map((e) => ({ ...strip(e), eta: { startsInMs: 0, takesMs: takes } }));
@@ -153,6 +155,9 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     ...(e.standing ? { standing: e.standing } : {}),
     ...(e.decision && !e.decision.answered ? { decision: e.decision } : {}),
     ...(e.tries ? { tries: e.tries } : {}),
+    ...(e.failure ? { failure: e.failure } : {}),
+    ...(e.fixOffer ? { fixOffer: e.fixOffer } : {}),
+    ...(e.dryRun ? { dryRun: e.dryRun } : {}),
     ...(view.review ? { reviewKit: true } : {}),
   };
 }

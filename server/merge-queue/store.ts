@@ -80,6 +80,8 @@ export interface QueueFile {
   seq: number;
   /** merge.try's trials, newest first (MERGE_TRIALS_KEPT), each pinned to its commit. */
   trials?: import("../../shared/merge-queue").MergeTrial[];
+  /** Dry runs asked for while the merge copy was busy, in the order they start (one per branch). */
+  trialsWaiting?: import("../../shared/merge-queue").MergeTrialWaiting[];
   /** A release holds the queue: only its entries land, nothing is pushed (queue.ts freezeForRelease). */
   release?: import("../../shared/merge-queue").MergeReleaseHold & { checks?: import("../../shared/project-contract").MergeCheckDecl[] };
 }
@@ -89,7 +91,7 @@ const KEEP_LANDED = 500;
 
 export const projectKey = (root: string): string => createHash("sha256").update(root).digest("hex").slice(0, 16);
 
-export function newId(prefix: "mq" | "mr" | "rq" | "dc"): string {
+export function newId(prefix: "mq" | "mr" | "rq" | "dc" | "tw"): string {
   // A request's id is the chat queue's own form (shared/topic-message.ts MERGE_REQUEST_ID_RE): the chat answers by it.
   if (prefix === "rq") return `rq_${randomBytes(6).toString("hex")}`;
   return `${prefix}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;

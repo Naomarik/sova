@@ -183,6 +183,9 @@ export const LAND_HOWS: readonly LandHow[] = ["local", "github-pr", "gitlab-mr",
 export type ApprovalBy = "land-button" | "typed" | "release";
 
 export interface MergeApproval {
+  /** Land Anyway on a setup branch's dry run that failed on the target too (or couldn't tell whose): the commit it
+   *  counts as passed for, so the landing goes on with no dry run of it. */
+  dryRunWaived?: string;
   by: ApprovalBy;
   /** ISO time. */
   at: string;
@@ -445,6 +448,9 @@ export interface MergeEntry {
   fixOffer?: FixOffer;
   /** A setup branch's dry run at this entry's commit. Derived when the view is read. Additive. */
   dryRun?: BranchDryRun;
+  /** Its Land's dry run failed on the target too, or couldn't tell whose: it waits for the user (state unattributed)
+   *  on that dry run (`run`) of `commit`. Land Anyway counts it passed; Try Again runs a new one. Additive. */
+  dryRunHold?: { run: string; commit: string };
   /** needs-fix only, derived when the view is read (never stored): sent back for its drafts, its drafts changed since
    *  (since the hand-back; for an entry from before that was kept, since the approval pinned them), and Sova's docs
    *  check of them finds no problem. Land comes back at the same commit. */
@@ -663,6 +669,8 @@ export interface BranchDryRun {
   /** waiting: what holds the merge copy now, in words (MergeTrialWaiting.after), and its place among waiting dry runs (1…). */
   after?: string;
   position?: number;
+  /** waiting: the MergeTrialWaiting id (tw_…) Stop Dry Run cancels it by. */
+  waiting?: string;
 }
 
 // ---- the queue ----------------------------------------------------------------------------------
@@ -1091,6 +1099,8 @@ export interface MergeReport {
   cleared?: number;
   /** merge.try: the trial as recorded (its run is `run`). */
   trial?: MergeTrial;
+  /** merge.try while the merge copy is busy: the dry run waits its turn. */
+  waiting?: MergeTrialWaiting;
   /** merge.hold: the merge thread's hold now (null: none); `until` when it lifts by itself. */
   hold?: { at: string; until: string } | null;
   /** merge.live: what the running server started on, the target's head, and the restart plan between them. */

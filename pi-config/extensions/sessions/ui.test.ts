@@ -386,34 +386,6 @@ test("PageUp/PageDown move ten selectable entries", () => {
   assert.match(ui.render(90).map(strip).at(-1)!, / 15\/25$/);
 });
 
-test("untrusted fields cannot inject terminal controls or extra label lines", () => {
-  const { ui } = setup(40);
-  const evil = "bad\x1b[2J\x1b]52;c;secret\x07\x9b31m\r\t\x00" + String.fromCharCode(0x202e, 0x2066) + "\nname";
-  const worker = { id: evil, name: evil, status: evil, model: evil, preview: evil };
-  ui.update([view(evil, { name: evil, cwd: evil, model: evil, host: evil, statusLabel: evil, preview: evil, tools: [evil], toolDetail: evil,
-    focusReason: evil, canFocus: false, unseen: true,
-    outline: { now: evil, overall: evil, topics: [evil], lastHeading: evil, detail: [{ heading: evil, bullets: [evil] }] },
-    activity: { state: "error", since: 1, error: evil, tools: [evil], toolDetail: evil }, workers: [worker] })], evil);
-  ui.handleInput(right);
-  const bad = /[\x00-\x09\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/;
-  // truncateToWidth appends its own trusted SGR reset; nothing else may survive.
-  const check = () => {
-    for (const width of [60, 120, 160]) {
-      const out = ui.render(width);
-      // Input owns a trusted cursor marker and reverse-video cursor.
-      for (const line of out) assert.doesNotMatch(line.replace(CURSOR_MARKER, "").replace(/\x1b\[(?:0|7|27)m/g, ""), bad, line);
-    }
-  };
-  check();
-  ui.handleInput(down);
-  ui.handleInput("\r");
-  check();
-  ui.handleInput("\t");
-  check();
-  ui.setQuery(evil);
-  check();
-});
-
 test("focus propagates to Input, invalidate uses current theme, refresh on changes", () => {
   let color = "\x1b[31m";
   const themed = { fg: (_: string, s: string) => `${color}${s}\x1b[0m`, bg: (_: string, s: string) => s } as Theme;

@@ -412,4 +412,25 @@ describe("merge.try and the land gate", () => {
       await k.done();
     }
   });
+
+  test("a passing dry run of a later commit clears a failing test run only when it ran a test check", async () => {
+    const k = makeKit();
+    try {
+      const b = k.repo.branch("setup/evidence", { ".sova/project.json": DEF_TEXT("true") });
+      const c1 = k.repo.commitOn(b.path, { ".sova/project.json": DEF_TEXT("true && true") });
+      const q = await k.q();
+      const r = await q.trial({ branch: "setup/evidence", commit: c1, by: { kind: "operator" } });
+      await q.tryingNow();
+      assert.equal(q.trials()[0]?.verdict, "passed");
+      // Its run ran setup steps only (the stand-in's copy): no test check, no evidence.
+      assert.equal(await q.passedAfter("setup/evidence", b.head), false, "a dry run that ran no test check never clears it");
+      const run = q.store.readRun(r.trial!.run)!;
+      run.steps.push({ id: "check:unit", kind: "check", label: "Unit", result: "passed", ms: 1, log: "logs/u.log", counts: { passed: 3, failed: 0, skipped: 0 } });
+      q.store.writeRun(run);
+      assert.equal(await q.passedAfter("setup/evidence", b.head), true, "one that ran tests on a later commit clears it");
+      assert.equal(await q.passedAfter("setup/evidence", c1), false, "never its own commit");
+    } finally {
+      await k.done();
+    }
+  });
 });

@@ -116,7 +116,8 @@ export function dryRunLine(
   chatTitle?: (session: string) => string | undefined,
 ): { text: string; stand?: string; older?: string } {
   const why = stripDot(d.why);
-  const older = d.older && d.older.commit !== d.commit ? olderNote(d.older) : undefined;
+  // An older commit's dry run is a note while the head has none of its own that passed; once it has, it says nothing.
+  const older = d.older && d.older.commit !== d.commit && d.state !== "passed" ? olderNote(d.older) : undefined;
   const extra = { ...(older ? { older } : {}), ...(d.land && (d.state === "needed" || d.state === "waiting" || d.state === "running") ? { stand: LAND_STANDS } : {}) };
   switch (d.state) {
     case "needed":

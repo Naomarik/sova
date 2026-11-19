@@ -70,6 +70,8 @@ test("an older commit's dry run is a note, never the state", () => {
   assert.equal(olderNote({ commit: OLD, verdict: "passed" }), "Dry run passed at 0f9e8d7, an older commit.");
   // The same commit is no older one.
   assert.equal(dryRunLine(dr("needed", { older: { commit: HEAD, verdict: "void" } }), "master").older, undefined);
+  // The head's own pass says it all.
+  assert.equal(dryRunLine(dr("passed", { older: { commit: OLD, verdict: "passed" } }), "master").older, undefined);
 });
 
 test("the row's buttons by state: Land with Run, Stop while it runs or waits, Fix on a failure", () => {

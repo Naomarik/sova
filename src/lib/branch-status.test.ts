@@ -119,6 +119,9 @@ const TABLE: { name: string; branches: Branch[]; says: string; keys: RowKey[] }[
   { name: "back with the chat: the user's Land stands", branches: [{ branch: "a", queue: { state: "with-chat" } }, { branch: "b", readiness: ready }], says: "1 needs a fix", keys: ["with-chat", "ready"] },
   { name: "a decision waits for you", branches: [{ branch: "a", queue: { state: "needs-user" } }, { branch: "b", queue: { state: "with-chat" } }], says: "1 needs you", keys: ["needs-you", "with-chat"] },
   { name: "can't tell whose failure", branches: [{ branch: "a", queue: { state: "unattributed" } }], says: "1 needs you", keys: ["unattributed"] },
+  // The merge thread rules on whose failure it is first: the row waits for it, never Ready with Land, and asks nothing of you.
+  { name: "waiting for the merge thread's ruling", branches: [{ branch: "a", readiness: ready, queue: { state: "unattributed", waitingRuling: true } }], says: "1 waiting for the merge thread", keys: ["waiting-ruling"] },
+  { name: "waiting for the thread's ruling ranks above ready", branches: [{ branch: "a", queue: { state: "unattributed", waitingRuling: true } }, { branch: "b", readiness: ready }], says: "1 waiting for the merge thread", keys: ["waiting-ruling", "ready"] },
   { name: "drafts changed", branches: [{ branch: "a", queue: { state: "drafts-changed" } }], says: "1 needs you", keys: ["drafts-changed"] },
   { name: "a request to review", branches: [{ branch: "a", queue: { state: "request-review", request: host("open") } }], says: "1 needs you", keys: ["request-review"] },
   {
@@ -192,6 +195,7 @@ test("the table reaches every key a row can have", () => {
     "behaviour-differs": true,
     "review-flagged": true,
     unattributed: true,
+    "waiting-ruling": true,
     "needs-fix": true,
     "with-chat": true,
     "needs-you": true,

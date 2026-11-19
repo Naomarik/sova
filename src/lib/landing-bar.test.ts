@@ -193,6 +193,7 @@ test("several merge needs-you with nothing running: the first takes the bar, the
 
 test("an entry back with its chat is never needs-you; a decision is, in its own words and answers", () => {
   assert.equal(bar([proj({ queue: queue({ needsYou: [entry({ branch: "feat/r", state: "review-flagged" })] }) })]), null, "review findings go back to the chat by themselves");
+  assert.equal(bar([proj({ queue: queue({ needsYou: [entry({ branch: "feat/u", state: "unattributed", waitingRuling: true })] }) })]), null, "the merge thread rules on whose failure first: nothing asks you yet");
   const decision = { id: "dc_1", kind: "out-of-tries" as const, question: "Tried 3 times: Unit tests failed each time", choices: [], raisedBy: "queue" as const, actions: ["land" as const], at: "" };
   const b = bar([proj({ queue: queue({ needsYou: [entry({ id: "me_7", branch: "feat/o", state: "needs-fix", decision })] }) })])!;
   assert.equal(b.top.kind, "merge-needs");

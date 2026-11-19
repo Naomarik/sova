@@ -308,7 +308,10 @@ export function WorktreeQueueRow(props: {
   createEffect(on(() => shownCommit(w()), () => setError(null), { defer: true }));
   /** The branch's dry run at its newest commit (the entry's, at the commit it pins, else the reading's at the head);
       an older commit's is never the branch's current one. */
+  // The merge thread rules on whose failure it is first: the row says only that (no dry run, failure line or Fix yet).
+  const ruling = () => row().key === "waiting-ruling";
   const dry = (): BranchDryRun | undefined => {
+    if (ruling()) return undefined;
     const q = w().queue;
     if (q?.dryRun && q.dryRun.commit === q.commit && q.state !== "landed" && q.state !== "cancelled") return q.dryRun;
     const r = w().readiness?.dryRun;
@@ -316,7 +319,7 @@ export function WorktreeQueueRow(props: {
     return r && (!head || r.commit === head) ? r : undefined;
   };
   const target = () => w().mergeProject?.target ?? w().queue?.target ?? "the target";
-  const failure = () => (w().queue?.failure && w().queue!.failure!.commit === w().queue!.commit ? w().queue!.failure : dry()?.failure);
+  const failure = () => (ruling() ? undefined : w().queue?.failure && w().queue!.failure!.commit === w().queue!.commit ? w().queue!.failure : dry()?.failure);
   const fixOffer = () => w().queue?.fixOffer ?? dry()?.fixOffer;
   /** Land's place: Fix while a failure holds the branch up; else the dry run's own buttons beside the row's. */
   const landsHere = () => buttons().includes("Land") && !row().decision;

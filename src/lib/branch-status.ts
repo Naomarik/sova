@@ -16,9 +16,10 @@ export function chatRowsOf(s: Pick<SessionSummary, "branches" | "readiness">): Q
 }
 
 /** How each fact is marked: a symbol of its own (colour is never the only signal) and a tone. */
-export const STATUS_MARK: Record<HeadlineKind, { icon: "alert-triangle" | "alert-circle" | "check-circle" | "progress" | "clock" | "branch"; tone: "error" | "warn" | "success" | "accent" | "info" | "muted" }> = {
+export const STATUS_MARK: Record<HeadlineKind, { icon: "alert-triangle" | "alert-circle" | "chat" | "check-circle" | "progress" | "clock" | "branch"; tone: "error" | "warn" | "success" | "accent" | "info" | "muted" }> = {
   fix: { icon: "alert-triangle", tone: "error" },
   you: { icon: "alert-circle", tone: "warn" },
+  thread: { icon: "chat", tone: "info" },
   ready: { icon: "check-circle", tone: "success" },
   checking: { icon: "progress", tone: "accent" },
   queued: { icon: "clock", tone: "info" },

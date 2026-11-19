@@ -3,7 +3,7 @@ import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } fro
 import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, needsYouOf, withItsChat } from "../lib/merge-queue";
+import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, WAITING_RULING_LINE, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, needsYouOf, withItsChat } from "../lib/merge-queue";
 import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision, STANDING_LINE, standingWords, answeredInChat, type DecisionAction } from "../lib/merge-standing";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
@@ -1059,7 +1059,10 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
   const fixPress = usePress(props.onChanged);
   const decision = () => openDecision(e());
   /** The answers on the queue: the decision's, else the state's own. Remove from Queue always last. */
+  // The merge thread rules on whose failure it is first: nothing to answer yet, only Remove from Queue.
+  const ruling = () => !!e().waitingRuling;
   const actions = (): DecisionAction[] => {
+    if (ruling()) return ["remove"];
     const d = decision();
     if (d) return decisionActions(d);
     switch (e().state) {
@@ -1077,7 +1080,8 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
     const d = decision();
     return d ? answeredInChat(d) : e().state === "behaviour-differs" || e().state === "needs-user";
   };
-  const chip = (): { label: string; tone: "warn" } => {
+  const chip = (): { label: string; tone: "warn" | "info" } => {
+    if (ruling()) return { label: "Waiting for the merge thread", tone: "info" };
     const d = decision();
     const held = heldDryRunLabel(e());
     if (held) return { label: held, tone: "warn" };
@@ -1179,7 +1183,10 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
           <p class="list-meta">{e().review?.text ?? e().reason ?? "The review found something that blocks it."}</p>
         </Show>
         {/* A Land's held dry run says its failure once, in the question; Fix and its menu answer it. */}
-        <Show when={(e().state === "unattributed" || decision()?.kind === "unattributed") && !heldOnDryRun(e())}>
+        <Show when={ruling()}>
+          <p class="list-meta">{WAITING_RULING_LINE}</p>
+        </Show>
+        <Show when={!ruling() && (e().state === "unattributed" || decision()?.kind === "unattributed") && !heldOnDryRun(e())}>
           <p class="list-meta">{unattributedWhy(e().reason, props.target)} Land Anyway lands the commit it tested; Try Again checks it afresh.</p>
           <UnclearChecks projectId={props.projectId} unclear={e().unclear} target={props.target} class="list-meta" />
         </Show>
@@ -1189,7 +1196,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
         <Show when={!decision() && (e().state === "conflict" || e().state === "needs-user")}>
           <p class="list-meta">{e().reason ?? "The merge thread is judging the conflict. The line moves on meanwhile."}</p>
         </Show>
-        <Show when={!heldOnDryRun(e()) && e().failure}>{(f) => <p class="list-meta mq-failure">{failureLine(f(), props.target)}</p>}</Show>
+        <Show when={!ruling() && !heldOnDryRun(e()) && e().failure}>{(f) => <p class="list-meta mq-failure">{failureLine(f(), props.target)}</p>}</Show>
         <Show when={e().failure?.kind === "dry-run"}>
           <DryRunWhat target={props.target} class="list-meta" />
         </Show>
@@ -1200,7 +1207,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
       <div class="button-row mq-row-act">
         <QueueReview projectId={props.projectId} branch={e().branch} scope={{ kind: "queue", project: props.projectId, entry: e().id }} session={e().session} chatOf={props.chatOf} />
         {/* A failure holds it up: Fix takes Land's place, Land moves into its menu (§app.merge-queue/fix). */}
-        <Show when={e().failure}>
+        <Show when={!ruling() && e().failure}>
           <Show when={heldOnDryRun(e())}>
             <button type="button" class="button button-sm" aria-label={`Run the dry run of ${e().branch} again`} disabled={!!act.busy()} onClick={(ev) => { ev.stopPropagation(); doAct("try-again"); }}>
               Run Dry Run Again

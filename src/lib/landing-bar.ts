@@ -261,7 +261,8 @@ function currentStepLine(run: Pick<MergeRun, "steps">, now: number): string | nu
 // ---- the merge queue's parts ----------------------------------------------------------------------
 
 // A decision waiting for the user counts wherever the view lists its entry; an entry back with its chat never does.
-const needsYouOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) => (WAITING_FOR_USER.includes(e.state) && e.state !== "review-flagged") || !!openDecision(e));
+// An entry the merge thread is still ruling on (whose failure is it?) asks nothing of you yet: it isn't the bar's.
+const needsYouOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) => !e.waitingRuling && ((WAITING_FOR_USER.includes(e.state) && e.state !== "review-flagged") || !!openDecision(e)));
 const conflictsOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) => e.state === "conflict");
 
 /** One needs-you entry, in the Merge Queue tab's words: branch, then one line of why. */

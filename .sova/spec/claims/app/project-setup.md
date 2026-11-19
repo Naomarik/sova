@@ -166,6 +166,8 @@ on the run page (§app.merge-queue/dry-runs).
 **What it runs.** It checks out that commit in the project's merge copy (§app.merge-queue/run) and
 runs, from setup on and with logs:
 - the project's setup steps, always;
+- the branch's own spec drafts, made into docs in the copy before any check: the same Docs step a
+  landing runs (§app.merge-queue/run), with the drafts as they stand when the dry run starts;
 - the merge checks the branch's own `.sova/project.json` declares that are **new or changed** against
   the target's (a check id the target doesn't have, or one whose argument list, time limit, rerun
   rule or required services differ), and any check whose required service the branch adds or changes
@@ -178,8 +180,8 @@ Every other check shows as **Not run (unchanged)**: it runs again in the landing
 with the newest target, so nothing goes unchecked and a dry run stays short. A branch whose setup
 change touches no check (a deploy target or the release playbook alone) runs its setup steps only,
 and passes when they do; so does a commit that declares no merge checks ("no automated tests"). A dry
-run runs no install step, no review and no spec docs step, and never a tag, push, publish, release
-step or deploy step: those are only drawn (§app.project-setup/drawing). Each check it runs runs as
+run runs no install step and no review, and never a tag, push, publish, release step or deploy step:
+those are only drawn (§app.project-setup/drawing). Each check it runs runs as
 though every file in the commit changed and the merge thread had picked it, so none skips itself for
 its paths or for not being picked, and runs fresh (§app.merge-queue/checks).
 A dry run names no selection: an optional check that takes one (§app.merge-queue/checks) runs with
@@ -190,6 +192,15 @@ run for the branch's changes against the target (its files changed since the mer
 this branch's changes" when there are none; a skipped check doesn't fail the dry run.
 A commit with no valid `.sova/project.json` is refused (`invalid-request`), and so is a check named
 for the dry run that the commit doesn't declare.
+
+**The spec as it will be.** Because the drafts are made into docs first, a spec check the dry run
+runs (Sova's Spec check, or No new spec findings) judges the spec as it will be once the branch
+lands, never the target's spec without them. The docs exist only in the merge copy: the dry run
+saves, promotes, publishes and lands nothing, keeps no spec commit, and leaves the branch's drafts
+as drafts. A branch with no drafts of its own, or a project with no spec, skips the step and says
+so, as a landing does ("no spec drafts of the branch's own"). Drafts that don't fit fail the dry
+run there, before any check, as the branch's own failure, with the reason a landing would give;
+fixing them in the drafts needs no commit, and Run Dry Run Again checks them at the same commit.
 
 **Whose failure it is, as a landing tells it.** A check that fails is run once more on the commit, and
 one that passes then counts as flaky, not failed. One that fails again, when the target also declares

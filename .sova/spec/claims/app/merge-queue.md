@@ -477,7 +477,8 @@ own folder, so a failure at any step, the first included, has its log.
    landing to mark the branch's drafts with (§app.merge-queue/land, §app.merge-queue/publish);
    nothing reaches the branch's folder here. The step is skipped, with its reason, for a project
    with no spec, an approval without its specs, or a branch with no drafts of its own ("no spec
-   drafts of the branch's own").
+   drafts of the branch's own"). A dry run (§app.project-setup/trial) runs this step too, on its
+   own commit with the branch's drafts as they stand when it starts, and keeps nothing it made.
 6. **Checks.** The checks run on that commit, in order (§app.merge-queue/checks), with the review
    (§app.merge-queue/review) alongside them.
 7. **Reruns.** A red check is rerun to place the blame (§app.merge-queue/blame), always fresh: a
@@ -1684,7 +1685,8 @@ tell whose failure with its answers, stopped (by whom) or couldn't run (the mach
 and why** lists every check, those it didn't run as **Not run (unchanged)**, and each it ran with the
 landing's tags, time, counts and Log; a check rerun on the target shows that run too. Its legend is
 the dry run's own: "Runs the checks this branch adds or changes; the rest show Not run (unchanged)."
-It says the commit ran "on its own (not merged with {target})".
+It says the commit ran "on its own (not merged with {target})". Its Spec docs step shows before the
+checks, as a landing's does: made, skipped with its reason, or failed with what doesn't fit.
 
 **Run Dry Run, Run Dry Run Again and Stop Dry Run** are the operator's own click in Sova's page
 (§app.access/your-click), refused to scripts, chats' tools and the Overseers with where to click; the

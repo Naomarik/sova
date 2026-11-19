@@ -9,6 +9,7 @@ import { readinessChip } from "./worktrees";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
 import { requestChip, requestReason } from "./merge-queue-requests";
 import { DECISION_LABEL, STANDING_LINE, answeredInChat, decisionActions, openDecision, standingWords, type CardDecision, type StandingFacts } from "./merge-standing";
+import { heldDryRunLabel } from "./dry-run";
 
 export type { MergeEntry, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo };
 export { ordinal };
@@ -60,6 +61,7 @@ export type RowKey =
   | "behaviour-differs"
   | "review-flagged"
   | "unattributed"
+  | "waiting-ruling"
   | "needs-fix"
   | "with-chat"
   | "needs-you"
@@ -269,13 +271,13 @@ export function withItsChat(v: Pick<MergeQueueView, "needsYou" | "needsFix" | "r
 const pastSentBack = (w: RowKeyInput): boolean => w.status === "merged" || !!w.mergedInto || !w.exists || !!w.gone || w.readiness?.state === "merged";
 
 /** Rows past the queue (landed, merged, gone) carry no size: there's nothing left to land. */
-const SIZED: RowKey[] = ["ready", "ready-to-merge", "waiting-ok", "landing-specs", "conflicting", "in-progress", "blocked", "no-reading", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "with-chat", "needs-you", "drafts-changed", "request-review"];
+const SIZED: RowKey[] = ["ready", "ready-to-merge", "waiting-ok", "landing-specs", "conflicting", "in-progress", "blocked", "no-reading", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "waiting-ruling", "needs-fix", "with-chat", "needs-you", "drafts-changed", "request-review"];
 
 /** What a row's key reads: the fields of QueueRowInput the ladder below looks at, and nothing else. */
 export type RowKeyInput = Pick<QueueRowInput, "status" | "exists"> &
   Partial<Pick<QueueRowInput, "mergedInto" | "gone" | "left">> & {
     readiness?: Pick<NonNullable<QueueRowInput["readiness"]>, "state" | "dirtyCount" | "noCommits" | "landing"> & Partial<Pick<NonNullable<QueueRowInput["readiness"]>, "merged" | "reason" | "conflicts" | "left">>;
-    queue?: Pick<RowQueueFacts, "state" | "commit" | "request" | "settled" | "redrafted" | "newerCommits"> & Partial<Pick<StandingFacts, "decision">>;
+    queue?: Pick<RowQueueFacts, "state" | "commit" | "request" | "settled" | "redrafted" | "newerCommits"> & Partial<Pick<RowQueueFacts, "waitingRuling">> & Partial<Pick<StandingFacts, "decision">>;
   };
 
 /** A decision's row key: the kinds the tab already names keep their key; the rest read "Needs you". */
@@ -296,11 +298,13 @@ export function entryKeyOf(w: RowKeyInput): RowKey | null {
       return pastSentBack(w) ? null : "with-chat";
     case "needs-user":
       return pastSentBack(w) ? null : "needs-you";
+    // Can't tell whose failure, and the merge thread rules first: it waits for the thread, never Ready with Land.
+    case "unattributed":
+      return e.waitingRuling ? "waiting-ruling" : "unattributed";
     case "queued":
     case "checking":
     case "conflict":
     case "behaviour-differs":
-    case "unattributed":
     case "review-flagged":
     case "drafts-changed":
     case "request-review":
@@ -401,7 +405,7 @@ function queueRowOf(w: QueueRowInput): QueueRow {
         ...base,
         newer: undefined,
         key,
-        label: DECISION_LABEL[dec.kind] ?? "Needs you",
+        label: heldDryRunLabel(auto) ?? DECISION_LABEL[dec.kind] ?? "Needs you",
         tone: "warn",
         reason: `${dec.question}${dec.cantSettle ? " · can't be settled without you" : ""}`,
         action: (one ?? "none") as RowAction,
@@ -419,6 +423,11 @@ function queueRowOf(w: QueueRowInput): QueueRow {
     if (key === "needs-you") return { ...base, newer: undefined, key, label: "Needs you", tone: "warn", reason: e.reason, action: "none", answerInChat: true, remove: true };
     switch (e.state) {
       case "queued":
+        // A setup branch's Land: its dry run comes first (§app.project-setup/land-gate); running, it counts as checking.
+        if (e.standing?.phase === "dry-run")
+          return e.standing.run
+            ? { ...base, key: "checking", label: "Dry run running", tone: "accent", live: true, detail: short(e.commit), action: "none", remove: true }
+            : { ...base, key: "queued", label: e.position ? `Approved · dry run first · ${ordinal(e.position)}` : "Approved · dry run first", tone: "info", detail: short(e.commit), action: "none", remove: true };
         return {
           ...base,
           key: "queued",
@@ -448,6 +457,8 @@ function queueRowOf(w: QueueRowInput): QueueRow {
         };
       }
       case "unattributed":
+        // The merge thread rules on whose failure it is first: nothing to press but Remove from Queue meanwhile.
+        if (key === "waiting-ruling") return { ...base, newer: undefined, key, label: "Waiting for the merge thread", tone: "info", reason: WAITING_RULING_LINE, action: "none", remove: true };
         // A check failed on the merge and on the target alone, naming no tests: nobody is blamed; you decide.
         return { ...base, key: "unattributed", label: "Can't tell whose failure", tone: "warn", reason: unattributedWhy(e.reason), action: "land-anyway", tryAgain: true, remove: true };
       case "review-flagged":
@@ -540,6 +551,17 @@ function queueRowOf(w: QueueRowInput): QueueRow {
   if (invalid)
     return { ...quiet, ...truth, reason: invalidWords(invalid), action: "land" };
   const unset = w.mergeProject?.checks === "unset";
+  // A dry run of its head running now counts as checking (§chat.composer/worktrees-control); Land stays (it waits).
+  const dry = r?.dryRun;
+  const head = w.mergeStats?.head ?? r?.landing?.commit;
+  if (!unset && dry?.state === "running" && (!head || dry.commit === head))
+    return { ...quiet, ...truth, key: "checking", label: "Dry run running", tone: "accent", live: true, detail: short(dry.commit), action: "land" };
+  // Its head's dry run failed: that holds it up, so the row says so in place of Ready (Fix takes Land's place on the
+  // row). The branch's own failure needs a fix; one master shares, or can't place, needs you (§app.merge-queue/fix).
+  if (!unset && dry?.state === "failed" && (!head || dry.commit === head)) {
+    const theirs = dry.failure?.whose === "master" || dry.failure?.whose === "unclear";
+    return { ...quiet, ...truth, key: theirs ? "needs-you" : "needs-fix", label: dry.failure?.whose === "unclear" ? "Can't tell whose failure" : "Dry run failed", tone: theirs ? "warn" : "error", detail: short(dry.commit), action: "land" };
+  }
   return {
     ...quiet,
     ...truth,
@@ -640,12 +662,15 @@ export function landConfirmWords(branch: string, ahead: number | undefined, targ
 export const unattributedWhy = (reason: string | undefined, target?: string): string =>
   sentence(reason) || `A check failed on the merge and on ${target ?? "the target"} alone, so nobody is blamed.`;
 
+/** A Land whose failure the merge thread is ruling on (whose is it?) before it asks you. */
+export const WAITING_RULING_LINE = "Can't tell whose failure: the merge thread is judging it; it asks you if it can't tell.";
+
 /** One unclear check's line: "Unit tests: fails with this branch and on master alone", or the queue's own why. */
 export const unclearLine = (u: { label: string; why?: string }, target?: string): string =>
   u.why?.trim() ? `${u.label}: ${u.why.trim().replace(/[.]$/, "")}` : `${u.label}: fails with this branch and on ${target ?? "the target"} alone, naming no tests`;
 
 /** The order the summary counts in. */
-const ORDER: RowKey[] = ["ready", "ready-to-merge", "waiting-ok", "landing-specs", "drafts-to-land", "conflicting", "in-progress", "blocked", "stale", "no-reading", "queued", "checking", "conflict", "behaviour-differs", "needs-you", "review-flagged", "unattributed", "needs-fix", "with-chat", "drafts-changed", "request-review", "requested", "uncommitted", "no-commits", "landed", "pushed", "closed", "merged", "cleaned-up", "removed", "dropped"];
+const ORDER: RowKey[] = ["ready", "ready-to-merge", "waiting-ok", "landing-specs", "drafts-to-land", "conflicting", "in-progress", "blocked", "stale", "no-reading", "queued", "checking", "conflict", "behaviour-differs", "needs-you", "review-flagged", "unattributed", "waiting-ruling", "needs-fix", "with-chat", "drafts-changed", "request-review", "requested", "uncommitted", "no-commits", "landed", "pushed", "closed", "merged", "cleaned-up", "removed", "dropped"];
 const COUNT_WORD: Record<RowKey, [string, string]> = {
   ready: ["ready", "ready"],
   "ready-to-merge": ["ready to merge", "ready to merge"],
@@ -664,6 +689,7 @@ const COUNT_WORD: Record<RowKey, [string, string]> = {
   "behaviour-differs": ["behaviour differs", "behaviour differs"],
   "review-flagged": ["review flagged", "reviews flagged"],
   unattributed: ["can't tell whose failure", "can't tell whose failure"],
+  "waiting-ruling": ["waiting for the merge thread", "waiting for the merge thread"],
   "needs-fix": ["needs a fix", "need a fix"],
   "with-chat": ["back with its chat", "back with their chats"],
   "needs-you": ["needs you", "need you"],
@@ -690,15 +716,16 @@ export function rowsSummary(rows: Pick<QueueRow, "key">[]): string {
     .join(" · ");
 }
 
-/** Which fact the headline states, the first that holds: needs you, needs a fix, ready, checking, queued, else how
+/** Which fact the headline states, the first that holds: needs you, needs a fix, waiting for the merge thread, ready, checking, queued, else how
     many worktrees. */
-export type HeadlineKind = "you" | "fix" | "ready" | "checking" | "queued" | "worktrees";
+export type HeadlineKind = "you" | "fix" | "thread" | "ready" | "checking" | "queued" | "worktrees";
 
 /** The headline's words per fact, the one table the composer control, the session list's row status and the words
     extensions may not take on a row (src/lib/row-place.ts) all read. */
 export const HEADLINE_WORDS: Record<HeadlineKind, (n: number) => string> = {
   you: (n) => `${n} ${n === 1 ? "needs" : "need"} you`,
   fix: (n) => `${n} ${n === 1 ? "needs" : "need"} a fix`,
+  thread: (n) => `${n} waiting for the merge thread`,
   ready: (n) => `${n} ready`,
   // Said as one, as the control always has.
   checking: () => "1 checking",
@@ -706,7 +733,7 @@ export const HEADLINE_WORDS: Record<HeadlineKind, (n: number) => string> = {
   worktrees: (n) => `${n} ${n === 1 ? "worktree" : "worktrees"}`,
 };
 
-const HEADLINE_DOT: Record<HeadlineKind, "ok" | "warn" | "err" | null> = { you: "warn", fix: "err", ready: "ok", checking: null, queued: null, worktrees: null };
+const HEADLINE_DOT: Record<HeadlineKind, "ok" | "warn" | "err" | null> = { you: "warn", fix: "err", thread: null, ready: "ok", checking: null, queued: null, worktrees: null };
 
 /** The rows' keys that need you (the headline's first fact). */
 export const NEEDS_YOU_KEYS: readonly RowKey[] = ["behaviour-differs", "needs-you", "unattributed", "drafts-changed", "request-review"];
@@ -719,7 +746,7 @@ export function headline(rows: Pick<QueueRow, "key">[]): { kind: HeadlineKind; t
   const kind = headlineKind(rows);
   if (!kind) return null;
   const count = (...k: readonly RowKey[]) => rows.filter((r) => k.includes(r.key)).length;
-  const n = kind === "you" ? count(...NEEDS_YOU_KEYS) : kind === "fix" ? count(...FIX_KEYS) : kind === "ready" ? count("ready") : kind === "checking" ? 1 : kind === "queued" ? count("queued") : rows.length;
+  const n = kind === "you" ? count(...NEEDS_YOU_KEYS) : kind === "fix" ? count(...FIX_KEYS) : kind === "thread" ? count("waiting-ruling") : kind === "ready" ? count("ready") : kind === "checking" ? 1 : kind === "queued" ? count("queued") : rows.length;
   const text = HEADLINE_WORDS[kind](n);
   return { kind, text, n: Number(/^\d+/.exec(text)?.[0] ?? rows.length), dot: HEADLINE_DOT[kind] };
 }
@@ -728,6 +755,7 @@ function headlineKind(rows: Pick<QueueRow, "key">[]): HeadlineKind | null {
   const has = (...k: readonly RowKey[]) => rows.some((r) => k.includes(r.key));
   if (has(...NEEDS_YOU_KEYS)) return "you";
   if (has(...FIX_KEYS)) return "fix";
+  if (has("waiting-ruling")) return "thread";
   if (has("ready")) return "ready";
   if (has("checking")) return "checking";
   if (has("queued")) return "queued";
@@ -833,12 +861,13 @@ export function stepDetail(s: Pick<RunStep, "id" | "kind" | "result" | "detail">
 export const invalidWords = (invalid: string): string => `This project's .sova/project.json doesn't parse: ${invalid.trim().replace(/[.]$/, "")}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses.`;
 
 /** The queue's state chip. */
-export function queueStateChip(v: Pick<MergeQueueView, "state" | "checks"> & Partial<Pick<MergeQueueView, "invalid">>): { label: string; tone: Tone; live?: boolean } {
+export function queueStateChip(v: Pick<MergeQueueView, "state" | "checks"> & Partial<Pick<MergeQueueView, "invalid" | "trialNow">>): { label: string; tone: Tone; live?: boolean } {
   // A definition that doesn't parse reads "unset" too: it is said as what it is, never "Not set up".
   if (v.invalid) return { label: "Definition invalid", tone: "error" };
   if (v.checks === "unset") return { label: "Not set up", tone: "warn" };
   if (v.state === "paused") return { label: "Paused", tone: "warn" };
-  if (v.state === "running") return { label: "Running", tone: "accent", live: true };
+  // A dry run holds the merge copy: the queue is running, never idle (§app.merge-queue/dry-runs).
+  if (v.state === "running" || v.trialNow) return { label: "Running", tone: "accent", live: true };
   return { label: "Idle", tone: "neutral" };
 }
 

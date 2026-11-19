@@ -53,6 +53,9 @@ export interface RunInput {
   tryOnly?: true;
   /** A trial (merge.try) of this branch or commit: the try runs on it, not on the target, and its words say so. */
   trialOf?: string;
+  /** A dry run: the target's definition and head, so a check that fails again and the target also declares is run on
+   *  the target alone with the target's own definition of it (whose failure). Absent: no comparison. */
+  trialTarget?: { def: ProjectDef; head: string };
   /** Run the review step (the project declares a kit and the approval didn't skip it). */
   review: boolean;
   /** Aborted when the run is voided (master moved, cancelled, server stopping). */
@@ -123,6 +126,8 @@ export interface RunOutcome {
   noChecks?: true;
   /** The checks it ran, with sources. */
   checks: CheckPick[];
+  /** A dry run that failed (or couldn't run): what holds the branch up, its run id filled in by the queue. */
+  trialFailure?: Omit<import("../../shared/merge-queue").BranchFailure, "run">;
 }
 
 /** copy-checks' entry point: one run, start to verdict. Never throws for a red check: every outcome is a value

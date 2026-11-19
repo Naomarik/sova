@@ -543,12 +543,15 @@ export async function mergeRun(projectId: string, hash: string, commit?: string)
   const root = readProject(projectId).root;
   const head = (await realGit(["rev-parse", "--verify", "--quiet", `refs/heads/${review.branch}^{commit}`], root)).stdout.trim();
   if (head && (commit ?? review.commit) && head !== (commit ?? review.commit)) throw new RuntimeRefusal(BRANCH_MOVED, 409);
-  const untried = await (await import("../merge-queue/wire")).setupUntriedAt(root, head);
-  if (untried) throw new RuntimeRefusal(untried, 409);
+  const wire = await import("../merge-queue/wire");
+  const untried = await wire.setupUntriedAt(root, head);
+  // Can't tell: refused. Served: Land runs the dry run first; unserved: Merge Branch needs a passing one.
+  if (untried === wire.TRIAL_UNREADABLE || untried === (await import("../merge-queue/setup-branch")).SETUP_UNREADABLE) throw new RuntimeRefusal(untried, 409);
   try {
     // Once the project's merge queue is set up, Merge Branch is Land: approved at the branch head in the queue.
     // It pins the tip the proposal was read at (the screen's, else the review's), never a later one.
     if (await landThroughQueue(projectId, readProject(projectId).root, review.sessionId, commit ?? review.commit)) return { view: await readRuntime(projectId), merged: false, queued: true };
+    if (untried) throw new RuntimeRefusal(untried, 409);
     await mergeCodingWorktree(projectId, review.sessionId);
   } catch (err) {
     if (!(err instanceof OrgError)) throw err;

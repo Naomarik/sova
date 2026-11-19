@@ -5311,6 +5311,13 @@ export interface WorktreeReadiness {
   landing?: WorktreeLanding;
   /** This worktree changes automatic cleanup and no rehearsal passed at its head today: Land reads Rehearsal needed, disabled (§app.merge-queue/approve). */
   rehearsal?: true;
+  /** A setup branch: its dry run at its head (never an older commit's as current). `landing` stays while one is
+      needed: Land runs it first. Additive. */
+  dryRun?: import("./merge-queue").BranchDryRun;
+  /** The chat's newest check run (test run, typecheck, build) as readiness read it, with the branch head it ran at
+      (`commit`, when known). One at an older commit than the head never blocks the head: `why` names its commit.
+      Additive. */
+  lastCheck?: { commit?: string; at: number; ok: boolean; what?: string; failed?: string };
   /** The shared answer (§chat.worktrees/nothing-left): "nothing" left to land, or only spec "drafts" not proved landed.
       Absent: work is left, or it can't tell. */
   left?: "nothing" | "drafts";

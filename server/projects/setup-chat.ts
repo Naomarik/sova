@@ -339,7 +339,7 @@ export interface SetupMergeDeps {
 
 /**
  * Merge Branch on the Setup chat's proposal, the operator's alone: refused unless `hash` is the head's and `commit`
- * the head; then the land gate (a passing trial of that head). A project the queue serves gets Land: the operator's
+ * the head; then the land gate (a passing dry run of that head; on a served project, Land runs it first). A project the queue serves gets Land: the operator's
  * approval of that exact commit, landed by the queue; never a move of the target here. Otherwise the build's worktree
  * is merged, as Merge Branch on any run. Answers whether it was queued.
  */
@@ -352,9 +352,13 @@ export async function mergeSetup(projectId: string, hash: string, commit: string
   if (!cur || !open) throw new OrgError(NO_SETUP_PROPOSAL, 409);
   if (!open.read.hash || open.read.hash !== hash) throw new OrgError(SETUP_CHANGED_SINCE, 409);
   if (commit && commit !== open.read.commit) throw new OrgError(SETUP_BRANCH_MOVED, 409);
-  const untried = await (await import("../merge-queue/wire")).setupUntriedAt(root, open.read.commit);
-  if (untried) throw new OrgError(untried, 409);
+  const wire = await import("../merge-queue/wire");
+  const untried = await wire.setupUntriedAt(root, open.read.commit);
+  // Can't tell: refused, never let through. A project the queue serves takes Land, which runs the dry run first
+  // (§app.project-setup/land-gate); Merge Branch, with no line to wait in, refuses a head with no passing dry run.
+  if (untried === wire.TRIAL_UNREADABLE || untried === (await import("../merge-queue/setup-branch")).SETUP_UNREADABLE) throw new OrgError(untried, 409);
   if (await deps.land(projectId, root, cur.run, open.read.commit)) return { queued: true };
+  if (untried) throw new OrgError(untried, 409);
   await deps.merge(projectId, cur.run);
   return { queued: false };
 }

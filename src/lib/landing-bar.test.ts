@@ -193,6 +193,7 @@ test("several merge needs-you with nothing running: the first takes the bar, the
 
 test("an entry back with its chat is never needs-you; a decision is, in its own words and answers", () => {
   assert.equal(bar([proj({ queue: queue({ needsYou: [entry({ branch: "feat/r", state: "review-flagged" })] }) })]), null, "review findings go back to the chat by themselves");
+  assert.equal(bar([proj({ queue: queue({ needsYou: [entry({ branch: "feat/u", state: "unattributed", waitingRuling: true })] }) })]), null, "the merge thread rules on whose failure first: nothing asks you yet");
   const decision = { id: "dc_1", kind: "out-of-tries" as const, question: "Tried 3 times: Unit tests failed each time", choices: [], raisedBy: "queue" as const, actions: ["land" as const], at: "" };
   const b = bar([proj({ queue: queue({ needsYou: [entry({ id: "me_7", branch: "feat/o", state: "needs-fix", decision })] }) })])!;
   assert.equal(b.top.kind, "merge-needs");
@@ -410,4 +411,23 @@ test("the counter counts every segment: usual run, installing, no push, a check 
   const between = run([step("copy", "copy", "passed"), step("merge", "merge", "passed"), step("check:unit", "check", "passed")], { checks });
   assertCounter(between, {}, "check:build");
   assert.equal(runNow(run([], { checks }), undefined, NOW), "Starting");
+});
+
+test("a running dry run is the bar's running state: Dry run · {branch}, never Landing, its track only the steps it runs", () => {
+  const r = run([step("copy", "copy", "passed"), step("setup", "setup", "passed"), step("check:playbook", "check", "running")], { entry: "trial", branch: "feat/play", base: TIP });
+  const trialNow = {
+    trial: { run: "mr_1", commit: TIP, branch: "feat/play", verdict: "running" as const, by: { kind: "land" as const, entry: "me_9" }, startedAt: iso(60_000), needs: "adds the merge check Playbook tests" },
+    run: r,
+    progress: { at: 1, of: 2 },
+  };
+  const q = queue({ state: "running", trialNow, waiting: [entry({ id: "me_2", branch: "feat/next", position: 1 })] });
+  const bar = reduceLanding([proj({ queue: q })], NOW).bar!.top;
+  assert.equal(bar.title, "Dry run · feat/play");
+  assert.doesNotMatch(`${bar.title} ${bar.sub} ${bar.oneLine}`, /Landing/);
+  assert.equal(bar.sub, "check 1 of 2");
+  assert.deepEqual(bar.segments.map((s) => s.id), ["copy", "setup", "check:playbook"]);
+  assert.equal(bar.count?.text, "+1");
+  assert.ok(bar.lines.some((l) => l.text === "Nothing lands from a dry run."));
+  assert.ok(bar.peek.some((l) => l.text === "Needed: adds the merge check Playbook tests"));
+  assert.deepEqual(bar.actions.map((a) => a.label), ["Checks", "Queue"]);
 });

@@ -287,7 +287,7 @@ describe("scratch copies: the queue", () => {
     }
   });
 
-  test("a queue copy that changes the project's setup: Land says it is a queue copy, never to run a trial; a user's branch with the same change gets the trial gate", async () => {
+  test("a queue copy that changes the project's setup: Land says it is a queue copy, never to run a dry run; a user's branch with the same change gets its dry run first", async () => {
     let made = new Set<string>();
     const k = makeKit({ deps: { queueMade: async () => (p) => made.has(p) } });
     try {
@@ -297,7 +297,8 @@ describe("scratch copies: the queue", () => {
       k.repo.branch("feat/setup-mine", setup);
       made = new Set([old.path]);
       await assert.rejects(q.add({ branch: "feat/resolve-mq_old3", by: "land-button" }), /feat\/resolve-mq_old3 is a scratch copy the merge queue made/);
-      await assert.rejects(q.add({ branch: "feat/setup-mine", by: "land-button" }), (e: unknown) => e instanceof MergeFailure && !/scratch copy/.test(e.message) && /trial/i.test(e.message), "the control: the gate still holds a user's setup branch");
+      const mine = await q.add({ branch: "feat/setup-mine", by: "land-button" });
+      assert.equal(mine.entry.standing?.phase, "dry-run", "the control: the gate still holds a user's setup branch, as a dry run first");
     } finally {
       await k.done();
     }

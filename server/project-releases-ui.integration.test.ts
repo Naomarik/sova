@@ -501,15 +501,15 @@ describe("the Setup chat on the Releases tab", () => {
     }
   });
 
-  test("a proposal with a release setup: its steps, and Run Trial until a trial of its head passed", async () => {
+  test("a proposal with a release setup: its steps, and Run Dry Run until a dry run of its head passed", async () => {
     const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { setup: setupWith("proposed", null) });
     try {
       const pr = o.page.getByRole("group", { name: "Setup proposal" });
       await pr.waitFor();
       await pr.getByText("Pick the version").waitFor();
       await pr.getByText("Make the release commit").waitFor();
-      assert.equal(await pr.getByRole("button", { name: /^(Land|Merge Branch) / }).count(), 0, "no Land or Merge Branch before a passing trial");
-      await pr.getByRole("button", { name: /^Run Trial of / }).waitFor();
+      assert.equal(await pr.getByRole("button", { name: /^(Land|Merge Branch) / }).count(), 0, "no Land or Merge Branch before a passing dry run");
+      await pr.getByRole("button", { name: /^Run Dry Run of / }).waitFor();
       await shot(o.page, "setup-proposed");
     } finally {
       await o.ctx.close();
@@ -532,7 +532,7 @@ test("Set Up with a Chat refused: the server's words beside the button", async (
 const NO_SETUP: SetupStatus = { chat: null, setUp: { merge: false, release: false, deploy: false }, can: { open: true }, history: [] };
 function setupWith(state: "working" | "proposed", trial: null): SetupStatus {
   const proposal = state === "proposed"
-    ? ({ branch: "sova/setup-notes-1a2b3c", target: "master", commit: sha("e"), served: false, hash: `sha256:${"a".repeat(64)}`, services: [], files: [{ path: ".sova/project.json", status: "M", setup: true }, { path: ".sova/playbooks/release/PLAYBOOK.md", status: "A", setup: true }], merge: { checks: "none" }, release: { hash: `sha256:${"b".repeat(64)}`, settings: { playbook: ".sova/playbooks/release", tag: "v${version}", scheme: "semver", channels: ["stable"], commit: true, checks: [], quietMin: 30 }, steps: [{ id: "version", label: "Pick the version", phase: "prepare" }, { id: "commit", label: "Make the release commit", phase: "prepare" }], files: ["PLAYBOOK.md", "release.json"] }, trial, land: { can: false, why: `This setup branch has no passing trial at ${sha("e").slice(0, 7)}: run a trial of it first.` } } as unknown as SetupProposal)
+    ? ({ branch: "sova/setup-notes-1a2b3c", target: "master", commit: sha("e"), served: false, hash: `sha256:${"a".repeat(64)}`, services: [], files: [{ path: ".sova/project.json", status: "M", setup: true }, { path: ".sova/playbooks/release/PLAYBOOK.md", status: "A", setup: true }], merge: { checks: "none" }, release: { hash: `sha256:${"b".repeat(64)}`, settings: { playbook: ".sova/playbooks/release", tag: "v${version}", scheme: "semver", channels: ["stable"], commit: true, checks: [], quietMin: 30 }, steps: [{ id: "version", label: "Pick the version", phase: "prepare" }, { id: "commit", label: "Make the release commit", phase: "prepare" }], files: ["PLAYBOOK.md", "release.json"] }, trial, land: { can: false, why: `This setup branch has no passing dry run at ${sha("e").slice(0, 7)}: run one first.` } } as unknown as SetupProposal)
     : null;
   return { chat: { sessionId: "s-setup", path: "/w/sessions/setup.jsonl", title: "Setup · notes", state, startedAt: new Date(T0).toISOString(), branch: "sova/setup-notes-1a2b3c", proposal, setUp: { merge: false, release: false, deploy: false } }, setUp: { merge: false, release: false, deploy: false }, can: { open: true }, history: [] };
 }

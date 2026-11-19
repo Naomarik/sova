@@ -362,6 +362,20 @@ test("can't tell whose failure: its words, the queue's why, Land Anyway, Try Aga
   assert.equal(rowsSummary([{ key: "unattributed" }]), "1 can't tell whose failure");
 });
 
+test("waiting for the merge thread's ruling: never Ready and never Land, whatever the tree reads; only Remove from Queue", () => {
+  // The tree itself reads ready: the entry still speaks for the row until the thread rules or asks you.
+  const r = queueRow(wt({ readiness: { ...ready, landing: { state: "ready", commit: SHA } } as never, queue: q({ state: "unattributed", waitingRuling: true, reason: "Lint fails on master too and names no tests" }) }));
+  assert.equal(r.key, "waiting-ruling");
+  assert.equal(r.label, "Waiting for the merge thread");
+  assert.equal(r.tone, "info");
+  assert.equal(r.reason, "Can't tell whose failure: the merge thread is judging it; it asks you if it can't tell.");
+  assert.deepEqual(rowButtons(r, "prj_1"), ["Remove from Queue"]);
+  assert.deepEqual(controlWords([{ key: "waiting-ruling" }, { key: "ready" }]), { text: "1 waiting for the merge thread", n: 1, dot: null });
+  // Once the thread raises it to you, it is Can't tell whose failure again, and needs you.
+  assert.equal(queueRow(wt({ queue: q({ state: "unattributed" }) })).key, "unattributed");
+  assert.deepEqual(controlWords([{ key: "waiting-ruling" }, { key: "unattributed" }]), { text: "1 needs you", n: 1, dot: "warn" });
+});
+
 // ---- the run page's Checks and why ----
 
 const runStep = (x: Partial<RunStep>): RunStep => ({ id: "check:unit", kind: "check", label: "Unit tests", result: "passed", ms: 75_000, log: "check-unit.log", ...x });

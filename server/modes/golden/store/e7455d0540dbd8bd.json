@@ -47,6 +47,7 @@
    "merge.names",
    "merge.rule",
    "merge.respond",
+   "merge.stop-try",
    "release.status",
    "release.logs",
    "release.request",
@@ -75,7 +76,7 @@
  },
  "branch": {
   "type": "string",
-  "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+  "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
  },
  "from": {
   "type": "string",
@@ -141,7 +142,7 @@
  },
  "commit": {
   "type": "string",
-  "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+  "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
  },
  "plan": {
   "type": "string",

@@ -567,6 +567,7 @@ export class MergeCards {
     setOpt(card, "conflict", e.conflict ? structuredClone(e.conflict) : undefined);
     setOpt(card, "review", e.review ? structuredClone(e.review) : undefined);
     setOpt(card, "unclear", e.state === "unattributed" && e.unclear?.length ? structuredClone(e.unclear) : undefined);
+    setOpt(card, "waitingRuling", e.state === "unattributed" && e.waitingRuling ? (true as const) : undefined);
     setOpt(card, "landed", e.landed ? structuredClone(e.landed) : undefined);
     setOpt(card, "request", e.request ? structuredClone(e.request) : undefined);
     setOpt(card, "worktree", e.worktree);

@@ -1617,7 +1617,17 @@ describe("can't tell whose failure", () => {
       await until(async () => (await k.entry(a.entry.id)).ruling?.unattributed, "the thread rules first");
       const waiting = await k.entry(a.entry.id);
       assert.equal(waiting.decision, undefined, "not raised to the user yet");
-      assert.ok(!(await q.view()).needsYou.some((x) => x.id === a.entry.id), "not in Needs you yet");
+      // Waiting for the thread's ruling, it shows in Needs you as such, and its branch's row says so: never Ready with Land.
+      const v = await q.view();
+      const row = v.needsYou.find((x) => x.id === a.entry.id);
+      assert.equal(row?.waitingRuling, true, "in Needs you as Waiting for the merge thread");
+      assert.equal(row?.decision, undefined);
+      const { worktreeQueueInfo } = await import("./view");
+      const info = worktreeQueueInfo(v, "feat/a");
+      assert.equal(info?.state, "unattributed");
+      assert.equal(info?.waitingRuling, true, "the branch's rows read it");
+      const { branchQueueOf } = await import("../../shared/merge-queue");
+      assert.equal(branchQueueOf(info!).waitingRuling, true, "and the session list's branch rows");
       await q.rule(a.entry.id, { ruling: "try-again", text: "the host ran out of temp space" });
       await landed(k, a.entry.id);
       assert.equal(k.notices.filter((n) => n.kind === "decision").length, 0, "the user never heard of it");

@@ -18,7 +18,7 @@ import { CardErrorBox } from "./TranscriptKind";
 import { Icon } from "./ui";
 import { BranchPlaceLine } from "./BranchPlaceLine";
 import { UnclearChecks } from "./WorktreesModal";
-import { unattributedWhy } from "../lib/merge-queue";
+import { unattributedWhy, WAITING_RULING_LINE } from "../lib/merge-queue";
 import { isRequestState } from "../lib/merge-queue-requests";
 import { RequestReview, RequestStatus, type RequestEntry } from "./MergeQueueRequests";
 
@@ -201,7 +201,10 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
           </Show>
         </p>
       </Show>
-      <Show when={d().state === "unattributed"}>
+      <Show when={d().state === "unattributed" && d().waitingRuling}>
+        <p class="text-caption mq-card-line">{WAITING_RULING_LINE}</p>
+      </Show>
+      <Show when={d().state === "unattributed" && !d().waitingRuling}>
         <p class="text-caption mq-card-line">{unattributedWhy(d().reason, d().target)} Nobody is blamed: Land Anyway lands the commit it tested, Try Again checks it afresh.</p>
         <UnclearChecks projectId={d().project} unclear={d().unclear} target={d().target} />
       </Show>

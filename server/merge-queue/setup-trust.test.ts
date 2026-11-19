@@ -169,11 +169,13 @@ describe("merge.try: what a trial runs, and that it saves nothing", () => {
       assert.equal(input.base, b.head, "nothing is merged onto the target");
       assert.equal(input.tryOnly, true);
       const mergeIds = (input.project.def?.merge?.checks as { id: string }[]).map((c) => c.id);
-      assert.deepEqual(mergeIds, ["unit", "lint"], "the branch's own merge checks (the target declares only unit)");
+      assert.deepEqual(mergeIds, ["lint"], "only the merge check the branch adds (the target declares unit, unchanged)");
       assert.deepEqual((input.releaseChecks ?? []).map((c) => c.id).sort(), ["perf", "smoke"], "new and changed release checks run");
       const trial = q.trials()[0]!;
       assert.equal(trial.verdict, "passed");
       assert.deepEqual(trial.notRun?.map((c) => c.id), ["e2e"], "the unchanged release check is reported not run");
+      assert.deepEqual(trial.skipped?.map((c) => c.id), ["unit"], "the unchanged merge check runs in the landing");
+      assert.deepEqual(trial.ran?.map((c) => c.id).sort(), ["lint", "perf", "smoke"]);
       assert.deepEqual(trial.by, { kind: "chat", session: "s-setup" });
       // Nothing saved: the target and the branch didn't move, no entry, no landing.
       assert.equal(t.repo.head(), target);
@@ -205,42 +207,41 @@ describe("merge.try: what a trial runs, and that it saves nothing", () => {
   });
 });
 
-describe("Land on a setup branch waits for a passing trial of its exact head", () => {
-  test("refused with no trial, while running, after a failing one; taken once a trial of that commit passed; a new commit needs a new trial", async () => {
+describe("Land on a setup branch runs a dry run of its exact head first", () => {
+  test("taken with no dry run, after a failing one, or a pass of an older commit, as Approved · dry run first; a pass of the exact head lands it plainly", async () => {
     const t = realKit();
     try {
       const b = setupBranch(t.repo, "setup/d", (d) => d.merge.checks.push(CHECK("lint")));
-      const land = () => t.call("merge.add", { project: t.repo.root, branch: "setup/d" }, op);
-      let r = await land();
-      assert.equal(r.ok, false, "no trial");
-      assert.match(r.error?.message ?? "", /no passing trial/);
-      // A running trial isn't a pass.
-      const h = holdRun(t.k);
-      await t.call("merge.try", { project: t.repo.root, branch: "setup/d" }, chatOf(t.repo.root));
-      await h.started;
-      r = await land();
-      assert.equal(r.ok, false, "trial running");
-      h.release();
-      await (await t.k.q()).tryingNow();
-      // A failing trial isn't a pass.
+      const q = await t.k.q();
+      const land = async () => {
+        const r = await t.call("merge.add", { project: t.repo.root, branch: "setup/d" }, op);
+        assert.equal(r.ok, true, JSON.stringify(r.error));
+        await t.call("merge.cancel", { entry: r.merge!.entry!.id }, op);
+        return r.merge!.entry!;
+      };
+      // Held, so nothing a Land queues starts before it is cancelled.
+      await t.call("merge.pause", { project: t.repo.root }, op);
+      assert.equal((await land()).standing?.phase, "dry-run", "no dry run yet");
+      await t.call("merge.resume", { project: t.repo.root }, op);
       t.k.run.set(() => ({ verdict: "failed", why: "lint failed" }));
       await t.call("merge.try", { project: t.repo.root, branch: "setup/d" }, chatOf(t.repo.root));
-      await (await t.k.q()).tryingNow();
-      r = await land();
-      assert.equal(r.ok, false, "trial failed");
-      assert.match(r.error?.message ?? "", /did not pass/);
-      // A passing trial of an OLDER commit doesn't count for the new head.
+      await q.tryingNow();
+      await t.call("merge.pause", { project: t.repo.root }, op);
+      assert.equal((await land()).standing?.phase, "dry-run", "a failed one: the Land runs a new one");
+      await t.call("merge.resume", { project: t.repo.root }, op);
       t.k.run.set(null);
       await t.call("merge.try", { project: t.repo.root, branch: "setup/d" }, chatOf(t.repo.root));
-      await (await t.k.q()).tryingNow();
+      await q.tryingNow();
+      assert.equal(q.trials()[0]?.verdict, "passed");
       const newer = t.repo.commitOn(b.path, { "note.txt": "more\n" });
-      r = await land();
-      assert.equal(r.ok, false, `a pass at ${b.head.slice(0, 7)} doesn't cover ${newer.slice(0, 7)}`);
-      // A pass of the exact head: taken.
+      await t.call("merge.pause", { project: t.repo.root }, op);
+      const e = await land();
+      assert.equal(e.standing?.phase, "dry-run", `a pass at ${b.head.slice(0, 7)} doesn't cover ${newer.slice(0, 7)}`);
+      await t.call("merge.resume", { project: t.repo.root }, op);
       await t.call("merge.try", { project: t.repo.root, branch: "setup/d" }, chatOf(t.repo.root));
-      await (await t.k.q()).tryingNow();
-      r = await land();
-      assert.equal(r.ok, true, JSON.stringify(r.error));
+      await q.tryingNow();
+      await t.call("merge.pause", { project: t.repo.root }, op);
+      assert.equal((await land()).standing, undefined, "its exact head passed: in line as any branch");
     } finally {
       await t.done();
     }
@@ -255,16 +256,19 @@ describe("Land on a setup branch waits for a passing trial of its exact head", (
         ["feat/deploy", (d) => (d.deploy = { targets: { staging: { about: "s", requires: { tests: "none" }, steps: [{ id: "push", run: ["./push"] }], rollback: { none: "rebuilt nightly" } } } })],
         ["feat/playbook", () => {}, { ".sova/playbooks/release/PLAYBOOK.md": "# steps\n" }],
       ];
+      await t.call("merge.pause", { project: t.repo.root }, op);
       for (const [name, edit, extra] of gated) {
         setupBranch(t.repo, name, edit, extra);
         const r = await t.call("merge.add", { project: t.repo.root, branch: name }, op);
-        assert.equal(r.ok, false, `${name}: gated`);
-        assert.match(r.error?.message ?? "", /trial/, `${name}: ${JSON.stringify(r.error)}`);
+        assert.equal(r.ok, true, `${name}: ${JSON.stringify(r.error)}`);
+        assert.equal(r.merge?.entry?.standing?.phase, "dry-run", `${name}: a dry run first`);
+        await t.call("merge.cancel", { entry: r.merge!.entry!.id }, op);
       }
-      // Another key of the definition (not a pipeline section) and plain code: no trial needed.
+      // Another key of the definition (not a pipeline section) and plain code: no dry run needed.
       setupBranch(t.repo, "feat/plain", (d) => (d.sources = ["src.txt"]), { "src.txt": "code\n" });
       const plain = await t.call("merge.add", { project: t.repo.root, branch: "feat/plain" }, op);
       assert.equal(plain.ok, true, JSON.stringify(plain.error));
+      assert.equal(plain.merge?.entry?.standing, undefined);
     } finally {
       await t.done();
     }
@@ -275,7 +279,10 @@ describe("Land on a setup branch waits for a passing trial of its exact head", (
     try {
       setupBranch(t.repo, "setup/on", (d) => d.merge.checks.push(CHECK("lint")));
       const land = () => t.call("merge.add", { project: t.repo.root, branch: "setup/on" }, op);
-      assert.match((await land()).error?.message ?? "", /no passing trial/, "with work left, the trial gate speaks");
+      await t.call("merge.pause", { project: t.repo.root }, op);
+      const first = await land();
+      assert.equal(first.merge?.entry?.standing?.phase, "dry-run", "with work left, Land runs a dry run first");
+      await t.call("merge.cancel", { entry: first.merge!.entry!.id }, op);
       sh(t.repo.root, "merge", "-q", "--no-ff", "--no-edit", "setup/on");
       const r = await land();
       assert.equal(r.ok, false);
@@ -294,10 +301,10 @@ describe("Land on a setup branch waits for a passing trial of its exact head", (
       sh(t.repo.root, "push", "-q", "origin", t.repo.target);
       const b = t.repo.branch("feat/ops-playbook", { "ops/release/PLAYBOOK.md": "# steps, changed\n" });
       const q = await t.k.q();
-      assert.match((await q.setupUntried(t.repo.head(), b.head)) ?? "", /no passing trial/, "a setup branch: untried");
+      assert.match((await q.setupUntried(t.repo.head(), b.head)) ?? "", /no passing dry run/, "a setup branch: untried");
+      assert.equal((await q.dryRunOf("feat/ops-playbook", b.head))?.why, "changes the release playbook");
       const r = await t.call("merge.add", { project: t.repo.root, branch: "feat/ops-playbook" }, op);
-      assert.equal(r.ok, false, "gated");
-      assert.match(r.error?.message ?? "", /no passing trial/);
+      assert.equal(r.merge?.entry?.standing?.phase, "dry-run", "gated: a dry run first");
       // A file beside that folder is plain code: no trial needed.
       const plain = t.repo.branch("feat/ops-other", { "ops/notes.md": "n\n" });
       assert.equal(await q.setupUntried(t.repo.head(), plain.head), null);
@@ -309,14 +316,16 @@ describe("Land on a setup branch waits for a passing trial of its exact head", (
   test("services: a branch changing a service a merge check requires is gated; changing one no check requires lands with no trial", async () => {
     const t = realKit();
     try {
+      // Held: nothing a Land takes runs (and lands) while the cases are read.
+      await t.call("merge.pause", { project: t.repo.root }, op);
       const gated: [string, (d: Record<string, any>) => void][] = [
         ["svc/edit-required", (d) => (d.services.db.cmd = ["db-server", "--fsync=off"])],
       ];
       for (const [name, edit] of gated) {
         setupBranch(t.repo, name, edit);
         const r = await t.call("merge.add", { project: t.repo.root, branch: name }, op);
-        assert.equal(r.ok, false, `${name}: gated`);
-        assert.match(r.error?.message ?? "", /trial/, `${name}: ${JSON.stringify(r.error)}`);
+        assert.equal(r.merge?.entry?.standing?.phase, "dry-run", `${name}: gated, ${JSON.stringify(r.error)}`);
+        await t.call("merge.cancel", { entry: r.merge!.entry!.id }, op);
       }
       // A service no merge check requires (on either side): edited or added, it lands with no trial.
       for (const [name, edit] of [
@@ -326,6 +335,7 @@ describe("Land on a setup branch waits for a passing trial of its exact head", (
         setupBranch(t.repo, name, edit);
         const r = await t.call("merge.add", { project: t.repo.root, branch: name }, op);
         assert.equal(r.ok, true, `${name}: ${JSON.stringify(r.error)}`);
+        assert.equal(r.merge?.entry?.standing, undefined, `${name}: no dry run`);
       }
     } finally {
       await t.done();
@@ -334,7 +344,7 @@ describe("Land on a setup branch waits for a passing trial of its exact head", (
 });
 
 describe("the user's typed \"land it\" on a setup branch (worktree land, served)", () => {
-  test("its go-ahead is refused to the chat with the land gate's words and queues nothing; after a passing trial of that head it queues", async () => {
+  test("its go-ahead is taken as any Land: queued with a dry run of that head first, nothing refused to the chat", async () => {
     const t = realKit();
     const dir = mkdtempSync(join(tmpdir(), "mq-setup-typed-"));
     try {
@@ -350,20 +360,15 @@ describe("the user's typed \"land it\" on a setup branch (worktree land, served)
         refused: (session, text) => void refused.push({ session, text }),
       };
       assert.deepEqual(await ingestOnce(deps), [], "the first read is a baseline");
+      await t.call("merge.pause", { project: t.repo.root }, op);
       recordGoAhead({ branch: "sova/setup-x", commit: b.head, session: "s-setup", at: "2026-11-05T10:00:00Z", by: "owner-chat" }, deps.file);
       const did = await ingestOnce(deps);
-      assert.match(did[0] ?? "", /refused: This setup branch has no passing trial/);
-      assert.deepEqual(refused, [{ session: "s-setup", text: `sova/setup-x at ${b.head.slice(0, 7)} couldn't be queued to land: This setup branch has no passing trial at ${b.head.slice(0, 7)}: run a trial of it first.` }]);
+      assert.match(did[0] ?? "", /^queued sova\/setup-x/);
       const q = await t.k.q();
-      assert.equal(q.entries().length, 0, "nothing queued");
-      // A passing trial of that exact head: the same word, typed again, queues it.
-      await t.call("merge.try", { project: t.repo.root, branch: "sova/setup-x" }, chatOf(t.repo.root));
-      await q.tryingNow();
-      recordGoAhead({ branch: "sova/setup-x", commit: b.head, session: "s-setup", at: "2026-11-05T10:00:01Z", by: "owner-chat" }, deps.file);
-      const did2 = await ingestOnce(deps);
-      assert.match(did2[0] ?? "", /^queued sova\/setup-x/);
-      assert.equal(q.entries().find((e) => e.branch === "sova/setup-x")?.approval.commit, b.head, "pinned to the tried head");
-      assert.equal(refused.length, 1);
+      const e = q.entries().find((x) => x.branch === "sova/setup-x");
+      assert.equal(e?.approval.commit, b.head, "pinned to the typed head");
+      assert.equal(e?.standing?.phase, "dry-run");
+      assert.deepEqual(refused, []);
     } finally {
       rmSync(dir, { recursive: true, force: true });
       await t.done();
@@ -372,7 +377,7 @@ describe("the user's typed \"land it\" on a setup branch (worktree land, served)
 });
 
 describe("the merge copy is held by one thing at a time", () => {
-  test("a trial is refused (busy) while a landing holds the copy, and saves no trial record", async () => {
+  test("a dry run asked for while a landing holds the copy waits its turn, then starts after it", async () => {
     const t = realKit();
     try {
       t.repo.branch("feat/x", { "x.txt": "x\n" });
@@ -382,10 +387,12 @@ describe("the merge copy is held by one thing at a time", () => {
       assert.equal(add.ok, true, JSON.stringify(add.error));
       await h.started;
       const r = await t.call("merge.try", { project: t.repo.root, branch: "setup/e" }, chatOf(t.repo.root));
-      assert.equal(r.ok, false);
-      assert.equal(r.error?.code, "busy", JSON.stringify(r.error));
-      assert.equal((await t.k.q()).trials().length, 0);
+      assert.equal(r.ok, true, JSON.stringify(r.error));
+      assert.equal(r.merge?.waiting?.after, "the landing of feat/x");
+      const q = await t.k.q();
+      assert.equal(q.trials().length, 0, "nothing ran yet");
       h.release();
+      await until(() => q.trials().find((x) => x.branch === "setup/e" && x.verdict !== "running"), "its turn, after the landing");
     } finally {
       await t.done();
     }

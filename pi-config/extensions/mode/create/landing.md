@@ -11,7 +11,7 @@ A card lands on the main branch with no checks, so a change that fails one turns
 - Change: whether the project has a merge queue, and its first checks: a list of checks, one test command, or "no automated tests".
 - Lives: the `merge` section of `.sova/project.json`, created if there's no file yet.
 - Approves: the person alone: their answers to the project's Setup chat, then Merge Branch on its branch. First setup is theirs; no card holds it.
-- By: Screen. Set Up with a Chat on the project page's Merge Queue tab (or in Settings → Merge Queue) opens the project's Setup chat: it reads the project, measures its commands, asks what it can't find out, draws the plan, writes it on its own branch and runs a trial of that branch's checks. Merge Branch is offered once a trial of the branch's head passed. You never write the section yourself for a first setup: send them to that chat.
+- By: Screen. Set Up with a Chat on the project page's Merge Queue tab (or in Settings → Merge Queue) opens the project's Setup chat: it reads the project, measures its commands, asks what it can't find out, draws the plan, writes it on its own branch and runs a dry run of that branch's new or changed checks. Merge Branch is offered once a dry run of the branch's head passed. You never write the section yourself for a first setup: send them to that chat.
 - Live: once the branch is merged. The next branch goes through the queue.
 - Check: the Merge Queue tab shows the queue, and Land appears on the project's branches.
 
@@ -20,7 +20,7 @@ A card lands on the main branch with no checks, so a change that fails one turns
 - Change: anything about how branches land, how releases go or how the project ships, beyond the values in the next section.
 - Lives: `.sova/project.json` (`merge`, `release`, `deploy`) and the folders they name.
 - Approves: the person: Change Setup, their answers, then Land on the Setup chat's branch.
-- By: Screen. Change Setup on the Merge Queue tab, the Releases tab or Settings → Merge Queue reopens the same Setup chat; it draws the current setup, marks what changes, trial-runs it, and proposes it on a branch. Land is offered once a trial of that branch's head passed, since the queue checks a branch with the target's checks, not the branch's.
+- By: Screen. Change Setup on the Merge Queue tab, the Releases tab or Settings → Merge Queue reopens the same Setup chat; it draws the current setup, marks what changes, dry-runs it, and proposes it on a branch. Land on it runs a dry run of that branch's head first, then lands by itself, since the queue checks a branch with the target's checks, not the branch's.
 - Live: after landing, from the next landing.
 - Check: the Merge Queue tab shows the new checks on the next run.
 
@@ -56,7 +56,7 @@ A card lands on the main branch with no checks, so a change that fails one turns
 - Change: what each check runs, adding or removing a check, the offline install, and the branch the queue lands into. Keys: `merge.checks`, `merge.install`, `merge.target`. A check is `{id, label, run, timeout?, rerun?, requires?, optional?, needsSelect?}`, 1 to 30 of them, or `"checks": "none"`; `needsSelect` true makes the merge thread's pick of it name what it runs (a group, files, walkthroughs), or the pick is refused.
 - Lives: the `merge` section of `.sova/project.json`.
 - Approves: the person, by Land.
-- By: Land, through Change Setup. Never a card: the project's Setup chat changes the command on its own branch and runs a trial of it, and Land is offered once a trial of that branch's head passed, since the queue checks a branch with the target's checks, not its own.
+- By: Land, through Change Setup. Never a card: the project's Setup chat changes the command on its own branch and runs a dry run of it; Land runs a dry run of that branch's head first if none passed, since the queue checks a branch with the target's checks, not its own.
 - Live: after landing, from the next landing.
 - Check: the next landing's run shows each check, tagged Required.
 
@@ -101,3 +101,12 @@ The whole section, beside the file's other keys. `run` is a list of arguments, a
 - By: None. You can't set them. The merge thread asks in the branch's chat, and until they're set up a push is held.
 - Live: from the next push.
 - Check: Settings → Merge Queue reads "Set up · {n} names", never the names.
+
+## Dry runs and Fix
+
+- Change: whether a setup branch (one that changes the merge checks, release checks or playbook, deploy targets, or a service a merge check needs) may land: it needs a dry run of the checks it adds or changes on its exact commit first; nothing lands from one. And a failure holding a branch up: Fix sends its whole context to the branch's chat, Fix in New Chat starts a fresh chat with it (on a new branch from the target when the target fails too); either chat explains and proposes, then waits for the person.
+- Lives: nothing to edit: the queue's own records (each dry run, kept 20).
+- Approves: the person: Land, Run Dry Run, Stop Dry Run, Fix and Fix in New Chat are their clicks.
+- By: Screen. Land on a setup branch runs its dry run first, then lands by itself. Run Dry Run (Run Dry Run Again) on the branch's row; while the merge copy is busy it waits its turn. Stop Dry Run on Checking now, the run page or a waiting row. Fix and Fix in New Chat on a held-up row; all of these are the person's own clicks. A chat starts a dry run with `merge.try` and stops one it started with `merge.stop-try`.
+- Live: at once.
+- Check: the Merge Queue tab's Dry runs tab and Checking now; the branch's row reads its dry run for its newest commit.

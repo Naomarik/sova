@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 96513,
+      "bytes": 96575,
       "tools": [
         {
           "name": "sova_attention",
@@ -1867,7 +1867,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -1933,7 +1933,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -2989,7 +2989,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 102298,
+      "bytes": 102360,
       "tools": [
         {
           "name": "sova_attention",
@@ -4941,7 +4941,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -5007,7 +5007,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -6260,7 +6260,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 41164,
+      "bytes": 41226,
       "tools": [
         {
           "name": "sova_project",
@@ -7357,7 +7357,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -7423,7 +7423,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -7682,7 +7682,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 41830,
+      "bytes": 41892,
       "tools": [
         {
           "name": "sova_project",
@@ -8785,7 +8785,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -8851,7 +8851,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -8903,7 +8903,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 41605,
+      "bytes": 41667,
       "tools": [
         {
           "name": "sova_project",
@@ -10012,7 +10012,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -10078,7 +10078,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -10130,7 +10130,7 @@
       ]
     },
     "project-overseer+copies": {
-      "bytes": 47182,
+      "bytes": 47244,
       "tools": [
         {
           "name": "sova_project",
@@ -11319,7 +11319,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -11385,7 +11385,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -11783,7 +11783,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 10590,
+      "bytes": 10669,
       "tools": [
         {
           "name": "project_verbs",
@@ -11841,6 +11841,7 @@
                   "merge.names",
                   "merge.rule",
                   "merge.respond",
+                  "merge.stop-try",
                   "release.status",
                   "release.logs",
                   "release.request",
@@ -11869,7 +11870,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -11935,7 +11936,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -12075,7 +12076,7 @@
       ]
     },
     "project-verbs:overseer": {
-      "bytes": 6319,
+      "bytes": 6381,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12125,7 +12126,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -12191,7 +12192,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -12243,7 +12244,7 @@
       ]
     },
     "project-verbs:overseer+onboard": {
-      "bytes": 6985,
+      "bytes": 7047,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12299,7 +12300,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -12365,7 +12366,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -12417,7 +12418,7 @@
       ]
     },
     "project-verbs:project-overseer": {
-      "bytes": 7230,
+      "bytes": 7292,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12467,7 +12468,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -12533,7 +12534,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -12585,7 +12586,7 @@
       ]
     },
     "project-verbs:overseer+copies": {
-      "bytes": 8434,
+      "bytes": 8496,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12643,7 +12644,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -12709,7 +12710,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",
@@ -12767,7 +12768,7 @@
       ]
     },
     "project-verbs:project-overseer+copies": {
-      "bytes": 8908,
+      "bytes": 8970,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12825,7 +12826,7 @@
               },
               "branch": {
                 "type": "string",
-                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)."
+                "description": "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)."
               },
               "from": {
                 "type": "string",
@@ -12891,7 +12892,7 @@
               },
               "commit": {
                 "type": "string",
-                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial."
+                "description": "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run."
               },
               "plan": {
                 "type": "string",

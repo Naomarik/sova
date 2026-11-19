@@ -137,7 +137,7 @@ test("setup goes through the project's Setup chat: no topic offers the old setup
 	}
 	for (const name of ["landing", "releases", "project"]) assert.ok(CREATE_FILES[name]!.includes("Set Up with a Chat"), `${name}.md offers Set Up with a Chat`);
 	for (const name of ["landing", "releases", "shared"]) assert.ok(CREATE_FILES[name]!.includes("Change Setup"), `${name}.md offers Change Setup`);
-	assert.match(CREATE_FILES.landing!, /Land is offered once a trial of that branch's head passed/);
+	assert.match(CREATE_FILES.landing!, /Land on it runs a dry run of that branch's head first, then lands by itself/);
 });
 
 test("an alignment's go-ahead is never the OK, in the block and in the shared rules", () => {

@@ -11,8 +11,8 @@ through the [merge queue](/docs/merge-queue/) like any other change. The one set
 the project's files is the **Release Note**, for the next release only.
 
 **Set Up with a Chat**, on the project's Releases tab, writes both for you: the project's Setup chat
-reads the project, asks how it releases, and proposes them on a branch you review. It lands once a
-trial of that commit has passed. **Change Setup** opens the same chat later.
+reads the project, asks how it releases, and proposes them on a branch you review. Its new or
+changed checks get a [dry run](/docs/dry-runs/) of that commit before it lands. **Change Setup** opens the same chat later.
 
 ## The `release` section
 

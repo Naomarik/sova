@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 652 |
-| Routes a catalogue entry points at | 217 |
-| Catalogue entries | 288 |
+| Routes registered | 655 |
+| Routes a catalogue entry points at | 220 |
+| Catalogue entries | 293 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -34,7 +34,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Approvals and grants | 21 |
 | Pending (not yet a command) | 22 |
 | Chat socket frame types | 14 |
-| Document/window keydown listeners | 12 |
+| Document/window keydown listeners | 13 |
 | Hand-written tool specs | 155 |
 
 ## Catalogue entries
@@ -147,6 +147,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.verb.merge.names` | Project merge.names | changes | `POST /api/project-services/merge.names` | admin |
 | `project.verb.merge.rule` | Project merge.rule | changes | `POST /api/project-services/merge.rule` | admin |
 | `project.verb.merge.respond` | Project merge.respond | changes | `POST /api/project-services/merge.respond` | admin |
+| `project.verb.merge.stop-try` | Project merge.stop-try | changes | `POST /api/project-services/merge.stop-try` | admin |
 | `project.verb.release.status` | Project release.status | looks | `POST /api/project-services/release.status` | admin |
 | `project.verb.release.logs` | Project release.logs | looks | `POST /api/project-services/release.logs` | admin |
 | `project.verb.release.request` | Project release.request | changes | `POST /api/project-services/release.request` | admin |
@@ -219,6 +220,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.folder.read` | Read Folder File | looks | `GET /api/folders/read` | sessions |
 | `project.merge-queue.update-local-main` | Update Local Main | changes | `POST /api/merge-queue/projects/:project/update-local-main` | admin |
 | `project.merge-queue.discard-branch` | Discard Branch… | changes | `POST /api/merge-queue/projects/:project/discard-branch` | admin |
+| `project.merge-queue.dry-run.start` | Run Dry Run | changes | `POST /api/merge-queue/projects/:project/dry-run` | admin |
+| `project.merge-queue.dry-run.stop` | Stop Dry Run | changes | `POST /api/merge-queue/projects/:project/dry-run/stop` | admin |
+| `project.merge-queue.fix` | Fix | changes | `POST /api/merge-queue/projects/:project/fix` | admin |
+| `project.merge-queue.fix.new-chat` | Fix in New Chat | changes | `POST /api/merge-queue/projects/:project/fix` | admin |
 | `project.merge-queue.request.publish` | Publish Request | changes | `POST /api/merge-queue/entries/:id/publish` | admin |
 | `project.merge-queue.land-how.set` | Change How It Lands | changes | `PUT /api/merge-queue/projects/:project/land-how` | admin |
 | `project.merge-queue.land-how.clear` | Clear This Computer's Choice | changes | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin |
@@ -933,6 +938,9 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/merge-queue/landing-summary` | sessions | `project.merge-queue.landing-summary` |
 | `POST /api/merge-queue/projects/:project/branch-summary` | admin | `project.merge-queue.branch-summary.retry` |
 | `POST /api/merge-queue/projects/:project/discard-branch` | admin | `project.merge-queue.discard-branch` |
+| `POST /api/merge-queue/projects/:project/dry-run` | admin | `project.merge-queue.dry-run.start` |
+| `POST /api/merge-queue/projects/:project/dry-run/stop` | admin | `project.merge-queue.dry-run.stop` |
+| `POST /api/merge-queue/projects/:project/fix` | admin | `project.merge-queue.fix`, `project.merge-queue.fix.new-chat` |
 | `PUT /api/merge-queue/projects/:project/land-how` | admin | `project.merge-queue.land-how.set` |
 | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin | `project.merge-queue.land-how.clear` |
 | `PUT /api/merge-queue/projects/:project/models` | admin | `project.merge-queue.models.set` |
@@ -974,7 +982,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `PATCH /api/playbook-runs/:run` | full | `playbook.run.edit` |
 | `GET /api/playbooks` | sessions | `playbook.list` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
-| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.live`, `project.verb.merge.logs`, `project.verb.merge.names`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.respond`, `project.verb.merge.restart`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.rule`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.merge.test`, `project.verb.merge.try`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
+| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.hold`, `project.verb.merge.live`, `project.verb.merge.logs`, `project.verb.merge.names`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.respond`, `project.verb.merge.restart`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.rule`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.merge.stop-try`, `project.verb.merge.test`, `project.verb.merge.try`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.note`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
 | `POST /api/projects` | admin | `project.create` |
 | `GET /api/projects/:pid` | sessions | `project.get` |
@@ -1121,6 +1129,7 @@ The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a pag
 | --- | --- |
 | `src/commands/keys.ts` | window, document |
 | `src/components/ChangesViewer.tsx` | document |
+| `src/components/DryRun.tsx` | document |
 | `src/components/FolderApprovalsDialog.tsx` | document |
 | `src/components/GroupView.tsx` | window |
 | `src/components/InsightStrip.tsx` | document |

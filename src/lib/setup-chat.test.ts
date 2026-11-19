@@ -37,6 +37,9 @@ test("a Setup row's chip is the first line of the promise that holds, for every 
     [(c) => c.queued, "Queued", undefined],
     [(c) => c.problem, "Blocked", "warn"],
     [(c) => headTried(c, "running"), "Running", "accent"],
+    // No dry run of the head yet: on a served project Land runs one first (Ready where Land is on offer).
+    [(c) => (c.state === "none" || c.state === "stale") && c.served && !c.refused, "Ready", "success"],
+    [(c) => (c.state === "none" || c.state === "stale") && c.served, "Blocked", "warn"],
     [(c) => c.state === "none" || c.state === "stale", "Your turn", "warn"],
     [(c) => headTried(c, "failed"), "Failed", "error"],
     [(c) => headTried(c, "machine") || headTried(c, "void"), "Your turn", "warn"],
@@ -64,7 +67,7 @@ test("a Setup row's chip is the first line of the promise that holds, for every 
             if (!queued) assert.equal(word === "Ready", st.can && (st.action === "land" || st.action === "merge"), JSON.stringify(c));
             if (word === "Ready") ready++;
           }
-  assert.equal(ready, 2, "Ready only on the last line: not queued, no problem, passed, not refused, either way of landing");
+  assert.equal(ready, 4, "Ready: not queued, no problem, not refused, and passed either way of landing, or served with no dry run of the head (Land runs it first)");
 });
 
 test("a Setup proposal that isn't read, or couldn't be, is never Ready", () => {
@@ -101,7 +104,7 @@ test("the chat's chip: questions counted, working live, idle says nothing", () =
   assert.equal(chatLine(null), null);
 });
 
-test("a trial check's chip says the word, never hue alone", () => {
+test("a dry-run check's chip says the word, never hue alone", () => {
   assert.equal(trialChip(check("passed")).word, "Passed");
   assert.equal(trialChip(check("failed")).word, "Failed");
   assert.equal(trialChip(check("running")).live, true);
@@ -116,34 +119,40 @@ test("durations: seconds, then minutes and seconds", () => {
   assert.equal(durationWords(undefined), null);
 });
 
-test("the trial line names the commit it tried", () => {
-  assert.equal(trialLine(proposal()), "Trial of a1b2c3d: passed");
-  assert.equal(trialLine(proposal({ trial: trial("failed") })), "Trial of a1b2c3d: failed");
-  assert.equal(trialLine(proposal({ trial: trial("running") })), "Trial of a1b2c3d: running");
-  assert.equal(trialLine(proposal({ trial: trial("machine", { why: "the merge copy's disk is full." }) })), "Trial of a1b2c3d: didn't finish, the merge copy's disk is full");
+test("the dry-run line names the commit it ran on, never 'trial'", () => {
+  assert.equal(trialLine(proposal()), "Dry run of a1b2c3d: passed");
+  assert.equal(trialLine(proposal({ trial: trial("failed") })), "Dry run of a1b2c3d: failed");
+  assert.equal(trialLine(proposal({ trial: trial("running") })), "Dry run of a1b2c3d: running");
+  assert.equal(trialLine(proposal({ trial: trial("machine", { why: "the merge copy's disk is full." }) })), "Dry run of a1b2c3d: couldn't run, the merge copy's disk is full");
+  assert.equal(trialLine(proposal({ trial: trial("void", { why: "stopped by a Sova restart" }) })), "Dry run of a1b2c3d: stopped, stopped by a Sova restart");
   assert.equal(trialLine(proposal({ trial: null })), null);
   assert.equal(trialStale(proposal({ trial: trial("passed", { commit: OLD }) })), true);
 });
 
-test("Land and Merge Branch only once a trial of the exact head passed; else Run Trial says why", () => {
+test("Land runs the dry run first on a served project; Merge Branch waits for a passing one; else Run Dry Run says why", () => {
   assert.deepEqual(landState(proposal()), { action: "land", can: true });
   assert.deepEqual(landState(proposal({ served: false })), { action: "merge", can: true });
-  const why = "Run a trial of a1b2c3d first: it lands only once its own checks pass.";
-  assert.deepEqual(landState(proposal({ trial: null })), { action: "trial", can: true, why });
-  assert.deepEqual(landState(proposal({ served: false, trial: null })), { action: "trial", can: true, why }, "Merge Branch is gated too");
-  // A passing trial of an older commit doesn't count for the head, and neither does a run that didn't finish.
-  assert.equal(landState(proposal({ trial: trial("passed", { commit: OLD }) })).action, "trial");
-  assert.equal(landState(proposal({ trial: trial("failed") })).action, "trial");
-  assert.equal(landState(proposal({ trial: trial("machine") })).action, "trial");
-  assert.deepEqual(landState(proposal({ trial: trial("running") })), { action: "wait", can: false, why: "Trial of a1b2c3d: running" });
+  assert.deepEqual(landState(proposal({ trial: null })), { action: "land", can: true, why: "A dry run of a1b2c3d runs first. Once it passes, it lands by itself." });
+  assert.deepEqual(landState(proposal({ served: false, trial: null })), { action: "trial", can: true, why: "Run a dry run of a1b2c3d first: it merges only once its new checks pass." }, "Merge Branch is gated");
+  // A passing dry run of an older commit doesn't count for the head: Land runs a new one first.
+  assert.equal(landState(proposal({ trial: trial("passed", { commit: OLD }) })).action, "land");
+  assert.equal(landState(proposal({ served: false, trial: trial("passed", { commit: OLD }) })).action, "trial");
+  // A dry run of the head that failed, stopped or couldn't run offers Run Dry Run Again, never "fix it" for a stop.
+  for (const st of ["failed", "machine", "void"] as const) {
+    const s = landState(proposal({ trial: trial(st) }));
+    assert.equal(s.action, "trial", st);
+    assert.equal(s.again, true, st);
+    if (st !== "failed") assert.doesNotMatch(s.why!, /fix/i, st);
+  }
+  assert.deepEqual(landState(proposal({ trial: trial("running") })), { action: "wait", can: false, why: "Dry run of a1b2c3d: running" });
   // The host's own refusal stands after a passing trial; a definition that doesn't read refuses before it.
   assert.deepEqual(landState(proposal({ land: { can: false, why: "It conflicts with main." } })), { action: "land", can: false, why: "It conflicts with main." });
   assert.equal(landState(proposal({ problem: "merge.checks[0] has no command." })).can, false);
 });
 
-test("no automated tests: a trial of the merge copy alone passes with no checks, and lands", () => {
+test("no automated tests: a dry run of the merge copy alone passes with no checks, and lands", () => {
   const p = proposal({ merge: { checks: "none" }, trial: trial("passed", { checks: [] }) });
-  assert.equal(trialLine(p), "Trial of a1b2c3d: passed");
+  assert.equal(trialLine(p), "Dry run of a1b2c3d: passed");
   assert.deepEqual(landState(p), { action: "land", can: true });
 });
 

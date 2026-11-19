@@ -261,7 +261,7 @@ test("a deploy-setup run proposes its deploy recipe: its own hash and its render
     const shown = git(root, "rev-parse", branch3);
     const untried = await app.request(`/api/projects/${pid}/runtime/merge`, json("POST", { hash: r.deployHash, commit: shown }));
     assert.equal(untried.status, 409);
-    assert.match(((await untried.json()) as { error: string }).error, /no passing trial at/);
+    assert.match(((await untried.json()) as { error: string }).error, /no passing dry run at/);
     const q = await queues.get(root);
     await q.trial({ branch: branch3, by: { kind: "operator" } });
     await q.tryingNow();

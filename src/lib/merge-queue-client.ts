@@ -5,7 +5,7 @@
 import { createSignal } from "solid-js";
 import type { MergeAnswer, MergeCard, MergeReport, ReviewCard as MergeReviewCard } from "../../shared/merge-queue";
 import type { VerbResult } from "../../shared/project-contract";
-import { runMergeVerb } from "./api";
+import { fixFailure, type LandingRouteResult, runMergeVerb, startDryRun, stopDryRun } from "./api";
 import type { MergeEntry, MergeQueueView } from "./merge-queue-types";
 
 const [changed, setChanged] = createSignal(0);
@@ -20,12 +20,16 @@ export const mergeFeed = feed;
 const rowsSeen = new Map<string, string>();
 /** A row's branch summary as the key counts it: written, writing, failed, from an earlier commit. */
 const summaryKey = (s: { commit: string; state: string; stale?: { commit: string } } | undefined) => (s ? `${s.state}@${s.commit}${s.stale ? `<${s.stale.commit}` : ""}` : "");
+/** A branch's dry run as the key counts it: its state at its commit (never its progress, which moves often). */
+const dryKey = (d: { state: string; commit: string; run?: string } | undefined) => (d ? `${d.state}@${d.commit}:${d.run ?? ""}` : "");
 const rowsKey = (v: MergeQueueView) =>
   [
     v.current?.entry ?? "",
-    ...[...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].map((e) => `${e.id}:${e.state}:${e.position ?? ""}:${e.settled ?? ""}:${summaryKey(e.summary)}`),
+    `trial:${v.trialNow?.run.id ?? ""}`,
+    ...(v.trialsWaiting ?? []).map((w) => `tw:${w.id}@${w.commit}`),
+    ...[...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].map((e) => `${e.id}:${e.state}:${e.position ?? ""}:${e.settled ?? ""}:${summaryKey(e.summary)}:${dryKey(e.dryRun)}`),
     ...v.recent.map((l) => `${l.entry.id}:landed:${l.entry.notes.length}`),
-    ...(v.ready ?? []).map((r) => `${r.branch}:ready:${summaryKey(r.summary)}`),
+    ...(v.ready ?? []).map((r) => `${r.branch}:ready:${summaryKey(r.summary)}:${dryKey(r.dryRun)}`),
   ].join(",");
 /** The session feed's `merge_queue` frame: the tab adopts the view; worktree rows reload only when an entry moved. */
 export function noteMergeFeed(msg: { project: string; view: MergeQueueView }): void {
@@ -77,9 +81,21 @@ export const land = (worktree: string, o: LandOptions = {}) =>
   act(null, "merge.add", { checkout: worktree, ...opts(o) });
 /** Land on the queue's own rows, by branch. */
 export const landBranch = (project: string, branch: string, o: LandOptions = {}) => act(project, "merge.add", { branch, ...opts(o) });
-/** Run Trial on a Setup chat's proposal: `merge.try` of its setup branch at `commit` in the merge copy (its own
-    checks, from setup on, logged); it saves, merges and moves nothing. */
+/** Run Dry Run on a Setup chat's proposal: `merge.try` of its setup branch at `commit` in the merge copy (its new or
+    changed checks, from setup on, logged); it saves, merges and moves nothing. */
 export const trySetupBranch = (project: string, branch: string, commit: string) => act(project, "merge.try", { branch, commit });
+/** A dry run or Fix route's answer as `refusal` reads it ({ok, error}); readers are told to reload either way. */
+async function routeAct<T>(call: () => Promise<LandingRouteResult<T>>): Promise<{ ok: boolean; error?: { message: string }; value?: T }> {
+  const r = await call();
+  noteMergeChanged();
+  return r.ok ? { ok: true, value: r.value } : { ok: false, error: r.error };
+}
+/** Run Dry Run / Run Dry Run Again on a branch's row (`project`: the project's id). Busy: it waits its turn. */
+export const runDryRun = (project: string, branch: string, commit: string) => routeAct(() => startDryRun(project, branch, commit));
+/** Stop Dry Run: the running one by its run, or one waiting for the merge copy by its id. */
+export const stopTheDryRun = (project: string, which: { run: string } | { waiting: string }) => routeAct(() => stopDryRun(project, which));
+/** Fix: the failure's context to the branch's own chat; Fix in New Chat: a fresh chat with it (`newChat`). */
+export const fixIt = (project: string, body: { branch?: string; commit?: string; run?: string; check?: string; newChat?: boolean }) => routeAct(() => fixFailure(project, body));
 export const cancelEntry = (e: Pick<MergeEntry, "id">) => act(null, "merge.cancel", { entry: e.id });
 /** The user's answer to an entry that waits for them, a click on Sova's page: Accept, Land Anyway, Try Again. */
 export const answerEntry = (e: Pick<MergeEntry, "id">, answer: MergeAnswer) => act(null, "merge.answer", { entry: e.id, answer });

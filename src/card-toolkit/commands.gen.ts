@@ -109,6 +109,7 @@ export type CommandId =
   | "project.verb.merge.names"
   | "project.verb.merge.rule"
   | "project.verb.merge.respond"
+  | "project.verb.merge.stop-try"
   | "project.verb.release.status"
   | "project.verb.release.logs"
   | "project.verb.release.request"
@@ -181,6 +182,10 @@ export type CommandId =
   | "project.folder.read"
   | "project.merge-queue.update-local-main"
   | "project.merge-queue.discard-branch"
+  | "project.merge-queue.dry-run.start"
+  | "project.merge-queue.dry-run.stop"
+  | "project.merge-queue.fix"
+  | "project.merge-queue.fix.new-chat"
   | "project.merge-queue.request.publish"
   | "project.merge-queue.land-how.set"
   | "project.merge-queue.land-how.clear"
@@ -3216,6 +3221,79 @@ export interface CommandParams {
     /** Choices, comma-separated */
     "choices"?: string[];
   };
+  /** The project verb merge.stop-try (sova-project merge.stop-try): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
+  "project.verb.merge.stop-try": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
+  };
   /** The project verb release.status, as the operator (sova-project release.status). (only looks; needs the card's owner trusted) */
   "project.verb.release.status": {
     /** The project's root */
@@ -3802,7 +3880,7 @@ export interface CommandParams {
     /** Its thinking level */
     "thinking"?: string;
   };
-  /** Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: refused unless that head has a passing trial. The user's own page only: a chat, an Overseer or a script is refused. (changes something; needs the card's owner trusted) */
+  /** Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: on a project the queue serves Land runs a dry run of that head first; Merge Branch refuses a head with no passing dry run. The user's own page only: a chat, an Overseer or a script is refused. (changes something; needs the card's owner trusted) */
   "project.setup.merge": {
     /** The project's id */
     "pid": string;
@@ -4045,6 +4123,50 @@ export interface CommandParams {
     "dryRun"?: boolean;
     /** The dry run's digest: the folder's files go only while they are still that listing */
     "digest"?: string;
+  };
+  /** Run Dry Run (Run Dry Run Again) on a setup branch's row: a dry run of the merge and release checks the branch adds or changes on its exact commit, in the merge copy; nothing lands and nothing is saved. While the copy is busy it waits its turn. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.dry-run.start": {
+    /** The project's id */
+    "project": string;
+    /** The branch */
+    "branch": string;
+    /** The branch's tip the row showed (full commit) */
+    "commit": string;
+  };
+  /** Stop Dry Run: stops the running dry run (by its run) at once, freeing the merge copy, or takes a waiting one (by its id) out of the wait. Nothing is blamed; the branch needs a new dry run. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.dry-run.stop": {
+    /** The project's id */
+    "project": string;
+    /** The running dry run's run (mr_…) */
+    "run"?: string;
+    /** A waiting dry run's id (tw_…) */
+    "waiting"?: string;
+  };
+  /** Fix on a branch a failure holds up (its dry run or its landing): sends the failure's whole context to the branch's own chat as your message, asking it to explain and propose a fix, then wait for you. Refused while that chat works or is open in a terminal. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.fix": {
+    /** The project's id */
+    "project": string;
+    /** The branch */
+    "branch": string;
+    /** The commit the failure is at (full) */
+    "commit": string;
+    /** The failed run (mr_…) */
+    "run": string;
+  };
+  /** Fix in New Chat: starts a fresh coding chat with the failure's whole context as its first message, on a new branch from the target for a failure the target shares (or a check broken on it), else on this branch in its worktree. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.fix.new-chat": {
+    /** The project's id */
+    "project": string;
+    /** The branch (the target's name for a check broken on it) */
+    "branch": string;
+    /** The commit the failure is at (full) */
+    "commit": string;
+    /** The failed run (mr_…) */
+    "run": string;
+    /** Always true: start a new chat */
+    "newChat": boolean;
+    /** A check broken on the target: its id */
+    "check"?: string;
   };
   /** Publish a checked branch's pull or merge request with the title and description you reviewed: the spec docs commit, the leak scan, the push, then the request. (changes something; needs the card's owner trusted) */
   "project.merge-queue.request.publish": {
@@ -4800,6 +4922,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.merge.names": "changes",
   "project.verb.merge.rule": "changes",
   "project.verb.merge.respond": "changes",
+  "project.verb.merge.stop-try": "changes",
   "project.verb.release.status": "looks",
   "project.verb.release.logs": "looks",
   "project.verb.release.request": "changes",
@@ -4872,6 +4995,10 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.folder.read": "looks",
   "project.merge-queue.update-local-main": "changes",
   "project.merge-queue.discard-branch": "changes",
+  "project.merge-queue.dry-run.start": "changes",
+  "project.merge-queue.dry-run.stop": "changes",
+  "project.merge-queue.fix": "changes",
+  "project.merge-queue.fix.new-chat": "changes",
   "project.merge-queue.request.publish": "changes",
   "project.merge-queue.land-how.set": "changes",
   "project.merge-queue.land-how.clear": "changes",

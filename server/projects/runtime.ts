@@ -14,11 +14,11 @@ import { landThroughQueue, mergeCodingWorktree, startOnboardSession, type Starte
 import { projectRootOf } from "../project-root";
 import { realGit } from "../project-services/engine";
 import { readWorktree } from "../project-worktrees";
-import { ONBOARD_PLAYBOOK_ID, onboardRefusal, onboardRunMode, onboardStart } from "./onboard";
+import { ONBOARD_PLAYBOOK_ID, onboardRefusalCached, onboardRunMode, onboardStart } from "./onboard";
 import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, proposesOf, runLive } from "./playbook-review";
 import { runtimeFeed, type FeedRow } from "./runtime-feed";
-import { ALREADY_RUNNING, verbsChatPathOfRun, verbsCurrentOf } from "./verbs-chat";
-import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchived, readProject, runtimeSid } from "./spaces";
+import { ALREADY_RUNNING, carryPathOf, verbsChatPathOfRun, verbsCurrentOf, type VerbsCurrent } from "./verbs-chat";
+import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchivedWhy, readProject, runtimeSid } from "./spaces";
 
 /**
  * The host side of the software registry (§app/project-runtime): `runtime/<p>`, a host-local project-layer
@@ -300,7 +300,8 @@ function joinLive(software: Record<string, unknown>[], instances: InstanceSummar
 
 export { ALREADY_RUNNING } from "./verbs-chat";
 
-function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlaybook | null {
+/** `verbs`: the project's open Project verbs chat as peekVerbsChat read it (undefined: unread, the record as it is). */
+function playbookView(host: OrgHostApi, d: Record<string, unknown>, verbs?: VerbsCurrent | null): RuntimePlaybook | null {
   const pb = obj(d.playbook);
   if (!pb.sessionId) return null;
   const bf = obj(pb.branchFacts);
@@ -311,7 +312,7 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const deploy = proposes === "deploy" ? obj(bf.deploy) : proposes === "release" ? obj(bf.release) : proposes === "pipeline" ? obj(bf.pipeline) : null;
   const build = obj(host.data(str(pb.sid)));
   // A Project verbs chat carrying on this run's branch (Start Fresh with commits) is the session the run is read from.
-  const carry = verbsChatPathOfRun(str(pb.sessionId));
+  const carry = verbs === undefined ? verbsChatPathOfRun(str(pb.sessionId)) : carryPathOf(verbs, str(pb.sessionId));
   return {
     sessionId: str(pb.sessionId),
     playbookId: str(pb.playbookId) || "project-verbs",
@@ -371,21 +372,22 @@ export function openOnboardRun(builds: readonly SessionInfo[], projectId: string
 /** Why Set Up with a Chat / Change Setup… can't start or open the project's Project verbs chat, or undefined: the
     start's own refusals (archived, the folder elsewhere or missing, no Git, the playbook missing, no model), read
     before any press from the same rule (onboard.ts onboardRefusal) so the line and a press say the same sentence. */
-export async function onboardWhyOf(projectId: string): Promise<string | undefined> {
-  const p = readProject(projectId);
-  if (projectArchived(projectId)) return `${p.name || p.id} is archived. Unarchive it first.`;
+export async function onboardWhyOf(projectId: string, verbs?: VerbsCurrent | null): Promise<string | undefined> {
+  const archived = projectArchivedWhy(projectId);
+  if (archived) return archived;
   // An open chat is opened by the press, whatever a new start would need (verbs-chat.ts openVerbsChat).
-  if (await verbsChatOpen(projectId)) return undefined;
-  return (await onboardRefusal(projectId)) ?? undefined;
+  if (verbs === undefined ? await peekVerbsChat(projectId) : verbs) return undefined;
+  return (await onboardRefusalCached(projectId)) ?? undefined;
 }
 
-/** The project's Project verbs chat is open, as a press finds it (the live ways; false before the routes exist). */
-async function verbsChatOpen(projectId: string): Promise<boolean> {
+/** The project's open Project verbs chat, as a press finds it, read without writing its record (verbs-chat.ts
+    peekCurrentChat); undefined before the routes exist or when it can't be read. */
+async function peekVerbsChat(projectId: string): Promise<VerbsCurrent | null | undefined> {
   try {
-    const [{ verbsDeps }, { currentChat }] = await Promise.all([import("./runtime-routes"), import("./verbs-chat")]);
-    return !!(await currentChat(projectId, verbsDeps()));
+    const [{ verbsDeps }, { peekCurrentChat }] = await Promise.all([import("./runtime-routes"), import("./verbs-chat")]);
+    return await peekCurrentChat(projectId, verbsDeps());
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -470,7 +472,9 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
   const def = obj(d.def);
   const reg = obj(d.registered);
   // Why the button can't start or open the Project verbs chat, read before any press from the start's own refusals.
-  const onboardWhy = await onboardWhyOf(projectId);
+  // Read only (the page polls this): the record is brought in line by the presses and the chat's own read.
+  const verbs = await peekVerbsChat(projectId);
+  const onboardWhy = await onboardWhyOf(projectId, verbs ?? null);
   const rows = at.host.log.rows({ session: at.sid }) as unknown as FeedRow[];
   return {
     projectId,
@@ -486,7 +490,7 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
     drift: cfg.includes("stale") && Array.isArray(obj(d.drift).paths) ? (obj(d.drift).paths as string[]) : null,
     proof,
     registered: reg.hash ? { hash: str(reg.hash), suite: Number(reg.suite) || 0, commit: str(reg.commit) || null, at: iso(reg.at) } : null,
-    playbook: await withRun(playbookView(at.host, d), String(d.playbookState), root),
+    playbook: await withRun(playbookView(at.host, d, verbs), String(d.playbookState), root),
     can: {
       onboard: !onboardWhy,
       ...(onboardWhy ? { onboardWhy } : {}),

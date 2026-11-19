@@ -81,10 +81,6 @@ export function setupStatus(v: ProjectRuntimeView): { word: string; tone?: ChipT
 /** Set Up with a Chat while never set up, Change Setup… once something was registered (the other tabs' words). */
 export const playbookLabel = (v: Pick<ProjectRuntimeView, "registered">): string => (v.registered ? "Change Setup…" : "Set Up with a Chat");
 
-/** Start Fresh on the Project verbs chat (§app.project-runtime/onboard): the server's own sentences. */
-export const VERBS_WORKING_WHY = "The Project verbs chat is working: wait for its turn to end (or stop it), then Start Fresh.";
-export const VERBS_DIRTY_WHY = "The Project verbs chat's worktree has edits not committed: commit or discard them in that chat, then Start Fresh.";
-
 /** Start Fresh's confirm: with commits beyond the target its proposal stays and the new chat carries on there. Pure. */
 export function freshConfirmWords(ahead: number, branch?: string): string {
   return ahead > 0

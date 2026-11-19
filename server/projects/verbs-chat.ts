@@ -1,13 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import type { VerbsChatOpened, VerbsChatStatus, VerbsChatView } from "../../shared/project-runtime";
+import { existsSync } from "node:fs";
+import { VERBS_DIRTY, VERBS_STILL_WORKING, type VerbsChatOpened, type VerbsChatStatus, type VerbsChatView } from "../../shared/project-runtime";
 import { isArchived } from "../archived-sessions";
 import { canonicalPath } from "../paths";
 import type { Envelope } from "../org-envelope";
 import { OrgError } from "../org-error";
-import { stateRoot } from "../state-root";
+import { chatRecordStore, historyLine, type ChatRecord } from "./chat-record";
 import { branchStateOf } from "./setup-chat";
-import { projectArchived, readProject } from "./spaces";
+import { projectArchivedWhy, readProject } from "./spaces";
 
 /**
  * The project's standing Project verbs chat (§app.project-runtime/onboard): at most one open per project, kept as the
@@ -41,48 +40,11 @@ export interface VerbsHistoryItem extends VerbsCurrent {
   why: "fresh" | "ended";
 }
 
-interface ProjectRecord {
-  current?: VerbsCurrent;
-  history: VerbsHistoryItem[];
-}
+const store = chatRecordStore<VerbsCurrent, VerbsHistoryItem>("verbs-chats.json", { cache: true });
+const readAll = store.all;
+const saveRecord = store.save;
 
-const HISTORY_MAX = 20;
-const recordFile = (): string => join(stateRoot(), "verbs-chats.json");
-
-let cache: { mtimeMs: number; all: Record<string, ProjectRecord> } | null = null;
-
-function readAll(): Record<string, ProjectRecord> {
-  try {
-    const mtimeMs = statSync(recordFile()).mtimeMs;
-    if (cache && cache.mtimeMs === mtimeMs) return cache.all;
-    const raw = JSON.parse(readFileSync(recordFile(), "utf8")) as Record<string, ProjectRecord>;
-    const all = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-    cache = { mtimeMs, all };
-    return all;
-  } catch {
-    return {};
-  }
-}
-
-function writeAll(all: Record<string, ProjectRecord>): void {
-  const file = recordFile();
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(all, null, 2)}\n`, { mode: 0o600 });
-  renameSync(tmp, file);
-  cache = null;
-}
-
-export function verbsRecordOf(projectId: string): ProjectRecord {
-  const r = readAll()[projectId];
-  return { ...(r?.current ? { current: r.current } : {}), history: Array.isArray(r?.history) ? r.history : [] };
-}
-
-function saveRecord(projectId: string, r: ProjectRecord): void {
-  const all = { ...readAll() };
-  all[projectId] = { ...(r.current ? { current: r.current } : {}), history: r.history.slice(-HISTORY_MAX) };
-  writeAll(all);
-}
+export const verbsRecordOf = (projectId: string): ChatRecord<VerbsCurrent, VerbsHistoryItem> => store.of(projectId);
 
 /** The build session a carry-on chat stands in for (a chat Start Fresh started in an earlier run's worktree): its
     turns are that run's turns, so the registry hears them. Null for any other session file. */
@@ -95,11 +57,14 @@ export function verbsRunOfPath(path: string): string | null {
   return null;
 }
 
+/** `c`'s path when it is a carry-on chat standing in for `run`'s build session, else null. Pure. */
+export const carryPathOf = (c: VerbsCurrent | null | undefined, run: string): string | null => (c && c.run === run && c.sessionId !== run && c.path ? c.path : null);
+
 /** The carry-on chat that stands in for a run's build session, or null (none, or the run's own chat). */
 export function verbsChatPathOfRun(run: string): string | null {
   for (const r of Object.values(readAll())) {
-    const c = r?.current;
-    if (c && c.run === run && c.sessionId !== run && c.path) return c.path;
+    const path = carryPathOf(r?.current, run);
+    if (path) return path;
   }
   return null;
 }
@@ -110,8 +75,7 @@ export const verbsCurrentOf = (projectId: string): VerbsCurrent | null => verbsR
 // ---- the sentences ----------------------------------------------------------------------------------------
 
 export const NO_VERBS_CHAT = "There is no open Project verbs chat to start fresh.";
-export const VERBS_STILL_WORKING = "The Project verbs chat is working: wait for its turn to end (or stop it), then Start Fresh.";
-export const VERBS_DIRTY = "The Project verbs chat's worktree has edits not committed: commit or discard them in that chat, then Start Fresh.";
+export { VERBS_DIRTY, VERBS_STILL_WORKING };
 export const ALREADY_RUNNING = (title: string) => `The Project verbs playbook is already running: "${title}".`;
 export const WAITS_ANSWERS = (title: string) => `The Project verbs chat waits on the user's answers in "${title}": a start reaches it once they are answered.`;
 export const PROPOSAL_WAITS = (branch: string) => `The Project verbs chat's proposal on ${branch} waits on the user's review: a start reaches it once it is merged.`;
@@ -166,6 +130,8 @@ function stillOpen(projectId: string, c: VerbsCurrent | undefined, deps: Pick<Ve
 /** The project's open Project verbs chat: the recorded one while it is open (else it joins the history), else an
     open onboard build adopted as it. */
 export async function currentChat(projectId: string, deps: Pick<VerbsDeps, "buildGone" | "adoptable" | "now">): Promise<VerbsCurrent | null> {
+  // The same answer peekCurrentChat reads, with the record brought in line: an ended chat joins the history, an
+  // adopted build is recorded.
   const rec = verbsRecordOf(projectId);
   if (rec.current && stillOpen(projectId, rec.current, deps)) return rec.current;
   if (rec.current) {
@@ -180,11 +146,20 @@ export async function currentChat(projectId: string, deps: Pick<VerbsDeps, "buil
   return current;
 }
 
+/** The project's open Project verbs chat as currentChat finds it, read only (the registry's polled read): the recorded
+    one while it is open, else the open onboard build it would adopt. Writes nothing. */
+export async function peekCurrentChat(projectId: string, deps: Pick<VerbsDeps, "buildGone" | "adoptable" | "now">): Promise<VerbsCurrent | null> {
+  const rec = verbsRecordOf(projectId);
+  if (rec.current && stillOpen(projectId, rec.current, deps)) return rec.current;
+  const a = await deps.adoptable(projectId);
+  return a ? { ...a, startedAt: iso(deps) } : null;
+}
+
 /** The earlier chats, for a new chat's first message (its memory). Pure. */
 export function earlierChats(history: readonly VerbsHistoryItem[]): string {
   if (!history.length) return "";
   const out = ["## Earlier Project verbs chats", "Read them before you change anything: what they learned and decided is yours to keep."];
-  for (const h of [...history].reverse()) out.push(`- ${h.path} (started ${h.startedAt}, ${h.why === "fresh" ? "closed by Start Fresh" : "ended"} ${h.endedAt}${h.branch ? `, branch ${h.branch}` : ""})`);
+  for (const h of [...history].reverse()) out.push(historyLine(h));
   return out.join("\n");
 }
 
@@ -230,15 +205,10 @@ async function replace(projectId: string, old: VerbsCurrent | undefined, input: 
   return { sessionId: made.sessionId, path: made.path, reopened: false, ...(made.worktree ? { worktree: made.worktree } : {}), ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}) };
 }
 
-const archivedWhy = (projectId: string): string | null => {
-  const p = readProject(projectId);
-  return projectArchived(projectId) ? `${p.name || p.id} is archived. Unarchive it first.` : null;
-};
-
 /** Set Up with a Chat / Change Setup… (POST /api/projects/:pid/verbs/onboard): opens the open chat, sending nothing;
     with none, starts one (carrying on the last chat's kept branch and proposal, when there is one). */
 export async function openVerbsChat(projectId: string, input: { why?: string; model?: string; thinking?: string }, deps: VerbsDeps, envelope?: Envelope): Promise<VerbsChatOpened> {
-  const no = archivedWhy(projectId);
+  const no = projectArchivedWhy(projectId);
   if (no) throw new OrgError(no, 409);
   const cur = await currentChat(projectId, deps);
   if (cur) return { sessionId: cur.sessionId, path: cur.path, reopened: true, ...(cur.worktree && cur.branch ? { worktree: { path: cur.worktree, branch: cur.branch } } : {}) };
@@ -248,7 +218,7 @@ export async function openVerbsChat(projectId: string, input: { why?: string; mo
 /** Start Fresh (POST /api/projects/:pid/verbs/chat/fresh), the operator's own press: refused while the chat works or
     its worktree has edits not committed; else it is archived and replaced. */
 export async function freshVerbsChat(projectId: string, input: { model?: string; thinking?: string }, deps: VerbsDeps, envelope?: Envelope): Promise<VerbsChatOpened> {
-  const no = archivedWhy(projectId);
+  const no = projectArchivedWhy(projectId);
   if (no) throw new OrgError(no, 409);
   const cur = await currentChat(projectId, deps);
   if (!cur) throw new OrgError(NO_VERBS_CHAT, 409);
@@ -278,7 +248,7 @@ export type OverseerVerbsStart = VerbsChatOpened & { delivered?: true; held?: { 
 export async function overseerVerbsStart(projectId: string, why: string, deps: VerbsDeps, envelope: Envelope): Promise<OverseerVerbsStart> {
   const cur = await currentChat(projectId, deps);
   if (!cur) return replace(projectId, verbsRecordOf(projectId).history.at(-1), why ? { why } : {}, deps, envelope);
-  const no = archivedWhy(projectId) ?? deps.overseerMay?.(projectId, envelope) ?? null;
+  const no = projectArchivedWhy(projectId) ?? deps.overseerMay?.(projectId, envelope) ?? null;
   if (no) throw new OrgError(no, 409);
   const live = await deps.live(cur.path);
   const title = titleOf(projectId);
@@ -311,4 +281,4 @@ export async function readVerbsChat(projectId: string, deps: Pick<VerbsDeps, "bu
 }
 
 /** Tests: the record file. */
-export const verbsRecordFileForTest = recordFile;
+export const verbsRecordFileForTest = store.file;

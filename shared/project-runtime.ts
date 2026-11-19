@@ -116,6 +116,11 @@ export interface VerbsChatView {
   dirty: boolean;
 }
 
+/** Start Fresh's refusals while the chat works or its worktree has edits not committed: the server answers them and the
+    chat's head says them before a press, word for word. */
+export const VERBS_STILL_WORKING = "The Project verbs chat is working: wait for its turn to end (or stop it), then Start Fresh.";
+export const VERBS_DIRTY = "The Project verbs chat's worktree has edits not committed: commit or discard them in that chat, then Start Fresh.";
+
 export interface VerbsChatStatus {
   chat: VerbsChatView | null;
   /** The earlier Project verbs chats, newest last. */

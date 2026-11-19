@@ -1,8 +1,8 @@
 import { createEffect, createResource, createSignal, createUniqueId, on, onMount, Show } from "solid-js";
-import type { VerbsChatView } from "../../shared/project-runtime";
+import { VERBS_DIRTY, VERBS_STILL_WORKING, type VerbsChatView } from "../../shared/project-runtime";
 import { ApiError, freshVerbsChat, getVerbsChat } from "../lib/api";
 import { projectSessionHref } from "../lib/projects-route";
-import { freshConfirmWords, VERBS_DIRTY_WHY, VERBS_WORKING_WHY } from "../lib/project-software";
+import { freshConfirmWords } from "../lib/project-software";
 import { announce, toast } from "../lib/ui-state";
 import { trapFocus } from "./ui";
 import "../projects.css";
@@ -44,8 +44,8 @@ export function VerbsChatFresh(props: { projectId: string; control: VerbsChatCon
     try {
       const now = (await getVerbsChat(props.projectId)).chat;
       if (!now) return void setRefused("This is no longer the project's Project verbs chat.");
-      if (now.working) return void setRefused(VERBS_WORKING_WHY);
-      if (now.dirty) return void setRefused(VERBS_DIRTY_WHY);
+      if (now.working) return void setRefused(VERBS_STILL_WORKING);
+      if (now.dirty) return void setRefused(VERBS_DIRTY);
       setAsking({ ahead: now.ahead, ...(now.branch ? { branch: now.branch } : {}) });
     } catch (err) {
       setRefused(errText(err));
@@ -78,7 +78,7 @@ export function VerbsChatFresh(props: { projectId: string; control: VerbsChatCon
         aria-haspopup="dialog"
         aria-disabled={props.control.working() || busy() ? "true" : undefined}
         aria-describedby={props.control.working() ? props.describedBy : undefined}
-        title={props.control.working() ? VERBS_WORKING_WHY : "Archive this chat and start a new one"}
+        title={props.control.working() ? VERBS_STILL_WORKING : "Archive this chat and start a new one"}
         onClick={() => void press()}
       >
         Start Fresh…
@@ -94,7 +94,7 @@ export function VerbsChatNote(props: { control: VerbsChatControl; id: string }) 
   return (
     <Show when={props.control.working()}>
       <p class="text-caption text-muted verbs-fresh-why" id={props.id}>
-        {VERBS_WORKING_WHY}
+        {VERBS_STILL_WORKING}
       </p>
     </Show>
   );

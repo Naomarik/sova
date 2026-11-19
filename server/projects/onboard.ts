@@ -124,6 +124,7 @@ let offeredForTest: (() => Promise<string[] | null>) | null = null;
 /** Tests: what this host's model picker lists (null: the real list again). */
 export function setOfferedRefsForTest(f: (() => Promise<string[] | null>) | null): void {
   offeredForTest = f;
+  refusalMemo.clear();
 }
 
 /** The refs this host's model picker lists (credentials configured); null when they can't be read. */
@@ -146,6 +147,24 @@ export async function onboardRefusal(projectId: string, input: { model?: string 
   const id = resolvePlaybookId(input.playbook?.trim() || ONBOARD_PLAYBOOK_ID);
   const facts = await onboardFacts(projectId, id);
   return startRefusal(facts, onboardModel(input, input.model?.trim() ? null : await offeredRefs()));
+}
+
+/** How long the setup line's reason is kept: the registry is read on every poll, and the reason lists this host's
+    models and asks Git for the folder's repository. A press always reads it fresh (onboardStart). */
+export const ONBOARD_REFUSAL_TTL_MS = 10_000;
+const refusalMemo = new Map<string, { at: number; why: Promise<string | null> }>();
+
+/** onboardRefusal(projectId) as the setup line reads it, the same answer kept for ONBOARD_REFUSAL_TTL_MS (one read in
+    flight is shared; a failed read is not kept). */
+export function onboardRefusalCached(projectId: string, now: number = Date.now()): Promise<string | null> {
+  const hit = refusalMemo.get(projectId);
+  if (hit && now - hit.at < ONBOARD_REFUSAL_TTL_MS) return hit.why;
+  const why = onboardRefusal(projectId);
+  refusalMemo.set(projectId, { at: now, why });
+  why.catch(() => {
+    if (refusalMemo.get(projectId)?.why === why) refusalMemo.delete(projectId);
+  });
+  return why;
 }
 
 /** The run's first prompt, title and model from the facts, or why it can't start. Pure. */

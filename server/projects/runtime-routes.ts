@@ -66,42 +66,34 @@ function liveSetupDeps(app: Hono<any>): SetupDeps {
     // Project verbs playbook's, so the two never block each other.
     startRun: async (pid, input, envelope?: Envelope) => (await import("../project-overseer")).startSetupSession(pid, { ...input, mode: { mode: SETUP_MODE.mode, minorModes: [...SETUP_MODE.minorModes] }, ...(envelope ? { envelope } : {}) }),
     // A plain chat in the folder, made without a first message, set to the Setup chat's mode and model, then sent it.
-    startChat: async (cwd, text, title, model) => {
-      const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd }) });
-      const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
-      if (res.status !== 201 || !json?.id || !json.path) throw new RuntimeRefusal(`The Setup chat didn't start: ${json?.error ?? `HTTP ${res.status}`}`, 409);
-      (await import("../session-titles")).writeAutoTitle(json.id, title);
-      const chat = await (await import("../chat-handle")).acquireChatHandle(json.path);
-      await chat.switchMode({ mode: SETUP_MODE.mode, minorModes: [...SETUP_MODE.minorModes] });
-      if (model) {
-        await chat.setModel(model.model);
-        if (model.thinking) await chat.setThinking(model.thinking);
-      }
-      await chat.deliverToAgent(text);
-      return { id: json.id, path: json.path };
-    },
-    archive: async (path) => {
-      const r = await (await import("../sessions-index")).archiveSession(path, true);
-      return r.ok ? { ok: true } : { ok: false, error: r.error ?? "refused" };
-    },
+    startChat: async (cwd, text, title, model) => plainChat(app, cwd, text, title, { mode: SETUP_MODE.mode, minorModes: [...SETUP_MODE.minorModes] }, model, "The Setup chat"),
+    archive: archiveChat,
     working: async (path) => !!(await (await import("./playbook-review")).runLive(path))?.working,
-    // Remove Worktree on the build, then its branch, which has no commit beyond the target (nothing is lost).
-    removeEmpty: async (pid, sessionId, branch) => {
-      const po = await import("../project-overseer");
-      await po.removeCodingWorktree(pid, sessionId).catch(() => undefined);
-      const root = readProject(pid).root;
-      const { NO_BACKGROUND_CLEANUP } = await import("../git-no-background");
-      await realGit([...NO_BACKGROUND_CLEANUP, "branch", "-D", branch], root).catch(() => undefined);
-    },
+    removeEmpty: removeEmptyRun,
   };
 }
 
+/** Archive a chat (the Setup chat's and the Project verbs chat's Start Fresh); a refusal says why. */
+async function archiveChat(path: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const r = await (await import("../sessions-index")).archiveSession(path, true);
+  return r.ok ? { ok: true } : { ok: false, error: r.error ?? "refused" };
+}
+
+/** Remove Worktree on the build, then its branch, which has no commit beyond the target (nothing is lost). */
+async function removeEmptyRun(pid: string, sessionId: string, branch: string): Promise<void> {
+  const po = await import("../project-overseer");
+  await po.removeCodingWorktree(pid, sessionId).catch(() => undefined);
+  const root = readProject(pid).root;
+  const { NO_BACKGROUND_CLEANUP } = await import("../git-no-background");
+  await realGit([...NO_BACKGROUND_CLEANUP, "branch", "-D", branch], root).catch(() => undefined);
+}
+
 /** A plain chat in `cwd`, titled and set to `mode` and the model, then sent `text`: the Setup chat's and a carry-on
-    Project verbs chat's way to start in an earlier run's folder. */
-async function plainChat(app: Hono<any>, cwd: string, text: string, title: string, mode: import("../../shared/project-overseer").ProjectCodingMode, model?: { model: string; thinking?: string }): Promise<{ id: string; path: string }> {
+    Project verbs chat's way to start in an earlier run's folder. `who` names it in the refusal when it can't be made. */
+async function plainChat(app: Hono<any>, cwd: string, text: string, title: string, mode: import("../../shared/project-overseer").ProjectCodingMode, model?: { model: string; thinking?: string }, who = "The chat"): Promise<{ id: string; path: string }> {
   const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd }) });
   const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
-  if (res.status !== 201 || !json?.id || !json.path) throw new RuntimeRefusal(`The chat didn't start: ${json?.error ?? `HTTP ${res.status}`}`, 409);
+  if (res.status !== 201 || !json?.id || !json.path) throw new RuntimeRefusal(`${who} didn't start: ${json?.error ?? `HTTP ${res.status}`}`, 409);
   (await import("../session-titles")).writeAutoTitle(json.id, title);
   const chat = await (await import("../chat-handle")).acquireChatHandle(json.path);
   await chat.switchMode({ mode: mode.mode, minorModes: [...mode.minorModes] } as Parameters<typeof chat.switchMode>[0]);
@@ -140,10 +132,7 @@ function liveVerbsDeps(app: Hono<any>): VerbsDeps {
       const mode = (m.mode === "normal" || m.mode === "delegate") && Array.isArray(m.minorModes) ? { mode: m.mode as "normal" | "delegate", minorModes: m.minorModes as string[] } : playbookRunMode(hostDefaultMode());
       return plainChat(app, cwd, text, title, mode, model);
     },
-    archive: async (path) => {
-      const r = await (await import("../sessions-index")).archiveSession(path, true);
-      return r.ok ? { ok: true } : { ok: false, error: r.error ?? "refused" };
-    },
+    archive: archiveChat,
     live: async (path) => {
       const l = await (await import("./playbook-review")).runLive(path);
       return { working: !!l?.working, questions: l?.questions ?? 0 };
@@ -153,12 +142,7 @@ function liveVerbsDeps(app: Hono<any>): VerbsDeps {
       return r.code === 0 && r.stdout.trim().length > 0;
     },
     deliver: async (path, text) => void (await (await (await import("../chat-handle")).acquireChatHandle(path)).deliverToAgent(text)),
-    removeEmpty: async (pid, sessionId, branch) => {
-      const po = await import("../project-overseer");
-      await po.removeCodingWorktree(pid, sessionId).catch(() => undefined);
-      const { NO_BACKGROUND_CLEANUP } = await import("../git-no-background");
-      await realGit([...NO_BACKGROUND_CLEANUP, "branch", "-D", branch], readProject(pid).root).catch(() => undefined);
-    },
+    removeEmpty: removeEmptyRun,
     buildGone: (pid, run) => {
       // Sync read of the engine already open (verbs-chat asks while it decides).
       const engine = engineOf(pid);

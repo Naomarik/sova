@@ -3,9 +3,9 @@
 // (the engine's conform stubbed: its own suite is the engine's tests); registration and drift. A throwaway PI_CODING_AGENT_DIR and repos in the OS temp dir.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { Hono } from "hono";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
@@ -174,6 +174,40 @@ test("no model on this host: the line says the press's own sentence before any p
     assert.equal(((await r.json()) as { error: string }).error, v.can.onboardWhy, "the press says the same");
   } finally {
     setOfferedRefsForTest(null);
+  }
+});
+
+test("the setup line's reason is read once per few seconds, the same answer a fresh read gives", async () => {
+  const { setOfferedRefsForTest, onboardRefusal, onboardRefusalCached, ONBOARD_REFUSAL_TTL_MS } = await import("./onboard");
+  let lists = 0;
+  setOfferedRefsForTest(async () => (lists++, []));
+  try {
+    const first = await read();
+    const second = await read();
+    assert.equal(lists, 1, "the second poll lists no models");
+    assert.deepEqual([first.can.onboardWhy, second.can.onboardWhy], [await onboardRefusal(pid), await onboardRefusal(pid)]);
+    lists = 0;
+    await onboardRefusalCached(pid, Date.now() + ONBOARD_REFUSAL_TTL_MS);
+    assert.equal(lists, 1, "past its time it is read again");
+  } finally {
+    setOfferedRefsForTest(null);
+  }
+});
+
+test("the registry's read writes nothing: a Project verbs chat no longer open stays in its record for a press to close", async () => {
+  const file = (await import("./verbs-chat")).verbsRecordFileForTest();
+  const before = `${JSON.stringify({ [pid]: { current: { sessionId: "gone", path: join(tmp, "gone.jsonl"), startedAt: "2026-01-01T00:00:00.000Z", run: "gone" }, history: [] } }, null, 2)}\n`;
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, before);
+  const { setOfferedRefsForTest, onboardModels } = await import("./onboard");
+  setOfferedRefsForTest(async () => [onboardModels()[0]!]);
+  try {
+    const v = await read();
+    assert.equal(v.can.onboard, true, "a chat no longer open isn't the one a press opens: a new start may go ahead");
+    assert.equal(readFileSync(file, "utf8"), before, "the record is as it was");
+  } finally {
+    setOfferedRefsForTest(null);
+    rmSync(file, { force: true });
   }
 });
 

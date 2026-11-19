@@ -171,9 +171,10 @@ export function SessionView(props: {
   const po = !props.paneId && !props.head ? s().projectOverseer : undefined;
   const poEarlier = !!po && !!(s().project?.finished ?? s().org?.finished);
   const poControl = po ? createProjectOverseerControl({ projectId: po.projectId, path, summary: s, onRefresh: () => props.onRefresh() }) : null;
-  /** A project's coding session may be its standing Project verbs chat, whose head has Start Fresh… (§app.project-runtime/onboard).
-      Decided at mount, read on open and as its turn starts and ends; this host's sessions only. */
-  const verbsProject = !props.paneId && !props.head && !po && !hostOf(path) && s().project?.kind === "coding" ? s().project!.projectId : undefined;
+  /** A project's verb playbook run may be its standing Project verbs chat, whose head has Start Fresh… (§app.project-runtime/onboard).
+      Decided at mount, read on open and as its turn starts and ends; this host's sessions only. Any other coding
+      session never asks. */
+  const verbsProject = !props.paneId && !props.head && !po && !hostOf(path) && s().project?.kind === "coding" && s().project?.onboard ? s().project!.projectId : undefined;
   const verbsControl = verbsProject ? createVerbsChatControl({ projectId: verbsProject, path, busy: () => !!s().busy }) : null;
   const verbsWhyId = `verbs-fresh-why-${sessionIdOfPath(path)}`;
 

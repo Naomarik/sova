@@ -51,6 +51,9 @@ export interface LastCheck {
   failed?: string;
   /** The branch head it ran at, when known (§chat.worktrees/newest-commit). */
   commit?: string;
+  /** Its kind, by the command it ran ("test run", "typecheck", "build", "check run"): only a newer run of the same kind
+   *  replaces it. Absent: read before it was kept (`what` stands for it). */
+  kind?: string;
 }
 
 const listed = (xs: readonly string[], n = 3) => `${xs.slice(0, n).join(", ")}${xs.length > n ? `, +${xs.length - n} more` : ""}`;
@@ -77,6 +80,15 @@ export function checkFailureOf(output: string): { what: string; failed?: string 
   return { what: "check run" };
 }
 
+/** A check command's kind, from what it runs (the same word whether it passes or fails): a typecheck, a build, a test
+ *  run, or another check run. A newer run clears a failing one only when it is of the same kind
+ *  (§chat.worktrees/newest-commit). Pure. */
+export function checkKindOf(cmd: string): "test run" | "typecheck" | "build" | "check run" {
+  if (/\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+|exec\s+)?(?:typecheck|tsc)\b|\btsc\b/.test(cmd)) return "typecheck";
+  if (/\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:test|vitest)\b|\bvitest\b|\b(?:node|tsx)\b[^\n|;&]*\s--test\b|\bcargo\s+test\b|\bgo\s+test\b|\bpytest\b|\bmake\s+test\b/.test(cmd)) return "test run";
+  if (/\b(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?build\b|\bcargo\s+build\b|\bgo\s+build\b/.test(cmd)) return "build";
+  return "check run";
+}
 /** Whose run failed and what it names: "this chat's last test run failed: 1 failing file, server/a.test.ts". */
 export const lastCheckWords = (c: Pick<LastCheck, "what" | "failed" | "commit">): string => `this chat's last ${c.what ?? "check run"}${c.commit ? ` at ${c.commit.slice(0, 7)}` : ""} failed${c.failed ? `: ${c.failed}` : ""}`;
 

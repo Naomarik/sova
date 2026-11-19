@@ -141,7 +141,8 @@
           "at": 1788256815000,
           "check": {
             "toolCallId": "call_c",
-            "ok": true
+            "ok": true,
+            "kind": "test run"
           }
         },
         {
@@ -233,12 +234,16 @@
       ],
       "lastCheck": {
         "at": 1788256815000,
-        "ok": true
+        "ok": true,
+        "what": "test run",
+        "kind": "test run"
       },
       "checks": [
         {
           "at": 1788256815000,
-          "ok": true
+          "ok": true,
+          "what": "test run",
+          "kind": "test run"
         }
       ],
       "lastReply": {
@@ -409,7 +414,8 @@
           "at": 1788256815000,
           "check": {
             "toolCallId": "call_c",
-            "ok": true
+            "ok": true,
+            "kind": "test run"
           }
         },
         {
@@ -501,12 +507,16 @@
       ],
       "lastCheck": {
         "at": 1788256815000,
-        "ok": true
+        "ok": true,
+        "what": "test run",
+        "kind": "test run"
       },
       "checks": [
         {
           "at": 1788256815000,
-          "ok": true
+          "ok": true,
+          "what": "test run",
+          "kind": "test run"
         }
       ],
       "lastReply": {

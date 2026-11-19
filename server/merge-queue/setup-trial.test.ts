@@ -429,6 +429,8 @@ describe("merge.try and the land gate", () => {
       q.store.writeRun(run);
       assert.equal(await q.passedAfter("setup/evidence", b.head), true, "one that ran tests on a later commit clears it");
       assert.equal(await q.passedAfter("setup/evidence", c1), false, "never its own commit");
+      // The same rule for every kind: a dry run that ran only tests never clears a failing typecheck.
+      assert.equal(await q.passedAfter("setup/evidence", b.head, "typecheck"), false, "tests alone don't clear a typecheck");
     } finally {
       await k.done();
     }

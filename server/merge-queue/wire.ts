@@ -1068,11 +1068,11 @@ export async function startMergeQueue(
       return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null;
     },
     // Newer evidence than a failing check run: a passing dry run or merge queue run of a later commit of the branch.
-    passedAfter: async (dir, branch, commit) => {
+    passedAfter: async (dir, branch, commit, kind) => {
       const p = await projectOf(dir);
       if (p.state !== "ok" || !p.git || !served.isListed(p.root)) return false;
       const queue = (await q.peek(p.root)) ?? (await q.get(p.root));
-      return queue.passedAfter(branch, commit);
+      return queue.passedAfter(branch, commit, kind);
     },
     // A setup branch's dry run state at its head, with Fix on a failure (§chat.worktrees/newest-commit).
     dryRunAt: async (dir, branch, head, session) => {

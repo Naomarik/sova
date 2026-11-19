@@ -81,6 +81,7 @@ import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopy
 import { commitResolution } from "./resolve-content";
 import { dropRunDrafts } from "./run-logs";
 import { isTestCheck } from "./checks";
+import { checkKindOf } from "../ready-to-land";
 import { changedServices, dryRunMergeChecks, dryRunReasons, dryRunWhyLine, isSetupChange, requiredServices, SETUP_UNREADABLE, setupChangeOf, stoppedByWords, trialEndedText, trialOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
@@ -3280,19 +3281,25 @@ export class ProjectQueue {
 
   /** A passing dry run, or a passing merge queue run, of a commit of `branch` later than `commit` (one descending from
    *  it): newer evidence than a check run at `commit` (§chat.worktrees/newest-commit). */
-  async passedAfter(branch: string, commit: string): Promise<boolean> {
+  async passedAfter(branch: string, commit: string, kind = "test run"): Promise<boolean> {
     const later = new Set<string>();
-    // A dry run counts only when it ran a test check (one that ran tests, or the project's test command): setup steps
-    // or other checks alone prove nothing about a failing test run.
+    // A dry run counts only when it ran a check of that kind (§chat.worktrees/newest-commit): for a test run, one that ran
+    // tests or is the project's test command; for a typecheck or a build, one whose command is that. Setup steps or
+    // checks of another kind alone prove nothing.
     for (const t of this.q.trials ?? []) {
       if (t.branch !== branch || t.verdict !== "passed" || t.commit === commit) continue;
       const run = this.store.readRun(t.run);
       const checks = (run?.steps ?? []).filter((x) => x.kind === "check" && x.result === "passed");
       if (!checks.length) continue;
       const def = (await this.deps.definitionAt(this.root, t.commit).catch(() => ({ def: null }))).def ?? null;
-      const decl = Array.isArray(def?.merge?.checks) ? def.merge.checks : [];
-      const ranTests = checks.some((x) => ((x.counts?.passed ?? 0) > 0) || isTestCheck(def, { run: decl.find((c) => `check:${c.id}` === x.id)?.run ?? [] }));
-      if (ranTests) later.add(t.commit);
+      const decl = Array.isArray(def?.merge?.checks) ? def.merge.checks : [...(def?.release?.checks ?? [])];
+      const argvOf = (stepId: string) => [...decl, ...(def?.release?.checks ?? [])].find((c) => `check:${c.id}` === stepId)?.run ?? [];
+      const kindOf = (x: RunStep): string => {
+        const argv = argvOf(x.id);
+        if ((x.counts?.passed ?? 0) > 0 || isTestCheck(def, { run: argv })) return "test run";
+        return checkKindOf(argv.join(" "));
+      };
+      if (checks.some((x) => kindOf(x) === kind)) later.add(t.commit);
     }
     for (const e of this.q.entries) {
       if (e.branch !== branch || e.commit === commit) continue;

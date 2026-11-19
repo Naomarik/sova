@@ -729,9 +729,9 @@
       "server/project-services/store.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-16T19:06Z",
-      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#a73053a7"
+      "by": "naomarik",
+      "at": "2026-11-18T20:26Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.project-services/share": {

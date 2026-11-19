@@ -470,6 +470,22 @@
     "authority": "accepted",
     "evidence": "reviewed"
   },
+  "§design.copy-deck/running-copies-setup": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§app.project-runtime/software-card",
+      "§app.project-runtime/onboard",
+      "§app.project-runtime/run-report"
+    ],
+    "code": [
+      "src/components/ProjectServicesTab.tsx",
+      "src/lib/project-software.ts",
+      "server/projects/runtime.ts",
+      "server/projects/onboard.ts"
+    ]
+  },
   "§design.copy-deck/sandbox": {
     "kind": "behavior",
     "requires": [

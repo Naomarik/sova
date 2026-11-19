@@ -1018,9 +1018,11 @@ The operator sees and drives every running copy from two places, both on this ho
   (§app.project-services/conform) from the newest passing stamp of the main checkout's current
   definition; with none, from the newest stamp of an older definition that has a reading, the line
   then starting "Measured {date} on an older definition: each copy took about …"; with neither, "Not
-  measured yet: Run Again on this tab's setup line measures it." (and still this machine's memory).
+  measured yet: the Project verbs chat on this tab's setup line measures it." (and still this machine's memory).
 - **The setup line** ends the copy-limit card: whether the project's services are set up, with
-  **Run Playbook** or **Run Again**, the live run's strip and a proposed run's review
+  **Set Up with a Chat** (with a short explanation of running copies while never set up) or
+  **Change Setup…**, both opening the project's one Project verbs chat, or the one sentence that
+  says why it can't start, the live run's strip and a proposed run's review
   (§app.project-runtime/software-card). The tab's other parts read as before whatever it says.
 - **Open**: while a copy has an entry and the entry's own service is ready, whatever the copy's
   state (Degraded or Starting included), Open is its row's first action and carries the row's one

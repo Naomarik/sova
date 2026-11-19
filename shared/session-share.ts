@@ -15,6 +15,9 @@
  * GET /api/s/<token>[?v=<tab>][&before=<n>]  -> SessionShareView
  * GET /api/s/<token>/img/<n>     -> the image's bytes (Content-Type from SESSION_SHARE_IMAGE_TYPES;
  *                                   ≤ SESSION_SHARE_IMAGE_MAX_BYTES; 404 when no such image)
+ * GET /api/s/<token>/d/<label>/<n>/<kind> -> one shown design version's walled document
+ *                                   (SessionShareDesignKind; header CSP sandbox, Google Fonts only;
+ *                                   404 when the view shows no such version)
  * WS  /ws/s?token=<token>&v=<tab> SessionShareServerMessage stream; the page sends only
  *                                   SessionShareClientMessage (anything else closes the socket)
  * Dead links: 410 { error, code: "gone", why?: "expired" } with no names; unknown: 404
@@ -25,7 +28,7 @@
  * the share listener):
  * GET  /api/session-shares[?session=<id>]              -> SessionShare[] (newest first)
  * POST /api/session-shares  body SessionShareCreate    -> 201 SessionShareMinted
- * GET  /api/session-shares/preview?session=<id>[&cut=<c>][&from=<entryId>][&before=<n>]
+ * GET  /api/session-shares/preview?session=<id>[&cut=<c>][&designsAt=<t>][&from=<entryId>][&before=<n>]
  *                                                      -> SessionSharePreview (as a recipient would
  *                                                         see it; the first read fixes `cut`, later
  *                                                         reads and images pass it; `from` slices
@@ -35,14 +38,19 @@
  *                                                         share page's picker: every shown message
  *                                                         as a short excerpt with its entry id)
  * GET  /api/session-shares/preview/img/<n>?session=<id>&cut=<c>[&from=<entryId>] -> image bytes
+ * GET  /api/session-shares/preview/d/<label>/<n>/<kind>?session=<id>&cut=<c>&designsAt=<t>[&from=<entryId>]
+ *                                                      -> the design document a recipient gets
  * GET  /api/session-shares/:id/preview[?before=<n>]    -> SessionShareView (this share, now)
  * GET  /api/session-shares/:id/preview/img/<n>         -> image bytes
+ * GET  /api/session-shares/:id/preview/d/<label>/<n>/<kind> -> the design document
  * PATCH /api/session-shares/:id  body SessionSharePatch -> SessionShare
  * POST /api/session-shares/:id/recipients  body SessionShareAddRecipient -> SessionShareMinted
  * POST /api/session-shares/:id/recipients/:rid/relink  -> SessionShareMinted (the old link stops)
  * POST /api/session-shares/:id/recipients/:rid/revoke  -> SessionShare
- * POST /api/session-shares/:id/update  [body { cut }]  -> SessionShare (snapshot: the cut moves to the
- *                                                         previewed cut, else the current leaf)
+ * POST /api/session-shares/:id/update  [body { cut, designsAt }] -> SessionShare (snapshot: the cut
+ *                                                         moves to the previewed cut, else the current
+ *                                                         leaf; the design cut to the previewed
+ *                                                         designsAt, else now)
  * POST /api/session-shares/:id/extend  body { days: SessionShareDays } -> SessionShare (every live
  *                                                         link then expires `days` from now)
  * POST /api/session-shares/:id/stop                    -> SessionShare (every link stops)
@@ -158,6 +166,8 @@ export interface SessionShareCreate {
   /** The slice's start: an entry id from the outline (absent: from the first message). Not on the
       branch to `cut` (or, live, the current branch): 409 stale-preview. */
   from?: string;
+  /** A snapshot: the preview's `designsAt` (absent: the server's now). Ignored while live. */
+  designsAt?: string;
   title: string;
   mode: SessionShareMode;
   expiresInDays: SessionShareDays;
@@ -174,6 +184,8 @@ export interface SessionSharePatch {
   cut?: string;
   /** The slice's new start; null: from the first message again. Open pages get a reset view. */
   from?: string | null;
+  /** With a new cut (or Follow live off): the preview's `designsAt` (absent: the server's now). */
+  designsAt?: string;
 }
 
 /** POST …/:id/recipients: a named label, or `{ anyone: true }` (409 when one is already live). */
@@ -240,6 +252,10 @@ export interface SessionShareView {
       one path, so item numbers keep their meaning). A view of another lineage replaces the page's
       (earlier pages included), and an earlier page read in another lineage is dropped. */
   lineage?: string;
+  /** Every Lookbook of the whole view (§app.session-share/lookbook), on every page and push, in
+      branch order: the page draws each beside the item its `after` names, once that item is read.
+      [] when none; absent from an older host, which shares no designs. */
+  lookbooks?: SessionShareLookbook[];
 }
 
 /** The operator's Preview (never on the share page): the view plus the cut it was built at, to
@@ -248,7 +264,68 @@ export interface SessionSharePreview extends SessionShareView {
   cut: string;
   /** The `from` it was sliced at, echoed. */
   from?: string;
+  /** The design cut it was built at (when the preview was first read): later reads pass it as
+      `&designsAt=`, and Create, Update to Now and Stop Following send it back as `designsAt`, so a
+      snapshot's designs are exactly the previewed ones. Absent from an older host. */
+  designsAt?: string;
+  /** A shown design version (whole view) uses a picture captured from a signed-in page (the
+      preview says so above the designs). Operator only: never on a recipient's view. */
+  signedInPictures?: true;
 }
+
+// ---- Lookbooks (§app.session-share/content) ------------------------------------------------------
+
+/** One finished version of a shared design. A snapshot shows only those finished by its cut;
+    Follow live, every finished one (never a page being written). */
+export interface SessionShareDesignVersion {
+  /** The design's own version number, 1, 2 …: the document's address names it. */
+  n: number;
+  /** When it was finished, a canonical ISO time. */
+  at: string;
+  /** The views its page names, in page order (redacted, capped); absent: none. */
+  views?: string[];
+}
+
+/** One design of a shared Lookbook, built field by field: never its status, cost, chat, session,
+    model id, brief, instructions or stills. */
+export interface SessionShareDesign {
+  /** The design's letter, "A", "B" … (/^[A-Z]{1,4}$/). */
+  label: string;
+  /** Its style's name (redacted, at most SESSION_SHARE_DESIGN_NAME_MAX characters). */
+  style: string;
+  /** Its layout's name; absent when the designer arranged its own page. */
+  layout?: string;
+  /** The model's name as Sova's picker shows it (redacted, capped). */
+  modelName: string;
+  /** Oldest first, never empty: a design with no shown version is left out. */
+  versions: SessionShareDesignVersion[];
+}
+
+/** A Lookbook in the shared conversation, carried beside the items (never renumbering them). */
+export interface SessionShareLookbook {
+  /** Opaque, "lb1", "lb2" … in branch order within the view; never the run's id. */
+  id: string;
+  /** It sits right after the item with this `n` (whole-view numbering, as items); -1: before the
+      first item. */
+  after: number;
+  /** By label; never empty (a Lookbook with no shown design is left out). */
+  designs: SessionShareDesign[];
+}
+
+export const SESSION_SHARE_DESIGN_NAME_MAX = 80;
+export const SESSION_SHARE_DESIGN_VIEWS_MAX = 24;
+/**
+ * A design document's kinds. `page`: the page runs its scripts, in the app's two-frame wall
+ * (src/lib/design-frame.ts), under a header CSP `sandbox allow-scripts allow-forms` plus
+ * DESIGN_SHARE_SHELL_CSP and `frame-ancestors 'self'`: frame it by `src` with DESIGN_SHARE_SHELL_ATTRS (its
+ * page is a `blob:` document, so nothing it can read holds the link). `still`:
+ * no scripts in any browser (DESIGN_STREAM_CSP under `sandbox`): frame it with DESIGN_STREAM_ATTRS.
+ * `tile` / `tile-still`: the same with small pictures and motion held, for the block's tiles.
+ */
+export const SESSION_SHARE_DESIGN_KINDS = ["page", "still", "tile", "tile-still"] as const;
+export type SessionShareDesignKind = (typeof SESSION_SHARE_DESIGN_KINDS)[number];
+/** The largest design document served (its pictures inlined); a larger one is refused. */
+export const SESSION_SHARE_DESIGN_MAX_BYTES = 32 * 1024 * 1024;
 
 /** The share page's picker (operator only): every message the share would show at `cut`, whole
     session, oldest first. `n` is the item's index in the whole (unsliced) view. */

@@ -1,4 +1,5 @@
 import { existsSync, watch, type FSWatcher } from "node:fs";
+import { onDesignChanged } from "../design/store";
 import { closeLink, pushView, sweepViewers, viewerCount } from "../session-share-presence";
 import { sessionShareView, sourceReadable } from "../session-share-view";
 import { getShare, linkByHash, linkState, listShares, type ShareRecord } from "../session-shares";
@@ -14,6 +15,10 @@ import { sourceKey, sourceOf } from "./session-routes";
  *   A watch starts and stops on the reconcile tick (RECONCILE_MS), so a share with no open page
  *   costs nothing.
  * - Update to now, a mode switch and a title change push the new view at once (pushShareView).
+ * - A change to a shared chat's designs (onDesignChanged: a version landing, a removal, a restore),
+ *   debounced by LIVE_DEBOUNCE_MS per chat, rebuilds the view of each of its shares with an open
+ *   page and pushes it only when its Lookbooks changed: a page being written changes the store many
+ *   times a second and never what a share shows (§app.session-share/lookbook).
  * - Every SWEEP_MS, open pages whose link expired or was turned off, or whose share no longer reads
  *   (the file gone or unparseable, the cut no longer in it), close with 4410.
  */
@@ -29,6 +34,8 @@ const builds = new Map<string, number>();
 let buildSeq = 0;
 /** Per share, the lineage of the last view pushed. */
 const pushed = new Map<string, string | undefined>();
+/** Per share, the Lookbooks of the last view pushed (JSON), so a design change that changes none sends nothing. */
+const pushedLookbooks = new Map<string, string>();
 
 /**
  * Rebuild a share's view (its newest page) and push it to its open pages. The build is bound to
@@ -41,7 +48,7 @@ const pushed = new Map<string, string | undefined>();
  * carries its lineage, and a page replaces a view of another lineage whatever the flag says (the
  * first push after a start knows no earlier one, so it says nothing).
  */
-export async function pushShareView(shareId: string): Promise<void> {
+export async function pushShareView(shareId: string, opts: { onlyIfLookbooksChanged?: boolean } = {}): Promise<void> {
   if (!viewerCount(shareId)) return;
   const hit = getShare(shareId);
   if (!hit || hit.share.stoppedAt) return;
@@ -53,9 +60,12 @@ export async function pushShareView(shareId: string): Promise<void> {
   builds.delete(shareId);
   const now = getShare(shareId);
   if (!view || !now || now.share.stoppedAt || sourceKey(now.share) !== key) return;
+  const lookbooks = JSON.stringify(view.lookbooks ?? []);
+  if (opts.onlyIfLookbooksChanged && pushedLookbooks.get(shareId) === lookbooks) return;
   closeDeadViewers();
   const reset = pushed.has(shareId) && pushed.get(shareId) !== view.lineage;
   pushed.set(shareId, view.lineage);
+  pushedLookbooks.set(shareId, lookbooks);
   pushView(shareId, view, reset);
 }
 
@@ -128,17 +138,42 @@ export function closeLinks(hashes: readonly string[]): void {
   for (const h of hashes) closeLink(h);
 }
 
+/** Per chat, the pending push of its shares after a design change. */
+const designTimers = new Map<string, NodeJS.Timeout>();
+
+/** A chat's designs changed: once LIVE_DEBOUNCE_MS has passed, push each of its open shares whose Lookbooks changed. */
+export function designsChanged(sessionId: string): void {
+  if (designTimers.has(sessionId)) return;
+  const t = setTimeout(() => {
+    designTimers.delete(sessionId);
+    for (const s of listShares(sessionId).shares) if (!s.stoppedAt && viewerCount(s.id) > 0) void pushShareView(s.id, { onlyIfLookbooksChanged: true }).catch(() => {});
+  }, LIVE_DEBOUNCE_MS);
+  t.unref();
+  designTimers.set(sessionId, t);
+}
+
 let timers: NodeJS.Timeout[] = [];
+let offDesigns: (() => void) | null = null;
+
+/** Hear design changes (once): whatever serves share sockets in this process calls it. */
+export function ensureDesignPushes(): void {
+  offDesigns ??= onDesignChanged(designsChanged);
+}
 
 export function startSessionShareLive(): void {
   if (timers.length) return;
   timers = [setInterval(reconcileLiveWatches, RECONCILE_MS), setInterval(() => void sweepSessionViewers().catch(() => 0), SWEEP_MS)];
   for (const t of timers) t.unref();
+  ensureDesignPushes();
 }
 
 export function stopSessionShareLive(): void {
   for (const t of timers) clearInterval(t);
   timers = [];
+  offDesigns?.();
+  offDesigns = null;
+  for (const t of designTimers.values()) clearTimeout(t);
+  designTimers.clear();
   for (const id of [...watching.keys()]) unwatch(id);
 }
 

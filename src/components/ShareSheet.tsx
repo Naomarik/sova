@@ -21,9 +21,14 @@ import { absoluteTime } from "../lib/spend";
 import {
   addRecipient,
   daysWord,
+  designTiles,
   expiresWord,
   extendShare,
-  imagesBlocked,
+  previewDesignUrls,
+  previewLookbooks,
+  previewNewDesign,
+  previewShareDesign,
+  reviewBlocked,
   isShareChanged,
   isStalePreview,
   copyableLink,
@@ -49,9 +54,11 @@ import {
   visitLine,
 } from "../lib/session-shares";
 import { openSettings } from "../lib/settings-nav";
-import { shareHref } from "../lib/share-slice";
+import { mergeEarlier, shareHref } from "../lib/share-slice";
 import { DELETE_LINK, DELETE_THIS_LINK, deleteLinkConfirm, LINK_GONE } from "../lib/link-delete";
 import { SessionThread } from "../share/SessionShareApp";
+import type { DesignUrls } from "../share/lookbook-model";
+import { DesignsShared } from "./ShareDesigns";
 import { DeleteButton } from "./DeleteButton";
 import { Banner, CopyButton, Icon, trapFocus } from "./ui";
 import { BrokenLinksNotice, OpensAtLine } from "./OpensAt";
@@ -125,8 +132,9 @@ export function ShareSheet(props: {
     Update to Now, or Follow live turning off, will stop at. */
 type Stage = null | "preview" | "update" | "snapshot";
 
-/** The thread as the share page draws it, with Show Earlier. */
-export function PreviewBody(props: { first: SessionShareView; title?: string; read(before: number): Promise<SessionShareView>; imageUrl(n: number): string }) {
+/** The thread as the share page draws it, with Show Earlier, and its Lookbooks where they sit
+    (drawn from `designs`, the operator's preview routes: no page of their own). */
+export function PreviewBody(props: { first: SessionShareView; title?: string; read(before: number): Promise<SessionShareView>; imageUrl(n: number): string; designs?: DesignUrls }) {
   const [view, setView] = createSignal(props.first);
   const [earlier, setEarlier] = createSignal<"busy" | string | null>(null);
   const more = async () => {
@@ -135,7 +143,8 @@ export function PreviewBody(props: { first: SessionShareView; title?: string; re
     setEarlier("busy");
     try {
       const page = await props.read(v.before);
-      setView((cur) => ({ ...cur, items: [...page.items.filter((i) => i.n < (cur.items[0]?.n ?? Infinity)), ...cur.items], before: page.before }));
+      // The preview is one fixed cut, so its pages always join (as before), Lookbooks included.
+      setView((cur) => mergeEarlier({ ...cur, lineage: page.lineage }, page)!);
       setEarlier(null);
     } catch (x) {
       setEarlier(`Couldn't load earlier messages. ${errText(x)}`);
@@ -147,7 +156,7 @@ export function PreviewBody(props: { first: SessionShareView; title?: string; re
         <span class="share-preview-title">{props.title ?? view().title}</span>
         <span class="text-caption text-muted"> · Read only. No visit is recorded.</span>
       </p>
-      <SessionThread view={view()} imageUrl={props.imageUrl} onEarlier={() => void more()} earlierState={earlier()} />
+      <SessionThread view={view()} imageUrl={props.imageUrl} designs={props.designs} onEarlier={() => void more()} earlierState={earlier()} />
     </div>
   );
 }
@@ -294,6 +303,8 @@ function ManageShare(props: {
   /** The fresh preview an Update to Now or Stop Following Live stops at, with its images' state. */
   const [next, setNext] = createSignal<SessionSharePreview | null>(null);
   const [nextThumbs, setNextThumbs] = createSignal<ThumbState>(NO_THUMBS);
+  const [nextDesigns, setNextDesigns] = createSignal<ThumbState>(NO_THUMBS);
+  const nextLookbooks = createMemo(() => (next() ? previewLookbooks(next()!) : []));
   const [nextError, setNextError] = createSignal<string | null>(null);
   const [stale, setStale] = createSignal(false);
   const stopped = () => !!s().stoppedAt;
@@ -364,6 +375,7 @@ function ManageShare(props: {
   const readNext = async () => {
     setNext(null);
     setNextThumbs(NO_THUMBS);
+    setNextDesigns(NO_THUMBS);
     setNextError(null);
     try {
       setNext(await previewNew(props.host, s().sessionId));
@@ -380,7 +392,7 @@ function ManageShare(props: {
   const nextBlocked = () => {
     const p = next();
     if (!p) return nextError() ? "The conversation couldn't be read." : "Reading the conversation first.";
-    return imagesBlocked({ ...nextThumbs(), total: p.images });
+    return reviewBlocked({ ...nextThumbs(), total: p.images }, { ...nextDesigns(), total: designTiles(nextLookbooks()).length });
   };
   const confirmNext = async (st: "update" | "snapshot") => {
     const p = next();
@@ -388,7 +400,9 @@ function ManageShare(props: {
     setBusy(st);
     setStale(false);
     try {
-      const r = st === "update" ? await updateShare(props.host, s().id, p.cut) : await patchShare(props.host, s().id, { mode: "snapshot", cut: p.cut });
+      // What they then keep is exactly the preview: its messages to `cut`, its designs to `designsAt`.
+      const designsAt = p.designsAt ? { designsAt: p.designsAt } : {};
+      const r = st === "update" ? await updateShare(props.host, s().id, p.cut, p.designsAt) : await patchShare(props.host, s().id, { mode: "snapshot", cut: p.cut, ...designsAt });
       props.onChanged(r);
       props.setPreviewing(null);
       void readActivity();
@@ -415,8 +429,8 @@ function ManageShare(props: {
             <div class="modal-body share-preview-body" tabindex="0" aria-label="Preview">
               <p class="usage-note">
                 {st() === "update"
-                  ? "Their pages will show the conversation as it is here, images included."
-                  : "Follow live stops here: their pages keep the conversation as it is here, images included."}
+                  ? `Their pages will show the conversation as it is here, images${nextLookbooks().length > 0 ? " and designs" : ""} included.`
+                  : `Follow live stops here: their pages keep the conversation as it is here, images${nextLookbooks().length > 0 ? " and designs" : ""} included.`}
               </p>
               <Show when={stale()}>
                 <Banner tone="warn" title={STALE_PREVIEW} body="Nothing changed for them. We read it again: check it, then confirm." />
@@ -449,11 +463,15 @@ function ManageShare(props: {
                           <Show when={v().images > 0}>
                             <ImagesShared count={v().images} url={(n) => previewNewImage(props.host, s().sessionId, cut, n)} onState={setNextThumbs} />
                           </Show>
+                          <Show when={nextLookbooks().length > 0}>
+                            <DesignsShared lookbooks={nextLookbooks()} signedIn={v().signedInPictures} url={previewNewDesign(props.host, s().sessionId, v())} onState={setNextDesigns} />
+                          </Show>
                           <PreviewBody
                             first={v()}
                             title={s().title}
-                            read={(b) => previewNew(props.host, s().sessionId, { cut, before: b })}
+                            read={(b) => previewNew(props.host, s().sessionId, { cut, designsAt: v().designsAt, before: b })}
                             imageUrl={(n) => previewNewImage(props.host, s().sessionId, cut, n)}
+                            designs={previewDesignUrls(previewNewDesign(props.host, s().sessionId, v()))}
                           />
                         </>
                       )}
@@ -479,7 +497,12 @@ function ManageShare(props: {
         {(v) => (
           <>
             <div class="modal-body share-preview-body" tabindex="0" aria-label="Preview">
-              <PreviewBody first={v()} read={(b) => previewShare(props.host, s().id, b)} imageUrl={(n) => previewShareImage(props.host, s().id, n)} />
+              <PreviewBody
+                first={v()}
+                read={(b) => previewShare(props.host, s().id, b)}
+                imageUrl={(n) => previewShareImage(props.host, s().id, n)}
+                designs={previewDesignUrls(previewShareDesign(props.host, s().id))}
+              />
             </div>
             <div class="modal-foot">
               <button type="button" class="button" onClick={() => props.setPreviewing(null)}>

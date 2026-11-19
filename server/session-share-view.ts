@@ -11,6 +11,7 @@ import {
   SESSION_SHARE_IMAGE_MAX_BYTES,
   SESSION_SHARE_IMAGE_TYPES,
   SESSION_SHARE_PAGE,
+  type SessionShareDesignKind,
   type SessionShareImageRef,
   type SessionShareItem,
   type SessionShareMode,
@@ -21,6 +22,7 @@ import {
 import { parseWakeNudge } from "../shared/wake";
 import { parsePi, strictBranchTo, typedText, type PiFile } from "./harness/pi/reader";
 import { serverRedactor } from "./overseer-redact";
+import { designDocument, lookbookAnchors, lookbooksUseSignedIn, shareLookbooks, type LookbookAnchor } from "./session-share-designs";
 
 /**
  * The session share view (§app/session-share/content, /never): a session's branch reduced to what a
@@ -52,12 +54,21 @@ export interface ShareSource {
   mode: SessionShareMode;
   /** The share's id, for a recipient's view: its views then carry a `lineage`. */
   lineageKey?: string;
+  /** The session's id, whose design store holds its Lookbooks (§app.session-share/lookbook);
+      absent: the view carries none. */
+  sessionId?: string;
+  /** A snapshot's design cut: the latest finish time of a version it shows. null: every finished
+      version (Follow live). Absent: the cut entry's time for a snapshot, null while live. */
+  designsAt?: string | null;
 }
 
 type ImageBlock = { data: string; mime: string };
 
 interface Built {
   items: SessionShareItem[];
+  /** The slice's Lookbook runs and the items they follow. */
+  anchors: LookbookAnchor[];
+  scrub: (text: string) => string;
   /** Each item's entry id, by `n` (operator-only: the outline). */
   ids: string[];
   images: ImageBlock[];
@@ -100,7 +111,7 @@ export function branchTo(file: PiFile, cutEntryId: string | null): HEntry[] | nu
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** A text scrubber: secrets out, then the session's cwd relative and the home directory `~`. */
-function scrubberFor(cwd: string | undefined): (text: string) => string {
+export function scrubberFor(cwd: string | undefined): (text: string) => string {
   const secrets = serverRedactor();
   const home = homedir();
   const rules: [RegExp, string][] = [];
@@ -260,8 +271,8 @@ export function shownEntries(branch: HEntry[]): Shown[] {
   return out;
 }
 
-/** `slice` is the branch as built; `earlier`, whether the slice dropped a shown message. */
-function build(file: PiFile, slice: HEntry[], earlier: boolean): Built {
+/** `slice` is the branch as built (a suffix of `branch`); `earlier`, whether the slice dropped a shown message. */
+function build(file: PiFile, branch: HEntry[], slice: HEntry[], earlier: boolean): Built {
   const cwd = file.header?.cwd;
   const scrub = scrubberFor(typeof cwd === "string" ? cwd : undefined);
   const items: SessionShareItem[] = [];
@@ -274,16 +285,21 @@ function build(file: PiFile, slice: HEntry[], earlier: boolean): Built {
     const at = canonicalTime(e.at);
     if (at) through = at;
   }
+  const itemOf = new Map<HEntry, number>();
   for (const { e, role, text, blocks } of shownEntries(slice)) {
     const at = canonicalTime(e.at);
     const imgs = refs(blocks);
     ids.push(e.id ?? "");
+    itemOf.set(e, items.length);
     items.push({ kind: role === "user" ? "user" : "reply", n: items.length, text: cutAtToken(scrub(text), SESSION_SHARE_TEXT_MAX), ...(at ? { at } : {}), ...(imgs ? { images: imgs } : {}) });
   }
-  return { items, ids, images, through, earlier };
+  return { items, ids, images, through, earlier, anchors: lookbookAnchors(branch, slice, itemOf), scrub };
 }
 
-type Src = Pick<ShareSource, "sessionPath" | "cutEntryId" | "from">;
+type Src = Pick<ShareSource, "sessionPath" | "cutEntryId" | "from" | "sessionId" | "designsAt">;
+
+/** The design cut a source shows Lookbooks at: its own, else a snapshot's cut entry time (null while live). */
+const designCut = (src: Src, through: string | null): string | null => (src.designsAt !== undefined ? src.designsAt : src.cutEntryId === null ? null : through);
 
 /** Per share, the lineage its views were last built in, and that view's start and last entry. */
 const lineages = new Map<string, { id: string; from: string | null; tip: string | null }>();
@@ -318,7 +334,7 @@ async function built(src: Src & { lineageKey?: string }): Promise<(Built & { lin
   const got = await sliced(src);
   if (!got) return null;
   const earlier = shownEntries(got.branch.slice(0, got.branch.length - got.slice.length)).length > 0;
-  const made = build(got.file, got.slice, earlier);
+  const made = build(got.file, got.branch, got.slice, earlier);
   return src.lineageKey ? { ...made, lineage: lineageOf(src.lineageKey, src.from, got.slice) } : made;
 }
 
@@ -333,6 +349,8 @@ export async function sessionShareView(src: ShareSource, opts: { before?: number
   const before = opts.before;
   const end = typeof before === "number" && Number.isSafeInteger(before) ? Math.max(0, Math.min(before, b.items.length)) : b.items.length;
   const start = Math.max(0, end - SESSION_SHARE_PAGE);
+  // Every Lookbook of the whole view, on every page (a page places each by its `after`).
+  const lookbooks = src.sessionId ? shareLookbooks(src.sessionId, b.anchors, designCut(src, b.through), b.scrub) : [];
   // Every view (the page's, the API's, each live frame) passes the kept-link filters as a whole.
   return redactShareLinksDeep(redactPreviewLinksDeep({
     title: redactShareLinks(redactPreviewLinks(serverRedactor().redact(src.title))),
@@ -344,7 +362,27 @@ export async function sessionShareView(src: ShareSource, opts: { before?: number
     images: b.images.length,
     ...(b.earlier ? { earlier: true as const } : {}),
     ...(b.lineage ? { lineage: b.lineage } : {}),
+    lookbooks,
   }));
+}
+
+/**
+ * The walled document of a design version the share shows (§app.session-share/lookbook-serving),
+ * or null: the share no longer reads, or its view shows no such design or version.
+ */
+export async function sessionShareDesign(src: Src, label: string, n: number, kind: SessionShareDesignKind): Promise<string | null> {
+  if (!src.sessionId) return null;
+  const b = await built(src);
+  if (!b) return null;
+  // The page's text passes both link filters inside, before its pictures go in.
+  return designDocument(src.sessionId, b.anchors, designCut(src, b.through), label, n, kind, b.scrub);
+}
+
+/** Whether a shown design version uses a picture captured from a signed-in page (the operator's preview). */
+export async function sessionShareSignedInPictures(src: Src): Promise<boolean> {
+  if (!src.sessionId) return false;
+  const b = await built(src);
+  return !!b && lookbooksUseSignedIn(src.sessionId, b.anchors, designCut(src, b.through));
 }
 
 /**

@@ -135,6 +135,17 @@ test("a pushed newest page keeps earlier pages read; a reset replaces the view w
   assert.deepEqual(mergeNewest(null, view([5])).items.map((i) => i.n), [5]);
 });
 
+test("Lookbooks are the newest answer's whole list: a design removed since, or a run no longer shown, never stays on screen", () => {
+  const lb = (id: string, labels: string[], after = 0) => ({ id, after, designs: labels.map((label) => ({ label, style: "S", modelName: "M", versions: [{ n: 1, at: "2026-09-30T00:00:00.000Z" }] })) });
+  const read = view([0, 1, 2, 3], { lookbooks: [lb("lb1", ["A", "B"]), lb("lb2", ["G"], 2)] });
+  // A was removed, then B: run 1 shows none, so run 2's Lookbook is now lb1.
+  const pushed = mergeNewest(read, view([2, 3, 4], { before: 2, lookbooks: [lb("lb1", ["G"], 2)] }));
+  assert.deepEqual(pushed.lookbooks, [lb("lb1", ["G"], 2)]);
+  // An earlier page read after it (each page carries the whole list) never brings the old one back.
+  assert.deepEqual(mergeEarlier(pushed, view([0, 1], { lookbooks: [lb("lb1", ["A", "B"]), lb("lb2", ["G"], 2)] }))!.lookbooks, [lb("lb1", ["G"], 2)]);
+  assert.deepEqual(mergeNewest(read, view([2, 3, 4], { lookbooks: [] })).lookbooks, [], "none left: none shown");
+});
+
 test("the earlier line shows only above the slice's first item", () => {
   assert.equal(earlierLine({ earlier: true }), true);
   assert.equal(earlierLine({ earlier: true, before: 200 }), false);

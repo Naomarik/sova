@@ -44,6 +44,15 @@ also update Y" list live in its guide: read the guide of every area your task to
   user's LIVE TUI on its next `/reload` and every runtime Sova embeds. Treat it like
   `shared/protocol.ts`: coordinate before changing any contract Sova parses (extensions guide).
 - `statecharts/`: the org's statecharts (statecharts guide).
+- `playbooks/`: the playbooks Sova ships that you start from the Playbooks dialog (A/B cycle, Brandmaker,
+  Marketing, Spec review). `system-playbooks/`: the ones only Sova starts (merge thread, release, release
+  maker, project setup, project deploy, project verbs): never listed, never replaced by a playbook of the
+  same id, their tests in Sova's own test folders. A project's config for those chats lives in its
+  `.sova/playbook-config/<id>/` (merge-queue, release, review, request, project-setup), never in
+  `.sova/playbooks/`, which holds only playbooks you start.
+- `migrations/`: temporary code that keeps an old place working, one folder per migration, listed in
+  `migrations/manifest.json` with the version that removes it (`server/migrations.test.ts` fails once
+  it is due); reached through one import per call site (`migrations/README.md`).
 
 ## Commands
 
@@ -185,7 +194,7 @@ goes live on `systemctl --user restart sova-runtime.service` (macOS:
   the page (§app.access/your-click), and `server.restart` answers with where to click. The server can't
   stop raw `systemctl`, `launchctl` or `kill`, so this is a rule, not a wall.
 - **The one exception: Sova's own merge thread**, after landings, once the queue is idle (nothing queued
-  or checking), outside a release, and only as `.sova/playbooks/merge-queue/PLAYBOOK.md` "When the
+  or checking), outside a release, and only as `.sova/playbook-config/merge-queue/PLAYBOOK.md` "When the
   queue is idle" says: it holds the queue (`merge.hold`), builds the main checkout, restarts
   `sova-runtime.service` and checks `/api/health`'s head. No other chat, worker or script does;
   `POST /api/updates/restart` still refuses every chat.

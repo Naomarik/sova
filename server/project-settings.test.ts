@@ -254,6 +254,15 @@ describe("file changes: a card, a Sova-owned ref, and Apply on the branch", asyn
     for (const ok of [".sova/project.json", ".sova/offers.json", ".sova/profiles/a.json", ".sova/playbooks/x/PLAYBOOK.md", ".sova/minor-modes/m/MODE.md"]) assert.ok(settings.isSettingsPath(ok), ok);
     for (const no of ["src/a.ts", ".sova/spec/manifest.json", ".sova/project.json/x", ".sova/profiles/../../x", "AGENTS.md"]) assert.ok(!settings.isSettingsPath(no), no);
   });
+
+  test("a config file for Sova's own chats is a settings file of the same setting as at its old place", () => {
+    for (const id of ["merge-queue", "release", "review", "request", "project-setup"]) {
+      const now = `.sova/playbook-config/${id}/references/x.md`;
+      assert.ok(settings.isSettingsPath(now), now);
+      assert.deepEqual(settings.settingOfPath(now), settings.settingOfPath(`.sova/playbooks/${id}/references/x.md`), now);
+      assert.deepEqual(settings.settingOfPath(now), { setting: "playbook", id });
+    }
+  });
 });
 
 describe("a project that isn't in Git", async () => {

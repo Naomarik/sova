@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { realGit } from "./guard";
@@ -31,9 +32,9 @@ import {
   type ThreadSession,
 } from "./thread";
 // @ts-expect-error: a plain .mjs script of the shipped playbook, typed by use here
-import { blastRadius } from "../../playbooks/merge-queue/scripts/blast-radius.mjs";
+import { blastRadius } from "../../system-playbooks/merge-queue/scripts/blast-radius.mjs";
 // @ts-expect-error: as above
-import { hunksOf } from "../../playbooks/merge-queue/scripts/conflict-hunks.mjs";
+import { hunksOf } from "../../system-playbooks/merge-queue/scripts/conflict-hunks.mjs";
 
 const REPO = join(import.meta.dirname, "..", "..");
 const HOUR = 60 * 60 * 1000;
@@ -261,6 +262,7 @@ test("the playbook changed since the thread read it: its next event starts with 
   const [third, fourth] = [f.woken[1]!.text, f.woken[2]!.text];
   assert.ok(third.startsWith("The playbook changed since you read it: read "), third);
   assert.ok(third.includes(join(own, "PLAYBOOK.md")) && third.includes(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md")));
+  assert.ok(third.includes(`The method's scripts are in ${join(DEFAULT_PLAYBOOK_DIR, "scripts")}.`), "a thread started before a move learns where the scripts went");
   assert.match(third, /\n\nQueued: entry mq_3/);
   assert.match(fourth, /^Queued: entry mq_4/, "said once, then the new hash is the one read");
   assert.equal(f.created.length, 1, "a playbook change never replaces the thread");
@@ -347,7 +349,14 @@ test("with no thread wired, the server's notify is a no-op and no chat is a thre
 test("the project's own playbook is read after the method; without one the method alone", () => {
   const dir = scratchRoot("mq-thread-pb-");
   assert.equal(playbookDir(dir), DEFAULT_PLAYBOOK_DIR);
+  assert.equal(DEFAULT_PLAYBOOK_DIR, fileURLToPath(new URL("../../system-playbooks/merge-queue", import.meta.url)), "the method is Sova's own, in system-playbooks/");
+  // A project set up before .sova/playbook-config: its old folder is read while it is the only one.
+  const old = join(dir, ".sova", "playbooks", "merge-queue");
+  mkdirSync(old, { recursive: true });
+  writeFileSync(join(old, "PLAYBOOK.md"), "# old\n");
+  assert.equal(playbookDir(dir), old);
   const own = join(dir, PROJECT_PLAYBOOK);
+  assert.equal(PROJECT_PLAYBOOK, join(".sova", "playbook-config", "merge-queue"));
   mkdirSync(own, { recursive: true });
   writeFileSync(join(own, "PLAYBOOK.md"), "# x\n");
   assert.equal(playbookDir(dir), own);
@@ -538,7 +547,7 @@ test("blast radius: a branch touching statecharts gets the statecharts check pic
   commitFile(r, "docs/b.md", "b\n", "doc");
   git(r, "checkout", "-q", "master");
   const calls: VerbCall[] = [];
-  const map = join(REPO, ".sova", "playbooks", "merge-queue", "references", "blast-radius.json");
+  const map = join(REPO, ".sova", "playbook-config", "merge-queue", "references", "blast-radius.json");
   const { t, settle } = wiredThread(dir, standInModel(r, map, calls));
   t.notify(r, { kind: "queued", entry: entry("mq_charts", { branch: "feat/charts", commit: git(r, "rev-parse", "feat/charts") }) });
   t.notify(r, { kind: "queued", entry: entry("mq_docs", { branch: "feat/docs", commit: git(r, "rev-parse", "feat/docs") }) });

@@ -63,6 +63,14 @@ const playbook = (front: string): { title: string; dir: string; body: string } =
   writeFileSync(join(dir, "PLAYBOOK.md"), `---\ntitle: T\n${front}---\n# Body\n`);
   return { title: "T", dir, body: "# Body\n" };
 };
+/** A chat started before Sova's own playbooks moved: its message names `<install>/playbooks/<id>`, now gone, while
+    the playbook is at `<install>/system-playbooks/<id>`. */
+const movedPlaybook = (id: string): { title: string; dir: string; body: string } => {
+  const install = join(base, `install${++n}`);
+  mkdirSync(join(install, "system-playbooks", id), { recursive: true });
+  writeFileSync(join(install, "system-playbooks", id, "PLAYBOOK.md"), "---\ntitle: T\nproposes: pipeline\n---\n# Body\n");
+  return { title: "T", dir: join(install, "playbooks", id), body: "# Body\n" };
+};
 const user = (text: string): HEntry => ({ kind: "user", blocks: [{ type: "text", text }] }) as unknown as HEntry;
 const ctxOf = (cwd: string, opts: { branch?: HEntry[]; trees?: string[] } = {}): HookCtx =>
   ({
@@ -86,6 +94,7 @@ const offers: [string, () => HookCtx | Promise<HookCtx>][] = [
   ["a setup playbook with the user's own text after it", () => ctxOf(folder(), { branch: [user(playbookTurnText(playbook("proposes: definition\n"), "only the API"))] }) ],
   ["a setup playbook a schedule fired, plain", () => ctxOf(folder(), { branch: [user(`Scheduled run.\n\n${playbookTurnText(playbook("proposes: deploy\n"), "")}`)] }) ],
   ["a setup playbook a schedule fired, as a block", () => { const p = playbook("proposes: release\n"); return ctxOf(folder(), { branch: [user(`Scheduled run.\n\n${renderBlock({ id: "x", dir: p.dir, entry: "PLAYBOOK.md" }, "abc", { load: "full", body: p.body }, [])}`)] }); }],
+  ["a chat started before the move names the setup playbook's old folder", () => ctxOf(folder(), { branch: [user(playbookTurnText(movedPlaybook("project-setup"), ""))] })],
 ];
 for (const [name, ctx] of offers) test(`offered: ${name}`, async () => assert.equal(await projectVerbsOffered(await ctx()), true));
 
@@ -99,6 +108,7 @@ const refuses: [string, () => HookCtx | Promise<HookCtx>][] = [
   ["a message that only mentions a setup playbook's folder", () => ctxOf(folder(), { branch: [user(`Playbook: T — ${playbook("proposes: pipeline\n").dir}`)] })],
   ["a playbook's head in the model's words, not a user's", () => ctxOf(folder(), { branch: [{ kind: "assistant", blocks: [{ type: "text", text: playbookTurnText(playbook("proposes: pipeline\n"), "") }] } as unknown as HEntry] })],
   ["a folder that doesn't exist", () => ctxOf(join(base, "gone"))],
+  ["an old folder of a playbook that never moved is not read at system-playbooks/", () => ctxOf(folder(), { branch: [user(playbookTurnText(movedPlaybook("brandmaker"), ""))] })],
   ["a relative folder", () => ctxOf("somewhere")],
   ["files on another computer, even with its project's definition, queue and copy", () => {
     // The placeholder is a real local folder holding all of them, so only its being another computer's can say no.

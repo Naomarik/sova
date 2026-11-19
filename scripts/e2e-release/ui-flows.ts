@@ -32,7 +32,7 @@ const OUT = resolve(opt("--out", join(UNDER, "shots")));
 const MODEL_PORT = Number(opt("--model-port", "11434"));
 const ONLY = opt("--only") ? new Set(opt("--only").split(",")) : null;
 if (!BASE || /:(4800|4810)\b/.test(BASE)) throw new Error("--url of a branch's own copy is required (never 4800/4810)");
-const MAKER = resolve(import.meta.dirname, "../../playbooks/release-maker/scripts/release-maker.mjs");
+const MAKER = resolve(import.meta.dirname, "../../system-playbooks/release-maker/scripts/release-maker.mjs");
 const STATE = join(UNDER, "flows.json");
 const log = (...a: unknown[]) => console.log("[flows]", ...a);
 
@@ -91,11 +91,11 @@ if (phase === "setup") {
   const flow = new ReleaseFixture(flowOpts);
   maker(flow.project, "init");
   {
-    const f = join(flow.project, ".sova/playbooks/release/release.json");
+    const f = join(flow.project, ".sova/playbook-config/release/release.json");
     const m = JSON.parse(readFileSync(f, "utf8")) as { v: 1; steps: Array<Record<string, unknown>> };
     m.steps.push({ id: "try-live", label: "Try it on the staging copy", phase: "check", held: true }, { id: "smoke", label: "Smoke test the build", phase: "check" });
     writeFileSync(f, JSON.stringify(m));
-    const pb = join(flow.project, ".sova/playbooks/release/PLAYBOOK.md");
+    const pb = join(flow.project, ".sova/playbook-config/release/PLAYBOOK.md");
     writeFileSync(pb, `${readFileSync(pb, "utf8")}\n## This project's own steps\n\n- \`try-live\`: run it on the staging copy and wait for the operator's Continue.\n- \`smoke\`: smoke test the build.\n`);
   }
   maker(flow.project, "fmt");
@@ -253,7 +253,7 @@ try {
     await shot("F1-4-land-clicked", undefined, { deskOnly: true });
     await until("the maker's branch landed", () => (git(SETUP.project, ["log", "-3", "--format=%s", "master"]).includes(git(made.path, ["log", "-1", "--format=%s"])) ? true : null), 300_000, 500);
     check(c, true, "the setup branch landed on master");
-    check(c, git(SETUP.project, ["ls-tree", "-r", "--name-only", "master", ".sova/playbooks/release/"]).includes("release.json"), "master has the release playbook");
+    check(c, git(SETUP.project, ["ls-tree", "-r", "--name-only", "master", ".sova/playbook-config/release/"]).includes("release.json"), "master has the release playbook");
     await go(desk, tab(PID.setup, "releases"), "Start Release");
     await shot("F1-5-releases-set-up", "Start Release");
     check(c, !(await desk.getByText("Releases aren't set up").filter({ visible: true }).count()), "Releases tab: set up, Start Release offered");

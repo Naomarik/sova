@@ -64,10 +64,13 @@ test("the first prompt is the playbook's turn plus the why; the title names the 
   assert.ok(!onboardStartFrom(facts(), { why: " " }, ["claude-code-cli/claude-opus-5-5"]).prompt.includes("---"));
 });
 
-test("the shipped catalog lists project-verbs for any folder, with its PLAYBOOK.md body", async () => {
-  const cat = await listPlaybooks(fileURLToPath(new URL("../../", import.meta.url)), { userDir: "/nonexistent-user-playbooks" });
-  const p = linkedPlaybook(cat.playbooks, ONBOARD_PLAYBOOK_ID, "sova");
-  assert.ok(p, "listed");
+test("project-verbs is Sova's own: never in the Playbooks list, found by Sova's caller in system-playbooks/ with its PLAYBOOK.md body", async () => {
+  const cwd = fileURLToPath(new URL("../../", import.meta.url));
+  const deps = { userDir: "/nonexistent-user-playbooks" };
+  assert.equal(linkedPlaybook((await listPlaybooks(cwd, deps)).playbooks, ONBOARD_PLAYBOOK_ID, "sova"), null, "not listed");
+  const p = linkedPlaybook((await listPlaybooks(cwd, { ...deps, includeUnlisted: true })).playbooks, ONBOARD_PLAYBOOK_ID, "sova");
+  assert.ok(p, "found");
+  assert.equal(p.dir, fileURLToPath(new URL("../../system-playbooks/project-verbs", import.meta.url)));
   assert.equal(p.source, "sova");
   assert.equal(p.title, "Project verbs");
   assert.match(p.body, /At most 6 conform runs/);

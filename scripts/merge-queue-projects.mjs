@@ -338,7 +338,7 @@ async function cases(P) {
     P.commitOutside("qa: declare the review kit (outside the queue)", (dir) => {
       const f = join(dir, ".sova/project.json");
       const def = JSON.parse(readFileSync(f, "utf8"));
-      def.merge = { ...(def.merge ?? {}), review: ".sova/playbooks/review" };
+      def.merge = { ...(def.merge ?? {}), review: ".sova/playbook-config/review" };
       writeFileSync(f, JSON.stringify(def, null, 2) + "\n");
     });
     await until("noticed", async () => (await P.q.view())?.state === "paused", 120_000, 1000).catch(() => {});

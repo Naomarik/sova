@@ -26,6 +26,8 @@ import type { MergeEntry, MergeThreadAsk } from "../../shared/merge-queue";
 import { mergeThreadTitle } from "../../shared/fixed-names";
 import { NEEDS_USER_RULE } from "./rulings";
 import { serverStart } from "../project-services/self-host";
+// Temporary (migrations/manifest.json: playbook-config-old-place).
+import { configDirOf } from "../../migrations/playbook-config-old-place/index.mjs";
 
 /** A thread without memory older than this is replaced at its next event (a thread with memory never ages out). */
 export const THREAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -45,10 +47,16 @@ export const DELIVERY_TIMEOUT_MS = 60_000;
 /** The shipped profile and playbook ids. */
 export const THREAD_PROFILE = "merge-thread";
 export const PLAYBOOK_ID = "merge-queue";
-/** A project's own playbook, relative to its root. */
-export const PROJECT_PLAYBOOK = join(".sova", "playbooks", PLAYBOOK_ID);
-/** The generic default that ships with Sova, for a project without its own. */
-export const DEFAULT_PLAYBOOK_DIR = fileURLToPath(new URL(`../../playbooks/${PLAYBOOK_ID}`, import.meta.url));
+/** A project's own playbook, relative to its root (§chat.playbooks/playbook-config). */
+export const PROJECT_PLAYBOOK = join(".sova", "playbook-config", PLAYBOOK_ID);
+/** The generic default that ships with Sova, for a project without its own (§chat.playbooks/system-playbooks). */
+export const DEFAULT_PLAYBOOK_DIR = fileURLToPath(new URL(`../../system-playbooks/${PLAYBOOK_ID}`, import.meta.url));
+
+/** The project's own playbook folder relative to `root`: PROJECT_PLAYBOOK, or the old place while only it has one. */
+export function projectPlaybookRel(root: string, exists: (p: string) => boolean = existsSync): string {
+  const has = (rel: string) => exists(join(root, rel, "PLAYBOOK.md"));
+  return configDirOf(PLAYBOOK_ID, PROJECT_PLAYBOOK.split("\\").join("/"), has);
+}
 
 /** What the thread needs to know about an entry. */
 export type ThreadEntry = Pick<MergeEntry, "id" | "branch" | "commit" | "target">;
@@ -169,7 +177,7 @@ export function replaceReason(rec: ThreadRecord | undefined, s: ThreadSession | 
 
 /** The playbook folder the thread follows in `root`: the project's own, else the shipped default. */
 export function playbookDir(root: string, exists: (p: string) => boolean = existsSync): string {
-  const own = join(root, PROJECT_PLAYBOOK);
+  const own = join(root, projectPlaybookRel(root, exists));
   return exists(join(own, "PLAYBOOK.md")) ? own : DEFAULT_PLAYBOOK_DIR;
 }
 
@@ -220,7 +228,7 @@ export function playbookHash(playbook: string, method: string = DEFAULT_PLAYBOOK
 /** The line put before an event when the playbook changed since the thread last read it. */
 export function rereadLine(playbook: string, method: string = DEFAULT_PLAYBOOK_DIR): string {
   const files = [join(method, "PLAYBOOK.md"), ...(playbook !== method ? [join(playbook, "PLAYBOOK.md")] : [])];
-  return `The playbook changed since you read it: read ${files.join(" and ")} again first, with the references they name.`;
+  return `The playbook changed since you read it: read ${files.join(" and ")} again first, with the references they name. The method's scripts are in ${join(method, "scripts")}.`;
 }
 
 const short = (sha: string) => sha.slice(0, 7);

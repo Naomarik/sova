@@ -12,7 +12,7 @@ import { scratchRoot } from "../test-scratch";
 import { removeReviewChange, reviewChangeDir, writeReviewChange } from "./review-change";
 
 const REPO = join(import.meta.dirname, "..", "..");
-const SCRIPTS = join(REPO, "playbooks", "merge-queue", "scripts");
+const SCRIPTS = join(REPO, "system-playbooks", "merge-queue", "scripts");
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 function project(): string {
@@ -40,9 +40,9 @@ test("blast-radius.mjs reads the project's own map from --repo and picks statech
   const none = run();
   assert.deepEqual(none.picks, []);
   assert.equal(none.map, null);
-  const own = join(r, ".sova", "playbooks", "merge-queue", "references");
+  const own = join(r, ".sova", "playbook-config", "merge-queue", "references");
   mkdirSync(own, { recursive: true });
-  copyFileSync(join(REPO, ".sova", "playbooks", "merge-queue", "references", "blast-radius.json"), join(own, "blast-radius.json"));
+  copyFileSync(join(REPO, ".sova", "playbook-config", "merge-queue", "references", "blast-radius.json"), join(own, "blast-radius.json"));
   const out = run();
   assert.deepEqual(out.picks.map((p: { id: string }) => p.id), ["statecharts"]);
   assert.match(out.picks[0].why, /statecharts changed/);

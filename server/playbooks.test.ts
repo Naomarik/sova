@@ -31,8 +31,8 @@ const drop = (root: string, id: string, text: string, entry = "PLAYBOOK.md") => 
 };
 const fm = (fields: Record<string, string>, body: string) =>
   `---\n${Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---\n\n${body}`;
-/** A shipped folder and an absent user folder: the baseline every test starts from. */
-const base = () => ({ shippedDir: fresh("shipped"), userDir: join(fresh("user-parent"), "playbooks") });
+/** A shipped folder, an empty system folder and an absent user folder: the baseline every test starts from. */
+const base = () => ({ shippedDir: fresh("shipped"), systemDir: fresh("system"), userDir: join(fresh("user-parent"), "playbooks") });
 
 test("shipped only: every well-formed playbook, sorted by title, with its absolute dir and stripped body", async () => {
   const deps = base();
@@ -276,16 +276,31 @@ test("listed: false leaves a playbook out of the list in every folder, unless So
   assert.deepEqual((await listPlaybooks(cwd, { ...deps, includeUnlisted: true })).playbooks.map((p) => p.id).sort(), ["my-hidden", "proj-hidden", "shown", "sova-only"]);
 });
 
-test("the real tree: Sova's own recipes are unlisted, still found by the callers that run them, and every description reads", async () => {
+test("system-playbooks/: never listed whatever its description says, found only by Sova's own callers, replaced by nothing", async () => {
+  const deps = base();
+  drop(deps.systemDir, "project-setup", fm({ title: "Project setup", proposes: "pipeline" }, "sova's"));
+  writeFileSync(join(deps.systemDir, "project-setup", "playbook.json"), JSON.stringify({ version: 1, listed: true }));
+  drop(deps.userDir, "project-setup", fm({ title: "My setup" }, "mine"));
+  const listed = (await listPlaybooks(undefined, deps)).playbooks;
+  assert.deepEqual(listed.map((p) => [p.source, p.id, p.replacesSova]), [["user", "project-setup", undefined]], "only the user's, an ordinary playbook of theirs");
+  const all = (await listPlaybooks(undefined, { ...deps, includeUnlisted: true })).playbooks;
+  assert.deepEqual(all.map((p) => [p.source, p.id, p.body]), [["sova", "project-setup", "sova's"], ["user", "project-setup", "mine"]]);
+  assert.equal(all[0]!.dir, join(deps.systemDir, "project-setup"));
+});
+
+test("the real tree: system-playbooks/ holds Sova's six, playbooks/ the four you start, no id in both, nothing in playbooks/ hidden", async () => {
   // This tree's own folders, read directly: a cwd would resolve to the main checkout's project (server/project-root.ts).
   const root = fileURLToPath(new URL("../", import.meta.url));
   const deps = { userDir: join(fresh("nouser"), "absent") };
-  const shippedOnly = ["merge-queue", "release", "release-maker", "project-deploy", "project-setup"];
+  const system = ["merge-queue", "project-deploy", "project-setup", "project-verbs", "release", "release-maker"];
   const listed = (await listPlaybooks(undefined, deps)).playbooks;
-  for (const id of shippedOnly) assert.ok(!listed.some((p) => p.id === id), `${id} is listed`);
-  const shipped = (await listPlaybooks(undefined, { ...deps, includeUnlisted: true })).playbooks;
-  for (const id of shippedOnly) assert.ok(shipped.some((p) => p.id === id), `${id} is found with includeUnlisted`);
+  assert.deepEqual(listed.map((p) => p.id).sort(), ["ab-cycle", "brandmaker", "marketing", "spec-review"], "the Playbooks dialog's Sova group");
+  const all = (await listPlaybooks(undefined, { ...deps, includeUnlisted: true })).playbooks;
+  const inSystem = all.filter((p) => p.dir.startsWith(join(root, "system-playbooks")));
+  assert.deepEqual(inSystem.map((p) => p.id).sort(), system, "Sova's own callers find all six there");
+  assert.deepEqual(all.map((p) => p.id).sort(), [...listed.map((p) => p.id), ...system].sort(), "no id in both folders, nothing in playbooks/ unlisted");
   const project = await listProjectPlaybooks(root);
-  for (const id of ["merge-queue", "release", "review", "request"]) assert.equal(project.find((p) => p.id === id)?.spec?.listed, false, `.sova/playbooks/${id}`);
-  for (const p of [...shipped, ...project]) assert.equal(p.specError, undefined, `${p.source}/${p.id}: ${p.specError}`);
+  for (const id of ["merge-queue", "release", "review", "request", "project-setup"]) assert.ok(!project.some((p) => p.id === id), `.sova/playbook-config/${id} is never listed, and .sova/playbooks no longer has it`);
+  assert.ok(project.some((p) => p.id === "pi-upgrade"), "the project's own playbooks you start still are");
+  for (const p of [...all, ...project]) assert.equal(p.specError, undefined, `${p.source}/${p.id}: ${p.specError}`);
 });

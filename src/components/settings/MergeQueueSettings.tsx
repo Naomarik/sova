@@ -432,7 +432,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
       </Group>
 
       <Group title="Review">
-        <Row label="Review each landing" end={<Tag source="project" />} hint={!draft().review && !s().review.canTurnOn ? "Turning it on needs the review folder on the target: .sova/playbooks/review." : undefined}>
+        <Row label="Review each landing" end={<Tag source="project" />} hint={!draft().review && !s().review.canTurnOn ? "Turning it on needs the review folder on the target: .sova/playbook-config/review." : undefined}>
           <Toggle label={draft().review ? "On" : "Off"} checked={draft().review} disabled={locked() || (!s().review.on && !s().review.canTurnOn)} onChange={(on) => setDraft({ ...draft(), review: on })} />
         </Row>
         <Row

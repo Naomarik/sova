@@ -18,7 +18,7 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   registry), [server/harness/pi/README.md](../../server/harness/pi/README.md) and
   [QUIRKS.md](../../server/harness/pi/QUIRKS.md). The restart rules every task follows are in
   [AGENTS.md](../../AGENTS.md#live-server-restart), with its one exception: Sova's own merge thread restarts
-  the live unit after landings, once the queue is idle (`.sova/playbooks/merge-queue/PLAYBOOK.md`; the
+  the live unit after landings, once the queue is idle (`.sova/playbook-config/merge-queue/PLAYBOOK.md`; the
   path rule is `server/restart-paths.ts`).
 - Spec: `§app/server-runtime`.
 - The command catalogue, the `scripts/sova.mjs` command line and what extensions may add:

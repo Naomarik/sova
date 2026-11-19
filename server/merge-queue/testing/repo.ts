@@ -35,7 +35,7 @@ export interface FixtureOptions {
   requireService?: { portBase: number };
   /** A bare `origin` beside the project, pushed to at creation (default true). */
   remote?: boolean;
-  /** Ship a review kit at `.sova/playbooks/review/` and declare it. */
+  /** Ship a review kit at `.sova/playbook-config/review/` and declare it. */
   review?: boolean;
   /** declared only: also declare `test.run` as the unit check's own command, so `unit` is the project's test check. */
   unitIsTestCommand?: boolean;
@@ -255,7 +255,7 @@ export class Fixture {
       target: this.target,
       // The offline install a lockfile change needs (here: deps.lock).
       install: { run: ["node", "install.mjs"], inputs: ["deps.lock"] },
-      ...(this.opts.review ? { review: ".sova/playbooks/review" } : {}),
+      ...(this.opts.review ? { review: ".sova/playbook-config/review" } : {}),
       ...(this.opts.merge ?? {}),
     };
     if (checks === "declared") {
@@ -291,7 +291,7 @@ export class Fixture {
     put("src/app.txt", "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\n");
     put("README.md", "# demo\n");
     if (this.opts.review) {
-      put(".sova/playbooks/review/SKILL.md", REVIEW_KIT);
+      put(".sova/playbook-config/review/SKILL.md", REVIEW_KIT);
       put("review.conf", "ok\n");
     }
     for (const [rel, text] of Object.entries(this.opts.files ?? {})) put(rel, text);

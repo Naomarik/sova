@@ -69,7 +69,7 @@ The whole section, beside the file's other keys. `run` is a list of arguments, a
 ## Review instructions
 
 - Change: what the reviewer of each landing looks for. Key: `merge.review`, the folder of the project's review kit.
-- Lives: a folder in the project such as `.sova/playbooks/review/`, with its instructions and references. It has no `SKILL.md` and sits in no skills folder, so ordinary chats never load it.
+- Lives: a folder in the project such as `.sova/playbook-config/review/`, with its instructions and references. It has no `SKILL.md` and sits in no skills folder, so ordinary chats never load it.
 - Approves: the person, by Land. Review on or off afterwards is the setting above.
 - By: Land. A `merge.review` key in the change turns review on when it lands, with no card: say so first, and have them check the review model, because a review that can't run stops the queue.
 - Live: after landing, from the next landing.
@@ -78,7 +78,7 @@ The whole section, beside the file's other keys. `run` is a list of arguments, a
 ## The merge thread's instructions
 
 - Change: what the merge thread should know about this project.
-- Lives: `.sova/playbooks/merge-queue/PLAYBOOK.md` in the project.
+- Lives: `.sova/playbook-config/merge-queue/PLAYBOOK.md` in the project.
 - Approves: the person, by Land.
 - By: Land.
 - Live: after landing. The thread reads the project folder's copy.
@@ -87,7 +87,7 @@ The whole section, beside the file's other keys. `run` is a list of arguments, a
 ## Request instructions
 
 - Change: how a pull or merge request's title and description are written, and the checks they must pass. Key: `merge.request`, the folder of the request kit.
-- Lives: a folder such as `.sova/playbooks/request/`: `PLAYBOOK.md`, a `references` folder, and `check*.mjs` files in a `scripts` folder, run in name order.
+- Lives: a folder such as `.sova/playbook-config/request/`: `PLAYBOOK.md`, a `references` folder, and `check*.mjs` files in a `scripts` folder, run in name order.
 - Approves: the person, by Land.
 - By: Land.
 - Live: after landing, for the next request. A project that lands locally never uses it.

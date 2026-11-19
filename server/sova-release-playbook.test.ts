@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -8,15 +8,16 @@ import { parseDefinition } from "../shared/project-contract";
 import { parseReleaseManifest } from "../shared/release";
 import { defHashOf } from "./project-services/def-hash";
 // @ts-expect-error: a plain .mjs driver, no types
-import * as maker from "../playbooks/release-maker/scripts/release-maker.mjs";
+import * as maker from "../system-playbooks/release-maker/scripts/release-maker.mjs";
 // @ts-expect-error: a plain .mjs driver, no types
-import { formatText } from "../playbooks/project-verbs/scripts/project-verbs.mjs";
+import { formatText } from "../system-playbooks/project-verbs/scripts/project-verbs.mjs";
 // @ts-expect-error: a plain .mjs driver, no types
-import * as sr from "../.sova/playbooks/release/scripts/sova-release.mjs";
+import * as sr from "../.sova/playbook-config/release/scripts/sova-release.mjs";
+import { migrationsDue, readMigrations } from "../migrations/due.mjs";
 
 /**
  * Sova's own release setup: its `release` section and `site` deploy target (in .sova/project.json), its project release
- * playbook (.sova/playbooks/release) and that playbook's driver, scripts/sova-release.mjs. Scratch repositories in a temp
+ * playbook (.sova/playbook-config/release) and that playbook's driver, scripts/sova-release.mjs. Scratch repositories in a temp
  * dir; nothing here tags, pushes, deploys or runs a release check. The cases that run the driver as a program:
  * sova-release-playbook.integration.test.ts.
  */
@@ -37,12 +38,12 @@ const withoutReleaseSections = () => {
 };
 
 test("Sova's release settings and site target are in .sova/project.json, parse, and leave the definition's hash as it was", () => {
-  assert.equal(existsSync(join(ROOT, ".sova/playbooks/release/project-sections.json")), false, "the waiting fragment is gone");
+  assert.equal(existsSync(join(ROOT, ".sova/playbook-config/release/project-sections.json")), false, "the waiting fragment is gone");
   const def = parseDefinition(definitionText());
-  assert.equal(def.release?.playbook, ".sova/playbooks/release");
+  assert.equal(def.release?.playbook, ".sova/playbook-config/release");
   assert.deepEqual(def.release?.channels, ["stable"]);
   assert.equal(def.release?.commit, true);
-  assert.deepEqual(def.release?.checkIds, ["release-notes", "release-integration", "release-extensions", "release-spec-replay", "release-site", "release-spec", "release-leaks"]);
+  assert.deepEqual(def.release?.checkIds, ["migrations-due", "release-notes", "release-integration", "release-extensions", "release-spec-replay", "release-site", "release-spec", "release-leaks"]);
   const site = def.deploy?.targets.find((t) => t.name === "site");
   assert.ok(site);
   assert.equal(site.releases, "only");
@@ -66,17 +67,17 @@ test("every sova-release.mjs subcommand Sova's definition names exists, and the 
     ...Object.values(def.deploy.targets as Record<string, { build?: { run: string[] }[]; steps: { run: string[] }[]; credentials?: { check: string[] }[] }>).flatMap((t) => [...(t.build ?? []).map((s) => s.run), ...t.steps.map((s) => s.run), ...(t.credentials ?? []).map((c) => c.check)]),
   ];
   const known: string[] = sr.SUBCOMMANDS;
-  const named = runs.filter((r) => r.includes(".sova/playbooks/release/scripts/sova-release.mjs")).map((r) => r[r.indexOf(".sova/playbooks/release/scripts/sova-release.mjs") + 1]!);
+  const named = runs.filter((r) => r.includes(".sova/playbook-config/release/scripts/sova-release.mjs")).map((r) => r[r.indexOf(".sova/playbook-config/release/scripts/sova-release.mjs") + 1]!);
   assert.ok(named.length >= 7);
   for (const c of named) assert.ok(known.includes(c), `${c} is not a sova-release.mjs subcommand`);
-  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbooks/release/release.json"), "utf8"));
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbook-config/release/release.json"), "utf8"));
   const prepare = manifest.steps.filter((s) => s.phase === "prepare").map((s) => s.id);
   assert.equal(prepare.at(-1), "commit", "the commit step is the last prepare step");
   // The committed definition is in canonical form; a scratch repository holds it and Sova's playbook folder.
   assert.equal(formatText(definitionText()), definitionText(), "run release-maker fmt on .sova/project.json");
   const r = mkdtempSync(join(dir, "check-"));
   git(r, "init", "-q");
-  cpSync(join(ROOT, ".sova/playbooks/release"), join(r, ".sova/playbooks/release"), { recursive: true });
+  cpSync(join(ROOT, ".sova/playbook-config/release"), join(r, ".sova/playbook-config/release"), { recursive: true });
   writeFileSync(join(r, ".sova/project.json"), definitionText());
   const out = await maker.check(r);
   assert.deepEqual(out.problems, []);
@@ -156,13 +157,13 @@ test("the release checks' pure parts: the dated changelog entry, the built landi
 });
 
 test("the Docs step runs every release and finishes on its own; the Release Note is the operator's word, an ask only context", () => {
-  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbooks/release/release.json"), "utf8"));
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbook-config/release/release.json"), "utf8"));
   const docs = manifest.steps.find((s) => s.id === "docs");
   assert.ok(docs);
   assert.notEqual(docs.held, true, "the docs step is not held");
-  const playbook = readFileSync(join(ROOT, ".sova/playbooks/release/PLAYBOOK.md"), "utf8");
-  const ref = readFileSync(join(ROOT, ".sova/playbooks/release/references/docs.md"), "utf8");
-  const general = readFileSync(join(ROOT, "playbooks/release/PLAYBOOK.md"), "utf8");
+  const playbook = readFileSync(join(ROOT, ".sova/playbook-config/release/PLAYBOOK.md"), "utf8");
+  const ref = readFileSync(join(ROOT, ".sova/playbook-config/release/references/docs.md"), "utf8");
+  const general = readFileSync(join(ROOT, "system-playbooks/release/PLAYBOOK.md"), "utf8");
   const docsBullet = playbook.slice(playbook.indexOf("- `docs`:"), playbook.indexOf("- `commit`:"));
   assert.match(docsBullet, /every release unless the operator's Release Note/);
   for (const text of [docsBullet, ref]) {
@@ -187,4 +188,39 @@ test("the Docs step runs every release and finishes on its own; the Release Note
   assert.match(playbook, /No such label: there is no note/);
   assert.match(playbook, /It never contains the note/);
   assert.match(general, /ask from a Project Assistant or an overseer is the quoted `Asked by …` line, separate from the note/);
+});
+
+test("every script Sova's own config playbooks run by path (`node <path>`) is in the tree", () => {
+  const pages: string[] = [];
+  const walk = (d: string) => {
+    for (const n of readdirSync(d)) {
+      const p = join(d, n);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (n.endsWith(".md")) pages.push(p);
+    }
+  };
+  walk(join(ROOT, ".sova", "playbook-config"));
+  const named = pages.flatMap((p) => [...readFileSync(p, "utf8").matchAll(/node (\.sova\/[^\s`'"]+\.mjs)/g)].map((m) => [p.slice(ROOT.length + 1), m[1]!] as const));
+  assert.ok(named.length >= 3, "the release playbook names its scripts by path");
+  for (const [page, script] of named) assert.ok(existsSync(join(ROOT, script)), `${page} runs ${script}, which isn't in the tree`);
+});
+
+test("a release at or past a migration's removeIn is refused at its version step and by its release check; one before it goes on", () => {
+  const r = mkdtempSync(join(tmpdir(), "sova-mig-due-"));
+  try {
+    mkdirSync(join(r, "migrations"));
+    writeFileSync(join(r, "migrations", "manifest.json"), JSON.stringify([{ id: "a", removeIn: "0.18.0" }, { id: "b", removeIn: "1.2.0" }]));
+    const due = (v: string) => migrationsDue(v, readMigrations(r)).map((m) => m.id);
+    for (const [v, want] of [["0.17.9", []], ["0.18.0-rc.1", ["a"]], ["0.18.0", ["a"]], ["0.19.3", ["a"]], ["1.1.9", ["a"]], ["1.2.0", ["a", "b"]], ["2.0.0", ["a", "b"]]] as const)
+      assert.deepEqual(due(v), want, v);
+    writeFileSync(join(r, "package.json"), JSON.stringify({ version: "0.18.0" }));
+    assert.equal(sr.migrationsDueCheck(r, undefined), 1, "the release check reads package.json's version: the release commit's");
+    assert.equal(sr.migrationsDueCheck(r, "0.17.1"), 0, "the version step names the version it picked");
+  } finally {
+    rmSync(r, { recursive: true, force: true });
+  }
+  // Sova's own: the check is a release check, and nothing is due at the version it is at.
+  const def = parseDefinition(readFileSync(join(ROOT, ".sova/project.json"), "utf8"));
+  assert.deepEqual(def.release?.checks.find((c) => c.id === "migrations-due")?.run, ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "migrations-due"]);
+  assert.equal(sr.migrationsDueCheck(ROOT, undefined), 0, "nothing is due at Sova's own version");
 });

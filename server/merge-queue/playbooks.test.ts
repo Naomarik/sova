@@ -9,14 +9,14 @@ import { test } from "node:test";
 import { excludedTools, profileFileError } from "../../shared/profiles";
 import { findProfile } from "../profile-sources";
 // @ts-expect-error: plain .mjs scripts of the playbooks, typed by use here
-import { blastRadius, globRe } from "../../playbooks/merge-queue/scripts/blast-radius.mjs";
+import { blastRadius, globRe } from "../../system-playbooks/merge-queue/scripts/blast-radius.mjs";
 // @ts-expect-error: as above
-import { hunksOf } from "../../playbooks/merge-queue/scripts/conflict-hunks.mjs";
+import { hunksOf } from "../../system-playbooks/merge-queue/scripts/conflict-hunks.mjs";
 import { checkReviewText, FINDING_MAX, MAX_FINDINGS, REVIEW_KINDS as KINDS } from "./review-verdict";
 import { reviewerText } from "./review-step";
 
 const REPO = join(import.meta.dirname, "..", "..");
-const SOVA_MAP = JSON.parse(readFileSync(join(REPO, ".sova", "playbooks", "merge-queue", "references", "blast-radius.json"), "utf8"));
+const SOVA_MAP = JSON.parse(readFileSync(join(REPO, ".sova", "playbook-config", "merge-queue", "references", "blast-radius.json"), "utf8"));
 type Pick = { id: string; why: string; select?: string[] };
 const picks = (paths: string[]): Pick[] => blastRadius(paths, SOVA_MAP).picks;
 
@@ -140,7 +140,7 @@ test("the reviewer's first message names the change Sova wrote for it, says it h
 });
 
 test("the review kit is never a registered skill: not under a skills folder, not in pi's skill settings", () => {
-  const kit = join(REPO, ".sova", "playbooks", "review");
+  const kit = join(REPO, ".sova", "playbook-config", "review");
   assert.ok(existsSync(join(kit, "PLAYBOOK.md")) && existsSync(join(kit, "references", "checklist.md")));
   assert.ok(!existsSync(join(kit, "SKILL.md")), "a SKILL.md would make it loadable as a skill");
   for (const dir of [".agents/skills", ".pi/skills", "pi-config/skills"]) {
@@ -165,7 +165,7 @@ test("the merge-reviewer profile ships with Sova, read only: no shell, edit tool
   for (const t of ["bash", "background_job", "edit", "write"]) assert.ok(gone.includes(t), t);
   for (const t of ["read", "grep", "find", "ls"]) assert.ok(!gone.includes(t), t);
   // The kit asks for nothing it could only run with a shell.
-  const kit = join(REPO, ".sova", "playbooks", "review");
+  const kit = join(REPO, ".sova", "playbook-config", "review");
   assert.equal(existsSync(join(kit, "scripts")), false, "the kit has no scripts: the reviewer can't run them");
   assert.doesNotMatch(readFileSync(join(kit, "PLAYBOOK.md"), "utf8"), /`(node|git|pnpm|bash) /);
   assert.deepEqual(raw.grant, []);

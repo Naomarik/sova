@@ -1,0 +1,41 @@
+[
+  {
+    "id": "playbook-config-old-place",
+    "what": "A project's add-ons for Sova-run chats (merge-queue, release, review, request, project-setup) moved from .sova/playbooks/<id> to .sova/playbook-config/<id>; a project with only the old folder is read there, and the old defaults are still recognised.",
+    "since": "0.16.0",
+    "removeIn": "0.18.0",
+    "paths": [
+      "migrations/playbook-config-old-place",
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/settings-edit.ts",
+      "pi-config/extensions/worktrees/setup-rule.ts",
+      "system-playbooks/merge-queue/scripts/blast-radius.mjs",
+      "system-playbooks/project-setup/scripts/project-setup.mjs",
+      "system-playbooks/release-maker/scripts/release-maker.mjs",
+      "system-playbooks/merge-queue/PLAYBOOK.md",
+      "system-playbooks/merge-queue/references/picks.md",
+      "system-playbooks/project-setup/PLAYBOOK.md",
+      "server/merge-queue/setup-trial.test.ts",
+      "server/merge-queue/thread.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/settings.ts",
+      "server/merge-queue/settings-edit.test.ts"
+    ]
+  },
+  {
+    "id": "system-playbooks-old-paths",
+    "what": "Sova's six own playbooks moved from playbooks/<id> to system-playbooks/<id>; a chat or a playbook run started before the move names the old folder (its first message, its run record): it keeps project_verbs, its run is still found and read at the new place, and its next turn is told the new folder.",
+    "since": "0.16.0",
+    "removeIn": "0.18.0",
+    "paths": [
+      "migrations/system-playbooks-old-paths",
+      "server/project-services/tools.ts",
+      "server/project-services/note.ts",
+      "server/project-services/tool-offered.test.ts",
+      "server/project-services/note.test.ts",
+      "server/playbook-runs/store.ts",
+      "server/playbook-host.ts",
+      "server/playbook-runs/moved-folder.test.ts"
+    ]
+  }
+]

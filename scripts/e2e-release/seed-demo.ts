@@ -39,7 +39,7 @@ const MODEL = opt("--model", "ollama/qwen3:4b");
 if (!BASE || !UNDER) throw new Error("--url, --token-file and --under are required");
 if (/:(4800|4810)\b/.test(BASE)) throw new Error("never the live server or the default hermetic port");
 for (const bad of [resolve(homedir(), ".pi"), resolve(homedir(), "webapps", "sova")]) if (UNDER === bad || UNDER.startsWith(bad + "/")) throw new Error(`refusing ${UNDER}`);
-const MAKER = resolve(import.meta.dirname, "../../playbooks/release-maker/scripts/release-maker.mjs");
+const MAKER = resolve(import.meta.dirname, "../../system-playbooks/release-maker/scripts/release-maker.mjs");
 const log = (...a: unknown[]) => console.log("[seed]", ...a);
 
 // ---- the stand-in model on the provider's port, for this run
@@ -100,11 +100,11 @@ try {
   const app = new ReleaseFixture({ kind: "bare", name: "acme-app", under: join(UNDER, "projects"), versions: ["0.1.0", "0.2.0", "0.3.0"], deploy: { releasesOnly: true } });
   maker(app.project, "init");
   {
-    const f = join(app.project, ".sova/playbooks/release/release.json");
+    const f = join(app.project, ".sova/playbook-config/release/release.json");
     const m = JSON.parse(readFileSync(f, "utf8")) as { v: 1; steps: Array<Record<string, unknown>> };
     m.steps.push({ id: "try-live", label: "Try it on the staging copy", phase: "check", held: true }, { id: "smoke", label: "Smoke test the build", phase: "check" }, { id: "docs-check", label: "Check the docs links", phase: "check" }, { id: "page", label: "Release page", phase: "after" });
     writeFileSync(f, JSON.stringify(m));
-    const pb = join(app.project, ".sova/playbooks/release/PLAYBOOK.md");
+    const pb = join(app.project, ".sova/playbook-config/release/PLAYBOOK.md");
     writeFileSync(pb, `${readFileSync(pb, "utf8")}\n## This project's own steps\n\n- \`try-live\`: run it on the staging copy and wait for the operator's Continue.\n- \`smoke\`: smoke test the build.\n- \`docs-check\`: check the docs links.\n- \`page\`: make the release page.\n`);
   }
   maker(app.project, "fmt");

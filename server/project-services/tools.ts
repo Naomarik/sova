@@ -14,6 +14,8 @@ import { PROFILE, WORKTREES } from "../harness/state-kinds";
 import { queueChatRole } from "../../shared/merge-queue";
 import { stateView } from "../harness/state-view";
 import { playbookProposes } from "../playbooks";
+// Temporary (migrations/manifest.json: system-playbooks-old-paths).
+import { movedPlaybookDir } from "../../migrations/system-playbooks-old-paths/index.mjs";
 import { projectOf, projectRootOf } from "../project-root";
 import { chatStateRoot } from "../state-root";
 import type { Caller, CopyApproval, CreatorWorking, ProjectEngine, VerbAct } from "./engine";
@@ -385,7 +387,8 @@ async function ownCheckouts(ctx: ToolCtx | undefined): Promise<string[]> {
 /** Whether a message's text starts a playbook that proposes setup: sent by hand or by the Setup chat, or fired by a schedule. */
 async function startsSetupPlaybook(text: string): Promise<boolean> {
   const dirs = [...playbookDirsIn(text), ...parseBlockTags(text).flatMap((t) => (t.dir ? [t.dir] : []))];
-  for (const dir of dirs) if (isAbsolute(dir) && (await playbookProposes(dir))) return true;
+  // A chat started before Sova's own playbooks moved names the old folder (§chat.playbooks/system-playbooks).
+  for (const dir of dirs) if (isAbsolute(dir) && (await playbookProposes(movedPlaybookDir(dir)))) return true;
   return false;
 }
 

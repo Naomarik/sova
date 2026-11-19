@@ -25,7 +25,7 @@ Recommend Set Up with a Chat on the Releases tab for a project with none: the pr
 Beside the file's other keys:
 
 ```json
-{"release": {"playbook": ".sova/playbooks/release", "tag": "v${version}", "scheme": "semver", "channels": ["stable"], "commit": true}}
+{"release": {"playbook": ".sova/playbook-config/release", "tag": "v${version}", "scheme": "semver", "channels": ["stable"], "commit": true}}
 ```
 
 ## The release playbook

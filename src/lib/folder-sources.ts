@@ -4,7 +4,7 @@ import type { FolderSource } from "../../shared/folder-read";
 import { listFolder, readFolderFile } from "./api";
 import type { FolderGroup } from "./folder-viewer";
 
-/** Where a source's files come from, in one line: `.sova/playbooks/review at 97927e0`, "Shipped with Sova". */
+/** Where a source's files come from, in one line: `.sova/playbook-config/review at 97927e0`, "Shipped with Sova". */
 export function sourceCaption(src: FolderSource): string {
   if (src.kind === "builtin") return "Shipped with Sova";
   return src.ref ? `${src.dir} at ${/^[0-9a-f]{40}$/.test(src.ref) ? src.ref.slice(0, 7) : src.ref}` : src.dir;

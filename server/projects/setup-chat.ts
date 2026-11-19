@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import type { MergeRun, MergeTrial } from "../../shared/merge-queue";
 import { CONTRACT_FILE } from "../../shared/project-contract";
 import type { RuntimeRunReview } from "../../shared/project-runtime";
@@ -12,6 +12,8 @@ import type { Envelope } from "../org-envelope";
 import { realGit } from "../project-services/engine";
 import { chatRecordStore, historyLine, type ChatRecord } from "./chat-record";
 import { SETUP_PLAYBOOK_ID } from "./onboard";
+import { playbookDirsIn } from "../../shared/playbooks";
+import { PLAYBOOK_ENTRIES } from "../../shared/protocol";
 import { projectArchived, readProject } from "./spaces";
 
 /**
@@ -385,16 +387,35 @@ export interface SetupDeps {
   working: (path: string) => Promise<boolean>;
   /** Remove a build's empty worktree and its branch (no commits beyond the target). */
   removeEmpty: (projectId: string, sessionId: string, branch: string) => Promise<void>;
+  /** Whether the chat's playbook folder is gone (default: playbookFolderGone, below). */
+  playbookGone?: (path: string) => Promise<boolean>;
   now?: () => number;
 }
 
 export const STILL_WORKING = "The Setup chat is working: wait for its turn to end (or stop it), then Start Fresh.";
 
 /**
+ * Whether the chat at `path` follows a playbook folder that no longer holds a playbook: every folder its first message
+ * names has no entry file left (a Setup chat started before Sova's own playbooks moved to system-playbooks/). False
+ * when the message names none or the chat can't be read.
+ */
+export async function playbookFolderGone(path: string): Promise<boolean> {
+  try {
+    const { firstText, readBranch } = await import("../harness/pi/reader");
+    const first = (await readBranch(path)).find((h) => h.kind === "user");
+    const dirs = first ? playbookDirsIn(firstText(first) ?? "") : [];
+    return dirs.length > 0 && dirs.every((d) => !PLAYBOOK_ENTRIES.some((e) => existsSync(join(d, e))));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Set Up with a Chat / Change Setup / Start Fresh (POST /api/projects/:pid/setup). The open chat is reopened. Start
  * Fresh archives it. A chat that is archived (or Start Fresh'd) leaves its branch behind: with no commits beyond the
  * target, its empty worktree and branch are removed and a new chat starts on a fresh branch; with commits, a new chat
- * carries on in its folder on that branch, and its proposal stays. Never refused as already running.
+ * carries on in its folder on that branch, and its proposal stays. Never refused as already running. An open chat whose
+ * playbook folder is gone (it was started before the folder moved) is never reopened: it takes Start Fresh's path.
  */
 export async function openSetup(projectId: string, input: OpenSetupInput, deps: SetupDeps, envelope?: Envelope): Promise<SetupOpened> {
   const p = readProject(projectId);
@@ -402,15 +423,16 @@ export async function openSetup(projectId: string, input: OpenSetupInput, deps: 
   const iso = () => new Date(deps.now?.() ?? Date.now()).toISOString();
   const rec = setupRecordOf(projectId);
   const cur = stillOpen(rec.current) ? rec.current : undefined;
-  if (cur && !input.fresh) return { sessionId: cur.sessionId, path: cur.path, reopened: true, ...(cur.worktree && cur.branch ? { worktree: { path: cur.worktree, branch: cur.branch } } : {}) };
+  const fresh = !!input.fresh || (!!cur && (await (deps.playbookGone ?? playbookFolderGone)(cur.path)));
+  if (cur && !fresh) return { sessionId: cur.sessionId, path: cur.path, reopened: true, ...(cur.worktree && cur.branch ? { worktree: { path: cur.worktree, branch: cur.branch } } : {}) };
   const old = rec.current;
-  if (cur && input.fresh) {
+  if (cur && fresh) {
     if (await deps.working(cur.path)) throw new OrgError(STILL_WORKING, 409);
     const a = await deps.archive(cur.path);
     if (!a.ok) throw new OrgError(`The Setup chat couldn't be archived: ${a.error}`, 409);
   }
   if (old) {
-    rec.history.push({ sessionId: old.sessionId, path: old.path, startedAt: old.startedAt, endedAt: iso(), why: cur && input.fresh ? "fresh" : "ended", ...(old.branch ? { branch: old.branch } : {}) });
+    rec.history.push({ sessionId: old.sessionId, path: old.path, startedAt: old.startedAt, endedAt: iso(), why: cur && fresh ? "fresh" : "ended", ...(old.branch ? { branch: old.branch } : {}) });
     delete rec.current;
   }
   saveRecord(projectId, rec);

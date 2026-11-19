@@ -12,7 +12,7 @@ import { latestClaude } from "../../pi-config/extensions/claude-code/catalog.ts"
 
 /**
  * What the project act `verbs/onboard` starts (§app.project-runtime/onboard): the Project verbs
- * playbook (`playbooks/project-verbs`, §app.project-runtime/playbook) as a coding session's first
+ * playbook (`system-playbooks/project-verbs`, §app.project-runtime/playbook) as a coding session's first
  * prompt, its title and model, and the host's refusals. The act, its route and the live-run check
  * are the runtime's (server/projects/runtime*.ts); this module only reads.
  */

@@ -121,15 +121,15 @@ describe("the merge thread's playbook", () => {
   test("flagged when the project folder's copy (which the thread reads) isn't the target's", async () => {
     const k = kit();
     try {
-      k.repo.commitOn(k.repo.root, { ".sova/playbooks/merge-queue/PLAYBOOK.md": "# Ours\n" }, "playbook");
+      k.repo.commitOn(k.repo.root, { ".sova/playbook-config/merge-queue/PLAYBOOK.md": "# Ours\n" }, "playbook");
       const q = await k.q();
       const book = () => q.settings().then((s) => s.thread.playbooks.find((p) => p.source.kind === "project")!);
       assert.equal((await book()).differsFromFolder, false);
-      writeFileSync(join(k.repo.root, ".sova/playbooks/merge-queue/PLAYBOOK.md"), "# Edited\n");
+      writeFileSync(join(k.repo.root, ".sova/playbook-config/merge-queue/PLAYBOOK.md"), "# Edited\n");
       q.settingsChanged();
       assert.equal((await book()).differsFromFolder, true);
-      sh(k.repo.root, "checkout", "--", ".sova/playbooks/merge-queue/PLAYBOOK.md");
-      writeFileSync(join(k.repo.root, ".sova/playbooks/merge-queue/new.md"), "n\n");
+      sh(k.repo.root, "checkout", "--", ".sova/playbook-config/merge-queue/PLAYBOOK.md");
+      writeFileSync(join(k.repo.root, ".sova/playbook-config/merge-queue/new.md"), "n\n");
       q.settingsChanged();
       assert.equal((await book()).differsFromFolder, true, "an untracked file counts");
     } finally {

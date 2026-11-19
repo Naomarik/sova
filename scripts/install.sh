@@ -84,7 +84,7 @@ repo=${SOVA_REPO:-https://github.com/Naomarik/sova.git}
 # RELEASE: the default is `stable`, the one tag that moves: each release points it at its own
 # numbered tag (vX.Y.Z), and numbered tags never move. So the installer fetched from any ref, a
 # numbered tag's included, installs whatever `stable` points at when it runs; pinning a release
-# takes SOVA_REF=vX.Y.Z. Nothing here changes per release (.sova/playbooks/release/PLAYBOOK.md).
+# takes SOVA_REF=vX.Y.Z. Nothing here changes per release (.sova/playbook-config/release/PLAYBOOK.md).
 ref=${SOVA_REF:-stable}
 dir=${SOVA_DIR:-$HOME/.local/share/sova}
 bindir=${SOVA_BIN:-$HOME/.local/bin}

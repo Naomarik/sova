@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { listPlaybooks } from "../playbooks";
 // @ts-expect-error: a plain .mjs script, no types
-import * as pd from "../../playbooks/project-deploy/scripts/project-deploy.mjs";
+import * as pd from "../../system-playbooks/project-deploy/scripts/project-deploy.mjs";
 
 /**
  * The Project deploy playbook (§app.project-runtime/deploy-playbook): a verb playbook that proposes
@@ -16,7 +16,7 @@ import * as pd from "../../playbooks/project-deploy/scripts/project-deploy.mjs";
  * address, a shell string, a secret-looking value).
  */
 
-const PLAYBOOK = fileURLToPath(new URL("../../playbooks/project-deploy/", import.meta.url));
+const PLAYBOOK = fileURLToPath(new URL("../../system-playbooks/project-deploy/", import.meta.url));
 const SCRIPT = join(PLAYBOOK, "scripts", "project-deploy.mjs");
 const dir = mkdtempSync(join(tmpdir(), "project-deploy-playbook-"));
 after(() => rmSync(dir, { recursive: true, force: true }));

@@ -214,7 +214,7 @@ export function publishBlocked(title: string): string | null {
   return title.trim() ? null : "Give it a title first.";
 }
 
-/** "Written from .sova/playbooks/request · 3 checks passed", or Sova's plain default. */
+/** "Written from .sova/playbook-config/request · 3 checks passed", or Sova's plain default. */
 export function requestChecksWords(folder: string | undefined, checks: readonly RequestTextCheck[] | undefined): string {
   const c = checks ?? [];
   if (!folder) return "No request folder: written in Sova's plain default.";

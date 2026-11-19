@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync, createReadStream } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { MergeRun } from "../../shared/merge-queue";
 import {
   type AnyVerb,
@@ -49,6 +50,9 @@ import type { LandingReleaseCut } from "../../shared/merge-queue";
 import { MergeFailure } from "../merge-queue/queue";
 import { changelogSection } from "../updates/check";
 import { callerTag, type Caller } from "./engine";
+
+/** Sova's general release method, by its full folder so it resolves from any project's release worktree (§app.release/playbook). */
+export const RELEASE_METHOD_DIR = fileURLToPath(new URL("../../system-playbooks/release", import.meta.url));
 
 /**
  * Release (al_1): a project's numbered versions, cut by its release playbook's chat and held by Sova where it can't
@@ -602,7 +606,7 @@ export class Releaser {
   private firstMessage(rec: ReleaseRecord, checkout: string, branch: string, from: { note: string | null; asked: { by: string; why: string } | null } = { note: null, asked: null }): string {
     const plan = rec.steps.map((s) => `- ${s.id} (${s.phase}${s.held ? ", held for the operator" : ""}${s.artifact ? ", reports an artifact" : ""}): ${s.label}`).join("\n");
     return [
-      `Release ${rec.id} of ${rec.project} started. You are its release chat: follow Sova's release method (playbooks/release) and this project's playbook (${rec.settings.playbook}); the project's playbook wins where they differ, Sova's gates always apply.`,
+      `Release ${rec.id} of ${rec.project} started. You are its release chat: follow Sova's release method (${RELEASE_METHOD_DIR}) and this project's playbook (${rec.settings.playbook}); the project's playbook wins where they differ, Sova's gates always apply.`,
       `Work in ${checkout} (branch ${branch}, cut from ${short(rec.base)}, the frozen ${rec.settings.commit ? "target" : "release commit"}). Never push, tag or move a branch yourself: Sova does it at Publish.`,
       `The plan:\n${plan}`,
       `Report each step through project_verbs: release.step {release: "${rec.id}", step, state: running|done|failed|skipped|held, summary, detail?, facts?} (facts: version=…, commit=…, branch=…, url=…, artifact=<path>, sha256=…, size=…), and the notes with release.notes {release: "${rec.id}", text}. The version step reports version=; ${rec.settings.commit ? `the commit step reports commit=<sha> branch=${branch}: Sova then puts it in the merge queue and runs the gating checks` : "this release is tag-only: the gating checks start when the last prepare step is done"}. Sova checks the facts it can see; where they disagree, the fact wins.`,

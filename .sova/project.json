@@ -68,7 +68,7 @@
             "kind": "env",
             "check": [
               "node",
-              ".sova/playbooks/release/scripts/sova-release.mjs",
+              ".sova/playbook-config/release/scripts/sova-release.mjs",
               "env-set",
               "SOVA_SITE_PAGES_PROJECT"
             ]
@@ -78,7 +78,7 @@
             "kind": "env",
             "check": [
               "node",
-              ".sova/playbooks/release/scripts/sova-release.mjs",
+              ".sova/playbook-config/release/scripts/sova-release.mjs",
               "env-set",
               "SOVA_SITE_VIDEO_DIR"
             ]
@@ -89,7 +89,7 @@
             "id": "video",
             "run": [
               "node",
-              ".sova/playbooks/release/scripts/sova-release.mjs",
+              ".sova/playbook-config/release/scripts/sova-release.mjs",
               "site-video",
               "${checkout}"
             ]
@@ -117,7 +117,7 @@
             "id": "pages",
             "run": [
               "node",
-              ".sova/playbooks/release/scripts/sova-release.mjs",
+              ".sova/playbook-config/release/scripts/sova-release.mjs",
               "site-pages",
               "${commit}"
             ]
@@ -232,19 +232,25 @@
       "inputs": ["pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json"],
       "timeout": 600
     },
-    "review": ".sova/playbooks/review"
+    "review": ".sova/playbook-config/review"
   },
   "release": {
-    "playbook": ".sova/playbooks/release",
+    "playbook": ".sova/playbook-config/release",
     "tag": "v${version}",
     "scheme": "semver",
     "channels": ["stable"],
     "commit": true,
     "checks": [
       {
+        "id": "migrations-due",
+        "label": "No migration due at this version",
+        "run": ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "migrations-due"],
+        "timeout": 60
+      },
+      {
         "id": "release-notes",
         "label": "Release notes entry",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "changelog-check"],
+        "run": ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "changelog-check"],
         "timeout": 60
       },
       {
@@ -257,7 +263,7 @@
       {
         "id": "release-extensions",
         "label": "Every extension suite",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "ext-all"],
+        "run": ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "ext-all"],
         "timeout": 1800
       },
       {
@@ -269,19 +275,19 @@
       {
         "id": "release-site",
         "label": "Site build",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "site-check"],
+        "run": ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "site-check"],
         "timeout": 900
       },
       {
         "id": "release-spec",
         "label": "No new spec findings",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "spec-new"],
+        "run": ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "spec-new"],
         "timeout": 600
       },
       {
         "id": "release-leaks",
         "label": "Leak scan since the last release",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "leak-scan"],
+        "run": ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "leak-scan"],
         "timeout": 600
       }
     ]

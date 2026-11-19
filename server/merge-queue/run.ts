@@ -14,7 +14,7 @@
  */
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { CheckPick, MergeNote, ReviewVerdict, RunStep, RunStepKind, StepResult } from "../../shared/merge-queue";
 import type { ProjectDef, StepDecl } from "../../shared/project-contract";
 import { render } from "../../shared/project-contract";
@@ -616,8 +616,9 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
 /**
  * A dry run (merge.setup dryRun; RunInput.tryOnly): the checks a project is about to declare, run on the target itself,
  * merging nothing. The copy reset to `base`, setup, then the checks `input.project.def` declares (the user's unsaved
- * answer), each failure run once more (a pass then is noted flaky). No docs, no review, no attribution: a red here is
- * the project's own, never a branch's. Outcome: passed (noChecks when "none"), failed with the failing step's label,
+ * answer), each failure run once more (a pass then is noted flaky). No review, no attribution: a red here is the
+ * project's own, never a branch's. A trial (merge.try, `trialOf`) of a branch or commit runs the landing's docs step
+ * after setup, before any check, and judges whose a red check is (trialWhose). Outcome: passed (noChecks when "none"), failed with the failing step's label,
  * machine or void.
  */
 async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise<RunOutcome> {
@@ -679,6 +680,20 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     }
     if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${where} (log: ${again.step.log})`, copy });
     notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun`, at: now() });
+  }
+  // A dry run of a branch or commit (§app.project-setup/trial): the landing's own docs step, before any check, so the
+  // checks judge the spec as it will be once the branch lands. The docs commit stays in the copy: nothing is kept.
+  if (input.trialOf) {
+    const own = input.draftsFromCommit && !input.draftsDir ? await committedDrafts(copy, input.runDir) : undefined;
+    const docs = await makeDocs({ input: own ? { ...input, draftsDir: own } : input, copy, steps, ident: await identityEnv(copy), deps, signal });
+    if (own) rmSync(own, { recursive: true, force: true });
+    if (signal.aborted) return voided("aborted");
+    if (docs.kind === "machine") return out({ verdict: "machine", why: docs.why, copy });
+    if (docs.kind === "refused") return out({ verdict: "failed", blame: "branch", cause: "drafts", why: docs.why, copy, trialFailure: { kind: "dry-run", commit: input.commit, whose: "branch", line: docs.why, checks: [{ id: "docs", label: "Spec docs", step: "docs", whose: "branch" }] } });
+    if (docs.kind === "made") {
+      scope.tip = docs.sha;
+      writeFileSync(changedFile, `${(await gitOut(copy, ["ls-tree", "-r", "--name-only", "HEAD"]).catch(() => "")).trim()}\n`);
+    }
   }
   const list = planChecks(def, input.picks, input.releaseChecks).map((c) => (input.trialOf ? { ...c, picked: true as const } : c));
   checksShown = picksOf(list);
@@ -922,7 +937,8 @@ async function makeDocs(o: { input: RunInput; copy: string; steps: Steps; ident:
   const st = o.steps.start("docs", "docs", "Spec docs");
   // Only the branch's own drafts land: an untracked one it carries, or a tracked one it adds or changes. A tracked
   // draft the target already has (a project that commits its drafts) is never landed, changed or deleted here.
-  const names = await ownDrafts(o.copy, o.input.base, o.input.commit, snapshot);
+  // A dry run's base is the tried commit itself: the branch's own are told against the target's head, as at landing.
+  const names = await ownDrafts(o.copy, o.input.tryOnly ? (o.input.trialTarget?.head ?? o.input.base) : o.input.base, o.input.commit, snapshot);
   const others = snapshot.filter((n) => !names.includes(n));
   if (others.length) st.log(`not the branch's (tracked, unchanged by it): ${others.length} draft${others.length === 1 ? "" : "s"}${others.length <= 10 ? ` (${others.join(", ")})` : ""}\n`);
   if (!names.length) {
@@ -959,6 +975,22 @@ async function makeDocs(o: { input: RunInput; copy: string; steps: Steps; ident:
   }
 }
 
+/** A bare commit's dry run: the drafts committed in it (the copy is at that commit), copied out file by file so no
+ *  untracked draft of any folder rides along. undefined: it commits none. */
+async function committedDrafts(copy: string, runDir: string): Promise<string | undefined> {
+  const prefix = ".sova/spec/drafts/";
+  const files = (await gitProc(copy, ["ls-files", "-z", "--", prefix])).out.split("\0").filter((f) => f.startsWith(prefix));
+  if (!files.length) return undefined;
+  const dir = join(runDir, "drafts");
+  rmSync(dir, { recursive: true, force: true });
+  for (const f of files) {
+    const to = join(dir, f.slice(prefix.length));
+    mkdirSync(dirname(to), { recursive: true });
+    cpSync(join(copy, f), to);
+  }
+  return dir;
+}
+
 /** Of `snapshot`'s draft names, the branch's own: untracked in both the target and the pinned commit, or changed by
  *  the branch since its merge base with the target. */
 export async function ownDrafts(copy: string, base: string, commit: string, snapshot: readonly string[]): Promise<string[]> {
@@ -979,8 +1011,11 @@ export async function ownDrafts(copy: string, base: string, commit: string, snap
 
 async function landDrafts(o: { input: RunInput; copy: string; ident: Record<string, string>; signal: AbortSignal }, st: Step, names: string[], tool: string): Promise<{ kind: "none" } | { kind: "made"; sha: string } | { kind: "refused"; why: string } | { kind: "machine"; why: string }> {
   const a = o.input.entry.approval;
-  const by = a.by === "typed" ? "the user (land it, typed in the branch's chat)" : "the user (Land)";
-  const verification = `Made official by the merge queue: ${o.input.entry.branch} at ${short(o.input.commit)}, approved ${a.at.slice(0, 16).replace("T", " ")}; committed before the run's checks (run ${o.input.runId})`;
+  const dry = !!o.input.tryOnly;
+  const by = dry ? "the merge queue (a dry run, never landed)" : a.by === "typed" ? "the user (land it, typed in the branch's chat)" : "the user (Land)";
+  const verification = dry
+    ? `Made official in the merge copy for a dry run of ${o.input.trialOf ?? o.input.entry.branch} at ${short(o.input.commit)}: never landed, published or kept (run ${o.input.runId})`
+    : `Made official by the merge queue: ${o.input.entry.branch} at ${short(o.input.commit)}, approved ${a.at.slice(0, 16).replace("T", " ")}; committed before the run's checks (run ${o.input.runId})`;
   const argv = [process.execPath, tool, "land", "--commit", "HEAD", "--by", by, "--verification", verification, "--write", "--root", o.copy, "--json"];
   st.log(`$ ${argv.slice(1).join(" ")}\n`);
   const p = await runProc(argv, { cwd: o.copy, env: { ...process.env as Record<string, string> }, timeoutMs: 300_000, signal: o.signal, log: st.log });
@@ -1015,7 +1050,8 @@ async function landDrafts(o: { input: RunInput; copy: string; ident: Record<stri
   const c = await gitProc(o.copy, [...NO_BACKGROUND_CLEANUP, "commit", "--no-verify", "-m", subject, "-m", String(j.commitMessage?.body || verification), "-m", `Sova-Spec-Landing: merge-queue ${o.input.runId}`], { env: o.ident, log: st.log });
   if (c.code !== 0) return (st.end("failed", { detail: tail(c.out) }), { kind: "machine", why: `committing the docs failed: ${tail(c.out)}` });
   const sha = await gitOut(o.copy, ["rev-parse", "HEAD"]);
-  keepLandedDrafts(o.input.runDir, o.copy, sha, names, st.log);
+  // A dry run lands nothing: no record for the branch folder's drafts.
+  if (!dry) keepLandedDrafts(o.input.runDir, o.copy, sha, names, st.log);
   st.end("passed", { detail: `${short(sha)}: ${subject}` });
   return { kind: "made", sha };
 }

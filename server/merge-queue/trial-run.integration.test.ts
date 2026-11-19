@@ -3,7 +3,8 @@
 // .sova/project.json can't pass a trial on checks that skipped themselves.
 import { after, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MergeEntry, RunStep } from "../../shared/merge-queue";
 import { parseDefinition } from "../../shared/project-contract";
@@ -36,7 +37,7 @@ const f = process.env.SOVA_MERGE_CHANGED;
 writeFileSync(${JSON.stringify(out)}, JSON.stringify({ picked: process.env.SOVA_MERGE_PICKED ?? null, changed: f ? readFileSync(f, "utf8").split("\\n").map((s) => s.trim()).filter(Boolean) : null }));
 `;
 
-async function trial(fx: Fixture, commit: string, branch: string, target?: { head: string }) {
+async function trial(fx: Fixture, commit: string, branch: string, target?: { head: string }, drafts: Pick<RunInput, "draftsDir" | "draftsFromCommit"> = {}) {
   const runId = `mr_trial${Math.random().toString(36).slice(2, 8)}`;
   const runDir = join(fx.root, "runs", runId);
   mkdirSync(runDir, { recursive: true });
@@ -55,12 +56,13 @@ async function trial(fx: Fixture, commit: string, branch: string, target?: { hea
     review: false,
     tryOnly: true,
     trialOf: branch,
+    ...drafts,
     ...(target ? { trialTarget: { def: parseDefinition(fx.fileAt(target.head, ".sova/project.json")!), head: target.head } } : {}),
     signal: new AbortController().signal,
     awaitReview: () => new Promise(() => {}),
   };
   const out: RunOutcome = await makeRunMerge({ specCore: join(REPO_ROOT, "pi-config/extensions/spec/core") })(input, { step: (s) => void steps.set(s.id, s), checks: () => {} });
-  return { out, steps };
+  return { out, steps, runDir };
 }
 
 describe("a trial runs path-gated checks in full", () => {
@@ -177,5 +179,93 @@ describe("a dry run tells whose failure it is, as a landing does", () => {
     const c = await trial(fx, added.commit, added.branch, { head: head2 });
     assert.equal(c.out.trialFailure?.whose, "branch");
     assert.equal(c.steps.get("rerun-master:new"), undefined);
+  });
+});
+
+describe("a dry run makes the branch's own spec drafts into docs before any check (§app.project-setup/trial)", () => {
+  const CORE = join(REPO_ROOT, "pi-config/extensions/spec/core");
+  /** The spec check a project runs: any finding fails it (a moved file a claim lists reads code-missing). */
+  const SPEC_CHECK = `import { execFileSync } from "node:child_process";
+let out;
+try { out = execFileSync(process.execPath, [${JSON.stringify(join(CORE, "sova-spec.mjs"))}, "check", "--root", ".", "--json"], { encoding: "utf8" }); } catch (e) { out = String(e.stdout ?? ""); }
+const findings = JSON.parse(out).findings ?? [];
+for (const f of findings) console.log(\`\${f.code}: \${f.message}\`);
+process.exit(findings.length ? 1 : 0);
+`;
+  const DEF = `${JSON.stringify({ version: 1, merge: { checks: [{ id: "spec", label: "Spec check", run: ["node", "checks/spec.mjs"] }] } }, null, 2)}\n`;
+  /** A draft `move` in `checkout` whose §a/top lists src/moved.txt instead of src/app.txt, with its chat's note. */
+  const moveDraft = (checkout: string) => {
+    const draft = (...a: string[]) => {
+      const r = spawnSync(process.execPath, [join(CORE, "sova-spec-draft.mjs"), ...a, "--root", checkout, "--json"], { cwd: checkout, encoding: "utf8" });
+      if (r.status !== 0) throw new Error(`spec draft ${a[0]}: ${r.stdout}${r.stderr}`);
+    };
+    draft("new", "move", "--write");
+    const rec = join(checkout, ".sova/spec/drafts/move/spec/claims/a/top.json");
+    writeFileSync(rec, readFileSync(rec, "utf8").replace("src/app.txt", "src/moved.txt"));
+    draft("evidence", "move", "--id", "§a/top", "--by", "chat", "--verification", "moved with the file", "--note", "--write");
+  };
+  /** A project with a spec (§a/top lists src/app.txt) and its spec check; a branch moving src/app.txt to src/moved.txt. */
+  async function moved(name: string) {
+    const fx = new Fixture();
+    fixtures.push(fx);
+    await fx.withSpec();
+    fx.commitIn(fx.project, { "checks/spec.mjs": SPEC_CHECK }, "spec check");
+    const head = fx.head();
+    const br = fx.branch(name, { "src/app.txt": null, "src/moved.txt": "moved\n", ".sova/project.json": DEF });
+    return { fx, head, br };
+  }
+
+  test("a branch moving a file a claim lists passes the spec check with its draft and fails it without; the docs are kept nowhere", async () => {
+    const { fx, head, br } = await moved("move");
+    const bare = await trial(fx, br.commit, br.branch, { head });
+    assert.equal(bare.out.verdict, "failed", "without its draft the spec check judges the old spec");
+    assert.deepEqual(bare.steps.get("docs") && { result: bare.steps.get("docs")!.result, detail: bare.steps.get("docs")!.detail }, { result: "skipped", detail: "no spec drafts" });
+    assert.match(bare.out.why ?? "", /^Spec check fails at/);
+
+    moveDraft(br.checkout);
+    const receipt = readFileSync(join(br.checkout, ".sova/spec/drafts/move/draft.json"), "utf8");
+    const origin = fx.originHead();
+    const r = await trial(fx, br.commit, br.branch, { head }, { draftsDir: join(br.checkout, ".sova/spec/drafts") });
+    assert.equal(r.out.verdict, "passed", r.out.why);
+    assert.equal(r.steps.get("docs")?.result, "passed", JSON.stringify(r.steps.get("docs")));
+    assert.equal(r.steps.get("check:spec")?.result, "passed");
+    const order = [...r.steps.keys()];
+    assert.ok(order.indexOf("docs") < order.indexOf("check:spec"), `the docs before any check: ${order.join(", ")}`);
+    // Saved, promoted, published and landed nothing: the target and origin where they were, the docs commit on no
+    // ref, no record for the branch folder's drafts, the draft still a draft.
+    const docs = git(r.out.copy!, ["rev-parse", "HEAD"]).trim();
+    assert.match(git(r.out.copy!, ["log", "-1", "--format=%B", docs]), /Sova-Spec-Landing: merge-queue/);
+    assert.equal(fx.head(), head);
+    assert.equal(fx.originHead(), origin);
+    assert.equal(git(fx.project, ["for-each-ref", "--contains", docs]).trim(), "", "the docs commit is on no branch or tag");
+    assert.equal(existsSync(join(r.runDir, "docs-landed.json")), false, "no landed-drafts record");
+    assert.equal(readFileSync(join(br.checkout, ".sova/spec/drafts/move/draft.json"), "utf8"), receipt, "the draft is left as it was");
+  });
+
+  test("a bare commit's dry run takes the drafts committed in it", async () => {
+    const { fx, head, br } = await moved("committed");
+    moveDraft(br.checkout);
+    git(br.checkout, ["add", "-f", ".sova/spec/drafts/move"]);
+    git(br.checkout, ["commit", "-q", "-m", "commit the draft"]);
+    const commit = git(br.checkout, ["rev-parse", "HEAD"]).trim();
+    const r = await trial(fx, commit, commit.slice(0, 7), { head }, { draftsFromCommit: true });
+    assert.equal(r.out.verdict, "passed", r.out.why);
+    assert.equal(r.steps.get("docs")?.result, "passed");
+    assert.equal(existsSync(join(r.runDir, "drafts")), false, "its drafts copy is gone");
+  });
+
+  test("drafts that don't fit fail the dry run at the docs step, the branch's, with a landing's reason; no check runs", async () => {
+    const { fx, head, br } = await moved("misfit");
+    fx.draft(br.checkout, "mine");
+    fx.editDraft(br.checkout, "mine", "Changed after the note.");
+    const r = await trial(fx, br.commit, br.branch, { head }, { draftsDir: join(br.checkout, ".sova/spec/drafts") });
+    assert.equal(r.out.verdict, "failed");
+    assert.equal(r.out.blame, "branch");
+    assert.equal(r.out.cause, "drafts");
+    assert.match(r.out.why ?? "", /^your spec drafts don't fit, so nothing was made official: .*§b\/mine/);
+    assert.equal(r.out.trialFailure?.whose, "branch");
+    assert.equal(r.out.trialFailure?.line, r.out.why);
+    assert.deepEqual(r.out.trialFailure?.checks.map((c) => c.step), ["docs"]);
+    assert.deepEqual([...r.steps.keys()].filter((k) => k.startsWith("check:")), []);
   });
 });

@@ -427,6 +427,6 @@ test("a running dry run is the bar's running state: Dry run · {branch}, never L
   assert.deepEqual(bar.segments.map((s) => s.id), ["copy", "setup", "check:playbook"]);
   assert.equal(bar.count?.text, "+1");
   assert.ok(bar.lines.some((l) => l.text === "Nothing lands from a dry run."));
-  assert.ok(bar.peek.some((l) => l.text === "Needs a dry run: adds the merge check Playbook tests"));
+  assert.ok(bar.peek.some((l) => l.text === "Needed: adds the merge check Playbook tests"));
   assert.deepEqual(bar.actions.map((a) => a.label), ["Checks", "Queue"]);
 });

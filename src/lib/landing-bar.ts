@@ -348,7 +348,7 @@ function dryRunBar(p: LandingProjectInput, q: LandingQueueCut, now: NonNullable<
   const who = t.by.kind === "land" ? "your Land" : t.by.kind === "operator" ? "you" : "its chat";
   const lines: LandingLine[] = [
     { text: `${branch} at ${short(t.commit)} · started by ${who}`, mono: true },
-    ...(t.needs ? [{ text: `Needs a dry run: ${t.needs}` }] : []),
+    ...(t.needs ? [{ text: `Needed: ${t.needs}` }] : []),
     { text: "Nothing lands from a dry run." },
     ...(currentStepLine(run, Date.now()) ? [{ text: currentStepLine(run, Date.now())!, mono: true as const }] : []),
     ...nextLines(q),
@@ -365,7 +365,7 @@ function dryRunBar(p: LandingProjectInput, q: LandingQueueCut, now: NonNullable<
     count: waitingCount(q),
     segments,
     lines,
-    peek: [...(t.needs ? [{ text: `Needs a dry run: ${t.needs}` }] : []), { text: `Started by ${who}` }, { text: "Nothing lands from a dry run." }],
+    peek: [...(t.needs ? [{ text: `Needed: ${t.needs}` }] : []), { text: `Started by ${who}` }, { text: "Nothing lands from a dry run." }],
     actions: [...(session ? [branchChat(session)] : []), checks(p.id, run.id), queue(p.id)],
     oneLine: `${p.name} · Dry run · ${branch}`,
   };

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dryRunActions, dryRunChip, dryRunLine, failureLine, explainerWords, landFirstLine, nth, olderNote, heldDryRunLabel, runsFirst, scopeWords, stoppedBy, testsWords, trialChip, trialLine, whoStarted, type BranchDryRun, type BranchFailure } from "./dry-run";
+import { dryRunActions, runToast, dryRunChip, dryRunLine, failureLine, explainerWords, landFirstLine, nth, olderNote, heldDryRunLabel, runsFirst, scopeWords, stoppedBy, testsWords, trialChip, trialLine, whoStarted, type BranchDryRun, type BranchFailure } from "./dry-run";
 
 const HEAD = "a1b2c3d4e5f6a7b8c9d0";
 const OLD = "0f9e8d7c6b5a49382716";
@@ -193,4 +193,9 @@ test("the sessions pane's row never reads a branch whose newest commit's dry run
   assert.equal(rowBranchStatus(s(dr("failed", { run: "mr_1", failure: failure("master") })))!.kind, "you");
   // An older commit's failure is not this head's: the head reads as itself.
   assert.equal(rowBranchStatus(s(dr("failed", { commit: OLD, run: "mr_1", failure: failure("branch") })))!.kind, "ready");
+});
+
+test("Run Dry Run's toast: started, or waiting for the merge copy with what holds it", () => {
+  assert.equal(runToast("feat/play", "abcdef1234"), "Started a dry run of feat/play at abcdef1.");
+  assert.equal(runToast("feat/play", "abcdef1234", { after: "the landing of feat/x" }), "Dry run of feat/play waiting · starts after the landing of feat/x.");
 });

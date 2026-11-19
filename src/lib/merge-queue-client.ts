@@ -20,12 +20,16 @@ export const mergeFeed = feed;
 const rowsSeen = new Map<string, string>();
 /** A row's branch summary as the key counts it: written, writing, failed, from an earlier commit. */
 const summaryKey = (s: { commit: string; state: string; stale?: { commit: string } } | undefined) => (s ? `${s.state}@${s.commit}${s.stale ? `<${s.stale.commit}` : ""}` : "");
+/** A branch's dry run as the key counts it: its state at its commit (never its progress, which moves often). */
+const dryKey = (d: { state: string; commit: string; run?: string } | undefined) => (d ? `${d.state}@${d.commit}:${d.run ?? ""}` : "");
 const rowsKey = (v: MergeQueueView) =>
   [
     v.current?.entry ?? "",
-    ...[...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].map((e) => `${e.id}:${e.state}:${e.position ?? ""}:${e.settled ?? ""}:${summaryKey(e.summary)}`),
+    `trial:${v.trialNow?.run.id ?? ""}`,
+    ...(v.trialsWaiting ?? []).map((w) => `tw:${w.id}@${w.commit}`),
+    ...[...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].map((e) => `${e.id}:${e.state}:${e.position ?? ""}:${e.settled ?? ""}:${summaryKey(e.summary)}:${dryKey(e.dryRun)}`),
     ...v.recent.map((l) => `${l.entry.id}:landed:${l.entry.notes.length}`),
-    ...(v.ready ?? []).map((r) => `${r.branch}:ready:${summaryKey(r.summary)}`),
+    ...(v.ready ?? []).map((r) => `${r.branch}:ready:${summaryKey(r.summary)}:${dryKey(r.dryRun)}`),
   ].join(",");
 /** The session feed's `merge_queue` frame: the tab adopts the view; worktree rows reload only when an entry moved. */
 export function noteMergeFeed(msg: { project: string; view: MergeQueueView }): void {

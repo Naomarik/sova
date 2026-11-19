@@ -19,9 +19,8 @@ import { ReviewChangesButton } from "./ReviewChanges";
 import { paneScopedId, usePaneScope } from "../lib/pane-scope";
 import { DISCARD_LINE, discardMenuLine } from "../lib/discard-branch";
 import { createDiscard, DiscardConfirm, type Discard } from "./DiscardBranch";
-import { dryRunActions, dryRunChip, failureLine, landFirstLine, runsFirst, startedToast, waitingIdOf, type BranchDryRun } from "../lib/dry-run";
-import { runDryRun } from "../lib/merge-queue-client";
-import { DryRunButton, DryRunLines, DryRunWhat, FixSplit, usePress, type FixTarget } from "./DryRun";
+import { dryRunActions, dryRunChip, failureLine, landFirstLine, runsFirst, waitingIdOf, type BranchDryRun } from "../lib/dry-run";
+import { DryRunButton, DryRunLines, DryRunWhat, FixSplit, runDryRunPress, usePress, type FixTarget } from "./DryRun";
 
 /** A tracked worktree with the queue's facts (SessionWorktreeInfo.queue, filled by the server). */
 export type QueueWorktree = SessionWorktreeInfo & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
@@ -481,7 +480,7 @@ export function WorktreeQueueRow(props: {
             items={(Item) => (
               <>
                 <Show when={dry() && (dryActs()?.menu.includes("again") || dry()!.state === "failed") && !dryActs()?.run}>
-                  <Item label="Run Dry Run Again" aria={`Run the dry run of ${w().branch} again`} description="Runs its new or changed checks on this commit again." onRun={() => void press.press("run", () => runDryRun(projectId()!, w().branch, commitOf()), startedToast(w().branch, commitOf()))} />
+                  <Item label="Run Dry Run Again" aria={`Run the dry run of ${w().branch} again`} description="Runs its new or changed checks on this commit again." onRun={() => runDryRunPress(press, projectId()!, w().branch, commitOf())} />
                 </Show>
                 <Show when={buttons().includes("Land")}>
                   <Item label="Land" aria={`Land ${w().branch}`} description="Asks first." onRun={() => confirm.open("land")} />

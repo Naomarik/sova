@@ -273,6 +273,9 @@ export const fixToast = (chat: string): string => `Sent the failure to ${chat}.`
 export const newChatToast = (check: string, branch: string, on: FixOffer["newChat"]["on"], target: string): string =>
   on === "new-branch" ? `Started a chat to fix ${check} on a new branch from ${target}.` : `Started a chat to fix ${check} on ${branch}.`;
 export const startedToast = (branch: string, commit: string): string => `Started a dry run of ${branch} at ${sha7(commit)}.`;
+/** Run Dry Run's toast: started, or waiting for the merge copy (the answer's `waiting`). */
+export const runToast = (branch: string, commit: string, waiting?: { after: string }): string =>
+  waiting ? `Dry run of ${branch} waiting · starts after ${waiting.after}.` : startedToast(branch, commit);
 export const stoppedToast = (branch: string): string => `Stopped the dry run of ${branch}.`;
 
 /** The empty-tab fact while a dry run runs: "1 dry run running." / "1 dry run running, 2 waiting." */

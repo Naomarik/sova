@@ -189,7 +189,9 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
                 <h3 class="text-heading-s" id="mq-steps-title">
                   Checks and why
                 </h3>
-                <p class="text-caption text-muted mq-legend">Required: the project's floor · Triggered: by the changed files · Added: by the merge thread</p>
+                <p class="text-caption text-muted mq-legend">
+                  {isDry() ? "Runs the checks this branch adds or changes; the rest show Not run (unchanged)." : "Required: the project's floor · Triggered: by the changed files · Added: by the merge thread"}
+                </p>
               </div>
               <Show when={r().noChecks}>
                 <p class="text-caption">This project declares no automated tests: it lands after a clean merge.</p>

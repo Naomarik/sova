@@ -4,7 +4,7 @@
 // lib/dry-run's, so every screen says the same thing.
 import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
-import { DRY_RUN_DOCS, DRY_RUN_LINK, DRY_RUN_SENTENCE, dryRunLine, explainerWords, fixToast, fixWhyNot, newChatLine, newChatToast, newChatWhyNot, startedToast, stoppedToast, type BranchDryRun, type BranchFailure, type FixOffer } from "../lib/dry-run";
+import { DRY_RUN_DOCS, DRY_RUN_LINK, DRY_RUN_SENTENCE, dryRunLine, explainerWords, fixToast, fixWhyNot, newChatLine, newChatToast, newChatWhyNot, runToast, stoppedToast, type BranchDryRun, type BranchFailure, type FixOffer } from "../lib/dry-run";
 import { fixIt, refusal, runDryRun, stopTheDryRun } from "../lib/merge-queue-client";
 import { projectSessionHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
@@ -151,6 +151,10 @@ export function usePress(onChanged?: () => void) {
   return { busy, error, setError, press };
 }
 
+/** Run Dry Run (or Again) on one press: its toast says started, or that it waits for the merge copy. */
+export const runDryRunPress = (press: ReturnType<typeof usePress>, projectId: string, branch: string, commit: string): void =>
+  void press.press("run", () => runDryRun(projectId, branch, commit), (v: { waiting?: { after: string } } | undefined) => runToast(branch, commit, v?.waiting));
+
 /** Run Dry Run / Run Dry Run Again, or Stop Dry Run, as the row's state asks. A busy merge copy never refuses Run: it
     waits its turn (the row then reads Dry run waiting, with Stop). */
 export function DryRunButton(props: {
@@ -170,7 +174,7 @@ export function DryRunButton(props: {
       const which = props.run ? { run: props.run } : props.waiting ? { waiting: props.waiting } : null;
       if (!which) return props.press.setError("Sova is still reading this dry run: try again in a moment.");
       void props.press.press("stop", () => stopTheDryRun(props.projectId, which), stoppedToast(props.branch));
-    } else void props.press.press("run", () => runDryRun(props.projectId, props.branch, props.commit), (v: { waiting?: { after: string } } | undefined) => (v?.waiting ? `The dry run of ${props.branch} waits for the merge copy: it starts after ${v.waiting.after}.` : startedToast(props.branch, props.commit)));
+    } else runDryRunPress(props.press, props.projectId, props.branch, props.commit);
   };
   return (
     <button

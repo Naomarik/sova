@@ -5,7 +5,7 @@ import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
 import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, needsYouOf, withItsChat } from "../lib/merge-queue";
 import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision, STANDING_LINE, standingWords, answeredInChat, type DecisionAction } from "../lib/merge-standing";
-import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue, runDryRun } from "../lib/merge-queue-client";
+import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeQueueTabHref, mergeRunHref, projectSessionHref, projectTabHref, type QueueTab } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
@@ -24,8 +24,8 @@ import { BranchSummaryView } from "./BranchSummary";
 import type { DiffScope, WorktreeReadiness } from "../../shared/protocol";
 import { ReviewChangesButton } from "./ReviewChanges";
 import { heldCount, heldHasContent, HeldList, RetiredList, RetirementLists, RetirementOff } from "./RetirementLists";
-import { DRY_RUN_NOW_LINE, dryRunActions, dryRunChip, dryRunFact, failureLine, landFirstLine, runsFirst, scopeWords, startedToast, tookWords, heldDryRunLabel, nth, trialChip, trialLine, waitingIdOf, whoStarted, type BranchDryRun } from "../lib/dry-run";
-import { DryRunButton, DryRunLines, DryRunWhat, FixNewChatButton, FixSplit, usePress, type FixTarget } from "./DryRun";
+import { DRY_RUN_NOW_LINE, dryRunActions, dryRunChip, dryRunFact, failureLine, landFirstLine, runsFirst, scopeWords, tookWords, heldDryRunLabel, nth, trialChip, trialLine, waitingIdOf, whoStarted, type BranchDryRun } from "../lib/dry-run";
+import { DryRunButton, DryRunLines, DryRunWhat, FixNewChatButton, FixSplit, runDryRunPress, usePress, type FixTarget } from "./DryRun";
 import type { MergeTrial, MergeTrialWaiting } from "../../shared/merge-queue";
 
 /** How often the tab reads the queue while it shows (a run's steps move by the second). */
@@ -926,7 +926,7 @@ function DryRunNow(props: { projectId: string; view: MergeQueueView; now: NonNul
           {branch()} at <span class="text-mono">{short(t().commit)}</span> · started by {whoStarted(t().by, title)}
         </span>
       </p>
-      <Show when={t().needs}>{(w) => <p class="text-caption">Needs a dry run: {w()}</p>}</Show>
+      <Show when={t().needs}>{(w) => <p class="text-caption">Needed: {w()}</p>}</Show>
       <p class="text-caption">{DRY_RUN_NOW_LINE}</p>
       <Show when={scopeWords(t())}>{(w) => <p class="text-caption text-muted">{w()}</p>}</Show>
       <p class="text-caption mq-now">
@@ -1320,7 +1320,7 @@ function WithChatRow(props: { projectId: string; entry: MergeEntry; view: MergeQ
             entry={e()}
             press={fixPress}
             chatOf={props.chatOf}
-            onAgain={e().dryRun && e().dryRun!.commit === e().commit ? () => void fixPress.press("run", () => runDryRun(props.projectId, e().branch, e().commit), startedToast(e().branch, e().commit)) : undefined}
+            onAgain={e().dryRun && e().dryRun!.commit === e().commit ? () => runDryRunPress(fixPress, props.projectId, e().branch, e().commit) : undefined}
             onLandAnyway={e().failure?.whose === "master" && e().dryRun?.land ? () => void act.run("land-anyway", () => answerEntry(e(), "land-anyway"), `Landing ${e().branch} anyway.`) : undefined}
           />
         </Show>
@@ -1378,8 +1378,10 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
       <div class="list-main">
         <RowHead projectId={props.projectId} branch={r().branch} session={r().session} archived={r().sessionArchived} chatOf={props.chatOf} />
         <p class="mq-facts">
-          <QueueChip row={chip()} title={chip().title} />
-          <Show when={dry()}>{(d) => <QueueChip row={dryRunChip(d())} title={d().why} />}</Show>
+          {/* One state chip: a dry run that hasn't passed at this head stands in for the chat's readiness. */}
+          <Show when={dry() && dry()!.state !== "passed" ? dry() : undefined} fallback={<QueueChip row={chip()} title={chip().title} />}>
+            {(d) => <QueueChip row={dryRunChip(d())} title={d().why} />}
+          </Show>
           <span class="text-mono text-muted">{short(r().commit)}</span>
           <span>
             {readyFactsWords(r())}
@@ -1426,7 +1428,7 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
               items={(Item) => (
                 <>
                   <Show when={dryActs()!.menu.includes("again")}>
-                    <Item label="Run Dry Run Again" aria={`Run the dry run of ${r().branch} again`} description="Runs its new or changed checks on this commit again." onRun={() => void press.press("run", () => runDryRun(props.projectId, r().branch, r().commit), startedToast(r().branch, r().commit))} />
+                    <Item label="Run Dry Run Again" aria={`Run the dry run of ${r().branch} again`} description="Runs its new or changed checks on this commit again." onRun={() => runDryRunPress(press, props.projectId, r().branch, r().commit)} />
                   </Show>
                   <Show when={dryActs()!.menu.includes("land")}>
                     <Item label="Land" aria={`Land ${r().branch}`} description="Asks first. A dry run runs first; it lands once it passes." onRun={() => confirm.open("land")} />

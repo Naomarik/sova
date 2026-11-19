@@ -535,10 +535,34 @@
       "src/components/ShareSheet.tsx",
       "src/components/SharesPage.tsx",
       "src/components/SessionDetails.tsx",
-      "src/lib/session-shares.ts"
+      "src/lib/session-shares.ts",
+      "src/components/SharePage.tsx"
     ],
     "about": [
       "§app/session-share"
+    ]
+  },
+  "§design.copy-deck/session-share-lookbook": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.session-share/lookbook",
+      "§app.session-share/lookbook-view",
+      "§app.session-share/sheet"
+    ],
+    "code": [
+      "src/share/SessionShareApp.tsx",
+      "src/components/ShareSheet.tsx",
+      "src/components/SharePage.tsx",
+      "src/share/Lookbook.tsx",
+      "src/share/DesignPage.tsx",
+      "src/share/lookbook-model.ts",
+      "src/components/ShareDesigns.tsx",
+      "src/lib/session-shares.ts"
+    ],
+    "about": [
+      "§app.session-share/lookbook-view"
     ]
   },
   "§design.copy-deck/settings-alignment": {

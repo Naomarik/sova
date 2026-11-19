@@ -548,7 +548,8 @@
       "src/vis/copy.ts",
       "src/vis/copy-plan.ts",
       "src/vis/copy-plan.test.ts",
-      "src/vis/snapshot.ts"
+      "src/vis/snapshot.ts",
+      "server/session-share-designs.ts"
     ],
     "requires": [
       "§chat.markdown/code-blocks",
@@ -556,9 +557,9 @@
       "§app/tours"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-16T13:15Z",
-      "source": "pi-session:02f36f42-fe72-46f4-b16d-5c9ac0af4715#a96b5ce8"
+      "by": "user",
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
     }
   },
   "§chat.markdown/working-notes": {

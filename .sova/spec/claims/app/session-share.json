@@ -12,7 +12,8 @@
       "server/share/routes.ts",
       "src/share/SessionShareApp.tsx",
       "shared/session-share.ts",
-      "server/share/session-routes.ts"
+      "server/share/session-routes.ts",
+      "server/session-share-designs.ts"
     ]
   },
   "§app.session-share/link": {
@@ -47,8 +48,92 @@
       "server/link-tokens.ts",
       "server/link-tokens.test.ts",
       "server/tours/shares.ts",
-      "server/tours/shares.test.ts"
+      "server/tours/shares.test.ts",
+      "server/session-share-view.ts"
     ]
+  },
+  "§app.session-share/lookbook": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.session-share/content",
+      "§app.session-share/never",
+      "§app.session-share/snapshot",
+      "§app.session-share/slice",
+      "§chat.design-mode/storage"
+    ],
+    "code": [
+      "server/session-share-view.ts",
+      "shared/session-share.ts",
+      "server/design/store.ts",
+      "server/share/session-live.ts",
+      "server/session-share-privacy.test.ts",
+      "server/session-share-designs.ts",
+      "server/session-shares-routes.ts",
+      "server/session-share-designs.test.ts",
+      "server/session-share-privacy.integration.test.ts",
+      "server/session-share-lookbook.test.helper.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
+    }
+  },
+  "§app.session-share/lookbook-serving": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.session-share/link",
+      "§app.session-share/never",
+      "§app.baton/share-listener",
+      "§mesh.public/share-protocol",
+      "§chat.design-mode/prototype-frame",
+      "§chat.markdown/visuals"
+    ],
+    "code": [
+      "server/share/session-routes.ts",
+      "server/share/edge.ts",
+      "server/share/router.ts",
+      "server/share/routes.ts",
+      "shared/vis-frame-host.ts",
+      "server/session-share-designs.ts",
+      "server/session-shares-routes.ts",
+      "shared/session-share.ts",
+      "src/lib/session-shares.ts",
+      "server/share-edge.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
+    }
+  },
+  "§app.session-share/lookbook-view": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.session-share/lookbook",
+      "§app.session-share/page",
+      "§chat.design-mode/prototype-frame"
+    ],
+    "code": [
+      "src/share/SessionShareApp.tsx",
+      "src/share/Lookbook.tsx",
+      "src/share/DesignPage.tsx",
+      "src/share/lookbook.css",
+      "src/share/lookbook-model.ts",
+      "src/lib/share-lookbook.test.ts",
+      "server/session-share-lookbook-browser.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
+    }
   },
   "§app.session-share/never": {
     "kind": "behavior",
@@ -64,8 +149,14 @@
       "server/link-tokens.ts",
       "server/session-shares.test.ts",
       "server/baton.test.ts",
-      "server/tours/shares.test.ts"
-    ]
+      "server/tours/shares.test.ts",
+      "server/session-share-designs.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-19T21:26Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#e711c517"
+    }
   },
   "§app.session-share/overview": {
     "kind": "behavior",
@@ -101,11 +192,14 @@
       "src/share/thread.tsx",
       "src/share/session-share.css",
       "src/vis/share-views.ts",
-      "src/vis/share-markdown.test.ts"
+      "src/vis/share-markdown.test.ts",
+      "src/share/Lookbook.tsx",
+      "src/share/lookbook-model.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-13T22:37Z"
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
     }
   },
   "§app.session-share/presence": {
@@ -123,7 +217,8 @@
       "server/session-share-activity.test.ts",
       "server/runtime-quirks.ts",
       "server/runtime-quirks.test.ts",
-      "server/runtime-quirks.integration.test.ts"
+      "server/runtime-quirks.integration.test.ts",
+      "server/share/session-live.ts"
     ]
   },
   "§app.session-share/reading": {
@@ -144,6 +239,31 @@
     "evidence": "reviewed",
     "code": []
   },
+  "§app.session-share/review-designs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.session-share/sheet",
+      "§app.session-share/lookbook",
+      "§app.session-share/snapshot",
+      "§app.session-share/lookbook-serving"
+    ],
+    "code": [
+      "src/components/ShareDesigns.tsx",
+      "src/components/ShareSheet.tsx",
+      "src/components/SharePage.tsx",
+      "src/lib/session-shares.ts",
+      "src/lib/session-shares.test.ts",
+      "server/session-shares-routes.ts",
+      "server/session-share-design-pin.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
+    }
+  },
   "§app.session-share/share-page": {
     "kind": "behavior",
     "authority": "accepted",
@@ -157,7 +277,9 @@
       "src/lib/share-slice.ts",
       "src/lib/share-slice.test.ts",
       "src/App.tsx",
-      "src/share-page.css"
+      "src/share-page.css",
+      "src/components/ShareDesigns.tsx",
+      "src/lib/session-shares.ts"
     ]
   },
   "§app.session-share/shares-page": {
@@ -207,12 +329,13 @@
       "server/session-shares-routes.ts",
       "shared/session-share.ts",
       "src/components/SharePage.tsx",
-      "src/components/OpensAt.tsx"
+      "src/components/OpensAt.tsx",
+      "src/components/ShareDesigns.tsx"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T12:42Z",
-      "source": "pi-session:a43d715c-1eb4-4040-a159-23c4193273a4#55333f93"
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
     }
   },
   "§app.session-share/slice": {
@@ -237,7 +360,10 @@
       "server/test-wait.ts",
       "server/session-shares.test.ts",
       "server/session-shares.integration.test.ts",
-      "src/share/SessionShareApp.tsx"
+      "src/share/SessionShareApp.tsx",
+      "server/session-share-designs.ts",
+      "src/share/lookbook-model.ts",
+      "src/lib/share-slice.test.ts"
     ]
   },
   "§app.session-share/snapshot": {
@@ -254,8 +380,16 @@
       "server/share/session-live.ts",
       "server/session-shares.test.ts",
       "server/session-shares.integration.test.ts",
-      "server/test-wait.ts"
-    ]
+      "server/test-wait.ts",
+      "server/session-share-design-cuts.ts",
+      "server/share/session-routes.ts",
+      "server/session-share-design-pin.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-19T21:26Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#e711c517"
+    }
   },
   "§app.session-share/visits": {
     "kind": "behavior",
@@ -274,13 +408,14 @@
   "§app/session-share": {
     "kind": "surface",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "code": [
       "shared/session-share.ts",
       "server/session-shares.ts",
       "server/session-shares-routes.ts",
       "server/session-share-view.ts",
-      "src/share/SessionShareApp.tsx"
+      "src/share/SessionShareApp.tsx",
+      "server/session-share-designs.ts"
     ],
     "notOwned": [
       "§app.baton/links",

@@ -1667,7 +1667,7 @@ host, person or recipient.
 | Blocked Create (its title) | "Give the share a title." · "Add a person, or turn on Anyone with the link." · "At most 20 links per share." · "Reading the conversation first." · "The conversation couldn't be read, so nothing can be shared yet." · "Loading the images first: every image is shown before anything is shared." · "An image didn't load. Retry it first: every image is shown before anything is shared." |
 | Slice | the slice line "Messages {a}–{b} of {total}" · "Message {a} of {total}" · "From message {a} · follows live" · unsliced, in Manage: "The whole session." · `Change Slice` · a start no longer on the branch (Update to now): "The start of this share is no longer in the session." · an end on a live share (server refusal): "A share that follows live has no end. Turn Follow live off to end it." · a change raced by another: "This share changed meanwhile. Try again." |
 | Stale preview (warn banner) | **The session changed. Preview it again.** Nothing was shared. We read it again: check it, then create the links. · confirming an update: **The session changed. Preview it again.** Nothing changed for them. We read it again: check it, then confirm. |
-| Update and stop following | titles "Update to Now" · "Stop Following Live" · "Their pages will show the conversation as it is here, images included." · "Follow live stops here: their pages keep the conversation as it is here, images included." · `Back to Share` · `Update to This` / `Stop Following Here` (`Saving…`) · failed: **Couldn't read the conversation.** Nothing changed. {reason} `Try Again` |
+| Update and stop following | titles "Update to Now" · "Stop Following Live" · "Their pages will show the conversation as it is here, images included." · "Follow live stops here: their pages keep the conversation as it is here, images included." (with designs shared, each ends "…images and designs included.") · `Back to Share` · `Update to This` / `Stop Following Here` (`Saving…`) · failed: **Couldn't read the conversation.** Nothing changed. {reason} `Try Again` |
 | Foot | `Cancel` · `Preview` · `Create Link` / `Create Links` (`Creating…`) · Preview: `Back to Sharing` / `Back to Share` · managing: `Stop Sharing` (armed `Stop Every Link?`), `Preview`, `Done` |
 | New links | eyebrow "New link" / "{n} new links" · `Copy Link` (toast "Link copied.") · the `linkWarning` text with `Open Settings` |
 | Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Copy Link` (title "Copy {label}'s link", the anyone row "Copy this link"; toast "Link copied.") · `Get New Link` (title "A new link for them. This one stops working.") · `Delete Link` (armed "Delete {label}'s Link?", the anyone row "Delete This Link?", with "The link stops working for good." under it while armed) · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
@@ -1682,7 +1682,7 @@ host, person or recipient.
 | List | "Tap where the share starts, then where it ends." · rows `You` / `Reply`, chips `Start` / `End` / `Start and end`, "Image only.", `aria-label` "1 image" / "{n} images" · none: **No messages yet.** There's nothing to share until the session has a message. |
 | Bar | the range: "Messages {a}–{b} of {total}" · "Message {a} of {total}" · "All {total} messages" · "No messages yet" · "From message {a} · follows live" · "All messages · follows live"; the ends: "From the first message · To the latest" / "From message {a} · To message {b}" · `Back` · `Preview` · `Next` · changing a share: `Save Slice` (`Saving…`) |
 | Hints | "Starts with a reply." `Include the question?` · "Ends with your question." `Include the reply?` · picking an end turns Follow live off: "Follow live is off: a share with an end stays as it is at that message." |
-| Review | "{range}. People you send a link to can read these messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs." · changing a share: "{range}. Open pages start over with the new slice." · Follow live off: "Off: they see these messages as they are now. You can update it to now later." · Save blocked: "The conversation couldn't be read, so nothing can be saved yet." · `Create Link` / `Create Links` (`Creating…`) · `Done` |
+| Review | "{range}. People you send a link to can read these messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs." (with designs shared: "…with their drawings and images, and the designs below. Never…") · changing a share: "{range}. Open pages start over with the new slice." · Follow live off: "Off: they see these messages as they are now. You can update it to now later." · Save blocked: "The conversation couldn't be read, so nothing can be saved yet." · `Create Link` / `Create Links` (`Creating…`) · `Done` |
 | Stale and errors | **The session changed. Preview it again.** Nothing was shared. / Nothing changed. We read it again: check the slice, then go on. · **Couldn't create the links.** / **Couldn't save the slice.** Nothing was shared. / Nothing changed. {reason} |
 | Changed meanwhile (Save Slice, 409 `share-changed`) | **This share changed meanwhile.** Nothing was changed. We read it again: save again to apply this slice. |
 | Done | "{range}. Copy it again any time from Manage, in the session's Sharing tab." / "{range}. Copy them again any time from Manage, in the session's Sharing tab." · toast "Slice saved." |
@@ -1709,6 +1709,29 @@ host, person or recipient.
 | Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") · "Tour links" (row: the tour's title, a link to its chat · "Edition checked {time} · Expires in {n} days" · the opened line; `Copy Link` titled "Copy the link to {title}"; `Delete Link` armed "Delete This Link?" with "The link stops working for good." under it; done "Link deleted.") |
 | Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Delete Link` (armed "Delete {person}'s Link?", with "{person}'s link stops working for good." under it while armed) |
 | Empty and hosts | **No public links are open.** Share a session from its Sharing tab: Session details, then Sharing. · "{host} can't be reached, so its links aren't listed." · failed action: **That didn't go through.** Nothing was changed. {reason} |
+
+## §design.copy-deck/session-share-lookbook — Lookbooks on a session share (§app.session-share/lookbook, §app.session-share/lookbook-view)
+
+`{letter}` is a design's letter, `{style}` and `{layout}` its direction's names, `{n}` a count, `{time}`
+a short date and time, `{title}` the share's public title. No cost, token count, status or Creative
+Director copy appears on a share.
+
+**Share page (what a recipient reads)**
+
+| Where | Copy |
+|---|---|
+| Lookbook block | title "Lookbook · {n} designs" ("Lookbook · 1 design") · a tile: the letter, "{style} · {layout}" (the style alone with no layout), "{model name} · {n} versions" ("1 version"); `aria-label` "Open design {letter}" |
+| Full-size view | `Back` · title "{letter}{version} · {style} · {layout}" (version 1 shows the letter alone; no direction: "Design {letter}{version}") with the model's name under it · `Previous design` / `Next design` (icon buttons) · Version picker "Version {n} · {month day, time}" (`aria-label` "Version") · `Desktop` / `Phone` · `Open in New Tab` |
+| A design's own tab | the tab's title "{letter} · {title}" · one thin bar: design picker "{letter} · {style}" / "Design {letter}" (`aria-label` "Design") · the Version picker · `Desktop` / `Phone` · the model's name · `Close` · a design no longer shared: **This design isn't part of the share.** The conversation it came from is still here. `Open the Conversation` · before the first read: "Loading the design." · offline: "Offline. We'll keep trying, and the page stays as it is." · a dead link: the share page's dead pages (§design.copy-deck/session-share) |
+| A frame | "Loading the page" · "This page couldn't be loaded." · "This page tried to leave its frame, so it was stopped." |
+| A still page | one quiet line: "Shown still: this browser can't run designs safely. They run in Chrome and Edge." |
+
+**Share sheet and the share page's create form**
+
+| Where | Copy |
+|---|---|
+| Designs | eyebrow "{n} designs · {m} versions" ("1 design", "1 version") · signed-in pictures, first: "Some pictures came from a signed-in page." · "Designs are shared as they are: every version shown here goes out." · several Lookbooks: "Lookbook {n}" over each · "Loading designs · {n} of {total}" · "{n} of {total} designs didn't load, so nothing can be shared until they do." ("…until it does.") · `Retry Designs` |
+| Blocked Create (its title, after the images' lines) | "Loading the designs first: every design is shown before anything is shared." · "A design didn't load. Retry it first: every design is shown before anything is shared." |
 
 ## §design.copy-deck/worktree-cleanup — New session's worktrees line and retirement (§chat.transcript/empty-worktrees, §chat.worktrees/cleanup, §chat.worktrees/retirement)
 

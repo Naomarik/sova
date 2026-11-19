@@ -639,7 +639,7 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   /api/i/<token>/assistant/older` and `GET /api/i/<token>/c/<k_handle>/older` (earlier pages), `POST
   /api/i/<token>/c/<k_handle>/message` and `/end`, `POST /api/i/<token>/requests/<r_handle>`, `GET /i/<token>/v/<v_handle>`, `POST /i/<token>/ask-link`
   and the WebSocket `/ws/i?token=` (§app.owner-page/page, §app/project-assistant); and, for session shares, only `GET /s/<token>`, `GET /api/s/<token>`,
-  `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). A new socket
+  `GET /api/s/<token>/img/<n>`, `GET /api/s/<token>/d/<letter>/<n>/<kind>` (§app.session-share/lookbook-serving) and the WebSocket `/ws/s?token=` (§app/session-share). A new socket
   of a link's own is named `/ws/<kind>/<name>` (§mesh.public/share-protocol). Every other path
   answers 404 before any routing, except on a gateway, whose edge also passes the forward-only
   shapes of §mesh.public/share-protocol for the links routed hosts registered (the path is judged raw, before any decoding: a dot segment, an
@@ -680,7 +680,8 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   `X-Frame-Options: SAMEORIGIN` and its own CSP, `sandbox allow-scripts; default-src 'none';
   script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:;
   media-src data: blob:; form-action 'none'; base-uri 'none'; frame-ancestors 'self'`, the same
-  headers wherever it is served from (this listener, or the gateway passing a routed host's).
+  headers wherever it is served from (this listener, or the gateway passing a routed host's); and a
+  session share's design shells, by exact path (§app.session-share/lookbook-serving).
 - The listener records visits (§app.baton/visits): it reads the user agent only to name a device
   family, a scanner or a link previewer, and keeps neither it nor the client address. The page
   shell resolves a token only for a known previewer's user agent, and answers the same either way.

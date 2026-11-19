@@ -371,7 +371,10 @@ broken block's source (§app.baton/outsider-view).
     accepts only the first such message from its parent, deletes `RTCPeerConnection` and its
     `webkit` alias (best effort: it closes the obvious path, not every one), and writes that
     document in place. The page's `frame-src 'self'` keeps the frame's own navigations on the
-    page's host;
+    page's host. A share's Lookbook designs are framed the same way, as same-host documents under a
+    header policy, each served whole from its own token-scoped address
+    (§app.session-share/lookbook-serving); only they also load Google Fonts
+    (§chat.design-mode/prototype-frame);
   - **no autoplay**: a motion gate runs before the model's code and holds CSS animations, SMIL,
     `requestAnimationFrame` and `setInterval` until the first pointer or key event in the frame
     (`setTimeout` loops and script-made SVG escape it; the guide asks for a Play/Step button);

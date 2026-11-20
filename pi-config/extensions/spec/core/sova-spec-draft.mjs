@@ -1031,7 +1031,7 @@ function overCap(base, spec, only) {
   }
   return { introduced, preexisting };
 }
-const overCapText = (x) => `${x.id} is ${x.bytes} B of prose${x.was === undefined ? "" : ` (was ${x.was} B)`}, over the ${x.cap} B cap: split it by topic into sibling claims, the old § keeping a short summary that requires its parts`;
+const overCapText = (x) => `${x.id} is ${x.bytes} B of prose${x.was === undefined ? "" : ` (was ${x.was} B)`}, over the ${x.cap} B cap: split it by topic into sibling H2s declared right after it, the old § keeping a short summary that requires them and ends in one line per part, "- §part — <its heading>"`;
 const overCapFinding = (x) => ({ severity: "warn", code: "declaration-over-cap", id: x.id, file: x.file, bytes: x.bytes, cap: x.cap, ...(x.was === undefined ? {} : { was: x.was }), message: overCapText(x) });
 
 const citedText = (r, base) => `the draft edited a line of ${r.citedBy.join(", ")} that cites ${r.id}, and ${r.files.join(", ")} changed since ${base.slice(0, 12)}, but ${r.id}'s prose is as it was: read it; if what it says changed, edit it in this draft (it is a foreign §)`;

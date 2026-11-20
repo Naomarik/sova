@@ -35,6 +35,7 @@ import {
 	SPEC_TOOL_NAME,
 	specToolReadCommand,
 	unreadLine,
+	parseRanked,
 	UNREAD_PREFIX,
 	PROCEDURE_HEAD,
 	procedurePath,
@@ -1025,4 +1026,16 @@ test("unreadLine: at most 10 § read first, those at relevance ≥ 0.036 or with
 	assert.equal(key, [...v.rank.map((r) => r.id).filter((id) => id !== "§a/other")].sort().join(","), "the key is the landed set, reads included");
 	assert.equal(unreadLine(v, new Set(["src/v.tsx"]), readAll(["§a/low", "§a/lowstale", "§a/zero"])).text, undefined, "all read: no line");
 	assert.equal(unreadLine(v, new Set(["src/none.ts"]), new Set()).text, undefined, "nothing landed: no line");
+});
+
+test("unreadLine: a split topic is one entry with its best part named, landing through its parts' files; reading the topic or any touched part reads it", () => {
+	const topic = { id: "§a/topic", score: 20, relevance: 0.5, stale: ["12"], files: ["src/p.ts"], part: "§a/topic-two", parts: ["§a/topic-one", "§a/topic-two"] };
+	const v: RankedView = { rank: [topic, { id: "§a/plain", score: 10, relevance: 0.4, stale: [], files: ["src/p.ts"] }] };
+	const own = new Set(["src/p.ts"]);
+	assert.match(unreadLine(v, own, new Set()).text!, /read first §a\/topic \(best part §a\/topic-two; still states 12\), §a\/plain$/);
+	assert.ok(!unreadLine(v, own, new Set()).text!.includes("§a/topic-one"), "no part as an entry of its own");
+	for (const read of ["§a/topic", "§a/topic-one", "§a/topic-two"]) assert.match(unreadLine(v, own, new Set([read])).text!, /read first §a\/plain$/, `reading ${read} reads the topic`);
+	const parsed = parseRanked(JSON.stringify({ exit: 0, census: { rank: [{ ...topic, files: ["src/p.ts"] }], touched: [{ id: "§a/topic-one", files: ["src/p.ts"] }] } }))!;
+	assert.deepEqual(parsed.rank[0], topic, "the topic's row carries its own files, part and parts");
+	assert.deepEqual(parseRanked(JSON.stringify({ exit: 0, census: { rank: [{ id: "§a/plain", score: 1, relevance: 1, stale: [] }], touched: [{ id: "§a/plain", files: ["src/p.ts"] }] } }))!.rank[0], { id: "§a/plain", score: 1, relevance: 1, stale: [], files: ["src/p.ts"] }, "an unsplit row reads its files from touched, as before");
 });

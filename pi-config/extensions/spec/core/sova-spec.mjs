@@ -16,6 +16,7 @@ import { fieldShape, checkFields, frameOf, frameFinding, aboutDelivered } from "
 import { lookCommand, graphMain, nearMain, occurs } from "./graph.mjs";
 import { mapMain } from "./map.mjs";
 import { whereMain } from "./where.mjs";
+import { splitOf, unitOf } from "./parts.mjs";
 import { assemble, readSpecGit, fixFor, isMerging, mixedFix } from "./layout.mjs";
 
 const ID_SRC = String.raw`§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?/[a-z][a-z-]*`;
@@ -595,6 +596,10 @@ function check(ctx) {
     provenance(ctx, id);
   }
   checkFields(ctx, add, parentOf);
+  // A split topic's summary lists its parts; one that breaks the pattern leaves them claims of their own in every view.
+  const split = splitOf(ctx);
+  for (const b of split.broken)
+    add("warn", "split-summary-broken", `${b.id} ends in a summary of the claims declared after it, but ${b.why}: it is not read as a split topic, so search and lookups list it and those claims separately`, { id: b.id });
   const code = codeUnion(ctx, [...ctx.claims.keys()]);
   const kinds = {}, labels = { authority: {}, evidence: {}, unlabeled: 0 };
   for (const r of ctx.claims.values()) {
@@ -612,7 +617,8 @@ function check(ctx) {
     if (bytes > cap) overCap++;
     return { id, file: d.file, lines: d.lines, level: d.level, textSha256: sha(d.text), bytes };
   });
-  return { counts: { records: ctx.claims.size, declarations: ctx.decls.size, kinds, labels, requiresEdges: edges, codePaths: code.length, cap, overCap }, declarations, frontier, code };
+  return { counts: { records: ctx.claims.size, declarations: ctx.decls.size, kinds, labels, requiresEdges: edges, codePaths: code.length, cap, overCap,
+    ...(split.down.size ? { split: { topics: split.down.size, parts: split.up.size } } : {}) }, declarations, frontier, code };
 }
 
 // The most prose bytes one declaration should hold: the spec's top-level `declarationCap`, else 6,144. Counted only,
@@ -916,41 +922,66 @@ function changedLines(root, commit, paths) {
 // Rank the foreign touched § (ids, with the changed paths each lands in) by those lines, each score divided by
 // its fan-in (of its changed paths, the fewest foreign touched § any one lands in: a broad file dilutes its §)
 // and by the heaviest weight a name can have, so a relevance means the same in a spec of any size.
-// → {rank: [{id, rank, score, fanIn, relevance, reason, stale}], readFirst, named}
-function rankTouched(ctx, commit, ids, filesOf) {
+// A split topic is ranked once, as the one passage it and its parts were: its row stands for every touched one of
+// them, lands in the paths any of them does, and names the touched part its changed lines fit best.
+// → {rank: [{id, rank, score, fanIn, relevance, reason, stale, part?, parts?, files?}], readFirst, named, members}
+function rankTouched(ctx, commit, ids0, filesOf0) {
+  const split = splitOf(ctx), members = new Map();
+  for (const id of ids0) { const t = split.up.get(id) ?? id; members.set(t, [...(members.get(t) ?? []), id]); }
+  const ids = [...members.keys()], filesOf = (id) => [...new Set(members.get(id).flatMap((m) => filesOf0(m)))];
   const lines = changedLines(ctx.root, commit, [...new Set(ids.flatMap((id) => filesOf(id)))].sort());
   const fan = new Map();
   for (const id of ids) for (const p of new Set(filesOf(id))) fan.set(p, (fan.get(p) ?? 0) + 1);
-  const all = [...ctx.decls.keys()].filter((id) => ctx.claims.has(id)), text = (id) => ctx.decls.get(id)?.text ?? "";
+  const claims = [...ctx.decls.keys()].filter((id) => ctx.claims.has(id)), all = claims.filter((id) => !split.up.has(id)), text = (id) => ctx.decls.get(id)?.text ?? "";
   // Every candidate token, then how many passages hold each: a passage's names and numbers once, strings by search.
   const cand = lineTokens();
   for (const v of lines.values()) for (const k of ["added", "removed"]) for (const f of TOKEN_KINDS) for (const t of v[k][f]) cand[f].add(t);
-  const strings = [...cand.strings].slice(0, STRINGS_CAP), nums = [...cand.numbers], df = new Map(), held = new Map();
-  for (const id of all) {
+  const strings = [...cand.strings].slice(0, STRINGS_CAP), nums = [...cand.numbers], df = new Map(), own = new Map(), held = new Map();
+  for (const id of claims) {
     const t = text(id), inText = numbersOf(t);
-    const has = new Set([...namesOf(t, (w) => cand.names.has(w)), ...nums.filter((n) => inText.has(n)), ...strings.filter((s) => occurs(t, s))]);
+    own.set(id, new Set([...namesOf(t, (w) => cand.names.has(w)), ...nums.filter((n) => inText.has(n)), ...strings.filter((s) => occurs(t, s))]));
+  }
+  for (const id of all) {
+    const has = split.down.has(id) ? new Set(unitOf(split, id).flatMap((m) => [...own.get(m)])) : own.get(id);
     held.set(id, has);
     for (const w of has) df.set(w, (df.get(w) ?? 0) + 1);
   }
   const weight = (t) => Math.log((all.length + 1) / (df.get(t) ?? 1));
-  const rows = ids.map((id) => {
+  const tokensOf = (paths) => {
     const toks = { added: lineTokens(), removed: lineTokens() };
-    for (const p of filesOf(id)) for (const k of ["added", "removed"]) for (const f of TOKEN_KINDS) for (const t of lines.get(p)?.[k][f] ?? []) toks[k][f].add(t);
+    for (const p of paths) for (const k of ["added", "removed"]) for (const f of TOKEN_KINDS) for (const t of lines.get(p)?.[k][f] ?? []) toks[k][f].add(t);
+    return toks;
+  };
+  const mineOf = (toks) => new Set(["added", "removed"].flatMap((k) => TOKEN_KINDS.flatMap((f) => [...toks[k][f]])));
+  // Of a topic's touched parts, the one holding the heaviest of its own files' changed tokens; ties in its summary's order.
+  const bestPart = (id) => {
+    let best = null;
+    for (const p of unitOf(split, id).filter((m) => m !== id && members.get(id).includes(m))) {
+      const has = own.get(p), s = [...mineOf(tokensOf(filesOf0(p)))].filter((t) => has.has(t)).reduce((n, t) => n + weight(t), 0);
+      if (!best || s > best.s) best = { id: p, s };
+    }
+    return best?.id;
+  };
+  const rows = ids.map((id) => {
+    const toks = tokensOf(filesOf(id));
     const has = held.get(id) ?? new Set();
-    const mine = new Set(["added", "removed"].flatMap((k) => TOKEN_KINDS.flatMap((f) => [...toks[k][f]])));
+    const mine = mineOf(toks);
     const reason = [...mine].filter((t) => has.has(t)).sort((a, b) => weight(b) - weight(a) || (a < b ? -1 : 1));
     // A literal the change removed and didn't add back, that the § still states.
     const gone = [...toks.removed.strings, ...toks.removed.numbers].filter((t) => !toks.added.strings.has(t) && !toks.added.numbers.has(t));
     const stale = [...new Set(gone)].filter((t) => has.has(t)).sort();
     const score = Math.round(reason.reduce((s, t) => s + weight(t), 0) * 100) / 100, fanIn = Math.min(...filesOf(id).map((p) => fan.get(p)));
-    return { id, score, fanIn, relevance: Math.round((score / fanIn / Math.log(all.length + 1)) * 1000) / 1000, reason, stale };
+    const part = split.down.has(id) ? bestPart(id) : undefined;
+    return { id, score, fanIn, relevance: Math.round((score / fanIn / Math.log(all.length + 1)) * 1000) / 1000, reason, stale,
+      ...(split.down.has(id) ? { ...(part ? { part } : {}), parts: unitOf(split, id).filter((m) => m !== id && members.get(id).includes(m)), files: filesOf(id) } : {}) };
   });
   // Equal relevance: the higher score, then the § that maps fewer code files is the more specific to each of them.
-  const breadth = (id) => new Set(ctx.claims.get(id).code ?? []).size;
+  const breadth = (id) => new Set(unitOf(split, id).flatMap((m) => ctx.claims.get(m).code ?? [])).size;
   rows.sort((a, b) => b.relevance - a.relevance || b.score - a.score || breadth(a.id) - breadth(b.id) || (a.id < b.id ? -1 : 1));
-  const rank = rows.map((r, i) => ({ id: r.id, rank: i + 1, score: r.score, fanIn: r.fanIn, relevance: r.relevance, reason: r.reason, stale: r.stale }));
+  const rank = rows.map((r, i) => ({ id: r.id, rank: i + 1, score: r.score, fanIn: r.fanIn, relevance: r.relevance, reason: r.reason, stale: r.stale,
+    ...(r.parts ? { ...(r.part ? { part: r.part } : {}), parts: r.parts, files: r.files } : {}) }));
   const readFirst = rank.filter((r) => r.relevance >= READ_FIRST_RELEVANCE || r.stale.length).slice(0, READ_FIRST).map((r) => r.id);
-  return { rank, readFirst, named: rank.map((r) => r.id).filter((id) => !readFirst.includes(id)) };
+  return { rank, readFirst, named: rank.map((r) => r.id).filter((id) => !readFirst.includes(id)), members };
 }
 
 // Evidence commits the project's drafts name that HEAD no longer contains: a rebase (or reset) rewrote them.
@@ -1036,8 +1067,9 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
   if (related) {
     // Ranked by the changed lines: every foreign touched § once, the first few marked read first.
     const byId = new Map(rel.touched.map((t) => [t.id, t]));
-    const r = rankTouched(ctx, ch.commit, rel.foreign, (id) => byId.get(id).files);
-    for (const x of r.rank) Object.assign(byId.get(x.id), { rank: x.rank, score: x.score, fanIn: x.fanIn, relevance: x.relevance, reason: x.reason, stale: x.stale });
+    const { members, ...r } = rankTouched(ctx, ch.commit, rel.foreign, (id) => byId.get(id).files);
+    // A split topic's touched parts carry their topic's rank.
+    for (const x of r.rank) for (const id of members.get(x.id)) Object.assign(byId.get(id), { rank: x.rank, score: x.score, fanIn: x.fanIn, relevance: x.relevance, reason: x.reason, stale: x.stale });
     Object.assign(touched, r);
   }
   if (!bd) { foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, deleted, orphanedEvidence, draftScan, ...touched } }; }

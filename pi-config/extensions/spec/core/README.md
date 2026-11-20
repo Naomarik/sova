@@ -144,8 +144,8 @@ for an area H1 whose record has the field) lists the neighbours one hop away in 
 |---|---|---|
 | `out` | the declared `requires`, the `embeds`, the notes `about` it or its H1, then the § the claim's prose names without requiring | `requires`, `embeds`, `about`, `named` |
 | `in` | the claims whose `requires` name it; the claims that `embeds` it; the notes `about` it; for an H2, also those that require or embed its H1 and the notes about its H1 (`via` names it) | `required-by`, `required-through-parent`, `embedded-by`, `embedded-through-parent`, `about-it` |
-| `down` | an H1's H2s, or a section's members, in declaration order; for an H1, then the notes `about` its H2s (one hop, by the first, in declaration order, of the H2s each serves, then id) | `children`, `members`, `children-about` |
-| `up` | an H2's parent | `parent` |
+| `down` | a split topic's parts first, in its summary's order (see **Split topics**); an H1's H2s (its parts not again), or a section's members, in declaration order; for an H1, then the notes `about` its H2s (one hop, by the first, in declaration order, of the H2s each serves, then id) | `parts`, `children`, `members`, `children-about` |
+| `up` | a part's split topic, then an H2's parent | `topic`, `parent` |
 | `mentions` | the claims whose prose names it | `mentioned-by` |
 
 Each line has `id`, `title`, `kind`, `labels` (when declared), `bytes` (what `read` of it delivers;
@@ -219,7 +219,8 @@ on a record that is not an H1 (`not-owned-not-area`) or naming a claim inside th
 
 Computed views over the whole graph, for orientation and lookup. `graph.mjs` holds the shared index
 (areas, interface tokens, code and reverse `requires`/`embeds` maps, agreement counts), `graph` and `impact --near`; `map.mjs`
-and `where.mjs` hold the other two, `topic.mjs` the ranker behind `where`'s topic rows. Like `toc`, each parses its own flags (before or after the
+and `where.mjs` hold the other two, `topic.mjs` the ranker behind `where`'s topic rows, `parts.mjs` the split topics they and
+`toc`, `read`, `check` and the census's ranking group. Like `toc`, each parses its own flags (before or after the
 command word), prints compact JSON with `--json` or readable text, pages under one whole-response
 budget (1,024–32,768) with a stateless `--cursor` bound to the request and every computed line, and
 prints its own bounded JSON with `--help`. Exit 0 is done, 1 more lines or a named unknown, 2 a
@@ -266,6 +267,25 @@ free; exit 0 when either kind found a claim, 1 when neither did or a name row wa
 rows are counted in `notShown`, not an unknown). An interface token is a backticked span (fences and comments masked) of 3+ characters with
 a letter and a separator, bracket or sigil, an inner capital, or all capitals; it occurs in a file
 with no `[A-Za-z0-9_$]` on either side, and weighs `ln((records + 1) / records using it)`.
+
+**Split topics.** A claim is a split topic when its prose ends in a summary of at least two lines
+`- §part — <the part's heading title, word for word>`, outside fenced code and HTML comments, each
+part the claim declared right after the one before (the first right after the topic) in the same
+file, an H2 with a record that the topic `requires`, and no split topic itself. The views read a
+topic and its parts as the one claim it was; on a spec with none, every answer is as before.
+`where`'s topic search has one unit per topic (its prose without the summary, then each part's
+heading and prose; names once; when its first sentence is the summary, its parts' first prose
+sentence), word weights over topics, and its row adds `part: {id, title}`, the part whose own text
+scores best (text: `best part:`). A name held by the topic or a part is one `defines`/`mentions` row for
+the topic (a part's heading or first sentence defines it), `part` naming the part holding it (text: `in part:`);
+a topic so listed is no topic row. A path lists the topic once when it or any part lists the file:
+its interface tokens are the topic's and its parts' together, weighed over topics (records = topics),
+and its row adds `parts: {listing, of}` (`topic: false` when only parts list it; text: `n of its m
+parts list it too`, `listed by n of its m parts`, `none of its m parts lists it`); `counts.claims` counts
+topics, and unmapped candidates are topics too. `read` of a topic adds `parts: [{id, title}]` to its item.
+`check` adds `counts.split: {topics, parts}` when any exists, and warns `split-summary-broken` for a list
+whose line names the claim declared right after it but breaks any other condition: the claim and
+those claims then stay claims of their own.
 
 **`impact §id --near`** (default 12,000). `impact` without `--near` is unchanged. The family is an
 H1 with its H2s, or an H2 alone (claims requiring or embedding its parent count, `via: "parent"`).
@@ -429,7 +449,10 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
   only that passage holds through a file only it maps; then score; then fewer mapped code files; then id. `stale` lists a literal
   the change removed that its passage still states. `readFirst` holds at most 10 at relevance 0.036
   or more or with a stale literal, `named` every other one. Each foreign `touched` entry carries its
-  `rank`, `score`, `fanIn`, `relevance`, `reason` and `stale` too.
+  `rank`, `score`, `fanIn`, `relevance`, `reason` and `stale` too. A split topic ranks once, as the one
+  passage it and its parts were (passages and fan-in count topics): its row stands for its touched
+  parts and adds `part` (the touched part holding the heaviest of its own files' changed tokens),
+  `parts` (the touched parts, in its summary's order) and `files`; each touched part carries its topic's rank.
 - **Foreign §s (every census --changed).** Reading `.sova/spec`, nothing is *created*. With
   `--spec DIR` (other than `.sova/spec`), an id is created when DIR's manifest has it and
   `.sova/spec/manifest.json` does not (a missing or unreadable current manifest counts as empty; its

@@ -102,8 +102,10 @@ The machine can't tell which label is correct.
      the draft takes from at or below the size cap to over it, or makes larger while it is over. The
      size is its prose bytes in its claim file, never its record's; the cap is 6,144 B or the spec's
      top-level `declarationCap`. One over the cap that the draft leaves alone or shrinks counts under
-     `preexisting`. Split such a claim by topic into sibling claims, the old § keeping a short summary
-     that `requires` its parts. It never refuses and never changes the exit status.
+     `preexisting`. Split such a claim by topic into sibling H2s declared right after it, the old §
+     keeping a short summary that `requires` them and ends in one line per part, `- §part — <its heading>`
+     (the views then read it and its parts as one topic: `core/README.md`, **Split topics**). It never
+     refuses and never changes the exit status.
 2. **Implement the change and verify it.** The tool never does this part.
 3. **`evidence`** records, for each changed ID, what was verified and against which
    implementation bytes:

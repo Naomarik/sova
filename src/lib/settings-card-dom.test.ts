@@ -60,7 +60,7 @@ test("a queue card whose Save waits has Cancel Save in place of Apply", () => {
 });
 
 test("a held card says what holds it, in the server's words", () => {
-  const words = "Saves once release v1.2.0 is published or abandoned.";
+  const words = "Saves once release v1.2.0 is published or cancelled.";
   const held = draw(card({ id: "sc_5", saveWaits: true, saveWords: words }), "p1");
   assert.ok(held.includes(words));
   assert.ok(!held.includes(QUEUE_CARD_WAITS), "never says a branch holds it during a release");

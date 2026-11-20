@@ -194,7 +194,7 @@ describe("a release holding the queue", () => {
       assert.equal(r.status, 200, await r.clone().text());
       const held = (await settings.settingsCard(t.pid, c.id))!;
       assert.equal(held.state, "waiting");
-      assert.equal(held.saveWords, "Saves once release v1.2.0 is published or abandoned.");
+      assert.equal(held.saveWords, "Saves once release v1.2.0 is published or cancelled.");
       assert.equal(t.k.repo.head(), head, "the target stays on the release commit");
       delete hold.q.release;
       assert.equal((await settings.settingsCard(t.pid, c.id))!.state, "applied", "the hold is over: it lands");

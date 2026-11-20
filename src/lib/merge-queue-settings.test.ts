@@ -148,7 +148,7 @@ test("a save says where it went: the target, waiting, a PR or MR opened, or a br
   const o = { target: "master", pushes: true, gitlab: false };
   assert.deepEqual(saveResultWords({ state: "saved", commit: "1a2b3c4d5e", pushed: false }, o), { text: "Saved to master as 1a2b3c4; pushed with the next landing." });
   assert.deepEqual(saveResultWords({ state: "waiting" }, o), { text: "Saves when the current branch finishes." });
-  assert.deepEqual(saveResultWords({ state: "waiting", release: "release v0.4.0" }, o), { text: "Saves once release v0.4.0 is published or abandoned." });
+  assert.deepEqual(saveResultWords({ state: "waiting", release: "release v0.4.0" }, o), { text: "Saves once release v0.4.0 is published or cancelled." });
   const req = { state: "requested" as const, commit: "c", branch: "sova/settings-1", url: "https://example.invalid/pr/12", number: 12 };
   assert.deepEqual(saveResultWords(req, o), { text: "Opened PR #12 for the settings change. It applies once it's merged into master.", link: { href: req.url, label: "Open PR" } });
   assert.equal(saveResultWords(req, { ...o, gitlab: true }).text, "Opened MR !12 for the settings change. It applies once it's merged into master.");
@@ -157,7 +157,7 @@ test("a save says where it went: the target, waiting, a PR or MR opened, or a br
 
 test("a waiting save's banner names the open release while one holds it; without one, the branch; failed says so", async () => {
   const { pendingSaveTitle } = await import("./merge-queue-settings");
-  assert.equal(pendingSaveTitle({ release: "release v0.4.0" }, false), "Saves once release v0.4.0 is published or abandoned.");
+  assert.equal(pendingSaveTitle({ release: "release v0.4.0" }, false), "Saves once release v0.4.0 is published or cancelled.");
   assert.equal(pendingSaveTitle({}, false), "Saves when the current branch finishes.");
   assert.equal(pendingSaveTitle({}, true), "The waiting save couldn't be applied.");
 });

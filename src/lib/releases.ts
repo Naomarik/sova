@@ -27,7 +27,7 @@ export const RELEASE_CHIP: Record<ReleaseState, ChipWord> = {
   ready: { word: "Ready to publish", tone: "warn" },
   publishing: { word: "Publishing", tone: "accent", live: true },
   published: { word: "Published", tone: "success" },
-  abandoned: { word: "Abandoned", tone: undefined },
+  abandoned: { word: "Cancelled", tone: undefined },
   withdrawn: { word: "Withdrawn", tone: "warn" },
 };
 

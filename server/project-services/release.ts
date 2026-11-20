@@ -61,7 +61,7 @@ export const RELEASE_METHOD_DIR = fileURLToPath(new URL("../../system-playbooks/
 /**
  * Release (al_1): a project's numbered versions, cut by its release playbook's chat and held by Sova where it can't
  * be undone. The record per release, the verbs and who may call each (t16, t17, q3, q12), the facts Sova checks itself
- * (q10: facts win), the queue's hold (q9) and Publish / Abandon / Withdraw through the queue (a6, a8, t23, t24).
+ * (q10: facts win), the queue's hold (q9) and Publish / Cancel Release (abandon) / Withdraw through the queue (a6, a8, t23, t24).
  *
  * The release chat works in its own worktree (`release/<id>`, cut from the frozen target) and reports each step
  * through its own project_verbs tool; Sova adds the release commit to the merge queue itself when the `commit` step is
@@ -85,7 +85,7 @@ export const SESSION_NEVER = "a coding session never starts or asks for a releas
 export const NOT_INITIALIZED = "releases aren't set up for this project: Set Up with a Chat on its Releases tab (the release section of .sova/project.json and its playbook's release.json)";
 export const ASK_INSTEAD = "ask for it instead: release.request {why} raises it for the operator";
 
-/** What an abandoned release's chat is told after its turn was stopped. */
+/** What a cancelled release's chat is told after its turn was stopped. */
 export const ABANDON_TAIL = "Your turn was stopped (Cancel Release). Do nothing more for it: run no tool, reply in one line that the release was cancelled.";
 
 const OPERATOR_ACTS: readonly ReleaseVerb[] = ["release.start", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw"];
@@ -270,7 +270,7 @@ export function authorizeRelease(verb: ReleaseVerb, caller: Caller, root: string
     return;
   }
   if (caller.kind === "session") {
-    if (isThread && verb === "release.abandon") throw new ReleaseFailure("forbidden", "the release chat may ask the operator to abandon (say why in your report), never abandon itself");
+    if (isThread && verb === "release.abandon") throw new ReleaseFailure("forbidden", "the release chat may ask the operator to cancel the release (say why in your report), never cancel it itself");
     throw new ReleaseFailure("forbidden", isThread ? "that is the operator's: say what you need in your report" : SESSION_NEVER);
   }
   // Overseers and the Project Assistant: start and publish only through the release power's act; the rest is the operator's.
@@ -711,7 +711,7 @@ export class Releaser {
     const phaseWhy =
       st.phase === "prepare"
         ? rec.state !== "preparing" || checks.state !== "waiting"
-          ? "the gating checks began: prepare steps are over (abandon and start again to change them)"
+          ? "the gating checks began: prepare steps are over (Cancel Release and start again to change them)"
           : null
         : st.phase === "check"
           ? !isReleaseOpen(rec.state) || checks.state !== "done"
@@ -939,7 +939,7 @@ export class Releaser {
       delete st.fact;
     } else {
       // A prepare step after the checks began can't be redone: the release commit is what the checks test.
-      if (st.phase === "prepare" && rec.steps.find((s) => s.id === "checks")!.state !== "waiting") throw new ReleaseFailure("release-refused", "the gating checks began: abandon the release to redo a prepare step");
+      if (st.phase === "prepare" && rec.steps.find((s) => s.id === "checks")!.state !== "waiting") throw new ReleaseFailure("release-refused", "the gating checks began: Cancel Release to redo a prepare step");
       st.state = "waiting";
       st.by = "operator";
       st.at = this.iso();
@@ -996,7 +996,7 @@ export class Releaser {
   private async abandon(root: string, req: Req): Promise<{ changed: boolean; report: ReleaseReport }> {
     const rec = this.mustRecord(root, req.release);
     if (rec.state === "publishing") throw new ReleaseFailure("busy", "Publish is running");
-    const why = (req.why ?? "").trim() || "abandoned by the operator";
+    const why = (req.why ?? "").trim() || "cancelled by the operator";
     const q = await this.deps.queue(root);
     // One press cancels; a confirm only once the release commit is on the target, since cancelling then reverts it.
     if (!req.confirm) {
@@ -1011,8 +1011,8 @@ export class Releaser {
     this.save(rec);
     // The chat's work ends here: its running turn is stopped, then it is told why (one short reply, no tool).
     if (rec.thread?.path && this.deps.thread.stop) await this.deps.thread.stop(rec.thread.path).catch((err) => this.log(`${root}: couldn't stop the release chat: ${err instanceof Error ? err.message : err}`));
-    this.wake(rec, `The operator abandoned ${rec.tag ? `release ${rec.tag}` : "this release"}: ${why}. ${ABANDON_TAIL}`);
-    this.log(`${root}: abandoned ${rec.id}${r.revert ? ` (revert ${r.revert})` : ""}`);
+    this.wake(rec, `The operator cancelled ${rec.tag ? `release ${rec.tag}` : "this release"}: ${why}. ${ABANDON_TAIL}`);
+    this.log(`${root}: cancelled ${rec.id}${r.revert ? ` (revert ${r.revert})` : ""}`);
     return { changed: true, report: { release: rec, view: await this.view(root) } };
   }
 
@@ -1183,7 +1183,7 @@ export class Releaser {
         c.state = "failed";
         c.summary = `${ev.what === "waiting" ? "can't tell whose failure" : "failed"}: ${ev.why ?? "a gating check"}`.slice(0, STEP_SUMMARY_MAX);
         rec.state = "checking";
-        this.wake(rec, `The gating checks failed: ${ev.why ?? "see the run"}. Say what failed in your report; the operator may Retry Step or abandon.`);
+        this.wake(rec, `The gating checks failed: ${ev.why ?? "see the run"}. Say what failed in your report; the operator may Retry Step or Cancel Release.`);
       } else if (ev.what === "cancelled") {
         if (c.state !== "done") {
           c.state = "failed";

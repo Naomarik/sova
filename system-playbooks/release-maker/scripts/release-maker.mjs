@@ -302,7 +302,7 @@ const FORBIDDEN = [
   [/["'`]git["'`]\s*,\s*\[\s*["'`]update-ref["'`]/, "moves a ref by hand (argv form): Sova's queue and Publish own them"],
   [/\bgh\s+release\s+create\b(?![^\n]*--verify-tag)/, "creates a release page without --verify-tag, which would make the tag itself"],
   [/\bgh\s+release\s+(delete|upload\s+--clobber)\b/, "deletes or overwrites a published release's page or files"],
-  [/\bgit\s+(reset\s+--hard|checkout\s+-B|branch\s+-f)\b/, "resets a branch: never in a release, abandon is Sova's"],
+  [/\bgit\s+(reset\s+--hard|checkout\s+-B|branch\s+-f)\b/, "resets a branch: never in a release, Cancel Release is Sova's"],
   [/\bsova-project\b|scripts\/sova-project\.mjs|\/api\/project-services\b|\bSOVA_TOKEN\b|auth-token/, "calls Sova as the operator: a step reports only through the release chat's own release.step"],
   [/\bmerge\.(pause|resume)\b/, "pauses or resumes the merge queue: the release freeze replaces it"],
 ];

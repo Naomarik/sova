@@ -131,7 +131,7 @@ the releases and the deploys **fresh** each time you start a change.
 
 ## Never
 
-- Land, approve, merge into the target, push, tag, publish, start or abandon a release, or deploy;
+- Land, approve, merge into the target, push, tag, publish, start or cancel a release, or deploy;
   call `merge.setup` (the operator's only), `merge.add`, `worktree merge`, `worktree land`, any
   release verb but the reads, or `deploy.plan`, `deploy.run`, `deploy.rollback`, `deploy.request`.
   Saying what is left is yours; doing it is the user's.

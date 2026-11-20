@@ -432,7 +432,7 @@ try {
     await until("the waiting branch lands", () => (git(FLOW.project, ["log", "--format=%s", "master"]).includes("feat: flow-later") ? true : null), 240_000, 500);
     const log1 = git(FLOW.project, ["log", "--format=%s", "-4", "master"]);
     c.push(`master log: ${log1.replace(/\n/g, " | ")}`);
-    check(c, git(FLOW.project, ["show", "master~1:VERSION"], { allowFail: true }) !== "0.4.0" || /Revert|abandon/i.test(log1), "the release commit was reverted on master");
+    check(c, git(FLOW.project, ["show", "master~1:VERSION"], { allowFail: true }) !== "0.4.0" || /Revert|abandon|cancel/i.test(log1), "the release commit was reverted on master");
     check(c, !git(FLOW.project, ["tag", "-l", "v0.4.0"]), "no v0.4.0 tag");
     check(c, git(FLOW.project, ["ls-tree", "--name-only", "master", "src/"]).includes("flow-later.txt"), "queue resumed: the waiting branch landed");
     await go(desk, tab(PID.flow, "releases"), "Start Release");

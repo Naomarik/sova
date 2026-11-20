@@ -125,7 +125,7 @@ describe("who may call which release verb (t17, q3, q12)", () => {
     ["release.start", { kind: "operator", fromChat: true }, false, new RegExp(FROM_CHAT.slice(0, 30))],
     ["release.publish", { kind: "operator" }, false, /needs confirm/],
     ["release.withdraw", { kind: "operator" }, false, /needs confirm/],
-    ["release.abandon", { kind: "session", id: "t", root, own: [] }, thread, /never abandon itself/],
+    ["release.abandon", { kind: "session", id: "t", root, own: [] }, thread, /never cancel it itself/],
     ["release.publish", { kind: "session", id: "t", root, own: [] }, thread, /operator's/],
     ["release.publish", { kind: "project-overseer", id: "po", root, act: async () => {} }, false, /needs the release power/],
     ["release.publish", { kind: "project-overseer", id: "po", root, act: async () => {}, releaseAct: true }, false, null],
@@ -197,7 +197,7 @@ describe("the freeze, the release entry and Publish (q9, a5, a6)", () => {
       // B waits, named.
       const bNow = await t.k.entry(eb.id);
       assert.equal(bNow.state, "queued");
-      assert.equal(bNow.reason, "waits for v0.2.0 to be published or abandoned");
+      assert.equal(bNow.reason, "waits for v0.2.0 to be published or cancelled");
       assert.equal((await q.view()).waiting.find((w) => w.id === eb.id)?.eta, undefined, "no start time while the release holds it");
       assert.equal(t.k.run.inputs.filter((i) => i.entry.id === eb.id).length, 0, "B never ran");
       const v = await q.view();
@@ -243,7 +243,7 @@ describe("the freeze, the release entry and Publish (q9, a5, a6)", () => {
       assert.equal(s.ok, true);
       release();
       await until(async () => (await t.k.entry(entry.id)).state === "queued", "B back in line");
-      assert.match((await t.k.entry(entry.id)).reason ?? "", /^waits for the open release to be published or abandoned$/);
+      assert.match((await t.k.entry(entry.id)).reason ?? "", /^waits for the open release to be published or cancelled$/);
       assert.equal(t.repo.head(), base);
       assert.equal(s.release!.release!.base, base);
     } finally {
@@ -576,7 +576,7 @@ describe("abandon and withdraw (t23, a8)", () => {
       assert.equal(q.releaseHold(), null);
       assert.equal(sh(t.repo.origin, "rev-parse", "master"), tip, "pushes resume");
       assert.equal(tryGit(t.repo.root, "rev-parse", "--verify", "refs/tags/v0.2.0").code !== 0, true, "no tag");
-      assert.ok(t.wakes.some((w) => /abandoned/.test(w.text)));
+      assert.ok(t.wakes.some((w) => /cancelled/.test(w.text)));
     } finally {
       await t.done();
     }
@@ -916,7 +916,7 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       const base = t.repo.head();
       await t.call("release.start", {});
       const q = await t.k.q();
-      await assert.rejects(q.setup({ command: "true" }), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^master stays on the release commit while a release is open: save the checks after Publish or Abandon$/.test(e.message));
+      await assert.rejects(q.setup({ command: "true" }), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^master stays on the release commit while a release is open: save the checks after Publish or Cancel Release$/.test(e.message));
       assert.equal(t.repo.head(), base);
     } finally {
       await t.done();
@@ -930,7 +930,7 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       await q.setLandHow("local", "computer");
       const dir = join(t.repo.state, "merge-queue", projectKey(t.repo.root));
       await t.call("release.start", {});
-      await assert.rejects(q.clearLandHowOverride(), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^how it lands can't change while a release is open: change it after Publish or Abandon$/.test(e.message));
+      await assert.rejects(q.clearLandHowOverride(), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^how it lands can't change while a release is open: change it after Publish or Cancel Release$/.test(e.message));
       assert.equal(readOverride(dir)?.how, "local", "the override stays");
       assert.equal((await t.call("release.abandon", { confirm: true, why: "not now" })).ok, true);
       await q.clearLandHowOverride();
@@ -941,9 +941,9 @@ describe("master's how-it-lands, settings saves and local-main updates against t
   });
 
   test("a waiting save names the release holding it, in the result and the settings; one already waiting on a branch reads as the release too; it drops when the hold lifts", async () => {
-    assert.equal(settingsWaitingWords("release v0.4.0"), "Saves once release v0.4.0 is published or abandoned");
+    assert.equal(settingsWaitingWords("release v0.4.0"), "Saves once release v0.4.0 is published or cancelled");
     assert.equal(settingsWaitingWords(), SETTINGS_WAITING_WORDS);
-    assert.equal(settingsWaitingClause("release v0.4.0"), "once release v0.4.0 is published or abandoned");
+    assert.equal(settingsWaitingClause("release v0.4.0"), "once release v0.4.0 is published or cancelled");
     assert.equal(settingsWaitingClause(), "when the current branch finishes");
     const t = releaseKit();
     try {
@@ -976,7 +976,7 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       await t.call("release.start", {});
       assert.deepEqual(await q.saveSettings({ push: false }), { state: "waiting", release: "the open release" });
       assert.equal((await q.settings()).pendingSave?.release, "the open release");
-      assert.equal(settingsWaitingWords("the open release"), "Saves once the open release is published or abandoned");
+      assert.equal(settingsWaitingWords("the open release"), "Saves once the open release is published or cancelled");
       // Every sentence the hold says before a version is picked, with no rl_ id in any.
       t.repo.branch("feat/b", { "b.txt": "b\n" });
       const { entry } = await q.add({ branch: "feat/b", by: "land-button" });
@@ -992,11 +992,11 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       assert.equal(said.pop(), "that release doesn't hold this queue");
       assert.equal(said.length, 7, JSON.stringify(said));
       for (const line of said) assert.doesNotMatch(line, /rl_/, line);
-      assert.equal(said[0], "waits for the open release to be published or abandoned");
-      assert.equal(said[1], "master stays on the release commit while a release is open: update it after Publish or Abandon");
+      assert.equal(said[0], "waits for the open release to be published or cancelled");
+      assert.equal(said[1], "master stays on the release commit while a release is open: update it after Publish or Cancel Release");
       assert.match(said[6]!, /^The open release: Pick the version failed/);
       assert.equal(said[4], "a release is already open (preparing)");
-      assert.equal(said[5], "a release is open: nothing is pushed until it is published or abandoned");
+      assert.equal(said[5], "a release is open: nothing is pushed until it is published or cancelled");
       await t.call("release.step", { step: "version", state: "done", summary: "v", facts: ["version=0.2.0"] }, t.chat);
       assert.equal((await q.settings()).pendingSave?.release, "release v0.2.0");
     } finally {
@@ -1009,8 +1009,8 @@ describe("master's how-it-lands, settings saves and local-main updates against t
     try {
       const rec = await ready(t);
       assert.equal((await t.call("release.abandon", { release: rec.id, confirm: true, why: "not now" })).ok, true);
-      assert.equal(sh(t.repo.root, "log", "-1", "--format=%s", (await t.k.entry(t.r.record(t.repo.root, rec.id)!.abandoned!.revert!)).commit), "Revert release v0.2.0 (abandoned)");
-      assert.ok(t.wakes.some((w) => /^The operator abandoned release v0\.2\.0: not now\./.test(w.text)), JSON.stringify(t.wakes.map((w) => w.text)));
+      assert.equal(sh(t.repo.root, "log", "-1", "--format=%s", (await t.k.entry(t.r.record(t.repo.root, rec.id)!.abandoned!.revert!)).commit), "Revert release v0.2.0 (cancelled)");
+      assert.ok(t.wakes.some((w) => /^The operator cancelled release v0\.2\.0: not now\./.test(w.text)), JSON.stringify(t.wakes.map((w) => w.text)));
     } finally {
       await t.done();
     }
@@ -1018,8 +1018,8 @@ describe("master's how-it-lands, settings saves and local-main updates against t
     try {
       await u.call("release.start", {});
       await u.call("release.abandon", { confirm: true, why: "no" });
-      const w = u.wakes.find((x) => /abandoned/.test(x.text))!;
-      assert.equal(w.text, `The operator abandoned this release: no. ${ABANDON_TAIL}`);
+      const w = u.wakes.find((x) => /cancelled/.test(x.text))!;
+      assert.equal(w.text, `The operator cancelled this release: no. ${ABANDON_TAIL}`);
     } finally {
       await u.done();
     }

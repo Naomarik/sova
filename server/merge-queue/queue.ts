@@ -759,7 +759,7 @@ export class ProjectQueue {
     // Served by the queue (team mq-served-only, served.ts): on Sova's Projects list with its setup done.
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
     const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
-    // An entry the hold keeps waiting has no start time: it starts once the release is published or abandoned.
+    // An entry the hold keeps waiting has no start time: it starts once the release is published or cancelled.
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     const chats = this.deps.chatsOf?.(this.root) ?? {};
     const readyRows = this.attachSummaries(v, ready.filter((r) => !heldBack.has(r.branch)));
@@ -1046,7 +1046,7 @@ export class ProjectQueue {
       if (file.blocked) throw new MergeFailure("invalid-request", file.blocked);
       // A project that lands by request or by pushing a branch never moves the target with a save: nothing to wait for.
       const how = effectiveHow((await this.declared()).def?.merge?.land, this.store.dir).effective;
-      // While a release holds the queue the target stays on the release commit: a save waits for Publish or Abandon.
+      // While a release holds the queue the target stays on the release commit: a save waits for Publish or Cancel Release.
       if (this.q.release || (!publishes(how) && (this.current || this.trying || this.landing))) {
         // A second save while one waits joins it (the later value of each setting wins).
         const was = this.q.pendingSave && !this.q.pendingSave.failed ? this.q.pendingSave.changes : {};
@@ -3139,7 +3139,7 @@ export class ProjectQueue {
         return { run: structuredClone(run) };
       }
       // Save: one commit on the target holding the new definition, moved to like a landing.
-      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: save the checks after Publish or Abandon`);
+      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: save the checks after Publish or Cancel Release`);
       const co = await checkoutOf(this.git, this.root, this.q.target);
       if (co) {
         const why = await dirtyWhy(this.git, co);
@@ -4701,7 +4701,7 @@ export class ProjectQueue {
   updateLocalMain(): Promise<{ kind: "updated" | "current"; head: string }> {
     return this.serial(async () => {
       if (this.landing) throw new MergeFailure("busy", "a landing is moving the target now: try again in a moment");
-      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: update it after Publish or Abandon`);
+      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: update it after Publish or Cancel Release`);
       this.landing = true;
       try {
         const r = await updateMainTip(this.git, this.root, this.q.target);
@@ -4875,11 +4875,12 @@ export class ProjectQueue {
 
   private waitingWords(): string {
     const h = this.q.release;
-    return h ? `waits for ${h.tag ?? (h.version ? `release ${h.version}` : "the open release")} to be published or abandoned` : "waiting";
+    return h ? `waits for ${h.tag ?? (h.version ? `release ${h.version}` : "the open release")} to be published or cancelled` : "waiting";
   }
   /** A reason the hold wrote (it is rewritten as the release's tag becomes known, and dropped when the hold lifts). */
   private isWaitingWords(r: string | undefined): boolean {
-    return !!r && r.startsWith("waits for ") && r.endsWith(" to be published or abandoned");
+    // "abandoned": the words before releases were cancelled, still on entries an older server wrote.
+    return !!r && r.startsWith("waits for ") && (r.endsWith(" to be published or cancelled") || r.endsWith(" to be published or abandoned"));
   }
   /** The holding release as the screens name it: its tag once picked, never its id ("the open release" until then). */
   private releaseName(): string {
@@ -4895,7 +4896,7 @@ export class ProjectQueue {
 
   /** Set or cleared, this computer's how-it-lands can't change under an open release: Publish must land as it started. */
   private refuseHowChangeWhileHeld(): void {
-    if (this.q.release) throw new MergeFailure("invalid-request", `how it lands can't change ${this.whileOpen()}: change it after Publish or Abandon`);
+    if (this.q.release) throw new MergeFailure("invalid-request", `how it lands can't change ${this.whileOpen()}: change it after Publish or Cancel Release`);
   }
 
   /** Release lands its commit on the target here and pushes it itself: a project that lands by request or by pushing a
@@ -4907,7 +4908,7 @@ export class ProjectQueue {
 
   private holdWords(): string {
     const h = this.q.release;
-    return h ? `${this.whileOpen().slice("while ".length)}: nothing is pushed until it is published or abandoned` : "";
+    return h ? `${this.whileOpen().slice("while ".length)}: nothing is pushed until it is published or cancelled` : "";
   }
   private holdFile(): string {
     return join(this.store.dir, "push-hold");
@@ -5109,7 +5110,7 @@ export class ProjectQueue {
           this.current.ac.abort();
         }
         e.state = "cancelled";
-        e.reason = `release abandoned${r.why ? `: ${r.why.split("\n")[0]!.slice(0, 160)}` : ""}`;
+        e.reason = `release cancelled${r.why ? `: ${r.why.split("\n")[0]!.slice(0, 160)}` : ""}`;
         e.updatedAt = this.iso();
       }
       const landed = [...mine].reverse().find((e) => (e.releaseKind ?? "release") === "release" && e.state === "landed" && e.landed);
@@ -5120,7 +5121,7 @@ export class ProjectQueue {
         return { revert: null };
       }
       if (head !== landed.landed!.sha) throw new MergeFailure("invalid-request", `${this.q.target} is at ${head.slice(0, 7)}, not the release commit ${landed.landed!.sha.slice(0, 7)}: undo it by hand`);
-      const sha = await revertCommit(this.git, this.root, head, landed.landed!.from, `Revert ${this.releaseName()} (abandoned)${r.why ? `\n\n${r.why}` : ""}`);
+      const sha = await revertCommit(this.git, this.root, head, landed.landed!.from, `Revert ${this.releaseName()} (cancelled)${r.why ? `\n\n${r.why}` : ""}`);
       if (typeof sha !== "string") throw new MergeFailure("busy", sha.error);
       const branch = `sova/release-revert-${r.release}`;
       const u = await this.git(["update-ref", `refs/heads/${branch}`, sha], this.root);

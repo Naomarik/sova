@@ -35,8 +35,9 @@ import { redactPreviewLinks } from "./preview-kept";
  * version whose page is on disk. A design with none, or removed, is left out, and so is a run
  * with none.
  *
- * A version's page is served as a walled document (`designDocument`): its text through the same
- * scrub as a message's and both link filters, then its pictures put in (never scrubbed, never
+ * A version's page is served as a walled document (`designDocument`): its text through the page
+ * scrub (a message's, without the redactor's name guesses, which break a page's scripts: the
+ * caller's `scrubPage`) and both link filters, then its pictures put in (never scrubbed, never
  * read as text), then the app's wall (src/lib/design-frame.ts) around it.
  */
 
@@ -195,15 +196,15 @@ export function designDocument(
   label: string,
   n: number,
   kind: SessionShareDesignKind,
-  scrub: (s: string) => string,
+  scrubPage: (s: string) => string,
 ): string | null {
   if (!isDesignLabel(label) || !Number.isSafeInteger(n) || n < 1 || !isShareDesignKind(kind)) return null;
   const shown = anchors.some((a) => shownDesigns(sessionId, a.runId, designsAt).some(({ d, versions }) => d.label === label && versions.some((v) => v.n === n)));
   if (!shown) return null;
   const raw = readPage(sessionId, label, n);
   if (raw === null) return null;
-  // The author's text is scrubbed; the pictures, put in after, never are.
-  const text = redactShareLinks(redactPreviewLinks(scrub(raw)));
+  // The author's text is scrubbed as code (its scripts must still parse); the pictures, put in after, never are.
+  const text = redactShareLinks(redactPreviewLinks(scrubPage(raw)));
   const tile = kind === "tile" || kind === "tile-still";
   const wrap = (html: string): string => (kind === "page" || kind === "tile" ? designShellDoc(designPageDoc(html, { motion: !tile }), { share: true }) : designStreamDoc(html));
   for (const size of tile ? (["small"] as const) : (["full", "small"] as const)) {

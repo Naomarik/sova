@@ -69,6 +69,8 @@ interface Built {
   /** The slice's Lookbook runs and the items they follow. */
   anchors: LookbookAnchor[];
   scrub: (text: string) => string;
+  /** A design page's scrub: `scrub` without the name guesses (scrubberFor's `code`). */
+  scrubPage: (text: string) => string;
   /** Each item's entry id, by `n` (operator-only: the outline). */
   ids: string[];
   images: ImageBlock[];
@@ -110,8 +112,10 @@ export function branchTo(file: PiFile, cutEntryId: string | null): HEntry[] | nu
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** A text scrubber: secrets out, then the session's cwd relative and the home directory `~`. */
-export function scrubberFor(cwd: string | undefined): (text: string) => string {
+/** A text scrubber: secrets out, then the session's cwd relative and the home directory `~`.
+    `code: true`: for a design's page: the known secret values and the shaped patterns go, the redactor's name
+    guesses don't, so the page's scripts still parse. */
+export function scrubberFor(cwd: string | undefined, opts: { code?: boolean } = {}): (text: string) => string {
   const secrets = serverRedactor();
   const home = homedir();
   const rules: [RegExp, string][] = [];
@@ -123,7 +127,7 @@ export function scrubberFor(cwd: string | undefined): (text: string) => string {
   }
   if (home && home !== "/") rules.push([new RegExp(`${at(home)}(?![\\w.-])`, "g"), "~"]);
   return (text: string) => {
-    let out = secrets.redact(text);
+    let out = secrets.redact(text, { code: opts.code });
     for (const [re, to] of rules) out = out.replace(re, to);
     return out;
   };
@@ -275,6 +279,7 @@ export function shownEntries(branch: HEntry[]): Shown[] {
 function build(file: PiFile, branch: HEntry[], slice: HEntry[], earlier: boolean): Built {
   const cwd = file.header?.cwd;
   const scrub = scrubberFor(typeof cwd === "string" ? cwd : undefined);
+  const scrubPage = scrubberFor(typeof cwd === "string" ? cwd : undefined, { code: true });
   const items: SessionShareItem[] = [];
   const ids: string[] = [];
   const images: ImageBlock[] = [];
@@ -293,7 +298,7 @@ function build(file: PiFile, branch: HEntry[], slice: HEntry[], earlier: boolean
     itemOf.set(e, items.length);
     items.push({ kind: role === "user" ? "user" : "reply", n: items.length, text: cutAtToken(scrub(text), SESSION_SHARE_TEXT_MAX), ...(at ? { at } : {}), ...(imgs ? { images: imgs } : {}) });
   }
-  return { items, ids, images, through, earlier, anchors: lookbookAnchors(branch, slice, itemOf), scrub };
+  return { items, ids, images, through, earlier, anchors: lookbookAnchors(branch, slice, itemOf), scrub, scrubPage };
 }
 
 type Src = Pick<ShareSource, "sessionPath" | "cutEntryId" | "from" | "sessionId" | "designsAt">;
@@ -374,8 +379,8 @@ export async function sessionShareDesign(src: Src, label: string, n: number, kin
   if (!src.sessionId) return null;
   const b = await built(src);
   if (!b) return null;
-  // The page's text passes both link filters inside, before its pictures go in.
-  return designDocument(src.sessionId, b.anchors, designCut(src, b.through), label, n, kind, b.scrub);
+  // The page's text passes the page scrub and both link filters inside, before its pictures go in.
+  return designDocument(src.sessionId, b.anchors, designCut(src, b.through), label, n, kind, b.scrubPage);
 }
 
 /** Whether a shown design version uses a picture captured from a signed-in page (the operator's preview). */

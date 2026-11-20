@@ -175,10 +175,16 @@ const JSON_FIELD = new RegExp(String.raw`("${SECRET_NAME}"\s*:\s*)"((?:[^"\\]|\\
 /** Not secrets however they are named: numbers, booleans, empties, what is already redacted. */
 const notSecret = (v: string) => !v || v === REDACTED || /^(?:\d+(?:\.\d+)?|true|false|null|none|undefined)$/i.test(v);
 
+/** `code: true`: the text is code (a design's page), so only SECRET_PATTERNS' shapes apply, never the name guesses
+    (ASSIGNMENT, JSON_FIELD): in a script those hit comparisons and ordinary fields (`e.key==='Escape'`,
+    `key='draft'`, `"token": "abc"`), and the rewritten script no longer parses. */
+export type PatternOptions = { code?: boolean };
+
 /** `text` with every shape-recognised secret replaced (see SECRET_PATTERNS). The same string when none is found. */
-export function redactPatterns(text: string): string {
+export function redactPatterns(text: string, opts: PatternOptions = {}): string {
   let out = text;
   for (const [re, to] of SECRET_PATTERNS) out = out.replace(re, to);
+  if (opts.code) return out === text ? text : out;
   out = out.replace(ASSIGNMENT, (m, name: string, eq: string, q: string, v: string) => (notSecret(v) ? m : `${name}${eq}${q}${REDACTED}${q}`));
   out = out.replace(JSON_FIELD, (m, head: string, v: string) => (notSecret(v) ? m : `${head}"${REDACTED}"`));
   return out === text ? text : out;
@@ -237,8 +243,10 @@ export function redactPrivate(text: string): string {
   return out === text ? text : out;
 }
 
-/** `outside: true`: also hide private data (`redactPrivate`), for what Sova sends to an outside model itself. */
-export type RedactOptions = { outside?: boolean };
+/** `outside: true`: also hide private data (`redactPrivate`), for what Sova sends to an outside model itself.
+    `code: true`: the text is code (a design's page): the known values and the shaped patterns go, the name
+    guesses don't (`PatternOptions`). */
+export type RedactOptions = { outside?: boolean } & PatternOptions;
 
 /**
  * Knows the secret values and replaces each occurrence with REDACTED. The values are read from the
@@ -296,18 +304,18 @@ export class Redactor {
       the patterns recognise by shape (`redactPatterns`), known or not. */
   redact(text: string, opts: RedactOptions = {}): string {
     if (!text) return text;
-    const out = this.redactSecrets(text);
+    const out = this.redactSecrets(text, { code: opts.code });
     return opts.outside ? redactPrivate(out) : out;
   }
 
-  private redactSecrets(text: string): string {
-    if (!this.matcher) return redactPatterns(text);
+  private redactSecrets(text: string, patterns: PatternOptions): string {
+    if (!this.matcher) return redactPatterns(text, patterns);
     let out = text.replace(this.matcher, REDACTED);
     if (this.fragments) {
       this.fragments.lastIndex = 0;
       if (this.fragments.test(out)) out = this.redactFragments(out);
     }
-    return redactPatterns(out);
+    return redactPatterns(out, patterns);
   }
 
   /** Replace each run of text that is a secret's start (running to wherever the text stops matching

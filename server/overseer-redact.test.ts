@@ -373,6 +373,30 @@ describe("secrets recognised by shape (no credential file names them)", () => {
     for (const t of plain) assert.equal(redactPatterns(t), t, t);
   });
 
+  test("code (a design's page): every shape above still goes, every name guess stays as written", () => {
+    // The cases whose only catch is the name before the value (ASSIGNMENT, JSON_FIELD).
+    const guesses = new Set(["NAME=value (env)", 'NAME="value"', "flag", "query string", "JSON field", "JSON credential"]);
+    for (const [name, input, expected] of cases) {
+      const want = guesses.has(name) ? input : expected;
+      assert.equal(redactPatterns(input, { code: true }), want, name);
+      assert.equal(new Redactor([], {}).refresh().redact(input, { code: true }), want, name);
+    }
+  });
+
+  test("code: a page's script comes out byte for byte and still parses; the same text as prose is still guessed at", () => {
+    const script = `addEventListener("keydown",(e)=>{if(e.key==='Escape')close();});let key='draft';key=chatKey(x);const cfg={"token": "abc", key: 1};`;
+    assert.equal(redactPatterns(script, { code: true }), script);
+    assert.doesNotThrow(() => new Function(redactPatterns(script, { code: true })));
+    // The bug's control: as prose, the name guesses rewrite it into a script that no longer parses.
+    assert.notEqual(redactPatterns(script), script);
+    assert.throws(() => new Function(redactPatterns(script)), SyntaxError);
+    // A known value and a real-looking key in the same page still go.
+    const known = "fake-known-value-".padEnd(32, "q");
+    const r = new Redactor([], { PAGE_API_KEY: known }).refresh();
+    const page = `${script}const a="${known}",b="${"sk-" + "ant-api03-FAKE0123456789abcdefFAKE"}",c="${"ghp_" + "FAKE0123456789abcdefFAKE0123"}",d="${known.slice(0, 20)}";`;
+    assert.equal(r.redact(page, { code: true }), `${script}const a="${REDACTED}",b="${REDACTED}",c="${REDACTED}",d="${REDACTED}";`);
+  });
+
   test("redactDeep applies the patterns with no known values loaded, and keeps object keys", () => {
     const r = new Redactor([], {}).refresh();
     const state = { tool_failures: [{ input: "echo $OPENAI_API_KEY", error: `OPENAI_API_KEY=${"sk-" + "proj-FAKEfakeFAKEfake1234567890"}` }], api_key_note: "fine" };

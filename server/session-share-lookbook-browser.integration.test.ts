@@ -18,7 +18,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import type { Browser, BrowserContext, Frame, Page } from "playwright-core";
-import { DESIGN_FRAME_LEFT } from "../src/lib/design-frame";
+import { DESIGN_FRAME_LEFT, DESIGN_NOTE_TAG, designScriptsDropped } from "../src/lib/design-frame";
 import { STILL_LINE } from "../src/share/lookbook-model";
 import { bigPage, hostilePages, LB_RUN, LB_SESSION_ID, LB_SHOWN, writeLookbookChat } from "./session-share-lookbook.test.helper";
 import { scratchRoot } from "./test-scratch";
@@ -73,6 +73,13 @@ const hostile = hostilePages(L, S, `${S}/api/s/${TOKEN}`);
   writeFileSync(join(dir, "state.json"), JSON.stringify(state));
   mkdirSync(join(dir, "M"), { recursive: true });
   writeFileSync(join(dir, "M", "v1.html"), bigPage(24));
+  // N: code the redactor's name guesses once rewrote (`e.key=[redacted]'Escape'`, so nothing ran), and one script
+  // that really doesn't parse.
+  state.designs.push({ ...like, label: "N", direction: "Keys", layout: undefined, modelName: "Mk Keys Model", versions: [{ n: 1, at: new Date(Date.UTC(2026, 8, 30, 0, 0, 5)).toISOString(), chars: 1, by: "first" }] });
+  state.runs.find((r) => r.id === LB_RUN)!.labels.push("N");
+  writeFileSync(join(dir, "state.json"), JSON.stringify(state));
+  mkdirSync(join(dir, "N"), { recursive: true });
+  writeFileSync(join(dir, "N", "v1.html"), `<!doctype html><html><body><h1 id="h">VISIBLE-LB-KEYS</h1><p id="ran">not yet</p><script>let key='draft';const keyOf=(x)=>x;key=keyOf(key);const cfg={"token": "abc"};const e={key:'Escape'};if(e.key==='Escape'&&cfg.token==='abc')document.getElementById('ran').textContent='key code ran';</script><script>if(</script></body></html>`);
 }
 
 const FONT = readFileSync(join(ROOT, "public", "fonts", "IBMPlexSans-Variable.woff2"));
@@ -94,7 +101,7 @@ after(async () => {
 });
 
 /** A fresh tab on `path` under the share listener, every request answered here. `still`: as a browser without the iframe `csp` attribute. */
-async function open(path: string, o: { still?: boolean; width?: number } = {}): Promise<{ page: Page; ctx: BrowserContext; popups: string[] }> {
+async function open(path: string, o: { still?: boolean; width?: number } = {}): Promise<{ page: Page; ctx: BrowserContext; popups: string[]; errors: string[] }> {
   const ctx = await browser.newContext({ viewport: { width: o.width ?? 1280, height: 900 } });
   const popups: string[] = [];
   if (o.still) await ctx.addInitScript(() => void delete (HTMLIFrameElement.prototype as unknown as { csp?: string }).csp);
@@ -114,8 +121,11 @@ async function open(path: string, o: { still?: boolean; width?: number } = {}): 
   });
   const page = await ctx.newPage();
   ctx.on("page", (p) => void popups.push(p.url() || "about:blank"));
+  // What any of its frames logged as an error, from before the first one loads.
+  const errors: string[] = [];
+  page.on("console", (m) => void (m.type() === "error" && errors.push(m.text())));
   await page.goto(S + path);
-  return { page, ctx, popups };
+  return { page, ctx, popups, errors };
 }
 
 /** The frame element a design draws in: the open view's, else the design page's. */
@@ -137,8 +147,8 @@ describe("a shared Lookbook in Chrome", () => {
     const { page, ctx } = await open(`/s/${TOKEN}`);
     try {
       await page.locator("section.lb-block").first().waitFor({ timeout: 20_000 });
-      assert.equal(await page.locator("section.lb-block .lb-title").first().textContent(), "Lookbook · 4 designs");
-      for (const l of ["A", "B", "K", "M"]) assert.equal(await page.locator(`article.lb-tile[aria-label="Design ${l}"]`).count(), 1, `tile ${l}`);
+      assert.equal(await page.locator("section.lb-block .lb-title").first().textContent(), "Lookbook · 5 designs");
+      for (const l of ["A", "B", "K", "M", "N"]) assert.equal(await page.locator(`article.lb-tile[aria-label="Design ${l}"]`).count(), 1, `tile ${l}`);
       await ctx.close();
       const full = await open(`/s/${TOKEN}?design=A&v=2`);
       const f = await designFrame(full.page, LB_SHOWN.A.pages[2]);
@@ -149,9 +159,39 @@ describe("a shared Lookbook in Chrome", () => {
       assert.ok(fonts.some((u) => u.startsWith("https://fonts.googleapis.com/css2")) && fonts.some((u) => u.startsWith("https://fonts.gstatic.com/")), `font requests: ${fonts.join(" ")}`);
       assert.equal(await f.evaluate(() => String(origin)), "null", "an opaque origin");
       assert.equal(await full.page.locator(".lb-page-note").filter({ hasText: STILL_LINE }).count(), 0, "Chrome runs the design: no still line");
+      assert.equal(await f.locator(DESIGN_NOTE_TAG).count(), 0, "its code all parses: no note");
+      assert.deepEqual(full.errors.filter((t) => /couldn't run/.test(t)), [], "and nothing logged");
       await full.ctx.close();
     } finally {
       await ctx.close().catch(() => {});
+    }
+  });
+
+  test("code the name guesses would rewrite runs on the link; a script that doesn't parse leaves a note and its error in the console", async () => {
+    const { page, ctx, errors: logged } = await open(`/s/${TOKEN}?design=N&v=1`);
+    try {
+      const f = await designFrame(page, "VISIBLE-LB-KEYS");
+      await f.waitForFunction(() => document.getElementById("ran")?.textContent === "key code ran", null, { timeout: 15_000 });
+      const note = await f.evaluate((tag) => {
+        const host = document.querySelector(tag);
+        const chip = host?.shadowRoot?.firstElementChild;
+        if (!chip) return null;
+        const r = chip.getBoundingClientRect();
+        // What a click at the chip's middle, and at its dot's, would land on.
+        const under = [chip, chip.firstElementChild!].map((e) => {
+          const b = e.getBoundingClientRect();
+          return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.tagName;
+        });
+        return { text: host!.shadowRoot!.textContent, left: r.left, bottom: innerHeight - r.bottom, width: r.width, under };
+      }, DESIGN_NOTE_TAG);
+      assert.ok(note, "the note is on the page");
+      assert.equal(note.text, designScriptsDropped(1));
+      assert.ok(note.width > 0 && note.left < 40 && note.bottom >= 0 && note.bottom < 40, `drawn in the bottom-left corner: ${JSON.stringify(note)}`);
+      assert.ok(note.under.every((t) => t && t !== DESIGN_NOTE_TAG.toUpperCase()), `a click on it reaches the page, never the note: ${note.under}`);
+      for (const end = Date.now() + 5000; !logged.some((t) => /couldn't run/.test(t)) && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
+      assert.ok(logged.some((t) => /This design's script couldn't run/.test(t) && /SyntaxError|Unexpected/.test(t)), `the parse error is logged: ${logged.join(" | ")}`);
+    } finally {
+      await ctx.close();
     }
   });
 

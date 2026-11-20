@@ -273,10 +273,13 @@ with no `[A-Za-z0-9_$]` on either side, and weighs `ln((records + 1) / records u
 part the claim declared right after the one before (the first right after the topic) in the same
 file, an H2 with a record that the topic `requires`, and no split topic itself. The views read a
 topic and its parts as the one claim it was; on a spec with none, every answer is as before.
-`where`'s topic search has one unit per topic (its prose without the summary, then each part's
-heading and prose; names once; when its first sentence is the summary, its parts' first prose
-sentence), word weights over topics, and its row adds `part: {id, title}`, the part whose own text
-scores best (text: `best part:`). A name held by the topic or a part is one `defines`/`mentions` row for
+`where`'s topic search has one unit per topic, scored on the text the claim had before it was split:
+its own text without the summary lines, then each part's text without its heading, a table head a part
+repeats at its start (one the topic's text already has) left out; heading, first sentence, names and
+prose are read from that text as from any claim, and word weights count topics. Its row adds `part:
+{id, title}`, the part whose own text (its heading included) scores best (text: `best part:`).
+`tests/search/split-units.mjs <before> <after>` compares every split topic's scored fields with the
+same claim in the unsplit spec. A name held by the topic or a part is one `defines`/`mentions` row for
 the topic (a part's heading or first sentence defines it), `part` naming the part holding it (text: `in part:`);
 a topic so listed is no topic row. A path lists the topic once when it or any part lists the file:
 its interface tokens are the topic's and its parts' together, weighed over topics (records = topics),

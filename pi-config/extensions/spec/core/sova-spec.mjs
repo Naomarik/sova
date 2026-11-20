@@ -396,6 +396,13 @@ function parseDeclarations(ctx, bodies, decls = new Map()) {
   return decls;
 }
 
+// The parsed graph of a spec, for read-only scripts over the core's own views (tests/search/split-units.mjs): it
+// loads only, and leaves no findings behind. → {ctx, findings, parentOf} | null
+export function graphAt(root, specRel = DEFAULT_SPEC) {
+  const n = findings.length, ctx = load(root, specRel), found = findings.splice(n);
+  return ctx ? { ctx, findings: found, parentOf } : null;
+}
+
 function load(root, specRel) {
   const ctx = loadManifest(root, specRel);
   if (!ctx) return null;

@@ -3,6 +3,7 @@
 // The constants were tuned on a dev set of real asks (tests/search/experiments/LOG.md holds every attempt).
 import { titleOf, whatOf, mask } from "./toc.mjs";
 import { splitOf, summaryLines } from "./parts.mjs";
+import { spansOf } from "./graph.mjs";
 
 export const TOPIC = {
   k1: 1.2, b: 0.75,
@@ -86,23 +87,49 @@ function unitOf(id, texts, fields) {
   return { id, per, any, title: new Set(per.title?.tf.keys() ?? termsOf(texts.title)) };
 }
 
-// A split topic as the one text it was: its own heading and area; its prose without the summary lines, then each
-// part's heading and prose; its names and its parts', each once; its first sentence, or, when that is the summary,
-// its parts' first prose sentence.
-function topicUnit(ix, split, id, parts, fields) {
-  const decl = ix.ctx.decls.get(id), area = ix.areaOf(id), ps = split.down.get(id), drop = summaryLines(split, id, decl);
-  const body = mask(decl.text, { doubleTicks: false, heading: true }).split("\n").filter((_, i) => !drop.has(i)).join("\n");
-  const what0 = whatOf(decl).what;
-  const what = /^\s*§/.test(what0) || ps.some((p) => what0.includes(p))
-    ? ps.map((p) => whatOf(ix.ctx.decls.get(p)).what).find((w) => !/^no prose sentence/.test(w)) ?? whatOf(ix.ctx.decls.get(ps[0])).what : what0;
-  const names = [...new Set([id, ...ps].flatMap((x) => ix.tokens.get(x).map((s) => s.token)))].join("\n");
-  const u = unitOf(id, { title: titleOf(decl), what, names, body, areaTitle: area !== id && ix.ctx.decls.has(area) ? titleOf(ix.ctx.decls.get(area)) : "" }, fields);
-  if (u.per.body) for (const p of ps) for (const f of ["title", "body"]) {
-    const pf = parts.get(p).per[f];
-    if (!pf) continue;
-    for (const [t, c] of pf.tf) { u.per.body.tf.set(t, (u.per.body.tf.get(t) ?? 0) + c); u.any.add(t); }
-    u.per.body.len += pf.len;
+// A split topic as the one text it was: its own text without the summary lines, then each part's text without its
+// heading, read as one passage, so it is scored on exactly the words the claim had before it was split.
+// A part that opens with a table whose header row and rule the topic already gave repeats them only to stand alone:
+// they are left out too.
+const TABLE_HEAD = /^(\|[^\n]*\|)\n(\|[ \t:|-]*-[ \t:|-]*\|)\n/;
+// The pieces of a split topic's text before it was split: its own text without the summary lines, then each part's
+// text without its heading (and a repeated table head). → {own, parts: [{id, body, dropped}]}
+function piecesOf(ix, split, id) {
+  const decl = ix.ctx.decls.get(id), drop = summaryLines(split, id, decl);
+  let text = decl.text.split("\n").filter((_, i) => !drop.has(i)).join("\n").replace(/\n+$/, "\n");
+  const own = text, parts = [];
+  for (const p of split.down.get(id)) {
+    let body = ix.ctx.decls.get(p).text.replace(/^[^\n]*\n/, ""), dropped = "";
+    const lead = /^\s*/.exec(body)[0], head = TABLE_HEAD.exec(body.slice(lead.length));
+    if (head && text.includes(`\n${head[1]}\n${head[2]}\n`)) { dropped = head[0]; body = lead + body.slice(lead.length + head[0].length); }
+    parts.push({ id: p, body, dropped });
+    text += "\n" + body;
   }
+  return { own, parts, text };
+}
+// A split topic's text as the one claim it was: what it is scored on.
+export function topicText(ix, split, id) {
+  return { ...ix.ctx.decls.get(id), text: piecesOf(ix, split, id).text };
+}
+// Scored as the claim it was. Its prose counts are its own text's plus each part's own prose counts (a part's heading
+// is masked there already), less a dropped table head: each part's text is cut into words once.
+function topicUnit(ix, split, id, parts, fields) {
+  const pc = piecesOf(ix, split, id), decl = { ...ix.ctx.decls.get(id), text: pc.text }, area = ix.areaOf(id);
+  const u = unitOf(id, {
+    title: titleOf(decl),
+    what: whatOf(decl).what,
+    names: spansOf(decl).map((s) => s.token).join("\n"),
+    body: mask(pc.own, { doubleTicks: false, heading: true }),
+    areaTitle: area !== id && ix.ctx.decls.has(area) ? titleOf(ix.ctx.decls.get(area)) : "",
+  }, fields);
+  const b = u.per.body;
+  if (b) for (const { id: p, dropped } of pc.parts) {
+    for (const [t, c] of parts.get(p).per.body.tf) { b.tf.set(t, (b.tf.get(t) ?? 0) + c); u.any.add(t); }
+    b.len += parts.get(p).per.body.len;
+    for (const t of termsOf(dropped)) { const c = b.tf.get(t) - 1; if (c) b.tf.set(t, c); else b.tf.delete(t); b.len--; }
+  }
+  // A term only a dropped table head held is no longer the topic's.
+  for (const t of [...u.any]) if (!fields.some((f) => u.per[f].tf.has(t))) u.any.delete(t);
   return u;
 }
 

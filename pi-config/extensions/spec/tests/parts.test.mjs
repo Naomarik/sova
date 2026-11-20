@@ -148,12 +148,22 @@ test("where NAME: a name a part holds lists its topic once, naming that part; ne
   assert.match(cli(b, ["where", "/api/health"], { json: false }).r.stdout, /^    in part: §app\.gate\/check-exceptions — What is never asked for the token$/m);
 });
 
-test("where WORDS: a split topic is one unit, ranked as the whole claim, its best-matching part named under it", () => {
-  const a = whole(), b = splitSpec();
-  for (const q of [["health", "route", "token"], ["cross", "site", "sockets"], ["gate", "token"]]) {
-    const before = cli(a, ["where", ...q]).j.lines.map((l) => l.id), after = cli(b, ["where", ...q]).j.lines;
-    assert.deepEqual(after.map((l) => l.id), before, `${q.join(" ")}: the same topics in the same order`);
+test("where WORDS: a split topic is scored on exactly the whole claim's words, so every row and score is the whole spec's; its best-matching part named under it", () => {
+  // A table cut between two parts: the second part opens with the head again, so that it stands alone; the whole had it once.
+  const head = "| Field | Meaning |\n|---|---|\n", row1 = "| `token` | the caller's key |\n", row2 = "| `health` | never asked |\n";
+  const pairs = [[whole(), splitSpec()],
+    [spec({ text: WHOLE.replace(`${RULES}\n${EXCEPTIONS}`, `${RULES}\n${head}${row1}${row2}\n${EXCEPTIONS}`) }),
+      spec({ text: split().replace(`${RULES}\n## §app.gate/check-exceptions — What is never asked for the token\n\n${EXCEPTIONS}`,
+        `${RULES}\n${head}${row1}\n## §app.gate/check-exceptions — What is never asked for the token\n\n${head}${row2}\n${EXCEPTIONS}`), records: SPLIT_RECORDS })]];
+  const rows = (j) => j.lines.map((l) => [l.type, l.id, l.score, l.matched]);
+  const queries = [["health", "route", "token"], ["cross", "site", "sockets"], ["gate", "token"]];
+  for (const [k, [a, b]] of pairs.entries()) for (const q of [...queries, ...(k ? [["field", "meaning", "caller"]] : [])]) {
+    const before = cli(a, ["where", ...q]).j, after = cli(b, ["where", ...q]).j;
+    assert.ok(before.lines.length, `${q.join(" ")}: something ranks`);
+    assert.deepEqual(rows(after), rows(before), `${q.join(" ")}: the same rows, in the same order, with the same scores`);
   }
+  const b = pairs[0][1];
+  assert.ok(WHOLE.includes(`${RULES}\n${EXCEPTIONS}`) && split().includes(`${RULES}\n## §app.gate/check-exceptions — What is never asked for the token\n\n${EXCEPTIONS}`), "the table fixture's anchors exist");
   const top = (q) => cli(b, ["where", ...q]).j.lines.find((l) => l.id === "§app.gate/check");
   assert.equal(top(["health", "route", "peer"]).part.id, PARTS[1]);
   assert.equal(top(["cross", "site", "sockets"]).part.id, PARTS[0]);

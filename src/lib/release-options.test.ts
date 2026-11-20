@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReleaseView } from "../../shared/release";
-import { countOff, kindLine, minutesWord, NONE_OFF, preset, presetOf, startBody, startLabel, startPanel, totalMinutes, turnedOffLine } from "./release-options";
+import { autoHint, countOff, kindLine, minutesWord, NONE_OFF, preset, presetOf, startBody, startLabel, startPanel, totalMinutes, turnedOffLine } from "./release-options";
 
 const VIEW = {
   settings: { checks: [{ id: "release-integration", label: "Every integration group" }, { id: "release-leaks", label: "Leak scan" }] } as unknown as ReleaseView["settings"],
@@ -43,6 +43,9 @@ test("presets: Full is nothing off, Quick is every step and release check off, a
 test("Start's label names the kind and says Custom exactly when something is off", () => {
   assert.equal(startLabel("minor", false), "Start Minor Release");
   assert.equal(startLabel("patch", true), "Start Patch Release (Custom)");
+  assert.equal(startLabel(null, false), "Start Release", "Auto names no kind");
+  assert.equal(startLabel(null, true), "Start Release (Custom)");
+  assert.equal(autoHint(VIEW.next), "0.17.1 or 0.18.0", "Auto: the patch or the minor the chat's rule may pick");
 });
 
 test("the total adds the landing checks and what's left on, from the figures there are", () => {
@@ -56,7 +59,8 @@ test("the total adds the landing checks and what's left on, from the figures the
 test("Start sends the kind and only the lists with something off, in the panel's order", () => {
   assert.deepEqual(startBody(P, "patch", NONE_OFF), { kind: "patch" });
   assert.deepEqual(startBody(P, "major", { steps: new Set(["try-live", "notes"]), checks: new Set(["release-leaks", "nope"]) }), { kind: "major", skipSteps: ["notes", "try-live"], skipChecks: ["release-leaks"] });
-  assert.deepEqual(startBody(P, null, NONE_OFF), {}, "a non-semver project sends no kind");
+  assert.deepEqual(startBody(P, null, NONE_OFF), {}, "Auto (or a non-semver project) with nothing off: the empty body of a plain Start Release");
+  assert.deepEqual(startBody(P, null, { steps: new Set(["docs"]), checks: new Set() }), { skipSteps: ["docs"] }, "Auto sends no kind, only what's off");
 });
 
 test("the card's lines: what its start turned off, and the kind it picked", () => {

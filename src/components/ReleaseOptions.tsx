@@ -3,7 +3,7 @@
 // always run, each with its line and its rough minutes; Start <Kind> Release sends the kind and what was turned off.
 import { createSignal, For, onMount, Show, type JSX } from "solid-js";
 import type { ReleaseKind, ReleaseStartOptions } from "../../shared/release";
-import { countOff, KIND_WORD, KINDS, minutesWord, NONE_OFF, preset, presetOf, startBody, startLabel, totalMinutes, type OptionItem, type Off, type StartPanel } from "../lib/release-options";
+import { autoHint, countOff, KIND_WORD, KINDS, minutesWord, NONE_OFF, preset, presetOf, startBody, startLabel, totalMinutes, type OptionItem, type Off, type StartPanel } from "../lib/release-options";
 import { Choice, Toggle } from "./form";
 
 export function ReleaseOptionsPanel(props: {
@@ -16,7 +16,9 @@ export function ReleaseOptionsPanel(props: {
   onClose(): void;
 }) {
   const p = () => props.panel;
-  const [kind, setKind] = createSignal<ReleaseKind>("patch");
+  // Auto (the default) sends no kind: the release chat's version rule picks patch or minor, as Start Release does.
+  const [kind, setKind] = createSignal<ReleaseKind | "auto">("auto");
+  const picked = (): ReleaseKind | null => (p().next && kind() !== "auto" ? (kind() as ReleaseKind) : null);
   const [off, setOff] = createSignal<Off>(NONE_OFF);
   const at = () => presetOf(p(), off());
   const custom = () => countOff(p(), off()) > 0;
@@ -28,7 +30,7 @@ export function ReleaseOptionsPanel(props: {
     else next.add(id);
     setOff({ ...o, [what]: next });
   };
-  const label = () => startLabel(kind(), custom());
+  const label = () => startLabel(picked(), custom());
   // Opened from the ▾ menu: focus moves into the panel, on its first choice.
   let box!: HTMLDivElement;
   onMount(() => box.querySelector<HTMLElement>("input:not(:disabled), button:not(:disabled)")?.focus());
@@ -49,8 +51,8 @@ export function ReleaseOptionsPanel(props: {
         {(n) => (
           <fieldset class="field rel-opt-kind">
             <legend class="field-label">Kind</legend>
-            <Choice label="Kind" class="rel-opt-kinds" value={kind()} options={KINDS.map((k) => ({ value: k, label: KIND_WORD[k], hint: <span class="text-mono">{n()[k]}</span> }))} onChange={(k) => setKind(k as ReleaseKind)} />
-            <p class="field-hint">A version your release note names still wins.</p>
+            <Choice label="Kind" class="rel-opt-kinds" value={kind()} options={[{ value: "auto", label: "Auto", hint: <span class="text-mono">{autoHint(n())}</span> }, ...KINDS.map((k) => ({ value: k, label: KIND_WORD[k], hint: <span class="text-mono">{n()[k]}</span> }))]} onChange={(k) => setKind(k as ReleaseKind | "auto")} />
+            <p class="field-hint">Auto lets the release chat pick, as Start Release does. A version your release note names still wins.</p>
           </fieldset>
         )}
       </Show>
@@ -105,8 +107,8 @@ export function ReleaseOptionsPanel(props: {
       </Show>
       <Show when={props.error}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
       <div class="deploy-actions">
-        <button type="button" class="button button-sm button-primary" aria-disabled={props.busy ? "true" : undefined} onClick={() => !props.busy && props.onStart(startBody(p(), p().next ? kind() : null, off()))}>
-          {props.busy ? "Starting…" : p().next ? label() : `Start Release${custom() ? " (Custom)" : ""}`}
+        <button type="button" class="button button-sm button-primary" aria-disabled={props.busy ? "true" : undefined} onClick={() => !props.busy && props.onStart(startBody(p(), picked(), off()))}>
+          {props.busy ? "Starting…" : label()}
         </button>
         <button type="button" class="button button-sm button-ghost" onClick={props.onClose}>
           Cancel

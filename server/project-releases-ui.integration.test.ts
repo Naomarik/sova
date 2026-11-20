@@ -561,7 +561,10 @@ describe("Release with Options", () => {
         await o.page.getByRole("menuitem", { name: "Release with options" }).click();
         const panel = o.page.getByRole("group", { name: "Release with options" });
         await panel.waitFor();
-        assert.equal(await o.page.getByRole("button", { name: "Start Release", exact: true }).count(), 0, "the panel's Start is the one primary while it's open");
+        assert.equal(await o.page.getByRole("button", { name: "More ways to start a release" }).count(), 0, "the head's split steps aside: the panel's Start is the one primary while it's open");
+        assert.equal(await o.page.getByRole("button", { name: "Start Release", exact: true }).count(), 1, "Auto: the panel's Start reads Start Release");
+        await panel.getByText("0.9.1 or 0.10.0", { exact: true }).waitFor();
+        assert.equal(await panel.getByRole("radio", { name: /Auto/ }).isChecked(), true, "Auto is the default");
         await panel.getByText("0.10.0", { exact: true }).waitFor();
         await panel.locator("label", { hasText: "Minor" }).click();
         assert.equal(await panel.getByRole("radio", { name: /Minor/ }).isChecked(), true);
@@ -601,7 +604,7 @@ describe("Release with Options", () => {
     });
   }
 
-  test("left at Full it still sends the kind; Cancel closes it with nothing sent; no manifest, no ▾", async () => {
+  test("left at Auto and Full it sends exactly a plain Start Release; a kind is sent only when picked; Cancel sends nothing; no manifest, no ▾", async () => {
     const o = await open(1280, TAB, view(OPTIONS_VIEW));
     try {
       await o.page.getByRole("button", { name: "More ways to start a release" }).click();
@@ -613,8 +616,18 @@ describe("Release with Options", () => {
       assert.equal(o.calls.some((c) => c.verb === "release.start"), false);
       await o.page.getByRole("button", { name: "More ways to start a release" }).click();
       await o.page.getByRole("menuitem", { name: "Release with options" }).click();
-      await panel.getByRole("button", { name: "Start Patch Release" }).click();
+      // Auto, nothing off: byte for byte the request a plain Start Release sends.
+      assert.equal(await panel.getByRole("radio", { name: /Auto/ }).isChecked(), true);
+      await panel.getByRole("button", { name: "Start Release", exact: true }).click();
       await called(o, "release.start");
+      const sent = o.calls.filter((c) => c.verb === "release.start");
+      assert.equal(JSON.stringify(sent[0]!.body), JSON.stringify({ project: ROOT_DIR }), "Auto + Full = the plain request, no options");
+      // A kind picked, nothing off: only the kind goes.
+      await o.page.getByRole("button", { name: "More ways to start a release" }).click();
+      await o.page.getByRole("menuitem", { name: "Release with options" }).click();
+      await panel.locator("label", { hasText: "Patch" }).click();
+      await panel.getByRole("button", { name: "Start Patch Release" }).click();
+      await until("the second start", () => o.calls.filter((c) => c.verb === "release.start").length === 2);
       assert.deepEqual(lastCall(o, "release.start").body, { project: ROOT_DIR, kind: "patch" });
     } finally {
       await o.ctx.close();

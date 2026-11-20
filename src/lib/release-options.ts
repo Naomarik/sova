@@ -70,8 +70,11 @@ export function presetOf(p: StartPanel, off: Off): "full" | "quick" | null {
 /** How many of the panel's rows are off (ids it doesn't list don't count). */
 export const countOff = (p: StartPanel, off: Off): number => p.steps.filter((s) => off.steps.has(s.id)).length + p.checks.filter((c) => off.checks.has(c.id)).length;
 
-/** The panel's Start: "Start Minor Release", plus " (Custom)" when anything is off. */
-export const startLabel = (kind: ReleaseKind, custom: boolean): string => `Start ${KIND_WORD[kind]} Release${custom ? " (Custom)" : ""}`;
+/** The panel's Start: "Start Minor Release", or "Start Release" under Auto (no kind), plus " (Custom)" when anything is off. */
+export const startLabel = (kind: ReleaseKind | null, custom: boolean): string => `Start ${kind ? `${KIND_WORD[kind]} ` : ""}Release${custom ? " (Custom)" : ""}`;
+
+/** Auto's hint: the numbers the release chat's own rule may pick (a patch or a minor), "0.17.1 or 0.18.0". */
+export const autoHint = (next: Record<ReleaseKind, string>): string => `${next.patch} or ${next.minor}`;
 
 /** The rough minutes of what runs: landing checks, then each step and release check left on. Null when nothing it
     runs has a figure. */
@@ -84,8 +87,8 @@ export function totalMinutes(p: StartPanel, off: Off): number | null {
 /** A rough figure in words: "under 1 min", "about 9 min". */
 export const minutesWord = (n: number): string => (n < 1 ? "under 1 min" : `about ${Math.round(n)} min`);
 
-/** release.start's body from the panel: the kind always, each list only when something in it is off, in the panel's
-    order. */
+/** release.start's body from the panel: the kind unless Auto (null), each list only when something in it is off, in the
+    panel's order. Auto with nothing off is {}: exactly a plain Start Release. */
 export function startBody(p: StartPanel, kind: ReleaseKind | null, off: Off): ReleaseStartOptions {
   const skipSteps = p.steps.filter((s) => off.steps.has(s.id)).map((s) => s.id);
   const skipChecks = p.checks.filter((c) => off.checks.has(c.id)).map((c) => c.id);

@@ -1,12 +1,13 @@
 import { createEffect, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
-import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStep, ReleaseView } from "../../shared/release";
+import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStartOptions, ReleaseStep, ReleaseView } from "../../shared/release";
 import type { ReleaseSetupReview } from "../../shared/project-runtime";
 import { relativeTime } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
-import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
+import { mergeRunHref, projectTabHref } from "../lib/projects-route";
+import { kindLine, startPanel, turnedOffLine } from "../lib/release-options";
 import {
-  abandonConfirmLine,
   askerWord,
+  cancelConfirmLine,
   NOTE_MAX,
   noteDraft,
   savedNoteLine,
@@ -17,12 +18,15 @@ import {
   publishConfirmLine,
   publishLabel,
   RELEASE_CHIP,
+  releaseChatHref,
   releaseChip,
+  releaseCommitLanded,
   releaseName,
   shortSha,
   shownRecord,
   sinceLine,
   startedByWord,
+  startWords,
   PHASE_WORD,
   STEP_CHIP,
   stepActions,
@@ -32,7 +36,9 @@ import {
 } from "../lib/releases";
 import { askDeployPlan, noteReleaseChanged, readReleases, releaseChanged, releaseFeed, releaseRefusal, runReleaseVerb } from "../lib/releases-client";
 import { announce, toast } from "../lib/ui-state";
+import { ActionMenu } from "./ActionMenu";
 import { CancelHeldButton } from "./HeldAct";
+import { ReleaseOptionsPanel } from "./ReleaseOptions";
 import { createSetupPoll, SetupChatButton, SetupChatState, SetupNotSetUp, type SetupPoll } from "./SetupChat";
 import { Banner, Chip, Icon } from "./ui";
 
@@ -90,7 +96,8 @@ function useAct() {
 }
 
 /**
- * A project's Releases tab: the release in progress with its steps, Publish and Abandon; then every
+ * A project's Releases tab: Start Release (and its ▾ Release with Options), the release in progress with its steps, Publish
+ * and Cancel Release; then every
  * numbered release from its tags, newest first, with its notes, channel badges, where it runs and Withdraw, and Change
  * Setup. A project whose releases aren't set up gets what a release does, with Set Up with a Chat.
  */
@@ -114,10 +121,37 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
   const head = useAct();
   const shown = () => shownRecord(v());
   const canStart = () => v().initialized && !v().problem && !v().open && !props.archived;
-  const start = () => void head.run("start", () => runReleaseVerb(v().project, "release.start"), "Started a release. Its chat follows the release playbook.");
   // The Release Note: offered wherever a release could start later (it is for the next start, open release or not).
   const canNote = () => v().initialized && !v().problem && !props.archived;
   const [editing, setEditing] = createSignal(false);
+  // The editor's draft lives here, so Start can save a changed one first (release.note, then release.start).
+  const [draft, setDraft] = createSignal("");
+  const toggleNote = () => {
+    if (!editing()) setDraft(v().note?.text ?? "");
+    setEditing(!editing());
+  };
+  const pending = () => (canNote() && editing() ? noteDraft(draft(), v().note?.text) : null);
+  // Release with Options: the ▾ beside Start Release opens it, when the view carries the playbook's manifest.
+  const panel = () => startPanel(v());
+  const [withOptions, setWithOptions] = createSignal(false);
+  const start = async (options?: ReleaseStartOptions) => {
+    const d = pending();
+    const ok = await head.run(
+      "start",
+      async () => {
+        if (d?.changed) {
+          const saved = await runReleaseVerb(v().project, "release.note", { text: d.text });
+          if (!saved.ok) return saved;
+        }
+        return runReleaseVerb(v().project, "release.start", options ? { ...options } : {});
+      },
+      "Started a release. Its chat follows the release playbook.",
+    );
+    if (ok) {
+      setEditing(false);
+      setWithOptions(false);
+    }
+  };
   return (
     <div class="stack mq-body rel-body">
       <div class="spread mq-head">
@@ -129,7 +163,7 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
         </div>
         <div class="cluster rel-head-act">
           <Show when={canNote()}>
-            <button type="button" class="button button-sm" aria-expanded={editing() ? "true" : "false"} aria-controls="rel-note-editor" onClick={() => setEditing(!editing())}>
+            <button type="button" class="button button-sm" aria-expanded={editing() ? "true" : "false"} aria-controls="rel-note-editor" onClick={toggleNote}>
               <Icon name="pencil" small />
               Release Note
             </button>
@@ -137,15 +171,43 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
           <Show when={v().initialized && !props.archived}>
             <SetupChatButton projectId={props.projectId} setUp from="releases" poll={props.setup} />
           </Show>
-          <Show when={canStart()}>
-            <button type="button" class="button button-sm button-primary" aria-disabled={head.busy() ? "true" : undefined} onClick={start}>
-              {head.busy() === "start" ? "Starting…" : "Start Release"}
-            </button>
+          {/* While the options panel is open its own Start is the one primary; the head's split steps aside. */}
+          <Show when={canStart() && !withOptions()}>
+            <div class="button-split wt-queue-split rel-start-split">
+              <button type="button" class="button button-sm button-primary" aria-disabled={head.busy() ? "true" : undefined} title={pending()?.changed ? "Saves your note first, then starts." : undefined} onClick={() => !head.busy() && void start()}>
+                {head.busy() === "start" ? "Starting…" : startWords(pending())}
+              </button>
+              <Show when={panel()}>
+                <ActionMenu label="More ways to start a release" title="More ways to start" icon="chevron-down" ghost={false} menuName="Start a release" panelClass="wt-land-menu" returnFocus>
+                  {(menu) => (
+                    <menu.Item
+                      label="Release with Options…"
+                      aria="Release with options"
+                      description="Pick the kind, and turn off steps and checks for this release."
+                      keepFocus
+                      onRun={() => setWithOptions(true)}
+                    />
+                  )}
+                </ActionMenu>
+              </Show>
+            </div>
           </Show>
         </div>
       </div>
       <Show when={canNote() && editing()}>
-        <NoteEditor project={v().project} saved={v().note} onClose={() => setEditing(false)} />
+        <NoteEditor saved={v().note} draft={draft()} setDraft={setDraft} project={v().project} onClose={() => setEditing(false)} />
+      </Show>
+      <Show when={canStart() && withOptions() && panel()}>
+        {(p) => (
+          <ReleaseOptionsPanel
+            panel={p()}
+            savesNote={!!pending()?.changed}
+            busy={head.busy() === "start"}
+            error={head.error()}
+            onStart={(o) => void start(o)}
+            onClose={() => setWithOptions(false)}
+          />
+        )}
       </Show>
       <Show when={canNote() && !editing() && v().note}>
         {(n) => (
@@ -188,7 +250,7 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
         <p class="mq-empty text-caption">
           {props.archived
             ? `${props.name} is archived: no release starts.`
-            : `No release open. Start Release opens a chat that follows ${props.name}'s release playbook; ${v().target} waits on it until you publish or abandon.`}
+            : `No release open. Start Release opens a chat that follows ${props.name}'s release playbook; ${v().target} waits on it until you publish or cancel it.`}
         </p>
       </Show>
       <History projectId={props.projectId} view={v()} archived={props.archived} targets={props.targets} />
@@ -200,9 +262,10 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
  * The Release Note's editor: the operator's instructions for the next release chat (a version, pages to skip). Save keeps
  * it on the server until a Start Release sends it; Clear Note drops it; an empty note changes nothing about Start.
  */
-function NoteEditor(props: { project: string; saved: { text: string; at: string } | null; onClose: () => void }) {
+function NoteEditor(props: { project: string; saved: { text: string; at: string } | null; draft: string; setDraft(text: string): void; onClose: () => void }) {
   const act = useAct();
-  const [draft, setDraft] = createSignal(props.saved?.text ?? "");
+  const draft = () => props.draft;
+  const setDraft = (t: string) => props.setDraft(t);
   const d = () => noteDraft(draft(), props.saved?.text);
   const save = async (text: string, done: string) => {
     if (await act.run(text ? "save" : "clear", () => runReleaseVerb(props.project, "release.note", { text }), done)) props.onClose();
@@ -228,7 +291,7 @@ function NoteEditor(props: { project: string; saved: { text: string; at: string 
         />
       </label>
       <p class="field-hint" id="rel-note-hint">
-        The next release chat reads it as your instructions. Start Release sends it, then clears it.
+        The next release chat reads it as your instructions. Start Release sends it, then clears it; with this open, Start saves it first.
       </p>
       <Show when={act.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
       <div class="deploy-actions">
@@ -268,17 +331,25 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
   const r = () => props.record;
   const v = () => props.view;
   const act = useAct();
-  const [confirm, setConfirm] = createSignal<"publish" | "abandon" | null>(null);
-  const [why, setWhy] = createSignal("");
+  const [confirm, setConfirm] = createSignal<"publish" | "cancel" | null>(null);
   const open = () => r().state === "preparing" || r().state === "checking" || r().state === "ready" || r().state === "publishing";
   const blocked = () => publishBlocked(v(), r());
   const name = () => releaseName(r());
   const publish = async () => {
     if (await act.run("publish", () => runReleaseVerb(v().project, "release.publish", { release: r().id, confirm: true }), `Publishing ${name()}.`)) setConfirm(null);
   };
-  const abandon = async () => {
-    if (await act.run("abandon", () => runReleaseVerb(v().project, "release.abandon", { release: r().id, why: why().trim(), confirm: true }), `Abandoned ${name()}.`)) setConfirm(null);
+  // Cancel Release: one press while the release commit hasn't landed; once it has, one confirm (cancelling reverts it).
+  // No reason asked: the server keeps its own.
+  const cancel = async () => {
+    if (await act.run("cancel", () => runReleaseVerb(v().project, "release.abandon", { release: r().id, confirm: true }), `Cancelled ${name()}. Landings go ahead.`)) setConfirm(null);
   };
+  const pressCancel = () => {
+    if (act.busy()) return;
+    if (releaseCommitLanded(r())) setConfirm("cancel");
+    else void cancel();
+  };
+  const offLine = () => turnedOffLine(r());
+  const kindWords = () => kindLine(r());
   return (
     <div class="mq-card rel-card" role="group" aria-label="Release in progress" data-release={r().id} data-state={r().state}>
       <div class="spread">
@@ -289,7 +360,7 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
         <div class="button-row mq-row-act">
           <Show when={r().thread}>
             {(t) => (
-              <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, t().session)}>
+              <a class="button button-sm button-ghost" href={releaseChatHref(props.projectId, t())}>
                 <Icon name="chat" small />
                 Open Release Chat
               </a>
@@ -309,8 +380,15 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
         </span>
       </p>
       <p class="text-caption mq-now">{progressLine(r())}</p>
-      <Show when={r().note || r().asked}>
+      <Show when={r().note || r().asked || offLine() || kindWords()}>
         <div class="rel-start-context" role="group" aria-label="What this release started with">
+          <Show when={offLine() || kindWords()}>
+            <div class="rel-saved-note">
+              <p class="text-eyebrow">Started with options</p>
+              <Show when={kindWords()}>{(k) => <p>{k()}</p>}</Show>
+              <Show when={offLine()}>{(o) => <p>{o()}</p>}</Show>
+            </div>
+          </Show>
           <Show when={r().note}>
             {(n) => (
               <div class="rel-saved-note">
@@ -331,18 +409,18 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
         </div>
       </Show>
       <Show when={open()}>
-        <p class="text-caption text-muted">Other landings wait in the queue until {name()} is published or abandoned.</p>
+        <p class="text-caption text-muted">Other landings wait in the queue until {name()} is published or cancelled.</p>
       </Show>
       <Show when={open() && v().quiet}>
         {(q) => (
           <Banner
             tone="warn"
             title={`No word from the release chat for ${q().minutes} min`}
-            body={`${v().target} stays frozen on it meanwhile. Open the chat to see where it is, or abandon the release.`}
+            body={`${v().target} stays frozen on it meanwhile. Open the chat to see where it is, or cancel the release.`}
             action={
               <Show when={r().thread}>
                 {(t) => (
-                  <a class="button button-sm" href={projectSessionHref(props.projectId, t().session)}>
+                  <a class="button button-sm" href={releaseChatHref(props.projectId, t())}>
                     Open Chat
                   </a>
                 )}
@@ -393,34 +471,23 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
                   {publishLabel(r())}
                 </button>
               </Show>
-              <button type="button" class="button button-sm button-destructive rel-abandon" aria-disabled={act.busy() ? "true" : undefined} onClick={() => setConfirm("abandon")}>
-                Abandon Release
+              <button type="button" class="button button-sm button-destructive rel-abandon" aria-disabled={act.busy() ? "true" : undefined} onClick={pressCancel}>
+                {act.busy() === "cancel" ? "Cancelling…" : "Cancel Release"}
               </button>
             </div>
           }
         >
           {(c) => (
-            <div class="deploy-confirm" role="group" aria-label={c() === "publish" ? `Confirm publishing ${name()}` : `Confirm abandoning ${name()}`}>
-              <Show
-                when={c() === "publish"}
-                fallback={
-                  <>
-                    <p class="orgs-line">{abandonConfirmLine(r())}</p>
-                    <label class="field">
-                      <span class="field-label">Why (kept with the release)</span>
-                      <input class="input" value={why()} onInput={(e) => setWhy(e.currentTarget.value)} />
-                    </label>
-                  </>
-                }
-              >
+            <div class="deploy-confirm" role="group" aria-label={c() === "publish" ? `Confirm publishing ${name()}` : `Confirm cancelling ${name()}`}>
+              <Show when={c() === "publish"} fallback={<p class="orgs-line">{cancelConfirmLine(r(), v().target)}</p>}>
                 <p class="orgs-line">{publishConfirmLine(r(), v())}</p>
               </Show>
               <div class="deploy-actions">
                 <Show
                   when={c() === "publish"}
                   fallback={
-                    <button type="button" class="button button-sm button-destructive" aria-disabled={act.busy() || !why().trim() ? "true" : undefined} title={why().trim() ? undefined : "Say why first."} onClick={() => why().trim() && void abandon()}>
-                      {act.busy() === "abandon" ? "Abandoning…" : "Abandon Release"}
+                    <button type="button" class="button button-sm button-destructive" aria-disabled={act.busy() ? "true" : undefined} onClick={() => !act.busy() && void cancel()}>
+                      {act.busy() === "cancel" ? "Cancelling…" : "Cancel and Revert"}
                     </button>
                   }
                 >
@@ -429,7 +496,7 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
                   </button>
                 </Show>
                 <button type="button" class="button button-sm button-ghost" onClick={() => setConfirm(null)}>
-                  Cancel
+                  {c() === "cancel" ? "Keep Release" : "Cancel"}
                 </button>
               </div>
             </div>

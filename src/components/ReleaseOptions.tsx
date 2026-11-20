@@ -126,7 +126,7 @@ function OptionGroup(props: { title: string; summary: string; note?: string; chi
   const id = `rel-opt-${props.title.toLowerCase().replace(/[^a-z]+/g, "-")}`;
   return (
     <div class="rel-opt-group" role="group" aria-label={props.title}>
-      <button type="button" class="rel-opt-head" aria-expanded={open() ? "true" : "false"} aria-controls={id} onClick={() => setOpen(!open())}>
+      <button type="button" class="rel-opt-head" aria-expanded={open() ? "true" : "false"} aria-controls={open() ? id : undefined} onClick={() => setOpen(!open())}>
         <Icon name={open() ? "chevron-down" : "chevron-right"} small />
         <span class="text-eyebrow">{props.title}</span>
         <span class="text-caption text-muted">{props.summary}</span>

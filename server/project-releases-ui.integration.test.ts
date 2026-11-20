@@ -620,6 +620,28 @@ describe("Release with Options", () => {
     });
   }
 
+  test("folding a group keeps what's off in it: Docs off, its group folded again, Start still sends it", async () => {
+    const o = await open(1280, TAB, view(OPTIONS_VIEW));
+    try {
+      await o.page.getByRole("button", { name: "More ways to start a release" }).click();
+      await o.page.getByRole("menuitem", { name: "Release with options" }).click();
+      const panel = o.page.getByRole("group", { name: "Release with options" });
+      const head = panel.getByRole("group", { name: "Release steps", exact: true }).getByRole("button", { name: /^Release steps/ });
+      assert.equal(await head.getAttribute("aria-controls"), null, "folded: it controls nothing on the page");
+      await head.click();
+      assert.equal(await panel.locator(`#${await head.getAttribute("aria-controls")}`).count(), 1, "open: aria-controls names its rows");
+      await panel.getByText("Docs pages").click();
+      await head.click();
+      assert.equal(await head.getAttribute("aria-expanded"), "false");
+      assert.match((await head.textContent()) ?? "", /2 of 3 on/, "the folded header still counts it off");
+      await panel.getByRole("button", { name: "Start Release (Custom)" }).click();
+      await called(o, "release.start");
+      assert.deepEqual(lastCall(o, "release.start").body, { project: ROOT_DIR, skipSteps: ["docs"] });
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
   test("left at Auto and Full it sends exactly a plain Start Release; a kind is sent only when picked; Cancel sends nothing; no manifest, no ▾", async () => {
     const o = await open(1280, TAB, view(OPTIONS_VIEW));
     try {

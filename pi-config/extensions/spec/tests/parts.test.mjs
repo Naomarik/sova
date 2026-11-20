@@ -60,12 +60,13 @@ test("a summary of the claims declared right after it, each required, its line t
   assert.equal(cli(whole(), ["read", "§app.gate/check"]).j.items[0].parts, undefined);
 });
 
-test("a list that is no summary splits nothing and warns nothing: fenced, in a comment, an ordinary requires list, a list of claims declared elsewhere", () => {
+test("a list that is no summary splits nothing and warns nothing: fenced, in a comment, an ordinary requires list, a list of claims declared elsewhere, the next claims in its own words", () => {
   const cases = {
     fenced: "```md\n" + SUMMARY + "```\n",
     comment: "<!--\n" + SUMMARY + "-->\n",
     "requires list": "Depends on:\n\n- §app.gate/unlock — the first visit asks for the token\n- §ot/other — logs the header\n",
     "claims elsewhere": "- §ot/other — Other\n- §ot/far — Far\n",
+    "the next claims in its own words": "It relies on two others:\n\n- §app.gate/check-rules — the token rules it applies\n- §app.gate/check-exceptions — what it lets through\n",
   };
   for (const [name, summary] of Object.entries(cases)) {
     const root = splitSpec({ summary });

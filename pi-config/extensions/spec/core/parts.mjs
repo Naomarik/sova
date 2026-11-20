@@ -25,8 +25,10 @@ export function summaryOf(decl) {
 const cache = new WeakMap();
 // A claim is a split topic when its prose ends in a summary of at least two parts, and each part is a claim declared
 // right after it in the same file, in the summary's order, as an H2, that it requires, whose heading the summary
-// line repeats word for word, and that is no topic of its own. A summary line naming the claim declared right after
-// it, in a list that breaks any of these, is a broken summary: the claim and those claims stay claims of their own.
+// line repeats word for word, and that is no topic of its own. A list meant as one breaking any of these is a broken
+// summary: one of its lines repeats the heading of a claim declared after it in the file, word for word, and a line
+// names the claim declared right after it. The claim and those claims stay claims of their own. A list whose lines
+// say something else of the claims they name (an ordinary list of what it relies on) is never a summary.
 // → {up: Map(part → topic), down: Map(topic → [parts]), broken: [{id, why}]}
 export function splitOf(ctx) {
   let s = cache.get(ctx);
@@ -41,11 +43,15 @@ export function splitOf(ctx) {
     // No line could be a summary's: nothing to mask.
     if (!rec || !d.text.includes("\n- §")) continue;
     const sum = summaryOf(d), first = after(id, 1)[0];
+    if (!first) continue;
+    // Meant as a summary: a line names the claim declared next, and some line repeats the heading of a later claim of
+    // this file it names. Neither: an ordinary list.
+    const later = new Set(after(id, Infinity));
+    const lines = sum.length ? sum : mask(d.text, { doubleTicks: false, heading: true }).split("\n").map((l) => SUMMARY_LINE.exec(l)).filter(Boolean).map((m) => ({ id: m[1], title: m[2] }));
+    const meant = lines.some((p) => p.id === first) && lines.some((p) => later.has(p.id) && titleOf(ctx.decls.get(p.id)) === p.title);
+    if (!meant) continue;
     if (!sum.length || first !== sum[0].id) {
-      // The claim declared next is listed, but not first in a list that ends the prose: out of order, or prose follows.
-      if (first && sum.some((p) => p.id === first)) broken.push({ id, why: `its summary does not list ${first}, the claim declared after it, first` });
-      else if (first && !sum.length && mask(d.text, { doubleTicks: false, heading: true }).split("\n").some((l) => SUMMARY_LINE.exec(l)?.[1] === first))
-        broken.push({ id, why: "its list of the claims after it is not the end of its prose" });
+      broken.push({ id, why: sum.length ? `its summary does not list ${first}, the claim declared after it, first` : "its list of the claims after it is not the end of its prose" });
       continue;
     }
     const next = after(id, sum.length), requires = new Set(rec.requires ?? []);

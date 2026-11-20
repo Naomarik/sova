@@ -1168,11 +1168,12 @@ describe("Release with Options: the operator's kind and what they turn off at St
       assert.deepEqual(await holdChecks(t), ["full", "site"]);
       assert.equal("options" in s.release!.release!, false);
       assert.doesNotMatch(t.starts.at(-1)!.text, /with options/);
-      // Empty lists are no options either.
+      // The panel's Auto kind with nothing turned off (no kind, empty lists) is a plain start too.
       assert.equal((await t.call("release.abandon", { confirm: true })).ok, true);
       const e = await t.call("release.start", { skipSteps: [], skipChecks: [] });
       assert.equal(e.ok, true, JSON.stringify(e.error));
       assert.equal("options" in e.release!.release!, false);
+      assert.doesNotMatch(t.starts.at(-1)!.text, /with options/);
       assert.deepEqual(await holdChecks(t), ["full", "site"]);
     } finally {
       await t.done();

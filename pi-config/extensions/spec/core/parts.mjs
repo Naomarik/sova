@@ -26,9 +26,11 @@ const cache = new WeakMap();
 // A claim is a split topic when its prose ends in a summary of at least two parts, and each part is a claim declared
 // right after it in the same file, in the summary's order, as an H2, that it requires, whose heading the summary
 // line repeats word for word, and that is no topic of its own. A list meant as one breaking any of these is a broken
-// summary: one of its lines repeats the heading of a claim declared after it in the file, word for word, and a line
-// names the claim declared right after it. The claim and those claims stay claims of their own. A list whose lines
-// say something else of the claims they name (an ordinary list of what it relies on) is never a summary.
+// summary: a line names the claim declared right after it, and either one of its lines repeats the heading of a claim
+// declared after it in the file, word for word, or the list that ends its prose opens with at least two lines naming
+// the claims declared right after it, in order (a summary whose parts were all renamed). The claim and those claims
+// stay claims of their own. Any other list (what it relies on, claims elsewhere, out of order) is never a summary;
+// a list of what it relies on that names exactly the next claims in order reads as a summary and warns.
 // → {up: Map(part → topic), down: Map(topic → [parts]), broken: [{id, why}]}
 export function splitOf(ctx) {
   let s = cache.get(ctx);
@@ -48,7 +50,8 @@ export function splitOf(ctx) {
     // this file it names. Neither: an ordinary list.
     const later = new Set(after(id, Infinity));
     const lines = sum.length ? sum : mask(d.text, { doubleTicks: false, heading: true }).split("\n").map((l) => SUMMARY_LINE.exec(l)).filter(Boolean).map((m) => ({ id: m[1], title: m[2] }));
-    const meant = lines.some((p) => p.id === first) && lines.some((p) => later.has(p.id) && titleOf(ctx.decls.get(p.id)) === p.title);
+    const next2 = after(id, 2), inOrder = sum.length >= 2 && next2.length === 2 && sum[0].id === next2[0] && sum[1].id === next2[1];
+    const meant = inOrder || (lines.some((p) => p.id === first) && lines.some((p) => later.has(p.id) && titleOf(ctx.decls.get(p.id)) === p.title));
     if (!meant) continue;
     if (!sum.length || first !== sum[0].id) {
       broken.push({ id, why: sum.length ? `its summary does not list ${first}, the claim declared after it, first` : "its list of the claims after it is not the end of its prose" });

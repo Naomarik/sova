@@ -60,13 +60,14 @@ test("a summary of the claims declared right after it, each required, its line t
   assert.equal(cli(whole(), ["read", "§app.gate/check"]).j.items[0].parts, undefined);
 });
 
-test("a list that is no summary splits nothing and warns nothing: fenced, in a comment, an ordinary requires list, a list of claims declared elsewhere, the next claims in its own words", () => {
+test("a list that is no summary splits nothing and warns nothing: fenced, in a comment, an ordinary requires list, claims declared elsewhere, the next claims out of order or mixed with others in its own words", () => {
   const cases = {
     fenced: "```md\n" + SUMMARY + "```\n",
     comment: "<!--\n" + SUMMARY + "-->\n",
     "requires list": "Depends on:\n\n- §app.gate/unlock — the first visit asks for the token\n- §ot/other — logs the header\n",
     "claims elsewhere": "- §ot/other — Other\n- §ot/far — Far\n",
-    "the next claims in its own words": "It relies on two others:\n\n- §app.gate/check-rules — the token rules it applies\n- §app.gate/check-exceptions — what it lets through\n",
+    "the next claim and one elsewhere, in its own words": "It relies on two others:\n\n- §app.gate/check-rules — the token rules it applies\n- §ot/other — what logs the header\n",
+    "the next claims out of order, in its own words": "It relies on two others:\n\n- §app.gate/check-exceptions — what it lets through\n- §app.gate/check-rules — the token rules it applies\n",
   };
   for (const [name, summary] of Object.entries(cases)) {
     const root = splitSpec({ summary });
@@ -84,6 +85,7 @@ test("a summary that names the claim declared next but breaks the pattern warns,
     [{ records: { "§app.gate/check": { kind: "behavior", requires: [PARTS[0]], code: ["src/gate.ts"] } } }, /it does not require §app\.gate\/check-exceptions/],
     [{ summary: SUMMARY + "- §app.gate/unlock — The first visit\n", records: { "§app.gate/check": { kind: "behavior", requires: [...PARTS, "§app.gate/unlock"] } } }, null],
     [{ rest: "\nThe parts above cover it.\n" }, /its list of the claims after it is not the end of its prose/],
+    [{ summary: "- §app.gate/check-rules — Rules\n- §app.gate/check-exceptions — Exceptions\n" }, /its line for §app\.gate\/check-rules says "Rules", not the part's heading "The token and the cross-site rules"/],
   ];
   for (const [o, why] of cases) {
     const root = splitSpec(o);
@@ -95,6 +97,9 @@ test("a summary that names the claim declared next but breaks the pattern warns,
     assert.equal(checkOf(root).counts.split, undefined);
   }
   assert.match(broken(splitSpec({ summary: swap }))[0], /its summary does not list §app\.gate\/check-rules, the claim declared after it, first/, "out of order");
+  // The known limit: a list of what it relies on that names exactly the claims declared next, in order, is a summary
+  // whose parts were all renamed as far as the rule can tell.
+  assert.match(broken(splitSpec({ summary: "It relies on two others:\n\n- §app.gate/check-rules — the token rules it applies\n- §app.gate/check-exceptions — what it lets through\n" }))[0] ?? "", /says "the token rules it applies", not the part's heading/);
 });
 
 test("a part that is a split topic itself: the outer summary is broken, the inner topic stands", () => {

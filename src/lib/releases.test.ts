@@ -17,7 +17,6 @@ import {
   releaseAt,
   releaseChatHref,
   releaseChip,
-  releaseCommitLanded,
   releaseOfTarget,
   shownRecord,
   sinceLine,
@@ -117,16 +116,9 @@ test("Withdraw moves each channel back to the newest release before it that isn'
   assert.match(withdrawConfirmLine(item("v0.8.0"), null, false), /^No channel points at it, so nothing moves\./);
 });
 
-test("Cancel Release asks first only once the release commit landed: a commit of its own whose gating checks passed", () => {
-  const c = "c".repeat(40);
-  const checked = (state: ReleaseStep["state"]) => record().steps.map((s) => (s.id === "checks" ? { ...s, state } : s));
-  // Every edge but the landed one cancels at once.
-  assert.equal(releaseCommitLanded(record()), false, "no release commit yet");
-  assert.equal(releaseCommitLanded(record({ commit: c, entry: "mq_1", steps: checked("running") })), false, "queued, checks still running");
-  assert.equal(releaseCommitLanded(record({ commit: c, entry: "mq_1", steps: checked("failed") })), false, "its checks failed: it never landed");
-  assert.equal(releaseCommitLanded(record({ commit: "b".repeat(40), steps: checked("done") })), false, "tag-only: the commit is the base, nothing to revert");
-  assert.equal(releaseCommitLanded(record({ commit: c, entry: "mq_1", steps: checked("done") })), true);
-  assert.match(cancelConfirmLine(record({ commit: c }), "master"), /^Cancelling reverts the release commit ccccccc, which already landed on master, as a landing of its own\. The release chat stops and nothing is published/);
+test("Cancel's confirm names the commit it reverts, and still reads without one", () => {
+  assert.match(cancelConfirmLine("c".repeat(40), "master"), /^Cancelling reverts the release commit ccccccc, which already landed on master, as a landing of its own\. The release chat stops and nothing is published/);
+  assert.match(cancelConfirmLine(null, "master"), /^Cancelling reverts the release commit, which already landed on master/);
 });
 
 test("Start Release says when it saves the open note first, and plain otherwise", () => {

@@ -110,7 +110,7 @@ interface Opened {
   set(v: ReleaseView): void;
 }
 
-async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown>; onboard409?: string; setup?: SetupStatus; setup409?: string; /** A verb's effect on the view release.status answers next. */ react?: (verb: string, body: Record<string, unknown>, v: ReleaseView) => ReleaseView | undefined } = {}): Promise<Opened> {
+async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown>; onboard409?: string; setup?: SetupStatus; setup409?: string; /** A verb's effect on the view release.status answers next. */ react?: (verb: string, body: Record<string, unknown>, v: ReleaseView) => ReleaseView | undefined; /** A release verb's refusal ({code, message} and its report), else it goes through. */ refuse?: (verb: string, body: Record<string, unknown>) => { code: string; message: string; release?: Record<string, unknown> } | undefined } = {}): Promise<Opened> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
@@ -127,6 +127,8 @@ async function open(width: number, hash: string, first: ReleaseView, o: { runtim
     const verb = /^\/api\/project-services\/((?:release|deploy)\.[a-z-]+)$/.exec(p)?.[1];
     if (verb) {
       calls.push({ verb, body: body() });
+      const no = o.refuse?.(verb, body());
+      if (no) return route.fulfill(json({ ...ok(verb, no.release ? { release: no.release } : {}), ok: false, changed: false, error: { code: no.code, message: no.message } }, 409));
       current = o.react?.(verb, body(), current) ?? current;
       if (verb === "release.status") return route.fulfill(json(ok(verb, { release: { view: current } })));
       if (verb.startsWith("release.")) return route.fulfill(json(ok(verb, { release: { view: current } })));
@@ -274,37 +276,41 @@ describe("the Releases tab", () => {
         assert.equal(await card.getByRole("link", { name: "Open Release Chat" }).getAttribute("href"), "#/sid/s-rel");
         if (width < 768) await noSideScroll(o.page);
         await shot(o.page, `in-progress-${width}`);
-        // Cancel Release: the release commit hasn't landed (its checks wait), so one press cancels, with no reason asked.
+        // Cancel Release: the first press asks no confirm and no reason; the server cancels (it hasn't landed).
         assert.equal(await card.getByRole("button", { name: "Abandon Release" }).count(), 0, "Cancel Release replaces Abandon Release");
         await card.getByRole("button", { name: "Cancel Release" }).click();
         await called(o, "release.abandon");
-        assert.deepEqual(lastCall(o, "release.abandon").body, { project: ROOT_DIR, release: "rl_abc123", confirm: true });
-        assert.equal(await o.page.getByRole("group", { name: /^Confirm cancelling/ }).count(), 0, "no confirm before the commit landed");
+        assert.deepEqual(lastCall(o, "release.abandon").body, { project: ROOT_DIR, release: "rl_abc123" });
+        assert.equal(await o.page.getByRole("group", { name: /^Confirm cancelling/ }).count(), 0, "the server cancelled: no confirm");
       } finally {
         await o.ctx.close();
       }
     });
   }
 
-  test("a release whose commit landed: Cancel Release asks once, saying it reverts the commit; the chat opens by its file", async () => {
-    const steps = record().steps.map((s) => (s.phase === "prepare" || s.id === "checks" ? { ...s, state: "done" as const } : s));
-    const r = record({ state: "ready", steps, thread: { session: "s-rel", path: "/w/sessions/rel.jsonl" } });
-    const o = await open(1280, TAB, view({ open: r, gates: { checksPassed: true, stepsDone: false, notes: true, why: ["steps not done: try-live"] } }));
+  test("Cancel Release on a landed commit: the server answers needs-confirm, and the one confirm names the commit it reverts", async () => {
+    // The polled view still shows the checks waiting: the server's answer at the press decides, not the view.
+    const r = record({ thread: { session: "s-rel", path: "/w/sessions/rel.jsonl" } });
+    const landed = record({ commit: sha("d") });
+    const refuse = (verb: string, b: Record<string, unknown>) =>
+      verb === "release.abandon" && b.confirm !== true ? { code: "needs-confirm", message: "release.abandon needs confirm: true (it reverts the release commit)", release: { release: landed } } : undefined;
+    const o = await open(1280, TAB, view({ open: r }), { refuse });
     try {
       const card = o.page.getByRole("group", { name: "Release in progress" });
       assert.equal(await card.getByRole("link", { name: "Open Release Chat" }).getAttribute("href"), `#/s/${encodeURIComponent("/w/sessions/rel.jsonl")}`);
       await card.getByRole("button", { name: "Cancel Release" }).click();
       const ask = o.page.getByRole("group", { name: "Confirm cancelling v0.10.0" });
-      await ask.getByText(/^Cancelling reverts the release commit ccccccc, which already landed on master, as a landing of its own\./).waitFor();
+      await ask.getByText(/^Cancelling reverts the release commit ddddddd, which already landed on master, as a landing of its own\./).waitFor();
+      assert.deepEqual(lastCall(o, "release.abandon").body, { project: ROOT_DIR, release: "rl_abc123" }, "the first press sends no confirm");
       assert.equal(await ask.getByRole("textbox").count(), 0, "no reason asked");
-      assert.equal(o.calls.some((c) => c.verb === "release.abandon"), false, "nothing cancelled before the confirm");
+      assert.equal(await card.getByRole("alert").count(), 0, "needs-confirm is a question, not a refusal");
       await shot(o.page, "cancel-landed");
       await ask.getByRole("button", { name: "Keep Release" }).click();
       await ask.waitFor({ state: "detached" });
-      assert.equal(o.calls.some((c) => c.verb === "release.abandon"), false, "Keep Release cancels nothing");
+      assert.equal(o.calls.filter((c) => c.verb === "release.abandon").length, 1, "Keep Release sends nothing");
       await card.getByRole("button", { name: "Cancel Release" }).click();
       await ask.getByRole("button", { name: "Cancel and Revert" }).click();
-      await called(o, "release.abandon");
+      await until("the confirmed cancel", () => o.calls.filter((c) => c.verb === "release.abandon").length === 3);
       assert.deepEqual(lastCall(o, "release.abandon").body, { project: ROOT_DIR, release: "rl_abc123", confirm: true });
     } finally {
       await o.ctx.close();

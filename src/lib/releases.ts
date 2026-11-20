@@ -124,14 +124,9 @@ export function withdrawConfirmLine(item: Pick<ReleaseHistoryItem, "tag" | "chan
   return `${moves} ${item.tag} itself stays, marked withdrawn with your reason; copies running it are told so. Deploy targets keep running it until you roll them back on the Deploy card.`;
 }
 
-/** The release commit is on the target: its gating checks passed, so the queue landed it (a tag-only release makes
-    none). Cancel Release reverts it then, so only then does Cancel ask first. */
-export const releaseCommitLanded = (r: Pick<ReleaseRecord, "commit" | "base" | "steps">): boolean =>
-  !!r.commit && r.commit !== r.base && r.steps.some((s) => s.id === "checks" && s.state === "done");
-
-/** Cancel Release's one confirm, once the release commit landed: what it reverts, then what stays. */
-export function cancelConfirmLine(r: Pick<ReleaseRecord, "commit">, target: string): string {
-  return `Cancelling reverts the release commit ${shortSha(r.commit)}, which already landed on ${target}, as a landing of its own. The release chat stops and nothing is published; landings waiting in the queue go ahead.`;
+/** Cancel Release's one confirm, asked by the server once the release commit landed: what it reverts, then what stays. */
+export function cancelConfirmLine(commit: string | null | undefined, target: string): string {
+  return `Cancelling reverts the release commit${commit ? ` ${shortSha(commit)}` : ""}, which already landed on ${target}, as a landing of its own. The release chat stops and nothing is published; landings waiting in the queue go ahead.`;
 }
 
 /** Start Release's words: with the note editor open on a changed draft, Start saves it first and says so. */

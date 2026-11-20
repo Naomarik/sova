@@ -20,7 +20,6 @@ import {
   RELEASE_CHIP,
   releaseChatHref,
   releaseChip,
-  releaseCommitLanded,
   releaseName,
   shortSha,
   shownRecord,
@@ -64,16 +63,19 @@ const chip = (c: ChipWord, title?: string) => (
   </Chip>
 );
 
-/** One action with its pending state; a refusal shows where it was pressed and is announced. */
+/** One action with its pending state; a refusal shows where it was pressed and is announced, unless `handled` takes it
+    (an answer the caller acts on itself, such as Cancel's needs-confirm). */
 function useAct() {
   const [busy, setBusy] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
-  const run = async (key: string, call: () => Promise<{ ok: boolean; error?: { message: string } }>, done: string): Promise<boolean> => {
+  const run = async <R extends { ok: boolean; error?: { code?: string; message: string } }>(key: string, call: () => Promise<R>, done: string, handled?: (r: R) => boolean): Promise<boolean> => {
     if (busy()) return false;
     setBusy(key);
     setError(null);
     try {
-      const no = releaseRefusal(await call());
+      const res = await call();
+      if (!res.ok && handled?.(res)) return false;
+      const no = releaseRefusal(res);
       if (no) {
         setError(no);
         announce(no);
@@ -338,15 +340,22 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
   const publish = async () => {
     if (await act.run("publish", () => runReleaseVerb(v().project, "release.publish", { release: r().id, confirm: true }), `Publishing ${name()}.`)) setConfirm(null);
   };
-  // Cancel Release: one press while the release commit hasn't landed; once it has, one confirm (cancelling reverts it).
-  // No reason asked: the server keeps its own.
-  const cancel = async () => {
-    if (await act.run("cancel", () => runReleaseVerb(v().project, "release.abandon", { release: r().id, confirm: true }), `Cancelled ${name()}. Landings go ahead.`)) setConfirm(null);
-  };
-  const pressCancel = () => {
-    if (act.busy()) return;
-    if (releaseCommitLanded(r())) setConfirm("cancel");
-    else void cancel();
+  // Cancel Release: the server decides. The first press sends no confirm and cancels unless the release commit landed;
+  // then it answers needs-confirm and the one confirm shows, naming the commit it reverts. No reason asked.
+  const [revert, setRevert] = createSignal<string | null>(null);
+  const cancel = async (confirmed: boolean) => {
+    const ok = await act.run(
+      "cancel",
+      () => runReleaseVerb(v().project, "release.abandon", { release: r().id, ...(confirmed ? { confirm: true } : {}) }),
+      `Cancelled ${name()}. Landings go ahead.`,
+      (res) => {
+        if (confirmed || res.error?.code !== "needs-confirm") return false;
+        setRevert(res.release?.release?.commit ?? r().commit);
+        setConfirm("cancel");
+        return true;
+      },
+    );
+    if (ok) setConfirm(null);
   };
   const offLine = () => turnedOffLine(r());
   const kindWords = () => kindLine(r());
@@ -471,7 +480,7 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
                   {publishLabel(r())}
                 </button>
               </Show>
-              <button type="button" class="button button-sm button-destructive rel-abandon" aria-disabled={act.busy() ? "true" : undefined} onClick={pressCancel}>
+              <button type="button" class="button button-sm button-destructive rel-abandon" aria-disabled={act.busy() ? "true" : undefined} onClick={() => !act.busy() && void cancel(false)}>
                 {act.busy() === "cancel" ? "Cancelling…" : "Cancel Release"}
               </button>
             </div>
@@ -479,14 +488,14 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
         >
           {(c) => (
             <div class="deploy-confirm" role="group" aria-label={c() === "publish" ? `Confirm publishing ${name()}` : `Confirm cancelling ${name()}`}>
-              <Show when={c() === "publish"} fallback={<p class="orgs-line">{cancelConfirmLine(r(), v().target)}</p>}>
+              <Show when={c() === "publish"} fallback={<p class="orgs-line">{cancelConfirmLine(revert(), v().target)}</p>}>
                 <p class="orgs-line">{publishConfirmLine(r(), v())}</p>
               </Show>
               <div class="deploy-actions">
                 <Show
                   when={c() === "publish"}
                   fallback={
-                    <button type="button" class="button button-sm button-destructive" aria-disabled={act.busy() ? "true" : undefined} onClick={() => !act.busy() && void cancel()}>
+                    <button type="button" class="button button-sm button-destructive" aria-disabled={act.busy() ? "true" : undefined} onClick={() => !act.busy() && void cancel(true)}>
                       {act.busy() === "cancel" ? "Cancelling…" : "Cancel and Revert"}
                     </button>
                   }

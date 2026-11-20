@@ -10,7 +10,7 @@ import { projectKey } from "../merge-queue/store";
 import { readOverride, writeOverride } from "../merge-queue/strategy";
 import { DEF, makeKit, makeRepo, sh, tryGit, until, untilAborted, type Kit } from "../merge-queue/testing/queue-kit";
 import type { Caller } from "./engine";
-import { authorizeRelease, FROM_CHAT, RELEASE_NOTE_LABEL, REPORTS_FROM_THREAD, ReleaseFailure, Releaser, SESSION_NEVER } from "./release";
+import { ABANDON_TAIL, authorizeRelease, FROM_CHAT, RELEASE_NOTE_LABEL, REPORTS_FROM_THREAD, ReleaseFailure, Releaser, SESSION_NEVER } from "./release";
 
 const RELEASE: ReleaseDecl = {
   playbook: ".sova/playbooks/release",
@@ -48,6 +48,7 @@ function releaseKit(o: { settings?: Partial<ReleaseDecl>; manifest?: unknown; or
   const wakes: { path: string; text: string }[] = [];
   const titles: string[] = [];
   const starts: { checkout: string; text: string }[] = [];
+  const stops: string[] = [];
   let clock = Date.now();
   let failNext: string | null = null;
   const r = new Releaser({
@@ -70,6 +71,9 @@ function releaseKit(o: { settings?: Partial<ReleaseDecl>; manifest?: unknown; or
         return { ok: true };
       },
       retitle: (_s, t) => void titles.push(t),
+      async stop(path) {
+        stops.push(path);
+      },
     },
     now: () => clock,
     log: () => {},
@@ -77,7 +81,7 @@ function releaseKit(o: { settings?: Partial<ReleaseDecl>; manifest?: unknown; or
   const op: Caller = { kind: "operator" };
   const chat: Caller = { kind: "session", id: "s-release", root: repo.root, own: [] };
   const call = (verb: string, body: Record<string, unknown>, caller: Caller = op) => r.run(verb, { project: repo.root, ...body }, caller);
-  return { repo, k, r, wakes, titles, starts, op, chat, call, def, tick: (ms: number) => (clock += ms), failNextStart: (why: string) => void (failNext = why), done: () => k.done() };
+  return { repo, k, r, wakes, titles, starts, stops, op, chat, call, def, tick: (ms: number) => (clock += ms), failNextStart: (why: string) => void (failNext = why), done: () => k.done() };
 }
 
 /** Start a release and report its prepare steps; the release commit bumps VERSION in the release worktree. */
@@ -575,7 +579,8 @@ describe("abandon and withdraw (t23, a8)", () => {
       assert.equal(a.release!.release!.abandoned!.revert, null);
       assert.equal((await t.k.q()).releaseHold(), null);
       assert.equal(t.r.openRecord(t.repo.root), null);
-      void s;
+      assert.deepEqual(t.stops, [s.release!.release!.thread!.path], "Cancel Release stops the release chat's turn");
+      assert.match(t.wakes.at(-1)!.text, /Your turn was stopped/);
     } finally {
       await t.done();
     }
@@ -1002,7 +1007,7 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       await u.call("release.start", {});
       await u.call("release.abandon", { confirm: true, why: "no" });
       const w = u.wakes.find((x) => /abandoned/.test(x.text))!;
-      assert.equal(w.text, "The operator abandoned this release: no. Stop; do nothing more for it.");
+      assert.equal(w.text, `The operator abandoned this release: no. ${ABANDON_TAIL}`);
     } finally {
       await u.done();
     }
@@ -1115,6 +1120,139 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       assert.equal(e.landed?.via, undefined, "landed here, not on a host");
       assert.equal((await t.k.entry(eb.id)).state, "queued");
       assert.ok(!t.k.run.inputs.some((i) => i.commit === b.head), "B never ran while held");
+    } finally {
+      await t.done();
+    }
+  });
+});
+
+describe("Release with Options: the operator's kind and what they turn off at Start", () => {
+  const OPT_MANIFEST = {
+    v: 1,
+    steps: [
+      { id: "version", label: "Pick the version", phase: "prepare" },
+      { id: "notes", label: "Draft the notes", phase: "prepare", skippable: true, about: "Full notes", minutes: 3 },
+      { id: "docs", label: "Update the docs", phase: "prepare", skippable: true },
+      { id: "commit", label: "Make the release commit", phase: "prepare" },
+      { id: "try-live", label: "Try it live", phase: "check", held: true, skippable: true, minutes: 5 },
+      { id: "page", label: "Release page", phase: "after" },
+    ],
+    checks: { full: { about: "Everything", minutes: 8.5 }, unit: { minutes: 1.4 } },
+  };
+  const TWO_CHECKS: Partial<ReleaseDecl> = {
+    checks: [
+      { id: "full", label: "Full suite", run: ["true"], timeout: 60, rerun: false, requires: [] },
+      { id: "site", label: "Site build", run: ["true"], timeout: 60, rerun: false, requires: [] },
+    ],
+    checkIds: ["full", "site"],
+  };
+  const holdChecks = async (t: ReturnType<typeof releaseKit>) => ((await t.k.q()).releaseHold()?.checks ?? []).map((c) => c.id);
+
+  test("a plain start is unchanged: every release check frozen with it, no options on the record or in the first message", async () => {
+    const t = releaseKit({ manifest: OPT_MANIFEST, settings: TWO_CHECKS });
+    try {
+      const s = await t.call("release.start", {});
+      assert.equal(s.ok, true, JSON.stringify(s.error));
+      assert.deepEqual(await holdChecks(t), ["full", "site"]);
+      assert.equal("options" in s.release!.release!, false);
+      assert.doesNotMatch(t.starts.at(-1)!.text, /with options/);
+      // Empty lists are no options either.
+      assert.equal((await t.call("release.abandon", { confirm: true })).ok, true);
+      const e = await t.call("release.start", { skipSteps: [], skipChecks: [] });
+      assert.equal(e.ok, true, JSON.stringify(e.error));
+      assert.equal("options" in e.release!.release!, false);
+      assert.deepEqual(await holdChecks(t), ["full", "site"]);
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("kind, turned-off steps and checks: the hold freezes the release checks minus those, the record keeps them with labels, the chat is told", async () => {
+    const t = releaseKit({ manifest: OPT_MANIFEST, settings: TWO_CHECKS });
+    try {
+      const s = await t.call("release.start", { kind: "major", skipSteps: ["docs", "try-live"], skipChecks: ["full"] });
+      assert.equal(s.ok, true, JSON.stringify(s.error));
+      assert.deepEqual(await holdChecks(t), ["site"], "only the release checks left on");
+      const rec = s.release!.release!;
+      assert.deepEqual(rec.options, {
+        kind: "major",
+        skipSteps: ["docs", "try-live"],
+        skipChecks: ["full"],
+        off: [
+          { what: "step", id: "docs", label: "Update the docs" },
+          { what: "step", id: "try-live", label: "Try it live" },
+          { what: "check", id: "full", label: "Full suite" },
+        ],
+      });
+      assert.deepEqual(t.r.record(t.repo.root, rec.id)!.options, rec.options, "persisted");
+      const first = t.starts.at(-1)!.text;
+      assert.match(first, /The operator started this release with options/);
+      assert.match(first, /- Kind: major\./);
+      assert.match(first, /- Turned off: docs \(Update the docs\), try-live \(Try it live\)\. Don't run them: report each `skipped`/);
+      assert.match(first, /never held/);
+      assert.match(first, /- Release checks turned off: full \(Full suite\)/);
+      // The turned-off held step reported skipped passes; Publish's gates count it as done.
+      const step = await t.call("release.step", { step: "docs", state: "skipped", summary: "Turned off at Start" }, t.chat);
+      assert.equal(step.ok, true, JSON.stringify(step.error));
+      // Only the kind: options with nothing off.
+      assert.equal((await t.call("release.abandon", { confirm: true })).ok, true);
+      const k2 = await t.call("release.start", { kind: "patch" });
+      assert.deepEqual(k2.release!.release!.options, { kind: "patch", skipSteps: [], skipChecks: [], off: [] });
+      assert.deepEqual(await holdChecks(t), ["full", "site"]);
+      assert.doesNotMatch(t.starts.at(-1)!.text, /Turned off/);
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("refused before anything freezes: an unknown or always-run step, an unknown check, a bad kind, a kind on a non-semver project, any option from an agent", async () => {
+    const t = releaseKit({ manifest: OPT_MANIFEST, settings: TWO_CHECKS });
+    try {
+      const bad: [Record<string, unknown>, string, RegExp][] = [
+        [{ skipSteps: ["nope"] }, "invalid-request", /nope isn't a step/],
+        [{ skipSteps: ["commit"] }, "invalid-request", /commit \(Make the release commit\) can't be turned off: only notes, docs, try-live can/],
+        [{ skipSteps: ["page"] }, "invalid-request", /can't be turned off/],
+        [{ skipChecks: ["typecheck"] }, "invalid-request", /typecheck isn't one of this project's release checks \(full, site\); landing checks always run/],
+        [{ kind: "huge" }, "invalid-request", /kind is one of patch, minor, major/],
+        [{ skipSteps: "docs" }, "invalid-request", /a list of ids/],
+      ];
+      for (const [body, code, why] of bad) {
+        const r = await t.call("release.start", body);
+        assert.equal(r.error?.code, code, JSON.stringify(body));
+        assert.match(r.error!.message, why, JSON.stringify(body));
+      }
+      const agent = await t.r.run("release.start", { project: t.repo.root, skipChecks: ["full"] }, { kind: "assistant", id: "pa", root: t.repo.root, releaseAct: true } as Caller);
+      assert.equal(agent.error?.code, "forbidden");
+      assert.match(agent.error!.message, /the operator's choices at Start/);
+      assert.equal(t.r.openRecord(t.repo.root), null, "nothing started");
+      assert.equal((await t.k.q()).releaseHold(), null, "nothing frozen");
+      assert.equal(t.starts.length, 0);
+      // The agent's plain start still runs the full release.
+      assert.equal((await t.r.run("release.start", { project: t.repo.root }, { kind: "assistant", id: "pa", root: t.repo.root, releaseAct: true } as Caller)).ok, true);
+    } finally {
+      await t.done();
+    }
+    const c = releaseKit({ manifest: OPT_MANIFEST, settings: { scheme: "calver" } });
+    try {
+      const r = await c.call("release.start", { kind: "minor" });
+      assert.equal(r.error?.code, "invalid-request");
+      assert.match(r.error!.message, /scheme is calver/);
+    } finally {
+      await c.done();
+    }
+  });
+
+  test("the view carries what the panel lists: the manifest with its hints, the landing checks with minutes, the next version of each kind", async () => {
+    const t = releaseKit({ manifest: OPT_MANIFEST, settings: TWO_CHECKS });
+    try {
+      const v = (await t.call("release.status", {})).release!.view!;
+      assert.deepEqual(v.manifest!.steps.filter((x) => x.skippable).map((x) => x.id), ["notes", "docs", "try-live"]);
+      assert.deepEqual(v.manifest!.checks, OPT_MANIFEST.checks);
+      const merge = (t.def.merge as { checks?: { id: string; label: string; optional?: true }[] }).checks ?? [];
+      assert.deepEqual(v.landingChecks.map((c) => c.id), merge.filter((c) => !c.optional).map((c) => c.id));
+      assert.equal(v.landingChecks.find((c) => c.id === "unit")?.minutes, 1.4, "a landing check's minutes come from the manifest's hints");
+      assert.equal("minutes" in v.landingChecks.find((c) => c.id === "statecharts")!, false);
+      assert.deepEqual(v.next, { patch: "0.1.1", minor: "0.2.0", major: "1.0.0" }, "from v0.1.0");
     } finally {
       await t.done();
     }

@@ -20,6 +20,9 @@ import type { CardInfo } from "./transcript-cards";
 import type { ChatProfileState } from "./profile-switch";
 export type { ChatProfileState, ProfileSwitchResult, ProfileSwitchTarget } from "./profile-switch";
 export type { WakeInfo };
+/** release.start's body beyond `project` (Release with Options, the operator's alone; none: a plain start), and what
+    the record keeps of it (`ReleaseRecord.options`, the card's "Turned off: …"). Defined with the other release shapes. */
+export type { ReleaseKind, ReleaseOptions, ReleaseStartOptions } from "./release";
 
 /** One running background job, as `GET /api/sessions/jobs?path=` lists it (§app.background-jobs/pane):
     the chat's own and its workers'. The server's `JobView` (server/background-jobs.ts). */

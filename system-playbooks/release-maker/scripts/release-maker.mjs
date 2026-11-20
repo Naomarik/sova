@@ -113,18 +113,23 @@ export function starterPlaybook({ tagOnly = false, bump = [], tag = "v${version}
   return lines.join("\n");
 }
 
-const MANIFEST_ORDER = { top: ["v", "steps"], step: ["id", "label", "phase", "held", "artifact"] };
+const MANIFEST_ORDER = { top: ["v", "steps", "checks"], step: ["id", "label", "phase", "held", "artifact", "skippable", "about", "minutes"], hint: ["about", "minutes"] };
 const sortKeys = (o, order) => Object.fromEntries([...order.filter((k) => k in o).map((k) => [k, o[k]]), ...Object.keys(o).filter((k) => !order.includes(k)).map((k) => [k, o[k]])]);
-/** release.json's canonical text: keys ordered, one step per line. Throws on bad JSON. */
+/** release.json's canonical text: keys ordered, one step per line, then the Release with Options panel's check hints
+    (`checks`), one per line. Throws on bad JSON. */
 export function formatManifest(text) {
   const m = JSON.parse(text);
   if (!isObj(m)) return `${JSON.stringify(m)}\n`;
   const o = sortKeys(m, MANIFEST_ORDER.top);
+  const line = (v) => JSON.stringify(v).replace(/,"/g, ', "').replace(/":/g, '": ');
   const steps = Array.isArray(o.steps) ? o.steps.map((s) => (isObj(s) ? sortKeys(s, MANIFEST_ORDER.step) : s)) : o.steps;
-  const rest = Object.entries(o).filter(([k]) => k !== "steps");
+  const rest = Object.entries(o).filter(([k]) => k !== "steps" && k !== "checks");
   const head = rest.map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)}`);
-  const body = Array.isArray(steps) ? `  "steps": [${steps.length ? `\n${steps.map((s) => `    ${JSON.stringify(s).replace(/,"/g, ', "').replace(/":/g, '": ')}`).join(",\n")}\n  ` : ""}]` : `  "steps": ${JSON.stringify(steps)}`;
-  return `{\n${[...head, ...(Object.prototype.hasOwnProperty.call(o, "steps") ? [body] : [])].join(",\n")}\n}\n`;
+  const body = Array.isArray(steps) ? `  "steps": [${steps.length ? `\n${steps.map((s) => `    ${line(s)}`).join(",\n")}\n  ` : ""}]` : `  "steps": ${JSON.stringify(steps)}`;
+  const hints = isObj(o.checks) ? Object.entries(o.checks).map(([id, h]) => `    ${JSON.stringify(id)}: ${line(isObj(h) ? sortKeys(h, MANIFEST_ORDER.hint) : h)}`) : null;
+  const checks = !("checks" in o) ? [] : hints ? [`  "checks": {${hints.length ? `\n${hints.join(",\n")}\n  ` : ""}}`] : [`  "checks": ${JSON.stringify(o.checks)}`];
+  // Unknown keys stay where they were (before steps); `checks` follows the steps.
+  return `{\n${[...head, ...(Object.prototype.hasOwnProperty.call(o, "steps") ? [body] : []), ...checks].join(",\n")}\n}\n`;
 }
 
 /** Write the starter into `root`. Refuses (returns problems, writes nothing) when any part exists. */

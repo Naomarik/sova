@@ -116,6 +116,11 @@ describe("the model", () => {
     const { readdirSync } = await import("node:fs");
     const dir = join(import.meta.dirname, "..", "profiles", "system");
     assert.deepEqual(readdirSync(dir).sort(), system.map((id) => `${id}.json`), "exactly these system profiles");
+    // The chats Sova starts for its queue and its releases run in a plain mode of their own, never the user's everyday modes.
+    for (const id of ["merge-thread", "release-thread"]) {
+      const p = await findProfile({ source: "sova", id }, null);
+      assert.deepEqual([p?.mode, p?.minorModes], ["normal", []], id);
+    }
   });
 
   test("a shipped profile file is listed after Default, in its normal form", async () => {

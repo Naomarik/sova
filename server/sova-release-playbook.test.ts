@@ -211,3 +211,24 @@ test("no release step or release check is about migrations: nothing stops a rele
   assert.ok(!sr.SUBCOMMANDS.some((x: string) => /migration/.test(x)), "the driver has no migrations subcommand");
   assert.doesNotMatch(readFileSync(join(ROOT, ".sova/playbook-config/release/PLAYBOOK.md"), "utf8"), /migration/i, "the release playbook never mentions migrations");
 });
+
+test("Release with Options in the playbooks: the kind picks the number (major is 1.0.0), turned-off steps are reported skipped, landings freeze at Start, the chat says what it is", () => {
+  const playbook = readFileSync(join(ROOT, ".sova/playbook-config/release/PLAYBOOK.md"), "utf8");
+  const general = readFileSync(join(ROOT, "system-playbooks/release/PLAYBOOK.md"), "utf8");
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbook-config/release/release.json"), "utf8"));
+  // The steps the panel offers are the ones the playbook says what to do without.
+  const off = manifest.steps.filter((s) => s.skippable).map((s) => s.id);
+  assert.deepEqual(off, ["notes", "stamps", "docs", "try-live", "outside-checks"]);
+  const section = playbook.slice(playbook.indexOf("## Steps turned off at Start"), playbook.indexOf("## Steps\n"));
+  for (const id of off) assert.ok(section.includes(`\`${id}\``), `${id} named where turned-off steps are`);
+  assert.match(section, /report it `skipped`, summary "Turned off at Start"/);
+  assert.doesNotMatch(playbook, /never a major while 0\.x/);
+  assert.match(playbook, /a \*\*major\*\* \(1\.0\.0 from 0\.x\) only when the operator picks it/);
+  assert.match(playbook, /The kind the operator picked in Release with Options[^\n]*wins over this rule/);
+  assert.match(general, /From the moment the operator presses Start Release until Publish or Cancel Release/);
+  assert.doesNotMatch(general, /From the moment the release commit is queued/);
+  assert.match(general, /begin your reply with "I'm the release chat for this release; I only run its steps\."/);
+  assert.match(general, /Retry Step[^\n]*Continue[^\n]*Cancel Release[^\n]*Publish[^\n]*a new chat/);
+  assert.match(general, /"Retry can't pass\. Cancel the release, land it, start again\."/);
+  assert.match(general, /each \*\*turned-off step\*\* is never run: report it `skipped`/);
+});

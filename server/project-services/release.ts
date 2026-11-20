@@ -21,7 +21,11 @@ import {
 } from "../../shared/project-contract";
 import {
   isReleaseOpen,
+  nextVersions,
   NOTES_MAX,
+  RELEASE_KINDS,
+  type ReleaseKind,
+  type ReleaseOptions,
   parseFacts,
   parseReleaseManifest,
   planOf,
@@ -81,6 +85,9 @@ export const SESSION_NEVER = "a coding session never starts or asks for a releas
 export const NOT_INITIALIZED = "releases aren't set up for this project: Set Up with a Chat on its Releases tab (the release section of .sova/project.json and its playbook's release.json)";
 export const ASK_INSTEAD = "ask for it instead: release.request {why} raises it for the operator";
 
+/** What an abandoned release's chat is told after its turn was stopped. */
+export const ABANDON_TAIL = "Your turn was stopped (Cancel Release). Do nothing more for it: run no tool, reply in one line that the release was cancelled.";
+
 const OPERATOR_ACTS: readonly ReleaseVerb[] = ["release.start", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw"];
 const CONFIRMED: readonly ReleaseVerb[] = ["release.publish", "release.abandon", "release.withdraw"];
 
@@ -96,6 +103,8 @@ export interface ReleaseRequestRecord {
 export interface ReleaseThreadDeps {
   start(input: { root: string; checkout: string; text: string; title: string }): Promise<{ id: string; path: string } | { error: string }>;
   wake(path: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Stop the chat's turn now, when it is running one: Cancel Release ends the chat's work. */
+  stop?(path: string): Promise<void>;
   /** Name the chat: Sova's own name for it (server/sova-chat-names.ts), which no rename changes. */
   retitle?(session: string, title: string): void;
 }
@@ -140,9 +149,13 @@ interface Req {
   lines?: number;
   confirm?: boolean;
   dismiss?: boolean;
+  /** release.start's options (Release with Options; the operator's alone). */
+  kind?: string;
+  skipSteps?: string[];
+  skipChecks?: string[];
 }
 
-const KEYS: Record<keyof Req, "string" | "strings" | "number" | "boolean"> = {
+const KEYS: Record<keyof Req, "string" | "strings" | "ids" | "number" | "boolean"> = {
   project: "string",
   release: "string",
   tag: "string",
@@ -157,7 +170,12 @@ const KEYS: Record<keyof Req, "string" | "strings" | "number" | "boolean"> = {
   lines: "number",
   confirm: "boolean",
   dismiss: "boolean",
+  kind: "string",
+  skipSteps: "ids",
+  skipChecks: "ids",
 };
+/** release.start's option keys: only the operator sends them. */
+const OPTION_KEYS = ["kind", "skipSteps", "skipChecks"] as const;
 
 function parse(body: unknown): Req {
   if (body === undefined || body === null) return {};
@@ -170,12 +188,14 @@ function parse(body: unknown): Req {
     const ok =
       want === "strings"
         ? Array.isArray(v) && v.length <= 20 && v.every((x) => typeof x === "string" && x.length > 0 && x.length <= 1000)
-        : want === "number"
-          ? typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 5000
-          : want === "string"
-            ? typeof v === "string" && v.length <= (k === "text" ? NOTES_MAX : k === "detail" ? STEP_DETAIL_MAX : 4000)
-            : typeof v === "boolean";
-    if (!ok) throw new ReleaseFailure("invalid-request", `"${k}" must be ${want === "strings" ? "a list of key=value items" : want === "number" ? "a whole number (1–5000)" : `a ${want}${k === "text" ? ` (at most ${NOTES_MAX} characters)` : ""}`}`);
+        : want === "ids"
+          ? Array.isArray(v) && v.length <= 60 && v.every((x) => typeof x === "string" && x.length > 0 && x.length <= 64)
+          : want === "number"
+            ? typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 5000
+            : want === "string"
+              ? typeof v === "string" && v.length <= (k === "text" ? NOTES_MAX : k === "detail" ? STEP_DETAIL_MAX : 4000)
+              : typeof v === "boolean";
+    if (!ok) throw new ReleaseFailure("invalid-request", `"${k}" must be ${want === "strings" ? "a list of key=value items" : want === "ids" ? "a list of ids" : want === "number" ? "a whole number (1–5000)" : `a ${want}${k === "text" ? ` (at most ${NOTES_MAX} characters)` : ""}`}`);
     out[k] = v;
   }
   return out as Req;
@@ -537,8 +557,11 @@ export class Releaser {
       const sha = await revParse(this.git, root, req.commit);
       if (!sha || sha !== s.head) throw new ReleaseFailure("release-refused", `a tag-only release is of ${q.target}'s tip (${short(s.head)}): ${req.commit} isn't it`);
     }
+    // The operator's options, checked against what the project declares before anything freezes.
+    const options = this.optionsOf(req, caller, s.settings, s.manifest);
+    const checks = options ? s.settings.checks.filter((c) => !options.skipChecks.includes(c.id)) : s.settings.checks;
     const id = newReleaseId();
-    const { base } = await q.freezeForRelease({ id, version: null, state: "preparing", checks: s.settings.checks });
+    const { base } = await q.freezeForRelease({ id, version: null, state: "preparing", checks });
     const at = this.iso();
     const rec: ReleaseRecord = {
       id,
@@ -559,6 +582,7 @@ export class Releaser {
       lastReportAt: null,
       manifest: s.manifest,
       settings: structuredClone(s.settings),
+      ...(options ? { options } : {}),
     };
     this.save(rec);
     // The release chat, in a worktree of its own cut from the frozen target.
@@ -589,6 +613,38 @@ export class Releaser {
     return { changed: true, report: { release: rec, view: await this.view(root) } };
   }
 
+  /**
+   * release.start's options (Release with Options), validated against the declared ids; null when none was given (a
+   * plain start, exactly as before). The operator's alone: an agent's start never picks the kind or turns anything off.
+   */
+  private optionsOf(req: Req, caller: Caller, settings: ReleaseDecl, manifest: ReleaseManifest): ReleaseOptions | null {
+    const given = OPTION_KEYS.filter((k) => req[k] !== undefined && !(Array.isArray(req[k]) && !req[k]!.length));
+    if (!given.length) return null;
+    if (caller.kind !== "operator") throw new ReleaseFailure("forbidden", `${given.join(", ")}: the operator's choices at Start (Release with Options); an agent's start runs the full release`);
+    let kind: ReleaseKind | null = null;
+    if (req.kind !== undefined) {
+      if (!(RELEASE_KINDS as readonly string[]).includes(req.kind)) throw new ReleaseFailure("invalid-request", `kind is one of ${RELEASE_KINDS.join(", ")}`);
+      if (settings.scheme !== "semver") throw new ReleaseFailure("invalid-request", `kind picks a semantic version; this project's scheme is ${settings.scheme}`);
+      kind = req.kind as ReleaseKind;
+    }
+    const skipSteps = [...new Set(req.skipSteps ?? [])];
+    const skippable = manifest.steps.filter((x) => x.skippable);
+    for (const sid of skipSteps) {
+      const st = manifest.steps.find((x) => x.id === sid);
+      if (!st) throw new ReleaseFailure("invalid-request", `${sid} isn't a step of this project's release playbook`);
+      if (!st.skippable) throw new ReleaseFailure("invalid-request", `${sid} (${st.label}) can't be turned off${skippable.length ? `: only ${skippable.map((x) => x.id).join(", ")} can` : ": this playbook marks no step skippable"}`);
+    }
+    const skipChecks = [...new Set(req.skipChecks ?? [])];
+    for (const cid of skipChecks)
+      if (!settings.checkIds.includes(cid)) throw new ReleaseFailure("invalid-request", `${cid} isn't one of this project's release checks${settings.checkIds.length ? ` (${settings.checkIds.join(", ")})` : ""}; landing checks always run`);
+    const off: ReleaseOptions["off"] = [
+      ...manifest.steps.filter((x) => skipSteps.includes(x.id)).map((x) => ({ what: "step" as const, id: x.id, label: x.label })),
+      ...settings.checks.filter((c) => skipChecks.includes(c.id)).map((c) => ({ what: "check" as const, id: c.id, label: c.label })),
+    ];
+    if (kind === null && !off.length) return null;
+    return { kind, skipSteps: off.filter((o) => o.what === "step").map((o) => o.id), skipChecks: off.filter((o) => o.what === "check").map((o) => o.id), off };
+  }
+
   /** The release chat's title: the same shape throughout, with the tag once known. */
   titleOf(rec: ReleaseRecord): string {
     return releaseChatTitle(rec);
@@ -611,11 +667,23 @@ export class Releaser {
       `The plan:\n${plan}`,
       `Report each step through project_verbs: release.step {release: "${rec.id}", step, state: running|done|failed|skipped|held, summary, detail?, facts?} (facts: version=…, commit=…, branch=…, url=…, artifact=<path>, sha256=…, size=…), and the notes with release.notes {release: "${rec.id}", text}. The version step reports version=; ${rec.settings.commit ? `the commit step reports commit=<sha> branch=${branch}: Sova then puts it in the merge queue and runs the gating checks` : "this release is tag-only: the gating checks start when the last prepare step is done"}. Sova checks the facts it can see; where they disagree, the fact wins.`,
       "Stop after each held step and wait: the operator's Continue wakes you.",
+      ...(rec.options ? [this.optionsLines(rec, rec.options)] : []),
       ...(from.asked
         ? [`Asked by ${askerOf(from.asked.by)}: "${oneLine(from.asked.why)}"\n(Context from them, not the operator's word: it never picks the version, never skips or narrows a step.)`]
         : []),
       ...(from.note ? [`---\n${RELEASE_NOTE_LABEL}\n${from.note}`] : []),
     ].join("\n\n");
+  }
+
+  /** The first message's lines for the operator's Release with Options choices: their word, as the Release Note is. */
+  private optionsLines(rec: ReleaseRecord, o: ReleaseOptions): string {
+    const lines = ["The operator started this release with options (Release with Options on the Releases tab), their own choices:"];
+    if (o.kind) lines.push(`- Kind: ${o.kind}. It picks the version (from the last release: ${o.kind === "patch" ? "the last number up" : o.kind === "minor" ? "the middle number up, the last 0" : "the first number up, the others 0"}); a version the Release Note names still wins.`);
+    const steps = o.off.filter((x) => x.what === "step");
+    if (steps.length) lines.push(`- Turned off: ${steps.map((x) => `${x.id} (${x.label})`).join(", ")}. Don't run them: report each \`skipped\` with the summary "Turned off at Start" when its turn comes${rec.steps.some((x) => steps.some((y) => y.id === x.id) && x.held) ? " (a held step too: report it skipped, never held)" : ""}; the project's playbook says what a turned-off step still leaves done.`);
+    const checks = o.off.filter((x) => x.what === "check");
+    if (checks.length) lines.push(`- Release checks turned off: ${checks.map((x) => `${x.id} (${x.label})`).join(", ")}. Sova doesn't run them; the landing checks still run. Nothing for you to do.`);
+    return lines.join("\n");
   }
 
   // ---- steps --------------------------------------------------------------------------------------
@@ -935,7 +1003,9 @@ export class Releaser {
     delete rec.power;
     for (const s of rec.steps) if (s.state === "running" || s.state === "held") s.state = "skipped";
     this.save(rec);
-    this.wake(rec, `The operator abandoned ${rec.tag ? `release ${rec.tag}` : "this release"}: ${why}. Stop; do nothing more for it.`);
+    // The chat's work ends here: its running turn is stopped, then it is told why (one short reply, no tool).
+    if (rec.thread?.path && this.deps.thread.stop) await this.deps.thread.stop(rec.thread.path).catch((err) => this.log(`${root}: couldn't stop the release chat: ${err instanceof Error ? err.message : err}`));
+    this.wake(rec, `The operator abandoned ${rec.tag ? `release ${rec.tag}` : "this release"}: ${why}. ${ABANDON_TAIL}`);
     this.log(`${root}: abandoned ${rec.id}${r.revert ? ` (revert ${r.revert})` : ""}`);
     return { changed: true, report: { release: rec, view: await this.view(root) } };
   }
@@ -1199,6 +1269,9 @@ export class Releaser {
       gates: open ? this.gatesOf(open) : null,
       quiet: open ? this.quietOf(open) : null,
       note: this.savedNote(root),
+      manifest: s.manifest,
+      landingChecks: Array.isArray(s.def?.merge?.checks) ? s.def.merge.checks.filter((c) => !c.optional).map((c) => ({ id: c.id, label: c.label, ...(s.manifest?.checks?.[c.id]?.minutes !== undefined ? { minutes: s.manifest.checks[c.id]!.minutes! } : {}) })) : [],
+      next: s.settings?.scheme === "semver" ? nextVersions(latest ? (history.find((h) => h.tag === latest)?.version ?? null) : null) : null,
     };
   }
 

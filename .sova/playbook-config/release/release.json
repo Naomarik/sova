@@ -2,14 +2,27 @@
   "v": 1,
   "steps": [
     {"id": "version", "label": "Pick the version", "phase": "prepare"},
-    {"id": "notes", "label": "Write the changelog entry and notes", "phase": "prepare"},
+    {"id": "notes", "label": "Write the changelog entry and notes", "phase": "prepare", "skippable": true, "about": "Full notes for someone on the last release; off: one short line in the changelog and on the tag", "minutes": 3},
     {"id": "bump", "label": "Bump the version in its places", "phase": "prepare"},
-    {"id": "stamps", "label": "Re-check the landing page and stamp it", "phase": "prepare"},
-    {"id": "docs", "label": "Update the affected Docs pages", "phase": "prepare"},
+    {"id": "stamps", "label": "Re-check the landing page and stamp it", "phase": "prepare", "skippable": true, "about": "Checks every claim on the landing page against this release and re-dates its stamp", "minutes": 5},
+    {"id": "docs", "label": "Update the affected Docs pages", "phase": "prepare", "skippable": true, "about": "Fixes the Docs pages whose features changed and writes pages for new ones", "minutes": 10},
     {"id": "commit", "label": "Make the release commit", "phase": "prepare"},
-    {"id": "try-live", "label": "Try it on the live server", "phase": "check", "held": true},
+    {"id": "try-live", "label": "Try it on the live server", "phase": "check", "held": true, "skippable": true, "about": "Waits for you to restart Sova on the release and use it, then your Continue", "minutes": 5},
     {"id": "release-page", "label": "Publish the GitHub release page", "phase": "after"},
-    {"id": "outside-checks", "label": "Outside checks the operator picks", "phase": "after", "held": true},
+    {"id": "outside-checks", "label": "Outside checks the operator picks", "phase": "after", "held": true, "skippable": true, "about": "Offers a clean install, an update and the live site check after Publish; you pick which run", "minutes": 15},
     {"id": "release-page-withdrawn", "label": "Mark the release page withdrawn", "phase": "withdraw"}
-  ]
+  ],
+  "checks": {
+    "typecheck": {"minutes": 0.6},
+    "unit": {"minutes": 1.4},
+    "integration": {"minutes": 6.3},
+    "build": {"minutes": 0.9},
+    "release-notes": {"about": "The changelog has this version's entry, once, dated"},
+    "release-integration": {"about": "Every integration group, the slow ones included", "minutes": 8.5},
+    "release-extensions": {"about": "Every pi-config extension's own tests", "minutes": 5},
+    "release-spec-replay": {"about": "Replays the spec engine's recorded sessions", "minutes": 7},
+    "release-site": {"about": "Builds the landing page and Docs at this release"},
+    "release-spec": {"about": "No spec finding the last release did not have"},
+    "release-leaks": {"about": "No secrets or machine details in anything since the last release"}
+  }
 }

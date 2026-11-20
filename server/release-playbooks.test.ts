@@ -91,6 +91,13 @@ test("init writes Sova's starter, which both parsers take and check passes; it n
   assert.equal(maker.formatManifest(m2), m2, "written in canonical form");
 });
 
+test("the canonical release.json: Release with Options' keys in order on each step's line, then the checks' hints one per line", () => {
+  const text = maker.formatManifest(JSON.stringify({ checks: { unit: { minutes: 1.4, about: "Unit" } }, steps: [{ minutes: 5, skippable: true, phase: "prepare", label: "Docs", id: "docs", about: "Pages" }], v: 1 }));
+  assert.equal(text, '{\n  "v": 1,\n  "steps": [\n    {"id": "docs", "label": "Docs", "phase": "prepare", "skippable": true, "about": "Pages", "minutes": 5}\n  ],\n  "checks": {\n    "unit": {"about": "Unit", "minutes": 1.4}\n  }\n}\n');
+  assert.equal(maker.formatManifest(text), text);
+  assert.deepEqual(parseReleaseManifest(text).checks, { unit: { about: "Unit", minutes: 1.4 } });
+});
+
 test("a tag-only starter has no commit step, keeps an existing definition, and checks clean", async () => {
   const r = project({ ".sova/project.json": JSON.stringify({ version: 1, services: { web: { cmd: ["node", "s.js"] } } }) });
   assert.equal(maker.init(r, { tagOnly: true, channels: [] }).ok, true);

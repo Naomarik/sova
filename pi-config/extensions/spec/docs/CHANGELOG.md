@@ -1177,6 +1177,80 @@ Numbers: on a copy of 70 real worktrees with drafts, the same 70 answers; every 
 - Numbers: **not measured.** A `spec-mode.md` change asks for a context-test arm (al_3); the words are the same
   but one shell expression, so the main chat decides whether to measure.
 
+### 2026-11-20
+
+**Search reads a split topic as one topic** (branch `feat/spec-search-ranker`, alignment al_7; not on master yet).
+
+- Goal: a claim cut into parts to fit the size cap stays findable as the claim it was. A split topic is one row
+  that names its best part in every place that ranks or lists claims: topic search, name and file lookups, the
+  census's ranking and its Unread § line, Sova's `spec` tool, and the Overseer's and side assistants'
+  `spec_lookup`. No constraint moves. Nothing is stored and no record field is added. A spec with nothing split
+  gives byte-identical answers.
+- Changed:
+  - `core/parts.mjs` (new). A claim is a split topic when its prose ends in at least two `- §part — <heading>`
+    lines. They must name, in order, the H2s declared right after it in the same file; each needs a record, must be
+    required by it and have its heading repeated word for word, and none may be a split topic itself. `check`
+    counts them (`counts.split`). It warns `split-summary-broken` when a list was meant as a summary but breaks
+    the shape. Fenced, commented and ordinary lists stay silent. One known limit: a dependency list in its own
+    words that names exactly the next claims, in order, warns too. It changes `check`'s exit code, never a search
+    answer.
+  - `core/topic.mjs`. A split topic is one search unit, scored on its claim's text from before the cut: its own
+    text without the summary lines, then each part's text without its heading line, in summary order, with a
+    repeated table head dropped. Its first sentence and names come from that text. Word statistics count topics.
+    A row gains `part` (text: `best part:`), the part that scores best on its own text.
+  - `core/where.mjs`. A name lookup gives one row per topic (`part`, text `in part:`). A part's heading or first
+    sentence counts as the topic's, so the topic defines a name a part defines: the rule unsplit claims follow
+    (the user's ruling). A file lookup lists a topic once when it or any part lists the file. Its tokens are the
+    topic's and its parts' together, its weights count topics, and its row gains `parts: {listing, of}` (plus
+    `topic: false` when only parts list the file). A topic is never listed twice.
+  - `core/sova-spec.mjs`. `census --changed --related` ranks once per topic: the row carries `part`, `parts`
+    and `files`, and the touched list keeps each part.
+  - `mode/spec-guard.ts`. The Unread § line names a topic once, "§U (best part §P)", and a read of the topic or of
+    any touched part counts. By the user's ruling, the census note's `New: <file> → §…` line and a finished
+    worker's "landed in" line stay as they were and name each touched part.
+  - `core/toc.mjs` and `core/read.mjs`. `toc --dir down` lists a topic's parts first. `--dir up` gives a part's
+    topic. `read --json` gives a topic's `parts`.
+  - `server/spec-lookup.ts`. `find` puts "best part: <ref> — <title>" under a topic's row. A `read` of a topic
+    ends with "Its parts (read each by its ref):" and their refs. `outline` of a topic lists its parts. This part
+    goes live only after a restart.
+  - `core/sova-spec-draft.mjs` and `DRAFTS.md`. The `declaration-over-cap` warning names the summary shape
+    search reads.
+  - `tests/parts.test.mjs`, `tests/search/split-units.mjs` (compares a split spec's scored units with the
+    unsplit spec's), `server/spec-lookup-parts.integration.test.ts`.
+- §: computed at landing with `sova-spec.mjs foreign`. Expected: +§tools.spec/split-topics,
+  §tools.spec/where-topic, §tools.spec/where-lookup, §tools.spec/census-rank, §tools.spec/unread-landed,
+  §tools.spec/single-read, §tools.spec/declaration-cap, §app.spec-lookup/tool.
+- Numbers: ranker 0d285c56d on the claim split re-cut be530827e (168 topics, 555 parts), against master c5cc013
+  with today's core. Whole-tree copies, code files present; rule `PREREG-al7.md` (102cb87d…6436). R@1 / R@3 /
+  MRR / R@3-any:
+  - Unsplit master: 0 of 5,970 answers differ (100 queries × JSON + text, 4,920 file lookups, 200 unmapped files,
+    648 names, census, check).
+  - Bench rule (BENCH-RULE, with the q8 "before" re-taken on c5cc013): dev 52 PASS and public 48 PASS. Both
+    equal the before on every metric: dev 26.9 / 51.9 / 0.414 / 67.3, public 37.5 / 54.2 / 0.494 / 66.7. The
+    public 48 are **seen**, not held-out: the fix below was made after a public-48 result. The sealed hidden set
+    is the only unseen evidence and runs once, on the claim split branch.
+  - Recorded finding: the previous build, d2122951c (part headings counted in a topic's text), on re-cut
+    45cafadc1 FAILED public 48 on MRR, 0.49343 against 0.49441 (a30 5 → 6, a76 8 → 9, near-ties). Its top-10
+    order moved on 12/52 dev and 12/48 public queries. Build 4 then scores a topic on its pre-split text only.
+  - Topic fidelity: topic rows (id, score, order) identical to the unsplit spec over every page of all 100 queries
+    (6,341 rows), and in 615 name lookups. Top-10 movement 0/52 dev, 0/48 public. Scored fields equal for
+    168/168 topics and 1,503/1,503 other units. The rebuilt text is word-equal but not byte-equal (blank lines,
+    line wrapping).
+  - File lookups: 5,120 of 5,120 identical row by row (ids mapped, type, score, order, counts); 3,659/3,659 part
+    counts right. No topic listed twice in 5,359 answers.
+  - Name lookups: 125 rows in 95 of 615 lookups move mentions → defines. None moves the other way, and no row is
+    added or lost. In a sample of 11, 8 were right and 3 weak, all generic names (`1`, `title`, `GET`).
+  - Best part: 185 rows, each a part of its topic. Judged on the 22 queries whose primary is a split topic in the
+    top 3 (one judge): 12 answer it, 8 partly, 2 no.
+  - Assistants' `find` → best part → `read`: 370/370 in the full and outsider views (in-process, on a copy).
+  - Census: the Unread § line names no part. Its read-first set equals pre-split in 30/30 change sets, its order
+    in 29/30. The ungrouped lines: `New:` lists a part beside its topic for 114 of 193 changed files, and the
+    landed line names a topic twice in 30/30 sets.
+  - Speed: one search +6.7% against today's search on the same split spec (rounds +5.0 to +7.8%, A/A noise
+    +0.6%), under the +10% limit. On master +0.3%. File lookups on the split +8.7%. New core on the split
+    against today's core on master, from separate runs: about +14%.
+  - Not measured: agents' behaviour with best-part rows; the live server path.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -1412,3 +1486,9 @@ The tools are Node standard library only. Nothing is installed.
     resolves as before. A host of your own that runs chats may set it to the tools it ships, and should not pass
     it to a machine where that path doesn't exist. A script of yours that resolves `$core` itself reads
     `SOVA_SPEC_CORE` first too (`coreDir` in `mode/spec-guard.ts` does).
+20. **Split topics** (2026-11-20, branch `feat/spec-search-ranker`). Copy every `core/*.mjs` again, the new
+    `parts.mjs` included. Nothing changes for a spec with no split topic. A claim you split stays findable as one
+    topic only in the shape §tools.spec/split-topics names. Its prose ends in one `- §part — <its heading>` line
+    per part, and the parts are declared right after it as H2s it requires. Run `check` and fix any
+    `split-summary-broken`. Scripts reading `where --json` may see `part` and `parts` on rows, and `census
+    --json` rank rows may carry `part`, `parts` and `files`. The unread line may read "§U (best part §P)".

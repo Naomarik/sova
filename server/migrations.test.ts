@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { migrationsDue } from "../migrations/due.mjs";
 
 /**
  * migrations/: temporary code that keeps something older working, one folder per migration, each listed in
- * migrations/manifest.json with the version that drops it. This file fails once Sova's version reaches a migration's
- * removeIn: clear it out of git then (its folder, its entry, the call sites its paths name).
+ * migrations/manifest.json under the major release that clears it (clearedIn). Nothing here, and nothing in a release,
+ * fails over a migration's age: they are cleared in a branch before that major release (its folder, its entry, the call
+ * sites its paths name).
  */
 const ROOT = join(import.meta.dirname, "..");
 const DIR = join(ROOT, "migrations");
@@ -16,7 +16,7 @@ interface Migration {
   id: string;
   what: string;
   since: string;
-  removeIn: string;
+  clearedIn: string;
   paths: string[];
 }
 
@@ -34,7 +34,6 @@ const before = (a: string, b: string): boolean => {
 };
 
 const manifest = JSON.parse(readFileSync(join(DIR, "manifest.json"), "utf8")) as Migration[];
-const version = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { version: string }).version;
 
 test("the version comparison orders versions by number, not by text", () => {
   assert.ok(before("0.16.0", "0.18.0"));
@@ -43,18 +42,23 @@ test("the version comparison orders versions by number, not by text", () => {
   assert.ok(!before("1.0.0", "0.18.0"));
 });
 
-test("no migration is due at Sova's version (the backstop of the release's own gate, migrations/due.mjs)", () => {
-  assert.deepEqual(migrationsDue(version, manifest), [], `due at ${version}: delete each due migration's folder, entry and the files its paths name`);
-  for (const m of manifest) assert.ok(before(version, m.removeIn), `${m.id} is due for removal in ${m.removeIn} (Sova is ${version}): delete migrations/${m.id}/, its entry and the call sites its paths name`);
+/** A major release: x.0.0 with x at least 1 (1.0.0 is the first; there is no 0.x major). */
+const isMajor = (v: string): boolean => /^[1-9]\d*\.0\.0$/.test(v);
+
+test("a major release is x.0.0 from 1.0.0 on", () => {
+  for (const v of ["1.0.0", "2.0.0", "10.0.0"]) assert.ok(isMajor(v), v);
+  for (const v of ["0.18.0", "0.0.0", "1.1.0", "1.0.1", "01.0.0", "1.0"]) assert.ok(!isMajor(v), v);
 });
 
-test("each entry is whole, began before it ends, and its folder and paths are there", () => {
+test("each entry is whole, grouped under a major release after it began, and its folder and paths are there", () => {
   const ids = manifest.map((m) => m.id);
   assert.equal(new Set(ids).size, ids.length, "ids are unique");
   for (const m of manifest) {
     assert.ok(/^[a-z0-9][a-z0-9-]*$/.test(m.id), m.id);
     assert.ok(m.what.trim(), `${m.id}: what`);
-    assert.ok(before(m.since, m.removeIn), `${m.id}: since ${m.since} is before removeIn ${m.removeIn}`);
+    assert.ok(!("removeIn" in m), `${m.id}: no removal version; it is grouped under clearedIn`);
+    assert.ok(isMajor(m.clearedIn), `${m.id}: clearedIn ${m.clearedIn} is a major release (x.0.0, from 1.0.0)`);
+    assert.ok(before(m.since, m.clearedIn), `${m.id}: since ${m.since} is before clearedIn ${m.clearedIn}`);
     assert.ok(m.paths.includes(`migrations/${m.id}`), `${m.id}: its folder is among its paths`);
     for (const p of m.paths) assert.ok(existsSync(join(ROOT, p)), `${m.id}: ${p} is there`);
   }

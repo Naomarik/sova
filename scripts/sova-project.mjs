@@ -11,7 +11,7 @@
 //   e.g. share --instance <id> --endpoint web.http --days 3 --confirm; revoke --link <pv_…> | --instance <id> [--endpoint …]
 //   release (shared/release.ts): release.status; release.logs [--release <rl_…>] [--step <id>]; release.request --why <text>;
 //     release.start [--commit <sha>]; release.continue|retry --release <rl_…> --step <id>; release.publish --release <rl_…>
-//     --confirm; release.abandon --release <rl_…> --why <text> --confirm; release.withdraw --release <rl_…> | --tag <tag>
+//     --confirm; release.abandon --release <rl_…> [--why <text>] [--confirm] (Cancel Release: --confirm only once its commit landed); release.withdraw --release <rl_…> | --tag <tag>
 //     --why <text> --confirm (refused from a chat's own scripts: the operator's word only); release.note --text <note>
 //     saves the Release Note the next release.start sends its chat (--text "" clears it)
 //   deploy (§app.project-services/deploy): deploy.status [--target <name>]; deploy.logs --target <name> | --deploy <dp_…>;

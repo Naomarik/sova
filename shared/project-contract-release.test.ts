@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DEFINITION_KEYS, DefinitionError, exitOf, isReleaseVerb, isVerb, parseDefinition, releaseTagOf, versionOfTag, versionProblem } from "./project-contract";
-import { ManifestError, parseFacts, parseReleaseManifest, planOf } from "./release";
+import { ManifestError, nextVersions, parseFacts, parseReleaseManifest, planOf } from "./release";
 
 // The release section: a pointer to the project's release playbook plus the facts Sova acts on (the tag, the
 // channels, the gating checks), parsed as strictly as the rest of the definition. Absent: releases not set up.
@@ -160,6 +160,34 @@ test("a manifest is parsed strictly", () => {
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "commit", label: "A", phase: "prepare" }, { id: "notes", label: "B", phase: "prepare" }] }), "$.steps[0]");
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "commit", label: "A", phase: "after" }] }), "$.steps[0].phase");
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after", artifact: false }] }), "$.steps[0].artifact");
+  // Release with Options: skippable steps and the panel's hints.
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after", skippable: false }] }), "$.steps[0].skippable");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "version", label: "A", phase: "prepare", skippable: true }] }), "$.steps[0].skippable");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "commit", label: "A", phase: "prepare", skippable: true }] }), "$.steps[0].skippable");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after", about: "" }] }), "$.steps[0].about");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after", about: "x".repeat(201) }] }), "$.steps[0].about");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after", minutes: -1 }] }), "$.steps[0].minutes");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after", minutes: "5" }] }), "$.steps[0].minutes");
+  assert.equal(manifestRefusal({ v: 1, steps: [], checks: [] }), "$.checks");
+  assert.equal(manifestRefusal({ v: 1, steps: [], checks: { unit: { minutes: 1, run: ["x"] } } }), "$.checks.unit.run");
+  assert.equal(manifestRefusal({ v: 1, steps: [], checks: { Unit: {} } }), "$.checks.Unit");
+});
+
+test("a manifest's skippable steps and hints read back as written; a manifest without them reads as before", () => {
+  const m = parseReleaseManifest(JSON.stringify({ v: 1, steps: [{ id: "version", label: "V", phase: "prepare" }, { id: "docs", label: "Docs", phase: "prepare", skippable: true, about: " Fixes the pages ", minutes: 10 }, { id: "try-live", label: "Try", phase: "check", held: true, skippable: true, minutes: 0 }], checks: { unit: { minutes: 1.4 }, full: { about: "All" } } }));
+  assert.deepEqual(m.steps[1], { id: "docs", label: "Docs", phase: "prepare", skippable: true, about: "Fixes the pages", minutes: 10 });
+  assert.deepEqual(m.steps[2], { id: "try-live", label: "Try", phase: "check", held: true, skippable: true, minutes: 0 });
+  assert.deepEqual(m.checks, { unit: { minutes: 1.4 }, full: { about: "All" } });
+  const plain = parseReleaseManifest('{"v":1,"steps":[{"id":"version","label":"V","phase":"prepare"}]}');
+  assert.deepEqual(plain, { v: 1, steps: [{ id: "version", label: "V", phase: "prepare" }] });
+});
+
+test("the next version of each kind: major is the next first number, 0.x included", () => {
+  assert.deepEqual(nextVersions("0.17.0"), { patch: "0.17.1", minor: "0.18.0", major: "1.0.0" });
+  assert.deepEqual(nextVersions("1.2.3"), { patch: "1.2.4", minor: "1.3.0", major: "2.0.0" });
+  assert.deepEqual(nextVersions("1.3.0-rc.1"), { patch: "1.3.0", minor: "1.4.0", major: "2.0.0" });
+  assert.deepEqual(nextVersions(null), { patch: "0.0.1", minor: "0.1.0", major: "1.0.0" });
+  assert.equal(nextVersions("2026.11"), null);
 });
 
 test("facts parse from key=value items, and an artifact's sha and size need its path", () => {

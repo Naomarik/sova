@@ -29,9 +29,9 @@ settings](/docs/release-settings/) says what each holds.
 ## Start a release
 
 **Start Release** on the Releases tab opens the release chat in a worktree of its own. From then
-until you publish or abandon, the project's [merge queue](/docs/merge-queue/) is frozen for the
+until you publish or cancel it, the project's [merge queue](/docs/merge-queue/) is frozen for the
 release: only the release's own commit lands, nothing is pushed, and every other branch waits in
-line ("waits for v0.10.0 to be published or abandoned").
+line ("waits for v0.10.0 to be published or cancelled").
 
 **Release Note**, beside Start Release, saves your instructions for the next release ("Release as
 0.10.1", "skip docs"), up to 4,000 characters. While a note is saved the tab shows it under its
@@ -59,7 +59,7 @@ ordinary chat you can talk to.
 
 The release commit goes through the merge queue first in line. It runs the project's usual checks,
 then the checks the release settings add, and lands on the main branch **without a push**. A
-failed check holds Publish: the chat fixes it with a new commit, or you abandon. Nothing overrides
+failed check holds Publish: the chat fixes it with a new commit, or you cancel the release. Nothing overrides
 a failed check.
 
 ## Publish
@@ -75,8 +75,9 @@ If Publish fails, every local change is put back, the release stays Ready, and t
 **Publish failed** with why. **Retry Publish** tries again. Publish lifts the freeze: the waiting
 branches land and push as usual.
 
-**Abandon Release** stops a release that isn't published. A release commit that already landed is
-undone by a revert that lands through the queue, never by resetting anything; no tag is made.
+**Cancel Release** stops a release that isn't published. Before the release commit lands it is one
+press. Once the commit has landed, cancelling reverts it, so one confirm says so first; the revert
+lands through the queue, never by resetting anything. No tag is made.
 
 ## After publish
 

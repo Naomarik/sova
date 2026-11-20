@@ -13,13 +13,9 @@
 //                                          sets site/src/data/site.ts `verified` (landing, needs --version) or `docsVerified`
 //                                          to the commit checked and today (UTC). Only after the re-check the playbook names.
 //   notes-out --version X.Y.Z --out <file> the CHANGELOG.md entry's body, for the release page. Exit 1: no single dated entry.
-//   migrations-due [--version X.Y.Z]       Sova's migrations (migrations/manifest.json) due for removal at that version (default
-//                                          package.json's): the version step runs it before anything is written. Exit 1: some are
-//                                          due (named; they leave in a branch that lands before this release goes on), 0: none.
 //   live-check --commit <sha> [--url <origin>]
 //                                          the live server's /api/health `head` is the commit (default origin http://localhost:4800). Exit 1: not it, 2: no answer.
 // Release-only checks (the settings' release.checks; SOVA_OUT gets the report, as every merge check):
-//   migrations-due    the same at package.json's version (the release commit's): no migration due at the version released.
 //   changelog-check   the entry for package.json's version: one heading `## vX.Y.Z — YYYY-MM-DD`, no placeholder, not empty.
 //   site-check        the site's install (offline first) and build (its docs leak check included), then the built landing
 //                     names the stable install command and links /releases/tag/vX.Y.Z.
@@ -37,7 +33,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bumpText, changelogEntry, compareVersions, parseVersion } from "../../../../system-playbooks/release/scripts/release.mjs";
-import { migrationsDue, readMigrations } from "../../../../migrations/due.mjs";
 import { report, specCore } from "../../../../scripts/merge-checks/lib.mjs";
 
 export const SITE_DATA = "site/src/data/site.ts";
@@ -168,22 +163,6 @@ const skipped = (why) => {
   report(OUT, { passed: 0, failed: 0, skipped: why });
   return 0;
 };
-
-/** The migrations-due report, as the version step and the release check print it. */
-export function migrationsDueCheck(root, version) {
-  const v = version ?? packageVersion(root);
-  if (!v) return finish("migrations due", ["package.json has no version"]);
-  let due;
-  try {
-    due = migrationsDue(v, readMigrations(root));
-  } catch (err) {
-    return finish("migrations due", [err.message]);
-  }
-  return finish(
-    "migrations due",
-    due.map((m) => `v${v} removes migrations/${m.id} (removeIn ${m.removeIn}): delete migrations/${m.id}/, its manifest entry and the files its paths name, in a branch that lands before this release`),
-  );
-}
 
 export function changelogCheck(root) {
   const v = packageVersion(root);
@@ -360,7 +339,7 @@ export function sitePages(root, commit) {
 // ---- CLI -----------------------------------------------------------------------------------------
 
 /** Every subcommand, in the order the header lists them. */
-export const SUBCOMMANDS = ["prev", "bump", "stamp", "notes-out", "migrations-due", "live-check", "changelog-check", "site-check", "ext-all", "spec-new", "leak-scan", "env-set", "site-video", "site-pages"];
+export const SUBCOMMANDS = ["prev", "bump", "stamp", "notes-out", "live-check", "changelog-check", "site-check", "ext-all", "spec-new", "leak-scan", "env-set", "site-video", "site-pages"];
 
 function opt(list, name) {
   const i = list.indexOf(name);
@@ -404,8 +383,6 @@ async function main(argv) {
       console.log(`${out}: ${r.body.split("\n").length} lines`);
       return 0;
     }
-    case "migrations-due":
-      return migrationsDueCheck(root, opt(rest, "--version"));
     case "live-check": {
       const c = opt(rest, "--commit");
       if (!c) return console.error("usage: live-check --commit <sha> [--url <origin>]"), 2;

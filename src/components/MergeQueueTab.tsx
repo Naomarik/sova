@@ -328,13 +328,13 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: Queue
           }
         />
       </Show>
-      {/* An open release freezes the target on it: only its own entries land until it's published or abandoned. */}
+      {/* An open release freezes the target on it: only its own entries land until it's published or cancelled. */}
       <Show when={v().release}>
         {(rel) => (
           <Banner
             tone="info"
             title={`${v().target} is frozen for ${holdName(rel())}`}
-            body="Other landings wait in line, and nothing is pushed, until the release is published or abandoned."
+            body="Other landings wait in line, and nothing is pushed, until the release is published or cancelled."
             action={
               <a class="button button-sm" href={projectTabHref(props.projectId, "releases")}>
                 Open Releases
@@ -820,7 +820,7 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
             <p class="mq-empty text-caption">
               {props.view.release
                 ? props.view.waiting.length
-                  ? `${props.view.waiting.length} waiting for ${holdName(props.view.release)}: they start once it's published or abandoned.`
+                  ? `${props.view.waiting.length} waiting for ${holdName(props.view.release)}: they start once it's published or cancelled.`
                   : `Nothing being checked. A branch you land now waits for ${holdName(props.view.release)}.`
                 : props.view.waiting.length
                   ? `${props.view.waiting.length} waiting. The next one starts in a moment.`

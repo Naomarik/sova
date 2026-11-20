@@ -76,6 +76,12 @@ export async function startReleaser(d: ReleaseWireDeps): Promise<Releaser> {
         // Sova's own name for its release chat (server/sova-chat-names.ts): a rename never reaches it.
         void import("../sova-chat-names").then(({ setSovaChatName }) => setSovaChatName(session, "release", title)).catch(() => {});
       },
+      async stop(path) {
+        // Cancel Release: the chat's turn stops now, as the merge queue stops a chat it retires (a release chat has no workers).
+        const { liveRetireDeps } = await import("../merge-queue/retire");
+        const live = await liveRetireDeps();
+        if (live.busy(path)) await live.abort(path);
+      },
       async wake(path, text) {
         const { promptSession } = await import("../session-prompt");
         const out = await promptSession(path, `[Sova · release] ${text}`);

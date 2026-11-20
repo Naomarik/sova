@@ -214,6 +214,6 @@ test("the tab's intro says what happens after the checks, by the way in effect",
 });
 
 test("a project-file save that waits says what for: the open release, else the current branch", () => {
-  assert.equal(landHowWaitingWords("github-pr", "release v0.4.0"), `${HOW_SHORT["github-pr"]} saves to the project file once release v0.4.0 is published or abandoned.`);
+  assert.equal(landHowWaitingWords("github-pr", "release v0.4.0"), `${HOW_SHORT["github-pr"]} saves to the project file once release v0.4.0 is published or cancelled.`);
   assert.equal(landHowWaitingWords("local"), `${HOW_SHORT.local} saves to the project file when the current branch finishes.`);
 });

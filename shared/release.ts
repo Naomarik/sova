@@ -36,11 +36,26 @@ export interface ManifestStep {
   held?: true;
   /** Its done report must carry an artifact's facts (artifact=<path>, sha256, size): a local build kept outside the repository. */
   artifact?: true;
+  /** The operator may turn it off at Start (Release with Options); the release chat then reports it `skipped`. */
+  skippable?: true;
+  /** One line on what it does, for the Release with Options panel. */
+  about?: string;
+  /** Rough minutes it takes (the panel's "about N min"). */
+  minutes?: number;
+}
+/** A hint for one check the Release with Options panel lists (a release check or a landing check, by its id). */
+export interface ManifestCheckHint {
+  about?: string;
+  minutes?: number;
 }
 export interface ReleaseManifest {
   v: 1;
   steps: ManifestStep[];
+  /** Hints for the panel, by check id; never changes which checks run. */
+  checks?: Record<string, ManifestCheckHint>;
 }
+export const STEP_ABOUT_MAX = 200;
+export const MINUTES_MAX = 1440;
 
 export class ManifestError extends Error {
   readonly path: string;
@@ -63,22 +78,37 @@ export function parseReleaseManifest(text: string): ReleaseManifest {
     throw new ManifestError("$", `not JSON (${err instanceof Error ? err.message : String(err)})`);
   }
   if (!isObj(raw)) throw new ManifestError("$", "must be an object {v: 1, steps: [...]}");
-  for (const k of Object.keys(raw)) if (k !== "v" && k !== "steps") throw new ManifestError(`$.${k}`, "unknown key");
+  for (const k of Object.keys(raw)) if (k !== "v" && k !== "steps" && k !== "checks") throw new ManifestError(`$.${k}`, "unknown key");
   if (raw.v !== 1) throw new ManifestError("$.v", "must be 1");
   if (!Array.isArray(raw.steps)) throw new ManifestError("$.steps", "must be a list of steps {id, label, phase}");
   if (raw.steps.length > MANIFEST_STEPS_MAX) throw new ManifestError("$.steps", `at most ${MANIFEST_STEPS_MAX} steps`);
   const steps = raw.steps.map((s, i): ManifestStep => {
     const at = `$.steps[${i}]`;
     if (!isObj(s)) throw new ManifestError(at, "must be an object {id, label, phase}");
-    for (const k of Object.keys(s)) if (!["id", "label", "phase", "held", "artifact"].includes(k)) throw new ManifestError(`${at}.${k}`, "unknown key");
+    for (const k of Object.keys(s)) if (!["id", "label", "phase", "held", "artifact", "skippable", "about", "minutes"].includes(k)) throw new ManifestError(`${at}.${k}`, "unknown key");
     if (typeof s.id !== "string" || !STEP_ID.test(s.id)) throw new ManifestError(`${at}.id`, "a step id is lowercase letters, digits and hyphens, starting with a letter, at most 31 characters");
     if ((SOVA_STEP_IDS as readonly string[]).includes(s.id)) throw new ManifestError(`${at}.id`, `"${s.id}" is Sova's own step: the playbook never declares it`);
     if (typeof s.label !== "string" || !s.label.trim() || s.label.length > STEP_LABEL_MAX) throw new ManifestError(`${at}.label`, `must be a short label (1 to ${STEP_LABEL_MAX} characters)`);
     if (!(MANIFEST_PHASES as readonly unknown[]).includes(s.phase)) throw new ManifestError(`${at}.phase`, 'must be "prepare" (before the checks), "check" (after the checks, before Publish), "after" (after Publish) or "withdraw" (after a Withdraw)');
     if (s.held !== undefined && s.held !== true) throw new ManifestError(`${at}.held`, "must be true, or absent");
     if (s.artifact !== undefined && s.artifact !== true) throw new ManifestError(`${at}.artifact`, "must be true, or absent");
-    return { id: s.id, label: s.label.trim(), phase: s.phase as ManifestPhase, ...(s.held === true ? { held: true as const } : {}), ...(s.artifact === true ? { artifact: true as const } : {}) };
+    if (s.skippable !== undefined && s.skippable !== true) throw new ManifestError(`${at}.skippable`, "must be true, or absent");
+    if (s.skippable === true && (s.id === RELEASE_VERSION_STEP || s.id === RELEASE_COMMIT_STEP)) throw new ManifestError(`${at}.skippable`, `"${s.id}" always runs: it can't be turned off`);
+    const hint = hintOf(s, at);
+    return { id: s.id, label: s.label.trim(), phase: s.phase as ManifestPhase, ...(s.held === true ? { held: true as const } : {}), ...(s.artifact === true ? { artifact: true as const } : {}), ...(s.skippable === true ? { skippable: true as const } : {}), ...hint };
   });
+  let checks: Record<string, ManifestCheckHint> | undefined;
+  if (raw.checks !== undefined) {
+    if (!isObj(raw.checks)) throw new ManifestError("$.checks", "must be an object of hints by check id {\"<id>\": {about?, minutes?}}");
+    checks = {};
+    for (const [id, h] of Object.entries(raw.checks)) {
+      const at = `$.checks.${id}`;
+      if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) throw new ManifestError(at, "a check id is lowercase letters, digits and hyphens");
+      if (!isObj(h)) throw new ManifestError(at, "must be an object {about?, minutes?}");
+      for (const k of Object.keys(h)) if (k !== "about" && k !== "minutes") throw new ManifestError(`${at}.${k}`, "unknown key");
+      checks[id] = hintOf(h, at);
+    }
+  }
   if (new Set(steps.map((s) => s.id)).size !== steps.length) throw new ManifestError("$.steps", "step ids must be unique");
   // Listed in plan order: prepare, check, after, withdraw (Sova's checks and Publish sit between them).
   const rank = (p: ManifestPhase) => MANIFEST_PHASES.indexOf(p);
@@ -89,7 +119,48 @@ export function parseReleaseManifest(text: string): ReleaseManifest {
   const ci = steps.findIndex((s) => s.id === RELEASE_COMMIT_STEP);
   if (ci >= 0 && steps[ci]!.phase !== "prepare") throw new ManifestError(`$.steps[${ci}].phase`, `the "${RELEASE_COMMIT_STEP}" step makes the release commit: it is a prepare step`);
   if (ci >= 0 && steps.slice(ci + 1).some((s) => s.phase === "prepare")) throw new ManifestError(`$.steps[${ci}]`, `the "${RELEASE_COMMIT_STEP}" step is the last prepare step: the checks start when it is done`);
-  return { v: 1, steps };
+  return { v: 1, steps, ...(checks ? { checks } : {}) };
+}
+
+function hintOf(o: Record<string, unknown>, at: string): ManifestCheckHint {
+  if (o.about !== undefined && (typeof o.about !== "string" || !o.about.trim() || o.about.length > STEP_ABOUT_MAX)) throw new ManifestError(`${at}.about`, `must be one line (1 to ${STEP_ABOUT_MAX} characters), or absent`);
+  if (o.minutes !== undefined && (typeof o.minutes !== "number" || !Number.isFinite(o.minutes) || o.minutes < 0 || o.minutes > MINUTES_MAX)) throw new ManifestError(`${at}.minutes`, `must be a number of minutes (0 to ${MINUTES_MAX}), or absent`);
+  return { ...(typeof o.about === "string" ? { about: o.about.trim() } : {}), ...(typeof o.minutes === "number" ? { minutes: o.minutes } : {}) };
+}
+
+// ---- Release with Options (the operator's choices at Start) -------------------------------------------
+
+/** Which number the release takes (semver): the operator's pick in Release with Options. A version the Release Note names still wins. */
+export const RELEASE_KINDS = ["patch", "minor", "major"] as const;
+export type ReleaseKind = (typeof RELEASE_KINDS)[number];
+
+/** release.start's options (the operator's alone). Absent or empty: a plain Start Release, exactly as before. `skipSteps`:
+    manifest steps marked `skippable`; `skipChecks`: ids of the settings' release checks (landing checks always run). */
+export interface ReleaseStartOptions {
+  kind?: ReleaseKind;
+  skipSteps?: string[];
+  skipChecks?: string[];
+}
+
+/** What a release started with, on its record (present only when the start had an option). `off`: each thing turned
+    off, with its label at Start (the release card's "Turned off: …"). */
+export interface ReleaseOptions {
+  kind: ReleaseKind | null;
+  skipSteps: string[];
+  skipChecks: string[];
+  off: { what: "step" | "check"; id: string; label: string }[];
+}
+
+const SEMVER_CORE = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z.-]+)?$/;
+/** The next version of each kind after `latest` (semver X.Y.Z; null when it isn't one). No release yet: from 0.0.0.
+    Major is the next first number: 0.17.0 → 1.0.0. */
+export function nextVersions(latest: string | null): Record<ReleaseKind, string> | null {
+  const m = SEMVER_CORE.exec(latest ?? "0.0.0");
+  if (!m) return null;
+  const [a, b, c] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const pre = /-/.test(latest ?? "");
+  // A pre-release's patch is the release it leads to (1.2.3-rc.1 → 1.2.3).
+  return { patch: pre ? `${a}.${b}.${c}` : `${a}.${b}.${c + 1}`, minor: `${a}.${b + 1}.0`, major: `${a + 1}.0.0` };
 }
 
 // ---- a release and its steps ----------------------------------------------------------------------
@@ -218,6 +289,8 @@ export interface ReleaseRecord {
   note?: string;
   /** The assistant's or overseer's pending ask this start consumed and passed to its chat as their context. */
   asked?: { by: string; why: string };
+  /** The operator's Release with Options choices (absent: a plain Start Release). */
+  options?: ReleaseOptions;
 }
 
 /** The operator's Release Note: at most this many characters. */
@@ -290,6 +363,13 @@ export interface ReleaseView {
   quiet: { minutes: number } | null;
   /** The operator's saved Release Note, for the next start (release.note); null when none. */
   note: { text: string; at: string } | null;
+  /** The release playbook's manifest on the target's tip (Release with Options lists its steps and hints); null when it doesn't read. */
+  manifest: ReleaseManifest | null;
+  /** The merge section's required checks (every landing runs them; a release always does too), with their labels and
+      the manifest's rough minutes for each (`checks` hints). */
+  landingChecks: { id: string; label: string; minutes?: number }[];
+  /** The version each kind gives after `latest` (semver only; null otherwise). */
+  next: Record<ReleaseKind, string> | null;
 }
 
 export interface ReleaseReport {

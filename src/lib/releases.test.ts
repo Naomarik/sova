@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStep, ReleaseView } from "../../shared/release";
 import {
-  abandonConfirmLine,
   askerWord,
+  cancelConfirmLine,
   NOTE_MAX,
   noteDraft,
   savedNoteLine,
@@ -15,10 +15,12 @@ import {
   publishConfirmLine,
   publishLabel,
   releaseAt,
+  releaseChatHref,
   releaseChip,
   releaseOfTarget,
   shownRecord,
   sinceLine,
+  startWords,
   stepActions,
   visibleSteps,
   withdrawConfirmLine,
@@ -114,9 +116,23 @@ test("Withdraw moves each channel back to the newest release before it that isn'
   assert.match(withdrawConfirmLine(item("v0.8.0"), null, false), /^No channel points at it, so nothing moves\./);
 });
 
-test("Abandon says a landed release commit is reverted as a landing, never otherwise", () => {
-  assert.doesNotMatch(abandonConfirmLine(record()), /reverted/);
-  assert.match(abandonConfirmLine(record({ entry: "mq_1", commit: "c".repeat(40) })), /reverted as a landing on the target/);
+test("Cancel's confirm names the commit it reverts, and still reads without one", () => {
+  assert.match(cancelConfirmLine("c".repeat(40), "master"), /^Cancelling reverts the release commit ccccccc, which already landed on master, as a landing of its own\. The release chat stops and nothing is published/);
+  assert.match(cancelConfirmLine(null, "master"), /^Cancelling reverts the release commit, which already landed on master/);
+});
+
+test("Start Release says when it saves the open note first, and plain otherwise", () => {
+  assert.equal(startWords(null), "Start Release", "editor closed");
+  assert.equal(startWords({ text: "Skip docs", changed: false }), "Start Release", "open, unchanged: the saved note goes as it is");
+  assert.equal(startWords({ text: "Skip docs", changed: true }), "Start Release with This Note");
+  assert.equal(startWords({ text: "", changed: true }), "Clear Note and Start Release");
+});
+
+test("Open Release Chat goes to the chat's file route when the record has it, else to its id", () => {
+  const byPath = releaseChatHref("prj_x", { session: "s-rel", path: "/w/sessions/rel.jsonl" });
+  assert.equal(byPath, `#/s/${encodeURIComponent("/w/sessions/rel.jsonl")}`);
+  assert.doesNotMatch(byPath, /s-rel/, "never the id where the path belongs");
+  assert.equal(releaseChatHref("prj_x", { session: "s rel" }), "#/sid/s%20rel");
 });
 
 test("a Deploy row's release: the history item that lists the target, else the one at its verified commit", () => {

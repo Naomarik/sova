@@ -1,6 +1,7 @@
 // A project's Releases screens in a real Chrome, at 1280px and 390px: the Releases tab not set up (Set Up Releases),
 // a release in progress (its steps, Continue, Retry Step, Publish held by its gates, then Publish with its confirm, the
-// release power's countdown with Cancel, Abandon with a reason), the history with channel badges and Withdraw, and on
+// release power's countdown with Cancel, Cancel Release in one press or with one confirm once its commit landed), Release
+// with Options (kind, presets, what's turned off) and the card's "Turned off", the history with channel badges and Withdraw, and on
 // the Deploy tab the Deploy row's "Runs vX" and the Plan Deploy of vX hand-off. The app's own build,
 // served from a scratch build with every request answered here (no server, no network); each verb call is recorded.
 // Chrome or Chromium must be installed (as the tour tests: nothing is downloaded).
@@ -92,6 +93,9 @@ const view = (x: Partial<ReleaseView> = {}): ReleaseView => ({
   quiet: null,
   deployTargets: ["prod"],
   note: null,
+  manifest: null,
+  landingChecks: [],
+  next: null,
   ...x,
 });
 const TARGET: DeployTargetView = { name: "prod", about: "the public site", standing: "declared", last: null, verifiedCommit: sha("9"), rollback: "redeploy-previous", request: null };
@@ -106,7 +110,7 @@ interface Opened {
   set(v: ReleaseView): void;
 }
 
-async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown>; onboard409?: string; setup?: SetupStatus; setup409?: string; /** A verb's effect on the view release.status answers next. */ react?: (verb: string, body: Record<string, unknown>, v: ReleaseView) => ReleaseView | undefined } = {}): Promise<Opened> {
+async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown>; onboard409?: string; setup?: SetupStatus; setup409?: string; /** A verb's effect on the view release.status answers next. */ react?: (verb: string, body: Record<string, unknown>, v: ReleaseView) => ReleaseView | undefined; /** A release verb's refusal ({code, message} and its report), else it goes through. */ refuse?: (verb: string, body: Record<string, unknown>) => { code: string; message: string; release?: Record<string, unknown> } | undefined } = {}): Promise<Opened> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
@@ -123,6 +127,8 @@ async function open(width: number, hash: string, first: ReleaseView, o: { runtim
     const verb = /^\/api\/project-services\/((?:release|deploy)\.[a-z-]+)$/.exec(p)?.[1];
     if (verb) {
       calls.push({ verb, body: body() });
+      const no = o.refuse?.(verb, body());
+      if (no) return route.fulfill(json({ ...ok(verb, no.release ? { release: no.release } : {}), ok: false, changed: false, error: { code: no.code, message: no.message } }, 409));
       current = o.react?.(verb, body(), current) ?? current;
       if (verb === "release.status") return route.fulfill(json(ok(verb, { release: { view: current } })));
       if (verb.startsWith("release.")) return route.fulfill(json(ok(verb, { release: { view: current } })));
@@ -245,7 +251,7 @@ describe("the Releases tab", () => {
   });
 
   for (const width of [1280, 390]) {
-    test(`a release in progress at ${width}px: its steps and states, Continue, Retry Step, Publish held by its gates, Abandon with a reason`, async () => {
+    test(`a release in progress at ${width}px: its steps and states, Continue, Retry Step, Publish held by its gates, Cancel Release in one press`, async () => {
       const r = record();
       const o = await open(width, TAB, view({ open: r, gates: { checksPassed: false, stepsDone: false, notes: true, why: ["the gating checks haven't passed yet", "steps not done: bump, commit"] } }));
       try {
@@ -254,7 +260,7 @@ describe("the Releases tab", () => {
         const states = await card.locator("[data-step]").evaluateAll((els) => els.map((e) => `${e.getAttribute("data-step")}:${e.getAttribute("data-state")}`));
         assert.deepEqual(states, ["version:done", "notes:done", "bump:failed", "commit:waiting", "checks:waiting", "try-live:held", "publish:waiting", "gh-release:waiting"], "after-withdraw steps wait until a withdraw");
         await card.getByText("Step 3 of 8 · Bump the files failed · 2 done").waitFor();
-        await card.getByText("Other landings wait in the queue until v0.10.0 is published or abandoned.").waitFor();
+        await card.getByText("Other landings wait in the queue until v0.10.0 is published or cancelled.").waitFor();
         await card.getByText("Not ready to publish: the gating checks haven't passed yet; steps not done: bump, commit.").waitFor();
         assert.equal(await card.getByRole("button", { name: /^Publish/ }).count(), 0);
         // A step's detail opens in place.
@@ -266,22 +272,63 @@ describe("the Releases tab", () => {
         await card.getByRole("button", { name: "Continue after Try it on the live server" }).click();
         await called(o, "release.continue");
         assert.deepEqual(lastCall(o, "release.continue").body, { project: ROOT_DIR, release: "rl_abc123", step: "try-live" });
-        await card.getByRole("link", { name: "Open Release Chat" }).waitFor();
+        // Open Release Chat opens the chat by its file when the record has it, else by its id (never its id as a path).
+        assert.equal(await card.getByRole("link", { name: "Open Release Chat" }).getAttribute("href"), "#/sid/s-rel");
         if (width < 768) await noSideScroll(o.page);
         await shot(o.page, `in-progress-${width}`);
-        // Abandon asks why, and says nothing is published.
-        await card.getByRole("button", { name: "Abandon Release" }).click();
-        const ask = o.page.getByRole("group", { name: "Confirm abandoning v0.10.0" });
-        await ask.getByText(/nothing is published\. If its release commit already landed, it's reverted as a landing on the target\./).waitFor();
-        await ask.getByLabel(/Why/).fill("wrong base");
-        await ask.getByRole("button", { name: "Abandon Release" }).click();
+        // Cancel Release: the first press asks no confirm and no reason; the server cancels (it hasn't landed).
+        assert.equal(await card.getByRole("button", { name: "Abandon Release" }).count(), 0, "Cancel Release replaces Abandon Release");
+        await card.getByRole("button", { name: "Cancel Release" }).click();
         await called(o, "release.abandon");
-        assert.deepEqual(lastCall(o, "release.abandon").body, { project: ROOT_DIR, release: "rl_abc123", why: "wrong base", confirm: true });
+        assert.deepEqual(lastCall(o, "release.abandon").body, { project: ROOT_DIR, release: "rl_abc123" });
+        assert.equal(await o.page.getByRole("group", { name: /^Confirm cancelling/ }).count(), 0, "the server cancelled: no confirm");
       } finally {
         await o.ctx.close();
       }
     });
   }
+
+  test("Cancel Release on a landed commit: the server answers needs-confirm, and the one confirm names the commit it reverts", async () => {
+    // The polled view still shows the checks waiting: the server's answer at the press decides, not the view.
+    const r = record({ thread: { session: "s-rel", path: "/w/sessions/rel.jsonl" } });
+    const landed = record({ commit: sha("d") });
+    const refuse = (verb: string, b: Record<string, unknown>) =>
+      verb === "release.abandon" && b.confirm !== true ? { code: "needs-confirm", message: "release.abandon needs confirm: true (it reverts the release commit)", release: { release: landed } } : undefined;
+    const o = await open(1280, TAB, view({ open: r }), { refuse });
+    try {
+      const card = o.page.getByRole("group", { name: "Release in progress" });
+      assert.equal(await card.getByRole("link", { name: "Open Release Chat" }).getAttribute("href"), `#/s/${encodeURIComponent("/w/sessions/rel.jsonl")}`);
+      await card.getByRole("button", { name: "Cancel Release" }).click();
+      const ask = o.page.getByRole("group", { name: "Confirm cancelling v0.10.0" });
+      await ask.getByText(/^Cancelling reverts the release commit ddddddd, which already landed on master, as a landing of its own\./).waitFor();
+      assert.deepEqual(lastCall(o, "release.abandon").body, { project: ROOT_DIR, release: "rl_abc123" }, "the first press sends no confirm");
+      assert.equal(await ask.getByRole("textbox").count(), 0, "no reason asked");
+      assert.equal(await card.getByRole("alert").count(), 0, "needs-confirm is a question, not a refusal");
+      await shot(o.page, "cancel-landed");
+      await ask.getByRole("button", { name: "Keep Release" }).click();
+      await ask.waitFor({ state: "detached" });
+      assert.equal(o.calls.filter((c) => c.verb === "release.abandon").length, 1, "Keep Release sends nothing");
+      await card.getByRole("button", { name: "Cancel Release" }).click();
+      await ask.getByRole("button", { name: "Cancel and Revert" }).click();
+      await until("the confirmed cancel", () => o.calls.filter((c) => c.verb === "release.abandon").length === 3);
+      assert.deepEqual(lastCall(o, "release.abandon").body, { project: ROOT_DIR, release: "rl_abc123", confirm: true });
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
+  test("a release started with options says which kind and what was turned off", async () => {
+    const r = record({ options: { kind: "minor", skipSteps: ["docs"], skipChecks: ["release-spec-replay"], off: [{ what: "step", id: "docs", label: "Docs pages" }, { what: "check", id: "release-spec-replay", label: "Spec replay" }] } });
+    const o = await open(1280, TAB, view({ open: r }));
+    try {
+      const ctx = o.page.getByRole("group", { name: "What this release started with" });
+      await ctx.getByText("Started with options").waitFor();
+      await ctx.getByText("Minor release, picked at Start.").waitFor();
+      await ctx.getByText("Turned off: Docs pages and Spec replay.").waitFor();
+    } finally {
+      await o.ctx.close();
+    }
+  });
 
   test("a ready release: Publish confirms what goes out first; the release power's countdown carries Cancel", async () => {
     const steps = record().steps.map((s) => (s.phase === "after" || s.phase === "withdraw" || s.id === "publish" ? s : { ...s, state: "done" as const }));
@@ -446,6 +493,26 @@ describe("the Release Note", () => {
     }
   });
 
+  test("Start with the note editor open on a changed draft saves the note first, and its label says so", async () => {
+    const react = (verb: string, b: Record<string, unknown>, v: ReleaseView): ReleaseView | undefined => (verb === "release.note" ? { ...v, note: { text: String(b.text), at: iso(0) } } : undefined);
+    const o = await open(1280, TAB, view({ note: { text: "Release as 0.10.1.", at: iso(5) } }), { react });
+    try {
+      await o.page.getByRole("button", { name: "Release Note" }).click();
+      const area = o.page.getByRole("group", { name: "Release note", exact: true }).getByLabel("Release note", { exact: true });
+      assert.equal(await area.inputValue(), "Release as 0.10.1.", "the editor opens on the saved note");
+      await o.page.getByRole("button", { name: "Start Release", exact: true }).waitFor();
+      await area.fill("Release as 0.10.2.");
+      await o.page.getByRole("button", { name: "Start Release with This Note" }).click();
+      await called(o, "release.start");
+      const verbs = o.calls.map((c) => c.verb).filter((v) => v === "release.note" || v === "release.start");
+      assert.deepEqual(verbs, ["release.note", "release.start"], "saved, then started");
+      assert.deepEqual(lastCall(o, "release.note").body, { project: ROOT_DIR, text: "Release as 0.10.2." });
+      assert.deepEqual(lastCall(o, "release.start").body, { project: ROOT_DIR });
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
   test("a started release shows the note it got and the ask it received, the ask labelled as theirs", async () => {
     const r = record({ note: "Release as 0.10.1.", asked: { by: "assistant:prj_rel00001", why: "3 fixes since v0.9.0 wait on a release" } });
     const o = await open(1280, TAB, view({ open: r, note: { text: "For the one after: skip docs.", at: iso(1) } }));
@@ -463,6 +530,152 @@ describe("the Release Note", () => {
       await shot(o.page, "note-on-record");
     } finally {
       await o.ctx.close();
+    }
+  });
+});
+
+const OPTIONS_VIEW: Partial<ReleaseView> = {
+  settings: { checks: [{ id: "release-integration", label: "Every integration group" }, { id: "release-spec-replay", label: "Spec replay" }] } as unknown as ReleaseView["settings"],
+  manifest: {
+    v: 1,
+    steps: [
+      { id: "version", label: "Pick the version", phase: "prepare" },
+      { id: "notes", label: "Full release notes", phase: "prepare", skippable: true, about: "Off: one short line in the changelog.", minutes: 2 },
+      { id: "docs", label: "Docs pages", phase: "prepare", skippable: true },
+      { id: "commit", label: "Make the release commit", phase: "prepare" },
+      { id: "try-live", label: "Try it on the live server", phase: "check", held: true, skippable: true, minutes: 3 },
+      { id: "release-page", label: "Publish the release page", phase: "after" },
+    ],
+    checks: { "release-integration": { minutes: 8.5 }, typecheck: { minutes: 0.6 }, unit: { minutes: 1.4 } },
+  },
+  landingChecks: [{ id: "typecheck", label: "Typecheck" }, { id: "unit", label: "Unit tests" }],
+  next: { patch: "0.9.1", minor: "0.10.0", major: "1.0.0" },
+};
+
+describe("Release with Options", () => {
+  for (const width of [1280, 390]) {
+    test(`at ${width}px: the ▾ opens it; kind, Quick, a check back on, and Start sends the kind and what's off`, async () => {
+      const o = await open(width, TAB, view(OPTIONS_VIEW));
+      try {
+        await o.page.getByRole("button", { name: "More ways to start a release" }).click();
+        await o.page.getByRole("menuitem", { name: "Release with options" }).click();
+        const panel = o.page.getByRole("group", { name: "Release with options" });
+        await panel.waitFor();
+        assert.equal(await o.page.getByRole("button", { name: "More ways to start a release" }).count(), 0, "the head's split steps aside: the panel's Start is the one primary while it's open");
+        assert.equal(await o.page.getByRole("button", { name: "Start Release", exact: true }).count(), 1, "Auto: the panel's Start reads Start Release");
+        await panel.getByText("0.9.1 or 0.10.0", { exact: true }).waitFor();
+        assert.equal(await panel.getByRole("radio", { name: /Auto/ }).isChecked(), true, "Auto is the default");
+        await panel.getByText("0.10.0", { exact: true }).waitFor();
+        // Every group opens folded: its header says how many are on and their minutes, and no row shows.
+        const head = (g: string) => panel.getByRole("group", { name: g, exact: true }).getByRole("button", { name: new RegExp(`^${g}`) });
+        const heads: [string, string][] = [["Always done", "never turned off"], ["Release steps", "3 of 3 on · about 5 min"], ["Release-only checks", "2 of 2 on · about 9 min"], ["Landing checks", "all run · about 2 min"]];
+        for (const [g, words] of heads) {
+          assert.equal(await head(g).getAttribute("aria-expanded"), "false", `${g} starts folded`);
+          assert.match((await head(g).textContent()) ?? "", new RegExp(words.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+        }
+        assert.equal(await panel.getByRole("checkbox").count(), 0, "folded: no rows");
+        await panel.getByRole("button", { name: /^Start Release$/ }).waitFor();
+        await panel.getByText("about 16 min", { exact: true }).waitFor();
+        // A header opens its group by keyboard too.
+        await head("Release steps").focus();
+        await o.page.keyboard.press("Enter");
+        assert.equal(await head("Release steps").getAttribute("aria-expanded"), "true");
+        for (const g of ["Always done", "Release-only checks", "Landing checks"]) await head(g).click();
+        await panel.locator("label", { hasText: "Minor" }).click();
+        assert.equal(await panel.getByRole("radio", { name: /Minor/ }).isChecked(), true);
+        const go = panel.getByRole("button", { name: /^Start .* Release/ });
+        assert.equal(await go.textContent(), "Start Minor Release");
+        await panel.getByText("about 16 min", { exact: true }).waitFor();
+        // What can't be turned off reads on and fixed.
+        for (const name of [/^Pick the version/, /^Publish, after your confirm/, /^Typecheck/, /^Unit tests/]) {
+          const box = panel.getByRole("checkbox", { name });
+          assert.equal(await box.isChecked(), true);
+          assert.equal(await box.isDisabled(), true);
+        }
+        assert.equal(await panel.getByRole("checkbox", { name: /^Publish the release page/ }).isDisabled(), true, "an after step not marked skippable always runs");
+        await panel.getByText("Off: one short line in the changelog.").waitFor();
+        await panel.getByRole("button", { name: "Quick" }).click();
+        assert.equal(await panel.getByRole("button", { name: "Quick" }).getAttribute("aria-pressed"), "true");
+        for (const name of [/^Full release notes/, /^Docs pages/, /^Try it on the live server/, /^Every integration group/, /^Spec replay/]) assert.equal(await panel.getByRole("checkbox", { name }).isChecked(), false);
+        assert.equal(await go.textContent(), "Start Minor Release (Custom)");
+        await panel.getByText("about 2 min", { exact: true }).waitFor();
+        assert.match((await head("Release steps").textContent()) ?? "", /0 of 3 on$/);
+        await panel.getByText("Spec replay").click();
+        assert.equal(await panel.getByRole("checkbox", { name: /^Spec replay/ }).isChecked(), true);
+        const fill = (text: string) => panel.locator(".toggle", { hasText: text }).locator(".toggle-box").evaluate((el) => getComputedStyle(el).backgroundColor);
+        const on = await fill("Pick the version");
+        await until("Spec replay drawn on, as the boxes that are on", async () => (await fill("Spec replay")) === on);
+        assert.notEqual(await fill("Docs pages"), on, "an unticked box is drawn off");
+        assert.equal(await panel.getByRole("button", { name: "Quick" }).getAttribute("aria-pressed"), "false", "one back on: neither preset");
+        if (width < 768) await noSideScroll(o.page);
+        await shot(o.page, `options-${width}`);
+        await panel.evaluate((el) => el.scrollIntoView());
+        await shot(o.page, `options-top-${width}`);
+        await go.click();
+        await called(o, "release.start");
+        assert.deepEqual(lastCall(o, "release.start").body, { project: ROOT_DIR, kind: "minor", skipSteps: ["notes", "docs", "try-live"], skipChecks: ["release-integration"] });
+      } finally {
+        await o.ctx.close();
+      }
+    });
+  }
+
+  test("folding a group keeps what's off in it: Docs off, its group folded again, Start still sends it", async () => {
+    const o = await open(1280, TAB, view(OPTIONS_VIEW));
+    try {
+      await o.page.getByRole("button", { name: "More ways to start a release" }).click();
+      await o.page.getByRole("menuitem", { name: "Release with options" }).click();
+      const panel = o.page.getByRole("group", { name: "Release with options" });
+      const head = panel.getByRole("group", { name: "Release steps", exact: true }).getByRole("button", { name: /^Release steps/ });
+      assert.equal(await head.getAttribute("aria-controls"), null, "folded: it controls nothing on the page");
+      await head.click();
+      assert.equal(await panel.locator(`#${await head.getAttribute("aria-controls")}`).count(), 1, "open: aria-controls names its rows");
+      await panel.getByText("Docs pages").click();
+      await head.click();
+      assert.equal(await head.getAttribute("aria-expanded"), "false");
+      assert.match((await head.textContent()) ?? "", /2 of 3 on/, "the folded header still counts it off");
+      await panel.getByRole("button", { name: "Start Release (Custom)" }).click();
+      await called(o, "release.start");
+      assert.deepEqual(lastCall(o, "release.start").body, { project: ROOT_DIR, skipSteps: ["docs"] });
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
+  test("left at Auto and Full it sends exactly a plain Start Release; a kind is sent only when picked; Cancel sends nothing; no manifest, no ▾", async () => {
+    const o = await open(1280, TAB, view(OPTIONS_VIEW));
+    try {
+      await o.page.getByRole("button", { name: "More ways to start a release" }).click();
+      await o.page.getByRole("menuitem", { name: "Release with options" }).click();
+      const panel = o.page.getByRole("group", { name: "Release with options" });
+      assert.equal(await panel.getByRole("button", { name: "Full" }).getAttribute("aria-pressed"), "true");
+      await panel.getByRole("button", { name: "Cancel" }).click();
+      await panel.waitFor({ state: "detached" });
+      assert.equal(o.calls.some((c) => c.verb === "release.start"), false);
+      await o.page.getByRole("button", { name: "More ways to start a release" }).click();
+      await o.page.getByRole("menuitem", { name: "Release with options" }).click();
+      // Auto, nothing off: byte for byte the request a plain Start Release sends.
+      assert.equal(await panel.getByRole("radio", { name: /Auto/ }).isChecked(), true);
+      await panel.getByRole("button", { name: "Start Release", exact: true }).click();
+      await called(o, "release.start");
+      const sent = o.calls.filter((c) => c.verb === "release.start");
+      assert.equal(JSON.stringify(sent[0]!.body), JSON.stringify({ project: ROOT_DIR }), "Auto + Full = the plain request, no options");
+      // A kind picked, nothing off: only the kind goes.
+      await o.page.getByRole("button", { name: "More ways to start a release" }).click();
+      await o.page.getByRole("menuitem", { name: "Release with options" }).click();
+      await panel.locator("label", { hasText: "Patch" }).click();
+      await panel.getByRole("button", { name: "Start Patch Release" }).click();
+      await until("the second start", () => o.calls.filter((c) => c.verb === "release.start").length === 2);
+      assert.deepEqual(lastCall(o, "release.start").body, { project: ROOT_DIR, kind: "patch" });
+    } finally {
+      await o.ctx.close();
+    }
+    const plain = await open(1280, TAB, view());
+    try {
+      await plain.page.getByRole("button", { name: "Start Release", exact: true }).waitFor();
+      assert.equal(await plain.page.getByRole("button", { name: "More ways to start a release" }).count(), 0);
+    } finally {
+      await plain.ctx.close();
     }
   });
 });

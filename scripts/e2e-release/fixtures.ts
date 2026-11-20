@@ -59,6 +59,8 @@ export interface ReleaseStep {
   held?: true;
   /** Its done report carries an artifact's facts. */
   artifact?: true;
+  /** The operator may turn it off at Start (Release with Options). */
+  skippable?: true;
 }
 
 export const DEFAULT_STEPS: ReleaseStep[] = [

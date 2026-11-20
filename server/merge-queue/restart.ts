@@ -174,7 +174,7 @@ export async function restartSelf(q: RestartQueue, deps: RestartDeps): Promise<M
   if (deps.checkout() !== q.root) return { outcome: "nothing", why: `Sova doesn't run from ${q.root}: this project's merge thread restarts nothing` };
   const facts = q.restartFacts();
   if (facts.busy) return { outcome: "nothing", why: "something is queued or checking: another Idle follows" };
-  if (facts.release) return { outcome: "nothing", why: "a release is open: nothing is built or restarted until it is published or abandoned" };
+  if (facts.release) return { outcome: "nothing", why: "a release is open: nothing is built or restarted until it is published or cancelled" };
   const pending = readPending(pendingFile(q));
   if (pending) {
     // The restart was scheduled but this start is still the one it was to replace: on its way for a minute or two, then

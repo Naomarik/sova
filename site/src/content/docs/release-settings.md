@@ -62,7 +62,7 @@ A release lands its commit on the main branch and pushes it itself, so a project
 by pull request, merge request or a pushed branch can't release yet. Set how it lands to Merge
 locally in [Settings → Merge Queue](/docs/merge-queue-settings/) first. While a release is open, this
 computer's choice of how it lands can't change, and a save to the project's file waits until the
-release is published or abandoned.
+release is published or cancelled.
 
 ## The Release Note
 

@@ -13,7 +13,6 @@ import * as maker from "../system-playbooks/release-maker/scripts/release-maker.
 import { formatText } from "../system-playbooks/project-verbs/scripts/project-verbs.mjs";
 // @ts-expect-error: a plain .mjs driver, no types
 import * as sr from "../.sova/playbook-config/release/scripts/sova-release.mjs";
-import { migrationsDue, readMigrations } from "../migrations/due.mjs";
 
 /**
  * Sova's own release setup: its `release` section and `site` deploy target (in .sova/project.json), its project release
@@ -43,7 +42,7 @@ test("Sova's release settings and site target are in .sova/project.json, parse, 
   assert.equal(def.release?.playbook, ".sova/playbook-config/release");
   assert.deepEqual(def.release?.channels, ["stable"]);
   assert.equal(def.release?.commit, true);
-  assert.deepEqual(def.release?.checkIds, ["migrations-due", "release-notes", "release-integration", "release-extensions", "release-spec-replay", "release-site", "release-spec", "release-leaks"]);
+  assert.deepEqual(def.release?.checkIds, ["release-notes", "release-integration", "release-extensions", "release-spec-replay", "release-site", "release-spec", "release-leaks"]);
   const site = def.deploy?.targets.find((t) => t.name === "site");
   assert.ok(site);
   assert.equal(site.releases, "only");
@@ -205,22 +204,31 @@ test("every script Sova's own config playbooks run by path (`node <path>`) is in
   for (const [page, script] of named) assert.ok(existsSync(join(ROOT, script)), `${page} runs ${script}, which isn't in the tree`);
 });
 
-test("a release at or past a migration's removeIn is refused at its version step and by its release check; one before it goes on", () => {
-  const r = mkdtempSync(join(tmpdir(), "sova-mig-due-"));
-  try {
-    mkdirSync(join(r, "migrations"));
-    writeFileSync(join(r, "migrations", "manifest.json"), JSON.stringify([{ id: "a", removeIn: "0.18.0" }, { id: "b", removeIn: "1.2.0" }]));
-    const due = (v: string) => migrationsDue(v, readMigrations(r)).map((m) => m.id);
-    for (const [v, want] of [["0.17.9", []], ["0.18.0-rc.1", ["a"]], ["0.18.0", ["a"]], ["0.19.3", ["a"]], ["1.1.9", ["a"]], ["1.2.0", ["a", "b"]], ["2.0.0", ["a", "b"]]] as const)
-      assert.deepEqual(due(v), want, v);
-    writeFileSync(join(r, "package.json"), JSON.stringify({ version: "0.18.0" }));
-    assert.equal(sr.migrationsDueCheck(r, undefined), 1, "the release check reads package.json's version: the release commit's");
-    assert.equal(sr.migrationsDueCheck(r, "0.17.1"), 0, "the version step names the version it picked");
-  } finally {
-    rmSync(r, { recursive: true, force: true });
-  }
-  // Sova's own: the check is a release check, and nothing is due at the version it is at.
+test("no release step or release check is about migrations: nothing stops a release over them", () => {
   const def = parseDefinition(readFileSync(join(ROOT, ".sova/project.json"), "utf8"));
-  assert.deepEqual(def.release?.checks.find((c) => c.id === "migrations-due")?.run, ["node", ".sova/playbook-config/release/scripts/sova-release.mjs", "migrations-due"]);
-  assert.equal(sr.migrationsDueCheck(ROOT, undefined), 0, "nothing is due at Sova's own version");
+  assert.ok(def.release?.checks.length, "the scan reads Sova's release checks");
+  for (const c of def.release?.checks ?? []) assert.doesNotMatch(`${c.id} ${c.label} ${c.run.join(" ")}`, /migration/i, c.id);
+  assert.ok(!sr.SUBCOMMANDS.some((x: string) => /migration/.test(x)), "the driver has no migrations subcommand");
+  assert.doesNotMatch(readFileSync(join(ROOT, ".sova/playbook-config/release/PLAYBOOK.md"), "utf8"), /migration/i, "the release playbook never mentions migrations");
+});
+
+test("Release with Options in the playbooks: the kind picks the number (major is 1.0.0), turned-off steps are reported skipped, landings freeze at Start, the chat says what it is", () => {
+  const playbook = readFileSync(join(ROOT, ".sova/playbook-config/release/PLAYBOOK.md"), "utf8");
+  const general = readFileSync(join(ROOT, "system-playbooks/release/PLAYBOOK.md"), "utf8");
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbook-config/release/release.json"), "utf8"));
+  // The steps the panel offers are the ones the playbook says what to do without.
+  const off = manifest.steps.filter((s) => s.skippable).map((s) => s.id);
+  assert.deepEqual(off, ["notes", "stamps", "docs", "try-live", "outside-checks"]);
+  const section = playbook.slice(playbook.indexOf("## Steps turned off at Start"), playbook.indexOf("## Steps\n"));
+  for (const id of off) assert.ok(section.includes(`\`${id}\``), `${id} named where turned-off steps are`);
+  assert.match(section, /report it `skipped`, summary "Turned off at Start"/);
+  assert.doesNotMatch(playbook, /never a major while 0\.x/);
+  assert.match(playbook, /a \*\*major\*\* \(1\.0\.0 from 0\.x\) only when the operator picks it/);
+  assert.match(playbook, /The kind the operator picked in Release with Options[^\n]*wins over this rule/);
+  assert.match(general, /From the moment the operator presses Start Release until Publish or Cancel Release/);
+  assert.doesNotMatch(general, /From the moment the release commit is queued/);
+  assert.match(general, /begin your reply with "I'm the release chat for this release; I only run its steps\."/);
+  assert.match(general, /Retry Step[^\n]*Continue[^\n]*Cancel Release[^\n]*Publish[^\n]*a new chat/);
+  assert.match(general, /"Retry can't pass\. Cancel the release, land it, start again\."/);
+  assert.match(general, /each \*\*turned-off step\*\* is never run: report it `skipped`/);
 });

@@ -152,7 +152,7 @@ A release, in order:
 6. **After** steps (the chat): a release page (`gh release create --verify-tag` only), a registry
    publish, building an artifact, store submission. A failed one never undoes Publish.
 7. **Withdraw** (the operator, after a bad release): channels move back; then the `withdraw` steps.
-Abandon (the operator) reverts an unpublished release commit through the queue and lifts the freeze.
+Cancel Release (the operator's, `release.abandon`) reverts an unpublished release commit through the queue and lifts the freeze.
 
 What a release playbook may never do (its check refuses it): push, create or move a tag, update a ref
 by hand, reset a branch, `gh release create` without `--verify-tag`, call Sova, pause the queue,

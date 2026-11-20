@@ -51,8 +51,9 @@ also update Y" list live in its guide: read the guide of every area your task to
   `.sova/playbook-config/<id>/` (merge-queue, release, review, request, project-setup), never in
   `.sova/playbooks/`, which holds only playbooks you start.
 - `migrations/`: temporary code that keeps an old place working, one folder per migration, listed in
-  `migrations/manifest.json` with the version that removes it (`server/migrations.test.ts` fails once
-  it is due); reached through one import per call site (`migrations/README.md`).
+  `migrations/manifest.json` under the major release that clears it (`clearedIn`, e.g. `1.0.0`); no
+  removal date, and nothing stops a release over one; reached through one import per call site
+  (`migrations/README.md`).
 
 ## Commands
 

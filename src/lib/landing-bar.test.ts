@@ -321,8 +321,8 @@ test("a held release step is warn and needs you, with Continue in place; a faile
   const failed = bar([proj({ release: release({ open: record({ steps: plan({ changelog: "failed" }) }) }) })])!;
   assert.equal(failed.top.title, "Changelog failed");
   assert.ok(failed.top.actions.some((a) => a.kind === "retry" && a.step === "changelog"));
-  // Publish and Abandon are never in the bar.
-  for (const a of [...held.top.actions, ...failed.top.actions]) assert.ok(!/Publish|Abandon/.test(a.label));
+  // Publish and Cancel Release are never in the bar.
+  for (const a of [...held.top.actions, ...failed.top.actions]) assert.ok(!/Publish|Cancel Release|Abandon/.test(a.label));
 });
 
 test("ready to publish, the power's countdown, a quiet chat", () => {

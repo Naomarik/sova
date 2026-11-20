@@ -406,7 +406,7 @@ try {
     check(c, FLOW.deployedVersion() === v02, "the unreleased tip was refused; target still runs v0.2.0");
   });
 
-  // ---------------- F3 Abandon (phone drives) → master back, queue resumes
+  // ---------------- F3 Cancel Release (phone drives) → master back, queue resumes
   await flowRun("F3", async (c) => {
     const base = git(FLOW.project, ["rev-parse", "master"]);
     let rec: Rec | null = (await k.verb("release.status", { project: FLOW.project })).json.release?.view?.open ?? null;
@@ -421,19 +421,18 @@ try {
     const b = FLOW.branch("flow-later", { "src/flow-later.txt": "later\n" });
     await go(desk, tab(PID.flow, "merge-queue"), "frozen");
     await click(desk, "button", `Land ${b.branch}`);
-    await go(phone, tab(PID.flow, "releases"), "Abandon Release");
-    await click(phone, "button", "Abandon Release");
-    await phone.waitForTimeout(500);
-    const why = phone.getByRole("group", { name: "Confirm abandoning v0.4.0" }).getByRole("textbox").filter({ visible: true });
-    if (await why.count()) await why.first().fill("Not this week");
-    await phone.screenshot({ path: join(OUT, "F3-1-abandon-confirm-phone.png") });
-    await click(phone, "button", "Abandon Release", "Confirm abandoning v0.4.0");
+    // Cancel Release: the release commit landed, so it asks once (it reverts the commit); no reason.
+    await go(phone, tab(PID.flow, "releases"), "Cancel Release");
+    await click(phone, "button", "Cancel Release");
+    await phone.getByRole("group", { name: "Confirm cancelling v0.4.0" }).filter({ visible: true }).first().waitFor({ timeout: 15_000 });
+    await phone.screenshot({ path: join(OUT, "F3-1-cancel-confirm-phone.png") });
+    await click(phone, "button", "Cancel and Revert", "Confirm cancelling v0.4.0");
     await openRec(FLOW, "abandoned", (r) => r.state === "abandoned", 120_000, ).catch(() => null);
     await until("master's tree back to the base", () => (git(FLOW.project, ["rev-parse", "master^{tree}"]) === git(FLOW.project, ["rev-parse", `${base}^{tree}`]) || git(FLOW.project, ["log", "--format=%s", "master"]).includes("feat: flow-later") ? true : null), 240_000, 500);
     await until("the waiting branch lands", () => (git(FLOW.project, ["log", "--format=%s", "master"]).includes("feat: flow-later") ? true : null), 240_000, 500);
     const log1 = git(FLOW.project, ["log", "--format=%s", "-4", "master"]);
     c.push(`master log: ${log1.replace(/\n/g, " | ")}`);
-    check(c, git(FLOW.project, ["show", "master~1:VERSION"], { allowFail: true }) !== "0.4.0" || /Revert|abandon/i.test(log1), "the release commit was reverted on master");
+    check(c, git(FLOW.project, ["show", "master~1:VERSION"], { allowFail: true }) !== "0.4.0" || /Revert|abandon|cancel/i.test(log1), "the release commit was reverted on master");
     check(c, !git(FLOW.project, ["tag", "-l", "v0.4.0"]), "no v0.4.0 tag");
     check(c, git(FLOW.project, ["ls-tree", "--name-only", "master", "src/"]).includes("flow-later.txt"), "queue resumed: the waiting branch landed");
     await go(desk, tab(PID.flow, "releases"), "Start Release");
@@ -451,15 +450,15 @@ try {
       rec = await openRec(SOLO, "solo release", (r) => !!r.thread?.path, 60_000);
       await chatPrepares(SOLO, rec, "0.2.0");
     } else if (rec.steps.some((s) => s.phase === "prepare" && s.state === "waiting") && stepOf(rec, "checks").state !== "waiting") {
-      // D12's stuck release: Abandon it from the screen, then start again.
+      // D12's stuck release: cancel it from the screen, then start again.
       notes_.push(`F8: abandoned the stuck release ${rec.id} (D12) from the screen`);
-      await go(desk, tab(PID.solo, "releases"), "Abandon Release");
-      await shot("F8-0-stuck-D12", "Abandon Release");
-      await click(desk, "button", "Abandon Release");
-      const g = `Confirm abandoning ${rec.tag ?? "v" + rec.version}`;
-      const why = desk.getByRole("group", { name: g }).getByRole("textbox").filter({ visible: true });
-      if (await why.count()) await why.first().fill("Stuck: bump can't be reported (D12)");
-      await click(desk, "button", "Abandon Release", g);
+      await go(desk, tab(PID.solo, "releases"), "Cancel Release");
+      await shot("F8-0-stuck-D12", "Cancel Release");
+      await click(desk, "button", "Cancel Release");
+      // One confirm only when its release commit landed (cancelling reverts it); else the press cancels.
+      const g = `Confirm cancelling ${rec.tag ?? "v" + rec.version}`;
+      await desk.waitForTimeout(500);
+      if (await desk.getByRole("group", { name: g }).count()) await click(desk, "button", "Cancel and Revert", g);
       await openRec(SOLO, "abandoned", (r) => r.state === "abandoned", 120_000, rec.id);
       await until("solo master back", () => (git(SOLO.project, ["log", "-3", "--format=%s", "master"]).includes("Revert") ? true : null), 240_000, 500);
       await go(desk, tab(PID.solo, "releases"), "Start Release");
@@ -519,14 +518,13 @@ try {
     check(c, true, "after bump, the commit is accepted and the gating checks start");
     await go(desk, tab(PID.solo, "releases"), "Release in progress");
     await shot("retest-D12-after-bump", "Release in progress", { deskOnly: true });
-    // leave acme-solo clean: Abandon from the screen
-    await click(desk, "button", "Abandon Release");
-    const g = "Confirm abandoning v0.3.0";
-    const why = desk.getByRole("group", { name: g }).getByRole("textbox").filter({ visible: true });
-    if (await why.count()) await why.first().fill("Retest only");
-    await click(desk, "button", "Abandon Release", g);
+    // leave acme-solo clean: Cancel Release from the screen (one confirm only once its commit landed)
+    await click(desk, "button", "Cancel Release");
+    const g = "Confirm cancelling v0.3.0";
+    await desk.waitForTimeout(500);
+    if (await desk.getByRole("group", { name: g }).count()) await click(desk, "button", "Cancel and Revert", g);
     await openRec(SOLO, "abandoned", (r) => r.state === "abandoned", 240_000, rec.id);
-    check(c, true, "retest release abandoned from the screen");
+    check(c, true, "retest release cancelled from the screen");
   });
 } finally {
   writeFileSync(join(OUT, "flows-results.json"), JSON.stringify({ results, notes: notes_, errors }, null, 2));

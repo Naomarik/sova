@@ -113,18 +113,23 @@ export function starterPlaybook({ tagOnly = false, bump = [], tag = "v${version}
   return lines.join("\n");
 }
 
-const MANIFEST_ORDER = { top: ["v", "steps"], step: ["id", "label", "phase", "held", "artifact"] };
+const MANIFEST_ORDER = { top: ["v", "steps", "checks"], step: ["id", "label", "phase", "held", "artifact", "skippable", "about", "minutes"], hint: ["about", "minutes"] };
 const sortKeys = (o, order) => Object.fromEntries([...order.filter((k) => k in o).map((k) => [k, o[k]]), ...Object.keys(o).filter((k) => !order.includes(k)).map((k) => [k, o[k]])]);
-/** release.json's canonical text: keys ordered, one step per line. Throws on bad JSON. */
+/** release.json's canonical text: keys ordered, one step per line, then the Release with Options panel's check hints
+    (`checks`), one per line. Throws on bad JSON. */
 export function formatManifest(text) {
   const m = JSON.parse(text);
   if (!isObj(m)) return `${JSON.stringify(m)}\n`;
   const o = sortKeys(m, MANIFEST_ORDER.top);
+  const line = (v) => JSON.stringify(v).replace(/,"/g, ', "').replace(/":/g, '": ');
   const steps = Array.isArray(o.steps) ? o.steps.map((s) => (isObj(s) ? sortKeys(s, MANIFEST_ORDER.step) : s)) : o.steps;
-  const rest = Object.entries(o).filter(([k]) => k !== "steps");
+  const rest = Object.entries(o).filter(([k]) => k !== "steps" && k !== "checks");
   const head = rest.map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)}`);
-  const body = Array.isArray(steps) ? `  "steps": [${steps.length ? `\n${steps.map((s) => `    ${JSON.stringify(s).replace(/,"/g, ', "').replace(/":/g, '": ')}`).join(",\n")}\n  ` : ""}]` : `  "steps": ${JSON.stringify(steps)}`;
-  return `{\n${[...head, ...(Object.prototype.hasOwnProperty.call(o, "steps") ? [body] : [])].join(",\n")}\n}\n`;
+  const body = Array.isArray(steps) ? `  "steps": [${steps.length ? `\n${steps.map((s) => `    ${line(s)}`).join(",\n")}\n  ` : ""}]` : `  "steps": ${JSON.stringify(steps)}`;
+  const hints = isObj(o.checks) ? Object.entries(o.checks).map(([id, h]) => `    ${JSON.stringify(id)}: ${line(isObj(h) ? sortKeys(h, MANIFEST_ORDER.hint) : h)}`) : null;
+  const checks = !("checks" in o) ? [] : hints ? [`  "checks": {${hints.length ? `\n${hints.join(",\n")}\n  ` : ""}}`] : [`  "checks": ${JSON.stringify(o.checks)}`];
+  // Unknown keys stay where they were (before steps); `checks` follows the steps.
+  return `{\n${[...head, ...(Object.prototype.hasOwnProperty.call(o, "steps") ? [body] : []), ...checks].join(",\n")}\n}\n`;
 }
 
 /** Write the starter into `root`. Refuses (returns problems, writes nothing) when any part exists. */
@@ -297,7 +302,7 @@ const FORBIDDEN = [
   [/["'`]git["'`]\s*,\s*\[\s*["'`]update-ref["'`]/, "moves a ref by hand (argv form): Sova's queue and Publish own them"],
   [/\bgh\s+release\s+create\b(?![^\n]*--verify-tag)/, "creates a release page without --verify-tag, which would make the tag itself"],
   [/\bgh\s+release\s+(delete|upload\s+--clobber)\b/, "deletes or overwrites a published release's page or files"],
-  [/\bgit\s+(reset\s+--hard|checkout\s+-B|branch\s+-f)\b/, "resets a branch: never in a release, abandon is Sova's"],
+  [/\bgit\s+(reset\s+--hard|checkout\s+-B|branch\s+-f)\b/, "resets a branch: never in a release, Cancel Release is Sova's"],
   [/\bsova-project\b|scripts\/sova-project\.mjs|\/api\/project-services\b|\bSOVA_TOKEN\b|auth-token/, "calls Sova as the operator: a step reports only through the release chat's own release.step"],
   [/\bmerge\.(pause|resume)\b/, "pauses or resumes the merge queue: the release freeze replaces it"],
 ];

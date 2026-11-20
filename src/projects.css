@@ -728,6 +728,37 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .rel-note-editor .field-hint { margin: 0; }
 .rel-note-count { margin-left: auto; font-variant-numeric: tabular-nums; }
 .rel-row .list-title { flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+/* Release with Options: the panel under the head. Each row is a checkbox whose label is two lines (its name with its
+   rough minutes, then what it does), box first; rows that can't be turned off are drawn checked and disabled. */
+.rel-options { display: flex; flex-direction: column; gap: var(--space-3); }
+.rel-options > p { margin: 0; }
+.rel-opt-kind { margin: 0; padding: 0; border: 0; min-width: 0; }
+.rel-opt-kind .field-hint { margin: 0; }
+.rel-opt-kinds { display: flex; flex-wrap: wrap; column-gap: var(--space-5); }
+/* The kinds are radios: round, the checked one a dot (as Settings' Text size), so they read apart from the checkboxes. */
+.rel-opt-kinds .toggle { justify-content: flex-start; }
+.rel-opt-kinds .toggle-box { border-radius: var(--r-full); }
+.rel-opt-kinds input:checked ~ .toggle-box { box-shadow: inset 0 0 0 3px var(--color-sunken); }
+.rel-opt-presets { gap: var(--space-2); }
+.rel-opt-presets .button[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-accent-tint); color: var(--color-accent); }
+.rel-opt-group { display: flex; flex-direction: column; border-top: var(--stroke-thin) solid var(--color-border); }
+/* A folded group's header: the whole 44px row is the toggle; its chevron says open or shut, and so does aria-expanded. */
+.rel-opt-head {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-2); width: 100%; min-height: var(--tap-min);
+  padding: var(--space-1) var(--space-2); margin: 0; box-sizing: border-box;
+  border: 0; border-radius: var(--r-md); background: none; color: var(--color-ink); font: inherit; text-align: left; cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.rel-opt-head:hover { background: var(--color-surface); }
+.rel-opt-head:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.rel-opt-head .icon { color: var(--color-ink-muted); }
+.rel-opt-body { display: flex; flex-direction: column; gap: var(--space-1); padding: 0 0 var(--space-2) var(--space-2); }
+.rel-opt-body > p { margin: 0; }
+.rel-opt-list { list-style: none; margin: 0; padding: 0; }
+.rel-opt-toggle { justify-content: flex-start; align-items: flex-start; padding: var(--space-1) 0; }
+.rel-opt-toggle .toggle-box { margin-top: 2px; }
+.rel-opt-words { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.rel-opt-total { margin: 0; }
 .deploy-release { display: block; margin-top: var(--space-1); }
 @media (max-width: 767px) {
   .rel-actions .rel-abandon { margin-left: 0; flex-basis: 100%; }

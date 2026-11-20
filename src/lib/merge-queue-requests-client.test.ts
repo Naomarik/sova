@@ -12,7 +12,7 @@ afterEach(() => {
 const answer = (status: number, body: unknown) => {
   globalThis.fetch = (async () => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })) as typeof fetch;
 };
-const REFUSED = { error: { code: "invalid-request", message: "how it lands can't change while release v0.4.0 is open: change it after Publish or Abandon" } };
+const REFUSED = { error: { code: "invalid-request", message: "how it lands can't change while release v0.4.0 is open: change it after Publish or Cancel Release" } };
 
 test("Clear Override refused while a release is open answers the route's words, not success", async () => {
   answer(400, REFUSED);

@@ -4,6 +4,10 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.17.1 — 2026-11-20
+
+Release with Options and Cancel Release on the Releases tab, Lookbook designs on share links, and Regenerate Title in the session menus.
+
 ## v0.17.0 — 2026-11-19
 
 Public links that work with no setup, a Time Spent tab, dry runs for branches that change the merge

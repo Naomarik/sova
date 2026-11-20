@@ -15,7 +15,7 @@ const claimLine = (ix, id) => {
   const rec = ix.ctx.claims.get(id);
   return { id, title: titleOf(ix.ctx.decls.get(id)), kind: rec.kind, ...labelsOf(rec) };
 };
-const partLine = (ix, id) => ({ id, title: titleOf(ix.ctx.decls.get(id)) });
+const partLine = (ix, id) => ({ id, title: titleOf(ix.ctx.decls.get(id)), ...labelsOf(ix.ctx.claims.get(id)) });
 // The lookups' view of the claims: a split topic and its parts are one claim, its interface tokens theirs together,
 // each once, and a token's weight counts topics, never parts. With nothing split it is the index itself.
 function lookupView(ix) {

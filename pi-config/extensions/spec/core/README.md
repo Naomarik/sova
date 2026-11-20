@@ -277,7 +277,7 @@ topic and its parts as the one claim it was; on a spec with none, every answer i
 its own text without the summary lines, then each part's text without its heading, a table head a part
 repeats at its start (one the topic's text already has) left out; heading, first sentence, names and
 prose are read from that text as from any claim, and word weights count topics. Its row adds `part:
-{id, title}`, the part whose own text (its heading included) scores best (text: `best part:`).
+{id, title, labels?}`, the part whose own text (its heading included) scores best (text: `best part:`).
 `tests/search/split-units.mjs <before> <after>` compares every split topic's scored fields with the
 same claim in the unsplit spec. A name held by the topic or a part is one `defines`/`mentions` row for
 the topic (a part's heading or first sentence defines it), `part` naming the part holding it (text: `in part:`);
@@ -285,7 +285,7 @@ a topic so listed is no topic row. A path lists the topic once when it or any pa
 its interface tokens are the topic's and its parts' together, weighed over topics (records = topics),
 and its row adds `parts: {listing, of}` (`topic: false` when only parts list it; text: `n of its m
 parts list it too`, `listed by n of its m parts`, `none of its m parts lists it`); `counts.claims` counts
-topics, and unmapped candidates are topics too. `read` of a topic adds `parts: [{id, title}]` to its item.
+topics, and unmapped candidates are topics too. `read` of a topic adds `parts: [{id, title, labels?}]` to its item.
 `check` adds `counts.split: {topics, parts}` when any exists, and warns `split-summary-broken` for a list
 whose line names the claim declared right after it but breaks any other condition: the claim and
 those claims then stay claims of their own.

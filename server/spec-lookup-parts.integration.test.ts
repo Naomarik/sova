@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { clearHandlesForTest, PART_LEAD, PARTS_HEAD, setLookupPlaceForTest, specLookupTools } from "./spec-lookup";
+import { CANDIDATE_MARK } from "./spec-lookup-projection";
 import { scratchRoot } from "./test-scratch";
 
 // A split topic in the look-up (§app.spec-lookup/tool, /outsider-view): the real spec tools on a main line whose
@@ -23,7 +24,7 @@ before(() => {
     "§site/gate": { kind: "surface", authority: "accepted", requires: [] },
     "§site.gate/check": { kind: "behavior", authority: "accepted", requires: Object.keys(PARTS) },
     "§site.gate/rules": { kind: "behavior", authority: "accepted", requires: [] },
-    "§site.gate/exceptions": { kind: "behavior", authority: "accepted", requires: [] },
+    "§site.gate/exceptions": { kind: "behavior", authority: "candidate", requires: [] },
   } }));
   writeFileSync(join(spec, "claims", "site", "gate.md"), [
     "# §site/gate — The gate", "", "The gate stands in front of every page.", "",
@@ -44,14 +45,16 @@ const tools = (view: "outsider" | "full", sessionId: string) => {
   setLookupPlaceForTest(() => ({ root, name: "Shop", names: [] }));
   return specLookupTools({ sessionId, projects: [{ id: "p1", name: "Shop" }], view })[0]!;
 };
-const refOf = (out: string, title: string) => new RegExp(`(s\\d+) — ${title}`).exec(out)?.[1];
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** The ref a line gives a title, a candidate's mark allowed between them. */
+const refOf = (out: string, title: string) => new RegExp(`(s\\d+) — (?:${esc(CANDIDATE_MARK)} )?${esc(title)}`).exec(out)?.[1];
 
 test("outsider: find names the best part with a ref that reads it; reading or outlining the topic gives every part a ref", async () => {
   clearHandlesForTest();
   const t = tools("outsider", "parts-out");
   const found = await run(t, { op: "find", words: "health page forwarded peer" });
   assert.ok(!found.includes("§"), found);
-  assert.match(found, new RegExp(`- s\\d+ — What the gate checks.*\\n  ${PART_LEAD} s\\d+ — ${PARTS["§site.gate/exceptions"]}`), found);
+  assert.match(found, new RegExp(`- s\\d+ — What the gate checks.*\\n  ${PART_LEAD} s\\d+ — (?:${esc(CANDIDATE_MARK)} )?${PARTS["§site.gate/exceptions"]}`), found);
   const best = refOf(found, PARTS["§site.gate/exceptions"])!;
   assert.match(await run(t, { op: "read", ref: best }), /The health page is never asked for the token/);
   const topic = refOf(found, "What the gate checks")!;
@@ -75,3 +78,16 @@ test("full view: find and read name the parts by § id, each readable", async ()
   for (const id of Object.keys(PARTS)) assert.ok(read.slice(read.indexOf(PARTS_HEAD)).includes(`- ${id} — `), read);
   assert.match(await run(t, { op: "read", ref: "§site.gate/rules" }), /turned away/);
 });
+
+test("outsider: a candidate part is marked as one, under find's row and in the topic's list of parts", async () => {
+  clearHandlesForTest();
+  const t = tools("outsider", "parts-candidate");
+  const found = await run(t, { op: "find", words: "health page forwarded peer" });
+  const best = found.split("\n").find((l) => l.trimStart().startsWith(PART_LEAD));
+  assert.ok(best?.includes(`${CANDIDATE_MARK} ${PARTS["§site.gate/exceptions"]}`), found);
+  const read = await run(t, { op: "read", ref: refOf(found, "What the gate checks")! });
+  const listed = read.slice(read.indexOf(PARTS_HEAD)).split("\n");
+  assert.ok(listed.find((l) => l.includes(PARTS["§site.gate/exceptions"]))?.includes(CANDIDATE_MARK), read);
+  assert.ok(!listed.find((l) => l.includes(PARTS["§site.gate/rules"]))?.includes(CANDIDATE_MARK), "an accepted part is not marked");
+});
+

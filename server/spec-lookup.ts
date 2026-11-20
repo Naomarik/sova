@@ -254,9 +254,13 @@ function cachedRun(line: MainLine, args: string[]): Promise<Record<string, any>>
 interface PartRef {
   id: string;
   title: string;
+  /** Its labels: a candidate part is marked as one, like any other line. */
+  labels?: { authority?: string };
 }
 const partsOf = (v: unknown): PartRef[] =>
-  Array.isArray(v) ? v.filter((p) => typeof p?.id === "string").map((p) => ({ id: String(p.id), title: String(p.title ?? "") })) : [];
+  Array.isArray(v)
+    ? v.filter((p) => typeof p?.id === "string").map((p) => ({ id: String(p.id), title: String(p.title ?? ""), ...(typeof p.labels?.authority === "string" ? { labels: { authority: String(p.labels.authority) } } : {}) }))
+    : [];
 
 /** A passage's whole text, following the tool's cursor (bounded), and a split topic's parts. */
 async function readPassage(line: MainLine, id: string): Promise<{ title: string; text: string; candidate: boolean; kind: string; parts: PartRef[] } | null> {

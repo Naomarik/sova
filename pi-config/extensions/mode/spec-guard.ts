@@ -636,7 +636,7 @@ export function specReads(commands: readonly string[]): string[] {
 /** The ranked parts of a `census --changed --related --json`: each foreign touched § in rank order, with the files it lands in. */
 export interface RankedView {
 	/** relevance: score over fan-in (the spec tools' census rank); a census without it reads as its score. */
-	rank: { id: string; score: number; relevance: number; stale: string[]; files: string[] }[];
+	rank: { id: string; score: number; relevance: number; stale: string[]; files: string[]; part?: string; parts?: string[] }[];
 }
 export function parseRanked(stdout: string): RankedView | undefined {
 	let out: { exit?: unknown; census?: { rank?: unknown; touched?: unknown } | null };
@@ -650,11 +650,14 @@ export function parseRanked(stdout: string): RankedView | undefined {
 	const files = new Map<string, string[]>();
 	for (const t of c.touched as { id?: unknown; files?: unknown }[]) if (typeof t?.id === "string" && Array.isArray(t.files)) files.set(t.id, t.files as string[]);
 	return {
-		rank: (c.rank as { id?: unknown; score?: unknown; relevance?: unknown; stale?: unknown }[])
+		rank: (c.rank as { id?: unknown; score?: unknown; relevance?: unknown; stale?: unknown; files?: unknown; part?: unknown; parts?: unknown }[])
 			.filter((r) => typeof r?.id === "string")
 			.map((r) => {
 				const score = typeof r.score === "number" ? r.score : 0;
-				return { id: r.id as string, score, relevance: typeof r.relevance === "number" ? r.relevance : score, stale: Array.isArray(r.stale) ? (r.stale as string[]) : [], files: files.get(r.id as string) ?? [] };
+				// A split topic's row carries the files its touched parts land in, and those parts.
+				return { id: r.id as string, score, relevance: typeof r.relevance === "number" ? r.relevance : score, stale: Array.isArray(r.stale) ? (r.stale as string[]) : [],
+					files: Array.isArray(r.files) ? (r.files as string[]) : files.get(r.id as string) ?? [],
+					...(typeof r.part === "string" ? { part: r.part } : {}), ...(Array.isArray(r.parts) ? { parts: r.parts as string[] } : {}) };
 			}),
 	};
 }
@@ -664,17 +667,21 @@ const READ_FIRST = 10, READ_FIRST_RELEVANCE = 0.036;
 
 /**
  * The unread line over the ranked census, the session's own files and its reads: the landed foreign §
- * in rank order, at most 10 marked read first (relevance ≥ 0.036 or a stale literal), the rest left, uncounted, to the command that lists them. → {key, text?}:
+ * in rank order, at most 10 marked read first (relevance ≥ 0.036 or a stale literal), the rest left, uncounted, to the command that lists them.
+ * A split topic is one entry, its best part named; reading it or any of its touched parts reads it. → {key, text?}:
  * key is the landed set (unreadSaid); no text when none landed or every one was read.
  */
 export function unreadLine(v: RankedView, own: ReadonlySet<string>, read: ReadonlySet<string>, command = "census --changed --related"): { key: string; text?: string } {
 	const landed = v.rank.filter((r) => r.files.some((f) => own.has(f)));
 	const key = landed.map((r) => r.id).sort().join(",");
-	const unread = landed.filter((r) => !read.has(r.id));
+	const unread = landed.filter((r) => !read.has(r.id) && !r.parts?.some((p) => read.has(p)));
 	if (!unread.length) return { key };
 	const first = unread.filter((r) => r.relevance >= READ_FIRST_RELEVANCE || r.stale.length).slice(0, READ_FIRST);
 	const more = unread.length > first.length;
-	const shown = (r: RankedView["rank"][number]) => (r.stale.length ? `${r.id} (still states ${r.stale.join(", ")})` : r.id);
+	const shown = (r: RankedView["rank"][number]) => {
+		const notes = [...(r.part ? [`best part ${r.part}`] : []), ...(r.stale.length ? [`still states ${r.stale.join(", ")}`] : [])];
+		return notes.length ? `${r.id} (${notes.join("; ")})` : r.id;
+	};
 	const rest = !first.length ? `none read first; lower-ranked: ${command}` : more ? `; lower-ranked: ${command}` : "";
 	return { key, text: `${DIGEST_TAG} ${UNREAD_PREFIX}${first.length ? `read first ${first.map(shown).join(", ")}` : ""}${rest}` };
 }

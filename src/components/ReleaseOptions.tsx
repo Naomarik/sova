@@ -3,8 +3,9 @@
 // always run, each with its line and its rough minutes; Start <Kind> Release sends the kind and what was turned off.
 import { createSignal, For, onMount, Show, type JSX } from "solid-js";
 import type { ReleaseKind, ReleaseStartOptions } from "../../shared/release";
-import { autoHint, countOff, KIND_WORD, KINDS, minutesWord, NONE_OFF, preset, presetOf, startBody, startLabel, totalMinutes, type OptionItem, type Off, type StartPanel } from "../lib/release-options";
+import { autoHint, countOff, groupSummary, KIND_WORD, KINDS, minutesWord, NONE_OFF, preset, presetOf, startBody, startLabel, totalMinutes, type OptionItem, type Off, type StartPanel } from "../lib/release-options";
 import { Choice, Toggle } from "./form";
+import { Icon } from "./ui";
 
 export function ReleaseOptionsPanel(props: {
   panel: StartPanel;
@@ -66,7 +67,7 @@ export function ReleaseOptionsPanel(props: {
         </button>
         <span class="text-caption text-muted">{at() === "full" ? "Everything runs, as Start Release does." : at() === "quick" ? "Release steps and release-only checks off." : "Custom."}</span>
       </div>
-      <OptionGroup title="Always done" note="Never turned off.">
+      <OptionGroup title="Always done" summary={groupSummary(p().always.map((a) => ({ id: a, label: a })), null, "never turned off")}>
         <For each={p().always}>
           {(a) => (
             <li>
@@ -76,17 +77,17 @@ export function ReleaseOptionsPanel(props: {
         </For>
       </OptionGroup>
       <Show when={p().steps.length}>
-        <OptionGroup title="Release steps">
+        <OptionGroup title="Release steps" summary={groupSummary(p().steps, off().steps)}>
           <For each={p().steps}>{row("steps")}</For>
         </OptionGroup>
       </Show>
       <Show when={p().checks.length}>
-        <OptionGroup title="Release-only checks">
+        <OptionGroup title="Release-only checks" summary={groupSummary(p().checks, off().checks)}>
           <For each={p().checks}>{row("checks")}</For>
         </OptionGroup>
       </Show>
       <Show when={p().landing.length}>
-        <OptionGroup title="Landing checks" note="Every landing runs them; so does every release.">
+        <OptionGroup title="Landing checks" summary={groupSummary(p().landing, null)} note="Every landing runs them; so does every release.">
           <For each={p().landing}>
             {(x) => (
               <li>
@@ -118,14 +119,24 @@ export function ReleaseOptionsPanel(props: {
   );
 }
 
-function OptionGroup(props: { title: string; note?: string; children: JSX.Element }) {
+/** One group of the panel, folded by default: its header (a button) says the group, how many are on and their minutes;
+    opening it lists its rows. */
+function OptionGroup(props: { title: string; summary: string; note?: string; children: JSX.Element }) {
+  const [open, setOpen] = createSignal(false);
+  const id = `rel-opt-${props.title.toLowerCase().replace(/[^a-z]+/g, "-")}`;
   return (
     <div class="rel-opt-group" role="group" aria-label={props.title}>
-      <p class="cluster text-caption">
+      <button type="button" class="rel-opt-head" aria-expanded={open() ? "true" : "false"} aria-controls={id} onClick={() => setOpen(!open())}>
+        <Icon name={open() ? "chevron-down" : "chevron-right"} small />
         <span class="text-eyebrow">{props.title}</span>
-        <Show when={props.note}>{(n) => <span class="text-muted">{n()}</span>}</Show>
-      </p>
-      <ul class="rel-opt-list">{props.children}</ul>
+        <span class="text-caption text-muted">{props.summary}</span>
+      </button>
+      <Show when={open()}>
+        <div id={id} class="rel-opt-body">
+          <Show when={props.note}>{(n) => <p class="text-caption text-muted">{n()}</p>}</Show>
+          <ul class="rel-opt-list">{props.children}</ul>
+        </div>
+      </Show>
     </div>
   );
 }

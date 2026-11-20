@@ -566,6 +566,21 @@ describe("Release with Options", () => {
         await panel.getByText("0.9.1 or 0.10.0", { exact: true }).waitFor();
         assert.equal(await panel.getByRole("radio", { name: /Auto/ }).isChecked(), true, "Auto is the default");
         await panel.getByText("0.10.0", { exact: true }).waitFor();
+        // Every group opens folded: its header says how many are on and their minutes, and no row shows.
+        const head = (g: string) => panel.getByRole("group", { name: g, exact: true }).getByRole("button", { name: new RegExp(`^${g}`) });
+        const heads: [string, string][] = [["Always done", "never turned off"], ["Release steps", "3 of 3 on · about 5 min"], ["Release-only checks", "2 of 2 on · about 9 min"], ["Landing checks", "all run · about 2 min"]];
+        for (const [g, words] of heads) {
+          assert.equal(await head(g).getAttribute("aria-expanded"), "false", `${g} starts folded`);
+          assert.match((await head(g).textContent()) ?? "", new RegExp(words.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+        }
+        assert.equal(await panel.getByRole("checkbox").count(), 0, "folded: no rows");
+        await panel.getByRole("button", { name: /^Start Release$/ }).waitFor();
+        await panel.getByText("about 16 min", { exact: true }).waitFor();
+        // A header opens its group by keyboard too.
+        await head("Release steps").focus();
+        await o.page.keyboard.press("Enter");
+        assert.equal(await head("Release steps").getAttribute("aria-expanded"), "true");
+        for (const g of ["Always done", "Release-only checks", "Landing checks"]) await head(g).click();
         await panel.locator("label", { hasText: "Minor" }).click();
         assert.equal(await panel.getByRole("radio", { name: /Minor/ }).isChecked(), true);
         const go = panel.getByRole("button", { name: /^Start .* Release/ });
@@ -584,6 +599,7 @@ describe("Release with Options", () => {
         for (const name of [/^Full release notes/, /^Docs pages/, /^Try it on the live server/, /^Every integration group/, /^Spec replay/]) assert.equal(await panel.getByRole("checkbox", { name }).isChecked(), false);
         assert.equal(await go.textContent(), "Start Minor Release (Custom)");
         await panel.getByText("about 2 min", { exact: true }).waitFor();
+        assert.match((await head("Release steps").textContent()) ?? "", /0 of 3 on$/);
         await panel.getByText("Spec replay").click();
         assert.equal(await panel.getByRole("checkbox", { name: /^Spec replay/ }).isChecked(), true);
         const fill = (text: string) => panel.locator(".toggle", { hasText: text }).locator(".toggle-box").evaluate((el) => getComputedStyle(el).backgroundColor);

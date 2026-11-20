@@ -105,3 +105,12 @@ export function turnedOffLine(r: Pick<ReleaseRecord, "options">): string | null 
 
 /** The release card's line for the kind its start picked: "Minor release, picked at Start.", or null. */
 export const kindLine = (r: Pick<ReleaseRecord, "options">): string | null => (r.options?.kind ? `${KIND_WORD[r.options.kind]} release, picked at Start.` : null);
+
+/** A folded group's header line after its name: how many are on and their rough minutes. `off` null: a group nothing
+    turns off ("all run", or `fixed`'s words). "3 of 5 on · about 12 min", "all run · about 9 min", "never turned off". */
+export function groupSummary(items: readonly OptionItem[], off: ReadonlySet<string> | null, fixed = "all run"): string {
+  const on = off ? items.filter((x) => !off.has(x.id)) : items;
+  const count = off ? `${on.length} of ${items.length} on` : fixed;
+  const known = on.filter((x) => typeof x.minutes === "number");
+  return known.length ? `${count} · ${minutesWord(known.reduce((n, x) => n + x.minutes!, 0))}` : count;
+}

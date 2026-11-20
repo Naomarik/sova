@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReleaseView } from "../../shared/release";
-import { autoHint, countOff, kindLine, minutesWord, NONE_OFF, preset, presetOf, startBody, startLabel, startPanel, totalMinutes, turnedOffLine } from "./release-options";
+import { autoHint, countOff, groupSummary, kindLine, minutesWord, NONE_OFF, preset, presetOf, startBody, startLabel, startPanel, totalMinutes, turnedOffLine } from "./release-options";
 
 const VIEW = {
   settings: { checks: [{ id: "release-integration", label: "Every integration group" }, { id: "release-leaks", label: "Leak scan" }] } as unknown as ReleaseView["settings"],
@@ -71,4 +71,12 @@ test("the card's lines: what its start turned off, and the kind it picked", () =
   assert.equal(turnedOffLine(off(["Docs pages", "Spec replay", "Leak scan"])), "Turned off: Docs pages, Spec replay and Leak scan.");
   assert.equal(kindLine({ options: { kind: "minor", skipSteps: [], skipChecks: [], off: [] } }), "Minor release, picked at Start.");
   assert.equal(kindLine(off(["x"])), null);
+});
+
+test("a folded group's header: how many are on and their minutes, or the words of a group nothing turns off", () => {
+  assert.equal(groupSummary(P.steps, NONE_OFF.steps), "3 of 3 on · about 5 min");
+  assert.equal(groupSummary(P.steps, new Set(["try-live"])), "2 of 3 on · about 2 min", "minutes of what's on only");
+  assert.equal(groupSummary(P.steps, preset(P, "quick").steps), "0 of 3 on", "nothing on: no figure");
+  assert.equal(groupSummary(P.landing, null), "all run · about 2 min");
+  assert.equal(groupSummary([{ id: "a", label: "a" }], null, "never turned off"), "never turned off", "no figure at all: the words alone");
 });

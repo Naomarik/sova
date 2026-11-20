@@ -392,20 +392,26 @@ never marks Build skipped. `--fresh` or `SOVA_FRESH=1` runs it and still keeps a
 only when the checkout didn't change while it ran, and a check started from inside a test just
 runs. The rest of Build always runs, since the walkthroughs and the server use what it makes.
 
-## §app.server-runtime/migrations — Code that keeps an old place working lives in `migrations/`, with a version to go
+## §app.server-runtime/migrations — Code that keeps an old place working lives in `migrations/`, grouped under the major release that clears it
 
 Code that keeps an old place or an old shape working after a move is temporary, and lives in one
 place: the top-level `migrations/` folder, one subfolder per migration (`migrations/<id>/`) holding
-all of its code, and `migrations/manifest.json`, a list of `{id, what, since, removeIn, paths}`: what
-it keeps working, the version it came in, the version it goes in, and the files that reach it.
-Sova's code reaches a migration through one small import at each place that needs it, so retiring
-one is deleting its subfolder, its manifest entry and those imports. A unit test in Sova's test run
-fails once `package.json`'s version reaches any entry's `removeIn`, so a migration past its version
-can't stay unnoticed. The folder's README says how, it is cleared out of Git every so often, and
-AGENTS.md's layout names it.
+all of its code, and `migrations/manifest.json`, a list of `{id, what, since, clearedIn, paths}`: what
+it keeps working, the version it came in, the **major release that clears it** (`clearedIn`, `x.0.0`
+from `1.0.0` on: there is no 0.x major), and the files that reach it. Sova's code reaches a migration
+through one small import at each place that needs it, so retiring one is deleting its subfolder, its
+manifest entry and those imports.
 
-The first two come with the move of Sova's own playbooks, since 0.16.0, each with `removeIn` 0.18.0
-(proposed): `playbook-config-old-place`, which reads a project's `.sova/playbooks/{merge-queue,
+**A migration has no removal date, and nothing stops a release over one**: no release step, release
+check or test looks at a migration's age or at the version being released. The migrations grouped
+under a major release are cleared in a branch that lands before it. A unit test in Sova's test run
+checks only the manifest's shape: each entry whole, with no `removeIn`, its `clearedIn` a major
+release after its `since`, its folder and paths there, each code file it lists naming it, every file
+that imports it among its paths, and every folder under `migrations/` a listed migration. The
+folder's README says how, and AGENTS.md's layout names it.
+
+The first two come with the move of Sova's own playbooks, since 0.16.0, each grouped under 1.0.0:
+`playbook-config-old-place`, which reads a project's `.sova/playbooks/{merge-queue,
 release,review,request,project-setup}` while its `.sova/playbook-config/` folder is absent
 (§chat.playbooks/playbook-config), and `system-playbooks-old-paths`, which reads the old folder
 `<Sova repo>/playbooks/<id>/` a chat's first message names as `system-playbooks/<id>/` for the six

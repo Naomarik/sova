@@ -430,7 +430,8 @@ What a release is and isn't (not a deploy); the release playbook doing the work 
 Sova holding what can't be undone; Set Up Releases; Start Release and the frozen merge queue; the
 steps and their states, Continue on a held step, Retry Step, the quiet warning; the release checks
 and that nothing overrides a failed one; Publish, all or nothing, Publish failed and Retry Publish;
-Abandon Release; after-publish steps and Plan Deploy of a release; Withdraw and the numbered tag that
+Cancel Release (one press before the release commit lands, one confirm once cancelling would revert
+it); after-publish steps and Plan Deploy of a release; Withdraw and the numbered tag that
 never moves; the release power and the Project Assistant's ask; the history on the Releases tab; a
 link to its settings page (§site.docs/release-settings). Screenshots of the Releases tab's history and of
 a release in progress (a held step, a failed step, Publish waiting).

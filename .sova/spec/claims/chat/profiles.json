@@ -366,15 +366,16 @@
       "server/profile-editor.ts",
       "server/profile-editor.test.ts",
       "server/session-profile.ts",
-      "server/session-profiles-runtime.test.ts"
+      "server/session-profiles-runtime.test.ts",
+      "profiles/system/release-thread.json"
     ],
     "requires": [
       "§chat.profiles/model"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§chat.profiles/session-tools": {

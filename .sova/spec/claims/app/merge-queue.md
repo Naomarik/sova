@@ -517,7 +517,7 @@ included, has a run page with each step's log (§app.merge-queue/view).
 
 **Frozen for a release.** While a release is open (§app.release/checks), the queue runs only that
 release's entries, first in line; every other entry waits with "waits for {tag} to be published or
-abandoned", and a run of another branch checking when the release starts is voided and goes back to
+cancelled" (an entry an older server wrote may still read "… or abandoned", and counts as the same wait), and a run of another branch checking when the release starts is voided and goes back to
 the front of the line, never blamed.
 
 **Held for a restart.** While the merge thread holds new starts (§app.merge-queue/empty), no waiting
@@ -824,9 +824,9 @@ and more (§app.merge-queue/publish).
 - **Leak scan first.** The leak scan with the private names runs over what would be pushed.
 - **Release hold.** While a release is open the queue is frozen for it (§app.release/checks): only
   the release's own entries land, nothing is pushed ("held: release {tag} is open: nothing is pushed
-  until it is published or abandoned"), and the target stays on the release. Publish lifts the hold
+  until it is published or cancelled"), and the target stays on the release. Publish lifts the hold
   with one atomic push of the target, the numbered tag and its channels (§app.release/publish);
-  Abandon lifts it once a landed release commit's revert has landed (§app.release/abandon). No
+  Cancel Release lifts it once a landed release commit's revert has landed (§app.release/abandon). No
   Pause or Resume is involved.
 
 A push that is refused or held keeps the landing. The view's strip reads "master {sha} · not pushed:
@@ -1169,7 +1169,7 @@ restart Sova (§chat.merge-queue/sova-restart).
   running after it was busy, it tells its merge thread so, once (**Idle**). That happens when a run
   ends (it landed, was sent back to its chat, or waits for the user's decision, §app.merge-queue/needs-user) and nothing else is in line, when a cancel
   takes out the last entry in line or checking, and when a release's hold of the queue lifts at its
-  Publish or Abandon. "Nothing left to check" means no entry checking or in line, and no conflict
+  Publish or Cancel Release. "Nothing left to check" means no entry checking or in line, and no conflict
   waiting for the thread's judgement; entries waiting for the user, on the host or sent back to
   their chat don't count. The message names the entry that changed last, the queue's newest landing
   with its commit, and the target's head. It is sent again only after the queue was busy again (or
@@ -1283,9 +1283,9 @@ shows, top to bottom:
   failed twice; a landing in flight at a stop needs a look), the
   queue's own why, and Resume.
 - **Frozen for a release**, while one holds the queue: "{target} is frozen for release {tag}" with
-  "Other landings wait in line, and nothing is pushed, until the release is published or abandoned."
+  "Other landings wait in line, and nothing is pushed, until the release is published or cancelled."
   and **Open Releases** (§app.release/tab). With nothing checking, the line reads "{n} waiting for
-  release {tag}: they start once it's published or abandoned." or "Nothing being checked. A branch
+  release {tag}: they start once it's published or cancelled." or "Nothing being checked. A branch
   you land now waits for release {tag}."
 
 Under them, the same whatever tab is chosen:
@@ -2177,8 +2177,8 @@ listed as needing you.
 same catalogue commands the tabs use (the verbs `merge.resume`, `release.retry` and `release.continue`,
 §app.project-services/merge-verbs, §app.release/verbs). Land Anyway,
 Accept, Try Again, Land and Remove from Queue open the Merge Queue tab at that entry, where the
-user's own click acts (§app.access/your-click); Publish and Abandon open the
-Releases tab. Neither Publish nor Abandon is ever in the bar.
+user's own click acts (§app.access/your-click); Publish and Cancel Release open the
+Releases tab. Neither Publish nor Cancel Release is ever in the bar.
 
 **On a phone (<768px).** The bar is the same 44px row, directly above the foot bar
 (§app.insights/sidebar-foot-phone), shown only while there is something to show. A tap opens a bottom
@@ -2524,9 +2524,9 @@ chat, a script, the Overseer or an extension is refused with a sentence. Saving 
 project file removes the key.
 
 **While a release is open** (§app.release/checks), a choice kept on this computer can't be set or
-cleared: "how it lands can't change while release {tag} is open: change it after Publish or Abandon",
+cleared: "how it lands can't change while release {tag} is open: change it after Publish or Cancel Release",
 shown as an error, and Clear Override leaves the choice in place. A change to the project file is a
-save, so it waits like any save and is made after Publish or Abandon
+save, so it waits like any save and is made after Publish or Cancel Release
 (§app.merge-queue/settings-save). **Releases need
 Merge locally:** a release lands its commit on the target and pushes it itself, so a project that
 lands by request or by pushing a branch can't release yet (§app.release/start).
@@ -2687,7 +2687,7 @@ going on its moved base and is never voided. When the project folder has uncommi
 the local target has commits the host lacks, it is refused with the reason and nothing is forced.
 When it is already current it says "Local main is already current." While a release is open it is
 refused too, since the target stays on the release: "{target} stays on the release commit while
-release {tag} is open: update it after Publish or Abandon" (§app.release/checks).
+release {tag} is open: update it after Publish or Cancel Release" (§app.release/checks).
 
 ## §app.merge-queue/hosts — GitHub and GitLab, signed in on this computer
 

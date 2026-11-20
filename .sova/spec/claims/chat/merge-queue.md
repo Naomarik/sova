@@ -751,7 +751,7 @@ happens. `merge.live {project}` tells the thread, without reaching Sova's port, 
 and when it started, the target's head and the plan between them, and the Idle message carries the
 live commit too.
 - **Never during a release.** While a release is open (§app.release/checks) `merge.restart` builds
-  and restarts nothing. The release's hold lifting at Publish or Abandon sends Idle again, and the
+  and restarts nothing. The release's hold lifting at Publish or Cancel Release sends Idle again, and the
   thread catches up then. A release's own commit is never a reason to restart: trying a release
   live stays the operator's Apply (§app.release/sova).
 - **Page files only:** it runs `pnpm run build` in the main checkout and restarts nothing; on a

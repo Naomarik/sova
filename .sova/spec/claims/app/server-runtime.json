@@ -86,12 +86,15 @@
       "server/project-services/tools.ts",
       "system-playbooks/merge-queue/scripts/blast-radius.mjs",
       "system-playbooks/project-setup/scripts/project-setup.mjs",
-      "system-playbooks/release-maker/scripts/release-maker.mjs"
+      "system-playbooks/release-maker/scripts/release-maker.mjs",
+      ".sova/project.json",
+      ".sova/playbook-config/release/scripts/sova-release.mjs",
+      ".sova/playbook-config/release/PLAYBOOK.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-18T20:28Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.server-runtime/pi-workers": {

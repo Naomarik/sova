@@ -699,7 +699,7 @@ user row.
 - **A held Apply.** Every card that commits files waits while a branch or a release holds the target or
   the target waits for a resume, whoever prepared it: an overseer's card, a Create chat's, and **Land** on the
   uncommitted edits' card below. It says "Saves when the current branch finishes." or "Saves once release {version} is published or
-  abandoned.", with **Cancel Save**.
+  cancelled.", with **Cancel Save**.
   It applies at the queue's next quiet point, before the next branch starts
   (§app.merge-queue/master-moved). A run that fails meanwhile doesn't stop it, and a branch landing on
   files the card doesn't touch doesn't fail it.

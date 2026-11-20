@@ -19,12 +19,14 @@
       "server/project-services/release.ts",
       "server/project-services/release-wire.ts",
       "server/project-services/release.test.ts",
-      "server/project-services/release-gates.integration.test.ts"
+      "server/project-services/release-gates.integration.test.ts",
+      "src/components/ReleasesTab.tsx",
+      "src/lib/releases.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/callers": {
@@ -47,9 +49,9 @@
       "server/project-services/release-power.integration.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T20:51Z",
-      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/checks": {
@@ -90,9 +92,9 @@
       "server/test-cache-guard.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T20:05Z",
-      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/deploy": {
@@ -164,12 +166,15 @@
       "shared/release.ts",
       "shared/project-contract-release.test.ts",
       "server/project-services/release.ts",
-      "server/release-playbooks.test.ts"
+      "server/release-playbooks.test.ts",
+      "system-playbooks/release-maker/scripts/release-maker.mjs",
+      "system-playbooks/release/PLAYBOOK.md",
+      "scripts/e2e-release/fixtures.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/playbook": {
@@ -188,9 +193,9 @@
       "server/sova-release-playbook.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-18T20:28Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/power": {
@@ -297,12 +302,13 @@
       "shared/release.ts",
       "server/project-services/release.ts",
       "server/project-services/release-wire.ts",
-      "server/project-services/release.test.ts"
+      "server/project-services/release.test.ts",
+      "src/lib/releases.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T20:51Z",
-      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/settings": {
@@ -348,9 +354,9 @@
       ".sova/playbook-config/release/scripts/docs-drift.mjs"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-19T04:09Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5fbb134e"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/start": {
@@ -374,12 +380,13 @@
       "server/project-services/release-e2e.integration.test.ts",
       "server/merge-queue/queue.ts",
       "shared/release.ts",
-      "server/project-services/release-power.integration.test.ts"
+      "server/project-services/release-power.integration.test.ts",
+      "server/project-services/release-options.integration.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-18T20:28Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/steps": {
@@ -397,12 +404,13 @@
       "shared/release.ts",
       "server/project-services/release-publish.integration.test.ts",
       "server/project-services/release-gates.integration.test.ts",
-      "server/project-services/release-local.integration.test.ts"
+      "server/project-services/release-local.integration.test.ts",
+      "system-playbooks/release/PLAYBOOK.md"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/tab": {
@@ -430,12 +438,17 @@
       "server/project-releases-ui.integration.test.ts",
       "shared/protocol.ts",
       "src/components/SetupChat.tsx",
-      "src/app.css"
+      "src/app.css",
+      "src/components/ReleaseOptions.tsx",
+      "src/lib/release-options.ts",
+      "src/lib/release-options.test.ts",
+      "scripts/e2e-release/ui-flows.ts",
+      "server/form-inventory-baseline.test.json"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-19T07:07Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/verbs": {
@@ -466,12 +479,13 @@
       "docs/commands.md",
       "server/commands-inventory/baseline.json",
       "scripts/sova.mjs",
-      "server/project-services/release-e2e.integration.test.ts"
+      "server/project-services/release-e2e.integration.test.ts",
+      "shared/protocol.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T20:51Z",
-      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.release/withdraw": {

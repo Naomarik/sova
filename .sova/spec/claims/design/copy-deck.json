@@ -227,7 +227,8 @@
       "src/components/DryRun.tsx",
       "server/merge-queue/fix.ts",
       "server/merge-queue/setup-branch.ts",
-      "server/merge-queue/queue.ts"
+      "server/merge-queue/queue.ts",
+      "shared/merge-queue-settings.ts"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {

@@ -56,9 +56,9 @@ Beside the file's other keys:
 
 ## Cutting a release
 
-- Change: nothing is configured: this is the release itself. Start, Continue, Retry, Publish, Abandon, Withdraw. While it's open the merge queue is frozen.
+- Change: nothing is configured: this is the release itself. Start, Continue, Retry, Publish, Cancel Release, Withdraw. While it's open the merge queue is frozen.
 - Lives: the project page's Releases tab, with a record of every release.
-- Approves: the person, on that tab, with a confirm for Publish, Abandon and Withdraw. An overseer with the `release` power may start and publish after the waiting period; it can't override a failed check.
+- Approves: the person, on that tab, with a confirm for Publish and Withdraw, and for Cancel Release once the release commit has landed (cancelling then reverts it). An overseer with the `release` power may start and publish after the waiting period; it can't override a failed check.
 - By: Screen. The Releases tab. Name it: you never run these. A chat's script is refused by its caller key, which is the limit of that refusal: a token with no caller key can't be told from the person's own terminal.
 - Live: at Publish. Once public, a release's tag is never moved or deleted. Withdraw marks it withdrawn and moves its channels back; it doesn't roll back a deploy.
 - Check: the tab shows each step and the latest release.

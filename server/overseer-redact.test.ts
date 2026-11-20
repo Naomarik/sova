@@ -373,11 +373,13 @@ describe("secrets recognised by shape (no credential file names them)", () => {
     for (const t of plain) assert.equal(redactPatterns(t), t, t);
   });
 
-  test("code (a design's page): every shape above still goes, every name guess stays as written", () => {
-    // The cases whose only catch is the name before the value (ASSIGNMENT, JSON_FIELD).
-    const guesses = new Set(["NAME=value (env)", 'NAME="value"', "flag", "query string", "JSON field", "JSON credential"]);
+  test("code (a design's page): every shape above still goes; a name guess only inside quotes or a query, on a secret-length word", () => {
+    // The cases whose only catch is the name before the value (ASSIGNMENT, JSON_FIELD), and whether code still takes it:
+    // a bare value (env line, flag) could be code (`token = getToken()`), so it stays; quoted ones of secret length go;
+    // the query string's and the credentials' values are under secret length.
+    const guesses = new Map([["NAME=value (env)", false], ['NAME="value"', true], ["flag", false], ["query string", false], ["JSON field", true], ["JSON credential", false]]);
     for (const [name, input, expected] of cases) {
-      const want = guesses.has(name) ? input : expected;
+      const want = guesses.get(name) === false ? input : expected;
       assert.equal(redactPatterns(input, { code: true }), want, name);
       assert.equal(new Redactor([], {}).refresh().redact(input, { code: true }), want, name);
     }
@@ -395,6 +397,27 @@ describe("secrets recognised by shape (no credential file names them)", () => {
     const r = new Redactor([], { PAGE_API_KEY: known }).refresh();
     const page = `${script}const a="${known}",b="${"sk-" + "ant-api03-FAKE0123456789abcdefFAKE"}",c="${"ghp_" + "FAKE0123456789abcdefFAKE0123"}",d="${known.slice(0, 20)}";`;
     assert.equal(r.redact(page, { code: true }), `${script}const a="${REDACTED}",b="${REDACTED}",c="${REDACTED}",d="${REDACTED}";`);
+  });
+
+  test("code: an unshaped secret behind a secret name still goes, and the page's code still parses", () => {
+    const v = "fake0unshaped".padEnd(24, "z");
+    const scripts: [string, string][] = [
+      [`const apiKey = "${v}";`, `const apiKey = "${REDACTED}";`],
+      [`const cfg={"password": "${v}", "keyLabel": "Press any key to start"};`, `const cfg={"password": "${REDACTED}", "keyLabel": "Press any key to start"};`],
+      [`fetch('/api/x?access_token=${v}&n=1');`, `fetch('/api/x?access_token=${REDACTED}&n=1');`],
+      [`fetch(\`/api/x?access_token=\${accessTokenFromStorage}\`);`, `fetch(\`/api/x?access_token=\${accessTokenFromStorage}\`);`],
+      [`let token;a?token=readTokenFromStorage(b):0;`, `let token;a?token=readTokenFromStorage(b):0;`],
+      [`el.dataset.key='Escape';const keyColor='#ffcc00';const storageKey='lookbook-theme-v2';`, `el.dataset.key='Escape';const keyColor='#ffcc00';const storageKey='${REDACTED}';`],
+    ];
+    for (const [script, want] of scripts) {
+      assert.doesNotThrow(() => new Function(script), `the case itself parses: ${script}`);
+      const out = redactPatterns(script, { code: true });
+      assert.equal(out, want);
+      assert.doesNotThrow(() => new Function(out), `still parses: ${out}`);
+    }
+    // In markup, an attribute and a link's query.
+    const html = `<div data-api-key="${v}"><a href="https://example.test/cb?client_secret=${v}">x</a></div>`;
+    assert.equal(redactPatterns(html, { code: true }), `<div data-api-key="${REDACTED}"><a href="https://example.test/cb?client_secret=${REDACTED}">x</a></div>`);
   });
 
   test("redactDeep applies the patterns with no known values loaded, and keeps object keys", () => {

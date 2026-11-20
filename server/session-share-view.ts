@@ -69,7 +69,7 @@ interface Built {
   /** The slice's Lookbook runs and the items they follow. */
   anchors: LookbookAnchor[];
   scrub: (text: string) => string;
-  /** A design page's scrub: `scrub` without the name guesses (scrubberFor's `code`). */
+  /** A design page's scrub: `scrub` with the name guesses kept to what leaves code valid (scrubberFor's `code`). */
   scrubPage: (text: string) => string;
   /** Each item's entry id, by `n` (operator-only: the outline). */
   ids: string[];
@@ -113,8 +113,8 @@ export function branchTo(file: PiFile, cutEntryId: string | null): HEntry[] | nu
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** A text scrubber: secrets out, then the session's cwd relative and the home directory `~`.
-    `code: true`: for a design's page: the known secret values and the shaped patterns go, the redactor's name
-    guesses don't, so the page's scripts still parse. */
+    `code: true`: for a design's page: the known secret values and the shaped patterns go, and the redactor's name
+    guesses only where the swap keeps code valid (`PatternOptions`), so the page's scripts still parse. */
 export function scrubberFor(cwd: string | undefined, opts: { code?: boolean } = {}): (text: string) => string {
   const secrets = serverRedactor();
   const home = homedir();

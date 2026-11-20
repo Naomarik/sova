@@ -175,18 +175,34 @@ const JSON_FIELD = new RegExp(String.raw`("${SECRET_NAME}"\s*:\s*)"((?:[^"\\]|\\
 /** Not secrets however they are named: numbers, booleans, empties, what is already redacted. */
 const notSecret = (v: string) => !v || v === REDACTED || /^(?:\d+(?:\.\d+)?|true|false|null|none|undefined)$/i.test(v);
 
-/** `code: true`: the text is code (a design's page), so only SECRET_PATTERNS' shapes apply, never the name guesses
-    (ASSIGNMENT, JSON_FIELD): in a script those hit comparisons and ordinary fields (`e.key==='Escape'`,
-    `key='draft'`, `"token": "abc"`), and the rewritten script no longer parses. */
+/** `code: true`: the text is code (a design's page). SECRET_PATTERNS' shapes all apply; a name guess (ASSIGNMENT,
+    JSON_FIELD) applies only where swapping the value keeps the code valid and the value looks like a secret
+    (`codeGuess`). Unguarded, the guesses hit comparisons and ordinary fields (`e.key==='Escape'` became
+    `e.key=[redacted]'Escape'`, `token = getToken()` became `token = [redacted])`), and the script no longer parsed. */
 export type PatternOptions = { code?: boolean };
+
+/**
+ * In code, a name guess's value goes only when the swap can't break the code: it sits inside quotes (a string literal,
+ * a JSON field, an attribute), or it is a URL query's (`?name=` / `&name=`, never `&&`), whose value stops before
+ * any quote, made of a URL's token characters only (so it never ends on a template literal's backtick or brace).
+ * And only a value that looks like a secret: one word of secret length, not a number, path or plain URL
+ * (`plausibleSecret`), so a page's short keys and labels (`key='draft'`, `data-key="Escape"`, `keyColor='#fc0'`) run
+ * as written.
+ */
+function codeGuess(v: string, quoted: boolean, before: string): boolean {
+  if (!plausibleSecret(v) || /[\s\\]/.test(v)) return false;
+  return quoted || (/(?:^|[^&])[?&]$/.test(before) && /^[A-Za-z0-9._~+/=%-]+$/.test(v));
+}
 
 /** `text` with every shape-recognised secret replaced (see SECRET_PATTERNS). The same string when none is found. */
 export function redactPatterns(text: string, opts: PatternOptions = {}): string {
   let out = text;
   for (const [re, to] of SECRET_PATTERNS) out = out.replace(re, to);
-  if (opts.code) return out === text ? text : out;
-  out = out.replace(ASSIGNMENT, (m, name: string, eq: string, q: string, v: string) => (notSecret(v) ? m : `${name}${eq}${q}${REDACTED}${q}`));
-  out = out.replace(JSON_FIELD, (m, head: string, v: string) => (notSecret(v) ? m : `${head}"${REDACTED}"`));
+  const code = !!opts.code;
+  out = out.replace(ASSIGNMENT, (m, name: string, eq: string, q: string, v: string, at: number, s: string) =>
+    notSecret(v) || (code && !codeGuess(v, !!q, s.slice(Math.max(0, at - 2), at))) ? m : `${name}${eq}${q}${REDACTED}${q}`,
+  );
+  out = out.replace(JSON_FIELD, (m, head: string, v: string) => (notSecret(v) || (code && !codeGuess(v, true, "")) ? m : `${head}"${REDACTED}"`));
   return out === text ? text : out;
 }
 
@@ -245,7 +261,7 @@ export function redactPrivate(text: string): string {
 
 /** `outside: true`: also hide private data (`redactPrivate`), for what Sova sends to an outside model itself.
     `code: true`: the text is code (a design's page): the known values and the shaped patterns go, the name
-    guesses don't (`PatternOptions`). */
+    guesses only where the swap keeps code valid (`PatternOptions`). */
 export type RedactOptions = { outside?: boolean } & PatternOptions;
 
 /**

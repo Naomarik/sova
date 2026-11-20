@@ -60,7 +60,9 @@ const design = (label: string, runId: string, versions: { n: number; min: number
 });
 /** Code the redactor's name guesses would rewrite (`e.key=[redacted]'Escape'`), which a page keeps as written. */
 const CODE = `addEventListener('keydown',(e)=>{if(e.key==='Escape')close()});let key='draft';key=chatKey(x);const cfg={"token": "abc"};`;
-const page = (mark: string) => `<!doctype html><html><head><style>h1{color:red}</style></head><body><h1>${mark}</h1><script>document.title="ran"</script><script>${CODE}</script></body></html>`;
+/** An unshaped value behind a secret name, in quotes: the page scrub still takes it. */
+const UNSHAPED = "fake0unshaped".padEnd(24, "z");
+const page = (mark: string) => `<!doctype html><html><head><style>h1{color:red}</style></head><body><h1>${mark}</h1><script>document.title="ran"</script><script>${CODE}</script><script>const apiKey="${UNSHAPED}"</script></body></html>`;
 
 /** A chat: u1 · a1 · card(run1) · a2 · u3 · card(run2) · a3, runs run1 and run2; and its design store. */
 function chat(sid: string): string {
@@ -191,6 +193,7 @@ describe("design documents", () => {
       const doc = (await sessionShareDesign(live, "A", 1, kind))!;
       assert.ok(doc.includes("PAGE-A1"), kind);
       assert.ok(!doc.includes("sk-ant-api03-"), `${kind}: the secret is scrubbed`);
+      assert.ok(!doc.includes(UNSHAPED) && doc.includes("apiKey="), `${kind}: so is an unshaped one behind a secret name`);
       if (kind === "page" || kind === "tile") {
         assert.ok(doc.includes("createElement(\"iframe\")") && doc.includes("URL.createObjectURL(new Blob([html]"), `${kind}: the shell makes the page's frame, a blob: document`);
         assert.ok(!doc.includes(".srcdoc"), `${kind}: never srcdoc, whose base URL would be the shell's address under the link`);

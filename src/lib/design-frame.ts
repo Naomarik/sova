@@ -81,7 +81,7 @@ const NOTE_SCRIPT = `(n)=>{const h=document.createElement(${JSON.stringify(DESIG
 h.setAttribute("style","all:initial;position:fixed;left:8px;bottom:8px;z-index:2147483647;pointer-events:none");
 const r=h.attachShadow({mode:"open"}),c=document.createElement("span"),d=document.createElement("span");
 c.setAttribute("role","status");
-c.setAttribute("style","all:initial;pointer-events:none;display:inline-flex;align-items:center;gap:6px;max-width:calc(100vw - 16px);box-sizing:border-box;padding:3px 10px;border-radius:999px;background:#FBF1DE;color:#8A5A00;font:500 12px/1.4 Inter,system-ui,-apple-system,'Segoe UI',sans-serif");
+c.setAttribute("style","all:initial;pointer-events:none;display:inline-flex;align-items:center;gap:6px;max-width:calc(100vw - 16px);box-sizing:border-box;padding:3px 10px;border-radius:999px;background:#FBF1DE;color:#8A5A00;font:530 12.5px/1.45 Inter,system-ui,-apple-system,'Segoe UI',sans-serif");
 d.setAttribute("style","all:initial;pointer-events:none;flex:none;width:6px;height:6px;border-radius:50%;background:#8A5A00");
 c.append(d,(n===1?${JSON.stringify(NOTE_ONE)}:n+${JSON.stringify(NOTE_MANY)})+${JSON.stringify(NOTE_REST)});r.append(c);document.documentElement.append(h);}`;
 

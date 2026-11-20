@@ -36,8 +36,8 @@ import { redactPreviewLinks } from "./preview-kept";
  * with none.
  *
  * A version's page is served as a walled document (`designDocument`): its text through the page
- * scrub (a message's, without the redactor's name guesses, which break a page's scripts: the
- * caller's `scrubPage`) and both link filters, then its pictures put in (never scrubbed, never
+ * scrub (a message's, its name guesses only where the swap keeps code valid, since unguarded they
+ * broke a page's scripts: the caller's `scrubPage`) and both link filters, then its pictures put in (never scrubbed, never
  * read as text), then the app's wall (src/lib/design-frame.ts) around it.
  */
 

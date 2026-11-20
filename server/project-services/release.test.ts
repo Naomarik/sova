@@ -539,7 +539,7 @@ describe("facts win (q10)", () => {
 });
 
 describe("abandon and withdraw (t23, a8)", () => {
-  test("abandoning after the release commit landed reverts it as a queue landing, lifts the hold, and B lands after", async () => {
+  test("abandoning after the release commit landed needs the confirm (without it nothing changes), then reverts it as a queue landing, lifts the hold, and B lands after", async () => {
     const t = releaseKit();
     try {
       const base = t.repo.head();
@@ -550,6 +550,18 @@ describe("abandon and withdraw (t23, a8)", () => {
       const q = await t.k.q();
       t.repo.branch("feat/b", { "b.txt": "b\n" });
       const { entry: eb } = await q.add({ branch: "feat/b", by: "land-button" });
+      const tipBefore = t.repo.head();
+      const unconfirmed = await t.call("release.abandon", { why: "wrong notes" });
+      assert.equal(unconfirmed.error?.code, "needs-confirm", JSON.stringify(unconfirmed));
+      assert.match(unconfirmed.error!.message, new RegExp(`reverts the release commit ${t.r.record(t.repo.root, rec.id)!.commit!.slice(0, 7)}`));
+      assert.equal(unconfirmed.changed, false);
+      assert.equal(unconfirmed.release!.release!.commit, t.r.record(t.repo.root, rec.id)!.commit, "the record names the landed commit");
+      assert.equal(unconfirmed.release!.view!.open!.id, rec.id, "and the view comes with it");
+      assert.equal(t.r.record(t.repo.root, rec.id)!.state, "ready", "still open");
+      assert.equal(q.releaseHold()?.id, rec.id, "still frozen");
+      assert.equal(q.entries().some((e) => e.releaseKind === "revert"), false, "no revert made");
+      assert.equal(t.repo.head(), tipBefore, "master unmoved");
+      assert.deepEqual(t.stops, [], "the chat not stopped");
       const a = await t.call("release.abandon", { why: "wrong notes", confirm: true });
       assert.equal(a.ok, true, JSON.stringify(a.error));
       const revert = a.release!.release!.abandoned!.revert!;
@@ -570,11 +582,11 @@ describe("abandon and withdraw (t23, a8)", () => {
     }
   });
 
-  test("abandoning before anything landed lifts the hold at once", async () => {
+  test("abandoning before anything landed needs no confirm and lifts the hold at once", async () => {
     const t = releaseKit();
     try {
       const s = await t.call("release.start", {});
-      const a = await t.call("release.abandon", { confirm: true });
+      const a = await t.call("release.abandon", {});
       assert.equal(a.ok, true);
       assert.equal(a.release!.release!.abandoned!.revert, null);
       assert.equal((await t.k.q()).releaseHold(), null);

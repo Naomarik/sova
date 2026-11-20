@@ -89,7 +89,8 @@ export const ASK_INSTEAD = "ask for it instead: release.request {why} raises it 
 export const ABANDON_TAIL = "Your turn was stopped (Cancel Release). Do nothing more for it: run no tool, reply in one line that the release was cancelled.";
 
 const OPERATOR_ACTS: readonly ReleaseVerb[] = ["release.start", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw"];
-const CONFIRMED: readonly ReleaseVerb[] = ["release.publish", "release.abandon", "release.withdraw"];
+/** Always confirmed. release.abandon needs confirm only once its release commit is on the target (it reverts it): abandon() checks. */
+const CONFIRMED: readonly ReleaseVerb[] = ["release.publish", "release.withdraw"];
 
 export interface ReleaseRequestRecord {
   id: string;
@@ -265,7 +266,7 @@ export function authorizeRelease(verb: ReleaseVerb, caller: Caller, root: string
   // The operator's acts.
   if (caller.kind === "operator") {
     if (fromChat(caller)) throw new ReleaseFailure("forbidden", FROM_CHAT);
-    if (CONFIRMED.includes(verb) && !req.confirm) throw new ReleaseFailure("needs-confirm", `${verb} needs confirm: true (it ${verb === "release.publish" ? "makes the version public" : verb === "release.withdraw" ? "moves the channels back" : "reverts the release commit"})`);
+    if (CONFIRMED.includes(verb) && !req.confirm) throw new ReleaseFailure("needs-confirm", `${verb} needs confirm: true (it ${verb === "release.publish" ? "makes the version public" : "moves the channels back"})`);
     return;
   }
   if (caller.kind === "session") {
@@ -437,8 +438,8 @@ export class Releaser {
       return this.result(verb, root, true, changed, report);
     } catch (err) {
       const f = err instanceof ReleaseFailure ? err : err instanceof MergeFailure ? new ReleaseFailure(err.code, err.message) : new ReleaseFailure("busy", err instanceof Error ? err.message : String(err));
-      const record = (err as { record?: ReleaseRecord }).record;
-      if (record) report = { release: record };
+      const { record, view } = err as { record?: ReleaseRecord; view?: ReleaseView };
+      if (record || view) report = { ...(record ? { release: record } : {}), ...(view ? { view } : {}) };
       if (changed && root) this.changed(root);
       return this.result((isReleaseVerb(verb) ? verb : "release.status") as AnyVerb, root, false, changed, report, { code: f.code, message: f.message });
     }
@@ -997,6 +998,11 @@ export class Releaser {
     if (rec.state === "publishing") throw new ReleaseFailure("busy", "Publish is running");
     const why = (req.why ?? "").trim() || "abandoned by the operator";
     const q = await this.deps.queue(root);
+    // One press cancels; a confirm only once the release commit is on the target, since cancelling then reverts it.
+    if (!req.confirm) {
+      const landed = await this.landedReleaseCommit(rec, q);
+      if (landed) throw Object.assign(new ReleaseFailure("needs-confirm", `Cancelling reverts the release commit ${short(landed)}, already on ${q.target}: confirm to revert it`), { record: { ...rec, commit: rec.commit ?? landed }, view: await this.view(root) });
+    }
     const r = await q.abandonRelease({ release: rec.id, why });
     rec.state = "abandoned";
     rec.abandoned = { at: this.iso(), why, revert: r.revert };
@@ -1008,6 +1014,19 @@ export class Releaser {
     this.wake(rec, `The operator abandoned ${rec.tag ? `release ${rec.tag}` : "this release"}: ${why}. ${ABANDON_TAIL}`);
     this.log(`${root}: abandoned ${rec.id}${r.revert ? ` (revert ${r.revert})` : ""}`);
     return { changed: true, report: { release: rec, view: await this.view(root) } };
+  }
+
+  /** The release commit on the target that abandoning would revert (the queue's own rule in abandonRelease), or null. */
+  private async landedReleaseCommit(rec: ReleaseRecord, q: ProjectQueue): Promise<string | null> {
+    const hold = q.releaseHold();
+    if (!hold || hold.id !== rec.id) return null;
+    const landed = q
+      .entries()
+      .filter((e) => e.release === rec.id && (e.releaseKind ?? "release") === "release" && e.state === "landed" && e.landed)
+      .at(-1);
+    if (!landed) return null;
+    const head = await q.targetHead();
+    return head && head !== hold.base ? landed.landed!.sha : null;
   }
 
   private async withdraw(root: string, req: Req): Promise<{ changed: boolean; report: ReleaseReport }> {

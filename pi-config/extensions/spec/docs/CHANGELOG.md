@@ -1227,8 +1227,12 @@ Numbers: on a copy of 70 real worktrees with drafts, the same 70 answers; every 
     648 names, census, check).
   - Bench rule (BENCH-RULE, with the q8 "before" re-taken on c5cc013): dev 52 PASS and public 48 PASS. Both
     equal the before on every metric: dev 26.9 / 51.9 / 0.414 / 67.3, public 37.5 / 54.2 / 0.494 / 66.7. The
-    public 48 are **seen**, not held-out: the fix below was made after a public-48 result. The sealed hidden set
-    is the only unseen evidence and runs once, on the claim split branch.
+    public 48 are **seen**, not held-out: the fix below was made after a public-48 result.
+  - Hidden set, the only unseen evidence (42 new questions from recent real asks, locked by sha256 28967479…e9ce9
+    before anything was scored on it, run once): PASS, the split equal to master, 38.1 / 66.7 / 0.544 / 73.8, with
+    the result order identical on 42/42 queries and no hit through a part. Today's core on the same split, without
+    this change, FAILS: raw 31.0 / 47.6 / 0.407 / 59.5, re-resolved 35.7 / 61.9 / 0.497 / 71.4, 15 queries worse.
+    Leak caveat: the set's leak median is 0.5, above the public held-out's 0.4.
   - Recorded finding: the previous build, d2122951c (part headings counted in a topic's text), on re-cut
     45cafadc1 FAILED public 48 on MRR, 0.49343 against 0.49441 (a30 5 → 6, a76 8 → 9, near-ties). Its top-10
     order moved on 12/52 dev and 12/48 public queries. Build 4 then scores a topic on its pre-split text only.

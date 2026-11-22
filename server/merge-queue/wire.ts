@@ -803,13 +803,15 @@ export async function startMergeQueue(
               ? { kind: "paused" as const, why: ev.why ?? "paused" }
               : ev.kind === "names"
                 ? { kind: "names" as const, file: ev.namesFile ?? "", target: ev.target }
+                : ev.kind === "names-hit"
+                ? { kind: "names-hit" as const, target: ev.target, entry, ...(ev.run ? { run: ev.run } : {}), hits: ev.hits ?? [] }
                 : ev.kind === "idle"
                   ? { kind: "idle" as const, entry, ...(ev.lastLanded ? { lastLanded: ev.lastLanded } : {}), ...(ev.head ? { head: ev.head } : {}) }
                   : rulingEvent(ev, entry, base);
     if (!mapped) return false;
     if (!servedNow.has(servedKey(ev.root))) return false;
     if (!threadMod.hasMergeThread()) return false;
-    keeper.notify(ev.root, mapped as Parameters<typeof keeper.notify>[1]);
+    keeper.notify(ev.root, mapped as Parameters<typeof keeper.notify>[1], ev.fresh ? { fresh: ev.fresh } : {});
     return true;
   };
   const sessionPath = async (session: string): Promise<string | null> => {
@@ -955,6 +957,22 @@ export async function startMergeQueue(
     },
     // A test check broken on the target: one notification that opens the project's Merge Queue tab (its Needs you
     // holds the flag), so the user can start a chat to fix the target.
+    // §app.merge-queue/pausing: the queue paused itself (never the user's own pause): one notification opening its tab.
+    pausedSelf: (p, root) => {
+      const id = projectIdOf(root);
+      if (p.kind === "operator") return;
+      void Promise.all([import("../push"), import("./notices")])
+        .then(([{ notifyOnce }, { pausedPush }]) => notifyOnce(pausedPush(p, root, id)))
+        .catch((err) => console.warn(`[merge-queue] ${root}: pause notification not sent: ${err instanceof Error ? err.message : String(err)}`));
+    },
+    // A push the scan held, a merge thread that isn't answering: one notification opening the project's tab.
+    alert: (a, root) => {
+      const id = projectIdOf(root);
+      void import("../push")
+        .then(({ notifyOnce }) => notifyOnce({ ...a, hash: id ? `#/projects/${encodeURIComponent(id)}/merge-queue` : "#/projects" }))
+        .catch((err) => console.warn(`[merge-queue] ${root}: notification not sent: ${err instanceof Error ? err.message : String(err)}`));
+    },
+    threadHealth: (root) => threadMod.mergeThreadKeeper()?.health(root) ?? null,
     flagBroken: (b, root) => {
       const id = projectIdOf(root);
       void import("../push")

@@ -599,6 +599,7 @@ test("every event tells the thread to read its moment's Read as you go row now, 
     { kind: "drafts-changed", entry: entry(), names: ["d"] },
     { kind: "fix", entry: entry(), request: "rq_1", asked: "fix the unit test", commit: "b".repeat(40) },
     { kind: "chat-answer", entry: entry(), request: "rq_1", answer: "cant", text: "no way" },
+    { kind: "names-hit", target: "master", entry: entry(), run: "mr_1", hits: ["- commit abc1234 · a.txt:1 · private name #1"] },
   ];
   assert.deepEqual(evs.map((e) => e.kind).sort(), Object.keys(READ_AS_YOU_GO).sort(), "every event kind the thread is sent has a moment");
   const method = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8");

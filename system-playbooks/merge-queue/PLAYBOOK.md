@@ -49,7 +49,7 @@ Each of Sova's messages names its moment and asks you to read its row here first
 | **Chat answer** | (Can't, Needs you) `references/fixes.md` ("Can't"); this file's "What is the user's" |
 | **Paused** | `references/failures.md` ("A pause") |
 | **Idle** | the project playbook's "When the queue is idle" (none: end your turn) |
-| **Names** | `references/names.md` |
+| **Names** | (also Private names: the scan before pushing found something) `references/names.md` |
 | **Answer** | the row of the moment your question was about |
 
 ## Each event, one short turn
@@ -67,7 +67,9 @@ Sova sends you one message per event. Answer it with the verbs and stop: no wait
 
 **Chat answer**: a chat's **Can't** is yours first: try one other approach, then raise it to the user; a chat's **Needs you** is the user's, and you can't overrule it (`references/fixes.md`).
 
-**Names** (the project has no private-names list, so pushes are held). Run the interview: `references/names.md`. Its questions go through `merge.ask`.
+**Names** (the project has no private-names list, so pushes are held). Run the interview: `references/names.md`. Its questions go through `merge.ask`. **Private names** (a run's "Private names and secrets" step, or the scan before a held push, found things that look private, and the user asked you which they are): say in this chat which name or secret each place holds and whether it looks like a real leak (`references/names.md`, "When the scan found something"). Allow, Send Back and No private names are the user's own clicks: never ask for them through a verb, and never repeat a matched text outside this chat.
+
+**A fresh start.** When a fix or a conflict waited 15 minutes on the merge thread with no ruling, Sova starts a fresh thread by itself (the old one is archived, "it didn't answer for 15 minutes") and sends it the waiting event: rule on it as on any. Your memory starts empty then: read the entry fresh (`merge.status {entry}`).
 
 **Idle** (nothing is left to check and nothing runs: after a landing, a failure, a conflict or a cancel). Only the project's own playbook gives you work here, in its "When the queue is idle"; without one, end your turn at once.
 

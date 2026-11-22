@@ -157,6 +157,15 @@ export function sendBackText(e: Pick<MergeEntry, "branch" | "target" | "commit">
       if (f.diagnosis?.trim()) lines.push(`Merge thread: ${f.diagnosis.trim()}`);
       lines.push("Address each finding and commit.");
       break;
+    case "names": {
+      // Where and what kind, never the matched text (§app.merge-queue/names-step): the chat finds it there.
+      const hits = f.run?.steps.find((s) => s.kind === "scan")?.scan?.hits ?? [];
+      lines.push(`${e.branch} didn't land${tryWords}: the scan before pushing found ${hits.length || "some"} thing${hits.length === 1 ? "" : "s"} that look like private names or secrets, and the user sent it back to remove them.`);
+      for (const h of hits.slice(0, 12)) lines.push(`- ${h.where} · ${h.what}`);
+      if (hits.length > 12) lines.push(`- … and ${hits.length - 12} more (the run's "Private names and secrets" step lists them all)`);
+      lines.push(`Remove each from the branch, its files and its commit messages alike: one in an earlier commit stays in the history until that commit is rewritten (squash or reword the branch's commits onto ${e.target}). Never write the matched text in your answer.`);
+      break;
+    }
     case "drafts":
       lines.push(`${e.branch}'s spec drafts don't fit at landing${tryWords}: ${f.why}.`);
       lines.push("Make them fit in your drafts (that needs no commit); a new or changed promise isn't a fit: answer Needs you for it.");

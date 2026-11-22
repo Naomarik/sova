@@ -1,6 +1,6 @@
 ---
 title: Merge thread (Sova)
-description: Sova's own additions to the merge thread's method: what's worth noting on a Sova landing, restarting Sova once the queue is idle, its blast-radius map, its conflict and failure hints.
+description: Sova's own additions to the merge thread's method: what's worth noting on a Sova landing, restarting Sova once the queue is idle, what its checks cost and when to add one, its conflict and failure hints.
 ---
 
 # Merge thread: Sova
@@ -33,7 +33,7 @@ Sova sends **Idle** when the queue has nothing left to check and nothing runs. T
 You decide on your own (the method's "On your own"). Ask the user only what is theirs (the method's "What is the user's"), and only what the branch, its commits and the logs can't settle: a ruling's `needs-user`, or `merge.ask` with the entry it is about (the private-names interview is the usual one). Never wait in this chat.
 
 ## Picks
-The map is `references/blast-radius.json` (rules → check ids of `.sova/project.json`'s merge section: optional ones, or required ones that skip themselves). The method's `scripts/blast-radius.mjs` finds it on its own from the repo root. What each pick costs and when it is worth it: `references/blast-radius.md`. Extend the map in the same branch that adds a new area with its own tests.
+Sova's folder rules are the `rules` of `.sova/project.json`'s merge section (each names a check of its merge section: an optional one, or a required one that skips itself, with its selection and reason); Sova applies them itself on every run. What each check costs and when one is worth adding beyond the rules: `references/picks.md`. A branch that adds a new area with its own tests adds its rule in the same branch.
 
 ## Conflicts: Sova's usual cases
 - `shared/commands-ids.json`: ids are append-only; both sides appending different ids is a list extension (keep both, in the order master has them, the branch's after). The same id with two meanings is behaviour differs.

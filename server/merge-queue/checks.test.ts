@@ -103,7 +103,7 @@ describe("what a run checks", () => {
     mkdirSync(dir, { recursive: true });
     const f = join(dir, "out.json");
     writeFileSync(f, JSON.stringify({ passed: 3, failed: 1, skipped: 2, failures: [{ name: "x", file: "a.test.ts", message: "boom" }, { bogus: 1 }], failingFiles: ["a.test.ts", "b.test.ts"], notes: ["n"] }));
-    expect(readCheckOut(f)).toEqual({ passed: 3, failed: 1, skipped: 2, failures: [{ name: "x", file: "a.test.ts", message: "boom" }], failingFiles: ["a.test.ts", "b.test.ts"], failingNames: ["x"], notes: ["n"] });
+    expect(readCheckOut(f)).toEqual({ passed: 3, failed: 1, skipped: 2, failures: [{ name: "x", file: "a.test.ts", message: "boom" }], failingFiles: ["a.test.ts", "b.test.ts"], failingNames: ["x"], failingTests: [{ test: "x", file: "a.test.ts" }], notes: ["n"] });
     writeFileSync(f, JSON.stringify({ passed: 0, failed: 0, skipped: "no change to its paths" }));
     expect(readCheckOut(f)).toMatchObject({ skippedWhy: "no change to its paths", skipped: null });
     writeFileSync(f, JSON.stringify({ failures: [{ file: "c.test.ts" }] }));
@@ -253,5 +253,47 @@ describe("test checks and runs that ran no test", () => {
     expect(ranNoTest({ failingFiles: [], report: report({ ranFiles: ["a.test.ts"] }) })).toBe(false);
     expect(firstOutputLine("$ node scripts/run-tests.mjs --integration --groups\n[fresh: every test file runs (SOVA_FRESH=1)]\n\nrun-tests: --groups needs a value\nusage: …\n")).toBe("run-tests: --groups needs a value");
     expect(firstOutputLine("\n\n")).toBe(undefined);
+  });
+});
+
+describe("a check in a folder of its own, with its own variables and report", () => {
+  const svcs = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
+  const plan = (check: Record<string, unknown>) => {
+    const d = parseDefinition(JSON.stringify({ version: 1, services: svcs, merge: { checks: [{ id: "unit", run: ["node", "run.mjs"], rerun: true, ...check }] } }));
+    return { d, c: planChecks(d)[0]! };
+  };
+
+  test("the definition refuses a check folder outside the checkout, a SOVA_ variable, a report of no kind, a rerunTest without ${test}", () => {
+    const refused = (check: Record<string, unknown>) => {
+      try {
+        plan(check);
+        return null;
+      } catch (e) {
+        return (e as Error).message;
+      }
+    };
+    expect(refused({ cwd: "../x" })).toMatch("cwd");
+    expect(refused({ env: { SOVA_SLOT: "1" } })).toMatch("env.SOVA_SLOT");
+    expect(refused({ env: { X: "${nope}" } })).toMatch("env.X");
+    expect(refused({ report: { xml: "a" } })).toMatch("report");
+    expect(refused({ report: { junit: "/abs" } })).toMatch("report.junit");
+    expect(refused({ rerunTest: ["-k", "name"] })).toMatch("rerunTest");
+    expect(refused({ cwd: "pkg", env: { X: "${checkout}" }, report: { tap: "stdout" }, rerunTest: ["-k", "${test}"] })).toBeNull();
+  });
+});
+
+describe("one commit per branch (merge.squash)", () => {
+  test("the message: the branch's only subject, else its name and every subject; only a local, non-release landing squashes", async () => {
+    const { commitMessageOf, squashes } = await import("./run");
+    expect(commitMessageOf(["fix the thing"], "feat/x", "main")).toBe("fix the thing\n\nLanded from feat/x onto main as one commit.");
+    expect(commitMessageOf(["a", "b"], "feat/x", "main")).toBe("Land feat/x onto main (2 commits)\n\n- a\n- b");
+    const on = parseDefinition(JSON.stringify({ version: 1, services: svc, merge: { checks: [{ id: "t", run: ["t"] }], squash: true } }));
+    const entry = (approval: Record<string, unknown>, release?: string) => ({ entry: { approval, ...(release ? { release } : {}) } }) as unknown as Parameters<typeof squashes>[1];
+    expect(squashes(on, entry({}))).toBe(true);
+    expect(squashes(on, entry({ how: "local" }))).toBe(true);
+    expect(squashes(on, entry({ how: "github-pr" }))).toBe(false);
+    expect(squashes(on, entry({ how: "local", via: "gitlab-mr" }))).toBe(false);
+    expect(squashes(on, entry({}, "rl_1"))).toBe(false);
+    expect(squashes(declared, entry({}))).toBe(false);
   });
 });

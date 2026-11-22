@@ -33,13 +33,14 @@ lowered CPU priority, so a landing never starves the live server. Every limit is
 Why it reads this way: fast, broad checks first (a typecheck fails in a minute, before a 25-minute
 suite); checks that would be wasted on most branches skip themselves from `$SOVA_MERGE_CHANGED`
 instead of being optional, so they still run when their paths change without anyone picking them;
-truly slow, path-specific work is optional and picked by a map.
+truly slow, path-specific work is optional and run by a folder rule.
 
 **The merge thread's additions** (`.sova/playbook-config/merge-queue/`): what is worth noting on a Sova
-landing (`references/noting.md`), the blast-radius map (`references/blast-radius.json`: path globs →
-a check id, an optional `select`, a `why`), and "When the queue is idle", the one place anything
-restarts Sova (`scripts/restart-sova.mjs`). A new optional check gets its map rule in the same
-branch, or the thread never picks it but by judgement.
+landing (`references/noting.md`), what each check costs and when to add one (`references/picks.md`),
+and "When the queue is idle", the one place anything restarts Sova (`scripts/restart-sova.mjs`). The
+folder rules live in `.sova/project.json` (`merge.rules`: path globs → a check id, an optional
+`select`, a `why`). A new optional check gets its rule in the same branch, or it runs only by the
+thread's judgement.
 
 **Releases** (`release`): the playbook `.sova/playbook-config/release`, tag `v${version}`, `semver`, the one
 channel `stable` (the installer follows it), a release commit, and seven release-only checks declared
@@ -84,11 +85,10 @@ a branch touches it, not only at release time."
      `scripts/merge-checks/` script that writes `SOVA_OUT` and skips with a reason when nothing under
      its paths changed), because `site-check`'s release-tag assertions belong to a release;
    - its limit: twice the warm time you measured.
-5. **Draw the change**: `draw --worktree --base master` after writing, the "Picked by the merge
-   thread" row marked changed.
+5. **Draw the change**: `draw --worktree --base master` after writing, the "Optional checks" and
+   "Folder rules" rows marked changed.
 6. **Write on your branch**: the check appended to `merge.checks` (`optional: true`), its script,
-   a rule in `.sova/playbook-config/merge-queue/references/blast-radius.json` and a line in
-   `blast-radius.md`. Nothing else changes: the services half, the release and the deploy stay byte
+   a rule in `merge.rules` and a line in `.sova/playbook-config/merge-queue/references/picks.md`. Nothing else changes: the services half, the release and the deploy stay byte
    for byte.
 7. **Check**: `fmt`, then `check --base master` (exit 0; the carried-over deploy note stays a note);
    commit by explicit path.

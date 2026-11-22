@@ -8,7 +8,8 @@ import { createPoll } from "../lib/poll";
 import { deployDot } from "../lib/project-deploy";
 import type { DeployReport, VerbResult } from "../../shared/project-contract";
 import { relativeTime } from "../lib/format";
-import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, TAB_LABEL, type ProjectTab, type QueueTab } from "../lib/projects-route";
+import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, TAB_LABEL, type PipelineAt, type ProjectTab, type QueueTab } from "../lib/projects-route";
+import { PipelineScreen } from "./pipeline/PipelineScreen";
 import { openIdeas } from "../lib/project-overseer-view";
 import { projectHostOf } from "../lib/mesh";
 import { announce, toast } from "../lib/ui-state";
@@ -99,6 +100,8 @@ export function ProjectPage(props: {
   run?: string;
   /** On the Merge Queue tab: which of its tabs (on a run's page, the one it was opened from). */
   queueTab?: QueueTab;
+  /** The queue screen (§app.merge-queue/explainer), on the Merge Queue or the Releases tab. */
+  pipeline?: PipelineAt;
   titleRef(el: HTMLHeadingElement): void;
   onProject(p: ProjectSummary): void;
   refetchProject(): void;
@@ -393,6 +396,12 @@ export function ProjectPage(props: {
           <Match when={tab() === "running-copies"}>
             {/* Its setup line, copies on this host and their verbs, previews and recent runs (§app.project-services/services-ui). */}
             <ProjectServicesTab projectId={projectId} archived={!!archived()} runtime={runtime} landed={() => landedCopies(po.worktrees.data(), props.sessions?.())} />
+          </Match>
+          <Match when={props.pipeline}>
+            {(at) => (
+              // The whole queue explained: its setup, runs, branch stories, the Setup chat's proposal and the setup's history; releases the same.
+              <PipelineScreen projectId={projectId} root={project().root} name={project().name} at={at()} releases={releases} setup={setup} chatOf={(id) => chatRefOf(id, props.sessions?.())} />
+            )}
           </Match>
           <Match when={tab() === "merge-queue"}>
             {/* One branch at a time onto the target: what's checking, the line, what waits for you, recent landings. */}

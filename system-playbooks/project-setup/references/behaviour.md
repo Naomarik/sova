@@ -60,10 +60,11 @@ blocking). Can't be told (a rerun that ran no test): it waits for the user. A se
 the target too is the machine's: retried once, then the queue pauses. So a check must report what it
 ran (`SOVA_OUT`), and fail only for real.
 
-**Optional checks** run only when the merge thread picks them for a branch, from the project's own
-blast-radius map (`.sova/playbook-config/merge-queue/PLAYBOOK.md` and its references) or its judgement. A
-check worth running on some branches only (slow end-to-end tests, one slow group) is optional, with a
-map rule that names the paths that call for it. A trial runs every optional check with no selection:
+**Optional checks** run only when something adds them for a branch: the project's folder rules
+(`merge.rules`, which Sova applies itself at the start of every run, read from the branch being landed:
+shown as Triggered with the rule's reason), or the merge thread's judgement on top. A check worth running
+on some branches only (slow end-to-end tests, one slow group) is optional, with a rule that names the
+paths that call for it. A trial runs every optional check with no selection:
 one that takes a selection reports Skipped with its reason when given none (or runs what the branch
 calls for), never a usage error, or no trial of the project can pass.
 

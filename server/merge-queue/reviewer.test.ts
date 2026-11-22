@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReviewerStart } from "./review-step";
-import { reviewerStarter, reviewerTitle, sweepReviewers, type ReviewerDeps } from "./reviewer";
+import { confinedBy, reviewerModel, reviewerStarter, reviewerTitle, sweepReviewers, type ReviewerDeps } from "./reviewer";
 
 const o: ReviewerStart = {
   runId: "mr_7",
@@ -123,4 +123,74 @@ test("the startup sweep: every reviewer chat left open whose run nobody waits on
   const done = await sweepReviewers(rows, new Set(["c"]), async (p) => (retired.push(p), "archived"));
   assert.deepEqual(retired, ["/s/a.jsonl"]);
   assert.deepEqual(done, ["/s/a.jsonl"]);
+});
+
+// ---- a reviewer with a shell, or the fixer: only ever confined (§app.merge-queue/review-kit) --------
+
+/** A starter's deps that record every chat made (its profile and first message), every prompt and every retire. */
+function shellDeps(confine: ReviewerDeps["confine"]) {
+  const made: { profile: string; text: string }[] = [];
+  const prompted: string[] = [];
+  const archived: string[] = [];
+  const deps: ReviewerDeps = {
+    async create(_cwd, text, _title, _root, x) {
+      made.push({ profile: x.profile, text });
+      return { ok: true, id: `r${made.length}`, path: `/s/r${made.length}.jsonl`, model: "zai/glm-5.3" };
+    },
+    ...(confine ? { confine } : {}),
+    async prompt(path, text) {
+      prompted.push(`${path}: ${text}`);
+      return { ok: true };
+    },
+    async archive(path) {
+      archived.push(path);
+      return { ok: true };
+    },
+    retire: { retryMs: 0, log: () => {} },
+  };
+  return { deps, made, prompted, archived };
+}
+
+const shellStart: ReviewerStart = { ...o, profile: "merge-reviewer-shell", text: "with a shell", readOnlyText: "read only" };
+
+test("a shell reviewer starts with no message, its sandbox on, then its message: nothing runs before it is confined", async () => {
+  const f = shellDeps(async () => ({ ok: true, status: "Sandbox on · full enforcement" }));
+  const h = await reviewerStarter(f.deps)(shellStart);
+  assert.deepEqual(f.made, [{ profile: "merge-reviewer-shell", text: "" }]);
+  assert.deepEqual(f.prompted, ["/s/r1.jsonl: with a shell"]);
+  assert.equal(h.limited, undefined);
+  assert.equal(h.model, "zai/glm-5.3");
+});
+
+test("a shell its sandbox can't confine is never given: that chat goes, a read-only reviewer starts with the read-only message, and says why", async () => {
+  for (const confine of [async () => ({ ok: false as const, why: "this runtime has no sandbox" }), async () => Promise.reject(new Error("boom")), undefined]) {
+    const f = shellDeps(confine);
+    const h = await reviewerStarter(f.deps)({ ...shellStart, profile: "merge-reviewer-fix" });
+    assert.deepEqual(f.made, [{ profile: "merge-reviewer-fix", text: "" }, { profile: "merge-reviewer", text: "read only" }]);
+    assert.deepEqual(f.prompted, [], "the unconfined chat never got its message");
+    assert.equal(h.sessionId, "r2");
+    assert.match(h.limited ?? "", /runs read-only: its sandbox couldn't be turned on/);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(f.archived, ["/s/r1.jsonl"], "the unconfined chat is retired");
+  }
+});
+
+test("the reviewer's model: this computer's pick, else the kit's when usable here, else the new-chat default", async () => {
+  const check = { defaults: () => ({ model: "zai/glm-5.3", thinking: "low" }), denial: (ref: string) => (ref === "off/model" ? "turned off" : null) };
+  const none = async () => null;
+  const pick = async () => ({ model: "a/pick", thinking: "high" });
+  assert.deepEqual(await reviewerModel("/r", { model: "k/kit", thinking: "medium" }, { picked: pick, check }), { opening: { model: "a/pick", thinking: "high" }, ran: { model: "a/pick", thinking: "high" } });
+  assert.deepEqual(await reviewerModel("/r", { model: "k/kit", thinking: "medium" }, { picked: none, check }), { opening: { model: "k/kit", thinking: "medium" }, ran: { model: "k/kit", thinking: "medium" } });
+  assert.deepEqual(await reviewerModel("/r", { model: "off/model" }, { picked: none, check }), { opening: null, ran: { model: "zai/glm-5.3", thinking: "low" } }, "a kit model turned off here: the default");
+  assert.deepEqual(await reviewerModel("/r", { thinking: "xhigh" }, { picked: none, check }), { opening: { model: "zai/glm-5.3", thinking: "xhigh" }, ran: { model: "zai/glm-5.3", thinking: "xhigh" } }, "effort alone: the default model at it");
+  assert.deepEqual(await reviewerModel("/r", undefined, { picked: none, check }), { opening: null, ran: { model: "zai/glm-5.3", thinking: "low" } });
+});
+
+test("a shell or fix reviewer's sandbox counts only in full: partial enforcement is a no (the read-only fallback), as for every unattended chat", () => {
+  assert.deepEqual(confinedBy({ on: true, enforcement: "full", status: "bwrap" }), { ok: true, status: "bwrap" });
+  assert.deepEqual(confinedBy({ on: true, enforcement: "partial", status: "no seccomp" }), { ok: false, why: "its enforcement is only partial (no seccomp)" });
+  assert.deepEqual(confinedBy({ on: false, enforcement: "none", status: "" }), { ok: false, why: "it stayed off" });
+  assert.deepEqual(confinedBy({ on: true, enforcement: "unavailable", status: "" }), { ok: false, why: "nothing enforces it here" });
+  assert.equal(confinedBy({ on: true, enforcement: "unavailable", status: "", starting: true }), null, "still coming on: wait");
+  assert.equal(confinedBy(null), null);
 });

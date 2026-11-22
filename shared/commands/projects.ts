@@ -512,6 +512,122 @@ const PROJECTS_SWEEP: CommandEntry[] = [
   }),
 ];
 
+/** The queue's known state and numbers: Clean Run, the flaky tests and Fix in New Chat on one, the history's pages
+ *  and the health summary. Clean Run and the fix are the user's own click on Sova's page. */
+const MERGE_KNOWN: CommandEntry[] = [
+  {
+    id: "project.merge-queue.clean-run",
+    label: "Clean Run",
+    summary: "Run from an empty merge copy: no installed packages, build output or setup kept from earlier runs, every check fresh. On the branch checking now, its run starts again clean; on a failed run whose Land still stands, it checks the same commit again, clean; otherwise the next run is clean. Your own page only.",
+    effect: "changes",
+    params: { project: mqProject, entry: { type: "string", description: "The queue entry (mq_…) it is pressed on; absent: the next run", in: "body" } },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/clean-run" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.flaky",
+    label: "Show Flaky Tests",
+    summary: "Every test that failed in a merge run and then passed on its rerun, across landings: how often, first and last seen, and the runs that saw it.",
+    effect: "looks",
+    params: { project: mqProject },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/flaky" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.flaky.fix",
+    label: "Fix in New Chat",
+    summary: "Start a new coding chat on a new branch to fix one flaky test, told the test, how often it failed and the runs and logs that saw it. Your own page only.",
+    effect: "changes",
+    params: { project: mqProject, key: { type: "string", description: "The flaky test's key, as Show Flaky Tests gives it", in: "body", required: true } },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/flaky/fix" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.history",
+    label: "Show Older",
+    summary: "A page of the merge queue's history, newest first: each finished branch, how long it took to land, its runs and why it was sent back. `before` the previous page's `next`; `branch` searches by branch.",
+    effect: "looks",
+    params: {
+      project: mqProject,
+      branch: { type: "string", description: "Only branches whose name contains this", in: "query" },
+      before: { type: "string", description: "The previous page's next", in: "query" },
+      limit: { type: "integer", description: "Rows per page (1–100, default 20)", in: "query" },
+    },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/history" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.health",
+    label: "Show Queue Health",
+    summary: "The merge queue's health over the last days: time to land, pass rate, the slowest checks, the flakiest tests, the usual reasons branches are sent back, and clean runs.",
+    effect: "looks",
+    params: { project: mqProject, days: { type: "integer", description: "How many days back (1–366, default 30)", in: "query" } },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/health" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
+/** The queue screen's reads (§app.merge-queue/explainer): the setup in force beside the Setup chat's proposal, and the
+ *  setup's versions on the main branch. */
+const MERGE_SCREEN: CommandEntry[] = [
+  {
+    id: "project.merge-queue.setup-map",
+    label: "Show Queue Setup",
+    summary: "The merge queue's setup as its overview draws it: the checks and which run when (the folder rules), the review, how it lands and pushes, the private names step; beside it the Setup chat's proposal, read live from that chat's working copy, and what changes.",
+    effect: "looks",
+    params: { project: mqProject },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/setup-map" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.setup-history",
+    label: "Show Setup History",
+    summary: "Each version of the merge queue's setup on the main branch, newest first: the commit that brought it in, when, and what it changed.",
+    effect: "looks",
+    params: { project: mqProject, limit: { type: "integer", description: "How many versions (1–50, default 20)", in: "query" } },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/setup-history" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
+/** The event memory's read (§app.merge-queue/activity): every recorded change of the queue, an entry, a run or a branch. */
+const MERGE_EVENTS: CommandEntry[] = [
+  {
+    id: "project.merge-queue.events",
+    label: "Show Queue Activity",
+    summary: "What happened in the merge queue, newest first, each with its time, who did it and why: approvals, runs started and restarted, steps, sends back and answers, the merge thread's decisions with what it read, pauses, landings and pushes. Narrowed to an entry, a run, a branch, an actor or a kind; pages back with before.",
+    effect: "looks",
+    params: {
+      project: mqProject,
+      entry: { type: "string", description: "One entry's (mq_…)", in: "query" },
+      run: { type: "string", description: "One run's (mr_…)", in: "query" },
+      branch: { type: "string", description: "One branch's, every entry of it", in: "query" },
+      by: { type: "string", description: "One actor's: user, queue, thread, chat, reviewer or release", in: "query" },
+      kind: { type: "string", description: "One kind of change (run-restarted, ruled, paused…)", in: "query" },
+      before: { type: "integer", description: "Older than this seq (the last one of the page before)", in: "query" },
+      limit: { type: "integer", description: "How many (1–500, default 100)", in: "query" },
+    },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/events" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
 export const PROJECT_ENTRIES: CommandEntry[] = [
   {
     id: "project.services.view",
@@ -529,4 +645,7 @@ export const PROJECT_ENTRIES: CommandEntry[] = [
   ...MERGE_SETTINGS,
   ...MERGE_LANDING,
   ...MERGE_SUMMARY,
+  ...MERGE_KNOWN,
+  ...MERGE_EVENTS,
+  ...MERGE_SCREEN,
 ];

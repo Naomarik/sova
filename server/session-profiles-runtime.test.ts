@@ -191,6 +191,19 @@ describe("removals hold in the runtime (excludeTools)", () => {
     for (const t of ["grep", "find", "ls"]) assert.ok(piSession(ro).getActiveToolNames().includes(t), t);
   });
 
+  test("the reviewer's two other profiles: with a shell has bash and no edit tools; the fixer has both; neither has workers, web or worktrees", async () => {
+    const open = async (id: string) => {
+      const raw = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), `../profiles/system/${id}.json`), "utf8"));
+      return piSession(await acquireChat(makeSession({ ...(parseProfile(raw) as object), source: "sova" }), true)).getActiveToolNames();
+    };
+    const shell = await open("merge-reviewer-shell");
+    const fix = await open("merge-reviewer-fix");
+    assert.ok(shell.includes("bash"), "shell: bash");
+    for (const t of ["edit", "write"]) assert.ok(!shell.includes(t), `shell: no ${t}`);
+    for (const t of ["bash", "edit", "write"]) assert.ok(fix.includes(t), `fixer: ${t}`);
+    for (const active of [shell, fix]) for (const t of ["agent_spawn", "team_create", "web_search", "worktree", "wake_nudge"]) assert.ok(!active.includes(t), `no ${t}`);
+  });
+
   test("a Default session is exactly as before: every tool, and no session tools", async () => {
     const chat = await acquireChat(makeSession(), true);
     const active = piSession(chat).getActiveToolNames();

@@ -97,6 +97,16 @@ describe("editing Sova's own project file in place", () => {
     assert.equal(editSettingsText(SOVA, { deleteBranches: false }), SOVA, "off where it's absent changes nothing");
   });
 
+  test("One commit per branch: on writes merge.squash true and changes no other byte; off removes it; only a boolean", () => {
+    assert.ok(!SOVA.includes('"squash"'), "the control: the file doesn't already say it");
+    const on = editSettingsText(SOVA, { squash: true });
+    assert.deepEqual(lineDiff(SOVA, on), { removed: [], added: ['"squash": true'] });
+    assert.equal(editSettingsText(on, { squash: false }), SOVA);
+    assert.equal(changeWords({ squash: true }), "one commit per branch on");
+    assert.equal(isEmptyChange({ squash: false }), false);
+    for (const v of ["true", 1, null]) assert.throws(() => parseChange({ squash: v }), SettingsEditError, String(v));
+  });
+
   test("Delete branches takes only a boolean", () => {
     for (const v of ["true", 1, null]) assert.throws(() => parseChange({ deleteBranches: v }), SettingsEditError, String(v));
   });

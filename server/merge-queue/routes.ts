@@ -7,7 +7,10 @@ import type { RunMerge, WakeThread } from "./contract";
 import { MergeFailure, type MergeQueues, type ProjectQueue } from "./queue";
 import { registerLiveMergeSettingsRoutes } from "./settings-routes";
 import { registerLiveMergeLandingRoutes } from "./routes-landing";
+import { registerLiveMergeKnownRoutes } from "./routes-known";
 import { registerLiveRunLogsRoutes } from "./run-logs-routes";
+import { registerLiveSetupMapRoutes } from "./setup-map";
+import { registerLiveMergeEventsRoutes } from "./routes-events";
 import { NOT_SERVED } from "./served";
 import type { MergeNamesReport } from "../../shared/merge-queue";
 import type { Proc } from "./copy";
@@ -70,7 +73,7 @@ export interface MergerDeps {
   now?: () => number;
 }
 
-const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask", "merge.hold", "merge.rule", "merge.restart", "merge.test", "merge.names"];
+const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.events", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask", "merge.hold", "merge.rule", "merge.restart", "merge.test", "merge.names"];
 const REVIEWER_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.review"];
 
 interface Req {
@@ -110,6 +113,8 @@ interface Req {
   request?: string;
   drafts?: boolean;
   contents?: Record<string, string>;
+  /** merge.answer allow / merge.names allow: the scan's matches (ScanHit.key) to mark fine; none: every one shown. */
+  matches?: string[];
 }
 
 const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings" | "map"> = {
@@ -149,6 +154,7 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings" | "map
   request: "string",
   drafts: "boolean",
   contents: "map",
+  matches: "strings",
 };
 
 /** A string key's length limit. merge.review's `text` carries a whole review, whose own format bounds it below this
@@ -209,6 +215,7 @@ export function merger(deps: MergerDeps): (verb: string, body: unknown, caller: 
       const r = await dispatch(deps, verb, req, q, caller);
       changed = r.changed;
       report = r.report;
+      recordAct(deps, verb, req, q, caller, r.report);
       return result(verb, root, true, changed, report, undefined, now());
     } catch (err) {
       const f = err instanceof MergeFailure ? err : new MergeFailure("busy", err instanceof Error ? err.message : String(err));
@@ -373,6 +380,77 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   throw new MergeFailure("forbidden", `only the project's merge thread calls ${verb}`);
 }
 
+const clipWhy = (t: string | undefined, n = 300): string => {
+  const l = (t ?? "").trim().split("\n")[0]!.trim();
+  return l.length > n ? `${l.slice(0, n - 1).trimEnd()}…` : l;
+};
+
+/**
+ * The event memory of a verb that went through (§app.merge-queue/activity): the merge thread's reads become the next
+ * ruling's evidence; each of its acts (and the reviewer's verdict, a chat's answer) is recorded with its reason.
+ * Never throws: a verb's answer never depends on its record.
+ */
+function recordAct(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQueue, caller: Caller, report: MergeReport): void {
+  try {
+    const sid = sessionId(caller);
+    const thread = !!sid && !!deps.isThreadChat?.(q.root, sid);
+    const entry = req.entry ?? report.entry?.id;
+    const at = { ...(entry ? { entry } : {}), ...(req.run ? { run: req.run } : {}) };
+    switch (verb) {
+      case "merge.status":
+        if (thread) q.noteThreadRead(req.entry ? `status of ${req.entry}` : "the queue's status");
+        return;
+      case "merge.events":
+        if (thread) q.noteThreadRead(`events of ${req.entry ?? req.run ?? req.branch ?? "the queue"}`);
+        return;
+      case "merge.logs":
+        if (thread) q.noteThreadRead(`log of ${report.run?.id ?? req.run ?? req.entry ?? "a run"}${req.step ? ` step ${req.step}` : ""}`);
+        return;
+      case "merge.respond":
+        if (report.request?.answer && report.entry) {
+          const a = report.request.answer;
+          const words = a.kind === "fixed" ? `Its chat answered Fixed: ${clipWhy(a.summary)}` : a.kind === "needs-you" ? `Its chat needs the user: ${clipWhy(a.question)}` : `Its chat can't: ${clipWhy(a.why)}`;
+          q.record({ kind: "answered", by: "chat", entry: report.entry.id, branch: report.entry.branch, request: report.request.id, answer: a.kind, why: words });
+        }
+        return;
+      case "merge.review":
+        if (report.run) q.ruled({ act: "review", by: "reviewer", entry: report.run.entry, run: report.run.id, step: "review", verdict: req.verdict, why: `The reviewer said ${req.verdict ?? "its verdict"}${req.text ? `: ${clipWhy(req.text)}` : "."}`, ...(req.text ? { text: req.text } : {}) });
+        return;
+    }
+    if (!thread) return;
+    switch (verb) {
+      case "merge.extend": {
+        const checks = (req.checks ?? []).join(", ");
+        const late = report.entry?.state === "checking";
+        q.ruled({ act: "extend", ...at, verdict: checks, why: `The merge thread added ${checks || "checks"}${req.select?.length ? ` (${req.select.join(", ")})` : ""}: ${clipWhy(req.why) || "no reason given"}.` });
+        if (report.entry) q.record({ kind: "picked", by: "thread", entry: report.entry.id, branch: report.entry.branch, ...(report.entry.run ? { run: report.entry.run } : {}), checks: req.checks ?? [], ...(late ? { late: true as const } : {}), why: `${checks} picked${late ? " after the run started: it still runs, before the push" : " for its run"}.` });
+        return;
+      }
+      case "merge.resolve":
+        q.ruled({ act: "resolve", ...at, verdict: req.verdict, why: `The merge thread judged the conflict ${req.verdict === "no-behaviour-change" ? "a change of no behaviour and resolved it" : req.verdict === "needs-user" ? "the user's to decide" : "the branch's chat's to fix"}: ${clipWhy(req.proposal ?? req.text) || "no reason given"}.`, ...(req.text ? { text: req.text } : {}) });
+        return;
+      case "merge.rule":
+        q.ruled({ act: req.ruling === "checked" || req.ruling === "beyond" ? "fix-checked" : "rule", ...at, verdict: req.ruling, why: `The merge thread ruled ${req.ruling ?? ""}${req.text ? `: ${clipWhy(req.text)}` : "."}`, ...(req.text ? { text: req.text } : {}) });
+        return;
+      case "merge.note":
+        q.ruled({ act: "note", ...at, why: req.note ? `The merge thread noted: ${clipWhy(req.note)}` : "The merge thread cleared its note." });
+        return;
+      case "merge.retry":
+        q.ruled({ act: "retry", ...at, why: `The merge thread put it back in line${req.note ? `: ${clipWhy(req.note)}` : "."}` });
+        return;
+      case "merge.hold":
+        q.ruled({ act: "hold", verdict: req.action, why: req.action === "clear" ? "The merge thread lifted its hold." : "The merge thread held new runs for 5 minutes." });
+        return;
+      case "merge.ask":
+        q.ruled({ act: "ask", ...at, why: `The merge thread asked the user: ${clipWhy(req.text)}` });
+        return;
+      case "merge.names":
+        q.ruled({ act: "names", why: `The merge thread ran the names ${req.action ?? "verb"}.` });
+        return;
+    }
+  } catch {}
+}
+
 /** A history row's run: its entry's last, or a partial row's newest. */
 const historyRun = (h: import("../../shared/merge-queue").MergeHistoryRow | null): string | undefined => h?.entry?.run ?? h?.runs?.at(-1);
 
@@ -397,7 +475,13 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
         ...(view.waitingOnHost ? { waitingOnHost: one(view.waitingOnHost) } : {}),
         recent: view.recent.filter((x) => x.entry.id === req.entry),
       };
-      return { changed: false, report: { view: narrowed, ...(kept ? { history: kept } : {}) } };
+      // Its recorded changes, the history's included (§app.merge-queue/activity), newest first.
+      return { changed: false, report: { view: narrowed, ...(kept ? { history: kept } : {}), events: q.events({ entry: req.entry, limit: 100 }) } };
+    }
+    case "merge.events": {
+      // The event memory (§app.merge-queue/activity): an entry's, a run's, a branch's or the queue's, newest first.
+      const events = q.events({ ...(req.entry ? { entry: req.entry } : {}), ...(req.run ? { run: req.run } : {}), ...(req.branch ? { branch: req.branch } : {}), limit: req.lines ?? 50 });
+      return { changed: false, report: { events } };
     }
     case "merge.logs": {
       const runId = req.run ?? (req.entry ? (q.entry(req.entry)?.run ?? historyRun(q.historyEntry(req.entry))) : undefined);
@@ -494,8 +578,8 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
     }
     case "merge.answer": {
       const a = need(req.answer, "answer");
-      if (!(MERGE_ANSWERS as readonly string[]).includes(a)) throw new MergeFailure("invalid-request", 'answer is "accept", "land-anyway", "try-again" or "land"');
-      const e = await q.answer(need(req.entry, "entry"), a as MergeAnswer, req.why);
+      if (!(MERGE_ANSWERS as readonly string[]).includes(a)) throw new MergeFailure("invalid-request", 'answer is "accept", "land-anyway", "try-again", "land", "allow", "send-back" or "ask-thread"');
+      const e = await q.answer(need(req.entry, "entry"), a as MergeAnswer, req.why, req.matches);
       return { changed: true, report: { entry: e, view: await viewOf() } };
     }
     case "merge.review": {
@@ -592,8 +676,16 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       return { changed: false, report: { test: r } };
     }
     case "merge.names": {
-      const action = need(req.action, 'action ("discover", "add" or "show")');
-      if (action !== "discover" && action !== "add" && action !== "show") throw new MergeFailure("invalid-request", '"action" is "discover", "add" or "show"');
+      const action = need(req.action, 'action ("discover", "add", "show", "none" or "allow")');
+      // §app.merge-queue/names-step: No private names and Allow are the user's own click (their page), never the merge
+      // thread's: a thread that could Allow could let a leak through.
+      if (action === "none" || action === "allow") {
+        if (caller.kind !== "operator") throw new MergeFailure("forbidden", `merge.names ${action} is the user's own click on their page, never the merge thread's`);
+        if (action === "none") return { changed: true, report: { names: { action, summary: `answered: no private names (${(await q.noPrivateNames()).file}); held pushes go now` } } };
+        const r = await q.allowPushHits(req.matches);
+        return { changed: true, report: { names: { action, summary: `${r.allowed} match${r.allowed === 1 ? "" : "es"} marked fine for this project; the held push is tried again`, count: r.allowed } } };
+      }
+      if (action !== "discover" && action !== "add" && action !== "show") throw new MergeFailure("invalid-request", '"action" is "discover", "add", "show", "none" or "allow"');
       if (action === "add" && !req.text?.trim()) throw new MergeFailure("invalid-request", "say the names to add (text: one `<kind>: <value>` per line)");
       if (!deps.names) throw new MergeFailure("unsupported", "this server runs no names step");
       return { changed: action !== "show", report: { names: await deps.names(q, action, req.text) } };
@@ -656,6 +748,12 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
   registerLiveMergeLandingRoutes(app);
   // The merge thread's Run Logs chip: the run folders' size and Clean Logs (run-logs-routes.ts).
   registerLiveRunLogsRoutes(app);
+  // The queue screen's Setup, Proposal and Setup history views: the setup in force and the Setup chat's, live (setup-map.ts).
+  registerLiveSetupMapRoutes(app);
+  // Clean Run, the flaky tests and their Fix in New Chat, the history's pages and the health summary (routes-known.ts).
+  registerLiveMergeKnownRoutes(app);
+  // The event memory's read: every recorded change of the queue, an entry, a run or a branch (routes-events.ts).
+  registerLiveMergeEventsRoutes(app);
   // Try Again on a branch summary that failed (branch-summaries.ts): {branch, commit}; refused for one that worked.
   app.post("/api/merge-queue/projects/:project/branch-summary", async (c) => {
     const b = (await c.req.json().catch(() => null)) as { branch?: unknown; commit?: unknown } | null;

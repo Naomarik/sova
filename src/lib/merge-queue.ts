@@ -945,6 +945,8 @@ export function pausedTitle(v: Pick<MergeQueueView, "paused">): string {
       return "Paused: a landing in flight at a stop needs a look.";
     case "definition-invalid":
       return "Paused: the project's .sova/project.json is invalid.";
+    case "time-limit":
+      return "Paused: a check runs past its time limit on the target too.";
   }
 }
 

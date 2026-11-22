@@ -5,7 +5,7 @@ import { answerEntry, cancelEntry, mergeChanged, readLog, readRun, refusal } fro
 import { createFollowedRead, createRunRead, logFollow } from "../lib/merge-run";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { announce, home, toast } from "../lib/ui-state";
-import { mergeQueueTabHref, projectSessionHref, type QueueTab } from "../lib/projects-route";
+import { mergeQueueTabHref, pipelineHref, projectSessionHref, type QueueTab } from "../lib/projects-route";
 import { Banner, Icon } from "./ui";
 import { type ChatOf, FromChat } from "./MergeQueueTab";
 import { ReviewerLinks } from "./MergeQueueChats";
@@ -70,6 +70,11 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
         </Show>
         <Show when={isTestRun()}>
           <span> · Test run of the checks</span>
+        </Show>
+        {/* Its plan beside what it did, what it ran with and its activity, on the queue screen (§app.merge-queue/explainer). */}
+        <Show when={!isDry() && !isTestRun()}>
+          <span aria-hidden="true"> · </span>
+          <a href={pipelineHref(props.projectId, "queue", "runs", props.runId)}>Plan and Activity</a>
         </Show>
       </nav>
       <Show when={run()} fallback={<p class="orgs-empty">{read.error() ? `Couldn't read this run. ${read.error() instanceof Error ? (read.error() as Error).message : String(read.error())}` : "Reading the run."}</p>}>

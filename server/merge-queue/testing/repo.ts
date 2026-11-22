@@ -5,7 +5,8 @@
  * scripts whose pass or fail the test controls by file content in the commit being checked:
  *
  * - `setup.conf`: `ok` | `broken` (setup exits 1) | `broken-once` (fails on its first run only).
- * - `build.conf`: `ok` | `broken`: the `build` check fails with no file named (a typecheck/build kind).
+ * - `build.conf`: `ok` | `broken`: the `build` check fails with no file named (a typecheck/build kind) |
+ *   `broken-once` (fails its first run per commit, passes after).
  * - `tests/<name>.txt`: `pass` | `fail` | `flaky` (fails its first run per content, passes after) |
  *   `hang` (sleeps until killed): the `unit` check, which names its failing files in SOVA_OUT and reruns
  *   only the files passed as argv.
@@ -44,6 +45,8 @@ export interface FixtureOptions {
   /** declared only: the unit check's time limit in seconds (default 60), and more checks after build and unit. */
   unitTimeout?: number;
   moreChecks?: Record<string, unknown>[];
+  /** declared only: keys over the unit check's own (`rerun: false`, `rerunTest: ["--name", "${test}"]`). */
+  unit?: Record<string, unknown>;
   /** The repo's folder name (default `demo`). */
   name?: string;
   /** Files on the target's first commit, over the defaults (e.g. `{"setup.conf": "broken\n"}`: master already broken). */
@@ -114,7 +117,7 @@ log("pass");
 const BUILD = (s: string) => `${prelude(s, "build")}
 const c = conf("build.conf", "ok");
 console.log("build: " + c);
-if (c === "broken") { console.error("build: error TS2322 in src/app.ts"); log("fail"); process.exit(2); }
+if (c === "broken" || (c === "broken-once" && once("build-once:" + head))) { console.error("build: error TS2322 in src/app.ts"); log("fail"); process.exit(2); }
 log("pass");
 `;
 
@@ -124,9 +127,13 @@ const UNIT = (s: string) => `${prelude(s, "unit")}
 if (existsSync("unit.usage")) { console.error("unit: --groups needs a value"); console.error("usage: unit [--groups <name>] [files]"); out({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [], ranFiles: [] }); log("fail"); process.exit(2); }
 // unit.crash at the root: a runner that dies midway, or one that never writes a report: exit 1 and no report at all.
 if (existsSync("unit.crash")) { console.error("unit: segfault in the middle of the suite"); log("fail"); process.exit(1); }
-const sel = process.argv.slice(2);
+// "--name <test>": only the tests of that name (a test file's base name, "a.txt"), as a runner's name filter runs them.
+const argv = process.argv.slice(2);
+const sel = [];
+const byName = [];
+for (let i = 0; i < argv.length; i++) argv[i] === "--name" ? byName.push(argv[++i]) : sel.push(argv[i]);
 const all = existsSync("tests") ? readdirSync("tests").filter((f) => f.endsWith(".txt")).sort().map((f) => "tests/" + f) : [];
-const files = sel.length ? all.filter((f) => sel.includes(f)) : all;
+const files = (sel.length ? all.filter((f) => sel.includes(f)) : all).filter((f) => !byName.length || byName.includes(f.replace(/^tests\\//, "")));
 // unit.basename: a selector that names no repo path can't be loaded, as nasabii's test.bb errors on "handler_test.clj".
 if (existsSync("unit.basename") && sel.length && !files.length) { console.log("unit: could not locate " + sel.join(" ")); out({ passed: 0, failed: 0, errors: 1, skipped: 0, failures: [{ name: "test run", message: "could not locate " + sel.join(" ") }] }); log("fail"); process.exit(1); }
 const failures = [];
@@ -264,7 +271,7 @@ export class Fixture {
     if (checks === "declared") {
       merge.checks = [
         { id: "build", label: "Build", run: ["node", "checks/build.mjs"] },
-        { id: "unit", label: "Unit tests", run: ["node", "checks/unit.mjs"], rerun: true, timeout: this.opts.unitTimeout ?? 60 },
+        { id: "unit", label: "Unit tests", run: ["node", "checks/unit.mjs"], rerun: true, timeout: this.opts.unitTimeout ?? 60, ...(this.opts.unit ?? {}) },
         ...(this.opts.moreChecks ?? []),
       ];
     } else if (checks === "none") merge.checks = "none";

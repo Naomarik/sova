@@ -3,7 +3,7 @@
  * the run checks. Never under Sova's state root or `~/.pi` (the Oct 29 failure: a copy there inherited the state
  * root's settings and its tests read the live server's files). Reset at the start of every run: any merge in progress
  * aborted, the tree forced to the target's head, untracked files removed (ignored ones, the setup's outputs such as
- * node_modules, kept for its cache), the spec drafts folder emptied.
+ * node_modules, kept for its cache, except on a clean run, which removes them too), the spec drafts folder emptied.
  */
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -175,7 +175,7 @@ async function isOurCopy(path: string): Promise<boolean> {
  * refused, never reset. Every git command
  * and its output goes to `log`. Throws CopyRefused for a path under the state root, Error for git failing.
  */
-export async function prepareCopy(o: { root: string; path: string; base: string; log: (s: string) => void; signal?: AbortSignal; state?: string; home?: string }): Promise<void> {
+export async function prepareCopy(o: { root: string; path: string; base: string; log: (s: string) => void; signal?: AbortSignal; state?: string; home?: string; clean?: boolean }): Promise<{ cut: boolean }> {
   assertCopyOutsideState(o.path, { root: o.root, ...(o.state ? { state: o.state } : {}), ...(o.home ? { home: o.home } : {}) });
   const step = async (cwd: string, args: string[]) => {
     o.log(`$ git ${args.join(" ")}\n`);
@@ -218,7 +218,7 @@ export async function prepareCopy(o: { root: string; path: string; base: string;
     if (r.code !== 0) throw new Error(`cutting the merge copy at ${o.path} failed: ${r.out.trim().split("\n").pop() || `exit ${r.code}`}`);
     writeFileSync(await markerFile(o.path), `${o.root}\n`);
     if (o.signal?.aborted) throw new Error("aborted");
-    return;
+    return { cut: true };
   }
   // A merge (or cherry-pick, rebase) a stopped run left in progress goes first; failure means none was.
   await step(o.path, ["merge", "--abort"]);
@@ -226,7 +226,9 @@ export async function prepareCopy(o: { root: string; path: string; base: string;
   if (co.code !== 0) throw new Error(`resetting the merge copy to ${o.base.slice(0, 12)} failed: ${co.out.trim().split("\n").pop() || `exit ${co.code}`}`);
   const reset = await step(o.path, ["reset", "--hard", o.base]);
   if (reset.code !== 0) throw new Error(`git reset --hard failed in the merge copy: ${reset.out.trim().split("\n").pop()}`);
-  const clean = await step(o.path, ["clean", "-ffd"]);
+  // A clean run empties the copy of everything beyond the tracked files: the ignored ones (installed packages, build
+  // output) too. Otherwise those stay, as the setup's cache.
+  const clean = await step(o.path, ["clean", o.clean ? "-ffdx" : "-ffd"]);
   if (clean.code !== 0) throw new Error(`git clean failed in the merge copy: ${clean.out.trim().split("\n").pop()}`);
   // A previous run's spec drafts are never this one's: whatever isn't tracked there goes (ignored ones too); tracked
   // drafts (a project that commits them) stay as the target has them.
@@ -234,6 +236,7 @@ export async function prepareCopy(o: { root: string; path: string; base: string;
     const d = await step(o.path, ["clean", "-ffdx", "--", ".sova/spec/drafts"]);
     if (d.code !== 0) throw new Error(`git clean of the spec drafts failed in the merge copy: ${d.out.trim().split("\n").pop()}`);
   }
+  return { cut: false };
 }
 
 /** Put the copy at `commit` (attribution: the target alone, or back to the tip), keeping ignored files; its submodules

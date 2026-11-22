@@ -26,8 +26,9 @@ import { readRunLogText } from "./run-logs";
 import { LANDED_DRAFTS_FILE, type LandedDraftsRecord } from "./landed-drafts";
 import { nothingToLandWords } from "./notices";
 import { blameCheck, blameFile, blameSetup, brokenOnTarget, type CheckBlame, type RedRun, summarize } from "./attribute";
-import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, firstOutputLine, freshOf, isTestCheck, type PlannedCheck, picksOf, planChecks, ranNoTest, reusedWords, runCheck, templateVarsOf } from "./checks";
+import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, firstOutputLine, freshOf, isTestCheck, type PlannedCheck, picksOf, planChecks, ranNoTest, reusedWords, runCheck, templateVarsOf, testKey } from "./checks";
 import type { RunHooks, RunInput, RunMerge, RunOutcome } from "./contract";
+import type { FlakySeen } from "./flaky";
 import { assertCopyOutsideState, CopyRefused, fillLfs, fillSubmodules, gitOut, gitProc, mergeCopyPath, modulesOf, moveCopy, prepareCopy, runProc } from "./copy";
 import { reviewStep, type ReviewDeps } from "./review-step";
 import { kitChangedBy, kitDeclAt, kitDiff, kitHashAt, ownFolder, ownReviewWords, readKitDecl, reviewerFixIn, reviewerProfileOf } from "./review-kit";
@@ -146,6 +147,9 @@ function logReused(st: Step, r: CheckRun): void {
   for (const f of used.list) st.log(`  reused ${f.file}${f.at ? ` · passed ${f.at}` : ""}${f.from ? ` · ${f.from}` : ""}${f.run ? ` · run ${f.run}` : ""}\n`);
   if (used.list.length < used.files) st.log(`  (${used.files - used.list.length} more not listed)\n`);
 }
+
+/** An event for the queue's record (RunHooks.event, when this build has it): run, entry and branch are filled in. */
+const hookEvent = (hooks: RunHooks, ev: import("../../shared/merge-queue").MergeEventInput): void => (hooks as { event?: (e: import("../../shared/merge-queue").MergeEventInput) => void }).event?.(ev);
 
 export const mergeSlotOf = (def: ProjectDef): number => Math.max(...slotLayoutOf(def, null).scratch) + 1;
 
@@ -268,18 +272,30 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   const notes: MergeNote[] = [];
   let checksShown: CheckPick[] = [];
   let rulesShown: RunRules | undefined;
-  const out = (o: Omit<RunOutcome, "notes" | "checks"> & { notes?: MergeNote[] }): RunOutcome => ({ ...o, notes: [...notes, ...(o.notes ?? [])], checks: checksShown, ...(rulesShown ? { rules: rulesShown } : {}) });
+  // A clean run (asked for, or the weekly one) reuses nothing; a copy cut new had nothing to reuse.
+  let clean = input.clean;
+  const flakySeen: FlakySeen[] = [];
+  const checksReused: { id: string; files: number }[] = [];
+  const out = (o: Omit<RunOutcome, "notes" | "checks"> & { notes?: MergeNote[] }): RunOutcome => ({ ...o, notes: [...notes, ...(o.notes ?? [])], checks: checksShown, ...(rulesShown ? { rules: rulesShown } : {}), ...(flakySeen.length ? { flaky: [...flakySeen] } : {}), ...(clean ? { clean } : {}) });
   const voided = (why: string): RunOutcome => out({ verdict: "void", why });
   const copy = mergeCopyPath(project.root);
   const def = project.def;
+  // Every check fresh on a clean run asked for (or the weekly one); a copy merely cut new still trusts earlier passes on
+  // identical code (they are kept outside the copy).
+  const fresh = (o: { rerun?: boolean; release?: boolean }): boolean => !!input.clean || freshOf(def, o);
 
   // 1. copy
-  const cs = steps.start("copy", "copy", "Merge copy");
+  const cs = steps.start("copy", "copy", clean ? "Merge copy (clean)" : "Merge copy");
   try {
     assertCopyOutsideState(copy, { root: project.root, ...(deps.state ? { state: deps.state } : {}), ...(deps.home ? { home: deps.home } : {}) });
     hooks.copy?.(copy);
     cs.log(`copy: ${copy}\nbase: ${base} (${target})\n`);
-    await prepareCopy({ root: project.root, path: copy, base, log: cs.log, signal, ...(deps.state ? { state: deps.state } : {}), ...(deps.home ? { home: deps.home } : {}) });
+    if (clean) cs.log(`clean run (${clean === "weekly" ? "the weekly one" : "asked for"}): every ignored file goes too, setup runs from nothing, every check runs fresh\n`);
+    const made = await prepareCopy({ root: project.root, path: copy, base, log: cs.log, signal, ...(clean ? { clean: true } : {}), ...(deps.state ? { state: deps.state } : {}), ...(deps.home ? { home: deps.home } : {}) });
+    // A copy cut new had nothing to reuse: that, rather than a weekly clean, is why (a clean run asked for stays so).
+    if (made.cut && clean !== "operator") clean = "new";
+    if (clean) await forgetSetup(copy);
+    hooks.ranWith?.({ copy: clean ? "fresh" : "reused", ...(clean ? { clean } : {}) });
   } catch (err) {
     if (signal.aborted) return (cs.end("failed", { detail: "aborted" }), voided("aborted"));
     const why = err instanceof Error ? err.message : String(err);
@@ -287,7 +303,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     cs.end("failed", { detail: why });
     return out({ verdict: "machine", why: err instanceof CopyRefused ? `refused: ${why}` : `the merge copy couldn't be made ready: ${why}` });
   }
-  cs.end("passed", { detail: `${copy} at ${short(base)}` });
+  cs.end("passed", { detail: `${copy} at ${short(base)}${clean === "new" ? " (cut new: nothing to reuse)" : clean ? " (clean: nothing reused)" : ""}` });
   if (!def) return out({ verdict: "machine", why: `${target} has no readable .sova/project.json`, copy });
   const declared = checksOf(def);
   if (declared === "unset") return out({ verdict: "machine", why: "this project hasn't said what to check (not set up)", copy });
@@ -401,6 +417,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       return setupBlame(`setup (${again.failed.id})`, again.step);
     }
     notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun (not blocking)`, at: now() });
+    flakySeen.push({ check: `setup:${failed.failed.id}`, label: `Setup: ${failed.failed.id}` });
   }
 
   // 4. install, when the branch changes what it reads
@@ -516,7 +533,8 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     // tipNamed: a whole check's failures as its rerun on the tip named them (files, else test names; [] = none).
     // `runs`: the merge's and the tip rerun's exit and whether each ran a test; `marks`: their steps, re-marked skipped
     // when the check turns out broken on the target (brokenOnTarget).
-    const reds: { check: PlannedCheck; files: string[]; names?: string[]; tipNamed?: string[]; runs?: RedRun[]; marks?: Step[] }[] = [];
+    // `tests`: the bare names a rerun by name takes (the check's rerunTest), so the target alone runs only those too.
+    const reds: { check: PlannedCheck; files: string[]; names?: string[]; tests?: string[]; tipNamed?: string[]; runs?: RedRun[]; marks?: Step[] }[] = [];
     const blames: CheckBlame[] = [];
     const broken: NonNullable<RunOutcome["broken"]> = [];
     // §app.merge-queue/time-limit: a check cut at its time limit (on the merge, or on its rerun there) is timed on the
@@ -549,7 +567,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const missing = check.requires.filter((s) => !needs.includes(s));
       if (missing.length) return finish(voided(`${check.label}, added after the run started, needs ${missing.join(", ")}: running again with it`));
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source, ...(check.why ? { why: check.why } : {}) });
-      const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, fresh: freshOf(def, { release }), signal });
+      const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, fresh: fresh({ release }), signal });
       if (r.proc.aborted || signal.aborted) return finish((st.end("failed", { detail: "aborted" }), voided("aborted")));
       if (r.proc.timedOut) {
         st.end("failed", { detail: `ran past its time limit (${check.timeoutSec} s): timed on ${target} alone next` });
@@ -559,7 +577,13 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const counts = countsOf(r.report);
       logReused(st, r);
       if (r.proc.code === 0) {
-        st.end(...passedEnd(r, counts));
+        const [result, end] = passedEnd(r, counts);
+        st.end(result, end);
+        // What this run reused: each check whose earlier passes on identical code stood.
+        if (end.reused) {
+          checksReused.push({ id: check.id, files: end.reused });
+          hooks.ranWith?.({ checksReused: [...checksReused] });
+        }
         continue;
       }
       st.end("failed", { counts, detail: r.failingFiles.length ? `${r.failingFiles.length} failing file${r.failingFiles.length === 1 ? "" : "s"}` : `exit ${r.proc.code}`, failures: (r.report?.failures ?? r.failingFiles.map((file) => ({ file }))).slice(0, 50) });
@@ -568,11 +592,27 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       // A reported file the merge doesn't have (a bare "handler_test.clj", nasabii) is no path to rerun or look for on
       // the target: the check's failures are then followed by name too.
       const paths = r.failingFiles.length ? await filesOn(copy, "HEAD", r.failingFiles) : [];
-      const byName = paths.length < r.failingFiles.length || !r.failingFiles.length;
+      // As narrow as the check can rerun: only the failing tests by name (it declares rerunTest and the report names
+      // them), else only their files (rerun), else the whole check, only when the runner named no failure at all. A
+      // check that named its failures but can't rerun just them isn't rerun on the tip: the whole suite never runs
+      // again just to get a pass; its failures go on to the target alone.
+      const tests = check.rerunTest ? [...new Set((r.report?.failingTests ?? []).map((t) => t.test).filter(Boolean))] : [];
+      const byName = tests.length > 0 || paths.length < r.failingFiles.length || !r.failingFiles.length;
       const files = check.rerun && !byName ? r.failingFiles : [];
       const names = byName ? idsOf(r) : [];
-      const again = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again${files.length ? ` (${files.length} file${files.length === 1 ? "" : "s"})` : ""}`);
-      const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, ...(files.length ? { files } : {}), fresh: freshOf(def, { rerun: true }), signal });
+      if (!tests.length && !files.length && (names.length || r.failingFiles.length)) {
+        const skip = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again`);
+        skip.log(`not rerun: ${check.label} can't run only its failing tests (it declares no rerunTest${check.rerun ? "" : " and no rerun of files"}), and the whole suite never runs again just to get a pass\n`);
+        skip.end("skipped", { detail: "can't rerun only the failing tests: not rerun" });
+        hookEvent(hooks, { kind: "note", by: "queue", note: "not-rerun", step: `check:${check.id}`, why: `${check.label} wasn't run again on the merge: it can't run only its failing tests, and the whole suite never reruns just to get a pass` });
+        reds.push(names.length ? { check, files: [], names } : { check, files: [], tipNamed: r.failingFiles, runs: [{ code: r.proc.code, noTest: ranNoTest(r) }], marks: [st] });
+        continue;
+      }
+      const fileOfName = (n: string): string | undefined => r.report?.failures.find((f) => f.name && testKey(f.name) === n)?.file;
+      const seenAs = (n: string): FlakySeen => (byName && r.report?.failingNames.length ? { check: check.id, label: check.label, name: n, ...(fileOfName(n) ? { file: fileOfName(n)! } : {}) } : { check: check.id, label: check.label, file: n });
+      const again = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again${tests.length ? ` (${tests.length} test${tests.length === 1 ? "" : "s"})` : files.length ? ` (${files.length} file${files.length === 1 ? "" : "s"})` : ""}`);
+      hookEvent(hooks, { kind: "note", by: "queue", note: "narrow-rerun", step: `check:${check.id}`, why: tests.length ? `${check.label} again on the merge, only its failing test${tests.length === 1 ? "" : "s"}: ${tests.slice(0, 5).join(", ")}${tests.length > 5 ? ", …" : ""}` : files.length ? `${check.label} again on the merge, only its failing file${files.length === 1 ? "" : "s"}: ${files.slice(0, 5).join(", ")}${files.length > 5 ? ", …" : ""}` : `${check.label} again on the merge, whole: it named no failing test or file` });
+      const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, ...(files.length ? { files } : {}), ...(tests.length ? { tests } : {}), fresh: fresh({ rerun: true }), signal });
       if (r2.proc.aborted || signal.aborted) return finish((again.end("failed", { detail: "aborted" }), voided("aborted")));
       if (r2.proc.timedOut) {
         again.end("failed", { detail: `ran past its time limit (${check.timeoutSec} s): timed on ${target} alone next` });
@@ -589,6 +629,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       if (r2.proc.code === 0 && !unrun.length && !ranNothing) {
         again.end("passed", { detail: "passes on a rerun: flaky" });
         const each = files.length ? files : names;
+        flakySeen.push(...(each.length ? each.map(seenAs) : [{ check: check.id, label: check.label }]));
         blames.push(each.length ? { id: check.id, label: check.label, files: each.map((file) => ({ file, blame: blameFile({ passesOnTip: true }) })) } : { id: check.id, label: check.label, whole: blameCheck({ passesOnTip: true }) });
         continue;
       }
@@ -601,8 +642,10 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         const extra = n2.filter((n) => !names.includes(n));
         again.end("failed", { detail: `${stillN.length} still failing${flakyN.length ? `, ${flakyN.length} passed` : ""}${extra.length ? `, ${extra.length} new` : ""}` });
         if (flakyN.length) blames.push({ id: check.id, label: check.label, files: flakyN.map((file) => ({ file, blame: "flaky" as const })) });
+        flakySeen.push(...flakyN.map(seenAs));
         if (!stillN.length && !extra.length) continue;
-        reds.push({ check, files: [], names: [...stillN, ...extra] });
+        const tests2 = tests.length ? [...new Set([...tests, ...(r2.report?.failingTests ?? []).map((t) => t.test).filter(Boolean)])] : [];
+        reds.push({ check, files: [], names: [...stillN, ...extra], ...(tests2.length ? { tests: tests2 } : {}) });
         continue;
       }
       // With files: the ones the rerun still names (all of them when it names none), and every one it didn't run.
@@ -617,6 +660,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       });
       if (files.length && !still.length) {
         blames.push({ id: check.id, label: check.label, files: files.map((file) => ({ file, blame: "flaky" as const })) });
+        flakySeen.push(...files.map(seenAs));
         continue;
       }
       reds.push({
@@ -625,6 +669,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         ...(files.length ? {} : { tipNamed: r2.failingFiles.length ? r2.failingFiles : namesOf(r2), runs: [{ code: r.proc.code, noTest: ranNoTest(r) }, { code: r2.proc.code, noTest: ranNoTest(r2) }], marks: [st, again] }),
       });
       if (flaky.length) blames.push({ id: check.id, label: check.label, files: flaky.map((file) => ({ file, blame: "flaky" as const })) });
+      flakySeen.push(...flaky.map(seenAs));
     }
     // 7. still red: the same on the target alone, in the same copy (after the review has read the tip).
     if (reds.length || slow.length) {
@@ -642,16 +687,16 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const sf = await runSetup({ def, scope: baseScope, steps, idPrefix: "rerun-master:setup:", labelPrefix: `Setup on ${target} alone: `, kind: "rerun-master", signal });
       if (signal.aborted) return finish(voided("aborted"));
       if (sf) return finish(out({ verdict: "machine", blame: "machine", why: `setup (${sf.failed.id}) fails on ${target} alone, so whose failure it is can't be told`, copy, mergeSha, tip }));
-      for (const { check, files, names, tipNamed, runs, marks } of reds) {
+      for (const { check, files, names, tests, tipNamed, runs, marks } of reds) {
         const onBase = files.length ? await filesOn(copy, base, files) : [];
         const absent = files.filter((f) => !onBase.includes(f));
-        const st = steps.start(`rerun-master:${check.id}`, "rerun-master", `${check.label} on ${target} alone${files.length ? ` (${onBase.length} file${onBase.length === 1 ? "" : "s"})` : ""}`);
+        const st = steps.start(`rerun-master:${check.id}`, "rerun-master", `${check.label} on ${target} alone${tests?.length ? ` (${tests.length} test${tests.length === 1 ? "" : "s"})` : files.length ? ` (${onBase.length} file${onBase.length === 1 ? "" : "s"})` : ""}`);
         if (files.length && !onBase.length) {
           st.end("skipped", { detail: `${target} hasn't these test files: the branch's` });
           blames.push({ id: check.id, label: check.label, files: files.map((file) => ({ file, blame: "branch" as const })) });
           continue;
         }
-        const r = await runCheck({ def, scope: baseScope, check, stepId: `rerun-master:${check.id}`, logFile: st.file, ...(files.length ? { files: onBase } : {}), fresh: freshOf(def, { rerun: true }), signal });
+        const r = await runCheck({ def, scope: baseScope, check, stepId: `rerun-master:${check.id}`, logFile: st.file, ...(files.length ? { files: onBase } : {}), ...(tests?.length ? { tests } : {}), fresh: fresh({ rerun: true }), signal });
         if (r.proc.aborted || signal.aborted) return finish((st.end("failed", { detail: "aborted" }), voided("aborted")));
         if (r.proc.timedOut) {
           // Red with the branch, and past the limit on the target alone: whose can't be told in time; the user decides.

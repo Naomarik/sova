@@ -24,6 +24,8 @@ export function noticeEvent(kind: MergeNoticeKind, e: MergeEntry, extra: { run?:
       return { kind: "approved", by: via === "fix" ? "queue" : via === "release" ? "release" : "user", ...ref(e), commit: e.commit, via, why: via === "fix" ? `Back in line at ${short(e.commit)}: the merge thread checked the fix, and the user's Land stands.` : `Approved at ${short(e.commit)} by ${byWords[via]}.` };
     }
     case "landed":
+      // A local landing is recorded where it lands (queue.ts markLanded), before its push; only the host's comes here.
+      if (e.landed?.via !== "host") return null;
       return { kind: "landed", by: "queue", ...ref(e), ...(run ? { run, step: "land" } : {}), sha: e.landed?.sha ?? "", from: e.landed?.from ?? "", why: e.landed?.via === "host" ? `The host merged it into ${e.target} as ${short(e.landed?.sha)}.` : `Landed on ${e.target} as ${short(e.landed?.sha)}.` };
     case "removed":
       return { kind: "cancelled", by: "user", ...ref(e), why: `Removed from the queue at ${short(e.commit)}.` };
@@ -65,6 +67,8 @@ export function restartCauseOf(voidWhy: string | null, why?: string): RestartCau
       return "release";
     case "superseded":
       return "superseded";
+    case "clean-run":
+      return "clean-run";
   }
   return /timed out|time limit/i.test(why ?? "") ? "timed-out" : "aborted";
 }

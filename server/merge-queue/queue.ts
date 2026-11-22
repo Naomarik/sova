@@ -1379,16 +1379,18 @@ export class ProjectQueue {
     return facts;
   }
 
-  private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;
+  private readyCache: { at: number; head: string; heads: string; list: MergeReady[] } | null = null;
   /** The next view reads the Ready list afresh: a branch went outside the queue (Discard Branch…). */
   forgetReady(): void {
     this.readyCache = null;
   }
   /** Ready, not approved (the view's Land list), re-read at most every 15 s or when the target moves. */
   private async readyList(head: string, redrafted: ReadonlySet<string> = new Set()): Promise<MergeReady[]> {
-    if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
-    const out: MergeReady[] = [];
+    // Kept while neither the target nor any worktree's head moved (a new commit on a branch is read at once).
     const trees = await worktreesOf(this.git, this.root);
+    const heads = trees.map((w) => `${w.path}@${w.head ?? ""}`).join("\n");
+    if (this.readyCache && this.readyCache.head === head && this.readyCache.heads === heads && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
+    const out: MergeReady[] = [];
     const made = await this.queueMadeNow();
     // The answers are kept per head and target, so only a move of the target reads any again: a few at a time, since
     // the heads with work each run a trial merge.
@@ -1417,7 +1419,7 @@ export class ProjectQueue {
       const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
       out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(draftsOnly ? { draftsOnly } : {}), ...(left ? { left: { whole: left.whole, code: left.codeOnly } } : { left: { whole: "unknown", code: "unknown" } }), ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
-    this.readyCache = { at: this.now(), head, list: out };
+    this.readyCache = { at: this.now(), head, heads, list: out };
     return this.filterReady(out, redrafted);
   }
 
@@ -4331,7 +4333,7 @@ export class ProjectQueue {
       run.verdict = why === "cancelled" ? "cancelled" : "void";
       run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : why === "release" ? "a release started: it waits for the release" : why === "clean-run" ? "you asked for a clean run: it starts again from an empty merge copy" : "cancelled";
       this.store.writeRun(run);
-      if (e.state === "checking" && (why === "master-moved" || why === "stopping" || why === "release")) this.record(countRestart(e, restartCauseOf(why), run.id, run.why));
+      if (e.state === "checking" && (why === "master-moved" || why === "stopping" || why === "release" || why === "clean-run")) this.record(countRestart(e, restartCauseOf(why), run.id, run.why));
       if (why === "master-moved" && e.state === "checking") {
         this.toFront(e);
         const head = await this.targetHead();
@@ -5061,6 +5063,8 @@ export class ProjectQueue {
     if (e.release && e.releaseKind === "revert" && this.q.release?.id === e.release) this.liftNow();
     this.save();
     this.log(`landed ${e.branch} at ${tip.slice(0, 7)}`);
+    // Recorded as it lands (before its push); a host's landing is recorded from its notice (activity.ts).
+    this.record({ kind: "landed", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "land", sha: tip, from: run.base, why: `Landed on ${e.target} as ${tip.slice(0, 7)}.` });
     this.releaseEvent(e, "landed", undefined, run.id);
     await this.push(tip, def, e);
     this.deps.notify?.("landed", e, { run, root: this.root });

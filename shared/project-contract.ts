@@ -12,10 +12,10 @@ export type Verb = (typeof VERBS)[number];
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
 /** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
-export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try", "merge.restart", "merge.live", "merge.test", "merge.names", "merge.rule", "merge.respond", "merge.stop-try"] as const;
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try", "merge.restart", "merge.live", "merge.test", "merge.names", "merge.rule", "merge.respond", "merge.stop-try", "merge.events"] as const;
 export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
-export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.live"];
+export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.live", "merge.events"];
 /** The release verbs (shared/release.ts): a project's release in progress and its history, never an instance. */
 export const RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw", "release.note"] as const;
 export type ReleaseVerb = (typeof RELEASE_VERBS)[number];

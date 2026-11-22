@@ -175,12 +175,13 @@
       "server/merge-queue/checks.ts",
       "server/merge-queue/checks.test.ts",
       "shared/project-contract-release.test.ts",
-      "system-playbooks/project-setup/references/definition.md"
+      "system-playbooks/project-setup/references/definition.md",
+      "server/merge-queue/rules.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-17T18:59Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#7cb0e8e1"
+      "at": "2026-11-22T19:47Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#271bac25"
     }
   },
   "§app.project-services/create": {
@@ -529,9 +530,9 @@
       "§app.project-services/merge-callers"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-19T07:07Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
+      "by": "user",
+      "at": "2026-11-22T15:53Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
     },
     "code": [
       "server/merge-queue/routes.ts",
@@ -562,7 +563,8 @@
       "server/merge-queue/scenarios-conflicts.integration.test.ts",
       "server/merge-queue/queue-review.test.ts",
       "server/merge-queue/review-verdict.ts",
-      "server/merge-queue/history.ts"
+      "server/merge-queue/history.ts",
+      "server/merge-queue/routes-activity.test.ts"
     ]
   },
   "§app.project-services/on-merge": {

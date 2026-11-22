@@ -17,6 +17,9 @@ import type { RulesRefusal } from "./rules";
  * rules (rules.ts planRulesFor).
  */
 
+/** Why a plan step after refused folder rules doesn't run (§app.merge-queue/plan). */
+export const NOT_REACHED_REFUSED = "not reached: the branch's folder rules are refused";
+
 const sha = (s: string): string => createHash("sha256").update(s).digest("hex");
 const short = (s: string): string => s.slice(0, 7);
 
@@ -151,6 +154,13 @@ export function planOf(f: PlanFacts, at: string): { plan: RunPlan; planned: Plan
     add({ id: "main-checkout", kind: "main-checkout", label: "Main folder moved too", will: "run" });
   } else add({ id: "land", kind: "land", label: f.how === "push-branch" ? "Push the branch" : "Open the request", will: "run", why: "the host lands it" });
   if (f.how === "local") add({ id: "push", kind: "push", label: "Push", will: f.push.will, ...(f.push.why ? { why: f.push.why } : {}) });
+  // The run stops at refused folder rules: nothing after that step runs, so none of it reads "run" or "if" (a step
+  // already skipped keeps its own reason, the refused rule's checks theirs).
+  if (refused)
+    for (let i = steps.findIndex((s) => s.id === "rules") + 1; i < steps.length; i++) {
+      const s = steps[i]!;
+      if (s.will !== "skip") steps[i] = { ...s, will: "skip", why: NOT_REACHED_REFUSED };
+    }
   const plan: RunPlan = { fingerprint: planFingerprint(inputs), inputs, steps, at };
   return { plan, planned };
 }

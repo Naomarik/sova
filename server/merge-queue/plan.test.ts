@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { RunPlan } from "../../shared/merge-queue";
 import type { ProjectDef } from "../../shared/project-contract";
-import { canonical, onPath, type PlanFacts, planOf, reuseOf, toolsOf, withLatePicks } from "./plan";
+import { canonical, NOT_REACHED_REFUSED, onPath, type PlanFacts, planOf, reuseOf, toolsOf, withLatePicks } from "./plan";
 import { ruleTriggers, rulesFromText, rulesRefusal } from "./rules";
 
 const DEF = {
@@ -142,6 +142,27 @@ describe("a plan whose branch's folder rules are refused", () => {
     const p = planWith(DEF, "{ not json");
     assert.equal(step(p, "rules")!.will, "refused");
     assert.match(step(p, "rules")!.why!, /^your branch's \.sova\/project\.json is refused: /);
+  });
+  test("the run stops at the refusal: every step after Folder rules is skipped, not reached; the steps before it stand", () => {
+    // Facts that put every kind of step in the plan: submodules, LFS, setup and install that run, drafts, a pick.
+    const busy: Partial<PlanFacts> = { clean: "operator", submodules: true, lfs: true, changed: ["pnpm-lock.yaml"], drafts: { hash: "d1", names: ["x"] }, picks: [{ id: "charts", label: "Statecharts", source: "picked", why: "charts" }] };
+    const refusals = [{ why: "your branch's folder rules are refused: src/** → e2e: …", checks: ["e2e"] }, { why: "your branch's .sova/project.json is refused: …", checks: [] }];
+    for (const how of ["local", "github-pr"] as const)
+      for (const refused of refusals) {
+        const plain = planOf(facts({ ...busy, how }), AT).plan.steps;
+        const p = planOf(facts({ ...busy, how, rules: { hash: "r1", own: false, triggers: [], refused } }), AT).plan;
+        assert.equal(p.fingerprint, planOf(facts({ ...busy, how, rules: { hash: "r1", own: false, triggers: [], refused } }), "2026-11-23T00:00:00.000Z").plan.fingerprint, "the same facts, the same plan");
+        const at = p.steps.findIndex((s) => s.id === "rules");
+        assert.deepEqual(p.steps.slice(0, at), plain.slice(0, at), "copy, merge, submodules and LFS run before the rules are read");
+        const after = p.steps.slice(at + 1);
+        const ids = after.map((s) => s.id);
+        for (const id of ["setup:deps", "install", "docs", "check:unit", "check:charts", "review", "scan", "land", ...(how === "local" ? ["main-checkout", "push"] : [])]) assert.ok(ids.includes(id), `${id} comes after the rules`);
+        assert.deepEqual(after.filter((s) => s.will !== "skip").map((s) => s.id), [], "nothing after the refusal runs");
+        for (const s of after) {
+          const was = plain.find((x) => x.id === s.id)!;
+          if (was.will !== "skip" && !refused.checks.includes(s.id.slice("check:".length))) assert.equal(s.why, NOT_REACHED_REFUSED, s.id);
+        }
+      }
   });
 });
 

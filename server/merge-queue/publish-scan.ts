@@ -61,6 +61,15 @@ export interface ScanInput {
   allowed?: ReadonlySet<string>;
 }
 
+/** "looks like a GitHub token", "looks like an AWS access key": the article by the label's sound (an initialism read
+ *  letter by letter: "an API key"). */
+export function looksLike(label: string): string {
+  const word = label.split(" ")[0] ?? "";
+  // An initialism (AWS, API) is read letter by letter: "an" before a letter whose name starts with a vowel sound.
+  const an = /^[A-Z]{2,}$/.test(word) ? "AEFHILMNORSX".includes(word[0]!) : /^[aeiou]/i.test(word);
+  return `looks like ${an ? "an" : "a"} ${label}`;
+}
+
 /** The key of one match (ScanFound.key). */
 export function foundKey(what: string, scope: string, text: string): string {
   return createHash("sha256").update(`${what}\0${scope}\0${text}`).digest("hex").slice(0, 24);
@@ -109,12 +118,13 @@ export async function scanPublication(git: Git, o: ScanInput): Promise<ScanResul
         return;
       }
       // One hit per match: the same line again in a later commit (a merge's own diff repeats its branch's) is the same.
-      const line = `${where} · ${kind === "name" ? what : `looks like a ${what}`}`;
+      const said = kind === "name" ? what : looksLike(what);
+      const line = `${where} · ${said}`;
       if (seen.has(line) || seen.has(key)) return;
       seen.add(line);
       seen.add(key);
       hits.push(line);
-      found.push({ key, where, kind, what: kind === "name" ? what : `looks like a ${what}`, ...(at.commit ? { commit: at.commit } : {}), ...(at.file ? { file: at.file } : {}), ...(at.line !== undefined ? { line: at.line } : {}) });
+      found.push({ key, where, kind, what: said, ...(at.commit ? { commit: at.commit } : {}), ...(at.file ? { file: at.file } : {}), ...(at.line !== undefined ? { line: at.line } : {}) });
     };
     for (const [i, t] of terms.entries()) if (lower.includes(t)) hit("name", `private name #${i + 1}`, `name:${createHash("sha256").update(t).digest("hex")}`);
     for (const [label, re] of SECRET_PATTERNS) if (re.test(text)) hit("secret", label, `secret:${label}`);

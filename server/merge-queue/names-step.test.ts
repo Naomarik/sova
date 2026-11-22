@@ -17,6 +17,23 @@ import { makeKit, makeRepo, sh, standInRun, until } from "./testing/queue-kit";
 const SECRET_NAME = "zorblaxcorp";
 
 describe("the scan's facts", () => {
+  test("the secret's kind reads with its article", async () => {
+    const { looksLike, SECRET_PATTERNS } = await import("./publish-scan");
+    const said = Object.fromEntries(SECRET_PATTERNS.map(([label]) => [label, looksLike(label)]));
+    assert.deepEqual(said, {
+      "private key": "looks like a private key",
+      "AWS access key": "looks like an AWS access key",
+      "GitHub token": "looks like a GitHub token",
+      "GitHub fine-grained token": "looks like a GitHub fine-grained token",
+      "GitLab token": "looks like a GitLab token",
+      "Anthropic key": "looks like an Anthropic key",
+      "API key": "looks like an API key",
+      "Slack token": "looks like a Slack token",
+      "Google API key": "looks like a Google API key",
+      "assigned secret": "looks like an assigned secret",
+    });
+  });
+
   test("where and what kind, never the text; an allowed match is skipped by its key, which follows the name, not its place in the list", async () => {
     const repo = makeRepo();
     try {
@@ -29,7 +46,7 @@ describe("the scan's facts", () => {
       const f = factsOf(r);
       assert.equal(f.state, "hits");
       assert.equal(scanResultOf(f), "failed");
-      assert.deepEqual(f.hits!.map((h) => [h.kind, h.what, h.file, h.line]).sort(), [["name", "private name #2", "src/a.ts", 1], ["secret", "looks like a AWS access key", "src/b.ts", 1]].sort());
+      assert.deepEqual(f.hits!.map((h) => [h.kind, h.what, h.file, h.line]).sort(), [["name", "private name #2", "src/a.ts", 1], ["secret", "looks like an AWS access key", "src/b.ts", 1]].sort());
       assert.ok(!JSON.stringify(f).includes(SECRET_NAME), "no matched text in the facts");
       assert.ok(!JSON.stringify(f).includes("AKIA" + "ABCDEFGHIJKLMNOP"));
 

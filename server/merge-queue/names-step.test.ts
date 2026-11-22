@@ -241,7 +241,11 @@ describe("the scan right before a push", () => {
       k.repo.branch("feat/u", { "u.txt": "u\n" });
       const { entry } = await q.add({ branch: "feat/u", by: "land-button", session: "s1" });
       await until(async () => (await k.entry(entry.id)).state === "landed", "landed");
-      const v = await q.view();
+      // The landing is recorded before its push is tried: wait for the push's outcome.
+      const v = await until(async () => {
+        const x = await q.view();
+        return x.heads.pushWhy ? x : null;
+      }, "the push held");
       assert.notEqual(sh(k.repo.origin, "rev-parse", k.repo.target), k.repo.head(), "not pushed");
       assert.match(v.heads.pushWhy ?? "", /couldn't list/);
       assert.equal(v.heads.pushScan?.state, "unreadable");

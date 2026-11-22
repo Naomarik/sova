@@ -3322,6 +3322,10 @@ export class ProjectQueue {
       this.save();
       return true;
     }
+    // A fresh start decided before a restart of Sova, whose wake never went: decided again (its why lived in memory).
+    if (tw.fresh && !tw.notified && !this.freshFor.has(e.id) && e.fix && !e.fix.told && !(this.deps.threadHealth?.(this.root)?.restarts ?? []).some((r) => r.at >= Date.parse(tw.fresh!.at))) {
+      this.freshFor.set(e.id, `it didn't answer for ${mins} minutes (${e.branch}'s ${what === "fix" ? "fix" : "conflict"} waited on it)`);
+    }
     if (tw.fresh && !tw.notified) {
       const failed = (this.deps.threadHealth?.(this.root)?.restarts ?? []).find((r) => r.at >= Date.parse(tw.fresh!.at) && !r.ok);
       if (failed) tw.fresh = { ...tw.fresh, ok: false, ...(failed.error ? { error: failed.error } : {}) };

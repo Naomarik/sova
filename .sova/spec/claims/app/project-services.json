@@ -608,7 +608,8 @@
       "server/project-services/self-host.ts",
       "server/app.ts",
       "server/project-services/archive-copies.test.ts",
-      "server/project-services/fake-host.ts"
+      "server/project-services/fake-host.ts",
+      "server/project-services/restart-limit.test.ts"
     ],
     "agreed": {
       "by": "user",
@@ -652,7 +653,7 @@
   "§app.project-services/result": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "requires": [],
     "code": [
       "shared/project-contract.ts",
@@ -665,12 +666,13 @@
       "server/project-services/share.integration.test.ts",
       "server/project-services/slots.test.ts",
       "shared/project-contract-release.test.ts",
-      "system-playbooks/project-verbs/references/contract.md"
+      "system-playbooks/project-verbs/references/contract.md",
+      "server/project-services/tools-answer.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-22T07:14Z",
+      "source": "pi-session:15ef791e-1aa7-40d2-9d62-459711ffa1c6#9055aab1"
     }
   },
   "§app.project-services/self-host": {
@@ -697,7 +699,7 @@
   "§app.project-services/services-ui": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "requires": [
       "§app.project-services/status-logs",
       "§app.project-services/callers",
@@ -730,8 +732,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-18T20:26Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "at": "2026-11-22T07:13Z",
+      "source": "pi-session:15ef791e-1aa7-40d2-9d62-459711ffa1c6#9055aab1"
     }
   },
   "§app.project-services/share": {
@@ -769,7 +771,7 @@
   "§app.project-services/status-logs": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "requires": [
       "§app.project-services/supervisor",
       "§app.project-services/result",
@@ -791,18 +793,22 @@
       "shared/project-contract.ts",
       "server/project-services/archive-copies.test.ts",
       "server/project-services/drivers.test.ts",
-      "server/project-services/drivers.integration.test.ts"
+      "server/project-services/drivers.integration.test.ts",
+      "server/project-services/restart-limit.ts",
+      "server/project-services/restart-limit.test.ts",
+      "server/project-services/tools.ts",
+      "server/project-services/tools-answer.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T20:06Z",
-      "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#15085bbd"
+      "by": "naomarik",
+      "at": "2026-11-22T07:13Z",
+      "source": "pi-session:15ef791e-1aa7-40d2-9d62-459711ffa1c6#9055aab1"
     }
   },
   "§app.project-services/supervisor": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "unreviewed",
     "requires": [
       "§app.project-services/contract",
       "§mesh.public/preview-serve"
@@ -824,12 +830,16 @@
       "server/project-services/restart.test.ts",
       "server/background-jobs-request.ts",
       "server/project-services/archive-copies.test.ts",
-      "src/components/ProjectServicesTab.tsx"
+      "src/components/ProjectServicesTab.tsx",
+      "server/project-services/restart-limit.ts",
+      "server/project-services/restart-limit.test.ts",
+      "server/project-services/systemd-sim.test.helper.ts",
+      "server/project-services/store.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T20:06Z",
-      "source": "pi-session:cd5bc367-c9ed-418c-9f81-00287ee4986a#15085bbd"
+      "by": "naomarik",
+      "at": "2026-11-22T07:13Z",
+      "source": "pi-session:15ef791e-1aa7-40d2-9d62-459711ffa1c6#9055aab1"
     }
   },
   "§app.project-services/teardown": {

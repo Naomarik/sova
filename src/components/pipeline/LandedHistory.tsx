@@ -8,6 +8,7 @@ import { mergeRunHref, pipelineHref } from "../../lib/projects-route";
 import { announce } from "../../lib/ui-state";
 import { HealthSummary } from "./PipelineRuns";
 import { ToneChip } from "./PipelineParts";
+import { SearchField } from "../form";
 import "./pipeline.css";
 
 const PAGE = 20;
@@ -69,7 +70,7 @@ export function LandedHistory(props: { projectId: string; newest: JSX.Element; n
         <HealthSummary health={health()} />
       </div>
       <div class="pl-filterbar" role="search">
-        <input class="input pl-search" type="search" placeholder="Search landings by branch" aria-label="Search landings by branch" value={search()} onInput={(e) => onSearch(e.currentTarget.value)} />
+        <SearchField class="pl-search" label="Search landings by branch" placeholder="Search landings by branch" spellcheck={false} value={search()} onInput={onSearch} />
         <a class="button button-sm button-ghost" href={pipelineHref(props.projectId, "queue", "runs")}>
           Queue Overview
         </a>

@@ -11,6 +11,7 @@ import { mergeRunHref, pipelineHref, projectSessionHref } from "../../lib/projec
 import { announce, home, toast } from "../../lib/ui-state";
 import { chatHref, type ChatOf } from "../MergeQueueTab";
 import { Icon } from "../ui";
+import { SearchField } from "../form";
 import { Mark, Sheet, Timeline, ToneChip, type TimelineItem } from "./PipelineParts";
 
 const RUN_POLL_MS = 3000;
@@ -143,7 +144,7 @@ export function RunsView(props: { projectId: string; view: MergeQueueView; item?
                 </button>
               )}
             </For>
-            <input class="input pl-search" type="search" placeholder="Search by branch" aria-label="Search by branch" value={search()} onInput={(e) => setSearch(e.currentTarget.value)} />
+            <SearchField class="pl-search" label="Search by branch" placeholder="Search by branch" spellcheck={false} value={search()} onInput={setSearch} />
           </div>
           <Show when={shown().length} fallback={<p class="pl-hint">{search() ? `No branch matching “${search()}”.` : "Nothing here yet. A branch shows here once you land it."}</p>}>
             <ul class="pl-rows" aria-label="Runs">

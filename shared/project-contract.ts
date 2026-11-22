@@ -554,7 +554,7 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches", "rules", "remote", "squash", "reviewFixes", "reviewFixes"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches", "rules", "remote", "squash", "reviewFixes"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect", "perSelector", "cwd", "env", "report", "rerunTest"],
   mergeReport: [["junit"], ["tap"]],
   mergeRule: ["paths", "check", "select", "why"],

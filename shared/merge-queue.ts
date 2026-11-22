@@ -646,8 +646,9 @@ export interface PlanStep {
   select?: string[];
   /** check, trigger: the folder rule that set it off. */
   rule?: string;
-  /** A merge thread pick that arrived after the run started (q9): it still runs, before the push. */
-  late?: true;
+  /** A merge thread pick that arrived after the run started (q9), with its arrival time: it still runs, before the
+   *  push. Late steps never change `fingerprint` (RunPlan.late holds the grown one). */
+  late?: string;
 }
 
 export interface RunPlan {
@@ -671,6 +672,8 @@ export interface RunRanWith {
   tools: { name: string; version: string | null }[];
   /** The merge copy was reused (installed packages, build output) or made fresh (Clean Run). */
   copy: "reused" | "fresh";
+  /** fresh: why (Clean Run pressed, the weekly clean run, or a copy cut new). */
+  clean?: "operator" | "weekly" | "new";
   /** Each setup step: skipped as unchanged since the last run (reused) or run. */
   setup: { id: string; reused: boolean }[];
   /** Checks whose test files' earlier passes on identical code stood (RunStep.reused). */
@@ -754,13 +757,13 @@ export type MergeEvent =
   | MergeEventBase<"cancelled">
   /** The merge thread's health: a fresh thread started by itself, that failed, a delivery failed or was refused,
    *  something waited on it too long. */
-  | (MergeEventBase<"thread-health"> & { what: "fresh-thread" | "fresh-failed" | "delivery-failed" | "refused" | "waited-long"; waitedMs?: number })
+  | (MergeEventBase<"thread-health"> & { what: "fresh-thread" | "fresh-failed" | "fresh-unanswered" | "delivery-failed" | "refused" | "waited-long"; waitedMs?: number; waitingOn?: "fix" | "conflict" })
   /** A Clean Run asked for or started. */
-  | (MergeEventBase<"clean-run"> & { cleanWhy: "operator" | "weekly" | "first" })
+  | (MergeEventBase<"clean-run"> & { cleanWhy: "operator" | "weekly" | "new" })
   /** A flaky failure recorded: failed, then passed on its narrow rerun. */
   | (MergeEventBase<"flaky"> & { check: string; file?: string; name?: string })
-  /** The publish scan "Private names and secrets": scanned, a hit, allowed, sent back, asked the thread. */
-  | (MergeEventBase<"names"> & { what: "scanned" | "hit" | "allowed" | "sent-back" | "asked" | "unanswered"; hits?: number })
+  /** The publish scan "Private names and secrets" and the names interview: counts and where, never a matched text. */
+  | (MergeEventBase<"names"> & { what: "clean" | "hits" | "unanswered" | "allowed" | "sent-back" | "asked-thread" | "no-names" | "push-scan-hit"; hits?: number })
   /** The review: started, the branch changed its kit, the reviewer's own fix, the verdict recorded. */
   | (MergeEventBase<"review"> & { what: "started" | "kit-changed" | "fixed" | "verdict"; kit?: string; model?: string; sha?: string; verdict?: ReviewVerdict["verdict"] })
   /** Anything else worth the record, in words; `note` a short tag ("timeout-probe", "rules-changed"). */

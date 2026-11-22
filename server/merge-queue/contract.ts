@@ -67,6 +67,10 @@ export interface RunInput {
   /** The review step's agent posts its verdict through `merge.review {run}`: this resolves with it (rejects on the
    *  signal). The review step may also answer from its own subprocess and never call it. */
   awaitReview(): Promise<ReviewVerdict>;
+  /** The run's plan, worked out before it started (plan.ts): saved on the run (MergeRun.plan). */
+  plan?: import("../../shared/merge-queue").RunPlan;
+  /** The plan's exact check list: the run runs these (and the picks that arrive late), never a list of its own. */
+  planned?: import("./checks").PlannedCheck[];
 }
 
 export interface RunHooks {
@@ -79,6 +83,11 @@ export interface RunHooks {
   merged?(sha: string): void;
   /** Where the copy lives (once the copy step has it). */
   copy?(path: string): void;
+  /** A change worth the event memory (§app.merge-queue/activity), from inside the run: its run, entry and branch are
+   *  filled in; give `step` the plan step it belongs to ("check:<id>", "review", "scan"…). */
+  event?(ev: import("../../shared/merge-queue").MergeEventInput): void;
+  /** What the run ran with, as it learns it (MergeRun.ranWith): merged into what the queue recorded at the start. */
+  ranWith?(patch: Partial<import("../../shared/merge-queue").RunRanWith>): void;
 }
 
 export type RunOutcomeVerdict =

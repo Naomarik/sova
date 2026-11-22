@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import { join } from "node:path";
 import { readRunLogText } from "./run-logs";
 import { MergeHistory } from "./history";
+import { MergeEventLog } from "./events";
 import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeHistoryRow, type MergeRun, type PauseInfo } from "../../shared/merge-queue";
 
 /**
@@ -13,6 +14,7 @@ import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeHistoryRow, type 
  *   <state>/merge-queue/<key>/runs/<run>/run.json   MergeRun
  *   <state>/merge-queue/<key>/runs/<run>/<step>.log every step's log, from its first line
  *   <state>/merge-queue/<key>/history/YYYY-MM.jsonl  every truly final entry, for good (history.ts)
+ *   <state>/merge-queue/<key>/events/YYYY-MM.jsonl   every change to a branch or to the queue, for good (events.ts)
  *
  * Every write re-writes the whole file atomically (tmp + rename). A damaged queue.json is kept aside and read as
  * empty, with a warning. queue.json holds the open entries and the newest KEEP_FINAL truly final ones; every write
@@ -56,6 +58,8 @@ export interface QueueFile {
    *  live in the history only); a sent-back entry still waiting on its chat is always kept. */
   entries: (MergeEntry & { seq: number })[];
   paused?: PauseInfo;
+  /** What each queued entry was last recorded waiting behind (a `waiting` event is recorded only when it changes). */
+  waitingSaid?: Record<string, string>;
   /** The merge thread's hold (merge.hold): no new run starts until `until` (epoch ms) or its clear; cleared at start. */
   hold?: { at: string; until: number };
   intent?: LandIntent;
@@ -109,12 +113,14 @@ function writeAtomic(file: string, text: string): void {
 export class QueueStore {
   readonly dir: string;
   readonly history: MergeHistory;
+  readonly events: MergeEventLog;
   constructor(
     base: string,
     readonly root: string,
   ) {
     this.dir = join(base, projectKey(root));
     this.history = new MergeHistory(this.dir);
+    this.events = new MergeEventLog(this.dir);
   }
 
   private get file(): string {

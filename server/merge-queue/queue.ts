@@ -43,8 +43,13 @@ import {
   type RunStep,
   type SentBackFor,
   type MergeHistoryRow,
+  type MergeEventInput,
+  type RunRanWith,
+  type MergeEventsPage,
+  VIEW_EVENTS,
 } from "../../shared/merge-queue";
 import { historyWords } from "./history";
+import { countRestart, noticeEvent, pauseEvent, restartCauseOf, runEndedEvent, stepEnded, stepEvent } from "./activity";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
@@ -216,6 +221,8 @@ export interface QueueDeps {
   /** Fix / Fix in New Chat on a failure holding `branch` up (wire.ts: the branch's chat's state). `shared`: the target
    *  shares it, so Fix in New Chat works on a new branch from the target. */
   fixOffer?: (o: { root: string; branch: string; worktree?: string; session?: string; shared: boolean }) => Promise<FixOffer>;
+  /** The queue paused itself (every pause but the operator's own): its one notification for the user (wire.ts). */
+  pausedSelf?: (p: PauseInfo, root: string) => void;
   /** Wake the merge thread; false: none was asked. */
   thread?: WakeThread;
   /** The chat that owns a branch, when the approval named none (Land on the Merge Queue tab); null: no known chat. */
@@ -363,11 +370,14 @@ export class ProjectQueue {
   /** Scratch copies are made and removed one at a time, in order (a retry's new copy never races the old one's removal). */
   private scratchChain: Promise<unknown> = Promise.resolve();
 
+  private readonly deps: QueueDeps;
   constructor(
-    private readonly deps: QueueDeps,
+    deps: QueueDeps,
     readonly root: string,
     readonly id: string,
   ) {
+    // Every notice to a branch's chat is a recorded change too (activity.ts noticeEvent): approved, landed, sent back…
+    this.deps = { ...deps, notify: (kind, e, extra) => (this.recordNotice(kind, e, extra), deps.notify?.(kind, e, extra)) };
     this.git = deps.git ?? realGit;
     this.store = new QueueStore(deps.base, root);
   }
@@ -397,6 +407,93 @@ export class ProjectQueue {
   /** The thread's or operator's note on an entry now ("" when none). */
   entryNote(entryId: string): string {
     return this.entry(entryId)?.notes.find((n) => n.kind === "thread" || n.kind === "operator")?.text ?? "";
+  }
+
+  // ---- the event memory (§app.merge-queue/activity) ---------------------------------------------
+
+  /** While a run's end is worked out, its follow-ups wait here, so "run ended" is recorded before what came of it. */
+  private heldEvents: MergeEventInput[] | null = null;
+  /** The merge thread's reason for the fix it is checking now, and what it read before (requeueFix files it). */
+  private fixWhy: { request: string; why: string; read: string[] } | null = null;
+  /** What the merge thread read (merge.status, merge.logs) since its last ruling: the next ruling's evidence. */
+  private threadReads: string[] = [];
+
+  /** Record one change to a branch or to the queue: kept for good (events.ts), the view's newest list follows. Never
+   *  throws. Inside a run, call RunHooks.event instead (run, entry and branch filled in). */
+  record(ev: MergeEventInput): void {
+    const at = ev.at ?? this.iso();
+    if (this.heldEvents) {
+      this.heldEvents.push({ ...ev, at } as MergeEventInput);
+      return;
+    }
+    try {
+      this.store.events.record({ ...ev, at } as MergeEventInput, (l) => this.log(l));
+    } catch (err) {
+      this.log(`event not recorded: ${err instanceof Error ? err.message : err}`);
+    }
+    this.schedulePublish();
+  }
+
+  private recordNotice(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: MergeRun; request?: MergeChatRequest; press?: string }): void {
+    const ev = noticeEvent(kind, e, extra);
+    if (ev) this.record(ev);
+  }
+
+  /** What a queued entry waits behind now, in words; null: nothing (its run is about to start). */
+  private behindWords(e: Entry, i: number, line: readonly Entry[]): string | null {
+    const p = this.q.paused;
+    if (p) return `the queue is paused: ${p.why.split("\n")[0]!.slice(0, 160)}`;
+    if (this.q.release && !e.release) return this.waitingWords().replace(/^waits for /, "");
+    if (this.current && this.current.entry !== e.id) {
+      const cur = this.entry(this.current.entry);
+      return i === 0 ? `${cur?.branch ?? "another branch"}'s run` : `${line[i - 1]!.branch}, ahead of it in line (${cur?.branch ?? "another branch"} is checking)`;
+    }
+    if (this.trying) return `a dry run of ${this.trying.trial?.branch ?? this.trying.run.branch}`;
+    if (i > 0) return `${line[i - 1]!.branch}, ahead of it in line`;
+    if (this.q.hold && this.q.hold.until > this.now()) return "the merge thread's hold on new runs";
+    return null;
+  }
+
+  /** A `waiting` event for each queued entry whose blocker changed since it was last said (kept in queue.json). */
+  private sayWaiting(): void {
+    const said = this.q.waitingSaid ?? {};
+    const next: Record<string, string> = {};
+    const line = this.queued();
+    line.forEach((e, i) => {
+      const behind = this.behindWords(e, i, line);
+      if (!behind) return;
+      next[e.id] = behind;
+      if (said[e.id] === behind) return;
+      const ahead = i > 0 ? line[i - 1]!.id : this.current?.entry;
+      this.record({ kind: "waiting", by: "queue", entry: e.id, branch: e.branch, behind, ...(ahead && ahead !== e.id ? { ahead } : {}), position: i + 1, why: `Waiting behind ${behind}.` });
+    });
+    if (Object.keys(next).length || this.q.waitingSaid) this.q.waitingSaid = Object.keys(next).length ? next : undefined;
+    if (!this.q.waitingSaid) delete this.q.waitingSaid;
+  }
+
+  /** The view's newest recorded changes (VIEW_EVENTS), newest first. */
+  private eventFields(): Pick<MergeQueueView, "events"> {
+    const list = this.store.events.newest().slice(0, VIEW_EVENTS);
+    return list.length ? { events: structuredClone(list) } : {};
+  }
+
+  /** A page of the recorded changes (GET …/events, merge.status {entry}): newest first, the history's included. */
+  events(q: import("./events").EventQuery = {}): MergeEventsPage {
+    return this.store.events.read(q);
+  }
+
+  /** The merge thread read something (merge.status, merge.logs): named in its next ruling's evidence. */
+  noteThreadRead(what: string): void {
+    if (this.threadReads.includes(what)) return;
+    this.threadReads = [...this.threadReads, what].slice(-10);
+  }
+
+  /** A merge thread (or reviewer) act, recorded with its reason and what the thread read before it. */
+  ruled(o: { act: import("../../shared/merge-queue").ThreadAct; by?: "thread" | "reviewer"; entry?: string; run?: string; verdict?: string; why: string; text?: string; step?: string }): void {
+    const e = o.entry ? this.entry(o.entry) : undefined;
+    const read = this.threadReads;
+    this.threadReads = [];
+    this.record({ kind: "ruled", by: o.by ?? "thread", act: o.act, read, ...(o.entry ? { entry: o.entry } : {}), ...(e ? { branch: e.branch } : {}), ...(o.run ? { run: o.run } : {}), ...(o.step ? { step: o.step } : {}), ...(o.verdict ? { verdict: o.verdict } : {}), ...(o.text ? { text: o.text } : {}), why: o.why });
   }
 
   /** Load the records and work out the target. Recovery (recover.ts) runs after. */
@@ -487,6 +584,7 @@ export class ProjectQueue {
 
   save(): void {
     this.viewCache = null;
+    this.sayWaiting();
     const settled = this.settledCache || this.swept.size ? new Set(this.settled().keys()) : undefined;
     this.store.write(this.q, { ...(settled ? { settled } : {}), now: this.iso() });
     this.schedulePublish();
@@ -766,7 +864,7 @@ export class ProjectQueue {
     // What retirement did here, as it last wrote it: no git (§chat.worktrees/retirement).
     // Switched off (../cleanup-switch.ts): the ledger only, never the saved list.
     const retirement = viewWhileOff(retirementViewOf(this.root, pendingWhileOff()));
-    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...this.trialFields(), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}) };
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...this.trialFields(), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}), ...this.eventFields() };
   }
 
   /**
@@ -1697,9 +1795,19 @@ export class ProjectQueue {
   }
 
   private pauseNow(kind: PauseKind, why: string, run?: string): void {
-    this.q.paused = { kind, why, at: this.iso(), ...(run ? { run } : {}) };
+    // Every pause but the operator's own is the queue pausing itself: recorded so, and the user notified once.
+    const self = kind !== "operator";
+    this.q.paused = { kind, why, at: this.iso(), ...(run ? { run } : {}), ...(self ? { self: true as const } : {}) };
     this.save();
     this.log(`paused (${kind}): ${why}`);
+    this.record(pauseEvent(this.q.paused));
+    if (self) {
+      try {
+        this.deps.pausedSelf?.(structuredClone(this.q.paused), this.root);
+      } catch (err) {
+        this.log(`pause notification failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
   }
 
   /** merge.resume / merge.retry: lift the pause. A move of the target from outside is accepted from here on. */
@@ -1708,6 +1816,7 @@ export class ProjectQueue {
       const p = this.q.paused;
       if (!p) return;
       delete this.q.paused;
+      this.record({ kind: "resumed", by: "user", why: `Resumed after: ${p.why.split("\n")[0]!.slice(0, 200)}` });
       this.q.knownTarget = (await this.targetHead()) ?? this.q.knownTarget;
       this.q.machineTries = {};
       this.holdUntil = 0;
@@ -2610,6 +2719,8 @@ export class ProjectQueue {
    */
   fixRuling(entryId: string, request: string | undefined, ok: boolean, text: string): Promise<MergeEntry> {
     return this.serial(async () => {
+      // The thread's reason and what it read go with the checked fix (MergeFix.why, read).
+      if (request) this.fixWhy = { request, why: clip(text), read: [...this.threadReads] };
       const found = request ? this.requestOf(request) : undefined;
       if (request && !found) throw new MergeFailure("not-found", `no merge queue request ${request}`);
       const e = found?.entry ?? this.mustEntry(entryId);
@@ -2805,7 +2916,8 @@ export class ProjectQueue {
     if (drafts) e.approval.drafts = { hash: drafts.hash, names: drafts.names };
     else delete e.approval.drafts;
     delete e.approval.blocked;
-    if (request) e.approval.fixes = [...(e.approval.fixes ?? []), { request, ...(moved ? { commit } : {}), ...(drafts ? { drafts: drafts.hash } : {}), checkedAt: this.iso() }];
+    const evidence = request && this.fixWhy?.request === request ? this.fixWhy : null;
+    if (request) e.approval.fixes = [...(e.approval.fixes ?? []), { request, ...(moved ? { commit } : {}), ...(drafts ? { drafts: drafts.hash } : {}), checkedAt: this.iso(), ...(evidence?.why ? { why: evidence.why } : {}), ...(evidence?.read.length ? { read: evidence.read } : {}) }];
     // A resolution of the old commit's conflict doesn't fit the new one: the next run judges afresh.
     if (moved) {
       delete e.conflict;
@@ -3957,6 +4069,7 @@ export class ProjectQueue {
     this.current = cur;
     this.save();
     this.log(`run ${runId}: ${e.branch} at ${e.commit.slice(0, 7)} onto ${this.q.target} ${base.slice(0, 7)}`);
+    this.record({ kind: "run-started", by: "queue", entry: e.id, branch: e.branch, run: runId, fingerprint: run.plan?.fingerprint ?? "", base, commit: e.commit, ...(run.plan?.sameAs ? { sameAs: run.plan.sameAs } : {}), why: `Run started: ${e.commit.slice(0, 7)} onto ${this.q.target} at ${base.slice(0, 7)}${run.plan ? `, plan ${run.plan.fingerprint}${run.plan.sameAs ? " (the same plan as its last run)" : ""}` : ""}.` });
     this.releaseEvent(e, "checking", undefined, runId);
     const resolution = e.conflict?.commit && (e.conflict.verdict === "no-behaviour-change" || e.notes.some((n) => n.kind === "resolved")) ? e.conflict.commit : undefined;
     const input: RunInput = {
@@ -3997,6 +4110,7 @@ export class ProjectQueue {
     const hooks = {
       step: (s: RunStep) => {
         const i = run.steps.findIndex((x) => x.id === s.id);
+        if (stepEnded(i >= 0 ? run.steps[i] : undefined, s)) this.record(stepEvent(e, runId, s));
         if (i >= 0) run.steps[i] = { ...s };
         else run.steps.push({ ...s });
         persist();
@@ -4007,6 +4121,12 @@ export class ProjectQueue {
       },
       merged: (sha: string) => {
         run.mergeSha = sha;
+        persist();
+      },
+      // Inside the run (run.ts): a change worth the record, its run, entry and branch filled in.
+      event: (ev: MergeEventInput) => this.record({ entry: e.id, branch: e.branch, run: runId, ...ev } as MergeEventInput),
+      ranWith: (patch: Partial<RunRanWith>) => {
+        run.ranWith = { tools: [], copy: "reused", setup: [], settings: [], ...run.ranWith, ...patch };
         persist();
       },
       copy: (path: string) => {
@@ -4040,7 +4160,21 @@ export class ProjectQueue {
     })();
   }
 
+  /** A run's end: "run ended" is recorded first, then what came of it (sent back, landed, restarted…). */
   private async finish(cur: Current, out: RunOutcome): Promise<void> {
+    const held: MergeEventInput[] = [];
+    this.heldEvents = held;
+    try {
+      await this.finishRun(cur, out);
+    } finally {
+      this.heldEvents = null;
+      const e = this.entry(cur.entry);
+      this.record(runEndedEvent(e ?? { id: cur.entry, branch: cur.run.branch }, cur.run));
+      for (const ev of held) this.record(ev);
+    }
+  }
+
+  private async finishRun(cur: Current, out: RunOutcome): Promise<void> {
     if (cur.watch) clearInterval(cur.watch);
     const run = cur.run;
     const w = this.reviewWaiters.get(run.id);
@@ -4074,6 +4208,7 @@ export class ProjectQueue {
       run.verdict = why === "cancelled" ? "cancelled" : "void";
       run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : why === "release" ? "a release started: it waits for the release" : "cancelled";
       this.store.writeRun(run);
+      if (e.state === "checking" && (why === "master-moved" || why === "stopping" || why === "release")) this.record(countRestart(e, restartCauseOf(why), run.id, run.why));
       if (why === "master-moved" && e.state === "checking") {
         this.toFront(e);
         const head = await this.targetHead();
@@ -4106,6 +4241,7 @@ export class ProjectQueue {
       case "void":
         run.verdict = "void";
         this.store.writeRun(run);
+        this.record(countRestart(e, restartCauseOf(null, out.why), run.id, out.why));
         this.toFront(e);
         this.save();
         this.kickSoon();
@@ -4119,6 +4255,7 @@ export class ProjectQueue {
         this.toFront(e);
         e.reason = out.why ?? "a machine failure";
         if (tries <= 1) {
+          this.record(countRestart(e, "machine-retry", run.id, `${out.why ?? "a machine failure"}; tried once more in a minute`));
           this.holdUntil = this.now() + (this.deps.retryDelayMs ?? 60_000);
           this.save();
           this.later(this.deps.retryDelayMs ?? 60_000, () => this.kickSoon());
@@ -4402,6 +4539,7 @@ export class ProjectQueue {
         run.verdict = "void";
         run.why = `${this.q.target} moved outside the queue before the landing`;
         this.store.writeRun(run);
+        this.record(countRestart(e, "target-moved", run.id, run.why));
         this.toFront(e);
         this.pauseNow("master-moved", `${this.q.target} moved outside the queue (${run.base.slice(0, 7)} → ${(pre.head ?? "?").slice(0, 7)}) before ${e.branch} landed: that run was voided; resume once that is intended`, run.id);
         return;
@@ -4423,6 +4561,7 @@ export class ProjectQueue {
       run.verdict = "void";
       run.why = `${this.q.target} moved outside the queue during the landing`;
       this.store.writeRun(run);
+      this.record(countRestart(e, "target-moved", run.id, run.why));
       this.toFront(e);
       this.pauseNow("master-moved", `${this.q.target} moved outside the queue during ${e.branch}'s landing: that run was voided; resume once that is intended`, run.id);
     } finally {
@@ -4816,7 +4955,9 @@ export class ProjectQueue {
       for (const x of this.q.entries) if (x.state === "landed" && x.landed && x.landed.pushed !== "pushed" && (x.landed.sha === tip || (await isAncestor(this.git, this.root, x.landed.sha, tip)))) x.landed = { ...x.landed, pushed: "pushed" };
       if (e?.landed) e.landed = { ...e.landed, pushed: "pushed" };
       if (e?.landed) delete e.landed.pushWhy;
+      this.record({ kind: "pushed", by: "queue", ...(e ? { entry: e.id, branch: e.branch, ...(e.run ? { run: e.run } : {}) } : {}), step: "push", sha: tip, why: `Pushed ${this.q.target} at ${tip.slice(0, 7)}.` });
     } else {
+      if (p.state === "not-pushed") this.record({ kind: "push-held", by: "queue", ...(e ? { entry: e.id, branch: e.branch, ...(e.run ? { run: e.run } : {}) } : {}), step: "push", why: `Not pushed: ${p.why ?? "held"}.` });
       if (e?.landed) e.landed = { ...e.landed, pushed: p.state, pushWhy: p.why };
       this.q.heads.pushWhy = p.why;
       if (p.state === "not-pushed" && "remote" in p && p.remote) this.q.heads.pushed = p.remote;

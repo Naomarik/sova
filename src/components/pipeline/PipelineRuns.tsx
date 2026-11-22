@@ -664,6 +664,9 @@ function RanWith(props: { run: MergeRun }) {
 /** The Private names and secrets step: where each hit is (never the matched text) and the user's three answers. */
 function ScanBody(props: { projectId: string; view: MergeQueueView; step: RunStep; entry: string }) {
   const s = () => scanOf(props.step)!;
+  // The answers are offered only while they still mean something: this branch waits for the user, or names aren't answered.
+  const waits = () => props.view.needsYou.some((e) => e.id === props.entry);
+  const unanswered = () => props.view.names === "unanswered";
   const [busy, setBusy] = createSignal(false);
   const answer = async (a: "allow" | "send-back" | "ask-thread") => {
     setBusy(true);
@@ -692,7 +695,7 @@ function ScanBody(props: { projectId: string; view: MergeQueueView; step: RunSte
   };
   return (
     <>
-      {s().state === "clean" ? `Nothing found in ${s().commits ?? "the"} ${s().commits === 1 ? "commit" : "commits"}.${s().allowed ? ` ${s().allowed} allowed matches skipped.` : ""}` : s().state === "unanswered" ? "Secrets were scanned. Private names aren’t answered yet, so the push waits for you." : s().state === "unreadable" ? `The scan couldn’t look${s().why ? `: ${s().why}` : ""}. Nothing is pushed until one passes.` : `${s().hits?.length ?? 0} found. Nothing was pushed.`}
+      {s().state === "clean" ? `Nothing found in ${s().commits ?? "the"} ${s().commits === 1 ? "commit" : "commits"}.${s().allowed ? ` ${s().allowed} allowed matches skipped.` : ""}` : s().state === "unanswered" ? (unanswered() ? "Secrets were scanned. Private names aren’t answered yet, so the push waits for you." : "Secrets were scanned. Private names weren’t answered yet, so the push waited for that answer.") : s().state === "unreadable" ? `The scan couldn’t look${s().why ? `: ${s().why}` : ""}. Nothing is pushed until one passes.` : `${s().hits?.length ?? 0} found. Nothing was pushed.`}
       <Show when={s().hits?.length}>
         <ul class="pl-tl-read" aria-label="Where">
           <For each={s().hits}>
@@ -704,7 +707,7 @@ function ScanBody(props: { projectId: string; view: MergeQueueView; step: RunSte
           </For>
         </ul>
       </Show>
-      <Show when={s().state === "hits"}>
+      <Show when={s().state === "hits" && waits()}>
         <span class="pl-tl-actions">
           <button type="button" class="button button-sm" disabled={busy()} onClick={() => void answer("ask-thread")}>
             Ask the Merge Thread
@@ -717,7 +720,7 @@ function ScanBody(props: { projectId: string; view: MergeQueueView; step: RunSte
           </button>
         </span>
       </Show>
-      <Show when={s().state === "unanswered"}>
+      <Show when={s().state === "unanswered" && unanswered()}>
         <span class="pl-tl-actions">
           <button type="button" class="button button-sm" disabled={busy()} onClick={() => void none()}>
             No Private Names

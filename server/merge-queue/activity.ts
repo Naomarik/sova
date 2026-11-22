@@ -1,4 +1,4 @@
-import type { MergeChatRequest, MergeEntry, MergeEventInput, MergeRun, PauseInfo, RestartCause, RunStep } from "../../shared/merge-queue";
+import type { MergeChatRequest, MergeDecisionAction, MergeEntry, MergeEventInput, MergeRun, PauseInfo, RestartCause, RunStep } from "../../shared/merge-queue";
 import type { MergeNoticeKind } from "./notices";
 
 /**
@@ -107,6 +107,13 @@ const verdictWords: Record<string, string> = {
   void: "was voided",
   cancelled: "was cancelled",
 };
+
+const ANSWER_WORDS: Record<string, string> = { accept: "Accept", "land-anyway": "Land Anyway", "try-again": "Try Again", land: "Land", remove: "Remove from Queue", allow: "Allow", "send-back": "Send Back", "ask-thread": "Ask the Merge Thread", message: "a message to its chat" };
+
+/** The user's answer to a decision, kept with the question it answered. */
+export function decisionAnsweredEvent(e: MergeEntry, d: NonNullable<MergeEntry["decision"]>, how: MergeDecisionAction | "message"): MergeEventInput {
+  return { kind: "decision", by: "user", ...ref(e), ...(d.run ? { run: d.run } : {}), decision: d.id, decisionKind: d.kind, answered: how, why: `You answered with ${ANSWER_WORDS[how] ?? how}: ${firstLine(d.question)}` };
+}
 
 export function runEndedEvent(e: Pick<MergeEntry, "id" | "branch">, run: MergeRun): MergeEventInput {
   return { kind: "run-ended", by: "queue", ...ref(e), run: run.id, verdict: run.verdict, ...(run.blame ? { blame: run.blame } : {}), why: `Run ${verdictWords[run.verdict] ?? run.verdict}${run.why ? `: ${firstLine(run.why)}` : "."}` };

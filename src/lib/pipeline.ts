@@ -372,7 +372,7 @@ export function eventTitle(e: QueueEvent): string {
     case "ruled":
       return `Merge thread: ${ACT_WORD[e.act] ?? e.act}`;
     case "decision":
-      return "Waiting for you";
+      return e.answered ? "You answered" : "Waiting for you";
     case "paused":
       return e.self ? "Queue paused itself" : "Queue paused";
     case "resumed":
@@ -405,7 +405,7 @@ export function eventTitle(e: QueueEvent): string {
 /** The tone of a recorded change's mark. */
 export function eventState(e: QueueEvent): MarkState {
   if (e.kind === "sent-back" || e.kind === "paused" || e.kind === "push-held" || (e.kind === "run-ended" && e.verdict !== "passed") || (e.kind === "names" && (e.what === "hits" || e.what === "push-scan-hit")) || (e.kind === "thread-health" && e.what !== "fresh-thread")) return "failed";
-  if (e.kind === "decision" || e.kind === "waiting" || e.kind === "run-restarted") return "waiting";
+  if ((e.kind === "decision" && !e.answered) || e.kind === "waiting" || e.kind === "run-restarted") return "waiting";
   return "done";
 }
 

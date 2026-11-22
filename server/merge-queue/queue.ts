@@ -59,7 +59,7 @@ import { mergedTree, planOf, reuseOf, settingsOf, toolsOf, toolVersion, treeShap
 import { planRulesFor } from "./rules";
 import { kitChangedBy, kitHashAt } from "./review-kit";
 import { squashes } from "./run";
-import { countRestart, noticeEvent, pauseEvent, restartCauseOf, runEndedEvent, stepEnded, stepEvent } from "./activity";
+import { countRestart, decisionAnsweredEvent, noticeEvent, pauseEvent, restartCauseOf, runEndedEvent, stepEnded, stepEvent } from "./activity";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef, remoteOf } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
@@ -2505,7 +2505,9 @@ export class ProjectQueue {
 
   /** The user answered the entry's decision (a click on it, or their message sent with its held note). */
   private answerDecision(e: Entry, how: NonNullable<MergeDecision["answered"]>["how"]): void {
-    if (e.decision && !e.decision.answered) e.decision = { ...e.decision, answered: { at: this.iso(), how } };
+    if (!e.decision || e.decision.answered) return;
+    e.decision = { ...e.decision, answered: { at: this.iso(), how } };
+    this.record(decisionAnsweredEvent(e, e.decision, how));
   }
 
   /**

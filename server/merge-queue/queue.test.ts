@@ -1651,6 +1651,8 @@ describe("can't tell whose failure", () => {
       assert.equal(sh(k.repo.root, "rev-parse", `${k.repo.head()}^2`), n.entry.commit, "only feat/next landed");
       // The line moved on since its run: Land Anyway reruns it on the new target; again can't tell, so that tip lands.
       await q.answer(u.entry.id, "land-anyway");
+      const answered = q.events({ entry: u.entry.id }).events.find((x) => x.kind === "decision" && x.answered);
+      assert.deepEqual([answered?.by, answered?.kind === "decision" && answered.answered, answered?.why.startsWith("You answered with Land Anyway: ")], ["user", "land-anyway", true], "the answer is kept as an event");
       await landed(k, u.entry.id);
       const done = await k.entry(u.entry.id);
       assert.ok(done.approval.overUnattributed);

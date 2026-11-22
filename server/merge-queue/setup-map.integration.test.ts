@@ -57,6 +57,7 @@ test("the setup in force, each version on the main branch, and the Setup chat's 
   a = await readSetupMap("prj_map", deps);
   assert.equal(a!.proposal?.dirty, true);
   assert.deepEqual(a!.changes.map((c) => [c.tag, c.name]), [["add", "Check lint"]]);
+  assert.equal(a!.behind, undefined, "a branch up to date with the target");
 
   // A proposal that doesn't parse says so, and still counts as one.
   writeFileSync(join(wt, ".sova/project.json"), "{ not json");
@@ -86,8 +87,10 @@ test("a Setup chat whose branch is behind the target proposes its own changes on
   let a = await readSetupMap("prj_behind", d);
   assert.deepEqual(a!.changes.map((x) => [x.tag, x.name]), [["add", "Check lint"]], "never the target's newer edit undone");
   assert.deepEqual(a!.proposal?.checks.map((x) => [x.id, x.timeoutSec]), [["typecheck", 900], ["unit", 600], ["lint", 60]]);
+  assert.equal(a!.behind, "merged");
   // Where the two edit the same line, the proposal is the chat's copy as is (the merge thread judges it at landing).
   writeFileSync(join(wt, ".sova/project.json"), def([check("typecheck", 300), check("unit")]));
   a = await readSetupMap("prj_behind", d);
   assert.deepEqual(a!.proposal?.checks.map((x) => [x.id, x.timeoutSec]), [["typecheck", 300], ["unit", 600]]);
+  assert.equal(a!.behind, "overlaps", "and the screen says so");
 });

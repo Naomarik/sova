@@ -310,6 +310,12 @@ export interface SetupMapAnswer {
   chat: { session: string; path?: string; state: "idle" | "working" | "waiting" | "proposed"; branch?: string } | null;
   /** setupChanges(main, proposal). */
   changes: SetupChange[];
+  /**
+   * The Setup chat's branch forked before the target's newer setup edits: "merged", the proposal is its copy merged
+   * onto them (as Confirm lands it); "overlaps", the two edit the same lines, so the proposal is its copy as is and
+   * the merge thread judges the overlap at landing. Absent: the branch is up to date.
+   */
+  behind?: "merged" | "overlaps";
   /** The version in force: its number and since when (from Setup history), when known. */
   version?: { n: number; at: string; earlier: number };
 }

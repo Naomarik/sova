@@ -126,15 +126,15 @@ async function mapAtCommit(deps: SetupMapDeps, root: string, commit: string, nam
  * A chat whose branch forked before the target's later setup edits would otherwise seem to undo them. Its copy as is
  * when the branch is up to date, or when the merge would conflict (the merge thread judges that one at landing).
  */
-async function mergedText(deps: SetupMapDeps, wt: string, text: string, main: { commit: string; text: string } | null): Promise<string> {
-  if (!main) return text;
+async function mergedText(deps: SetupMapDeps, wt: string, text: string, main: { commit: string; text: string } | null): Promise<{ text: string; behind?: "merged" | "overlaps" }> {
+  if (!main) return { text };
   const mb = await deps.git(["merge-base", main.commit, "HEAD"], wt);
   const base = mb.code === 0 ? mb.stdout.trim() : "";
-  if (!base || base === main.commit) return text;
+  if (!base || base === main.commit) return { text };
   const at = await deps.git(["show", `${base}:${CONTRACT_FILE}`], wt);
   const baseText = at.code === 0 ? at.stdout : "";
-  if (baseText === main.text) return text;
-  if (baseText === text) return main.text;
+  if (baseText === main.text) return { text };
+  if (baseText === text) return { text: main.text, behind: "merged" };
   const dir = mkdtempSync(join(tmpdir(), "sova-setup-merge-"));
   try {
     const [ours, old, theirs] = ["main", "base", "chat"].map((n) => join(dir, n));
@@ -142,19 +142,19 @@ async function mergedText(deps: SetupMapDeps, wt: string, text: string, main: { 
     writeFileSync(old!, baseText);
     writeFileSync(theirs!, text);
     const r = await deps.git(["merge-file", "-p", ours!, old!, theirs!], dir);
-    return r.code === 0 ? r.stdout : text;
+    return r.code === 0 ? { text: r.stdout, behind: "merged" } : { text, behind: "overlaps" };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
 /** The Setup chat's working copy as it is on disk now: its definition, kit and release playbook, merged onto `main`. */
-async function mapOfWorktree(deps: SetupMapDeps, chat: SetupChatFacts, root: string, names: NamesState | null, target: string, main: { commit: string; text: string } | null): Promise<SetupMap | null> {
+async function mapOfWorktree(deps: SetupMapDeps, chat: SetupChatFacts, root: string, names: NamesState | null, target: string, main: { commit: string; text: string } | null): Promise<{ map: SetupMap; behind?: "merged" | "overlaps" } | null> {
   const wt = chat.worktree;
   if (!wt || !existsSync(wt)) return null;
   const own = readInside(wt, CONTRACT_FILE);
   if (own === null) return null;
-  const text = await mergedText(deps, wt, own, main);
+  const { text, behind } = await mergedText(deps, wt, own, main);
   const { def, problem } = parse(text);
   const head = await deps.git(["rev-parse", "HEAD"], wt);
   const status = await deps.git(statusArgs("--porcelain"), wt);
@@ -171,7 +171,7 @@ async function mapOfWorktree(deps: SetupMapDeps, chat: SetupChatFacts, root: str
   const kit = def?.merge?.review;
   const ownKit = await reviewIn(deps, wt, kit);
   const review = ownKit?.problem && kit && main && existsSync(resolve(root, kit)) ? await reviewIn(deps, root, kit) : ownKit;
-  return setupMapOf(def, {
+  const map = setupMapOf(def, {
     of: "proposal",
     target,
     commit: head.code === 0 ? head.stdout.trim() : null,
@@ -183,6 +183,7 @@ async function mapOfWorktree(deps: SetupMapDeps, chat: SetupChatFacts, root: str
     release,
     ...(problem ? { problem } : {}),
   });
+  return { map, ...(behind ? { behind } : {}) };
 }
 
 export async function readSetupMap(projectId: string, deps: SetupMapDeps): Promise<SetupMapAnswer | null> {
@@ -197,7 +198,8 @@ export async function readSetupMap(projectId: string, deps: SetupMapDeps): Promi
   const main = commit ? await mapAtCommit(deps, root, commit, names, remote, "main", target) : setupMapOf(null, { of: "main", target, commit: null, remote, names });
   const chat = await deps.setupChat(projectId);
   const mainText = commit && shown?.code === 0 ? { commit, text: shown.stdout } : null;
-  let proposal = chat ? await mapOfWorktree(deps, chat, root, names, target, mainText) : null;
+  const read = chat ? await mapOfWorktree(deps, chat, root, names, target, mainText) : null;
+  let proposal = read?.map ?? null;
   // A working copy that changes nothing proposes nothing.
   if (proposal && proposal.hash === main.hash && !proposal.problem) proposal = null;
   const history = await readSetupHistory(projectId, deps, 50).catch(() => null);
@@ -207,6 +209,7 @@ export async function readSetupMap(projectId: string, deps: SetupMapDeps): Promi
     proposal,
     chat: chat ? { session: chat.session, ...(chat.path ? { path: chat.path } : {}), state: chat.state, ...(chat.branch ? { branch: chat.branch } : {}) } : null,
     changes: proposal ? setupChanges(main, proposal) : [],
+    ...(proposal && read?.behind ? { behind: read.behind } : {}),
     ...(current && current.hash === main.hash ? { version: { n: current.n, at: current.at, earlier: current.n - 1 } } : {}),
   };
 }

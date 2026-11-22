@@ -143,6 +143,11 @@ export function ProposalView(props: { projectId: string; scope: PipelineScope; m
                 <b>The proposed setup doesn’t parse.</b> {p().problem}
               </p>
             </Show>
+            <Show when={m()!.behind === "overlaps"}>
+              <p class="pl-factbox is-warn">
+                <b>The Setup chat’s edits overlap newer setup changes on {m()!.main.target ?? "the target"}.</b> This shows the chat’s copy as it is, so it may seem to undo them. The merge thread judges the overlap when its branch lands.
+              </p>
+            </Show>
           </header>
           <section>
             <h3 class="pl-section-title" style={{ "font-size": "var(--fs-heading-s)" }}>

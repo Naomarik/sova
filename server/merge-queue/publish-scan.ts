@@ -61,6 +61,9 @@ export interface ScanInput {
   allowed?: ReadonlySet<string>;
 }
 
+/** "1 thing that looks", "3 things that look" (n absent: "some things that look"). */
+export const thingsThatLook = (n: number | undefined): string => (n === 1 ? "1 thing that looks" : `${n || "some"} things that look`);
+
 /** "looks like a GitHub token", "looks like an AWS access key": the article by the label's sound (an initialism read
  *  letter by letter: "an API key"). */
 export function looksLike(label: string): string {
@@ -174,6 +177,6 @@ export async function scanPublication(git: Git, o: ScanInput): Promise<ScanResul
   }
   const counted = { ...extra, ...(allowed ? { allowed } : {}) };
   if (hits.length)
-    return { ok: false, why: `the scan before publishing found ${hits.length} thing${hits.length === 1 ? "" : "s"} that look private: nothing is published (${hits[0]}${hits.length > 1 ? ", …" : ""})`, hits: hits.slice(0, 50), found: found.slice(0, 50), commits: commits.length, ...counted };
+    return { ok: false, why: `the scan before publishing found ${thingsThatLook(hits.length)} private: nothing is published (${hits[0]}${hits.length > 1 ? ", …" : ""})`, hits: hits.slice(0, 50), found: found.slice(0, 50), commits: commits.length, ...counted };
   return { ok: true, commits: commits.length, ...counted };
 }

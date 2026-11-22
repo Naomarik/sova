@@ -7,6 +7,7 @@
  *   the cause it is about only, so a request never repeats an earlier conflict's or review's text.
  * No fs, no queue state: queue.ts calls these.
  */
+import { thingsThatLook } from "./publish-scan";
 import { join } from "node:path";
 import type { MergeEntry, MergeRun, ReviewFinding, SentBackFor } from "../../shared/merge-queue";
 import { reviewPrint } from "./review-record";
@@ -160,7 +161,7 @@ export function sendBackText(e: Pick<MergeEntry, "branch" | "target" | "commit">
     case "names": {
       // Where and what kind, never the matched text (§app.merge-queue/names-step): the chat finds it there.
       const hits = f.run?.steps.find((s) => s.kind === "scan")?.scan?.hits ?? [];
-      lines.push(`${e.branch} didn't land${tryWords}: the scan before pushing found ${hits.length || "some"} thing${hits.length === 1 ? "" : "s"} that look like private names or secrets, and the user sent it back to remove them.`);
+      lines.push(`${e.branch} didn't land${tryWords}: the scan before pushing found ${thingsThatLook(hits.length)} like private names or secrets, and the user sent it back to remove them.`);
       for (const h of hits.slice(0, 12)) lines.push(`- ${h.where} · ${h.what}`);
       if (hits.length > 12) lines.push(`- … and ${hits.length - 12} more (the run's "Private names and secrets" step lists them all)`);
       lines.push(`Remove each from the branch, its files and its commit messages alike: one in an earlier commit stays in the history until that commit is rewritten (squash or reword the branch's commits onto ${e.target}). Never write the matched text in your answer.`);

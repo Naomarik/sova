@@ -17,6 +17,11 @@ import { makeKit, makeRepo, sh, standInRun, until } from "./testing/queue-kit";
 const SECRET_NAME = "zorblaxcorp";
 
 describe("the scan's facts", () => {
+  test("a count reads with its verb", async () => {
+    const { thingsThatLook } = await import("./publish-scan");
+    assert.deepEqual([1, 2, 0, undefined].map(thingsThatLook), ["1 thing that looks", "2 things that look", "some things that look", "some things that look"]);
+  });
+
   test("the secret's kind reads with its article", async () => {
     const { looksLike, SECRET_PATTERNS } = await import("./publish-scan");
     const said = Object.fromEntries(SECRET_PATTERNS.map(([label]) => [label, looksLike(label)]));
@@ -130,6 +135,8 @@ describe("a hit holds the landing for the user", () => {
       assert.deepEqual(e.decision?.actions, ["allow", "send-back", "ask-thread"]);
       assert.ok(!e.decision!.question.includes(SECRET_NAME), "the question names the place, never the text");
       assert.match(e.decision!.question, /src\/x\.ts:1 · private name #1/);
+      assert.match(e.decision!.question, /found 1 thing that looks like private names or secrets:/);
+      assert.equal(e.reason, "the scan before pushing found 1 thing that looks private");
       assert.deepEqual(decided, ["private-names"], "one notification, as every decision");
       const run = (await q.view()).needsYou.find((x) => x.id === entry.id)!.run!;
       assert.equal(q.store.readRun(run)?.steps.find((s) => s.id === SCAN_STEP_ID)?.result, "failed");

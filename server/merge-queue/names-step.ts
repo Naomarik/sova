@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import type { LandHow, ScanFacts, ScanHit } from "../../shared/merge-queue";
 import type { ProjectDef } from "../../shared/project-contract";
 import type { Git } from "./guard";
-import { NAMES_NOT_SET_UP, type ScanResult, scanPublication } from "./publish-scan";
+import { NAMES_NOT_SET_UP, type ScanResult, scanPublication, thingsThatLook } from "./publish-scan";
 
 export const SCAN_STEP_ID = "scan";
 export const SCAN_STEP_LABEL = "Private names and secrets";
@@ -90,7 +90,7 @@ export function scanDetail(f: ScanFacts): string {
       return `no secrets in ${of}${ok}; private names not set up yet: it lands, and its push waits for your answer`;
     case "hits": {
       const h = f.hits ?? [];
-      return `${h.length} thing${h.length === 1 ? "" : "s"} that look private: ${h[0]?.where ?? ""} · ${h[0]?.what ?? ""}${h.length > 1 ? ", …" : ""}`;
+      return `${thingsThatLook(h.length)} private: ${h[0]?.where ?? ""} · ${h[0]?.what ?? ""}${h.length > 1 ? ", …" : ""}`;
     }
     case "unreadable":
       return `couldn't scan (${f.why ?? "unknown"}): it lands, and nothing is pushed until a scan passes`;

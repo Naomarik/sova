@@ -68,7 +68,7 @@ import type { GitRunner } from "../worktrees";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
 import { recordLandedDrafts } from "./landed-drafts";
 import { allowedKeys, allowFileOf, allowMatches, factsOf, hitLines, namesListEmpty, openHits, scanPlanned } from "./names-step";
-import { scanPublication } from "./publish-scan";
+import { scanPublication, thingsThatLook } from "./publish-scan";
 import { type MergeNoticeKind, nothingToLandWords } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { cleanChoices, fingerprintOf, isRuling, resolveVerdict, RULING_TEXT_MAX, RULING_WAIT_MS, type Ruling, sendBackText } from "./rulings";
@@ -2698,9 +2698,9 @@ export class ProjectQueue {
   /** A tested tip with hits: it waits for the user (Allow / Send Back / Ask the Merge Thread); the line moves on. */
   private holdForNames(e: Entry, run: MergeRun, hits: readonly ScanHit[]): void {
     run.verdict = "waiting";
-    run.why = `the scan before pushing found ${hits.length} thing${hits.length === 1 ? "" : "s"} that look private`;
+    run.why = `the scan before pushing found ${thingsThatLook(hits.length)} private`;
     this.store.writeRun(run);
-    const question = [`${e.branch} passed its checks, but the scan before pushing found ${hits.length} thing${hits.length === 1 ? "" : "s"} that look like private names or secrets:`, ...hitLines(hits, 6), "Allow (they're fine for this project), send it back to its chat to remove them, or ask the merge thread which names they are?"].join("\n");
+    const question = [`${e.branch} passed its checks, but the scan before pushing found ${thingsThatLook(hits.length)} like private names or secrets:`, ...hitLines(hits, 6), "Allow (they're fine for this project), send it back to its chat to remove them, or ask the merge thread which names they are?"].join("\n");
     this.raiseDecision(e, { kind: "private-names", question, choices: [], raisedBy: "queue", actions: ["allow", "send-back", "ask-thread"], run: run.id }, "needs-user", run.why);
     this.log(`${e.branch}: held for private names (${hits.length} hit${hits.length === 1 ? "" : "s"})`);
     this.record({ kind: "names", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "hits", hits: hits.length, why: `${run.why}: it waits for the user (Allow, Send Back or Ask the Merge Thread)` });
@@ -2728,7 +2728,7 @@ export class ProjectQueue {
     if (answer === "send-back") {
       this.answerDecision(e, "send-back");
       this.record({ kind: "names", by: "user", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "sent-back", hits: hits.length, why: "You sent it back to its chat to remove what looks private" });
-      this.sendBack(e, { cause: "names", why: `the scan before pushing found ${hits.length} thing${hits.length === 1 ? "" : "s"} that look private`, runId: run.id });
+      this.sendBack(e, { cause: "names", why: `the scan before pushing found ${thingsThatLook(hits.length)} private`, runId: run.id });
       this.save();
       this.kickSoon();
       return e;
@@ -2741,7 +2741,7 @@ export class ProjectQueue {
     const left = openHits(run.steps, file);
     if (left.length) {
       // Some still wait: the decision stays open, now naming only those.
-      e.decision = { ...d, question: [`${left.length} thing${left.length === 1 ? "" : "s"} that look private still wait:`, ...hitLines(left, 6), "Allow, send it back, or ask the merge thread?"].join("\n") };
+      e.decision = { ...d, question: [`${thingsThatLook(left.length)} private ${left.length === 1 ? "still waits" : "still wait"}:`, ...hitLines(left, 6), "Allow, send it back, or ask the merge thread?"].join("\n") };
       e.updatedAt = this.iso();
       this.save();
       this.republish();
@@ -5564,11 +5564,11 @@ export class ProjectQueue {
       this.q.heads.pushScan = p.scan;
       if (first) {
         const hits = p.scan.state === "hits";
-        this.log(hits ? `push held: the scan before pushing found ${p.scan.hits?.length ?? 0} thing(s) that look private` : `push held: the scan before pushing couldn't look (${p.scan.why ?? "unknown"})`);
+        this.log(hits ? `push held: the scan before pushing found ${thingsThatLook(p.scan.hits?.length)} private` : `push held: the scan before pushing couldn't look (${p.scan.why ?? "unknown"})`);
         this.record({ kind: "names", by: "queue", ...(e ? { entry: e.id, branch: e.branch } : {}), step: "push", what: "push-scan-hit", hits: p.scan.hits?.length ?? 0, why: `${this.q.target} wasn't pushed: the scan before pushing found things that look private` });
         if (e && hits) this.wake("names-hit", e, undefined, { hits: hitLines(p.scan.hits ?? [], 50) });
         try {
-          this.deps.alert?.({ title: `The merge queue needs you · ${this.root.split("/").pop() ?? this.root}`, body: hits ? `${this.q.target} wasn't pushed: the scan before pushing found ${p.scan.hits?.length ?? "some"} thing${p.scan.hits?.length === 1 ? "" : "s"} that look private. Allow them on the Merge Queue tab, or fix ${this.q.target}.` : `${this.q.target} wasn't pushed: the scan before pushing couldn't look (${p.scan.why ?? "unknown"}). Nothing is pushed until a scan passes: Retry on the Merge Queue tab.`, tag: `sova:merge-push-scan:${this.id}` }, this.root);
+          this.deps.alert?.({ title: `The merge queue needs you · ${this.root.split("/").pop() ?? this.root}`, body: hits ? `${this.q.target} wasn't pushed: the scan before pushing found ${thingsThatLook(p.scan.hits?.length)} private. Allow ${p.scan.hits?.length === 1 ? "it" : "them"} on the Merge Queue tab, or fix ${this.q.target}.` : `${this.q.target} wasn't pushed: the scan before pushing couldn't look (${p.scan.why ?? "unknown"}). Nothing is pushed until a scan passes: Retry on the Merge Queue tab.`, tag: `sova:merge-push-scan:${this.id}` }, this.root);
         } catch (err) {
           this.log(`push scan notification failed: ${err instanceof Error ? err.message : err}`);
         }

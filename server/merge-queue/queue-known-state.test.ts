@@ -98,6 +98,23 @@ describe("clean runs in the queue", () => {
   });
 });
 
+describe("a Clean Run's ask and its entry", () => {
+  test("asked on an entry that is then removed: the ask goes with it", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      await q.pause("hold the line");
+      k.repo.branch("feat/a", { "a.txt": "a\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      assert.equal((await q.cleanRun(entry.id)).clean?.next?.entry, entry.id);
+      await q.cancel(entry.id);
+      assert.equal((await q.view()).clean?.next, undefined);
+    } finally {
+      await k.done();
+    }
+  });
+});
+
 describe("flaky tests in the queue", () => {
   test("a run's flaky tests are counted across landings and shown on the view; a voided run's are not", async () => {
     const k = makeKit();

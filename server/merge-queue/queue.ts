@@ -61,7 +61,7 @@ import { type MergeNoticeKind, nothingToLandWords } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { cleanChoices, fingerprintOf, isRuling, resolveVerdict, RULING_TEXT_MAX, RULING_WAIT_MS, type Ruling, sendBackText } from "./rulings";
 import { estimateFromRuns } from "./estimate";
-import { afterRun, cleanFor, cleanInfo } from "./clean-run";
+import { afterRun, cleanFor, cleanInfo, dropAsk } from "./clean-run";
 import { FlakyStore } from "./flaky";
 import { healthOf, historyPage } from "./health";
 import type { MergeHistoryPage, MergeQueueHealth } from "../../shared/merge-queue-health";
@@ -1749,6 +1749,8 @@ export class ProjectQueue {
   cancel(entryId: string, note?: string): Promise<MergeEntry> {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
+      // A Clean Run asked on this entry goes with it.
+      this.q.clean = dropAsk(this.q.clean, e.id);
       // Remove from Queue: a sent-back entry leaves the queue; nothing of the branch's is deleted (its folder, commits,
       // drafts and run logs stay), and its chat's card gets a Removed revision.
       // Under the user's standing Land, an entry out of line (with its chat, waiting for their decision) is Removed too.

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { MergeHistoryRow, MergeRun } from "../../shared/merge-queue";
 import { FLAKY_RUNS_KEPT, type MergeFlakyTest } from "../../shared/merge-queue-health";
-import { afterRun, CLEAN_EVERY_MS, cleanFor, cleanInfo } from "./clean-run";
+import { afterRun, CLEAN_EVERY_MS, cleanFor, cleanInfo, dropAsk } from "./clean-run";
 import { countFlaky, FlakyStore, flakyFixText, flakyKey } from "./flaky";
 import { healthOf, historyPage } from "./health";
 
@@ -44,6 +44,20 @@ describe("clean runs: when a run starts from an empty copy", () => {
     assert.equal(cleanFor(onX, Date.parse(at(1)), "feat/x"), "operator");
     assert.deepEqual(afterRun(onX, { id: "mr_y", branch: "feat/y", startedAt: at(2), clean: "weekly" })?.next, onX.next);
     assert.equal(afterRun(onX, { id: "mr_x", branch: "feat/x", startedAt: at(2), clean: "operator" })?.next, undefined);
+  });
+
+  test("an ask goes with the entry it was asked on, and after a week (the weekly clean run has come by then)", () => {
+    const last = { at: at(0), run: "mr_a", why: "new" as const };
+    const onX = { next: { why: "operator" as const, at: at(0), entry: "mq_x", branch: "feat/x" }, last };
+    assert.deepEqual(dropAsk(onX, "mq_x"), { last });
+    assert.deepEqual(dropAsk(onX, "mq_y"), onX);
+    const open = { next: { why: "operator" as const, at: at(0) }, last };
+    assert.deepEqual(dropAsk(open, "mq_x"), open, "an ask on no entry stays");
+    assert.equal(cleanFor(onX, T0 + CLEAN_EVERY_MS - 1, "feat/x"), "operator");
+    assert.equal(cleanInfo(onX, T0 + CLEAN_EVERY_MS - 1).next?.entry, "mq_x");
+    assert.equal(cleanInfo(onX, T0 + CLEAN_EVERY_MS).next, undefined);
+    // Past the week it is the weekly clean run that makes the run clean, not the ask.
+    assert.equal(cleanFor(onX, T0 + CLEAN_EVERY_MS, "feat/y"), "weekly");
   });
 
   test("the view says what is asked, the last clean run and when the weekly one is due (never in the past)", () => {

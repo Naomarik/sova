@@ -15,9 +15,23 @@ export type CleanState = { next?: { why: CleanWhy; at: string; entry?: string; b
 /** Does Clean Run's ask apply to a run of `branch`? An ask on a branch's entry waits for that branch's run. */
 const askFits = (next: NonNullable<CleanState>["next"], branch: string | undefined): boolean => !!next && (!next.branch || next.branch === branch);
 
+/** An ask still standing at `now`: one a week old has had its weekly clean run anyway, and goes. */
+const askLive = (c: CleanState, now: number): NonNullable<CleanState>["next"] => {
+  const at = c?.next ? Date.parse(c.next.at) : NaN;
+  return c?.next && Number.isFinite(at) && now - at < CLEAN_EVERY_MS ? c.next : undefined;
+};
+
+/** The standing once entry `entryId` leaves the queue (removed, cancelled): an ask made on it goes with it. */
+export function dropAsk(c: CleanState, entryId: string): CleanState {
+  if (!c?.next?.entry || c.next.entry !== entryId) return c;
+  const { next: _gone, ...rest } = c;
+  return rest;
+}
+
 /** Why the run of `branch` starting at `now` (epoch ms) is clean, or undefined: it reuses the copy. */
 export function cleanFor(c: CleanState, now: number, branch?: string): CleanWhy | undefined {
-  if (askFits(c?.next, branch)) return c!.next!.why;
+  const next = askLive(c, now);
+  if (askFits(next, branch)) return next!.why;
   const last = c?.last ? Date.parse(c.last.at) : NaN;
   if (!Number.isFinite(last) || now - last >= CLEAN_EVERY_MS) return "weekly";
   return undefined;
@@ -36,5 +50,6 @@ export function afterRun(c: CleanState, run: { id: string; branch?: string; star
 export function cleanInfo(c: CleanState, now: number): MergeCleanInfo {
   const last = c?.last && Number.isFinite(Date.parse(c.last.at)) ? c.last : undefined;
   const dueAt = new Date(last ? Math.max(now, Date.parse(last.at) + CLEAN_EVERY_MS) : now).toISOString();
-  return { ...(c?.next ? { next: { ...c.next } } : {}), ...(last ? { last: { ...last } } : {}), dueAt };
+  const next = askLive(c, now);
+  return { ...(next ? { next: { ...next } } : {}), ...(last ? { last: { ...last } } : {}), dueAt };
 }

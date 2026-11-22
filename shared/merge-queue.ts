@@ -737,7 +737,8 @@ export interface PlanStep {
   id: string;
   kind: RunStepKind;
   label: string;
-  will: "run" | "skip" | "if";
+  /** refused: the run stops there, failed (the branch's folder rules are refused; `why` is the run's own reason). */
+  will: "run" | "skip" | "if" | "refused";
   /** skip: why not ("not picked; no folder rule matched"); if: on what ("only if a lockfile changes"); run: why it is in
    *  ("Triggered: statecharts/** changed (rule 3)", the thread's reason). Required checks run with none. */
   why?: string;

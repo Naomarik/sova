@@ -445,7 +445,7 @@ function RunDetail(props: { projectId: string; view: MergeQueueView; row: RunRow
   const plan = createMemo(() => (run() ? planRows(run()!) : null));
   const counts = () => {
     const rows = plan()?.rows ?? [];
-    return { inn: rows.filter((r) => !r.skip).length, skip: rows.filter((r) => r.skip).length };
+    return { inn: rows.filter((r) => !r.skip && !r.refused).length, skip: rows.filter((r) => r.skip).length, refused: rows.filter((r) => r.refused).length };
   };
   const timeline = (): TimelineItem[] =>
     (run()?.steps ?? []).map((s) => ({
@@ -559,7 +559,7 @@ function RunDetail(props: { projectId: string; view: MergeQueueView; row: RunRow
             <div class="pl-card-head">
               <h3 id="pl-plan-title">The plan</h3>
               <span class="chip chip-count">
-                {counts().inn} in · {counts().skip} skipped
+                {counts().inn} in · {counts().skip} skipped{counts().refused ? ` · ${counts().refused} refused` : ""}
               </span>
             </div>
             <div class="pl-card-body">
@@ -567,11 +567,11 @@ function RunDetail(props: { projectId: string; view: MergeQueueView; row: RunRow
                 <For each={plan()?.rows}>
                   {(p) => (
                     <li class="pl-plan-row" classList={{ "is-skip": !!p.skip }}>
-                      <Mark state={p.skip ? "skipped" : p.maybe ? "waiting" : "done"} late={p.late} />
+                      <Mark state={p.refused ? "failed" : p.skip ? "skipped" : p.maybe ? "waiting" : "done"} late={p.late} />
                       <span>
                         <span class="pl-plan-name">
                           {p.name}
-                          {p.late ? " · added after the start" : p.maybe ? " · only if needed" : ""}
+                          {p.refused ? " · refused" : p.late ? " · added after the start" : p.maybe ? " · only if needed" : ""}
                         </span>
                         <Show when={p.note}>
                           <span class="pl-plan-note">{p.note}</span>

@@ -7,6 +7,7 @@ import type { MergeCheckDecl, ProjectDef } from "../../shared/project-contract";
 import { remoteOf } from "../../shared/project-contract";
 import { checksOf, type PlannedCheck, planChecks } from "./checks";
 import { gitProc } from "./copy";
+import type { RulesRefusal } from "./rules";
 
 /**
  * A run's plan, worked out before it starts (§app.merge-queue/plan): every step it will take and every optional one it
@@ -59,7 +60,7 @@ export interface PlanFacts {
   /** The merge thread's picks at the start. */
   picks: CheckPick[];
   /** The branch's folder rules as they read after the merge (rules.ts planRulesFor). */
-  rules: { hash: string; own: boolean; triggers: CheckPick[]; unknown?: string[] };
+  rules: { hash: string; own: boolean; triggers: CheckPick[]; unknown?: string[]; refused?: RulesRefusal };
   /** The branch's changed paths against the target. */
   changed: string[];
   /** The review kit the run reviews with; `hash` null: no review step (`skip` says why). */
@@ -117,6 +118,11 @@ export function planOf(f: PlanFacts, at: string): { plan: RunPlan; planned: Plan
   else add({ id: "merge", kind: "merge", label: f.resolution ? "Take the conflict resolution" : f.squash ? `Squash ${short(f.commit)} onto ${f.target}` : `Merge ${short(f.commit)} onto ${f.target}`, will: "run" });
   if (f.submodules) add({ id: "submodules", kind: "copy", label: "Submodules", will: "run", why: "the project has submodules" });
   if (f.lfs) add({ id: "lfs", kind: "copy", label: "Large files (LFS)", will: "run", why: "the project keeps files in LFS" });
+  // Branch rules the run refuses (rules.ts rulesRefusal): the run stops right here, failed, with these words, and never
+  // runs the checks those rules name (§app.merge-queue/rules).
+  const refused = f.rules.refused;
+  const refusedCheck = (id: string) => !!refused?.checks.some((x) => id === x || id.startsWith(`${x}+`));
+  if (refused) add({ id: "rules", kind: "check", label: "Folder rules", will: "refused", why: refused.why });
   for (const s of def?.setup ?? []) add({ id: `setup:${s.id}`, kind: "setup", label: `Setup: ${s.id}`, will: f.clean ? "run" : "if", why: f.clean ? "run afresh on a clean run" : "only if its command or inputs changed since the last run" });
   const inst = def?.merge?.install;
   if (inst) {
@@ -127,11 +133,13 @@ export function planOf(f: PlanFacts, at: string): { plan: RunPlan; planned: Plan
   else if (f.drafts?.names.length) add({ id: "docs", kind: "docs", label: "Spec drafts made official", will: "run", why: `${f.drafts.names.length} draft${f.drafts.names.length === 1 ? "" : "s"}: ${f.drafts.names.slice(0, 3).join(", ")}${f.drafts.names.length > 3 ? ", …" : ""}` });
   else add({ id: "docs", kind: "docs", label: "Spec drafts made official", will: "skip", why: "no spec drafts" });
   if (declared === "none" && !planned.length) add({ id: "checks", kind: "check", label: "Checks", will: "skip", why: "the project declares no automated tests: it lands after a clean merge" });
-  for (const c of planned) add({ id: `check:${c.id}`, kind: "check", label: c.label, will: "run", source: c.source, ...(c.why ? { why: c.source === "trigger" ? `Triggered: ${c.why}` : c.why } : {}), ...(c.select?.length ? { select: [...c.select] } : {}) });
+  for (const c of planned)
+    if (refusedCheck(c.id)) add({ id: `check:${c.id}`, kind: "check", label: c.label, will: "skip", why: refused!.why, ...(c.select?.length ? { select: [...c.select] } : {}) });
+    else add({ id: `check:${c.id}`, kind: "check", label: c.label, will: "run", source: c.source, ...(c.why ? { why: c.source === "trigger" ? `Triggered: ${c.why}` : c.why } : {}), ...(c.select?.length ? { select: [...c.select] } : {}) });
   // Optional checks this run leaves out, each with why (§app.merge-queue/checks).
   const decls = declared === "declared" ? (def!.merge!.checks as MergeCheckDecl[]) : [];
   const leftOut = decls.filter((x) => x.optional && !planned.some((p) => p.id === x.id || p.id.startsWith(`${x.id}+`)));
-  for (const d of leftOut) add({ id: `check:${d.id}`, kind: "check", label: d.label, will: "skip", why: "optional: the merge thread didn't pick it, and no folder rule set it off" });
+  for (const d of leftOut) add({ id: `check:${d.id}`, kind: "check", label: d.label, will: "skip", why: refusedCheck(d.id) ? refused!.why : "optional: the merge thread didn't pick it, and no folder rule set it off" });
   for (const u of f.rules.unknown ?? []) add({ id: `rule:${steps.length}`, kind: "check", label: "Folder rule", will: "skip", why: u });
   if (f.review.hash === null) add({ id: "review", kind: "review", label: "Review", will: "skip", why: f.review.skip ?? "no review kit" });
   else add({ id: "review", kind: "review", label: "Review", will: "run", why: `review kit ${f.review.kit ?? ""}${f.review.own ? "; this branch changed its own review" : ""}`.trim() });

@@ -53,7 +53,7 @@ test("the private names step is in the pipeline exactly when the project pushes,
   assert.equal(queueStages(mapOf({ checks }, { names: "none" })).find((x) => x.id === "names")?.warn, undefined);
 });
 
-test("a saved plan's steps keep their place: in, only if, added late, skipped with why", () => {
+test("a saved plan's steps keep their place: in, only if, added late, skipped with why, refused with why", () => {
   const run = {
     steps: [],
     plan: {
@@ -65,21 +65,24 @@ test("a saved plan's steps keep their place: in, only if, added late, skipped wi
         { id: "install", kind: "install", label: "Install", will: "if", why: "only if a lockfile changes" },
         { id: "check:e2e", kind: "check", label: "Browser tests", will: "run", why: "picked", late: "2026-11-22T00:00:00Z" },
         { id: "check:deep", kind: "check", label: "Deep tests", will: "skip", why: "not picked; no folder rule matched" },
+        { id: "rules", kind: "check", label: "Folder rules", will: "refused", why: "your branch's folder rules are refused: src/** → e2e" },
       ],
     },
   } as unknown as MergeRun;
   const { rows, fingerprint } = planRows(run);
   assert.equal(fingerprint, "f".repeat(16));
   assert.deepEqual(
-    rows.map((r) => [r.id, !!r.skip, !!r.maybe, !!r.late]),
+    rows.map((r) => [r.id, !!r.skip, !!r.maybe, !!r.late, !!r.refused]),
     [
-      ["check:unit", false, false, false],
-      ["install", false, true, false],
-      ["check:e2e", false, false, true],
-      ["check:deep", true, false, false],
+      ["check:unit", false, false, false, false],
+      ["install", false, true, false, false],
+      ["check:e2e", false, false, true, false],
+      ["check:deep", true, false, false, false],
+      ["rules", false, false, false, true],
     ],
   );
   assert.equal(rows[3]!.note, "not picked; no folder rule matched");
+  assert.equal(rows[4]!.note, "your branch's folder rules are refused: src/** → e2e");
 });
 
 test("a branch's story is one attempt per run, in the order recorded", () => {

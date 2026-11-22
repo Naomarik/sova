@@ -4415,7 +4415,8 @@ export class ProjectQueue {
       const commit = resolution ?? e.commit;
       const rules = await planRulesFor({ root: this.root, base, commit, target: this.q.target, targetDef: def });
       const tree = (rules as { tree?: string }).tree ?? (await mergedTree(this.root, base, commit));
-      const unknown = [...(rules.info.unknown ?? []), ...(rules.error ? [`the branch's folder rules couldn't be read before the run (${rules.error}): the run reads them in the merge copy`] : []), ...(rules.refused ? [`the branch's definition doesn't parse: ${rules.refused}`] : [])];
+      // A refusal is the plan's Folder rules step (rules.ts rulesRefusal), never a line here too.
+      const unknown = [...rules.unknownWords, ...(rules.error ? [`the branch's folder rules couldn't be read before the run (${rules.error}): the run reads them in the merge copy`] : [])];
       const kit = def?.merge?.review;
       let review: PlanFacts["review"];
       if (!d.review || !kit) review = { hash: null, skip: "no review kit declared" };
@@ -4444,7 +4445,7 @@ export class ProjectQueue {
         ...(e.release ? { release: { id: e.release, checks: releaseChecks ?? [] } } : {}),
         ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}),
         picks: structuredClone(e.picks),
-        rules: { hash: rules.hash, own: !!rules.info.changed?.length, triggers: rules.triggers, ...(unknown.length ? { unknown } : {}) },
+        rules: { hash: rules.hash, own: !!rules.info.changed?.length, triggers: rules.triggers, ...(unknown.length ? { unknown } : {}), ...(rules.refusal ? { refused: rules.refusal } : {}) },
         changed: rules.changed,
         review,
         ...(clean ? { clean } : {}),

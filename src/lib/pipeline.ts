@@ -294,6 +294,8 @@ export interface PlanRow {
   /** Runs only if something happens (a lockfile changed, a check failed). */
   maybe?: true;
   late?: true;
+  /** The run stops here, failed (the branch's folder rules are refused); `note` says why. */
+  refused?: true;
 }
 
 const SOURCE_NOTE: Record<string, string> = { required: "Runs on every branch.", picked: "Added by the merge thread.", release: "A release check.", trigger: "A folder rule matched." };
@@ -308,6 +310,7 @@ export function planRows(r: MergeRun): { rows: PlanRow[]; fingerprint?: string; 
       note: s.why ?? (s.source ? (SOURCE_NOTE[s.source] ?? "") : ""),
       ...(s.will === "skip" ? { skip: true as const } : {}),
       ...(s.will === "if" ? { maybe: true as const } : {}),
+      ...(s.will === "refused" ? { refused: true as const } : {}),
       ...(s.late ? { late: true as const } : {}),
     }));
     return { rows, fingerprint: p.fingerprint, ...(p.sameAs ? { sameAs: p.sameAs } : {}), ...(p.late ? { grew: p.late.fingerprint } : {}) };

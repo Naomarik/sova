@@ -142,9 +142,9 @@ async function showAt(root: string, rev: string): Promise<string | null> {
  * SOVA_MERGE_CHANGED lists). A merge that conflicts has no rules to read (the run stops at the conflict). Never throws:
  * `error` says what couldn't be read, and `info.why` says it plainly (the run then reads its copy as usual).
  */
-export async function planRulesFor(o: { root: string; base: string; commit: string; target: string; targetDef: ProjectDef | null }): Promise<{ rules: MergeRuleDecl[]; info: RunRules; refused?: string; changed: string[]; triggers: CheckPick[]; unknown: MergeRuleDecl[]; hash: string; tree?: string; error?: string }> {
+export async function planRulesFor(o: { root: string; base: string; commit: string; target: string; targetDef: ProjectDef | null }): Promise<{ rules: MergeRuleDecl[]; info: RunRules; refused?: string; refusal?: RulesRefusal; changed: string[]; triggers: CheckPick[]; unknown: MergeRuleDecl[]; unknownWords: string[]; hash: string; tree?: string; error?: string }> {
   const decls = Array.isArray(o.targetDef?.merge?.checks) ? o.targetDef!.merge!.checks : [];
-  const failed = (error: string) => ({ rules: [], info: { from: "branch" as const, count: 0, why: `couldn't read the branch's rules before the run (${error.slice(0, 200)}): the run reads them from its merge copy` }, changed: [], triggers: [], unknown: [], hash: "", error });
+  const failed = (error: string) => ({ rules: [], info: { from: "branch" as const, count: 0, why: `couldn't read the branch's rules before the run (${error.slice(0, 200)}): the run reads them from its merge copy` }, changed: [], triggers: [], unknown: [], unknownWords: [], hash: "", error });
   try {
     const mt = await gitProc(o.root, [...NO_BACKGROUND_CLEANUP, "merge-tree", "--write-tree", "--no-messages", o.base, o.commit], { timeoutMs: 60_000 });
     const tree = mt.out.trim().split("\n")[0]?.trim() ?? "";
@@ -155,7 +155,8 @@ export async function planRulesFor(o: { root: string; base: string; commit: stri
     const changed = diff.out.split("\n").map((l) => l.trim()).filter(Boolean);
     const r = rulesFromText(await showAt(o.root, tree), o.targetDef);
     const t = ruleTriggers(r.rules, changed, decls);
-    return { ...r, info: withUnknown(r.info, t, o.target), changed, triggers: t.picks, unknown: t.unknown, hash: rulesHash(r.rules), tree };
+    const refusal = rulesRefusal(r, t, o.target);
+    return { ...r, info: withUnknown(r.info, t, o.target), ...(refusal ? { refusal } : {}), changed, triggers: t.picks, unknown: t.unknown, unknownWords: [...new Set(t.unknown.map((u) => notDeclaredWords(u, o.target)))], hash: rulesHash(r.rules), tree };
   } catch (err) {
     return failed(err instanceof Error ? err.message : String(err));
   }
@@ -165,8 +166,29 @@ export async function planRulesFor(o: { root: string; base: string; commit: stri
  *  one the target says needs a selection the rule doesn't give. */
 export function withUnknown(info: RunRules, t: { unknown: readonly MergeRuleDecl[]; refused: readonly MergeRuleDecl[] }, target: string): RunRules {
   const lines = [
-    ...t.unknown.map((u) => `${u.check} isn't declared on ${target} yet (${ruleWords(u)})`),
+    ...t.unknown.map((u) => notDeclaredWords(u, target)),
     ...t.refused.map((u) => `${u.check} runs with a selection on ${target} and this rule names none (${ruleWords(u)})`),
   ];
   return lines.length ? { ...info, unknown: [...new Set(lines)] } : info;
+}
+
+const notDeclaredWords = (u: MergeRuleDecl, target: string): string => `${u.check} isn't declared on ${target} yet (${ruleWords(u)})`;
+
+/** Why the branch's folder rules are refused, and the checks the refused rules name (none when its definition doesn't
+ *  read: no rule of it applies). */
+export interface RulesRefusal {
+  why: string;
+  checks: string[];
+}
+
+/**
+ * Whether a run refuses the branch's folder rules (§app.merge-queue/rules), from rulesFromText's reading and
+ * ruleTriggers' answer: its .sova/project.json doesn't read, or a rule this change hits names, with no selection, a
+ * check the target runs only with one. The run fails with `why`; the plan (§app.merge-queue/plan) shows the same words
+ * on its Folder rules step, so the two never disagree. Null: nothing is refused.
+ */
+export function rulesRefusal(r: { refused?: string }, t: { refused: readonly MergeRuleDecl[] }, target: string): RulesRefusal | null {
+  if (r.refused) return { why: `your branch's .sova/project.json is refused: ${r.refused}`, checks: [] };
+  if (!t.refused.length) return null;
+  return { why: `your branch's folder rules are refused: ${t.refused.map((x) => `${ruleWords(x)}: "${x.check}" runs with a selection on ${target} and this rule names none`).join("; ")}`, checks: [...new Set(t.refused.map((x) => x.check))] };
 }

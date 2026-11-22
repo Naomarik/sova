@@ -3,6 +3,7 @@ import { describe, test } from "node:test";
 import type { RunPlan } from "../../shared/merge-queue";
 import type { ProjectDef } from "../../shared/project-contract";
 import { canonical, onPath, type PlanFacts, planOf, reuseOf, toolsOf, withLatePicks } from "./plan";
+import { ruleTriggers, rulesFromText, rulesRefusal } from "./rules";
 
 const DEF = {
   version: 1,
@@ -115,6 +116,32 @@ describe("what a plan says", () => {
     assert.equal(step(pr, "main-checkout"), undefined);
     assert.equal(step(pr, "push"), undefined);
     assert.equal(step(pr, "land")!.label, "Open the request");
+  });
+});
+
+describe("a plan whose branch's folder rules are refused", () => {
+  // The run fails at the refusal (run.ts, rulesRefusal); the plan says so in its words and never plans the check.
+  const branchText = (rules: unknown) => JSON.stringify({ version: 1, merge: { checks: [{ id: "unit", run: ["bun", "test"] }, { id: "e2e", run: ["./e2e.sh"], optional: true }], rules } });
+  const planWith = (def: ProjectDef, text: string) => {
+    const r = rulesFromText(text, def);
+    const t = ruleTriggers(r.rules, ["src/a.ts"], def.merge!.checks as never);
+    const refused = rulesRefusal(r, t, "main");
+    return planOf(facts({ def, rules: { hash: "r1", own: false, triggers: t.picks, ...(refused ? { refused } : {}) } }), AT).plan;
+  };
+  for (const optional of [true, false])
+    test(`a rule naming ${optional ? "an optional" : "a required"} check the target runs only with a selection, with none: Folder rules refused, that check not planned`, () => {
+      const checks = (DEF.merge!.checks as { id: string }[]).map((c) => (c.id === "e2e" ? { ...c, needsSelect: true, ...(optional ? { optional: true } : { optional: undefined }) } : c));
+      const def = { ...DEF, merge: { ...DEF.merge, checks } } as unknown as ProjectDef;
+      const p = planWith(def, branchText([{ paths: ["src/**"], check: "e2e", why: "the UI changed" }]));
+      const why = `your branch's folder rules are refused: src/** → e2e: "e2e" runs with a selection on main and this rule names none`;
+      assert.deepEqual(step(p, "rules"), { id: "rules", kind: "check", label: "Folder rules", will: "refused", why });
+      assert.deepEqual([step(p, "check:e2e")!.will, step(p, "check:e2e")!.why], ["skip", why]);
+      assert.equal(planWith(def, branchText([{ paths: ["src/**"], check: "e2e", select: ["list"], why: "the UI changed" }])).steps.find((s) => s.will === "refused"), undefined, "with a selection nothing is refused");
+    });
+  test("a branch definition that doesn't read: Folder rules refused with the run's words", () => {
+    const p = planWith(DEF, "{ not json");
+    assert.equal(step(p, "rules")!.will, "refused");
+    assert.match(step(p, "rules")!.why!, /^your branch's \.sova\/project\.json is refused: /);
   });
 });
 

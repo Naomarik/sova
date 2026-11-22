@@ -4628,7 +4628,6 @@ export class ProjectQueue {
     })();
   }
 
-  /** A run's end: "run ended" is recorded first, then what came of it (sent back, landed, restarted…). */
   /** The view's clean-run standing and the flakiest tests (at most 10, most often first). */
   private knownFields(): Pick<MergeQueueView, "clean" | "flaky"> {
     const flaky = this.flaky.list().slice(0, 10);

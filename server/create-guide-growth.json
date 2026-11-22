@@ -597,6 +597,8 @@
    "project.merge-queue.flaky.fix": "landing",
    "project.merge-queue.history": "landing",
    "project.merge-queue.health": "landing",
+   "project.merge-queue.setup-map": "landing",
+   "project.merge-queue.setup-history": "landing",
    "attention.dismiss": "overseers",
    "attention.undismiss": "overseers",
    "overseer.attention": "overseers",

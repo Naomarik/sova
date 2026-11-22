@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import type { Hono } from "hono";
 import { CONTRACT_FILE, DefinitionError, parseDefinition, remoteOf as remoteName, type ProjectDef } from "../../shared/project-contract";
+import { statusArgs } from "./guard";
 import { ManifestError, parseReleaseManifest, RELEASE_MANIFEST_FILE } from "../../shared/release";
 import {
   setupChanges,
@@ -127,7 +128,7 @@ async function mapOfWorktree(deps: SetupMapDeps, chat: SetupChatFacts, root: str
   if (text === null) return null;
   const { def, problem } = parse(text);
   const head = await deps.git(["rev-parse", "HEAD"], wt);
-  const status = await deps.git(["status", "--porcelain"], wt);
+  const status = await deps.git(statusArgs("--porcelain"), wt);
   const dirty = status.code === 0 && status.stdout.trim() !== "";
   const remote = await remoteOf(deps.git, root, def);
   let release: SetupFacts["release"] = null;

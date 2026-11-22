@@ -696,7 +696,7 @@
     "server/create-settings-tool.ts": ["sova_settings"],
     "server/design/coordinator.ts": ["design_status","design_brief","design_browse","design_capture","design_send","design_new","design_stop","design_remove","design_restore","design_start_again","design_models","coordinator_card","project_verbs","design_images"],
     "server/design/describe.ts": ["asset_report"],
-    "server/design/tools.ts": ["lookbook","design_skill","design_look","design_stream","design_hand_in"],
+    "server/design/tools.ts": ["lookbook","design_skill","design_look","design_stream","design_page","design_hand_in"],
     "server/feature-chat-align.ts": ["align"],
     "server/harness/pi/session.ts": ["<computed: t.name>"],
     "server/memory/tools.ts": ["<computed: MEMORY_ZOOM_TOOL>","<computed: MEMORY_DATE_TOOL>","<computed: MEMORY_RECALL_TOOL>"],

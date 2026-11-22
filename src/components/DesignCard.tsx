@@ -675,6 +675,7 @@ export function DesignThumb(props: {
                 api={props.store.api}
                 label={props.d.label}
                 version={live()?.version}
+                draw={live()?.draw}
                 text={live()?.text ?? ""}
                 title={title()}
                 waiting={designWaiting(props.d)}

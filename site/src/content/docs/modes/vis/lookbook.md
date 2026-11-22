@@ -90,9 +90,10 @@ skill you named that can't be found becomes one of the Creative Director's quest
 The Creative Director reads the skills, and can read any file you point it to ("the logo is in my
 Downloads folder"), but writes and runs nothing. It chooses which of your skills the designers use,
 leaving out any that aren't about design, and the brief's **Design skills** line shows that choice.
-Its brief suggests which files of each skill the designers read first. Each designer can read those
-skills, and only those, through a reader Sova gives it. While it does, its tile says **Reading the
-design skill**. Designers copy the tokens and rules they use into the page, which still loads nothing
+Its brief says which file of each skill covers which part of the page. Each designer can read those
+skills, and only those, through a reader Sova gives it: SKILL.md first, then any other file when it
+reaches the part that file covers, at any point while it writes. While it reads, its tile says
+**Reading the design skill**, and once part of the page is on the tile it stays on show meanwhile. Designers copy the tokens and rules they use into the page, which still loads nothing
 but Google Fonts. An image the Creative Director finds, such as a logo, joins the brief's images and
 reaches the designers from there. The estimate before Start counts the reading.
 
@@ -151,8 +152,12 @@ appear, and neither do models that can't run, such as retired Ollama Cloud model
 ## Watching and working with designs
 
 The card shows a grid of designs, each with its label, direction, model, status and cost. A design
-waiting for a free session says so. While a page is being written it fills in as it arrives, with its
-scripts off, so its buttons and animations work once it's finished. Up to four pages show live at
+waiting for a free session says so. A designer may write its page in one go or build it in steps,
+adding to it, changing an earlier part or reading it back; either way the tile follows what it has
+written. While a page is being written it fills in as it arrives, with its scripts off, so its buttons
+and animations work once it's finished. When a designer changes an earlier part, the tile redraws in
+place, keeping the old picture until the new one is painted, so it never goes blank. Sova checks the
+page when the designer hands it in, and sends it back to be fixed if something is wrong. Up to four pages show live at
 once; others say "Waiting for a free preview". A page loads only Google Fonts from the web.
 
 - **Open** (or **Chat**) shows a design full size with its own conversation beside it, even while

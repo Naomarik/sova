@@ -55,7 +55,7 @@ function PageFrame(props: { d: DesignRecord; version: number; following: boolean
       </For>
       <Show when={streaming() || held()}>
         <div inert class="design-frame-layer" style={{ "z-index": 3 }}>
-          <DesignStreamFrame api={props.store.api} label={props.d.label} version={live()?.version} text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} over={props.version > 0} priority />
+          <DesignStreamFrame api={props.store.api} label={props.d.label} version={live()?.version} draw={live()?.draw} text={live()?.text ?? ""} title={title()} waiting={designWaiting(props.d)} over={props.version > 0} priority />
         </div>
       </Show>
       <Show when={props.version === 0 && !designIsWriting(props.d)}>

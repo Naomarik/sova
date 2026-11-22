@@ -9,7 +9,7 @@ import { Hono } from "hono";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-live-route-"));
 const { DESIGN_STREAM_CSP } = await import("../../src/lib/design-frame");
 const { mountDesignLiveRoutes } = await import("./live-route");
-const { applySlice, clearLivePage } = await import("./live");
+const { applySlice, clearLivePage, drawDraftLive, livePage } = await import("./live");
 const { LIVE_LINK_MS, liveLinkOpens, mintLiveLink, setLiveLinkClockForTest } = await import("./live-link");
 const store = await import("./store");
 const { designView } = await import("./live");
@@ -35,6 +35,8 @@ function makeDesign(): void {
 }
 
 const slice = (gen: number, at: number, text: string, version = 1) => applySlice(sid, label, version, { gen, at, text });
+/** A slice of a part added to the end of the draft (the tool's `append`): `at` counts from where that part began. */
+const part = (gen: number, at: number, text: string, version = 1) => applySlice(sid, label, version, { gen, at, text, append: true });
 const urlFor = async (): Promise<string> => ((await (await app.request(`/api/design/${label}/live-url?path=x`)).json()) as { url: string }).url;
 /** Reads what has arrived so far, then whether the document has ended. */
 async function reader(url: string) {
@@ -58,6 +60,7 @@ beforeEach(makeDesign);
 afterEach(() => {
   setLiveLinkClockForTest(null);
   clearLivePage(sid, label);
+  store.setPendingPage(sid, label, null);
 });
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
 
@@ -196,4 +199,96 @@ test("while a page is written its card has an estimate: the finished replies' co
   // A model the table has no price for gets no estimate, never $0.
   set("zai/no-such-model");
   assert.equal(est(), undefined);
+});
+
+test("F2: a part added to the end goes on in the same document: 'AB' then 'CD' is one document 'ABCD', never ended", async () => {
+  const [A, B, C, D] = ["<i>A</i>", "<i>B</i>", "<i>C</i>", "<i>D</i>"];
+  slice(1, 0, A + B);
+  // The first step is saved as the draft; the tile's document already is it, so nothing is drawn again.
+  store.setPendingPage(sid, label, A + B);
+  assert.equal(drawDraftLive(sid, label, 1, A + B), null);
+  const drawn = livePage(sid, label)!.draw;
+  const f = await reader(await urlFor());
+  await settle();
+  assert.ok(f.text().endsWith(A + B));
+  part(2, 0, C);
+  part(2, C.length, D);
+  await settle();
+  assert.ok(f.text().endsWith(A + B + C + D), f.text());
+  assert.equal(f.text().split(A).length - 1, 1, "one document, the draft not told again");
+  assert.equal(f.done(), false, "the part's start didn't end the document");
+  assert.equal(livePage(sid, label)!.text, A + B + C + D);
+  assert.equal(livePage(sid, label)!.draw, drawn, "the same document");
+  // Saved as the draft: still the same document.
+  store.setPendingPage(sid, label, A + B + C + D);
+  assert.equal(drawDraftLive(sid, label, 1, A + B + C + D), null);
+  await settle();
+  assert.equal(f.done(), false);
+});
+
+test("a part told again from its start (the link came back) goes on from the draft, not from the page's start", async () => {
+  slice(1, 0, "AB");
+  part(2, 0, "CD");
+  part(2, 0, "CDE");
+  assert.equal(livePage(sid, label)!.text, "ABCDE");
+  assert.equal(part(2, 9, "lost"), null, "a gap waits for the resync");
+});
+
+test("a part added when this server holds no page (it restarted between steps) starts from the saved draft", async () => {
+  store.setPendingPage(sid, label, "<p>saved</p>");
+  const r = part(3, 0, "<p>more</p>");
+  assert.ok(r && !r.began, "it goes on with the draft's document");
+  assert.equal(livePage(sid, label)!.text, "<p>saved</p><p>more</p>");
+  clearLivePage(sid, label);
+  store.setPendingPage(sid, label, null);
+  assert.equal(part(4, 0, "x"), null, "no draft: nothing to add to");
+  assert.equal(livePage(sid, label), null);
+});
+
+test("between steps, after a restart, the tile's page is the saved draft", () => {
+  store.setPendingPage(sid, label, "<p>draft</p>");
+  store.changeDesign(sid, label, (d) => void (d.live = { version: 1, chars: 12, draw: 7 }));
+  const live = livePage(sid, label)!;
+  assert.equal(live.text, "<p>draft</p>");
+  assert.equal(live.draw, 7, "the document the browser already shows");
+  assert.equal(live.written, 0, "nothing of it is being written now");
+});
+
+test("after edits the draft is drawn again: the old document ends and a new draw names the new one", async () => {
+  slice(1, 0, "<p>one</p>");
+  const before = livePage(sid, label)!.draw;
+  const f = await reader(await urlFor());
+  await settle();
+  store.setPendingPage(sid, label, "<p>two</p>");
+  const draw = drawDraftLive(sid, label, 1, "<p>two</p>");
+  assert.ok(draw !== null && draw !== before);
+  await f.ended();
+  assert.equal(f.text().includes("two"), false, "an old document is never written over");
+  const g = await reader(await urlFor());
+  await settle();
+  assert.match(g.text(), /<p>two<\/p>$/);
+  assert.equal(livePage(sid, label)!.draw, draw);
+});
+
+test("a page written whole again is a new document with a new draw", () => {
+  const a = slice(1, 0, "first")!;
+  const b = slice(2, 0, "second")!;
+  assert.ok(a.began && b.began);
+  assert.notEqual(a.draw, b.draw);
+  assert.equal(slice(2, 6, "!")!.began, false);
+});
+
+test("under a part added to the end, the estimate charges only what this reply writes", () => {
+  store.changeDesign(sid, label, (d) => {
+    d.model = "zai/priced";
+    d.usage = { input: 0, output: 0, cost: 0.5 };
+    d.live = { version: 1, chars: 0 };
+  });
+  store.changeDesigns(sid, (s) => void ((s.internal ??= {})[label] = { attempt: 1, brief: "", by: "first", context: 10_000 }));
+  store.setPendingPage(sid, label, "x".repeat(36_000));
+  part(2, 0, "x".repeat(3_600));
+  const d = designView(sid).designs.find((x) => x.label === label)!;
+  assert.equal(d.live!.chars, 39_600, "the tile counts the whole page");
+  // $0.50 spent, $0.01 of input, and 1,000 tokens written now at $36 a million: $0.036. The draft's 10,000 were charged.
+  assert.ok(Math.abs(d.live!.estimateUsd! - 0.546) < 1e-9, String(d.live!.estimateUsd));
 });

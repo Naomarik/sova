@@ -119,6 +119,9 @@ export interface DesignRecord {
   live?: {
     version: number;
     chars: number;
+    /** Names the document on show while it is written: a page written whole again, or the draft drawn again after an
+        edit, gets a new one, and the tile redraws in place. A part added to the end keeps it. */
+    draw?: number;
     /** An estimate, in dollars, of the session's cost so far: its finished replies' real cost plus the page written so
         far at the model's output price. Absent for a model with no price; the real `usage` replaces it when the reply ends. */
     estimateUsd?: number;

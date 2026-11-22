@@ -238,7 +238,7 @@ export function designerSkillsBlock(skills: readonly Pick<DesignSkill, "name" | 
   const lines = skills.map((s) => `- ${s.name}${s.description ? `: ${oneLine(s.description, 300)}` : ""}`);
   return [
     "DESIGN SKILLS:",
-    `This Lookbook uses design skills, the house rules for its pages. Read them before you write: ${DESIGN_SKILL_TOOL} with {"skill": name} lists a skill's files, and with {"skill": name, "file": path} returns one of them (start with SKILL.md). The brief may suggest which parts to read first; you may read any part.`,
+    `This Lookbook uses design skills, the house rules for its pages. ${DESIGN_SKILL_TOOL} with {"skill": name} lists a skill's files, and with {"skill": name, "file": path} returns one of them. Open each skill's SKILL.md before you write, then its other files when you reach the part of the page they cover; you may look anything up at any point. The brief may say which file covers which part.`,
     ...lines,
     "The page stays sealed: copy the tokens, colors, fonts and rules you need into the page itself. Nothing in a skill loads into the page, and only Google Fonts load from the web.",
   ].join("\n");
@@ -251,7 +251,7 @@ export function coordinatorSkillsBlock(skills: readonly DesignSkill[], missing: 
   if (skills.length) {
     parts.push(
       `Skills the user named for this run (read each SKILL.md with read):\n${skills.map((s) => `- ${s.name} (${s.from === "project" ? "this project's" : "from elsewhere on disk"}): ${join(s.dir, "SKILL.md")}${s.description ? `\n  ${oneLine(s.description, 300)}` : ""}`).join("\n")}`,
-      "Choose with design_brief's skills which of them the designers use: the ones about how pages look and read, leaving out any that aren't (a testing or tooling skill). In the Full Prompt, suggest which files of each the designers read first, by the exact paths inside the skill that you read (tokens/colors.css, not a path you guess). Suggest only: they may read any part.",
+      "Choose with design_brief's skills which of them the designers use: the ones about how pages look and read, leaving out any that aren't (a testing or tooling skill). Designers open each SKILL.md first and look up the rest as they go: in the Full Prompt, say which file of each covers which part of the page, by the exact paths inside the skill that you read (tokens/colors.css, not a path you guess). Point only: they may read any part at any point.",
     );
   }
   if (missing.length) parts.push(`Skills the user named that weren't found:\n${missing.map((m) => `- ${m.asked}: ${m.reason}`).join("\n")}\nAsk about each one as a question on the brief; never guess which skill they meant.`);

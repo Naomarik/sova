@@ -13,9 +13,10 @@ import { claudeCodeProviderLoad, sessionDirName } from "../../pi-config/extensio
 import { SESSIONS_DIR } from "../paths";
 import { readBranch } from "../harness/pi/reader";
 import { agentRoot } from "../state-root";
-import { applySlice, clearLivePage, livePage } from "./live";
+import { applySlice, clearLivePage, drawDraftLive, livePage } from "./live";
 import { noteDesignEvent } from "./coordinator";
 import { pageProblem } from "./lint";
+import { assetNamesProblem } from "./assets";
 import { versionViews } from "./views";
 import { launchEffortField, replyCost, resolveDesignModel } from "./setup";
 import { listModels } from "../models";
@@ -398,6 +399,7 @@ function follow(parent: DesignParent, label: string, chatId: string): void {
         // The first words of its reply: past the wait for a provider slot, so Queued ends here.
         if (e.type === "message_start" && e.message?.role === "assistant" && d.status === "queued") changeDesign(parent.sessionId, label, (x) => void (x.status = "writing"));
         if (e.type === "message_start" && e.message?.role === "user" && e.sendKey && d.delivery?.key === e.sendKey) changeDesign(parent.sessionId, label, (x) => void delete x.delivery);
+        if (e.type === "message_start" && e.message?.role === "user" && e.sendKey && readDesigns(parent.sessionId).internal?.[label]?.dropDraftOn === e.sendKey) dropDraft(parent.sessionId, label);
         if (e.type === "send_dropped" && e.sendKey && d.delivery?.key === e.sendKey)
           changeDesign(parent.sessionId, label, (x) => void (x.delivery = { state: "undelivered", key: e.sendKey!, at: new Date().toISOString(), error: "The session didn't take this message." }));
       } else if (f.t === "ended" && (f.cause === "killed" || f.cause === "died") && !f.resuming) {
@@ -434,20 +436,31 @@ function setWorkerState(parent: DesignParent, label: string, s: WorkerState): vo
 
 const NO_PAGE = "The model finished without writing a page.";
 
-/** What a turn left: a page that lands, or why the one it wrote doesn't. */
+/** What a turn left: a page that lands, or why the one it wrote doesn't. A draft is checked here as at a hand-in:
+    a turn that ended without one (the model stopped, its reply failed, it was stopped) never keeps a half-built page. */
 async function writtenThisTurn(sid: string, label: string, d: DesignRecord): Promise<{ page: string | null; problem: string | null }> {
+  const branch = d.route === "reply" && d.sessionFile ? await readBranch(d.sessionFile).catch(() => null) : null;
   const pending = pendingPage(sid, label);
-  if (pending) return { page: pending, problem: null };
+  // On the reply route a page written in a reply after the draft's last change replaces the draft.
+  if (pending !== null && !(branch && replyPageIsNewer(branch))) {
+    const problem = landingProblem(sid, pending);
+    return problem ? { page: null, problem } : { page: pending, problem: null };
+  }
   // A page written whole but never handed in (its session lost its tools, or stopped short) is still a page.
   const live = livePage(sid, label)?.text;
   const problem = live ? pageProblem(live) : null;
   if (live && !problem) return { page: live, problem: null };
-  if (d.route === "reply" && d.sessionFile) {
-    const reply = await unsavedReplyPage(d.sessionFile, readPage(sid, label));
+  if (branch) {
+    const reply = unsavedReplyPage(branch, readPage(sid, label));
+    // A reply's page that didn't land is the draft its fix changes.
+    if (reply.draft !== undefined) setPendingPage(sid, label, reply.draft);
     if (reply.page || reply.problem) return reply;
   }
   return { page: null, problem };
 }
+
+/** What a hand-in would object to in a page: a landing check, or an image it names that isn't there. */
+export const landingProblem = (sid: string, html: string): string | null => pageProblem(html) ?? assetNamesProblem(sid, html);
 
 async function settled(parent: DesignParent, label: string, state: WorkerState): Promise<void> {
   const sid = parent.sessionId;
@@ -534,8 +547,8 @@ function noteUnchanged(sid: string, label: string, reason: string): void {
 }
 
 function fixMessage(route: DesignRecord["route"], problem: string, attempt: number): string {
-  const how = route === "reply" ? "in your reply, between the two marker lines" : "with `design_stream`";
-  return `Your page didn't land, so nobody can see it yet (fix ${attempt} of ${DESIGN_FIX_TRIES}). What is wrong: ${problem}\n\nFix exactly that and change nothing else. Then deliver the complete page again, ${how}, and call \`${DESIGN_HAND_IN_TOOL}\`.`;
+  const how = route === "reply" ? "with `design_stream` edits, or by writing the page again in your reply between the two marker lines" : "with `design_stream`: edits, an added part, or the page again";
+  return `Your page didn't land, so nobody can see it yet (fix ${attempt} of ${DESIGN_FIX_TRIES}). What is wrong: ${problem}\n\nFix exactly that and change nothing else. Your draft is kept: change it however suits, ${how}, and call \`${DESIGN_HAND_IN_TOOL}\`.`;
 }
 
 /** Send a page that didn't land back to its session, while this design has tries left. False when it can't. */
@@ -556,39 +569,57 @@ async function sendBack(parent: DesignParent, label: string, problem: string): P
 }
 
 export const DESIGN_HAND_IN_TOOL = "design_hand_in";
+/** The page tool's name (server/design/tools.ts serves it). */
+const DESIGN_STREAM_TOOL = "design_stream";
 
 /** The turn just ended: everything after the user's last message. */
 const thisTurn = (branch: readonly HEntry[]): readonly HEntry[] => branch.slice(branch.map((e) => e.kind).lastIndexOf("user") + 1);
+
+const replyPageOf = (e: HEntry): string | null =>
+  e.kind === "assistant" ? pageInReply(e.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join(""), DESIGN_PAGE_START, DESIGN_PAGE_END) : null;
 
 /** The pages the replies of this turn carry between their markers, newest first. A page from an earlier turn is
     never among them: a question in Chat, with no new page, must not find one. */
 function replyPages(branch: readonly HEntry[]): string[] {
   const out: string[] = [];
   for (const e of [...thisTurn(branch)].reverse()) {
-    if (e.kind !== "assistant") continue;
-    const text = e.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
-    const page = pageInReply(text, DESIGN_PAGE_START, DESIGN_PAGE_END);
+    const page = replyPageOf(e);
     if (page !== null) out.push(page);
   }
   return out;
 }
 
+/** Whether a reply of this turn wrote a page after the draft's last change by `design_stream`: that page is then the
+    one being worked on, and a draft saved before it is stale. */
+export function replyPageIsNewer(branch: readonly HEntry[]): boolean {
+  let page = -1;
+  let edit = -1;
+  thisTurn(branch).forEach((e, i) => {
+    if (replyPageOf(e) !== null) page = i;
+    else if (e.kind === "tool-result" && e.tool === DESIGN_STREAM_TOOL && !e.isError) edit = i;
+  });
+  return page > edit;
+}
+
 /** The newest page in this turn's replies that counts as landed. */
 export const replyPageThisTurn = (branch: readonly HEntry[]): string | null => replyPages(branch).find((p) => !pageProblem(p)) ?? null;
 
+/** The page a session has now: on the reply route one written in this turn's reply after its draft last changed (the
+    newest that lands, else the newest), else its draft. Null when it has neither. */
+export function draftNow(sid: string, label: string, branch: readonly HEntry[] | null): string | null {
+  if (branch && replyPageIsNewer(branch)) return replyPageThisTurn(branch) ?? replyPages(branch)[0] ?? null;
+  return pendingPage(sid, label);
+}
+
 /** A page a reply-route session wrote and never handed in, read from its session file: the live buffer is only
-    this server's memory, and the file is what survives. Nothing once this turn's hand-in has dealt with it. */
-async function unsavedReplyPage(file: string, current: string | null): Promise<{ page: string | null; problem: string | null }> {
-  try {
-    const branch = await readBranch(file);
-    if (thisTurn(branch).some((e) => e.kind === "tool-result" && e.tool === DESIGN_HAND_IN_TOOL && !e.isError)) return { page: null, problem: null };
-    const page = replyPageThisTurn(branch);
-    if (page) return { page: page === current ? null : page, problem: null };
-    const newest = replyPages(branch)[0];
-    return { page: null, problem: newest === undefined ? null : pageProblem(newest) };
-  } catch {
-    return { page: null, problem: null };
-  }
+    this server's memory, and the file is what survives. Nothing once this turn's hand-in has dealt with it. `draft`:
+    the newest page, when none landed. */
+function unsavedReplyPage(branch: readonly HEntry[], current: string | null): { page: string | null; problem: string | null; draft?: string } {
+  if (thisTurn(branch).some((e) => e.kind === "tool-result" && e.tool === DESIGN_HAND_IN_TOOL && !e.isError)) return { page: null, problem: null };
+  const page = replyPageThisTurn(branch);
+  if (page) return { page: page === current ? null : page, problem: null };
+  const newest = replyPages(branch)[0];
+  return newest === undefined ? { page: null, problem: null } : { page: null, problem: pageProblem(newest), draft: newest };
 }
 
 /** Cost per card, from the session's own replies. API prices apply on a subscription too. */
@@ -681,8 +712,12 @@ export { pageProblem };
 export function refusedPage(parent: DesignParent, label: string, problem: string, html?: string): never {
   const sid = parent.sessionId;
   assertTakesPages(sid, label);
-  // The page it was refused for is what its next edits apply to, so a fix can be a small edit, not the page again.
-  if (html !== undefined) refusedPages.set(`${sid}\0${label}`, html);
+  // The page it was refused for stays its draft, kept on disk: its next edits apply to it, after a restart too, so a
+  // fix can be a small edit, not the page again.
+  if (html !== undefined && pendingPage(sid, label) !== html) {
+    setPendingPage(sid, label, html);
+    drawDraft(sid, label);
+  }
   const tried = takeFixTry(sid, label);
   clearLivePage(sid, label);
   if (tried) {
@@ -712,15 +747,12 @@ export function refusedPage(parent: DesignParent, label: string, problem: string
   throw new Error(`${problem} Your tries for this page are used up, so stop now.`);
 }
 
-/** Pages a tool turned away, in memory only: what their fix edits. */
-const refusedPages = new Map<string, string>();
+/** The page edits apply to: the one being worked on (its draft, or on the reply route a page in this turn's reply
+    written since), else a copy of its newest version. */
+export const editBase = (sid: string, label: string, branch: readonly HEntry[] | null = null): string | null => draftNow(sid, label, branch) ?? readPage(sid, label);
 
-/** The page edits apply to: the one being written, else one just refused, else the newest version. */
-export const editBase = (sid: string, label: string): string | null => pendingPage(sid, label) ?? refusedPages.get(`${sid}\0${label}`) ?? readPage(sid, label);
-
-/** A page that passed: whatever an earlier call was refused for is over. */
+/** A page that landed: whatever an earlier call was refused for is over. */
 function clearRefused(sid: string, label: string): void {
-  refusedPages.delete(`${sid}\0${label}`);
   changeDesigns(sid, (s) => {
     const i = s.internal?.[label];
     if (i) delete i.refused;
@@ -746,10 +778,23 @@ export function assertTakesPages(sid: string, label: string): void {
   if (d && (d.status === "stopped" || d.removed)) throw new Error("This design was stopped, so this page isn't kept. Stop now.");
 }
 
+/** A new request was taken up: the draft left from before it is no page anyone is working on. */
+function dropDraft(sid: string, label: string): void {
+  changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (i) delete i.dropDraftOn;
+    if (s.pending) delete s.pending[label];
+  });
+  // The tile showed that draft as the page being written: the new request starts from the newest version.
+  clearLivePage(sid, label);
+  if (designOf(sid, label)?.live) changeDesign(sid, label, (x) => void delete x.live);
+}
+
+/** Keep the page as its draft: whole, unfinished or not. Nothing is checked here; the hand-in checks it. */
 export function savePage(parent: DesignParent, label: string, html: string): void {
   assertTakesPages(parent.sessionId, label);
   setPendingPage(parent.sessionId, label, html);
-  clearRefused(parent.sessionId, label);
+  drawDraft(parent.sessionId, label);
 }
 
 export function handIn(parent: DesignParent, label: string, html: string, note: DesignNote): DesignVersion {
@@ -758,7 +803,7 @@ export function handIn(parent: DesignParent, label: string, html: string, note: 
 }
 
 /** A slice of the page being written, as its session's process sent it. */
-export function onLiveFrame(chatId: string, f: { thinking?: true; gen: number; at: number; text: string }): void {
+export function onLiveFrame(chatId: string, f: { thinking?: true; gen: number; at: number; text: string; append?: true }): void {
   const owner = host?.owner(chatId);
   const label = owner && labelOf(owner.workerId);
   if (!owner || !label) return;
@@ -770,18 +815,39 @@ export function onLiveFrame(chatId: string, f: { thinking?: true; gen: number; a
   if (f.at === 0 && !f.thinking && !livePage(sid, label) && f.text.trim() === readPage(sid, label)?.trim()) return;
   heard(owner.parent, label);
   if (f.thinking) {
-    if (!d.thinking && !d.live) changeDesign(sid, label, (x) => void (x.thinking = true));
+    // The newer of the two: thinking after reading a skill is thinking, and the tile says so.
+    if (!d.live && (!d.thinking || d.readingSkill))
+      changeDesign(sid, label, (x) => {
+        x.thinking = true;
+        delete x.readingSkill;
+      });
     return;
   }
   const version = (d.versions.at(-1)?.n ?? 0) + 1;
-  const began = applySlice(sid, label, version, f);
-  if (began)
-    changeDesign(sid, label, (x) => {
-      if (x.status !== "fixing") x.status = "writing";
-      x.live = { version, chars: 0 };
-      delete x.thinking;
-      delete x.readingSkill;
-    });
+  const slice = applySlice(sid, label, version, f);
+  // A new document, or a part added to a draft the tile wasn't showing as written (after a fix was asked for).
+  if (slice && (slice.began || d.live?.version !== version || d.live.draw !== slice.draw)) showLive(sid, label, version, slice.draw);
+}
+
+/** The tile shows the page being written, as the document `draw` names. */
+function showLive(sid: string, label: string, version: number, draw: number): void {
+  changeDesign(sid, label, (x) => {
+    if (x.status !== "fixing") x.status = "writing";
+    x.live = { version, chars: livePage(sid, label)?.chars ?? 0, draw };
+    delete x.thinking;
+    delete x.readingSkill;
+  });
+}
+
+/** The draft was saved: the page being written, as the tile shows it, is the draft. A part streamed onto it already is;
+    after edits or a page written whole again it is drawn again, in place. */
+export function drawDraft(sid: string, label: string): void {
+  const d = designOf(sid, label);
+  const draft = pendingPage(sid, label);
+  if (!d || !draft || d.status === "stopped" || d.removed) return;
+  const version = (d.versions.at(-1)?.n ?? 0) + 1;
+  const draw = drawDraftLive(sid, label, version, draft);
+  if (draw !== null) showLive(sid, label, version, draw);
 }
 
 export { livePage };
@@ -836,6 +902,16 @@ export async function deliverDesign(parent: DesignParent, label: string, send: D
     const alive = (await workers(parent).list()).some((r) => r.chatId === d.sessionId);
     // In the history before the session can have it: a reader of the session's file finds the item for each message.
     noted = noteSent(sid, label, send, key, by, !alive);
+    // A new request starts from the finished page: a draft left over from before it is dropped once the session
+    // takes it up (one still at work keeps its draft until then), or at once for a session started afresh.
+    if (send.by !== "server") {
+      if (!alive) dropDraft(sid, label);
+      else
+        changeDesigns(sid, (s) => {
+          const i = s.internal?.[label];
+          if (i) i.dropDraftOn = key;
+        });
+    }
     if (!alive) return await restartFromPage(parent, d, send.text);
     const { queued } = await workers(parent).send(d.sessionId, { text: send.text, delivery: "followUp", key });
     if (!following.has(`${sid}\0${label}`)) follow(parent, label, d.sessionId);
@@ -922,7 +998,6 @@ export function retryDesign(parent: DesignParent, label: string, by: DesignActor
       delete i.refused;
     }
   });
-  refusedPages.delete(`${parent.sessionId}\0${label}`);
   const run = runOf(parent.sessionId, d.runId);
   if (run?.phase === "done") setRunPhase(parent.sessionId, run.id, "generating");
   setHistoryId(parent.sessionId, label, recordHistory(parent.sessionId, { kind: "again", by, runId: d.runId, label, ...(toolCallId ? { toolCallId } : {}) }));
@@ -957,7 +1032,8 @@ function halt(parent: DesignParent, label: string, by: DesignActor, toolCallId?:
   stopWatching(sid, label);
   if (starting.has(startKey(sid, label))) haltedWhileStarting.add(startKey(sid, label));
   const d = designOf(sid, label)!;
-  const written = livePage(sid, label)?.text || pendingPage(sid, label) || "";
+  // The saved draft first: the live page may hold a part still being written onto it, or one already set aside.
+  const written = pendingPage(sid, label) || livePage(sid, label)?.text || "";
   const at = new Date().toISOString();
   let still: DesignStill | undefined;
   if (!d.versions.length && written.trim()) {
@@ -971,7 +1047,6 @@ function halt(parent: DesignParent, label: string, by: DesignActor, toolCallId?:
   }
   clearLivePage(sid, label);
   setPendingPage(sid, label, null);
-  refusedPages.delete(key);
   const sessionId = d.sessionId;
   // Removed before it ever started: it was waiting, and reads so once restored.
   const waiting = removing && d.status === "queued" && !d.sessionId && !starting.has(startKey(sid, label));

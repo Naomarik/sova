@@ -5,9 +5,15 @@
 // byte, the html field's value decoded as it comes. Through the reply: the document between two
 // marker lines, for a model whose provider delivers a tool's argument whole at the end (q15, t31).
 
-/** Incrementally decodes the top-level `html` string of a JSON object, across chunks cut anywhere.
-    Everything else in the object is skipped, so no parse of the whole argument is ever made. */
+/** The page tool's arguments that carry page text: a whole page, or a part added to the end of the draft. */
+export type PageArg = "html" | "append";
+
+/** Incrementally decodes the top-level `html` (or `append`) string of a JSON object, across chunks cut anywhere.
+    Everything else in the object is skipped, so no parse of the whole argument is ever made. Only the first
+    of them is decoded: `field` says which, once its value has begun. */
 export class HtmlArgDecoder {
+  /** Which argument the decoded characters belong to; null until one has begun. */
+  field: PageArg | null = null;
   private state: "before" | "key" | "key-esc" | "colon" | "value" | "html" | "esc" | "uni" | "skip-string" | "skip-esc" | "skip-number" | "skip-nest" | "skip-nest-string" | "skip-nest-esc" | "after" | "done" = "before";
   private key = "";
   private unicode = "";
@@ -45,7 +51,9 @@ export class HtmlArgDecoder {
         case "value":
           if (c === " " || c === "\n" || c === "\t" || c === "\r") i++;
           else if (c === '"') {
-            this.state = this.key === "html" ? "html" : "skip-string";
+            const page = !this.field && (this.key === "html" || this.key === "append");
+            if (page) this.field = this.key as PageArg;
+            this.state = page ? "html" : "skip-string";
             i++;
           } else if (c === "{" || c === "[") {
             this.depth = 1;

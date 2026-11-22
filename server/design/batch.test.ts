@@ -502,8 +502,10 @@ test("a version keeps the views its page names and asks for a browser pass, hand
   assert.equal(stat(la).versions[0]!.views, undefined);
   assert.deepEqual(stat(lb).versions[0]!.views, [{ name: "Plans", source: "declared", state: "unchecked" }, { name: "Billing", via: "Plans", source: "declared", state: "unchecked" }]);
   assert.deepEqual(viewChecks, [`${lb}1`]);
-  // A declaration done wrong is refused at save, as a landing check is.
-  await assert.rejects(sessionDesignTools(parent, la).find((t) => t.name === "design_stream")!.execute("t", { label: la, html: tabs.replace('data-sova-via="Plans"', 'data-sova-via="Plan B"') }, undefined, undefined, undefined), /data-sova-via="Plan B" names no view/);
+  // A declaration done wrong is refused at the hand-in, as a landing check is; the save only says so.
+  const saved = await sessionDesignTools(parent, la).find((t) => t.name === "design_stream")!.execute("t", { label: la, html: tabs.replace('data-sova-via="Plans"', 'data-sova-via="Plan B"') }, undefined, undefined, undefined);
+  assert.match((saved.content[0] as { text: string }).text, /would refuse it[\s\S]*data-sova-via="Plan B" names no view/);
+  await assert.rejects(sessionDesignTools(parent, la).find((t) => t.name === "design_hand_in")!.execute("t", { label: la, note: NOTE }, undefined, undefined, undefined), /data-sova-via="Plan B" names no view/);
 });
 
 test("a chat's designs are what they were after a restart, an archive leaves them, a deletion removes them", async () => {
@@ -595,12 +597,15 @@ test("a later turn finds no page in an earlier one, and a handed-in turn adds no
   }
 });
 
-test("a session on a model that can't stream tool arguments isn't offered design_stream; every other session is", async () => {
+test("a session on a model that can't stream tool arguments gets design_stream for edits only; every other session for html, append and edits", async () => {
   const names = (label: string) => sessionDesignTools(parent, label).map((t) => t.name);
+  const props = (label: string) => Object.keys((streamTool(label).parameters as { properties: object }).properties).sort();
   const reply = await replySession([]);
-  assert.deepEqual(names(reply), ["design_look", "design_hand_in"]);
+  assert.deepEqual(names(reply), ["design_look", "design_stream", "design_page", "design_hand_in"]);
+  assert.deepEqual(props(reply), ["edits", "label"]);
   const [tool] = launchDesigns(parent, newRun(["zai/a"], ["Heritage"]), {});
-  assert.deepEqual(names(tool!), ["design_look", "design_stream", "design_hand_in"]);
+  assert.deepEqual(names(tool!), ["design_look", "design_stream", "design_page", "design_hand_in"]);
+  assert.deepEqual(props(tool!), ["append", "edits", "html", "label"]);
 });
 
 test("design_hand_in finds the page in an earlier reply of its turn, never in an earlier turn", async () => {
@@ -656,7 +661,12 @@ test("a page with a script error goes back once, naming it, and spends no coordi
 });
 
 const streamTool = (label: string) => sessionDesignTools(parent, label).find((t) => t.name === "design_stream")!;
-const refuse = (label: string) => streamTool(label).execute("t", { label, html: BROKEN }, undefined, undefined, undefined);
+const handInTool = (label: string) => sessionDesignTools(parent, label).find((t) => t.name === "design_hand_in")!;
+/** A broken page saved, then handed in: the hand-in refuses it. */
+const refuse = async (label: string): Promise<unknown> => {
+  await streamTool(label).execute("t", { label, html: BROKEN }, undefined, undefined, undefined);
+  return handInTool(label).execute("t", { label, note: NOTE }, undefined, undefined, undefined);
+};
 
 test("a page a tool refuses spends a try and reads Fixing, and if the turn stops there the reason goes back", async () => {
   const f = await start();
@@ -787,12 +797,13 @@ test("design_look shows the page as its session has it now: saved and not handed
   assert.deepEqual(pageNow(parent, "A", { branch: () => reply as never }), { html: PAGE });
 });
 
-test("a refused edit and a hand-in with no page count too", async () => {
+test("an edit with nothing to edit is a plain error and spends no try; a hand-in with no page spends one", async () => {
   await start();
   const edits = streamTool("A").execute("t", { label: "A", edits: [{ find: "a", replace: "b" }] }, undefined, undefined, undefined);
   await assert.rejects(edits, /no page to edit/);
-  await assert.rejects(sessionDesignTools(parent, "A").find((t) => t.name === "design_hand_in")!.execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined), /no page to hand in/);
-  assert.equal(stat("A").fix?.attempt, 2);
+  assert.equal(stat("A").fix, undefined);
+  await assert.rejects(handInTool("A").execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined), /no page to hand in/);
+  assert.equal(stat("A").fix?.attempt, 1);
 });
 
 test("a fix that lands ends Fixing as an ordinary version, keeping who asked for the page", async () => {
@@ -1157,4 +1168,227 @@ test("a design added after Start runs on any model the user may use, at the effo
   policy.subagentDisabledModels = ["openai/astra"];
   await assert.rejects(newDesign(parent, { parents: [], instructions: "x", model: "openai/astra" }), /barred for workers/);
   assert.deepEqual(ofKind("new").map((i) => [i.label, i.parents, i.model, i.toolCallId]), [[fresh, [], "openai/astra", "call_n"], [named, ["A"], "openai/astra", undefined], [ticked, ["A"], "zai/a", undefined], [atRow, ["A"], "zai/a", undefined]]);
+});
+
+// ---- building a page in steps ---------------------------------------------------------------------
+
+const stream = (label: string, params: Record<string, unknown>, ctx?: unknown) => streamTool(label).execute("t", { label, ...params }, undefined, undefined, ctx as never);
+const textOf = (r: { content: unknown[] }) => (r.content[0] as { text: string }).text;
+const HEAD = "<!doctype html><html><body>";
+
+test("a page built in parts: html starts the draft, append adds to its end, edits change it, design_page reads it back, and none of it spends a try", async () => {
+  const f = await start();
+  assert.match(textOf(await stream("A", { html: HEAD })), /isn't a whole page yet/);
+  await stream("A", { append: "<main>one</main>" });
+  await stream("A", { edits: [{ find: "one", replace: "two" }] });
+  const done = await stream("A", { append: "</body></html>" });
+  assert.match(textOf(done), /Your page is whole: call design_hand_in/);
+  assert.equal(store.pendingPage(parent.sessionId, "A"), `${HEAD}<main>two</main></body></html>`);
+  const page = sessionDesignTools(parent, "A").find((t) => t.name === "design_page")!;
+  const read = textOf(await page.execute("t", { label: "A" }, undefined, undefined, undefined));
+  assert.match(read, /^Your draft \(\d+ characters\):\n1\t<!doctype html><html><body><main>two<\/main><\/body><\/html>$/);
+  assert.equal(stat("A").fix, undefined, "no step spent a try");
+  await handInTool("A").execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined);
+  assert.equal(store.readPage(parent.sessionId, "A"), `${HEAD}<main>two</main></body></html>`);
+  assert.equal(fixSends(f).length, 0);
+});
+
+test("one call is one step: html, append or edits, never two at once; an edit that misses is a plain error that changes nothing", async () => {
+  await start();
+  await assert.rejects(stream("A", { html: PAGE, append: "x" }), /one of html, append or edits/);
+  await assert.rejects(stream("A", {}), /html, append or edits/);
+  await stream("A", { html: PAGE });
+  await assert.rejects(stream("A", { edits: [{ find: "nowhere", replace: "x" }] }), /not in the page\. Nothing was changed/);
+  assert.equal(store.pendingPage(parent.sessionId, "A"), PAGE);
+  assert.equal(stat("A").fix, undefined);
+  assert.notEqual(stat("A").status, "fixing");
+});
+
+test("F3: append needs a started draft: with only a version and no draft it is refused with a message, and the version stands", async () => {
+  const f = await start();
+  await finish(f, "A");
+  await ticks();
+  await assert.rejects(stream("A", { append: "<p>x</p>" }), /no draft to add to yet: start the page with html/);
+  assert.equal(store.pendingPage(parent.sessionId, "A"), null);
+  assert.equal(stat("A").versions.length, 1);
+  assert.equal(stat("A").fix, undefined, "a plain tool error spends no try");
+  // Edits, with no draft, apply to a copy of the newest version: the version itself is untouched.
+  await stream("A", { edits: [{ find: "hi", replace: "hello" }] });
+  assert.equal(store.pendingPage(parent.sessionId, "A"), PAGE.replace("hi", "hello"));
+  assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
+});
+
+test("F1: a turn that ends on an unfinished draft with no hand-in keeps no version: it goes back to be finished", async () => {
+  const f = await start();
+  await stream("A", { html: `${HEAD}<main>half` });
+  settle(f);
+  await waitFor(() => stat("A").status === "fixing");
+  assert.equal(stat("A").versions.length, 0);
+  assert.equal(store.readPage(parent.sessionId, "A"), null);
+  assert.equal(fixSends(f).length, 1);
+  assert.match(lastSend(f).text, /draft is kept: change it however suits/);
+  assert.equal(store.pendingPage(parent.sessionId, "A"), `${HEAD}<main>half`, "the draft stays for the fix to finish");
+  // Finished with one more part and handed in, it lands as the first version.
+  await stream("A", { append: "</main></body></html>" });
+  await handInTool("A").execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined);
+  assert.equal(stat("A").versions.length, 1);
+});
+
+test("F1: a turn whose reply failed on an unfinished draft keeps no version either: with none before, it fails; with one, it stands unchanged", async () => {
+  const f = await start();
+  await stream("A", { html: HEAD });
+  settle(f, "error", "the provider is down");
+  await waitFor(() => stat("A").status === "failed");
+  assert.equal(stat("A").versions.length, 0);
+  assert.equal(fixSends(f).length, 0, "a provider's error spends no try");
+  const before = fakes.length;
+  const [label] = launchDesigns(parent, newRun(["zai/a"], ["Heritage"]), {});
+  await ticks();
+  const g = fakes[before]!;
+  await finish(g, label!);
+  await ticks();
+  await stream(label!, { html: HEAD });
+  settle(g, "error", "the provider is down");
+  await waitFor(() => stat(label!).unchanged !== undefined);
+  assert.equal(stat(label!).versions.length, 1);
+  assert.equal(stat(label!).status, "ready");
+});
+
+test("F4: a page the hand-in refused stays the draft on disk: after a restart the next edit applies to it", async () => {
+  const f = await start();
+  await assert.rejects(refuse("A"), /script 1, line 2/);
+  assert.equal(stat("A").status, "fixing");
+  store.forgetDesignCache();
+  assert.equal(store.pendingPage(parent.sessionId, "A"), BROKEN, "read back from disk");
+  await stream("A", { edits: [{ find: "var a = ;", replace: "var a = 1;" }] });
+  await handInTool("A").execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined);
+  assert.match(store.readPage(parent.sessionId, "A")!, /var a = 1;/);
+  assert.equal(fixSends(f).length, 0);
+});
+
+test("a hand-in refuses a page that isn't whole and keeps it as the draft, spending a try", async () => {
+  await start();
+  await stream("A", { html: HEAD });
+  await assert.rejects(handInTool("A").execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined));
+  assert.equal(stat("A").fix?.attempt, 1);
+  assert.equal(store.pendingPage(parent.sessionId, "A"), HEAD);
+});
+
+test("a draft left from before a new request is dropped when the session takes the request up; the server's fix keeps it", async () => {
+  const f = await start();
+  await finish(f, "A");
+  await ticks();
+  await stream("A", { html: HEAD });
+  await deliverDesign(parent, "A", { text: "fix it", key: "srv", by: "server" });
+  const feed = (key: string) => (registry as unknown as { onFeed(h: unknown, f: unknown): void }).onFeed(f, { t: "feed", cursor: { proc: f.mirror.worker.proc, seq: ++feedSeq }, event: { type: "message_start", message: { role: "user" }, sendKey: `design-send:${key}` } });
+  feed("srv");
+  assert.equal(store.pendingPage(parent.sessionId, "A"), HEAD, "the server's fix works on the draft");
+  await deliverDesign(parent, "A", { text: "darker", key: "u1", by: "user", version: "refine" });
+  assert.equal(store.pendingPage(parent.sessionId, "A"), HEAD, "kept until the session takes the request up");
+  feed("u1");
+  assert.equal(store.pendingPage(parent.sessionId, "A"), null);
+  // So an append on the new request has nothing left over to add to.
+  await assert.rejects(stream("A", { append: "x" }), /no draft/);
+});
+let feedSeq = 100;
+
+test("the reply route: design_stream takes only edits, on the page this turn's reply wrote, and a reply page newer than the draft replaces it", async () => {
+  const label = await replySession([]);
+  const entry = (kind: string, text: string, extra: Record<string, unknown> = {}) => ({ kind, blocks: [{ type: "text", text }], ...extra });
+  const ctx = (branch: unknown[]) => ({ branch: () => branch }) as never;
+  await assert.rejects(stream(label, { html: PAGE }), /written in your reply, between the line <<<design-page>>>/);
+  await assert.rejects(stream(label, { append: "x" }), /takes only edits/);
+  const written = [entry("user", "b"), entry("assistant", `${OPEN}\n${PAGE}\n${CLOSE}`)];
+  await stream(label, { edits: [{ find: "hi", replace: "one" }] }, ctx(written));
+  assert.equal(store.pendingPage(parent.sessionId, label), PAGE.replace("hi", "one"));
+  // After the edit its draft is the page: a second edit goes on from it.
+  const edited = [...written, entry("tool-result", "Edits applied", { tool: "design_stream" })];
+  await stream(label, { edits: [{ find: "one", replace: "two" }] }, ctx(edited));
+  assert.equal(store.pendingPage(parent.sessionId, label), PAGE.replace("hi", "two"));
+  // A page written again in a reply after that is what the hand-in takes, not the stale draft.
+  const OTHER = "<!doctype html><html><body>other</body></html>";
+  await handInTool(label).execute("t", { label, note: NOTE }, undefined, undefined, ctx([...edited, entry("tool-result", "ok", { tool: "design_stream" }), entry("assistant", `${OPEN}\n${OTHER}\n${CLOSE}`)]));
+  assert.equal(store.readPage(parent.sessionId, label), OTHER);
+});
+
+test("thinking after reading a skill reads Thinking; reading a skill after thinking reads Reading", async () => {
+  const { readingSkill } = await import("./batch");
+  const f = await start();
+  readingSkill(parent, "A");
+  assert.equal(stat("A").readingSkill, true);
+  onLiveFrame(f.rec.chatId, { thinking: true, gen: 0, at: 0, text: "" });
+  assert.equal(stat("A").thinking, true);
+  assert.equal(stat("A").readingSkill, undefined, "the record holds whichever came last");
+  readingSkill(parent, "A");
+  assert.equal(stat("A").readingSkill, true);
+  assert.equal(stat("A").thinking, undefined);
+});
+
+// ---- The live page follows the draft (designer steps) ----------------------------------------------
+
+const stepTool = (name: string) => sessionDesignTools(parent, "A").find((t) => t.name === name)!;
+const step = (args: Record<string, unknown>) => stepTool("design_stream").execute("t", { label: "A", ...args }, undefined, undefined, undefined);
+
+test("F2 through the tools: a first part, then one added to its end, is one document on the tile, never drawn again", async () => {
+  const f = await start();
+  onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: "<!doctype html><html><body><h1>AB" });
+  await step({ html: "<!doctype html><html><body><h1>AB" });
+  const draw = stat("A").live!.draw;
+  assert.ok(draw !== undefined, "the tile names the document it shows");
+  onLiveFrame(f.rec.chatId, { gen: 2, at: 0, text: "CD</h1>", append: true });
+  onLiveFrame(f.rec.chatId, { gen: 2, at: 7, text: "</body></html>", append: true });
+  assert.equal(livePage(parent.sessionId, "A")?.text, `<!doctype html><html><body><h1>ABCD</h1></body></html>`);
+  await step({ append: "CD</h1></body></html>" });
+  assert.equal(stat("A").live!.draw, draw, "the same document: no redraw");
+  assert.equal(stat("A").status, "writing");
+});
+
+test("after edits the tile draws the draft again, in place, under a new draw", async () => {
+  const f = await start();
+  onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: PAGE });
+  await step({ html: PAGE });
+  const draw = stat("A").live!.draw;
+  await step({ edits: [{ find: "hi", replace: "hello" }] });
+  assert.equal(livePage(parent.sessionId, "A")?.text, PAGE.replace("hi", "hello"));
+  assert.notEqual(stat("A").live!.draw, draw);
+  assert.equal(stat("A").live!.chars, PAGE.length + 3);
+});
+
+test("a stop keeps the saved draft as its still, not a part still being written onto it", async () => {
+  const f = await start();
+  onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: HALF });
+  await step({ html: HALF });
+  onLiveFrame(f.rec.chatId, { gen: 2, at: 0, text: "<p>half a par", append: true });
+  stopDesign(parent, "A", "user");
+  assert.equal(store.readStill(parent.sessionId, "A", 1), HALF);
+});
+
+test("F4 on the reply route: a reply's page the hand-in refused is kept as the draft on disk, and the next turn's edits apply to it after a restart", async () => {
+  const label = await replySession([]);
+  const entry = (kind: string, text: string, extra: Record<string, unknown> = {}) => ({ kind, blocks: [{ type: "text", text }], ...extra });
+  const ctx = (branch: unknown[]) => ({ branch: () => branch }) as never;
+  const wrote = [entry("user", "b"), entry("assistant", `${OPEN}\n${BROKEN}\n${CLOSE}`)];
+  await assert.rejects(handInTool(label).execute("t", { label, note: NOTE }, undefined, undefined, ctx(wrote)), /script 1, line 2/);
+  assert.equal(stat(label).fix?.attempt, 1);
+  store.forgetDesignCache();
+  // The next turn: its reply carries no page, so only the kept draft can be what the edit applies to.
+  const next = [...wrote, entry("user", "fix it")];
+  await stream(label, { edits: [{ find: "var a = ;", replace: "var a = 1;" }] }, ctx(next));
+  await handInTool(label).execute("t", { label, note: NOTE }, undefined, undefined, ctx([...next, entry("tool-result", "ok", { tool: "design_stream" })]));
+  assert.equal(store.readPage(parent.sessionId, label), BROKEN.replace("var a = ;", "var a = 1;"));
+});
+
+test("a reply-route turn that ends on a broken reply page with no hand-in goes back, and the fix's edits apply to that page", async () => {
+  const label = await replySession([asked("the brief"), withPage(BROKEN)]);
+  const f = fakes.at(-1)!;
+  settle(f);
+  await waitFor(() => stat(label).status === "fixing");
+  assert.equal(stat(label).versions.length, 0);
+  assert.equal(store.pendingPage(parent.sessionId, label), BROKEN, "the reply's page is the draft the fix changes");
+  const entry = (kind: string, text: string, extra: Record<string, unknown> = {}) => ({ kind, blocks: [{ type: "text", text }], ...extra });
+  const ctx = (branch: unknown[]) => ({ branch: () => branch }) as never;
+  const fixTurn = [entry("user", "the brief"), entry("assistant", `${OPEN}\n${BROKEN}\n${CLOSE}`), entry("user", lastSend(f).text)];
+  await stream(label, { edits: [{ find: "var a = ;", replace: "var a = 1;" }] }, ctx(fixTurn));
+  await handInTool(label).execute("t", { label, note: NOTE }, undefined, undefined, ctx([...fixTurn, entry("tool-result", "ok", { tool: "design_stream" })]));
+  assert.equal(store.readPage(parent.sessionId, label), BROKEN.replace("var a = ;", "var a = 1;"));
 });

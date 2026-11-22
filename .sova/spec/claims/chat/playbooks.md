@@ -737,18 +737,37 @@ and show the result.
   fix and to risk beside what it did: expected fixes, unexpected fixes, expected breaks and
   unexpected breaks. An arm with no prediction says so. A missed prediction is shown and recorded
   only: the winner is still picked by pass rate, then cost.
+- **The consultant's outlook.** After the baseline and after each round is scored, the round's
+  report is shown at once and a fresh consultant starts by itself. It reads the results and the
+  failing replies and, while you decide, sends a short plain follow-up as its own message: whether
+  the subject can still improve (likely, unlikely or futile), why the last change won or lost,
+  what the next round should do, the expected gain against the bar, and a recommendation (another
+  cycle, keep the baseline, or run the confirm), with one more line when a better fix needs
+  something the cycle didn't allow. It names no case numbers, file names or code. On your
+  go-ahead the same consultant writes the next round's one change, from its outlook. An answer you
+  give before the outlook arrives is held: the outlook is posted, then you're asked to confirm or
+  change your answer.
+- **What an outlook can stop.** A futile outlook writes no change and pauses to ask you: keep the
+  baseline, run a round anyway, or allow more to change; with rivals, it pauses only when all of
+  them say futile. An outlook never ends a campaign by itself. Each outlook's expected gain is one
+  exact figure, shown beside what happened in the next round's report. At the last stop the report
+  comes first, then the outlook, then the landing reviewer's verdict, which reads it; the record is
+  closed after that.
 - **A record that outlives the campaign.** Each subject (such as "vis") has a record kept in the
   project's repository, at `.sova/ab/<name>.jsonl`, and landed with Land: a winner's landing
-  carries it, and a parked campaign lands it alone. It holds every attempt, losing ones included:
-  the problem in general words, the change and why, the test models with their pass rates before
-  and after, expected and observed counts, whether it was carried or dropped, and its campaign
-  and round.
+  carries it, and a campaign closed as "baseline kept" or parked lands it alone. A campaign
+  closes by landing a winner, running another cycle, keeping the baseline (shown as "baseline
+  kept", never as parked) or parking. The record holds every attempt, losing ones included: the
+  problem in general words, the change and why, the test models with their pass rates before and
+  after, expected and observed counts, whether it was carried or dropped, and its campaign and
+  round; it also keeps each round's outlook.
 - **No private text in the record.** It holds no real-chat text, case wording or case numbers,
   and no machine details such as home folders or addresses; a check refuses such a line before
   it is written. The check also refuses the campaign's own case names, whatever their style.
 - **Who reads the record.** A new campaign's first report says which record it continues and
-  what it holds. Consultants read it before proposing a change, and the landing reviewer before
-  its verdict; the grader never does. When a new test model fails, the recorded fixes are
+  what it holds. Consultants read it before proposing a change, and the landing reviewer reads
+  it and the campaign's outlooks before its verdict, which may be Baseline kept; the grader reads
+  neither. When a new test model fails, the recorded fixes are
   re-tested before new ones are proposed.
 - **Test chats never see the record.** Each arm's copy removes it in a commit of its own that
   never lands, so it is gone from the copy's files and its current commit; a round refuses to

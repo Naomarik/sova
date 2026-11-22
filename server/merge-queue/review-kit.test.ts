@@ -92,4 +92,6 @@ test("the first message says what the reviewer may do: read-only, a shell in its
   assert.match(fix, /commit it there with git/);
   assert.match(fix, /copy of the branch feat\/x at its commit a{40}, not merged \(the diff is of the merge/);
   assert.match(fix, /never amend, rebase or reset/);
+  assert.doesNotMatch(fix, /earlier reviewer's fix/, "the first pass has none");
+  assert.match(reviewerText({ ...base, own: { at: "a".repeat(40), fixes: true }, shell: true, pass: { n: 2, of: 2 } }), /on top of aaaaaaa there are an earlier reviewer's fix, not the branch's change/);
 });

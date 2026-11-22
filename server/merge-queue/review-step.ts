@@ -125,7 +125,7 @@ export function reviewerText(o: Omit<ReviewerStart, "text" | "attempt">, target 
   const own = o.own;
   const where = own
     ? own.at !== o.commit
-      ? `Your working folder is a copy of the branch ${o.branch} at its commit ${own.at}, not merged (the diff is of the merge; an earlier reviewer's fix commits may be on top): read the files around each hunk there.`
+      ? `Your working folder is a copy of the branch ${o.branch} at its commit ${own.at}, not merged (the diff is of the merge): read the files around each hunk there.${o.pass && o.pass.n > 1 ? ` Any commits on top of ${own.at.slice(0, 7)} there are an earlier reviewer's fix, not the branch's change: don't review them as the change; keep or add to them.` : ""}`
       : `Your working folder is a copy of your own at that commit (not the merge copy the checks run in): read the files around each hunk there.`
     : "Your working folder is the merge copy at that commit: read the files around each hunk there.";
   const tools = own?.fixes

@@ -508,6 +508,22 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
         <Row label="Merge copy" end={<Tag source="sova" />}>
           <span class="text-mono">{tildePath(s().fixed.mergeCopy, home())}</span>
         </Row>
+        {/* What the target's tree needs beyond its own files (§app.merge-queue/project-shapes). */}
+        <Show when={s().shape?.submodules}>
+          <Row label="Submodules" end={<Tag source="project" />}>
+            Has submodules: each run checks them out from their own remotes.
+          </Row>
+        </Show>
+        <Show when={s().shape?.lfs}>
+          <Row label="Git LFS" end={<Tag source="project" />}>
+            <span>
+              Uses Git LFS: each run fetches its files.
+              <Show when={s().shape?.lfsMissing}>
+                {" "}git-lfs isn’t installed on this computer: landings fail until it is.
+              </Show>
+            </span>
+          </Row>
+        </Show>
       </Group>
 
       <Show when={changes() || problem() || said() || error()}>

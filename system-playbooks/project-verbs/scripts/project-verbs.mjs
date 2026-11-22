@@ -45,7 +45,7 @@ export const ORDER = {
   rollback: ["steps", "none"],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches", "reviewFixes", "rules", "remote", "squash"],
+  merge: ["target", "push", "checks", "install", "land", "request", "reuse", "deleteBranches", "rules", "remote", "squash", "reviewFixes", "review"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect", "perSelector", "cwd", "env", "report", "rerunTest"],
   mergeReport: ["junit", "tap"],
   mergeRule: ["paths", "check", "select", "why"],

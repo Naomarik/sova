@@ -235,23 +235,46 @@
     },
     "rules": [
       {
-        "paths": ["statecharts/**", "scripts/statecharts*.mjs", "scripts/statecharts.ts", "scripts/build-statecharts.mjs"],
+        "paths": [
+          "statecharts/**",
+          "scripts/statecharts*.mjs",
+          "scripts/statecharts.ts",
+          "scripts/build-statecharts.mjs"
+        ],
         "check": "statecharts",
         "why": "statecharts changed: compile them and run their tests"
       },
       {
-        "paths": ["pi-config/extensions/spec/core/**", "pi-config/extensions/spec/tests/replay/**", "pi-config/extensions/spec/WRITING.md", "pi-config/extensions/spec/PROMOTE.md", "pi-config/extensions/mode/spec-mode.md"],
+        "paths": [
+          "pi-config/extensions/spec/core/**",
+          "pi-config/extensions/spec/tests/replay/**",
+          "pi-config/extensions/spec/WRITING.md",
+          "pi-config/extensions/spec/PROMOTE.md",
+          "pi-config/extensions/mode/spec-mode.md"
+        ],
         "check": "spec-replay",
         "why": "the spec engine or its procedure changed: replay recorded spec sessions"
       },
       {
-        "paths": ["src/components/Composer*.tsx", "src/components/WorktreesControl.tsx", "src/components/WorktreesModal.tsx", "src/lib/composer*.ts", "src/lib/focus-view*.ts"],
+        "paths": [
+          "src/components/Composer*.tsx",
+          "src/components/WorktreesControl.tsx",
+          "src/components/WorktreesModal.tsx",
+          "src/lib/composer*.ts",
+          "src/lib/focus-view*.ts"
+        ],
         "check": "e2e",
         "select": ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs"],
         "why": "the composer changed: drive its browser walkthroughs"
       },
       {
-        "paths": ["src/lib/type-anywhere*.ts", "src/commands/keys*.ts", "src/components/Composer*.tsx", "src/components/SessionPane.tsx", "scripts/e2e/type-anywhere.mjs"],
+        "paths": [
+          "src/lib/type-anywhere*.ts",
+          "src/commands/keys*.ts",
+          "src/components/Composer*.tsx",
+          "src/components/SessionPane.tsx",
+          "scripts/e2e/type-anywhere.mjs"
+        ],
         "check": "e2e",
         "select": ["scripts/e2e/type-anywhere.mjs"],
         "why": "the app-wide keys, the composer or Session details changed: drive Type anywhere in a browser"
@@ -259,11 +282,19 @@
       {
         "paths": ["src/components/Transcript*.tsx", "src/lib/transcript*.ts", "src/lib/follow*.ts"],
         "check": "e2e",
-        "select": ["scripts/e2e/transcript-follow.mjs", "scripts/e2e/transcript-drift.mjs", "scripts/e2e/jump-settle.mjs"],
+        "select": [
+          "scripts/e2e/transcript-follow.mjs",
+          "scripts/e2e/transcript-drift.mjs",
+          "scripts/e2e/jump-settle.mjs"
+        ],
         "why": "the transcript view changed: drive its scrolling walkthroughs"
       },
       {
-        "paths": ["src/components/Overseer*.tsx", "src/components/Schedule*.tsx", "src/lib/schedules*.ts"],
+        "paths": [
+          "src/components/Overseer*.tsx",
+          "src/components/Schedule*.tsx",
+          "src/lib/schedules*.ts"
+        ],
         "check": "e2e",
         "select": ["scripts/e2e/overseer-schedules-menu.mjs"],
         "why": "the Overseer's schedules menu changed: drive its walkthrough"
@@ -275,13 +306,26 @@
         "why": "the flow view changed: drive its focus walkthrough"
       },
       {
-        "paths": ["server/tours/**", "shared/tour*", "server/tour-routes.ts", "server/project-services/tour-target*", "server/share/tour-*", "pi-config/extensions/sandbox/**"],
+        "paths": [
+          "server/tours/**",
+          "shared/tour*",
+          "server/tour-routes.ts",
+          "server/project-services/tour-target*",
+          "server/share/tour-*",
+          "pi-config/extensions/sandbox/**"
+        ],
         "check": "integration-group",
         "select": ["tours"],
         "why": "tours code changed: run the Tours group (a landing never runs it on its own)"
       },
       {
-        "paths": ["server/chat-runtime/**", "server/chat-host*", "server/chat-handle*", "server/chat-manager*", "server/harness/**"],
+        "paths": [
+          "server/chat-runtime/**",
+          "server/chat-host*",
+          "server/chat-handle*",
+          "server/chat-manager*",
+          "server/harness/**"
+        ],
         "check": "integration-group",
         "select": ["trial"],
         "why": "chat processes changed: run the Chat processes group (its trigger already does; listed so the reason shows)"

@@ -144,10 +144,13 @@ export type MergeDecisionKind =
   /** A fix that needs the user's OK: on top of work they asked for, or changing more than was asked (Land). */
   | "fix-ok"
   /** Spec drafts changed beyond making them fit (Land). */
-  | "drafts-changed";
+  | "drafts-changed"
+  /** The run's "Private names and secrets" step found something that looks private (Allow / Send Back / Ask the
+   *  Merge Thread; §app.merge-queue/names-step). */
+  | "private-names";
 
 /** A click on a decision, acted on the queue directly (merge.answer, the user's own click only). */
-export type MergeDecisionAction = "accept" | "land-anyway" | "try-again" | "land" | "remove";
+export type MergeDecisionAction = "accept" | "land-anyway" | "try-again" | "land" | "remove" | "allow" | "send-back" | "ask-thread";
 
 /** One decision waiting for the user (state `needs-user`): a question, choices that fill the chat's message box, and
  *  the queue's note held until the user answers there. */
@@ -471,6 +474,9 @@ export interface MergeEntry {
   /** A Fixed answer, Can't or Needs you waiting on the merge thread: the request, and whether the thread was told yet
    *  (false: it wasn't running; Sova tells it again once it runs). */
   fix?: { request: string; told: boolean; at: string };
+  /** A fix or a conflict waiting on the merge thread (§chat.merge-queue/thread-health): since when, the fresh thread
+   *  Sova started once it waited THREAD_DEADLINE_MS, and when the user was told it still waits. */
+  threadWait?: MergeThreadWait;
   /** Paused: you stopped the chat: the phase it goes back to at the user's next message. */
   pausedFrom?: MergeStanding;
   /** needs-user: the decision waiting for the user (the newest; an answered one stays until the entry moves on). */
@@ -550,7 +556,7 @@ export interface MergeReviewRecord {
 /** Why an entry was sent back: its spec drafts didn't fit (`drafts`), a check failed with it (`checks`), a conflict
  *  nobody judged (`conflict`), the user's Send Back (`user`), or the host refused its publication (`host`). Only
  *  `drafts` can be fixed with no commit. */
-export type SentBackFor = "drafts" | "checks" | "conflict" | "user" | "host" | "review";
+export type SentBackFor = "drafts" | "checks" | "conflict" | "user" | "host" | "review" | "names";
 
 export type PushState = "pending" | "pushed" | "not-pushed" | "no-remote";
 
@@ -597,9 +603,50 @@ export interface RunStep {
   /** check: how many of its test files already passed on identical code (the re-checked ones too); the step's log
    *  lists each and its source run. Its time says nothing about the check's full length (the estimate skips it). */
   reused?: number;
+  /** scan ("Private names and secrets"): what it found, where, never the matched text. */
+  scan?: ScanFacts;
   /** The plan step it carries out (RunPlan.steps[].id), when that isn't its own id: a rerun names its check's
    *  ("rerun-tip:unit" → "check:unit"), a setup rerun its setup step's. Absent: its own `id`. */
   plan?: string;
+}
+
+/** One thing the publish scan found, said without the matched text (§app.merge-queue/names-step). */
+export interface ScanHit {
+  /** An opaque hash of what matched and its line: Allow marks it fine by this, and it can't be read back. */
+  key: string;
+  /** "commit abc1234 · src/a.ts:12", "commit abc1234 · message line 2"; a private name in a path is masked. */
+  where: string;
+  commit?: string;
+  file?: string;
+  line?: number;
+  kind: "name" | "secret";
+  /** "private name #3" | "looks like a GitHub token". */
+  what: string;
+}
+
+/** The "Private names and secrets" step's facts. `unanswered`: no private names list yet, secrets were scanned; it
+ *  lands and its push waits for the interview (No private names). `unreadable`: the scan couldn't look (fail-closed:
+ *  nothing is pushed until one passes). */
+export interface ScanFacts {
+  state: "clean" | "hits" | "unanswered" | "unreadable";
+  commits?: number;
+  hits?: ScanHit[];
+  /** Matches the project marked fine (Allow), skipped. */
+  allowed?: number;
+  /** hits with no names list yet: only secrets were looked for. */
+  names?: false;
+  why?: string;
+}
+
+/** A fix or conflict waiting on the merge thread (MergeEntry.threadWait). */
+export interface MergeThreadWait {
+  what: "fix" | "conflict";
+  /** When it started waiting on the thread. */
+  since: string;
+  /** The fresh thread Sova started once it had waited the deadline: when, and whether it started. */
+  fresh?: { at: string; ok?: boolean; error?: string };
+  /** When the user was told that it still waits (the fresh thread failed or didn't answer either). */
+  notified?: string;
 }
 
 export type RunVerdict =
@@ -636,31 +683,16 @@ export interface MergeRun {
   endedAt?: string;
   /** "No checks declared": the project said so. */
   noChecks?: true;
-  /** The folder rules the run applied (§app.merge-queue/rules); absent on a run from before them, or one that
-   *  stopped before its checks. */
-  rules?: RunRules;
   /** The plan worked out before the run started (§app.merge-queue/plan): every step it will take and every one it
    *  won't, each with why, and the fingerprint of its inputs. Absent on runs from before plans. */
   plan?: RunPlan;
   /** What the run ran with: tool versions, what it reused, the settings in force. Filled in as the run goes. */
   ranWith?: RunRanWith;
+  /** The folder rules the run applied (§app.merge-queue/rules); absent on a run from before them, or one that
+   *  stopped before its checks. */
+  rules?: RunRules;
   /** The review kit the run's review ran with (§app.merge-queue/review-kit). */
   review?: ReviewKitStamp;
-}
-
-/** The folder rules a run applied: read from the branch being landed, so a rule edit takes effect on its own landing. */
-export interface RunRules {
-  /** "branch": the branch's own rules; "target": the target's (`why` says why the branch's couldn't be read). */
-  from: "branch" | "target";
-  /** How many rules there are. */
-  count: number;
-  /** The branch changed its own rules: each change in one line ("added: src/** → e2e (…): why"). */
-  changed?: string[];
-  /** More changes than `changed` lists. */
-  more?: number;
-  why?: string;
-  /** Rules that matched but named a check the target doesn't declare: they apply once it does. */
-  unknown?: string[];
 }
 
 // ---- the run plan (al_1 step 11): worked out before a run starts ---------------------------------
@@ -851,6 +883,21 @@ export interface MergeEventsPage {
 /** How many of the newest events the view carries. */
 export const VIEW_EVENTS = 40;
 
+/** The folder rules a run applied: read from the branch being landed, so a rule edit takes effect on its own landing. */
+export interface RunRules {
+  /** "branch": the branch's own rules; "target": the target's (`why` says why the branch's couldn't be read). */
+  from: "branch" | "target";
+  /** How many rules there are. */
+  count: number;
+  /** The branch changed its own rules: each change in one line ("added: src/** → e2e (…): why"). */
+  changed?: string[];
+  /** More changes than `changed` lists. */
+  more?: number;
+  why?: string;
+  /** Rules that matched but named a check the target doesn't declare: they apply once it does. */
+  unknown?: string[];
+}
+
 /**
  * A trial (merge.try): a setup branch's proposed checks run on its exact head in the merge copy, nothing merged and
  * nothing saved. The checks are that commit's own `.sova/project.json` merge checks (and the services they require),
@@ -993,6 +1040,9 @@ export interface MergeQueueHeads {
   hasOrigin?: boolean;
   /** Why the last landing wasn't pushed ("held for a release", "leak scan: …", "origin moved"). */
   pushWhy?: string;
+  /** The scan before a held push found something that looks private (no run to hold it: the landings are in). Allow
+   *  there is merge.names {action: "allow"}. */
+  pushScan?: ScanFacts;
   /** Checks red on the target alone, by label. */
   targetRed?: string[];
   /** Fix / Fix in New Chat on each broken-target check (by check id): a chat on a new branch from the target. Additive. */
@@ -1049,6 +1099,9 @@ export interface MergeQueueView {
   heads: MergeQueueHeads;
   /** The merge thread's chat for this project, when one is recorded (the Merge thread card). */
   thread?: MergeThreadInfo;
+  /** The private names interview (§chat.merge-queue/names-interview): answered with a list, answered "No private
+   *  names" (an empty list), or not yet (pushes wait; one click answers it). Absent: the project doesn't push. */
+  names?: "answered" | "none" | "unanswered";
   /** The reviewer chat running now, for the head's "Review running · <branch> · Open" (a retry: its current attempt). */
   reviewing?: { run: string; branch: string; session: string; path: string; attempt: number; startedAt: string };
   /** The queue's chats, newest first: the current thread, earlier ones, every reviewer chat (the History section). */
@@ -1332,13 +1385,13 @@ export interface WorktreeMergeProject {
  * merge.note    {entry, note}                                 → entry (empty note clears the thread's)
  * merge.extend  {entry, checks, select?, why, note?}          → entry (adds picks; never drops)
  * merge.resolve {entry, verdict, files?, ours, theirs, proposal, commit?, note?}  → entry (the thread's judgement)
- * merge.answer  {entry, answer: accept | land-anyway | try-again | land, why?}     → entry (the user's own click)
+ * merge.answer  {entry, answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread, matches?, why?}  → entry (the user's own click)
  * merge.rule    {entry, ruling, text?, choices?, request?, note?}                 → entry (the thread's ruling)
  * merge.review  {run, verdict, text?}                         → entry (the review step's verdict)
  * merge.retry   {project | entry, note?}                      → view (rerun after a machine pause)
  * merge.try     {project?, branch? | commit?, checks?}        → trial + run (a setup branch's checks on its head; saves nothing)
  */
-export const MERGE_ANSWERS = ["accept", "land-anyway", "try-again", "land"] as const;
+export const MERGE_ANSWERS = ["accept", "land-anyway", "try-again", "land", "allow", "send-back", "ask-thread"] as const;
 export type MergeAnswer = (typeof MERGE_ANSWERS)[number];
 
 /**
@@ -1454,7 +1507,8 @@ export interface MergeCopyTest {
 
 /** merge.names's answer: never a name, except `list` (show). */
 export interface MergeNamesReport {
-  action: "discover" | "add" | "show";
+  /** none: the user's one-click "No private names" (an empty list); allow: the held push's hits marked fine. */
+  action: "discover" | "add" | "show" | "none" | "allow";
   /** The script's own summary (kinds and counts; masked public hits). */
   summary: string;
   count?: number;
@@ -1698,6 +1752,30 @@ export interface MergeThreadInfo {
   ask?: MergeThreadAsk;
   /** Messages in its chat, when known. */
   messages?: number;
+  /** How it answers (§chat.merge-queue/thread-health). */
+  health?: MergeThreadHealth;
+}
+
+/** The merge thread's health: what waits on it and since when, deliveries that failed, fresh threads Sova started. */
+export interface MergeThreadHealth {
+  /** ok; waiting (something waits on it, under the deadline); slow (past it: a fresh one is being started);
+   *  failed (a fresh one couldn't start, or didn't answer either: the user was told). */
+  state: "ok" | "waiting" | "slow" | "failed";
+  /** The longest wait now. */
+  waiting?: { what: "fix" | "conflict"; since: string; entry: string; branch: string };
+  /** Minutes a fix or conflict may wait before Sova starts a fresh thread. */
+  deadlineMin: number;
+  /** The newest deliveries that failed (oldest first). */
+  failures: MergeThreadFailure[];
+  /** Fresh threads Sova started by itself (oldest first). */
+  restarts: { at: string; why: string; ok: boolean; error?: string }[];
+}
+export interface MergeThreadFailure {
+  at: string;
+  /** The event that wasn't delivered. */
+  kind: string;
+  error: string;
+  branch?: string;
 }
 
 /** One History row: a merge thread (current or replaced) or a reviewer chat. `cleared`: its chat was deleted then

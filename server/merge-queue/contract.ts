@@ -54,6 +54,9 @@ export interface RunInput {
   /** The project's private names file (store.ts namesFileOf): the leak scan reads it (`--names` / SOVA_LEAK_NAMES).
    *  Absent: none yet (pushes are held until the merge thread's interview writes it). */
   namesFile?: string;
+  /** The landing pushes (names-step.ts scanPlanned): the run ends with the "Private names and secrets" step over what
+   *  it adds, reading this names file (absent: none yet, secrets only) and skipping the matches in `allowFile`. */
+  scan?: { namesFile?: string; allowFile: string };
   /** A dry run (merge.setup dryRun): reset to `base`, set up, run `project.def`'s checks there; no merge, no
    *  reruns, no review. The entry is a stand-in (its branch is the target). A trial (`trialOf`) runs the landing's
    *  docs step first, on `draftsDir` (or the commit's own drafts), and keeps nothing it made. */
@@ -89,13 +92,13 @@ export interface RunHooks {
   merged?(sha: string): void;
   /** Where the copy lives (once the copy step has it). */
   copy?(path: string): void;
-  /** The folder rules the run applies (§app.merge-queue/rules), once read (before the first check). */
-  rules?(r: import("../../shared/merge-queue").RunRules): void;
   /** A change worth the event memory (§app.merge-queue/activity), from inside the run: its run, entry and branch are
    *  filled in; give `step` the plan step it belongs to ("check:<id>", "review", "scan"…). */
   event?(ev: import("../../shared/merge-queue").MergeEventInput): void;
   /** What the run ran with, as it learns it (MergeRun.ranWith): merged into what the queue recorded at the start. */
   ranWith?(patch: Partial<import("../../shared/merge-queue").RunRanWith>): void;
+  /** The folder rules the run applies (§app.merge-queue/rules), once read (before the first check). */
+  rules?(r: import("../../shared/merge-queue").RunRules): void;
   /** The review kit the review runs with (§app.merge-queue/review-kit), once read, and again with the model it ran on. */
   review?(stamp: import("../../shared/merge-queue").ReviewKitStamp): void;
 }
@@ -160,6 +163,8 @@ export interface RunOutcome {
   checks: CheckPick[];
   /** A dry run that failed (or couldn't run): what holds the branch up, its run id filled in by the queue. */
   trialFailure?: Omit<import("../../shared/merge-queue").BranchFailure, "run">;
+  /** The "Private names and secrets" step's facts, when the run had it (RunInput.scan). */
+  scan?: import("../../shared/merge-queue").ScanFacts;
 }
 
 /** copy-checks' entry point: one run, start to verdict. Never throws for a red check: every outcome is a value
@@ -179,7 +184,7 @@ export type EstimateRun = (projectId: string, root: string) => number | null;
  *  cancel); `entry` is the one that changed last, `lastLanded` the newest landing. Answers whether a thread was asked:
  *  false (none, or off) never delays anything. */
 export interface ThreadEvent {
-  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle" | ThreadRulingKind;
+  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "names-hit" | "idle" | ThreadRulingKind;
   project: string;
   root: string;
   target: string;
@@ -189,6 +194,10 @@ export interface ThreadEvent {
   files?: string[];
   /** names: the private names file the interview writes. */
   namesFile?: string;
+  /** names-hit: where the scan found each thing that looks private ("<where> · <what>"), never the matched text. */
+  hits?: string[];
+  /** Start a fresh thread for this event instead of waking the one there: why (it didn't answer in time). */
+  fresh?: string;
   /** The target's commit the entry was queued against (queued) or its run started on (conflict, failed): the thread
    *  diffs `base...entry.commit`, which stays right after the entry lands. */
   base?: string;

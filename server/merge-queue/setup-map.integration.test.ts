@@ -70,3 +70,24 @@ test("the setup in force, each version on the main branch, and the Setup chat's 
 
   assert.equal(await readSetupMap("prj_none", deps), null);
 });
+
+test("a Setup chat whose branch is behind the target proposes its own changes on top of the target's newer setup, as Confirm would merge them", async () => {
+  const r = makeRepo({ prefix: "mq-setup-behind-" });
+  let c: SetupChatFacts | null = null;
+  const d: SetupMapDeps = { ...deps, rootOf: async (id) => (id === "prj_behind" ? r.root : null), setupChat: async () => c };
+  r.commitOn(r.root, { ".sova/project.json": def([check("typecheck"), check("unit")]) }, "set up the queue");
+  const wt = join(r.scratch, "setup-wt");
+  sh(r.root, "worktree", "add", "-q", wt, "-b", "setup/queue");
+  c = { session: "s2", worktree: wt, branch: "setup/queue", state: "working" };
+  // The target moves on after the chat's branch forked: typecheck gets 15 minutes.
+  r.commitOn(r.root, { ".sova/project.json": def([check("typecheck", 900), check("unit")]) }, "typecheck gets 15 minutes");
+  // The chat adds lint on its old copy.
+  writeFileSync(join(wt, ".sova/project.json"), def([check("typecheck"), check("unit"), check("lint", 60)]));
+  let a = await readSetupMap("prj_behind", d);
+  assert.deepEqual(a!.changes.map((x) => [x.tag, x.name]), [["add", "Check lint"]], "never the target's newer edit undone");
+  assert.deepEqual(a!.proposal?.checks.map((x) => [x.id, x.timeoutSec]), [["typecheck", 900], ["unit", 600], ["lint", 60]]);
+  // Where the two edit the same line, the proposal is the chat's copy as is (the merge thread judges it at landing).
+  writeFileSync(join(wt, ".sova/project.json"), def([check("typecheck", 300), check("unit")]));
+  a = await readSetupMap("prj_behind", d);
+  assert.deepEqual(a!.proposal?.checks.map((x) => [x.id, x.timeoutSec]), [["typecheck", 300], ["unit", 600]]);
+});

@@ -55,6 +55,10 @@ import {
   VIEW_EVENTS,
 } from "../../shared/merge-queue";
 import { historyWords } from "./history";
+import { mergedTree, planOf, reuseOf, settingsOf, toolsOf, toolVersion, treeShapes, withLatePicks, type PlanFacts } from "./plan";
+import { planRulesFor } from "./rules";
+import { kitChangedBy, kitHashAt } from "./review-kit";
+import { squashes } from "./run";
 import { countRestart, noticeEvent, pauseEvent, restartCauseOf, runEndedEvent, stepEnded, stepEvent } from "./activity";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef, remoteOf } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
@@ -4393,6 +4397,73 @@ export class ProjectQueue {
     return { hash, names };
   }
 
+  /**
+   * The run's plan, before it starts (§app.merge-queue/plan): every step it will take and every one it won't, each with
+   * why, from the definition, the branch's folder rules and review kit as they read after the merge (one `git
+   * merge-tree` reading, rules.ts planRulesFor), the picks so far and the approval. Never throws: a plan that can't be
+   * worked out is null (the run plans its own checks, as before) and says so in the event memory.
+   */
+  private async planRun(e: Entry, base: string, d: { def: ProjectDef | null; review: boolean }, clean: PlanFacts["clean"]): Promise<{ facts: PlanFacts; plan: import("../../shared/merge-queue").RunPlan; planned: import("./checks").PlannedCheck[] } | null> {
+    try {
+      const def = d.def;
+      const resolution = e.conflict?.commit && (e.conflict.verdict === "no-behaviour-change" || e.notes.some((n) => n.kind === "resolved")) ? e.conflict.commit : undefined;
+      const commit = resolution ?? e.commit;
+      const rules = await planRulesFor({ root: this.root, base, commit, target: this.q.target, targetDef: def });
+      const tree = (rules as { tree?: string }).tree ?? (await mergedTree(this.root, base, commit));
+      const unknown = [...(rules.info.unknown ?? []), ...(rules.error ? [`the branch's folder rules couldn't be read before the run (${rules.error}): the run reads them in the merge copy`] : []), ...(rules.refused ? [`the branch's definition doesn't parse: ${rules.refused}`] : [])];
+      const kit = def?.merge?.review;
+      let review: PlanFacts["review"];
+      if (!d.review || !kit) review = { hash: null, skip: "no review kit declared" };
+      else if (e.approval.withoutReview) review = { kit, hash: null, skip: "landed without review" };
+      else {
+        const hash = tree ? await kitHashAt(this.root, tree, kit) : null;
+        review = hash ? { kit, hash, ...((await kitChangedBy(this.root, base, tree!, kit)).length ? { own: true } : {}) } : { kit, hash: null, skip: `the review kit ${kit} isn't there as the branch would land` };
+      }
+      const how = approvalHow(e.approval);
+      const hasRemote = await this.hasRemote(remoteOf(def));
+      const scan = e.release ? ({ run: false, why: "a release's own commit: its publication is checked by the release" } as const) : scanPlanned({ def, how, hasRemote });
+      const push: PlanFacts["push"] =
+        def?.merge?.push === false ? { will: "skip", why: "this project doesn't push from the queue" }
+        : !hasRemote ? { will: "skip", why: "no remote to push to" }
+        : this.q.release ? { will: "if", why: `held while ${this.holdWords()}` }
+        : !this.names().exists ? { will: "if", why: "held until the private names interview is answered" }
+        : { will: "run" };
+      const shapes = tree ? await treeShapes(this.root, tree) : { submodules: false, lfs: false };
+      const releaseChecks = e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? structuredClone(this.q.release.checks) : undefined;
+      const facts: PlanFacts = {
+        def,
+        target: this.q.target,
+        base,
+        commit: e.commit,
+        ...(resolution ? { resolution } : {}),
+        ...(e.release ? { release: { id: e.release, checks: releaseChecks ?? [] } } : {}),
+        ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}),
+        picks: structuredClone(e.picks),
+        rules: { hash: rules.hash, own: !!rules.info.changed?.length, triggers: rules.triggers, ...(unknown.length ? { unknown } : {}) },
+        changed: rules.changed,
+        review,
+        ...(clean ? { clean } : {}),
+        ...(e.approval.drafts && !e.approval.withoutSpecs ? { drafts: e.approval.drafts } : {}),
+        ...(e.approval.withoutSpecs ? { withoutSpecs: true } : {}),
+        how,
+        ...(squashes(def, { entry: e, ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}), ...(releaseChecks ? { releaseChecks } : {}) }) ? { squash: true } : {}),
+        scan,
+        push,
+        ...(shapes.submodules ? { submodules: true } : {}),
+        ...(shapes.lfs ? { lfs: true } : {}),
+      };
+      const { plan, planned } = planOf(facts, this.iso());
+      // Visibly the same plan: the entry's last run worked out the same fingerprint.
+      const prev = e.runs.length ? this.store.readRun(e.runs[e.runs.length - 1]!) : null;
+      if (prev?.plan?.fingerprint === plan.fingerprint) plan.sameAs = prev.id;
+      return { facts, plan, planned };
+    } catch (err) {
+      this.log(`plan of ${e.branch} not worked out: ${err instanceof Error ? err.message : err}`);
+      this.record({ kind: "note", by: "queue", entry: e.id, branch: e.branch, note: "plan-unread", why: `The run's plan couldn't be worked out before it started (${err instanceof Error ? err.message : err}): the run plans its own checks.` });
+      return null;
+    }
+  }
+
   /** `own`: the branch's own definition, when the target's doesn't parse and this branch fixes it. */
   private async startRun(e: Entry, base: string, own?: ProjectDef, localBase: string = base): Promise<void> {
     this.idleOwed = e.id;
@@ -4411,7 +4482,19 @@ export class ProjectQueue {
         if (existsSync(from)) cpSync(from, join(draftsDir, n), { recursive: true });
       }
     }
+    const clean = cleanFor(this.q.clean, this.now(), e.branch);
+    const worked = await this.planRun(e, base, d, clean ?? undefined);
     const run: MergeRun = { id: runId, entry: e.id, project: this.id, branch: e.branch, base, commit: e.commit, steps: [], checks: [], verdict: "running", startedAt: this.iso() };
+    if (worked) {
+      run.plan = worked.plan;
+      run.ranWith = { tools: [], copy: clean ? "fresh" : "reused", ...(clean ? { clean } : {}), setup: [], settings: settingsOf(worked.facts, worked.planned) };
+      // Tool versions as the server resolves them, from the run's own folder (never the copy): filled in when known.
+      const ranWith = run.ranWith;
+      void Promise.all(toolsOf(worked.facts.def, worked.planned).map(async (name) => ({ name, version: await toolVersion(name, runDir, this.now()) }))).then((tools) => {
+        ranWith.tools = tools;
+        this.store.writeRun(run);
+      });
+    }
     e.state = "checking";
     e.run = runId;
     this.reviewEvent(e, { kind: "checking" });
@@ -4454,10 +4537,9 @@ export class ProjectQueue {
       ...(await this.scanInput(e, d.def)),
       review: d.review && !e.approval.withoutReview,
       // An empty merge copy when Clean Run asked for one, or the weekly one is due (clean-run.ts).
-      ...(() => {
-        const clean = cleanFor(this.q.clean, this.now(), e.branch);
-        return clean ? { clean } : {};
-      })(),
+      ...(clean ? { clean } : {}),
+      // The plan's own check list: the run runs exactly these, and the picks that arrive late (q9).
+      ...(worked ? { plan: worked.plan, planned: worked.planned } : {}),
       signal: ac.signal,
       awaitReview: () =>
         new Promise<ReviewVerdict>((resolve, reject) => {
@@ -4488,6 +4570,9 @@ export class ProjectQueue {
       },
       checks: (list: CheckPick[]) => {
         run.checks = list.map((c) => ({ ...c }));
+        // A late pick joins the saved plan, marked with its arrival; the start's fingerprint stays.
+        const grown = run.plan ? withLatePicks(run.plan, list as (CheckPick & { addedAt?: string })[], this.entry(e.id)?.picks ?? []) : null;
+        if (grown) run.plan = grown;
         persist();
       },
       merged: (sha: string) => {
@@ -4618,6 +4703,12 @@ export class ProjectQueue {
 
   /** A run's end: "run ended" is recorded first, then what came of it (sent back, landed, restarted…). */
   private async finish(cur: Current, out: RunOutcome): Promise<void> {
+    // What the run reused, as its steps say; the copy fresh when the run says it started from an empty one.
+    if (cur.run.ranWith) {
+      const fresh = (out as { clean?: "operator" | "weekly" | "new" }).clean;
+      Object.assign(cur.run.ranWith, reuseOf(cur.run.steps), fresh ? { copy: "fresh", clean: fresh } : { copy: "reused" });
+      if (!fresh) delete cur.run.ranWith.clean;
+    }
     const held = {
       entry: cur.entry,
       run: cur.run.id,

@@ -1212,6 +1212,31 @@ describe("notes and picks", () => {
     }
   });
 
+  test("q9: a pick after the run's last look runs it again before anything lands, once; one the run read lands with it", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      let open!: () => void;
+      const gate = new Promise<void>((r) => (open = r));
+      // The first run holds until the pick is in, reads no late picks, and passes: the pick is one it never saw.
+      k.run.set(async (input) => (k.run.inputs.length === 1 ? (await gate, {}) : (input.latePicks?.(), {})));
+      k.repo.branch("feat/a", { "a.txt": "a\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      await until(() => k.run.inputs.length === 1, "the first run");
+      await q.extend(entry.id, ["statecharts"], "late");
+      open();
+      await landed(k, entry.id);
+      const e = await k.entry(entry.id);
+      assert.equal(k.run.inputs.length, 2, "one rerun, never a loop");
+      assert.deepEqual(k.run.inputs[1]!.picks.map((p) => p.id), ["statecharts"], "the rerun has it planned");
+      assert.equal(e.runs.length, 2);
+      const first = q.store.readRun(e.runs[0]!)!;
+      assert.deepEqual([first.verdict, first.why], ["void", "Statecharts was added after the run's last look for picks: running again with it before anything lands"]);
+    } finally {
+      await k.done();
+    }
+  });
+
   test("extend refuses a pick of a check that needs a selection when it names none, and adds nothing of that call", async () => {
     const group = { id: "integration-group", label: "Slow test group", run: ["true"], timeout: 60, rerun: false, requires: [], optional: true, needsSelect: true };
     const def = { ...DEF, merge: { ...DEF.merge!, checks: [...(DEF.merge!.checks as object[]), group] } } as typeof DEF;

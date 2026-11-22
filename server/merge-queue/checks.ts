@@ -122,18 +122,6 @@ function withRelease(out: PlannedCheck[], release: readonly MergeCheckDecl[]): P
   return out;
 }
 
-/** The entry's picks a run's checks didn't cover (q9): a pick of the same check and selection that ran picked. A pick
- *  of a check that isn't declared any more is covered by nothing and never asked again (planChecks drops it). Pure. */
-export function uncoveredPicks(picks: readonly CheckPick[], ran: readonly CheckPick[], def?: ProjectDef | null): CheckPick[] {
-  const base = (id: string) => id.replace(/\+\d+$/, "");
-  const declared = def === undefined ? null : Array.isArray(def?.merge?.checks) ? def!.merge!.checks.map((c) => c.id) : def?.test ? ["test"] : [];
-  return picks.filter((p) => {
-    if (declared && !declared.includes(p.id)) return false;
-    const sel = JSON.stringify((p.select ?? []).filter((s) => typeof s === "string" && s && !s.startsWith("-")));
-    return !ran.some((c) => base(c.id) === p.id && JSON.stringify(c.select ?? []) === sel && c.source !== "required");
-  });
-}
-
 /** The CheckPick list the queue shows (hooks.checks). */
 export const picksOf = (list: readonly PlannedCheck[]): CheckPick[] =>
   list.map((c) => ({ id: c.id, label: c.label, source: c.source, ...(c.why ? { why: c.why } : {}), ...(c.select ? { select: c.select } : {}), ...(c.addedAt ? { addedAt: c.addedAt } : {}) }));

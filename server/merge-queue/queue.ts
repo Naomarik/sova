@@ -95,7 +95,7 @@ import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, REVIEW_FIX_
 import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { commitResolution } from "./resolve-content";
 import { dropRunDrafts } from "./run-logs";
-import { isTestCheck, uncoveredPicks } from "./checks";
+import { isTestCheck } from "./checks";
 import { checkKindOf } from "../ready-to-land";
 import { changedServices, dryRunMergeChecks, dryRunReasons, dryRunWhyLine, isSetupChange, requiredServices, SETUP_UNREADABLE, setupChangeOf, stoppedByWords, trialEndedText, trialOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
@@ -332,6 +332,9 @@ export interface AddRequest {
   via?: "github-pr" | "gitlab-mr";
 }
 
+/** A pick as the queue tells picks apart: its check and its selection. */
+const pickKey = (p: { id: string; select?: string[] }): string => JSON.stringify([p.id, p.select ?? []]);
+
 interface Current {
   run: MergeRun;
   entry: string;
@@ -342,6 +345,9 @@ interface Current {
   done: Promise<void>;
   /** The local target's head at the run's start: what the watch compares (a request project's base is origin's). */
   localBase: string;
+  /** Every pick the run was handed (at its start, or read through latePicks), by pickKey: a pick not among them when
+   *  the run passes reached the queue after its last look (q9). */
+  seenPicks: Set<string>;
 }
 
 type Entry = QueueFile["entries"][number];
@@ -4180,7 +4186,7 @@ export class ProjectQueue {
     e.updatedAt = this.iso();
     this.store.writeRun(run);
     const ac = new AbortController();
-    const cur: Current = { run, entry: e.id, ac, voidWhy: null, watch: null, done: Promise.resolve(), localBase };
+    const cur: Current = { run, entry: e.id, ac, voidWhy: null, watch: null, done: Promise.resolve(), localBase, seenPicks: new Set(e.picks.map(pickKey)) };
     this.current = cur;
     this.save();
     this.log(`run ${runId}: ${e.branch} at ${e.commit.slice(0, 7)} onto ${this.q.target} ${base.slice(0, 7)}`);
@@ -4198,7 +4204,11 @@ export class ProjectQueue {
       ...(draftsDir ? { draftsDir } : {}),
       picks: [...e.picks],
       // q9: the entry's picks as they are now; the run adds each new one to itself.
-      latePicks: () => structuredClone(this.entry(e.id)?.picks ?? []),
+      latePicks: () => {
+        const now = structuredClone(this.entry(e.id)?.picks ?? []);
+        for (const p of now) cur.seenPicks.add(pickKey(p));
+        return now;
+      },
       // A tag-only release's entry is the frozen target itself: its checks run there, nothing is merged or moved.
       ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}),
       ...(e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? { releaseChecks: structuredClone(this.q.release.checks) } : {}),
@@ -4618,12 +4628,12 @@ export class ProjectQueue {
       case "passed": {
         // q9: a pick that reached the queue after the run's last look for picks still runs before anything lands: the
         // run goes again from the start with it planned, at the front of the line (§app.merge-queue/picks).
-        const missed = uncoveredPicks(e.picks, run.checks, (await this.declared()).def);
+        const missed = e.picks.filter((p) => !cur.seenPicks.has(pickKey(p)));
         if (missed.length) {
           run.verdict = "void";
           run.why = `${missed.map((p) => p.label).join(", ")} ${missed.length === 1 ? "was" : "were"} added after the run's last look for picks: running again with ${missed.length === 1 ? "it" : "them"} before anything lands`;
           this.store.writeRun(run);
-          this.record({ kind: "note", by: "queue", note: "late-pick-restart", entry: e.id, branch: e.branch, run: run.id, why: run.why });
+          this.record(countRestart(e, "aborted", run.id, run.why));
           this.toFront(e);
           this.save();
           this.kickSoon();

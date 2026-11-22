@@ -28,7 +28,7 @@ import { nothingToLandWords } from "./notices";
 import { blameCheck, blameFile, blameSetup, brokenOnTarget, type CheckBlame, type RedRun, summarize } from "./attribute";
 import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, firstOutputLine, freshOf, isTestCheck, type PlannedCheck, picksOf, planChecks, ranNoTest, reusedWords, runCheck, templateVarsOf } from "./checks";
 import type { RunHooks, RunInput, RunMerge, RunOutcome } from "./contract";
-import { assertCopyOutsideState, CopyRefused, gitOut, gitProc, mergeCopyPath, moveCopy, prepareCopy, runProc } from "./copy";
+import { assertCopyOutsideState, CopyRefused, fillLfs, fillSubmodules, gitOut, gitProc, mergeCopyPath, modulesOf, moveCopy, prepareCopy, runProc } from "./copy";
 import { reviewStep, type ReviewDeps } from "./review-step";
 import { removeReviewChange, reviewChangeDir, writeReviewChange } from "./review-change";
 import { conflictsBetween } from "./conflicts";
@@ -315,7 +315,16 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     }
     mergeSha = await gitOut(copy, ["rev-parse", "HEAD"]);
   }
-  if (ms.s.result === "running") ms.end("passed", { detail: short(mergeSha) });
+  // Merge locally as one commit (merge.squash): the merge, or the thread's resolution, becomes one commit on the target
+  // holding the same tree; the docs commit folds into it below. Never a release's commit (its tag names that commit).
+  const squash = squashes(def, input) && mergeSha !== base;
+  if (squash) {
+    const one = await squashOnto(copy, base, mergeSha, commitMessageOf(await subjectsOf(copy, base, commit), input.entry.branch, target), ident, ms.log);
+    if ("error" in one) return (ms.end("failed", { detail: one.error }), out({ verdict: "machine", why: one.error, copy }));
+    mergeSha = one.sha;
+    ms.s.label = `Squash ${short(commit)} onto ${target}`;
+  }
+  if (ms.s.result === "running") ms.end("passed", { detail: squash ? `${short(mergeSha)}, one commit` : short(mergeSha) });
 
   // §app.merge-queue/run: a run that changes neither code nor specs stops, whatever let it through. No check, no review,
   // and the target never moves. Before the setup when no draft can land either.
@@ -331,6 +340,10 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     }
   }
   hooks.merged?.(mergeSha);
+
+  // The merged tree's submodules and LFS files, before anything reads it (a failure is the machine's: §app.merge-queue/project-shapes).
+  const filled = await fillSteps(copy, steps, signal);
+  if (filled) return signal.aborted ? voided("aborted") : out({ verdict: "machine", why: filled, copy, mergeSha });
 
   // The changed paths the checks read (SOVA_MERGE_CHANGED): the branch's against the target.
   const changed = (await gitProc(copy, ["diff", "--name-only", `${base}...${mergeSha}`])).out.split("\n").filter(Boolean);
@@ -411,6 +424,15 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     tip = docs.sha;
     const more = (await gitProc(copy, ["diff", "--name-only", `${mergeSha}..${tip}`])).out.split("\n").filter(Boolean);
     writeFileSync(changedFile, `${[...changed, ...more].join("\n")}\n`);
+    if (squash) {
+      // One commit: the branch's changes and their docs together, on the target's head.
+      const msg = (await gitOut(copy, ["log", "-1", "--format=%B", mergeSha])).trimEnd();
+      const docsLog = steps.all.find((x) => x.id === "docs")?.log;
+      const one = await squashOnto(copy, base, tip, msg, ident, (s) => docsLog && writeFileSync(join(input.runDir, docsLog), s, { flag: "a" }));
+      if ("error" in one) return out({ verdict: "machine", why: one.error, copy, mergeSha });
+      tip = mergeSha = one.sha;
+      hooks.merged?.(mergeSha);
+    }
   }
   scope.tip = tip;
   if (await sameTree(tip)) return nothing();
@@ -775,6 +797,8 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   if (!def) return out({ verdict: "machine", why: `${target} has no readable .sova/project.json`, copy });
   const declared = checksOf(def);
   if (declared === "unset") return out({ verdict: "machine", why: "no checks given to try", copy });
+  const filled = await fillSteps(copy, steps, signal);
+  if (filled) return signal.aborted ? voided("aborted") : out({ verdict: "machine", why: filled, copy });
   const changedFile = join(input.runDir, "changed.txt");
   // A trial runs every check in full: every tracked file of the commit reads as changed, and each check as picked.
   writeFileSync(changedFile, input.trialOf ? `${(await gitOut(copy, ["ls-tree", "-r", "--name-only", "HEAD"]).catch(() => "")).trim()}\n` : "\n");
@@ -1041,6 +1065,65 @@ async function conflictFiles(copy: string, a: string, b: string): Promise<string
 }
 
 /** The thread's resolution, taken: as is when its first parent is the target's head, else with the target merged in. */
+/**
+ * The copy's submodules and Git LFS files, each its own step (kind copy, ids "submodules" and "lfs"), only when the
+ * tree at HEAD has them. → why it failed (the machine's, never the branch's), or null.
+ */
+async function fillSteps(copy: string, steps: Steps, signal: AbortSignal): Promise<string | null> {
+  const has = await modulesOf(copy, "HEAD");
+  const each: [boolean, string, string, typeof fillSubmodules][] = [
+    [has.submodules, "submodules", "Submodules", fillSubmodules],
+    [has.lfs, "lfs", "Large files (LFS)", fillLfs],
+  ];
+  for (const [on, id, label, fill] of each) {
+    if (!on) continue;
+    const st = steps.start(id, "copy", label);
+    try {
+      await fill({ path: copy, log: st.log, signal });
+      st.end("passed");
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      st.end("failed", { detail: signal.aborted ? "aborted" : why });
+      return why;
+    }
+  }
+  return null;
+}
+
+/** Whether this run lands as one commit: the project merges locally with `merge.squash`, and it isn't a release's. */
+export function squashes(def: ProjectDef | null, input: Pick<RunInput, "entry" | "tryOnly" | "releaseChecks">): boolean {
+  if (def?.merge?.squash !== true || input.tryOnly || isReleaseRun(input)) return false;
+  const how = input.entry.approval.via ?? input.entry.approval.how ?? "local";
+  return how === "local";
+}
+
+/** The branch's own commit subjects (oldest first) the merge brings onto `base`, merges left out. */
+async function subjectsOf(copy: string, base: string, commit: string): Promise<string[]> {
+  const r = await gitProc(copy, ["log", "--reverse", "--no-merges", "--format=%s", `${base}..${commit}`]);
+  return r.code === 0 ? r.out.split("\n").map((s) => s.trim()).filter(Boolean) : [];
+}
+
+/**
+ * A one-commit landing's message: the branch's only subject, or its name with every subject listed (the newest 50).
+ * Pure.
+ */
+export function commitMessageOf(subjects: readonly string[], branch: string, target: string): string {
+  if (subjects.length === 1) return `${subjects[0]}\n\nLanded from ${branch} onto ${target} as one commit.`;
+  const shown = subjects.slice(-50);
+  return `Land ${branch} onto ${target} (${subjects.length} commit${subjects.length === 1 ? "" : "s"})\n\n${shown.map((s) => `- ${s}`).join("\n")}${subjects.length > shown.length ? `\n- … ${subjects.length - shown.length} older` : ""}`;
+}
+
+/** One commit on `base` holding `of`'s tree, the copy moved to it (its work tree is that tree already). */
+async function squashOnto(copy: string, base: string, of: string, message: string, ident: Record<string, string>, log: (s: string) => void): Promise<{ sha: string } | { error: string }> {
+  log(`$ git commit-tree ${short(of)}^{tree} -p ${short(base)} (one commit)\n`);
+  const c = await gitProc(copy, [...NO_BACKGROUND_CLEANUP, "commit-tree", `${of}^{tree}`, "-p", base, "-m", message], { env: ident, log });
+  const sha = c.out.trim().split("\n").pop() ?? "";
+  if (c.code !== 0 || !/^[0-9a-f]{40,64}$/.test(sha)) return { error: `the one-commit landing couldn't be made: ${tail(c.out)}` };
+  const r = await gitProc(copy, [...NO_BACKGROUND_CLEANUP, "reset", "--hard", "--quiet", sha], { log });
+  if (r.code !== 0) return { error: `the merge copy couldn't move to the one commit: ${tail(r.out)}` };
+  return { sha };
+}
+
 async function takeResolution(copy: string, base: string, resolution: string, log: (s: string) => void, env: Record<string, string>, signal: AbortSignal): Promise<{ sha: string } | { conflict: string[] } | { error: string }> {
   const first = (await gitProc(copy, ["rev-parse", "--verify", "-q", `${resolution}^1`])).out.trim();
   const co = await gitProc(copy, ["checkout", "--detach", "--force", resolution], { log, signal });

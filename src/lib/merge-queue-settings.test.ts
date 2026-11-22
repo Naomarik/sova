@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeQueueSettings } from "../../shared/merge-queue-settings";
 import { check as checkRule } from "../../shared/form-rules";
-import { deleteBranchesHint, changeLines, changesOf, draftHolds, draftProblem, freshChatWords, minutesTextOf, rebaseDraft, typedMinutes, checksCaption, minutes, modelWords, minutesRule, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
+import { deleteBranchesHint, squashHint, changeLines, changesOf, draftHolds, draftProblem, freshChatWords, minutesTextOf, rebaseDraft, typedMinutes, checksCaption, minutes, modelWords, minutesRule, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
 
 const SHA = "97927e0c0a92041da839da63093e474719f83837";
 const check = (id: string, optional = false) => ({ id, label: id[0]!.toUpperCase() + id.slice(1), timeoutSec: 600, rerun: false, optional });
@@ -60,6 +60,18 @@ test("Delete branches when cleaning up: off unless the file says so; a save send
   assert.deepEqual(changesOf({ ...toProjectDraft(on, true), deleteBranches: false }, on, true), { deleteBranches: false });
   assert.match(deleteBranchesHint(false), /and keeps the branch\.$/);
   assert.match(deleteBranchesHint(true), /then the branch\. Its last commit stays restorable\.$/);
+});
+
+test("One commit per branch: off unless the file says so; a save sends only a change of it", () => {
+  const s = settings();
+  const d = toProjectDraft(s, true);
+  assert.equal(d.squash, false, "absent reads off");
+  assert.deepEqual(changesOf({ ...d, squash: true }, s, true), { squash: true });
+  assert.deepEqual(changeLines({ squash: true }, s), ["One commit per branch: on"]);
+  const on = { ...s, squash: true };
+  assert.deepEqual(changesOf({ ...toProjectDraft(on, true), squash: false }, on, true), { squash: false });
+  assert.match(squashHint(true, "main"), /lands on main as one commit/);
+  assert.match(squashHint(false, "main"), /merge commit on main/);
 });
 
 test("Reuse passes from identical code: on unless the file says false; a save sends only a change of it", () => {

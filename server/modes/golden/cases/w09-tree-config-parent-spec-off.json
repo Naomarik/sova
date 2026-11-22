@@ -94,7 +94,7 @@
         "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
         "mode": "@2a933c3c3baab15d"
        },
-       "toolsAdded": "@5507daa50c66c264"
+       "toolsAdded": "@210dd30eb32c61db"
       },
       {
        "role": "user",
@@ -214,7 +214,7 @@
        "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>",
        "mode": "@2a933c3c3baab15d"
       },
-      "toolsAdded": "@cdcf551f934f10a0"
+      "toolsAdded": "@db2d4a29648e6086"
      }
     }
    ],
@@ -282,7 +282,7 @@
         "docs": "@7ac29a1ce1499f33",
         "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>"
        },
-       "toolsAdded": "@b4be81562900e7f8"
+       "toolsAdded": "@3c9bcadc79879eea"
       },
       {
        "role": "user",
@@ -326,7 +326,7 @@
        "docs": "@7ac29a1ce1499f33",
        "cwd": "<cwd>\n<ws:tree-mode>\n</cwd>"
       },
-      "toolsAdded": "@91becf4b6856252b"
+      "toolsAdded": "@8349886082d64473"
      }
     }
    ],

@@ -398,7 +398,7 @@ export interface MergeEntry {
   notes: MergeNote[];
   /** landed: where master went. `via` "host": the host merged the request (`sha` is the host's commit, which may be a
    *  squash or rebase of what Sova checked). */
-  landed?: { sha: string; from: string; at: string; pushed: PushState; pushWhy?: string; via?: "host" };
+  landed?: { sha: string; from: string; at: string; pushed: PushState; pushWhy?: string; via?: "host"; /** Landed as one commit (merge.squash): the pinned commit itself isn't on the target. */ oneCommit?: true };
   /** Landing by request or by push (approval.how not local): what was published, and the host's request. */
   request?: MergeRequestInfo;
   /** Estimates (ms): when it should start from now, and how long its run takes. */

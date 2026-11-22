@@ -61,6 +61,12 @@ export async function landTip(git: Git, root: string, target: string, from: stri
       if (head !== from) return { kind: "moved", head };
       return { kind: "dirty", why: `the fast-forward of ${co} was refused: ${(r.stderr || r.stdout).trim().split("\n").slice(0, 2).join(" ")}`, checkout: co };
     }
+    // Its submodules follow (§app.merge-queue/project-shapes): the checkout was clean, so each stood at the commit `from`
+    // records; left behind, the next landing would find the folder changed. Never forced: one the update can't move
+    // stays as it is, and the next landing says so.
+    if ((await git(["cat-file", "-e", `${to}:.gitmodules`], co)).code === 0) {
+      await git([...NO_BACKGROUND_CLEANUP, "submodule", "update", "--init", "--recursive"], co, { timeoutMs: 600_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+    }
   } else {
     const r = await git(["update-ref", "-m", "merge queue: land", `refs/heads/${target}`, to, from], root);
     if (r.code !== 0) return { kind: "moved", head: await revParse(git, root, `refs/heads/${target}`) };
@@ -80,7 +86,7 @@ export async function firstParents(git: Git, root: string, from: string, to: str
 export type PushResult = { state: "pushed"; sha: string } | { state: "not-pushed"; why: string; remote?: string } | { state: "no-remote"; why: string };
 
 /**
- * Push the target to origin: fast-forward only (never forced), only when origin's target is an ancestor of the tip
+ * Push the target to the project's remote (origin, or merge.remote): fast-forward only (never forced), only when origin's target is an ancestor of the tip
  * and every first-parent commit between them is one the queue landed (an unpublished release commit on master is
  * never pushed by the queue), never while a push hold is on (a release in progress), never when the project says not
  * to push. The leak scan is a check of the run (the project's merge section), so a tip reaching here passed it.
@@ -90,11 +96,12 @@ export async function pushTip(
   root: string,
   target: string,
   tip: string,
-  opts: { landed: ReadonlySet<string>; push?: boolean; holdFile?: string },
+  opts: { landed: ReadonlySet<string>; push?: boolean; holdFile?: string; remote?: string },
 ): Promise<PushResult> {
   if (opts.push === false) return { state: "not-pushed", why: "the project doesn't push from the queue" };
+  const to = opts.remote ?? "origin";
   const remotes = await git(["remote"], root);
-  if (!remotes.stdout.split("\n").includes("origin")) return { state: "no-remote", why: "no remote named origin" };
+  if (!remotes.stdout.split("\n").includes(to)) return { state: "no-remote", why: `no remote named ${to}` };
   if (opts.holdFile) {
     let hold: string | null = null;
     try {
@@ -102,18 +109,18 @@ export async function pushTip(
     } catch {}
     if (hold) return { state: "not-pushed", why: `held: ${hold.split("\n")[0]}` };
   }
-  const ls = await git(["ls-remote", "origin", `refs/heads/${target}`], root, { timeoutMs: 60_000 });
-  if (ls.code !== 0) return { state: "not-pushed", why: `origin can't be read: ${ls.stderr.trim().split("\n")[0] ?? ""}` };
+  const ls = await git(["ls-remote", to, `refs/heads/${target}`], root, { timeoutMs: 60_000 });
+  if (ls.code !== 0) return { state: "not-pushed", why: `${to} can't be read: ${ls.stderr.trim().split("\n")[0] ?? ""}` };
   const remote = ls.stdout.split(/\s/)[0] || null;
   if (remote === tip) return { state: "pushed", sha: tip };
   if (remote) {
-    if (!(await revParse(git, root, remote))) return { state: "not-pushed", why: `origin's ${target} (${remote.slice(0, 7)}) has commits this repository doesn't`, remote };
-    if (!(await isAncestor(git, root, remote, tip))) return { state: "not-pushed", why: `origin's ${target} (${remote.slice(0, 7)}) isn't in ${target}'s history: never forced`, remote };
+    if (!(await revParse(git, root, remote))) return { state: "not-pushed", why: `${to}'s ${target} (${remote.slice(0, 7)}) has commits this repository doesn't`, remote };
+    if (!(await isAncestor(git, root, remote, tip))) return { state: "not-pushed", why: `${to}'s ${target} (${remote.slice(0, 7)}) isn't in ${target}'s history: never forced`, remote };
     const between = await firstParents(git, root, remote, tip);
     const foreign = between.filter((c) => !opts.landed.has(c));
     if (foreign.length) return { state: "not-pushed", why: `${target} has ${foreign.length} commit${foreign.length === 1 ? "" : "s"} the queue didn't land (${foreign[0]!.slice(0, 7)}${foreign.length > 1 ? ", …" : ""}): a release or a hand commit is pushed by its own owner`, remote };
   }
-  const r = await git(["push", "--porcelain", "origin", `${tip}:refs/heads/${target}`], root, { timeoutMs: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...noBackgroundCleanupEnv() } });
-  if (r.code !== 0) return { state: "not-pushed", why: `origin refused the push: ${(r.stderr || r.stdout).trim().split("\n").filter((l) => !l.startsWith("To ")).slice(0, 2).join(" ")}`, ...(remote ? { remote } : {}) };
+  const r = await git(["push", "--porcelain", to, `${tip}:refs/heads/${target}`], root, { timeoutMs: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...noBackgroundCleanupEnv() } });
+  if (r.code !== 0) return { state: "not-pushed", why: `${to} refused the push: ${(r.stderr || r.stdout).trim().split("\n").filter((l) => !l.startsWith("To ")).slice(0, 2).join(" ")}`, ...(remote ? { remote } : {}) };
   return { state: "pushed", sha: tip };
 }

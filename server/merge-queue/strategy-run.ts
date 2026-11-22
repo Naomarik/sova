@@ -31,6 +31,8 @@ export interface PublishCtx {
   holdFile?: string;
   /** The host (request strategies); null: origin isn't on a host Sova opens requests on. */
   host: Hosting | null;
+  /** The remote it publishes to (merge.remote); absent: origin. */
+  remote?: string;
 }
 
 /** Where a request strategy's host is: origin's repo, when it's that host's. */
@@ -132,7 +134,7 @@ export async function publishEntry(ctx: PublishCtx, o: PublishInput, intent: (st
   const head = p.head;
   intent("push", head);
   const texts = o.text ? [{ label: "the request's title", text: o.text.title }, { label: "the request's description", text: o.text.body }] : undefined;
-  const pushed = await pushBranch(ctx.git, ctx.root, { branch: o.branch, tip: head, base: o.base, namesFile: ctx.namesFile, ...(ctx.holdFile ? { holdFile: ctx.holdFile } : {}), ...(texts ? { texts } : {}) });
+  const pushed = await pushBranch(ctx.git, ctx.root, { branch: o.branch, tip: head, base: o.base, namesFile: ctx.namesFile, ...(ctx.holdFile ? { holdFile: ctx.holdFile } : {}), ...(texts ? { texts } : {}), ...(ctx.remote ? { remote: ctx.remote } : {}) });
   if (pushed.state === "refused") {
     const textHit = !!pushed.hits?.length && pushed.hits.every((h) => h.startsWith("the request's"));
     const branchHit = !!pushed.hits?.length && !textHit;
@@ -163,7 +165,7 @@ async function openOrFind(h: Hosting, o: { head: string; base: string; text?: { 
  * has the text); else unknown, said and never retried blind.
  */
 export async function reconcilePublish(ctx: PublishCtx, o: { how: RequestHow; branch: string; head: string; text?: { title: string; body: string } | undefined }): Promise<PublishOutcome> {
-  const ls = await ctx.git(["ls-remote", "origin", `refs/heads/${o.branch}`], ctx.root, { timeoutMs: 60_000 });
+  const ls = await ctx.git(["ls-remote", ctx.remote ?? "origin", `refs/heads/${o.branch}`], ctx.root, { timeoutMs: 60_000 });
   if (ls.code !== 0) return { kind: "wait", why: "origin can't be read to finish the publication Sova stopped in" };
   const remote = ls.stdout.split(/\s/)[0] || null;
   if (remote !== o.head) return { kind: "refused", why: `Sova stopped while publishing ${o.branch}, and origin's ${o.branch} is ${remote ? `at ${remote.slice(0, 7)}` : "not there"}: publish again`, blame: "setup" };
@@ -189,7 +191,7 @@ export async function pollRequest(ctx: PublishCtx, o: { number: number; from: st
   const r = v.request;
   if (r.state === "closed") return { kind: "closed", request: r };
   if (r.state !== "merged") return { kind: "open", request: r };
-  const f = await fetchTarget(ctx.git, ctx.root, ctx.target);
+  const f = await fetchTarget(ctx.git, ctx.root, ctx.target, ctx.remote);
   const origin = "sha" in f ? f.sha : null;
   const sha = r.mergeCommit ?? origin ?? "";
   const parents = origin && o.from && origin !== o.from && (await isAncestor(ctx.git, ctx.root, o.from, origin)) ? await firstParents(ctx.git, ctx.root, o.from, origin) : [];
@@ -222,7 +224,7 @@ export async function publishSettings(ctx: PublishCtx, o: { how: RequestHow; fil
     const a = await ctx.host.adapter.auth(ctx.host.repo);
     if (!a.ok) return { state: "refused", why: a.why };
   }
-  const f = await fetchTarget(ctx.git, ctx.root, ctx.target);
+  const f = await fetchTarget(ctx.git, ctx.root, ctx.target, ctx.remote);
   if ("why" in f) return { state: "refused", why: f.why };
   const base = f.sha;
   const text = await o.textAt(base);
@@ -253,7 +255,7 @@ export async function publishSettings(ctx: PublishCtx, o: { how: RequestHow; fil
   }
   if (!(await revParse(ctx.git, ctx.root, commit))) return { state: "refused", why: "the settings commit wasn't made" };
   const texts = [{ label: "the request's title", text: o.message }, { label: "the request's description", text: o.body }];
-  const pushed = await pushBranch(ctx.git, ctx.root, { branch, tip: commit, base, namesFile: ctx.namesFile, ...(ctx.holdFile ? { holdFile: ctx.holdFile } : {}), texts });
+  const pushed = await pushBranch(ctx.git, ctx.root, { branch, tip: commit, base, namesFile: ctx.namesFile, ...(ctx.holdFile ? { holdFile: ctx.holdFile } : {}), texts, ...(ctx.remote ? { remote: ctx.remote } : {}) });
   if (pushed.state === "refused") return { state: "refused", why: pushed.why };
   if (o.how === "push-branch" || !ctx.host) return { state: "pushed", branch, commit };
   const r = await openOrFind(ctx.host, { head: branch, base: ctx.target, text: { title: o.message, body: o.body }, pushedHead: commit });

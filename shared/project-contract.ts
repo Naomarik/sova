@@ -12,10 +12,10 @@ export type Verb = (typeof VERBS)[number];
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
 /** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
-export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try", "merge.restart", "merge.live", "merge.test", "merge.names", "merge.rule", "merge.respond", "merge.stop-try", "merge.events"] as const;
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try", "merge.restart", "merge.live", "merge.test", "merge.names", "merge.rule", "merge.respond", "merge.stop-try"] as const;
 export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
-export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.live", "merge.events"];
+export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.live"];
 /** The release verbs (shared/release.ts): a project's release in progress and its history, never an instance. */
 export const RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw", "release.note"] as const;
 export type ReleaseVerb = (typeof RELEASE_VERBS)[number];
@@ -360,6 +360,17 @@ export interface MergeCheckDecl {
   /** Takes one selection per run: folder rules hitting it with different selections run it once per selection,
    *  instead of once with every selection joined. */
   perSelector?: true;
+  /** The folder it runs in, relative to the repository root (a package of a multi-package repository); absent: the
+   *  root. Its report's files, its `select` and its reruns' files are read from there. */
+  cwd?: string;
+  /** Variables of its own, over what Sova gives every check (never a SOVA_* name); values may use the templates. */
+  env?: Record<string, string>;
+  /** The test report its runner writes, read when it writes no SOVA_OUT: a JUnit XML file or folder, or TAP in a file
+   *  or on its own output (`"stdout"`); a path relative to `cwd`. */
+  report?: { junit: string } | { tap: string };
+  /** How to rerun one failing test by name: argv appended once per failing test, `${test}` its name (pytest
+   *  `["-k", "${test}"]`, node/bun `["--test-name-pattern", "${test}"]`). Absent: reruns name files only. */
+  rerunTest?: Argv;
 }
 /** The definition's `merge` section. `checks`: the required set, `"none"` (declared: no automated tests), or absent
  *  (the queue falls back to `test.run`, else the project isn't set up). `target`: the branch it lands on (absent: the
@@ -382,6 +393,10 @@ export interface MergeDecl {
   /** Folder rules: when one of `paths` changes, the run adds `check` (with `select`). Sova applies them itself at the
    *  start of each run, read from the branch being landed. Needs `checks` to be a list. */
   rules?: MergeRuleDecl[];
+  /** The remote the queue fetches from and pushes to; absent: `origin`. */
+  remote?: string;
+  /** Landing by merging locally: the branch lands as one commit on the target (a squash) instead of a merge commit. */
+  squash?: boolean;
 }
 
 /** One folder rule: a changed path matching one of `paths` (globs relative to the repository root: `**` any depth,
@@ -535,8 +550,9 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches", "rules"],
-  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect", "perSelector"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches", "rules", "remote", "squash", "reviewFixes"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect", "perSelector", "cwd", "env", "report", "rerunTest"],
+  mergeReport: [["junit"], ["tap"]],
   mergeRule: ["paths", "check", "select", "why"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
@@ -945,6 +961,10 @@ function* deployTemplates(d: DeployDecl): Generator<[string, string]> {
 /** Parse `.sova/project.json`'s text. Throws DefinitionError naming the first problem's path. */
 /** The variables a merge check's `run` may use beside the definition's own. */
 export const MERGE_VARS = ["merge.base", "merge.tip", "merge.target"] as const;
+/** A git remote's name as `merge.remote` takes it. */
+const REMOTE_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/;
+/** The remote the queue fetches from and pushes to: the project's `merge.remote`, else `origin`. */
+export const remoteOf = (def: { merge?: { remote?: string } } | null | undefined): string => def?.merge?.remote ?? "origin";
 /** `merge.land`'s values (shared/merge-queue.ts LandHow). */
 export const MERGE_LAND_HOWS = ["local", "github-pr", "gitlab-mr", "push-branch"] as const;
 
@@ -976,7 +996,31 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
       if (x.perSelector !== undefined && typeof x.perSelector !== "boolean") throw new DefinitionError(`${path}.perSelector`, "must be true or false");
       const requires = strList(x.requires, `${path}.requires`);
       for (const r of requires) if (!services.some((s) => s.name === r)) throw new DefinitionError(`${path}.requires`, `names no service "${r}"`);
-      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}), ...(x.needsSelect === true ? { needsSelect: true as const } : {}), ...(x.perSelector === true ? { perSelector: true as const } : {}) };
+      const cwd = x.cwd === undefined ? "." : relPath(x.cwd, `${path}.cwd`, true);
+      const env: Record<string, string> = {};
+      if (x.env !== undefined)
+        for (const [k, e] of Object.entries(obj(x.env, `${path}.env`))) {
+          if (!ENV_NAME.test(k) || k.startsWith("SOVA_")) throw new DefinitionError(`${path}.env.${k}`, "an env name is A-Z, 0-9 and _, and never a SOVA_ one (Sova sets those itself)");
+          if (typeof e !== "string") throw new DefinitionError(`${path}.env.${k}`, "must be a string");
+          env[k] = e;
+        }
+      let report: MergeCheckDecl["report"];
+      if (x.report !== undefined) {
+        const r = obj(x.report, `${path}.report`);
+        if ("junit" in r) {
+          keysOnly(r, K.mergeReport[0], `${path}.report`);
+          report = { junit: relPath(r.junit, `${path}.report.junit`, true) };
+        } else if ("tap" in r) {
+          keysOnly(r, K.mergeReport[1], `${path}.report`);
+          report = { tap: r.tap === "stdout" ? "stdout" : relPath(r.tap, `${path}.report.tap`, true) };
+        } else throw new DefinitionError(`${path}.report`, 'must be {junit: <file or folder>} or {tap: "stdout" | <file>}');
+      }
+      let rerunTest: Argv | undefined;
+      if (x.rerunTest !== undefined) {
+        rerunTest = argv(x.rerunTest, `${path}.rerunTest`);
+        if (!rerunTest.some((a) => a.includes("${test}"))) throw new DefinitionError(`${path}.rerunTest`, "must hold ${test} (the failing test's name)");
+      }
+      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}), ...(x.needsSelect === true ? { needsSelect: true as const } : {}), ...(x.perSelector === true ? { perSelector: true as const } : {}), ...(cwd !== "." ? { cwd } : {}), ...(Object.keys(env).length ? { env } : {}), ...(report ? { report } : {}), ...(rerunTest ? { rerunTest } : {}) };
     });
     if (!out.checks.some((c) => !c.optional)) throw new DefinitionError("$.merge.checks", "at least one check is required (not optional)");
     if (new Set(out.checks.map((c) => c.id)).size !== out.checks.length) throw new DefinitionError("$.merge.checks", "check ids must be unique");
@@ -1003,6 +1047,14 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
     out.deleteBranches = o.deleteBranches;
   }
   if (o.rules !== undefined) out.rules = mergeRules(o.rules, out.checks);
+  if (o.remote !== undefined) {
+    if (typeof o.remote !== "string" || !REMOTE_NAME.test(o.remote) || o.remote.includes("..") || o.remote.endsWith(".lock")) throw new DefinitionError("$.merge.remote", "must be a remote's name (letters, digits and . _ -)");
+    out.remote = o.remote;
+  }
+  if (o.squash !== undefined) {
+    if (typeof o.squash !== "boolean") throw new DefinitionError("$.merge.squash", "must be true or false");
+    out.squash = o.squash;
+  }
   return out;
 }
 
@@ -1240,6 +1292,17 @@ export function parseDefinition(text: string): ProjectDef {
         const bad = unknownVars(a, mv);
         if (bad) throw new DefinitionError(`$.merge.checks[${i}].run[${j}]`, bad);
       }
+    for (const [i, c] of (Array.isArray(def.merge.checks) ? def.merge.checks : []).entries()) {
+      for (const [k, a] of Object.entries(c.env ?? {})) {
+        const bad = unknownVars(a, mv);
+        if (bad) throw new DefinitionError(`$.merge.checks[${i}].env.${k}`, bad);
+      }
+      const tv = new Set([...mv, "test"]);
+      for (const [j, a] of (c.rerunTest ?? []).entries()) {
+        const bad = unknownVars(a, tv);
+        if (bad) throw new DefinitionError(`$.merge.checks[${i}].rerunTest[${j}]`, bad);
+      }
+    }
     for (const [j, a] of (def.merge.install?.run ?? []).entries()) {
       const bad = unknownVars(a, vars);
       if (bad) throw new DefinitionError(`$.merge.install.run[${j}]`, bad);

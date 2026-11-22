@@ -11783,7 +11783,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 10684,
+      "bytes": 10669,
       "tools": [
         {
           "name": "project_verbs",
@@ -11842,7 +11842,6 @@
                   "merge.rule",
                   "merge.respond",
                   "merge.stop-try",
-                  "merge.events",
                   "release.status",
                   "release.logs",
                   "release.request",

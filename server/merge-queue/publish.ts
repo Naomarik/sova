@@ -13,12 +13,13 @@ import { scanPublication } from "./publish-scan";
 
 const firstLine = (s: string): string => s.trim().split("\n").filter((l) => !l.startsWith("To ")).slice(0, 2).join(" ");
 
-/** origin's target fetched now (`refs/remotes/origin/<target>`): request projects test every run against it. */
-export async function fetchTarget(git: Git, root: string, target: string): Promise<{ sha: string } | { why: string }> {
-  const r = await git([...NO_BACKGROUND_CLEANUP, "fetch", "--no-tags", "--quiet", "origin", `+refs/heads/${target}:refs/remotes/origin/${target}`], root, { timeoutMs: 120_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
-  if (r.code !== 0) return { why: `origin's ${target} couldn't be fetched: ${firstLine(r.stderr || r.stdout)}` };
-  const sha = await revParse(git, root, `refs/remotes/origin/${target}`);
-  return sha ? { sha } : { why: `origin has no ${target}` };
+/** The remote's target fetched now (`refs/remotes/<remote>/<target>`; the remote is `origin` unless the project names
+ *  another, merge.remote): request projects test every run against it. */
+export async function fetchTarget(git: Git, root: string, target: string, remote = "origin"): Promise<{ sha: string } | { why: string }> {
+  const r = await git([...NO_BACKGROUND_CLEANUP, "fetch", "--no-tags", "--quiet", remote, `+refs/heads/${target}:refs/remotes/${remote}/${target}`], root, { timeoutMs: 120_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  if (r.code !== 0) return { why: `${remote}'s ${target} couldn't be fetched: ${firstLine(r.stderr || r.stdout)}` };
+  const sha = await revParse(git, root, `refs/remotes/${remote}/${target}`);
+  return sha ? { sha } : { why: `${remote} has no ${target}` };
 }
 
 export type PromoteResult =
@@ -91,9 +92,10 @@ export type BranchPushResult = { state: "pushed"; sha: string; from: string | nu
  * everything origin's `base` lacks up to the tip (and `texts`, the request's words), fast-forward only. A branch
  * origin already has must be in the tip's history (Land Again adds on top, never rewrites; q6).
  */
-export async function pushBranch(git: Git, root: string, o: { branch: string; tip: string; base: string; namesFile?: string | undefined; holdFile?: string; texts?: { label: string; text: string }[] }): Promise<BranchPushResult> {
+export async function pushBranch(git: Git, root: string, o: { branch: string; tip: string; base: string; namesFile?: string | undefined; holdFile?: string; texts?: { label: string; text: string }[]; remote?: string }): Promise<BranchPushResult> {
+  const to = o.remote ?? "origin";
   const remotes = await git(["remote"], root);
-  if (!remotes.stdout.split("\n").includes("origin")) return { state: "refused", why: "no remote named origin: nothing to publish to" };
+  if (!remotes.stdout.split("\n").includes(to)) return { state: "refused", why: `no remote named ${to}: nothing to publish to` };
   if (o.holdFile) {
     let hold: string | null = null;
     try {
@@ -101,25 +103,25 @@ export async function pushBranch(git: Git, root: string, o: { branch: string; ti
     } catch {}
     if (hold) return { state: "refused", why: `held: ${hold.split("\n")[0]}` };
   }
-  const ls = await git(["ls-remote", "origin", `refs/heads/${o.branch}`], root, { timeoutMs: 60_000 });
-  if (ls.code !== 0) return { state: "refused", why: `origin can't be read: ${firstLine(ls.stderr)}` };
+  const ls = await git(["ls-remote", to, `refs/heads/${o.branch}`], root, { timeoutMs: 60_000 });
+  if (ls.code !== 0) return { state: "refused", why: `${to} can't be read: ${firstLine(ls.stderr)}` };
   const remote = ls.stdout.split(/\s/)[0] || null;
   if (remote && remote !== o.tip) {
-    if (!(await revParse(git, root, remote))) return { state: "refused", why: `origin's ${o.branch} (${remote.slice(0, 7)}) has commits this repository doesn't: someone pushed to it; never forced` };
-    if (!(await isAncestor(git, root, remote, o.tip))) return { state: "refused", why: `origin's ${o.branch} (${remote.slice(0, 7)}) isn't in the tested commit's history: never forced` };
+    if (!(await revParse(git, root, remote))) return { state: "refused", why: `${to}'s ${o.branch} (${remote.slice(0, 7)}) has commits this repository doesn't: someone pushed to it; never forced` };
+    if (!(await isAncestor(git, root, remote, o.tip))) return { state: "refused", why: `${to}'s ${o.branch} (${remote.slice(0, 7)}) isn't in the tested commit's history: never forced` };
   }
   const scan = await scanPublication(git, { repo: root, range: `${o.base}..${o.tip}`, namesFile: o.namesFile, ...(o.texts ? { texts: o.texts } : {}) });
   if (!scan.ok) return { state: "refused", why: scan.why, hits: scan.hits };
   if (remote === o.tip) return { state: "pushed", sha: o.tip, from: remote };
-  const r = await git(["push", "--porcelain", "origin", `${o.tip}:refs/heads/${o.branch}`], root, { timeoutMs: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...noBackgroundCleanupEnv() } });
-  if (r.code !== 0) return { state: "refused", why: `origin refused the push: ${firstLine(r.stderr || r.stdout)}` };
+  const r = await git(["push", "--porcelain", to, `${o.tip}:refs/heads/${o.branch}`], root, { timeoutMs: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...noBackgroundCleanupEnv() } });
+  if (r.code !== 0) return { state: "refused", why: `${to} refused the push: ${firstLine(r.stderr || r.stdout)}` };
   return { state: "pushed", sha: o.tip, from: remote };
 }
 
-/** What origin's branch is now (null: none). */
-export async function remoteBranch(git: Git, root: string, branch: string): Promise<{ sha: string | null } | { why: string }> {
-  const ls = await git(["ls-remote", "origin", `refs/heads/${branch}`], root, { timeoutMs: 60_000 });
-  if (ls.code !== 0) return { why: `origin can't be read: ${firstLine(ls.stderr)}` };
+/** What the remote's branch is now (null: none). */
+export async function remoteBranch(git: Git, root: string, branch: string, remote = "origin"): Promise<{ sha: string | null } | { why: string }> {
+  const ls = await git(["ls-remote", remote, `refs/heads/${branch}`], root, { timeoutMs: 60_000 });
+  if (ls.code !== 0) return { why: `${remote} can't be read: ${firstLine(ls.stderr)}` };
   return { sha: ls.stdout.split(/\s/)[0] || null };
 }
 
@@ -133,15 +135,15 @@ export type UpdateMainResult =
  * (land.ts landTip: the main checkout too, only when clean; never forced). Refused, with the reason, when the
  * checkout holding it has uncommitted edits or local main has commits origin lacks; nothing pauses.
  */
-export async function updateLocalMain(git: Git, root: string, target: string): Promise<UpdateMainResult> {
-  const f = await fetchTarget(git, root, target);
+export async function updateLocalMain(git: Git, root: string, target: string, remote = "origin"): Promise<UpdateMainResult> {
+  const f = await fetchTarget(git, root, target, remote);
   if ("why" in f) return { kind: "refused", why: f.why };
   const local = await revParse(git, root, `refs/heads/${target}`);
   if (!local) return { kind: "refused", why: `no branch ${target} in ${root}` };
   if (local === f.sha) return { kind: "current", head: local };
   if (!(await isAncestor(git, root, local, f.sha))) {
     const n = await countBetween(git, root, f.sha, local);
-    return { kind: "refused", why: `local ${target} has ${n} commit${n === 1 ? "" : "s"} origin's doesn't: it isn't moved (never forced)` };
+    return { kind: "refused", why: `local ${target} has ${n} commit${n === 1 ? "" : "s"} ${remote}'s doesn't: it isn't moved (never forced)` };
   }
   const parents = await firstParents(git, root, local, f.sha);
   const r = await landTip(git, root, target, local, f.sha);
@@ -151,9 +153,9 @@ export async function updateLocalMain(git: Git, root: string, target: string): P
 }
 
 /** How far local main is behind origin's (as last fetched); 0 when level or unknown. */
-export async function localBehind(git: Git, root: string, target: string): Promise<number> {
+export async function localBehind(git: Git, root: string, target: string, remoteName = "origin"): Promise<number> {
   const local = await revParse(git, root, `refs/heads/${target}`);
-  const remote = await revParse(git, root, `refs/remotes/origin/${target}`);
+  const remote = await revParse(git, root, `refs/remotes/${remoteName}/${target}`);
   if (!local || !remote || local === remote) return 0;
   return countBetween(git, root, local, remote);
 }

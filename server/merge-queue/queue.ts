@@ -1,6 +1,7 @@
 import { retirementViewOf } from "../worktree-retire-view";
 import { pendingWhileOff, viewWhileOff } from "../cleanup-switch";
 import { queueQuietWork } from "./card-port";
+import { copyShapeOf } from "./copy";
 import { hostProblem } from "./host-sendback";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -51,7 +52,7 @@ import {
 } from "../../shared/merge-queue";
 import { historyWords } from "./history";
 import { countRestart, noticeEvent, pauseEvent, restartCauseOf, runEndedEvent, stepEnded, stepEvent } from "./activity";
-import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
+import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef, remoteOf } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
 import { type BranchLeft, branchLanded, branchLeft, type LandingRecords, NO_LANDINGS, registerQueueReading } from "../nothing-left";
@@ -849,7 +850,7 @@ export class ProjectQueue {
     if (onHost.length) v.waitingOnHost = onHost;
     const requestProject = publishes(effectiveHow(d.def?.merge?.land, this.store.dir).effective) || this.q.entries.some((e) => !!e.request && !isFinal(e));
     if (requestProject && head) {
-      const behind = await localBehind(this.git, this.root, this.q.target);
+      const behind = await localBehind(this.git, this.root, this.q.target, await this.remoteName());
       if (behind) {
         v.heads.behind = behind;
         const co = await checkoutOf(this.git, this.root, this.q.target);
@@ -1059,8 +1060,20 @@ export class ProjectQueue {
 
   /** Whether the project has origin, and origin's copy of the target as last fetched (its remote-tracking ref; never a fetch). */
   private async originFacts(): Promise<{ has: boolean; tracking: string | null }> {
-    const has = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
-    return { has, tracking: has ? await revParse(this.git, this.root, `refs/remotes/origin/${this.q.target}`) : null };
+    const remote = await this.remoteName();
+    const has = await this.hasRemote(remote);
+    return { has, tracking: has ? await revParse(this.git, this.root, `refs/remotes/${remote}/${this.q.target}`) : null };
+  }
+
+  /** The remote the queue fetches from and pushes to: the target's merge.remote, else origin. */
+  async remoteName(): Promise<string> {
+    return remoteOf((await this.declared()).def);
+  }
+
+  /** Whether the repository has a remote of that name (default: the queue's own). */
+  private async hasRemote(name?: string): Promise<boolean> {
+    const remote = name ?? (await this.remoteName());
+    return (await this.git(["remote"], this.root)).stdout.split("\n").includes(remote);
   }
 
   // ---- settings (the Settings dialog's Merge Queue tab) ----------------------------------------------
@@ -1106,7 +1119,8 @@ export class ProjectQueue {
       ...(file.blocked ? { editBlocked: file.blocked } : {}),
       ...(this.q.pendingSave ? { pendingSave: { ...this.q.pendingSave, ...(heldBy && !this.q.pendingSave.failed ? { release: heldBy } : {}) } } : {}),
       fixed: fixedValues(this.root, { ...(this.deps.retryDelayMs !== undefined ? { retryDelayMs: this.deps.retryDelayMs } : {}) }),
-      how: await landHowSetting({ dir: this.store.dir, root: this.root, projectHow: d.def?.merge?.land, ...(this.deps.hosts ? { hosts: this.deps.hosts } : {}) }),
+      how: await landHowSetting({ dir: this.store.dir, root: this.root, projectHow: d.def?.merge?.land, ...(d.def?.merge?.remote ? { remote: d.def.merge.remote } : {}), ...(this.deps.hosts ? { hosts: this.deps.hosts } : {}) }),
+      shape: await copyShapeOf(this.root, head).catch(() => undefined),
     });
     this.settingsCache = { key, at: this.now(), v };
     return structuredClone(v);
@@ -1365,18 +1379,16 @@ export class ProjectQueue {
     return facts;
   }
 
-  private readyCache: { at: number; head: string; heads: string; list: MergeReady[] } | null = null;
+  private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;
   /** The next view reads the Ready list afresh: a branch went outside the queue (Discard Branch…). */
   forgetReady(): void {
     this.readyCache = null;
   }
   /** Ready, not approved (the view's Land list), re-read at most every 15 s or when the target moves. */
   private async readyList(head: string, redrafted: ReadonlySet<string> = new Set()): Promise<MergeReady[]> {
-    // Kept while neither the target nor any worktree's head moved (a new commit on a branch is read at once).
-    const trees = await worktreesOf(this.git, this.root);
-    const heads = trees.map((w) => `${w.path}@${w.head ?? ""}`).join("\n");
-    if (this.readyCache && this.readyCache.head === head && this.readyCache.heads === heads && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
+    if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
     const out: MergeReady[] = [];
+    const trees = await worktreesOf(this.git, this.root);
     const made = await this.queueMadeNow();
     // The answers are kept per head and target, so only a move of the target reads any again: a few at a time, since
     // the heads with work each run a trial merge.
@@ -1405,7 +1417,7 @@ export class ProjectQueue {
       const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
       out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(draftsOnly ? { draftsOnly } : {}), ...(left ? { left: { whole: left.whole, code: left.codeOnly } } : { left: { whole: "unknown", code: "unknown" } }), ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
-    this.readyCache = { at: this.now(), head, heads, list: out };
+    this.readyCache = { at: this.now(), head, list: out };
     return this.filterReady(out, redrafted);
   }
 
@@ -1625,7 +1637,7 @@ export class ProjectQueue {
       // typed word, that can't open one there, or a computer not signed in to it, is refused now.
       if (opensRequest(approvalHow(approval))) {
         const host = await this.hosting();
-        if (!host) throw new MergeFailure("invalid-request", (await this.git(["remote", "get-url", "origin"], this.root)).code === 0 ? NO_HOST_WORDS : NO_ORIGIN_WORDS);
+        if (!host) throw new MergeFailure("invalid-request", (await this.git(["remote", "get-url", await this.remoteName()], this.root)).code === 0 ? NO_HOST_WORDS : NO_ORIGIN_WORDS);
         if (approval.via) approval.via = host.repo.kind === "github" ? "github-pr" : "gitlab-mr";
         const mismatch = hostMismatch(approvalHow(approval) as RequestHow, host);
         if (mismatch) throw new MergeFailure("invalid-request", mismatch);
@@ -3303,9 +3315,9 @@ export class ProjectQueue {
         this.checksCache = null;
         // The setup commit isn't pushed on its own: it goes out with the next landing. The view says so meanwhile,
         // from the sha origin had (its remote-tracking ref), unless a push is already held for its own reason.
-        if ((await this.git(["remote"], this.root)).stdout.split("\n").includes("origin")) {
+        if (await this.hasRemote()) {
           if (!this.q.heads.pushed) {
-            const remote = await revParse(this.git, this.root, `refs/remotes/origin/${this.q.target}`);
+            const remote = await revParse(this.git, this.root, `refs/remotes/${await this.remoteName()}/${this.q.target}`);
             if (remote) this.q.heads.pushed = remote;
           }
           if (!this.q.heads.pushWhy) this.q.heads.pushWhy = PUSH_WAITS_NEXT_LANDING;
@@ -3981,7 +3993,7 @@ export class ProjectQueue {
       // fetched just before, never the local one (which only Update Local Main moves).
       let base = head;
       if (publishes(approvalHow(e.approval))) {
-        const f = await fetchTarget(this.git, this.root, this.q.target);
+        const f = await fetchTarget(this.git, this.root, this.q.target, await this.remoteName());
         if ("why" in f) {
           const tries = (this.q.machineTries[e.id] ?? 0) + 1;
           this.q.machineTries[e.id] = tries;
@@ -4319,7 +4331,7 @@ export class ProjectQueue {
       run.verdict = why === "cancelled" ? "cancelled" : "void";
       run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : why === "release" ? "a release started: it waits for the release" : why === "clean-run" ? "you asked for a clean run: it starts again from an empty merge copy" : "cancelled";
       this.store.writeRun(run);
-      if (e.state === "checking" && (why === "master-moved" || why === "stopping" || why === "release" || why === "clean-run")) this.record(countRestart(e, restartCauseOf(why), run.id, run.why));
+      if (e.state === "checking" && (why === "master-moved" || why === "stopping" || why === "release")) this.record(countRestart(e, restartCauseOf(why), run.id, run.why));
       if (why === "master-moved" && e.state === "checking") {
         this.toFront(e);
         const head = await this.targetHead();
@@ -4712,7 +4724,7 @@ export class ProjectQueue {
     try {
       if (this.deps.hostRepo) repo = await this.deps.hostRepo(this.root);
       else {
-        const url = await this.git(["remote", "get-url", "origin"], this.root);
+        const url = await this.git(["remote", "get-url", await this.remoteName()], this.root);
         repo = url.code === 0 && url.stdout.trim() ? ((await suggestLanding(url.stdout.trim())).repo ?? null) : null;
       }
     } catch {
@@ -4725,7 +4737,7 @@ export class ProjectQueue {
 
   private async publishCtx(how: RequestHow): Promise<import("./strategy-run").PublishCtx> {
     const names = this.names();
-    return { git: this.git, root: this.root, target: this.q.target, namesFile: names.exists ? names.file : undefined, holdFile: join(this.store.dir, "push-hold"), host: how === "push-branch" ? null : await this.hosting() };
+    return { git: this.git, root: this.root, target: this.q.target, namesFile: names.exists ? names.file : undefined, holdFile: join(this.store.dir, "push-hold"), host: how === "push-branch" ? null : await this.hosting(), remote: await this.remoteName() };
   }
 
   /** A passed run on a request or push project (the entry is `checking`): its request's text drafted for the user's
@@ -4978,7 +4990,7 @@ export class ProjectQueue {
       if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: update it after Publish or Cancel Release`);
       this.landing = true;
       try {
-        const r = await updateMainTip(this.git, this.root, this.q.target);
+        const r = await updateMainTip(this.git, this.root, this.q.target, await this.remoteName());
         if (r.kind === "refused") throw new MergeFailure("invalid-request", r.why);
         if (r.kind === "current") return { kind: "current" as const, head: r.head };
         for (const c of r.parents) if (!this.q.landed.includes(c)) this.q.landed.push(c);
@@ -5031,6 +5043,12 @@ export class ProjectQueue {
     this.reviewEvent(e, { kind: "landed" });
     delete e.reason;
     e.landed = { sha: tip, from: run.base, at: this.iso(), pushed: "pending" };
+    // Landed as one commit (merge.squash): the pinned commit isn't on the target, so its pin is kept past the entry,
+    // as a host's squash is (§chat.worktrees/nothing-left).
+    if (tip !== e.commit && !(await isAncestor(this.git, this.root, e.commit, tip))) {
+      e.landed.oneCommit = true;
+      if (!this.q.hostPins?.[e.branch]?.includes(e.commit)) this.keepHostPin(e.branch, e.commit);
+    }
     e.updatedAt = this.iso();
     const branchTip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
     const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await ownCommitsPast(this.git, this.root, e.commit, branchTip, tip, true) : 0;
@@ -5043,8 +5061,6 @@ export class ProjectQueue {
     if (e.release && e.releaseKind === "revert" && this.q.release?.id === e.release) this.liftNow();
     this.save();
     this.log(`landed ${e.branch} at ${tip.slice(0, 7)}`);
-    // Recorded as it lands (before its push); a host's landing is recorded from its notice (activity.ts).
-    this.record({ kind: "landed", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "land", sha: tip, from: run.base, why: `Landed on ${e.target} as ${tip.slice(0, 7)}.` });
     this.releaseEvent(e, "landed", undefined, run.id);
     await this.push(tip, def, e);
     this.deps.notify?.("landed", e, { run, root: this.root });
@@ -5078,13 +5094,14 @@ export class ProjectQueue {
   private async push(tip: string, def: ProjectDef | null, e?: Entry): Promise<void> {
     const names = this.names();
     let p: Awaited<ReturnType<typeof pushTip>>;
-    const origin = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
+    const remote = remoteOf(def);
+    const origin = await this.hasRemote(remote);
     if (this.q.release && def?.merge?.push !== false && origin) {
       p = { state: "not-pushed", why: `held: ${this.holdWords()}` };
     } else if (!names.exists && def?.merge?.push !== false && origin) {
       p = { state: "not-pushed", why: PUSH_HELD_NAMES };
       if (e) this.wake("names", e, undefined, { namesFile: names.file });
-    } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold") });
+    } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold"), remote });
     if (p.state === "pushed") {
       this.q.heads.pushed = tip;
       delete this.q.heads.pushWhy;
@@ -5347,9 +5364,9 @@ export class ProjectQueue {
       if (head !== p.commit) throw new MergeFailure("invalid-request", `${this.q.target} is at ${(head ?? "?").slice(0, 7)}, not the release commit ${p.commit.slice(0, 7)}`);
       await this.mustLandLocally();
       const def = (await this.declared()).def;
-      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root));
+      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root, remoteOf(def)));
       if (pushes && !this.names().exists) throw new MergeFailure("invalid-request", PUSH_HELD_NAMES);
-      const r = await publishGit(this.git, { root: this.root, target: this.q.target, commit: p.commit, tag: p.tag, channels: p.channels, message: p.notes, push: pushes, landed: new Set(this.q.landed) });
+      const r = await publishGit(this.git, { root: this.root, target: this.q.target, commit: p.commit, tag: p.tag, channels: p.channels, message: p.notes, push: pushes, landed: new Set(this.q.landed), remote: remoteOf(def) });
       if (!r.ok) {
         this.log(`publish of ${p.tag} failed: ${r.why}`);
         throw new MergeFailure("busy", r.why);
@@ -5436,8 +5453,8 @@ export class ProjectQueue {
   withdrawRelease(w: { tag: string; sha: string; channels: Record<string, string | null>; why: string }): Promise<{ pushed: "pushed" | "not-pushed" | "no-remote"; channelsFrom: Record<string, string | null> }> {
     return this.serial(async () => {
       const def = (await this.declared()).def;
-      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root));
-      const r = await withdrawGit(this.git, { root: this.root, channels: w.channels, tag: w.tag, sha: w.sha, why: w.why, push: pushes });
+      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root, remoteOf(def)));
+      const r = await withdrawGit(this.git, { root: this.root, channels: w.channels, tag: w.tag, sha: w.sha, why: w.why, push: pushes, remote: remoteOf(def) });
       if (!r.ok) throw new MergeFailure("busy", r.why);
       this.log(`withdrew ${w.tag}: ${Object.entries(w.channels).map(([c, to]) => `${c} → ${to ? to.slice(0, 7) : "none"}`).join(", ")}`);
       return { pushed: r.pushed === "pending" ? "not-pushed" : r.pushed, channelsFrom: r.channelsFrom };

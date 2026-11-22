@@ -123,7 +123,7 @@
   "description": "@92bd36452c3a5ac1",
   "parameters": {
    "type": "object",
-   "properties": "@1ed4094edc1620ad",
+   "properties": "@e7455d0540dbd8bd",
    "required": [
     "verb"
    ],
@@ -190,18 +190,6 @@
     "op"
    ],
    "additionalProperties": false
-  }
- },
- {
-  "name": "rel__status",
-  "description": "Print the release status.\n\n(A tool of the project mode rel.)",
-  "parameters": {
-   "type": "object",
-   "properties": {
-    "verbose": {
-     "type": "boolean"
-    }
-   }
   }
  }
 ]

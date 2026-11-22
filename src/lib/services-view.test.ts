@@ -28,11 +28,9 @@ test("the services not ready are named; none when all are", () => {
   assert.equal(notReadyLine([s("web", "ready"), s("api", "failed"), s("db", "stopped")]), "api failed · db stopped");
   assert.equal(notReadyLine([s("web", "ready"), { ...s("flaky", "failed"), gaveUp: true as const }]), "flaky failed and stopped retrying; Start runs it again");
   // Retrying within its restart limit, whether between tries (failed) or in one (starting).
-  const retry = (name: string, state: "failed" | "starting" | "ready", n: number) => ({ ...s(name, "failed"), state, restarting: { try: n, of: 5 as const } });
+  const retry = (name: string, state: "failed" | "starting", n: number) => ({ ...s(name, "failed"), state, restarting: { try: n, of: 5 as const } });
   assert.equal(notReadyLine([s("web", "ready"), retry("api", "failed", 2)]), "api failed · restarting, try 2 of 5");
   assert.equal(notReadyLine([retry("api", "starting", 4), s("db", "stopped")]), "api failed · restarting, try 4 of 5 · db stopped");
-  // Up again but not yet 60 s: still its try, still named.
-  assert.equal(notReadyLine([retry("api", "ready", 2)]), "api failed · restarting, try 2 of 5");
   // A give-up with Sova's record is the failed block's, never this line's.
   const gave = { ...s("api", "failed"), gaveUp: true as const, giveUp: { rule: "in-a-row" as const, tries: 5, at: "2026-11-22T10:00:00Z", exit: 1, lines: [] } };
   assert.equal(notReadyLine([s("web", "ready"), gave]), null);

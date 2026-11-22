@@ -5558,11 +5558,12 @@ export class ProjectQueue {
       const first = !this.q.heads.pushScan;
       this.q.heads.pushScan = p.scan;
       if (first) {
-        this.log(`push held: the scan before pushing found ${p.scan.hits?.length ?? 0} thing(s) that look private`);
+        const hits = p.scan.state === "hits";
+        this.log(hits ? `push held: the scan before pushing found ${p.scan.hits?.length ?? 0} thing(s) that look private` : `push held: the scan before pushing couldn't look (${p.scan.why ?? "unknown"})`);
         this.record({ kind: "names", by: "queue", ...(e ? { entry: e.id, branch: e.branch } : {}), step: "push", what: "push-scan-hit", hits: p.scan.hits?.length ?? 0, why: `${this.q.target} wasn't pushed: the scan before pushing found things that look private` });
-        if (e) this.wake("names-hit", e, undefined, { hits: hitLines(p.scan.hits ?? [], 50) });
+        if (e && hits) this.wake("names-hit", e, undefined, { hits: hitLines(p.scan.hits ?? [], 50) });
         try {
-          this.deps.alert?.({ title: `The merge queue needs you · ${this.root.split("/").pop() ?? this.root}`, body: `${this.q.target} wasn't pushed: the scan before pushing found ${p.scan.hits?.length ?? "some"} thing${p.scan.hits?.length === 1 ? "" : "s"} that look private. Allow them on the Merge Queue tab, or fix ${this.q.target}.`, tag: `sova:merge-push-scan:${this.id}` }, this.root);
+          this.deps.alert?.({ title: `The merge queue needs you · ${this.root.split("/").pop() ?? this.root}`, body: hits ? `${this.q.target} wasn't pushed: the scan before pushing found ${p.scan.hits?.length ?? "some"} thing${p.scan.hits?.length === 1 ? "" : "s"} that look private. Allow them on the Merge Queue tab, or fix ${this.q.target}.` : `${this.q.target} wasn't pushed: the scan before pushing couldn't look (${p.scan.why ?? "unknown"}). Nothing is pushed until a scan passes: Retry on the Merge Queue tab.`, tag: `sova:merge-push-scan:${this.id}` }, this.root);
         } catch (err) {
           this.log(`push scan notification failed: ${err instanceof Error ? err.message : err}`);
         }
@@ -5591,8 +5592,8 @@ export class ProjectQueue {
     if (!remote) return null;
     const r = await scanPublication(this.git, { repo: this.root, range: `${remote}..${tip}`, namesFile: this.names().file, allowed: allowedKeys(allowFileOf(this.store.dir)) });
     if (r.ok) return null;
-    const facts = factsOf(r);
-    return { why: r.why, ...(facts.state === "hits" ? { facts } : {}) };
+    // Hits, or a scan that couldn't look (fail-closed): either holds the push, and the user is told.
+    return { why: r.why, facts: factsOf(r) };
   }
 
   /** A push held back earlier goes now if it can (resume, retry). */

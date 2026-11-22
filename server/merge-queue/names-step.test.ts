@@ -229,3 +229,26 @@ describe("the queue pausing itself", () => {
     }
   });
 });
+
+describe("the scan right before a push", () => {
+  test("one that can't look holds the push with its reason and tells the user; the landing itself goes on", async () => {
+    const alerts: string[] = [];
+    // git can't list what the remote lacks: the scan can't look, so nothing is pushed.
+    const failing: typeof realGit = (args, cwd, o) => (args[0] === "rev-list" && args[1] === "--reverse" ? Promise.resolve({ code: 128, stdout: "", stderr: "fatal: bad range" }) : realGit(args, cwd, o));
+    const k = makeKit({ deps: { git: failing, alert: (a) => void alerts.push(a.body) } });
+    try {
+      const q = await k.q();
+      k.repo.branch("feat/u", { "u.txt": "u\n" });
+      const { entry } = await q.add({ branch: "feat/u", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(entry.id)).state === "landed", "landed");
+      const v = await q.view();
+      assert.notEqual(sh(k.repo.origin, "rev-parse", k.repo.target), k.repo.head(), "not pushed");
+      assert.match(v.heads.pushWhy ?? "", /couldn't list/);
+      assert.equal(v.heads.pushScan?.state, "unreadable");
+      assert.equal(alerts.length, 1);
+      assert.match(alerts[0]!, /couldn't look/);
+    } finally {
+      await k.done();
+    }
+  });
+});

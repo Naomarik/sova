@@ -298,7 +298,9 @@
     "project.merge-queue.flaky",
     "project.merge-queue.flaky.fix",
     "project.merge-queue.history",
-    "project.merge-queue.health"
+    "project.merge-queue.health",
+    "project.merge-queue.setup-map",
+    "project.merge-queue.setup-history"
   ],
   "retired": [
     "settings.agents.get",

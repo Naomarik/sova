@@ -3,7 +3,7 @@ import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStartOptions, ReleaseSte
 import type { ReleaseSetupReview } from "../../shared/project-runtime";
 import { relativeTime } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
-import { mergeRunHref, projectTabHref } from "../lib/projects-route";
+import { mergeRunHref, pipelineHref, projectTabHref } from "../lib/projects-route";
 import { kindLine, startPanel, turnedOffLine } from "../lib/release-options";
 import {
   askerWord,
@@ -164,6 +164,12 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
           <Show when={!v().initialized}>{chip({ word: "Not set up", tone: "warn" })}</Show>
         </div>
         <div class="cluster rel-head-act">
+          {/* The release pipeline explained on one screen (§app.merge-queue/explainer, its Releases scope). */}
+          <Show when={v().initialized}>
+            <a class="button button-sm" href={pipelineHref(props.projectId, "releases")}>
+              Release Overview
+            </a>
+          </Show>
           <Show when={canNote()}>
             <button type="button" class="button button-sm" aria-expanded={editing() ? "true" : "false"} aria-controls="rel-note-editor" onClick={toggleNote}>
               <Icon name="pencil" small />

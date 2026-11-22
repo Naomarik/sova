@@ -7,7 +7,7 @@ import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy
 import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision, STANDING_LINE, standingWords, answeredInChat, type DecisionAction } from "../lib/merge-standing";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
-import { mergeQueueTabHref, mergeRunHref, projectSessionHref, projectTabHref, type QueueTab } from "../lib/projects-route";
+import { mergeQueueTabHref, mergeRunHref, pipelineHref, projectSessionHref, projectTabHref, type QueueTab } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeRunView } from "./MergeRunView";
 import { LocalBehind, RequestRow, type RequestEntry } from "./MergeQueueRequests";
@@ -275,6 +275,10 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: Queue
           <QueueChip row={chip()} />
         </div>
         <div class="button-row">
+          {/* The whole queue explained on one screen (§app.merge-queue/explainer). */}
+          <a class="button button-sm" href={pipelineHref(props.projectId)}>
+            Queue Overview
+          </a>
           <SetupChatButton projectId={props.projectId} setUp from="merge-queue" poll={props.setup} />
           <QueueSettingsButton projectId={props.projectId} />
           <Show

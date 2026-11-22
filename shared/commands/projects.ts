@@ -577,6 +577,33 @@ const MERGE_KNOWN: CommandEntry[] = [
   },
 ];
 
+/** The queue screen's reads (§app.merge-queue/explainer): the setup in force beside the Setup chat's proposal, and the
+ *  setup's versions on the main branch. */
+const MERGE_SCREEN: CommandEntry[] = [
+  {
+    id: "project.merge-queue.setup-map",
+    label: "Show Queue Setup",
+    summary: "The merge queue's setup as its overview draws it: the checks and which run when (the folder rules), the review, how it lands and pushes, the private names step; beside it the Setup chat's proposal, read live from that chat's working copy, and what changes.",
+    effect: "looks",
+    params: { project: mqProject },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/setup-map" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.setup-history",
+    label: "Show Setup History",
+    summary: "Each version of the merge queue's setup on the main branch, newest first: the commit that brought it in, when, and what it changed.",
+    effect: "looks",
+    params: { project: mqProject, limit: { type: "integer", description: "How many versions (1–50, default 20)", in: "query" } },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/setup-history" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
 export const PROJECT_ENTRIES: CommandEntry[] = [
   {
     id: "project.services.view",
@@ -595,4 +622,5 @@ export const PROJECT_ENTRIES: CommandEntry[] = [
   ...MERGE_LANDING,
   ...MERGE_SUMMARY,
   ...MERGE_KNOWN,
+  ...MERGE_SCREEN,
 ];

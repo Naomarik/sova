@@ -324,6 +324,8 @@ const VALIDATE_ONLY: Record<string, string> = {
   // The merge thread's Run Logs chip reads and cleans a started queue's run folders (server/merge-queue/run-logs.test.ts).
   "project.merge-queue.run-logs": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.merge-queue.run-logs.clean": "a valid call deletes a started queue's run logs, which the unit tier's app doesn't start",
+  "project.merge-queue.setup-map": "a valid call reads a registered git project's definition and its Setup chat's working copy, which the unit tier's app doesn't make",
+  "project.merge-queue.setup-history": "a valid call reads a registered git project's history of its definition, which the unit tier's app doesn't make",
   // Clean Run, the flaky tests and the history's numbers act on a started queue (routes-known.test.ts, queue-known-state.test.ts).
   "project.merge-queue.clean-run": "a valid call changes a started queue's next run, which the unit tier's app doesn't start",
   "project.merge-queue.flaky": "a valid call reads a started queue's flaky store, which the unit tier's app doesn't start",

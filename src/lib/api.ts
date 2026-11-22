@@ -1950,3 +1950,31 @@ export const fetchRunLogsOfThread = (session: string) =>
   request<import("../../shared/merge-run-logs").RunLogsInfo>(`/api/merge-queue/run-logs?session=${encodeURIComponent(session)}`, { cache: "no-store" });
 /** Clean Logs: the user's own click, confirmed. */
 export const cleanRunLogs = (project: string) => request<import("../../shared/merge-run-logs").RunLogsCleaned>("/api/merge-queue/run-logs/clean", jsonInit("POST", { project, confirm: true }));
+
+// ---- the queue screen (§app.merge-queue/explainer, §app.merge-queue/health) ----
+const mqProject = (projectId: string, tail: string) => `/api/merge-queue/projects/${encodeURIComponent(projectId)}/${tail}`;
+const query = (q: Record<string, string | number | undefined>) => {
+  const s = Object.entries(q)
+    .filter(([, v]) => v !== undefined && v !== "")
+    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+    .join("&");
+  return s ? `?${s}` : "";
+};
+/** The setup in force, and the Setup chat's proposal read live from its working copy. */
+export const getSetupMap = (projectId: string) => request<import("../../shared/merge-queue-setup-map").SetupMapAnswer>(mqProject(projectId, "setup-map"), { cache: "no-store" });
+/** The main branch's setup versions, newest first. */
+export const getSetupHistory = (projectId: string, limit = 20) => request<import("../../shared/merge-queue-setup-map").SetupHistoryAnswer>(mqProject(projectId, `setup-history${query({ limit })}`));
+/** One page of finished entries, newest first; `before`: the previous page's `next` (Show Older); `branch`: a search. */
+export const getMergeHistory = (projectId: string, q: { before?: string; branch?: string; limit?: number } = {}) =>
+  request<import("../../shared/merge-queue-health").MergeHistoryPage>(mqProject(projectId, `history${query(q)}`), { cache: "no-store" });
+/** The health summary over the last `days`. */
+export const getMergeHealth = (projectId: string, days = 30) => request<import("../../shared/merge-queue-health").MergeQueueHealth>(mqProject(projectId, `health${query({ days })}`), { cache: "no-store" });
+/** Every flaky test the queue has counted. */
+export const getFlakyTests = (projectId: string) => request<{ tests: import("../../shared/merge-queue-health").MergeFlakyTest[] }>(mqProject(projectId, "flaky"), { cache: "no-store" });
+/** Fix in New Chat on a flaky test: a fresh chat on a new branch, told the test and every run that saw it. */
+export const fixFlakyTest = (projectId: string, key: string) => request<{ session: string; path: string; branch?: string; worktree?: string }>(mqProject(projectId, "flaky/fix"), jsonInit("POST", { key }));
+/** Clean Run: the next run (or this failed entry's, put back in line) starts from an empty merge copy. */
+export const startCleanRun = (projectId: string, entry?: string) => request<unknown>(mqProject(projectId, "clean-run"), jsonInit("POST", entry ? { entry } : {}));
+/** The queue's recorded changes, newest first: of one entry, run or branch, or the whole queue; `before` a seq. */
+export const getMergeEvents = (projectId: string, q: { entry?: string; run?: string; branch?: string; by?: string; kind?: string; before?: number; limit?: number } = {}) =>
+  request<import("../../shared/merge-queue").MergeEventsPage>(mqProject(projectId, `events${query(q)}`), { cache: "no-store" });

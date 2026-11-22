@@ -9,6 +9,7 @@ import { registerLiveMergeSettingsRoutes } from "./settings-routes";
 import { registerLiveMergeLandingRoutes } from "./routes-landing";
 import { registerLiveMergeKnownRoutes } from "./routes-known";
 import { registerLiveRunLogsRoutes } from "./run-logs-routes";
+import { registerLiveSetupMapRoutes } from "./setup-map";
 import { registerLiveMergeEventsRoutes } from "./routes-events";
 import { NOT_SERVED } from "./served";
 import type { MergeNamesReport } from "../../shared/merge-queue";
@@ -736,6 +737,8 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
   registerLiveMergeLandingRoutes(app);
   // The merge thread's Run Logs chip: the run folders' size and Clean Logs (run-logs-routes.ts).
   registerLiveRunLogsRoutes(app);
+  // The queue screen's Setup, Proposal and Setup history views: the setup in force and the Setup chat's, live (setup-map.ts).
+  registerLiveSetupMapRoutes(app);
   // Clean Run, the flaky tests and their Fix in New Chat, the history's pages and the health summary (routes-known.ts).
   registerLiveMergeKnownRoutes(app);
   // The event memory's read: every recorded change of the queue, an entry, a run or a branch (routes-events.ts).

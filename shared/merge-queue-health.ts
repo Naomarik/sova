@@ -10,8 +10,9 @@ export type CleanWhy = "operator" | "weekly" | "new";
 
 /** The queue's clean-run standing (MergeQueueView.clean). */
 export interface MergeCleanInfo {
-  /** The next run starts from an empty copy: asked for by the operator (`entry`: the entry it was asked on), or due weekly. */
-  next?: { why: CleanWhy; at: string; entry?: string };
+  /** The next run starts from an empty copy: asked for by the operator (`entry`, `branch`: asked on that entry, so only
+   *  its branch's next run takes it). */
+  next?: { why: CleanWhy; at: string; entry?: string; branch?: string };
   /** The last run that started from an empty copy. */
   last?: { at: string; run: string; why: CleanWhy };
   /** When the weekly clean run is due (the first run after it is clean). */
@@ -80,7 +81,8 @@ export interface MergeQueueHealth {
   finished: number;
   /** Approval to landing, over the entries that landed. */
   timeToLand: { medianMs: number | null; p90Ms: number | null };
-  /** Runs that passed, of the runs that reached a verdict (void and cancelled ones left out). */
+  /** Landing runs that passed, of those that reached a verdict about the code (void, cancelled and machine runs, and
+   *  dry runs, left out). */
   passRate: { passed: number; runs: number; rate: number | null };
   /** The slowest checks by median time over their passing steps (reused-pass steps left out), slowest first. */
   slowestChecks: { id: string; label: string; medianMs: number; runs: number }[];

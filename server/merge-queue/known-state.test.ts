@@ -34,6 +34,18 @@ describe("clean runs: when a run starts from an empty copy", () => {
     assert.equal(cleanFor(after, Date.parse(at(6))), undefined);
   });
 
+  test("a Clean Run pressed while a clean run checks survives it; one asked on a branch's entry waits for that branch's run", () => {
+    // Pressed at minute 3, during the weekly clean run that started at minute 1: its end keeps the ask.
+    const during = afterRun({ next: { why: "operator", at: at(3) } }, { id: "mr_w", branch: "feat/y", startedAt: at(1), clean: "weekly" });
+    assert.deepEqual(during, { next: { why: "operator", at: at(3) }, last: { at: at(1), run: "mr_w", why: "weekly" } });
+    // Asked on feat/x's entry: feat/y's run doesn't take it (nor spend it), feat/x's does.
+    const onX = { next: { why: "operator" as const, at: at(0), entry: "mq_x", branch: "feat/x" }, last: { at: at(0), run: "mr_a", why: "new" as const } };
+    assert.equal(cleanFor(onX, Date.parse(at(1)), "feat/y"), undefined);
+    assert.equal(cleanFor(onX, Date.parse(at(1)), "feat/x"), "operator");
+    assert.deepEqual(afterRun(onX, { id: "mr_y", branch: "feat/y", startedAt: at(2), clean: "weekly" })?.next, onX.next);
+    assert.equal(afterRun(onX, { id: "mr_x", branch: "feat/x", startedAt: at(2), clean: "operator" })?.next, undefined);
+  });
+
   test("the view says what is asked, the last clean run and when the weekly one is due (never in the past)", () => {
     const last = { at: at(0), run: "mr_a", why: "new" as const };
     assert.deepEqual(cleanInfo({ last }, T0 + DAY), { last, dueAt: new Date(T0 + CLEAN_EVERY_MS).toISOString() });
@@ -148,6 +160,7 @@ describe("the health summary", () => {
     const runs = [
       mrun(1, "passed", recent, [step("unit", 100), step("e2e", 900), step("unit", 300, { reused: 5 })], { ranWith: { copy: "fresh" } as never }),
       mrun(2, "failed", recent + 1, [step("unit", 200), step("e2e", 0)]),
+      mrun(7, "machine", recent + 5),
       mrun(3, "void", recent + 2),
       mrun(4, "cancelled", recent + 3),
       { ...mrun(5, "passed", recent + 4), entry: "trial" },

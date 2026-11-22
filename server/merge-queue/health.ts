@@ -92,8 +92,9 @@ const p90 = (xs: readonly number[]): number | null => {
   return s[Math.min(s.length - 1, Math.ceil(s.length * 0.9) - 1)]!;
 };
 
-/** Verdicts a pass rate counts: the run reached a verdict about the code. */
-const COUNTED = new Set(["passed", "failed", "conflict", "waiting", "machine"]);
+/** Verdicts a pass rate counts: the run reached a verdict about the code (a machine or setup failure on the target too
+ *  is nobody's code, like a voided run). */
+const COUNTED = new Set(["passed", "failed", "conflict", "waiting"]);
 
 /**
  * The health summary over [since, until]: `rows` the history rows finished in or after `since` (more are filtered

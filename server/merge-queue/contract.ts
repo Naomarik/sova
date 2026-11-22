@@ -45,6 +45,9 @@ export interface RunInput {
   draftsFromCommit?: true;
   /** The checks the merge thread added for this entry (merge.extend), on top of required + triggers. */
   picks: CheckPick[];
+  /** The entry's picks as they are now (§app.merge-queue/checks, q9): the run reads it between checks and while it
+   *  waits for the review, and runs each new one too, before it answers. Absent: only `picks`. */
+  latePicks?(): CheckPick[];
   /** A release entry: the release's own gating checks (its `release.checks`, captured at the release's start), run
    *  after the merge set. Absent: not a release entry. */
   releaseChecks?: import("../../shared/project-contract").MergeCheckDecl[];
@@ -86,6 +89,8 @@ export interface RunHooks {
   merged?(sha: string): void;
   /** Where the copy lives (once the copy step has it). */
   copy?(path: string): void;
+  /** The folder rules the run applies (§app.merge-queue/rules), once read (before the first check). */
+  rules?(r: import("../../shared/merge-queue").RunRules): void;
   /** A change worth the event memory (§app.merge-queue/activity), from inside the run: its run, entry and branch are
    *  filled in; give `step` the plan step it belongs to ("check:<id>", "review", "scan"…). */
   event?(ev: import("../../shared/merge-queue").MergeEventInput): void;
@@ -130,6 +135,11 @@ export interface RunOutcome {
   conflict?: { files: string[] };
   /** Notes for the landing: flaky, master-red, review notes, no-checks. */
   notes: MergeNote[];
+  /** The folder rules the run applied. */
+  rules?: import("../../shared/merge-queue").RunRules;
+  /** machine: checks that ran past their time limit with the branch AND on the target alone (§app.merge-queue/time-limit):
+   *  not the branch's; the queue pauses at once and asks the user (never retried, never voided). */
+  overTime?: { check: string; label: string; limitSec: number }[];
   /** Each test (or file, or whole check) that failed and then passed on its rerun: the flaky store counts them. */
   flaky?: import("./flaky").FlakySeen[];
   /** The run started from an empty copy, and why (asked for, weekly, or the copy was cut new). Absent: it reused it. */

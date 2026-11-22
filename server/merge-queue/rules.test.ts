@@ -1,13 +1,14 @@
 import { describe, test } from "node:test";
 import { expect } from "./testing/expect";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DefinitionError, parseDefinition, type MergeRuleDecl, type ProjectDef } from "../../shared/project-contract";
 import { scratchRoot } from "../test-scratch";
 import { planChecks } from "./checks";
 import { globRe, planRulesFor, ruleTriggers, rulesChange, rulesFromText, withUnknown } from "./rules";
 
+const REPO = join(import.meta.dirname, "..", "..");
 const CHECKS = [
   { id: "unit", run: ["node", "t.mjs"] },
   { id: "replay", label: "Spec replay", run: ["node", "replay.mjs"] },
@@ -54,6 +55,49 @@ describe("folder rules in the merge section", () => {
     }
     expect(refusal([{ paths: ["a"], check: "unit", why: "x" }], "none").message).toMatch(/declare merge.checks as a list/);
     expect(refusal([], [{ id: "unit", run: ["t"], perSelector: "yes" }]).path).toBe("$.merge.checks[0].perSelector");
+  });
+});
+
+describe("Sova's own rules (.sova/project.json)", () => {
+  const own = parseDefinition(readFileSync(join(REPO, ".sova", "project.json"), "utf8"));
+  const rules = own.merge!.rules!;
+  const checks = own.merge!.checks as { id: string; label: string; perSelector?: true }[];
+  const hit = (paths: string[]) => ruleTriggers(rules, paths, checks).picks;
+  const by = (paths: string[]) => Object.fromEntries(hit(paths).map((p) => [p.id, p]));
+
+  test("its definition carries the rules (no separate map); the slow group takes one selection per run", () => {
+    expect(rules.length).toBe(10);
+    expect(checks.find((c) => c.id === "integration-group")!.perSelector).toBe(true);
+  });
+
+  test("each area sets off its check with its reason; docs alone set off nothing", () => {
+    expect(hit(["docs/a.md", "README.md", ".sova/spec/drafts/x/spec/a.md"])).toEqual([]);
+    const charts = by(["statecharts/src/org.cljs"]);
+    expect(Object.keys(charts)).toEqual(["statecharts"]);
+    expect(charts.statecharts!.why).toMatch(/^statecharts changed.*\(statecharts\/src\/org\.cljs\)$/);
+    expect(Object.keys(by(["pi-config/extensions/spec/core/sova-spec.mjs"]))).toEqual(["spec-replay"]);
+    const composer = by(["src/components/Composer.tsx"]);
+    expect(composer.e2e?.select).toEqual(["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs", "scripts/e2e/type-anywhere.mjs"]);
+    expect(composer.e2e!.why).toMatch(/composer changed/);
+    expect(by(["src/commands/keys.ts"]).e2e?.select).toEqual(["scripts/e2e/type-anywhere.mjs"]);
+    expect(by(["server/tours/browser.ts"])["integration-group"]?.select).toEqual(["tours"]);
+    expect(by(["server/chat-runtime/host.ts"])["integration-group"]?.select).toEqual(["trial"]);
+    expect(by(["server/chat-hostess/x.ts"])["integration-group"]).toBe(undefined);
+  });
+
+  test("several rules on one check are one run; the slow group runs once per group", () => {
+    const e2e = hit(["src/components/Composer.tsx", "src/components/TranscriptView.tsx", "src/lib/focus-view.ts"]);
+    expect(e2e.map((p) => [p.id, p.select])).toEqual([["e2e", ["scripts/e2e/focus-view.mjs", "scripts/e2e/instant-open.mjs", "scripts/e2e/type-anywhere.mjs", "scripts/e2e/transcript-follow.mjs", "scripts/e2e/transcript-drift.mjs", "scripts/e2e/jump-settle.mjs"]]]);
+    expect(e2e[0]!.why).toMatch(/composer changed.*; the transcript view changed/);
+    const groups = hit(["server/tours/browser.ts", "server/chat-runtime/host.ts", "server/tours/checks.ts"]);
+    expect(groups.map((x) => [x.id, x.select])).toEqual([["integration-group", ["tours"]], ["integration-group", ["trial"]]]);
+    expect(groups[0]!.why).toMatch(/\(server\/tours\/browser\.ts, server\/tours\/checks\.ts\)$/);
+  });
+
+  test("its rules name only walkthroughs and slow groups that exist", () => {
+    for (const r of rules) if (r.check === "e2e") for (const s of r.select ?? []) expect(existsSync(join(REPO, s))).toBe(true);
+    const groups = readFileSync(join(REPO, "scripts", "test-groups.mjs"), "utf8");
+    for (const r of rules) if (r.check === "integration-group") for (const g of r.select ?? []) if (g !== "merge-queue") expect(groups).toMatch(new RegExp(`name: "${g}"`));
   });
 });
 

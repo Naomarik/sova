@@ -15,7 +15,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
-import type { CheckPick, MergeNote, ReviewVerdict, RunStep, RunStepKind, StepResult } from "../../shared/merge-queue";
+import type { CheckPick, MergeNote, ReviewVerdict, RunRules, RunStep, RunStepKind, StepResult } from "../../shared/merge-queue";
 import type { ProjectDef, StepDecl } from "../../shared/project-contract";
 import { render } from "../../shared/project-contract";
 import { slotLayoutOf } from "../../shared/project-slots";
@@ -32,6 +32,7 @@ import { assertCopyOutsideState, CopyRefused, gitOut, gitProc, mergeCopyPath, mo
 import { reviewStep, type ReviewDeps } from "./review-step";
 import { removeReviewChange, reviewChangeDir, writeReviewChange } from "./review-change";
 import { conflictsBetween } from "./conflicts";
+import { branchRulesOf, ruleTriggers, withUnknown } from "./rules";
 
 export interface RunDeps extends ReviewDeps {
   /** The state root and home the copy must stay out of (tests move them). */
@@ -46,10 +47,20 @@ export interface RunDeps extends ReviewDeps {
   /** The project's private-names file for the leak scan when the queue gives none (RunInput.namesFile wins). Null,
    *  or a file that doesn't exist: the scan checks secrets only and notes the push is held. */
   leakNames?: (project: { id: string; root: string }) => string | null;
+  /** How often a run looks for late picks while it waits for the review (ms); tests shorten it. */
+  latePollMs?: number;
 }
 
 const now = () => new Date().toISOString();
 const short = (sha: string) => sha.slice(0, 7);
+/** How often a run waiting for its review looks for a late pick. */
+const LATE_POLL_MS = 1000;
+const pause = (ms: number) => new Promise<void>((r) => (setTimeout(r, ms) as { unref?: () => void }).unref?.());
+/** "42 s", "3 min 5 s". */
+const secsOf = (ms: number) => {
+  const s = Math.round(ms / 1000);
+  return s < 120 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ""}`;
+};
 /** At most `n` characters; a cut text ends in "…" (the full text is in the step's log). */
 export const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 const tail = (s: string, n = 1) => s.trim().split("\n").slice(-n).join(" ").slice(0, 300);
@@ -248,7 +259,8 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   const steps = new Steps(input.runDir, hooks);
   const notes: MergeNote[] = [];
   let checksShown: CheckPick[] = [];
-  const out = (o: Omit<RunOutcome, "notes" | "checks"> & { notes?: MergeNote[] }): RunOutcome => ({ ...o, notes: [...notes, ...(o.notes ?? [])], checks: checksShown });
+  let rulesShown: RunRules | undefined;
+  const out = (o: Omit<RunOutcome, "notes" | "checks"> & { notes?: MergeNote[] }): RunOutcome => ({ ...o, notes: [...notes, ...(o.notes ?? [])], checks: checksShown, ...(rulesShown ? { rules: rulesShown } : {}) });
   const voided = (why: string): RunOutcome => out({ verdict: "void", why });
   const copy = mergeCopyPath(project.root);
   const def = project.def;
@@ -328,6 +340,15 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   mkdirSync(scope.data, { recursive: true });
   writeFileSync(changedFile, `${changed.join("\n")}\n`);
 
+  // The folder rules are the branch's own, as they read after the merge (§app.merge-queue/rules); the check list stays
+  // the target's. A branch whose own definition is refused goes back to its chat with the refusal.
+  const ruled = branchRulesOf(copy, def);
+  const trig = ruleTriggers(ruled.rules, changed, Array.isArray(def.merge?.checks) ? def.merge!.checks : []);
+  const rulesNow = withUnknown(ruled.info, trig, target);
+  rulesShown = rulesNow;
+  hooks.rules?.(rulesNow);
+  if (ruled.refused) return out({ verdict: "failed", blame: input.resolution ? "resolution" : "branch", why: `your branch's .sova/project.json is refused: ${ruled.refused}`, copy, mergeSha });
+
   // Whose is a setup failure: rerun setup on the target alone, from nothing cached.
   const setupBlame = async (what: string, failedStep: RunStep): Promise<RunOutcome> => {
     const back = steps.start(`rerun-master:${failedStep.id}`, "rerun-master", `${failedStep.label} on ${target} alone`);
@@ -349,11 +370,13 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   const failed = await runSetup({ def, scope, steps, idPrefix: "setup:", labelPrefix: "Setup: ", kind: "setup", signal });
   if (signal.aborted) return voided("aborted");
   if (failed) {
-    if (failed.timedOut) return voided(`setup ${failed.failed.id} timed out`);
+    // A time limit is never a void (§app.merge-queue/time-limit): a setup step past it is a machine failure (one retry,
+    // then the queue pauses).
+    if (failed.timedOut) return out({ verdict: "machine", why: `setup ${failed.failed.id} ran past its time limit (${failed.failed.timeout} s)`, copy, mergeSha });
     const again = await runSetup({ def, scope, steps, idPrefix: "rerun-tip:setup:", labelPrefix: "Setup again: ", kind: "rerun-tip", fresh: true, signal });
     if (signal.aborted) return voided("aborted");
     if (again) {
-      if (again.timedOut) return voided(`setup ${again.failed.id} timed out`);
+      if (again.timedOut) return out({ verdict: "machine", why: `setup ${again.failed.id} ran past its time limit (${again.failed.timeout} s)`, copy, mergeSha });
       return setupBlame(`setup (${again.failed.id})`, again.step);
     }
     notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun (not blocking)`, at: now() });
@@ -369,7 +392,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     await forgetSetup(copy);
     const p = await runProc(argv, { cwd: copy, env: envOf(def, scope, { step: "install" }), timeoutMs: inst.timeout * 1000, signal, log: is.log });
     if (p.aborted) return (is.end("failed", { detail: "aborted" }), voided("aborted"));
-    if (p.timedOut) return (is.end("failed", { detail: `timed out after ${inst.timeout} s` }), voided("the install timed out"));
+    if (p.timedOut) return (is.end("failed", { detail: `timed out after ${inst.timeout} s` }), out({ verdict: "machine", why: `the install ran past its time limit (${inst.timeout} s)`, copy, mergeSha }));
     if (p.code !== 0) {
       is.end("failed", { detail: `exit ${p.code}: ${tail(p.out)}` });
       // The target alone needs no install (its own dependencies are what setup made): the change is the branch's.
@@ -392,11 +415,47 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   scope.tip = tip;
   if (await sameTree(tip)) return nothing();
 
-  // 6. checks, with the review beside them
-  const list = planChecks(def, input.picks, input.releaseChecks);
+  // 6. checks, with the review beside them: the required ones, the folder rules' triggers, the thread's picks.
+  // The plan's list when the queue worked one out (§app.merge-queue/plan); the run's own reading of the same inputs
+  // should agree, and a difference is recorded, never silent. The plan's list is what runs.
+  const own = planChecks(def, input.picks, input.releaseChecks, trig.picks);
+  const list = input.planned ? structuredClone(input.planned) : own;
+  if (input.planned) {
+    const words = (l: PlannedCheck[]) => l.map((c) => `${c.id}${c.select?.length ? `(${c.select.join(",")})` : ""}`).join(" ");
+    if (words(list) !== words(own)) hooks.event?.({ kind: "note", by: "queue", note: "plan-differs", step: "checks", why: `the run read its checks differently from its plan: planned ${words(list) || "none"}; read in the copy ${words(own) || "none"}. The plan's run.` });
+  }
+  if (rulesNow.changed?.length) hooks.event?.({ kind: "note", by: "queue", note: "rules-changed", why: `this branch changed its own rules: ${rulesNow.changed.join("; ")}` });
   const release = isReleaseRun(input);
   checksShown = picksOf(list);
   hooks.checks(checksShown);
+  // q9: a pick that arrives while the run's checks run is added to this run (after the planned ones), never left for
+  // a later one. `pullLate` adds each new one; a required check that already ran unpicked runs again, picked.
+  const ran = new Set<string>();
+  const baseOf = (id: string) => id.replace(/\+\d+$/, "");
+  const pullLate = (): boolean => {
+    if (!input.latePicks) return false;
+    const at = now();
+    let added = false;
+    for (const n of planChecks(def, input.latePicks(), input.releaseChecks, trig.picks).filter((x) => x.source === "picked")) {
+      const sel = JSON.stringify(n.select ?? []);
+      const have = list.find((c) => baseOf(c.id) === baseOf(n.id) && JSON.stringify(c.select ?? []) === sel);
+      if (have && (have.picked || !n.picked)) continue;
+      if (have && !ran.has(have.id)) {
+        Object.assign(have, { source: n.source, picked: true as const, ...(n.why ? { why: n.why } : {}), addedAt: at });
+        added = true;
+        continue;
+      }
+      const b = baseOf(n.id);
+      const k = list.filter((c) => baseOf(c.id) === b).length;
+      list.push({ ...n, id: k ? `${b}+${k}` : b, addedAt: at });
+      added = true;
+    }
+    if (added) {
+      checksShown = picksOf(list);
+      hooks.checks(checksShown);
+    }
+    return added;
+  };
   const review = input.review ? startReview({ input, copy, tip, steps, deps, def }) : null;
   const finish = async (o: RunOutcome): Promise<RunOutcome> => {
     await review?.cancel();
@@ -430,11 +489,43 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     const reds: { check: PlannedCheck; files: string[]; names?: string[]; tipNamed?: string[]; runs?: RedRun[]; marks?: Step[] }[] = [];
     const blames: CheckBlame[] = [];
     const broken: NonNullable<RunOutcome["broken"]> = [];
-    for (const check of list) {
+    // §app.merge-queue/time-limit: a check cut at its time limit (on the merge, or on its rerun there) is timed on the
+    // target alone below; `overTime` the ones that run past it there too.
+    const slow: { check: PlannedCheck; log: string }[] = [];
+    const overTime: { check: PlannedCheck; log: string }[] = [];
+    const slowMine: { check: PlannedCheck; log: string; ms: number }[] = [];
+    // The run's last look for late picks: once every check has run and the review has answered (polled meanwhile). A
+    // pick after this one runs the whole run again before it lands (queue.ts finish).
+    const moreLate = async (): Promise<boolean> => {
+      if (pullLate()) return true;
+      if (review && input.latePicks) {
+        let settled = false;
+        void review.settled.then(() => (settled = true));
+        while (!settled && !signal.aborted) {
+          await Promise.race([review.settled, pause(deps.latePollMs ?? LATE_POLL_MS)]);
+          if (pullLate()) return true;
+        }
+      }
+      return pullLate();
+    };
+    for (let i = 0; ; i++) {
+      if (i > 0 && i < list.length) pullLate();
+      if (i >= list.length && !(await moreLate())) break;
+      if (signal.aborted) return finish(voided("aborted"));
+      const check = list[i];
+      if (!check) break;
+      ran.add(check.id);
+      // A late pick needing a service this run didn't start: run again from the start, with it planned.
+      const missing = check.requires.filter((s) => !needs.includes(s));
+      if (missing.length) return finish(voided(`${check.label}, added after the run started, needs ${missing.join(", ")}: running again with it`));
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source, ...(check.why ? { why: check.why } : {}) });
       const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, fresh: freshOf(def, { release }), signal });
       if (r.proc.aborted || signal.aborted) return finish((st.end("failed", { detail: "aborted" }), voided("aborted")));
-      if (r.proc.timedOut) return finish((st.end("failed", { detail: `timed out after ${check.timeoutSec} s` }), voided(`${check.label} timed out after ${check.timeoutSec} s`)));
+      if (r.proc.timedOut) {
+        st.end("failed", { detail: `ran past its time limit (${check.timeoutSec} s): timed on ${target} alone next` });
+        slow.push({ check, log: st.s.log });
+        continue;
+      }
       const counts = countsOf(r.report);
       logReused(st, r);
       if (r.proc.code === 0) {
@@ -453,7 +544,11 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const again = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again${files.length ? ` (${files.length} file${files.length === 1 ? "" : "s"})` : ""}`);
       const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, ...(files.length ? { files } : {}), fresh: freshOf(def, { rerun: true }), signal });
       if (r2.proc.aborted || signal.aborted) return finish((again.end("failed", { detail: "aborted" }), voided("aborted")));
-      if (r2.proc.timedOut) return finish((again.end("failed", { detail: "timed out" }), voided(`${check.label} timed out on its rerun`)));
+      if (r2.proc.timedOut) {
+        again.end("failed", { detail: `ran past its time limit (${check.timeoutSec} s): timed on ${target} alone next` });
+        slow.push({ check, log: again.s.log });
+        continue;
+      }
       // Never a pass on a guess: the rerun counts for a file only when it shows it ran it (`ranFiles`, or for a runner that
       // lists none, at least one test ran). A file it didn't run is still failing (on to the target alone), never flaky.
       const ranTip = r2.report?.ranFiles;
@@ -502,7 +597,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       if (flaky.length) blames.push({ id: check.id, label: check.label, files: flaky.map((file) => ({ file, blame: "flaky" as const })) });
     }
     // 7. still red: the same on the target alone, in the same copy (after the review has read the tip).
-    if (reds.length) {
+    if (reds.length || slow.length) {
       if (review) await review.settled;
       const mv = steps.start("rerun-master:copy", "rerun-master", `Copy to ${target} alone`);
       try {
@@ -528,7 +623,12 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         }
         const r = await runCheck({ def, scope: baseScope, check, stepId: `rerun-master:${check.id}`, logFile: st.file, ...(files.length ? { files: onBase } : {}), fresh: freshOf(def, { rerun: true }), signal });
         if (r.proc.aborted || signal.aborted) return finish((st.end("failed", { detail: "aborted" }), voided("aborted")));
-        if (r.proc.timedOut) return finish((st.end("failed", { detail: "timed out" }), voided(`${check.label} timed out on ${target} alone`)));
+        if (r.proc.timedOut) {
+          // Red with the branch, and past the limit on the target alone: whose can't be told in time; the user decides.
+          st.end("failed", { detail: `runs past its ${check.timeoutSec} s limit on ${target} alone: whose failure can't be told` });
+          overTime.push({ check, log: st.s.log });
+          continue;
+        }
         if (names?.length) {
           const onT = idsOf(r);
           if (r.proc.code !== 0 && !onT.length) {
@@ -596,12 +696,38 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
           }
         }
       }
+      // Each check cut at its time limit, timed on the target alone: fresh, with the same limit.
+      for (const s of slow) {
+        const { check } = s;
+        const st = steps.start(`rerun-master:${check.id}`, "rerun-master", `${check.label} on ${target} alone, timed`);
+        st.log(`[${check.label} ran past its ${check.timeoutSec} s limit with the branch: timing it on ${target} alone, fresh, with the same limit]\n`);
+        hooks.event?.({ kind: "note", by: "queue", note: "timeout-probe", step: `check:${baseOf(check.id)}`, why: `${check.label} ran past its ${check.timeoutSec} s time limit with the branch: timing it on ${target} alone` });
+        const r = await runCheck({ def, scope: baseScope, check, stepId: `rerun-master:${check.id}`, logFile: st.file, fresh: true, signal });
+        if (r.proc.aborted || signal.aborted) return finish((st.end("failed", { detail: "aborted" }), voided("aborted")));
+        if (r.proc.timedOut) {
+          st.end("failed", { detail: `runs past its ${check.timeoutSec} s limit on ${target} alone too: not the branch's` });
+          overTime.push({ check, log: st.s.log });
+          continue;
+        }
+        st.end(r.proc.code === 0 ? "passed" : "failed", { detail: `finishes on ${target} alone in ${secsOf(r.proc.ms)} (limit ${check.timeoutSec} s${r.proc.code === 0 ? "" : `, exit ${r.proc.code}`}): the time-out is the branch's` });
+        slowMine.push({ check, log: s.log, ms: r.proc.ms });
+      }
     }
     const a = summarize(blames, { resolution: !!input.resolution, target });
     const flagged = broken.length ? { broken } : {};
     const at = now();
     const attributed = a.notes.map((n) => ({ ...n, at }));
+    // A time-out that is the branch's goes back to its chat like any failure: the check, its limit, both times, its log.
+    if (slowMine.length) {
+      const slowWhy = slowMine.map((s) => `${s.check.label} ran past its ${s.check.timeoutSec} s time limit with your branch and finishes in ${secsOf(s.ms)} on ${target} alone (log: ${s.log})`).join("; ");
+      return finish(out({ verdict: "failed", blame: a.verdict === "failed" ? a.blame! : input.resolution ? "resolution" : "branch", why: a.verdict === "failed" ? `${a.why}; ${slowWhy}` : slowWhy, notes: attributed, copy, mergeSha, tip, ...(a.targetRed.length ? { targetRed: a.targetRed } : {}), ...flagged }));
+    }
     if (a.verdict === "failed") return finish(out({ verdict: "failed", blame: a.blame!, why: a.why!, notes: attributed, copy, mergeSha, tip, ...(a.targetRed.length ? { targetRed: a.targetRed } : {}), ...flagged }));
+    // Past the limit on the target alone too: not the branch's. The queue pauses at once and asks the user.
+    if (overTime.length) {
+      const why = overTime.map((o) => `${o.check.label} runs past its ${o.check.timeoutSec} s time limit on ${target} alone too (log: ${o.log})`).join("; ");
+      return finish(out({ verdict: "machine", blame: "machine", why, overTime: overTime.map((o) => ({ check: baseOf(o.check.id), label: o.check.label, limitSec: o.check.timeoutSec })), notes: attributed, copy, mergeSha, tip }));
+    }
     const r = review ? await review.result : null;
     if (a.verdict === "unattributed") {
       // Waits for the user (Land Anyway lands `tip`); a blocking review still says so first.

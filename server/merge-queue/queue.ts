@@ -40,6 +40,7 @@ import {
   type PushState,
   type ReviewFinding,
   type ReviewVerdict,
+  type RunRules,
   type RunStep,
   type SentBackFor,
   type MergeHistoryRow,
@@ -90,7 +91,7 @@ import { projectPlaybookRel } from "./thread";
 import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
 import { commitResolution } from "./resolve-content";
 import { dropRunDrafts } from "./run-logs";
-import { isTestCheck } from "./checks";
+import { isTestCheck, uncoveredPicks } from "./checks";
 import { checkKindOf } from "../ready-to-land";
 import { changedServices, dryRunMergeChecks, dryRunReasons, dryRunWhyLine, isSetupChange, requiredServices, SETUP_UNREADABLE, setupChangeOf, stoppedByWords, trialEndedText, trialOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
@@ -1881,6 +1882,8 @@ export class ProjectQueue {
         if ((c as { needsSelect?: true }).needsSelect && !select?.length) throw new MergeFailure("invalid-request", `"${id}" (${c.label}) runs with a selection: send the pick's select (its groups, files or walkthroughs)`);
         return c;
       });
+      // q9: a pick while the entry's run checks is added to that run; one after the run's last look runs it again
+      // before anything lands (finish). Once the entry has landed it is final: refused above.
       for (const c of found) {
         const id = c.id;
         e.picks = e.picks.filter((p) => !(p.id === id && JSON.stringify(p.select ?? []) === JSON.stringify(select ?? [])));
@@ -3998,7 +4001,14 @@ export class ProjectQueue {
           try {
             await this.startTrial({ branch: e.branch, commit: e.commit, by: { kind: "land", entry: e.id }, checks: [] });
           } catch (err) {
-            this.holdOnTrial(e, { run: e.run ?? "", commit: e.commit, verdict: "machine", by: { kind: "land", entry: e.id }, startedAt: this.iso() }, `Dry run couldn't run: ${err instanceof Error ? err.message : err}. That's the machine, not this branch: run it again.`);
+            const msg = err instanceof Error ? err.message : String(err);
+            // The branch's own definition refused (its folder rules included, §app.merge-queue/rules): the branch's to fix,
+            // sent to its chat with the refusal; anything else is the machine's.
+            if (/^\.sova\/project\.json at \w+ is invalid: /.test(msg)) {
+              const why = `your branch's ${msg}: fix it in the branch`;
+              this.holdOnTrial(e, { run: e.run ?? "", commit: e.commit, verdict: "failed", by: { kind: "land", entry: e.id }, startedAt: this.iso() }, why);
+              this.request(e, "blocked", blockedText(e, why), {});
+            } else this.holdOnTrial(e, { run: e.run ?? "", commit: e.commit, verdict: "machine", by: { kind: "land", entry: e.id }, startedAt: this.iso() }, `Dry run couldn't run: ${msg}. That's the machine, not this branch: run it again.`);
             this.save();
           }
           return;
@@ -4091,6 +4101,8 @@ export class ProjectQueue {
       runDir,
       ...(draftsDir ? { draftsDir } : {}),
       picks: [...e.picks],
+      // q9: the entry's picks as they are now; the run adds each new one to itself.
+      latePicks: () => structuredClone(this.entry(e.id)?.picks ?? []),
       // A tag-only release's entry is the frozen target itself: its checks run there, nothing is merged or moved.
       ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}),
       ...(e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? { releaseChecks: structuredClone(this.q.release.checks) } : {}),
@@ -4145,6 +4157,10 @@ export class ProjectQueue {
       },
       copy: (path: string) => {
         run.copy = path;
+        persist();
+      },
+      rules: (r: RunRules) => {
+        run.rules = structuredClone(r);
         persist();
       },
     };
@@ -4279,6 +4295,7 @@ export class ProjectQueue {
     if (out.tip) run.tip = out.tip;
     if (out.copy) run.copy = out.copy;
     if (out.checks?.length) run.checks = out.checks;
+    if (out.rules) run.rules = out.rules;
     if (out.noChecks) run.noChecks = true;
     if (out.blame) run.blame = out.blame;
     if (out.why) run.why = out.why;
@@ -4342,6 +4359,17 @@ export class ProjectQueue {
         run.verdict = "machine";
         run.blame = out.blame ?? "machine";
         this.store.writeRun(run);
+        if (out.overTime?.length) {
+          // §app.merge-queue/time-limit: past the limit on the target alone too. Not the branch's, and a retry would
+          // only run over again: the queue pauses at once and asks the user; the entry keeps its place.
+          this.toFront(e);
+          e.reason = out.why ?? "a check runs past its time limit on the target too";
+          delete this.q.machineTries[e.id];
+          const names = out.overTime.map((o) => `${o.label} (${o.limitSec} s)`).join(", ");
+          this.pauseNow("time-limit", `${names} ${out.overTime.length === 1 ? "runs" : "run"} past ${out.overTime.length === 1 ? "its" : "their"} time limit on ${this.q.target} alone too, so not ${e.branch}'s. Raise the limit in .sova/project.json or speed it up on ${this.q.target}, then resume.`, run.id);
+          this.wake("paused", e, run.id, { why: out.why ?? "time limit" });
+          return;
+        }
         const tries = (this.q.machineTries[e.id] ?? 0) + 1;
         this.q.machineTries[e.id] = tries;
         this.toFront(e);
@@ -4481,6 +4509,19 @@ export class ProjectQueue {
         return;
       }
       case "passed": {
+        // q9: a pick that reached the queue after the run's last look for picks still runs before anything lands: the
+        // run goes again from the start with it planned, at the front of the line (§app.merge-queue/picks).
+        const missed = uncoveredPicks(e.picks, run.checks, (await this.declared()).def);
+        if (missed.length) {
+          run.verdict = "void";
+          run.why = `${missed.map((p) => p.label).join(", ")} ${missed.length === 1 ? "was" : "were"} added after the run's last look for picks: running again with ${missed.length === 1 ? "it" : "them"} before anything lands`;
+          this.store.writeRun(run);
+          this.record({ kind: "note", by: "queue", note: "late-pick-restart", entry: e.id, branch: e.branch, run: run.id, why: run.why });
+          this.toFront(e);
+          this.save();
+          this.kickSoon();
+          return;
+        }
         run.verdict = "passed";
         this.store.writeRun(run);
         if (out.review) e.review = out.review;

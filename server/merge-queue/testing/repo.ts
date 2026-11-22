@@ -41,6 +41,9 @@ export interface FixtureOptions {
   unitIsTestCommand?: boolean;
   /** Extra `merge` section keys (merged over the defaults). */
   merge?: Record<string, unknown>;
+  /** declared only: the unit check's time limit in seconds (default 60), and more checks after build and unit. */
+  unitTimeout?: number;
+  moreChecks?: Record<string, unknown>[];
   /** The repo's folder name (default `demo`). */
   name?: string;
   /** Files on the target's first commit, over the defaults (e.g. `{"setup.conf": "broken\n"}`: master already broken). */
@@ -261,7 +264,8 @@ export class Fixture {
     if (checks === "declared") {
       merge.checks = [
         { id: "build", label: "Build", run: ["node", "checks/build.mjs"] },
-        { id: "unit", label: "Unit tests", run: ["node", "checks/unit.mjs"], rerun: true, timeout: 60 },
+        { id: "unit", label: "Unit tests", run: ["node", "checks/unit.mjs"], rerun: true, timeout: this.opts.unitTimeout ?? 60 },
+        ...(this.opts.moreChecks ?? []),
       ];
     } else if (checks === "none") merge.checks = "none";
     def.merge = merge;

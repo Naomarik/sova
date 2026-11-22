@@ -499,15 +499,16 @@ describe("a merge run", () => {
     expect(callsAt(fx, "setup")).toHaveLength(0);
   });
 
-  test("a check that times out voids the run; an abort voids it too", async () => {
+  test("a check past its time limit is timed on the target alone (never a void); an abort voids the run", async () => {
     const fx = fixture();
     const def = fx.definition();
     (def.merge as { checks: { timeout?: number }[] }).checks[1]!.timeout = 2;
     fx.commitIn(fx.project, { ".sova/project.json": JSON.stringify(def, null, 2) }, "unit times out at 2 s");
     const br = fx.branch("hang", { "tests/a.txt": "hang\n" });
     const r = await run(fx, br);
-    expect(r.out).toMatchObject({ verdict: "void" });
-    expect(r.out.why).toContain("timed out");
+    // §app.merge-queue/time-limit: it finishes on the target alone, so the time-out is the branch's.
+    expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r.out.why).toMatch(/^Unit tests ran past its 2 s time limit with your branch and finishes in \d+ s on master alone/);
     const ctl = new AbortController();
     const br2 = fx.branch("hang2", { "tests/b.txt": "hang\n" });
     const pending = run(fx, br2, { signal: ctl.signal });

@@ -604,6 +604,30 @@ const MERGE_SCREEN: CommandEntry[] = [
   },
 ];
 
+/** The event memory's read (§app.merge-queue/activity): every recorded change of the queue, an entry, a run or a branch. */
+const MERGE_EVENTS: CommandEntry[] = [
+  {
+    id: "project.merge-queue.events",
+    label: "Show Queue Activity",
+    summary: "What happened in the merge queue, newest first, each with its time, who did it and why: approvals, runs started and restarted, steps, sends back and answers, the merge thread's decisions with what it read, pauses, landings and pushes. Narrowed to an entry, a run, a branch, an actor or a kind; pages back with before.",
+    effect: "looks",
+    params: {
+      project: mqProject,
+      entry: { type: "string", description: "One entry's (mq_…)", in: "query" },
+      run: { type: "string", description: "One run's (mr_…)", in: "query" },
+      branch: { type: "string", description: "One branch's, every entry of it", in: "query" },
+      by: { type: "string", description: "One actor's: user, queue, thread, chat, reviewer or release", in: "query" },
+      kind: { type: "string", description: "One kind of change (run-restarted, ruled, paused…)", in: "query" },
+      before: { type: "integer", description: "Older than this seq (the last one of the page before)", in: "query" },
+      limit: { type: "integer", description: "How many (1–500, default 100)", in: "query" },
+    },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/events" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
 export const PROJECT_ENTRIES: CommandEntry[] = [
   {
     id: "project.services.view",
@@ -622,5 +646,6 @@ export const PROJECT_ENTRIES: CommandEntry[] = [
   ...MERGE_LANDING,
   ...MERGE_SUMMARY,
   ...MERGE_KNOWN,
+  ...MERGE_EVENTS,
   ...MERGE_SCREEN,
 ];

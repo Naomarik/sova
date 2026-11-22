@@ -300,7 +300,9 @@
     "project.merge-queue.history",
     "project.merge-queue.health",
     "project.merge-queue.setup-map",
-    "project.merge-queue.setup-history"
+    "project.merge-queue.setup-history",
+    "project.verb.merge.events",
+    "project.merge-queue.events"
   ],
   "retired": [
     "settings.agents.get",

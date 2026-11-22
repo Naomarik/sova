@@ -6,7 +6,7 @@ import type { MergeEvent, MergeEventInput, MergeEventsPage } from "../../shared/
  * The merge queue's event memory, per project, beside queue.json (§app.merge-queue/activity):
  *
  *   <state>/merge-queue/<key>/events/YYYY-MM.jsonl   one MergeEvent per line, appended in `seq` order, by the month it
- *                                                    was recorded in; never rewritten, never trimmed
+ *                                                    was recorded in (not its `at`); never rewritten, never trimmed
  *
  * Every change to a branch or to the queue is one event: its time, who made it, why (one plain sentence), and the run
  * and plan step it belongs to. `seq` grows by one per event, per queue, across restarts: at the first record after a
@@ -106,11 +106,14 @@ export class MergeEventLog {
     // The memory tail is read before the append, so the new event is never in it twice.
     const tail = this.newest();
     const at = input.at ?? new Date(this.now()).toISOString();
+    // Filed by the month it is RECORDED in (never its `at`, which may be earlier): seqs then only grow along the files,
+    // so the newest month's last good line is always the newest seq.
+    const month = new Date(this.now()).toISOString().slice(0, 7);
     const ev = tidyEvent({ ...input, seq: ++this.seq, at } as MergeEvent);
     try {
       mkdirSync(this.dir, { recursive: true });
       // A line that a stop tore leaves no newline: start on a fresh one so this event is never glued to it.
-      appendFileSync(join(this.dir, `${/^\d{4}-\d{2}/.test(at) ? at.slice(0, 7) : new Date(this.now()).toISOString().slice(0, 7)}.jsonl`), `${this.needsNewline(at) ? "\n" : ""}${JSON.stringify(ev)}\n`, { mode: 0o600 });
+      appendFileSync(join(this.dir, `${month}.jsonl`), `${this.needsNewline(month) ? "\n" : ""}${JSON.stringify(ev)}\n`, { mode: 0o600 });
     } catch (err) {
       warn?.(`event ${ev.seq} (${ev.kind}) not written to ${this.dir}: ${err instanceof Error ? err.message : err}`);
     }
@@ -121,8 +124,7 @@ export class MergeEventLog {
 
   private newlineChecked = new Set<string>();
   /** Once per month file per start: does it end mid-line (a torn append)? */
-  private needsNewline(at: string): boolean {
-    const month = at.slice(0, 7);
+  private needsNewline(month: string): boolean {
     if (this.newlineChecked.has(month)) return false;
     this.newlineChecked.add(month);
     try {

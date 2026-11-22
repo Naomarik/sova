@@ -332,6 +332,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.merge-queue.flaky.fix": "a valid call starts a coding chat for one of a started queue's flaky tests, which the unit tier's app doesn't start",
   "project.merge-queue.history": "a valid call reads a started queue's history, which the unit tier's app doesn't start",
   "project.merge-queue.health": "a valid call reads a started queue's history and runs, which the unit tier's app doesn't start",
+  "project.merge-queue.events": "a valid call reads a started queue's event memory, which the unit tier's app doesn't start",
   "project.folder.list": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "project.folder.read": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the user's own page may)",

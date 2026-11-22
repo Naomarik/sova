@@ -20,11 +20,13 @@ function withDir(fn: (dir: string) => void): void {
 describe("the event memory's order of record", () => {
   test("seq goes on from the newest good line across a restart and a new month; nothing is renumbered", () => {
     withDir((dir) => {
-      const a = new MergeEventLog(dir);
-      a.record(note("one", { at: "2026-10-30T10:00:00.000Z" }));
-      a.record(note("two", { at: "2026-10-31T10:00:00.000Z" }));
-      const b = new MergeEventLog(dir);
-      const third = b.record(note("three", { at: "2026-11-01T10:00:00.000Z" }));
+      let now = Date.parse("2026-10-30T10:00:00.000Z");
+      const a = new MergeEventLog(dir, () => now);
+      a.record(note("one"));
+      a.record(note("two"));
+      now = Date.parse("2026-11-01T10:00:00.000Z");
+      const b = new MergeEventLog(dir, () => now);
+      const third = b.record(note("three"));
       assert.equal(third.seq, 3);
       assert.deepEqual(b.months(), ["2026-10", "2026-11"]);
       assert.deepEqual(
@@ -38,11 +40,26 @@ describe("the event memory's order of record", () => {
     });
   });
 
+  test("an event that happened last month but is recorded this month is filed this month: seqs stay unique after a restart", () => {
+    withDir((dir) => {
+      let now = Date.parse("2027-01-31T23:59:59.000Z");
+      new MergeEventLog(dir, () => now).record(note("run ended"));
+      now = Date.parse("2027-02-01T00:00:01.000Z");
+      const log = new MergeEventLog(dir, () => now);
+      log.record(note("held from January", { at: "2027-01-31T23:59:58.000Z" }));
+      const next = new MergeEventLog(dir, () => now).record(note("after a restart"));
+      assert.equal(next.seq, 3);
+      assert.deepEqual(new MergeEventLog(dir).read().events.map((e) => e.seq), [3, 2, 1]);
+      assert.equal(new MergeEventLog(dir).read().events[1]!.at, "2027-01-31T23:59:58.000Z", "its own time is kept");
+    });
+  });
+
   test("a line torn by a stop mid-append is skipped, and the next event starts on a line of its own", () => {
     withDir((dir) => {
-      new MergeEventLog(dir).record(note("kept", { at: "2026-11-02T10:00:00.000Z" }));
+      const now = () => Date.parse("2026-11-02T10:00:00.000Z");
+      new MergeEventLog(dir, now).record(note("kept"));
       appendFileSync(join(dir, "events", "2026-11.jsonl"), '{"seq":2,"kind":"no');
-      const ev = new MergeEventLog(dir).record(note("after", { at: "2026-11-02T11:00:00.000Z" }));
+      const ev = new MergeEventLog(dir, now).record(note("after"));
       assert.equal(ev.seq, 2, "the torn line never counted");
       const lines = readFileSync(join(dir, "events", "2026-11.jsonl"), "utf8").trimEnd().split("\n");
       assert.equal(JSON.parse(lines.at(-1)!).why, "after", "not glued to the torn line");
@@ -52,9 +69,9 @@ describe("the event memory's order of record", () => {
 
   test("an empty newest month falls back to the month before for the next seq", () => {
     withDir((dir) => {
-      new MergeEventLog(dir).record(note("october", { at: "2026-10-15T10:00:00.000Z" }));
+      new MergeEventLog(dir, () => Date.parse("2026-10-15T10:00:00.000Z")).record(note("october"));
       writeFileSync(join(dir, "events", "2026-11.jsonl"), "");
-      assert.equal(new MergeEventLog(dir).record(note("november", { at: "2026-11-15T10:00:00.000Z" })).seq, 2);
+      assert.equal(new MergeEventLog(dir, () => Date.parse("2026-11-15T10:00:00.000Z")).record(note("november")).seq, 2);
     });
   });
 });

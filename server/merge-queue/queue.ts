@@ -441,8 +441,9 @@ export class ProjectQueue {
 
   // ---- the event memory (§app.merge-queue/activity) ---------------------------------------------
 
-  /** While a run's end is worked out, its follow-ups wait here, so "run ended" is recorded before what came of it. */
-  private heldEvents: MergeEventInput[] | null = null;
+  /** While a run's end is worked out, that run's follow-ups wait here, so "run ended" is recorded before what came of
+   *  it; anything else (another entry, the queue) is recorded at once. Flushed before the landing's long steps. */
+  private heldEvents: { entry: string; run: string; list: MergeEventInput[]; flush: () => void } | null = null;
   /** The merge thread's reason for the fix it is checking now, and what it read before (requeueFix files it). */
   private fixWhy: { request: string; why: string; read: string[] } | null = null;
   /** What the merge thread read (merge.status, merge.logs) since its last ruling: the next ruling's evidence. */
@@ -452,8 +453,9 @@ export class ProjectQueue {
    *  throws. Inside a run, call RunHooks.event instead (run, entry and branch filled in). */
   record(ev: MergeEventInput): void {
     const at = ev.at ?? this.iso();
-    if (this.heldEvents) {
-      this.heldEvents.push({ ...ev, at } as MergeEventInput);
+    const h = this.heldEvents;
+    if (h && (ev.entry === h.entry || ev.run === h.run)) {
+      h.list.push({ ...ev, at } as MergeEventInput);
       return;
     }
     try {
@@ -4609,15 +4611,23 @@ export class ProjectQueue {
 
   /** A run's end: "run ended" is recorded first, then what came of it (sent back, landed, restarted…). */
   private async finish(cur: Current, out: RunOutcome): Promise<void> {
-    const held: MergeEventInput[] = [];
+    const held = {
+      entry: cur.entry,
+      run: cur.run.id,
+      list: [] as MergeEventInput[],
+      flush: () => {
+        if (this.heldEvents !== held) return;
+        this.heldEvents = null;
+        const e = this.entry(cur.entry);
+        this.record(runEndedEvent(e ?? { id: cur.entry, branch: cur.run.branch }, cur.run));
+        for (const ev of held.list) this.record(ev);
+      },
+    };
     this.heldEvents = held;
     try {
       await this.finishRun(cur, out);
     } finally {
-      this.heldEvents = null;
-      const e = this.entry(cur.entry);
-      this.record(runEndedEvent(e ?? { id: cur.entry, branch: cur.run.branch }, cur.run));
-      for (const ev of held) this.record(ev);
+      held.flush();
     }
   }
 
@@ -5004,6 +5014,8 @@ export class ProjectQueue {
 
   /** Land a passed run's tip (the entry is `checking`). */
   async landTested(e: Entry, run: MergeRun): Promise<void> {
+    // The run's end is known now: its events go before the landing's (and the push's) waits.
+    this.heldEvents?.flush();
     // Landing by request or by push (al_3): the target never moves here; the tested work is published instead.
     if (publishes(approvalHow(e.approval))) return this.landByRequest(e, run);
     // Never a tip whose "Private names and secrets" step found something the user hasn't marked fine.

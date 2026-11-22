@@ -23,7 +23,7 @@ const fixture = (o: ConstructorParameters<typeof Fixture>[0] = {}) => {
 };
 
 let n = 0;
-async function run(fx: Fixture, br: { branch: string; commit: string }, o: { clean?: RunInput["clean"]; planned?: (def: RunInput["project"]["def"]) => RunInput["planned"] } = {}) {
+async function run(fx: Fixture, br: { branch: string; commit: string }, o: { clean?: RunInput["clean"]; review?: boolean; planned?: (def: RunInput["project"]["def"]) => RunInput["planned"] } = {}) {
   const runId = `mr_k${++n}`;
   const runDir = join(fx.root, "runs", runId);
   mkdirSync(runDir, { recursive: true });
@@ -31,7 +31,7 @@ async function run(fx: Fixture, br: { branch: string; commit: string }, o: { cle
   const def = parseDefinition(fx.fileAt(base, ".sova/project.json")!);
   const entry = { id: `me_${n}`, project: "p1", target: fx.target, branch: br.branch, commit: br.commit, approval: { by: "land-button", at: new Date().toISOString(), commit: br.commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: "", updatedAt: "" } as MergeEntry;
   const steps = new Map<string, RunStep>();
-  const input: RunInput = { runId, entry, project: { id: "p1", root: fx.project, target: fx.target, def }, base, commit: br.commit, runDir, picks: [], review: false, signal: new AbortController().signal, awaitReview: () => new Promise(() => {}), ...(o.clean ? { clean: o.clean } : {}), ...(o.planned ? { planned: o.planned(def) } : {}) };
+  const input: RunInput = { runId, entry, project: { id: "p1", root: fx.project, target: fx.target, def }, base, commit: br.commit, runDir, picks: [], review: !!o.review, signal: new AbortController().signal, awaitReview: () => new Promise(() => {}), ...(o.clean ? { clean: o.clean } : {}), ...(o.planned ? { planned: o.planned(def) } : {}) };
   let ranWith: Record<string, unknown> = {};
   const notes: string[] = [];
   const out: RunOutcome = await makeRunMerge({ specCore: join(REPO_ROOT, "pi-config/extensions/spec/core") })(input, { step: (s) => void steps.set(s.id, s), checks: () => {}, ranWith: (p) => void (ranWith = { ...ranWith, ...p }), event: (ev) => void notes.push(`${(ev as { note?: string }).note ?? ev.kind}: ${ev.why}`) });
@@ -84,6 +84,14 @@ describe("the plan and the run's own reading", () => {
     expect(r.out.checks?.map((c) => c.id)).toEqual(["build", "unit", "lint"]);
     expect(r.steps.get("check:lint")?.result).toBe("passed");
     expect(r.notes.find((n) => n.startsWith("plan-differs"))).toMatch(/The plan's run, and the copy's lint with them\./);
+  });
+});
+
+describe("the review kit", () => {
+  test("a branch that deletes the target's kit: the Review step says it isn't there as the branch would land, never that the target lacks it", async () => {
+    const fx = fixture({ review: true });
+    const r = await run(fx, fx.branch("no-kit", { ".sova/playbook-config/review/SKILL.md": null }), { review: true });
+    expect(r.steps.get("review")).toMatchObject({ result: "skipped", detail: "the review kit .sova/playbook-config/review isn't there as the branch would land" });
   });
 });
 

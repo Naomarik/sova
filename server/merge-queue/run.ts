@@ -1105,7 +1105,7 @@ function startReview(o: { input: RunInput; copy: string; tip: string; steps: Ste
   let done = false;
   const result: Promise<ReviewResult> = (async () => {
     if (!kit || !existsSync(join(o.copy, kit))) {
-      st.end("skipped", { detail: kit ? `no review kit at ${kit} on ${o.input.project.target}` : "no review kit declared" });
+      st.end("skipped", { detail: kit ? `the review kit ${kit} isn't there as the branch would land` : "no review kit declared" });
       return { ok: true as const, verdict: { verdict: "ok" as const, commit: o.tip, at: now(), text: "no review kit" } };
     }
     // The branch's own kit (the merge copy is at the merged tip): what it declares, its hash, and whether the branch

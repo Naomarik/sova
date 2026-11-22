@@ -2,7 +2,8 @@
    scoped to .pl-screen and reads only semantic tokens. The screen asks its own box (container pl), never the window:
    at a folded width the detail panes move into a sheet and the lanes stack. */
 
-.pl-screen { container: pl / inline-size; display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+/* overflow: clip, not the card's hidden: hidden makes the card a scroll box, which stops the sticky stage detail. */
+.pl-screen { container: pl / inline-size; display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; overflow: clip; }
 .pl-screen .mono, .pl-mono { font-family: var(--font-mono); font-size: var(--fs-mono); letter-spacing: -0.01em; }
 .pl-muted { color: var(--color-ink-muted); }
 
@@ -242,7 +243,7 @@
 
 @container pl (min-width: 880px) {
   .pl-setup-grid { grid-template-columns: minmax(0, 1fr) 340px; }
-  .pl-aside { display: block; position: sticky; top: var(--space-4); align-self: start; }
+  .pl-aside { display: block; position: sticky; top: var(--space-4); align-self: start; max-height: calc(100vh - 2 * var(--space-4)); overflow-y: auto; }
   .pl-split { grid-template-columns: 320px minmax(0, 1fr); gap: var(--space-5); }
   .pl-strip-rows:has(> :nth-child(2)) { grid-template-columns: 1fr 1fr; }
   .pl-strip-rows:has(> :nth-child(2)) .pl-strip-row:nth-child(2n) { border-top: 0; border-inline-start: var(--stroke-thin) solid var(--color-border); }

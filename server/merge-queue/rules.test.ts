@@ -58,11 +58,9 @@ describe("folder rules in the merge section", () => {
   });
 });
 
-// Landing in two steps: the server that lands this branch can't read `merge.rules` yet, so Sova's own rules go into
-// .sova/project.json in a follow-up branch, once Sova runs this code. That follow-up removes this `.skip`.
-describe.skip("Sova's own rules (.sova/project.json)", () => {
+describe("Sova's own rules (.sova/project.json)", () => {
   const own = parseDefinition(readFileSync(join(REPO, ".sova", "project.json"), "utf8"));
-  const rules = own.merge!.rules ?? [];
+  const rules = own.merge!.rules!;
   const checks = own.merge!.checks as { id: string; label: string; perSelector?: true }[];
   const hit = (paths: string[]) => ruleTriggers(rules, paths, checks).picks;
   const by = (paths: string[]) => Object.fromEntries(hit(paths).map((p) => [p.id, p]));

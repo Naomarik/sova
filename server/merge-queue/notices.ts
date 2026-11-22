@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { type MergeEntry, type MergeRun, newerWords } from "../../shared/merge-queue";
+import { type MergeEntry, type MergeRun, newerWords, type PauseInfo } from "../../shared/merge-queue";
 
 /**
  * The words of what the queue tells a branch's own chat (server/merge-queue/cards.ts: its card, its hidden line, the
@@ -83,4 +83,19 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
     case "removed":
       return `The user removed ${e.branch} from the merge queue at ${short(e.commit)}; nothing of the branch was deleted.`;
   }
+}
+
+/**
+ * The one notification of the queue pausing itself (§app.merge-queue/pausing, §app.notifications/merge-queue): every
+ * pause but the user's own. "The merge queue paused · {project folder}", the pause's reason, a tap opening the
+ * project's Merge Queue tab. Its tag is the pause's, so one pause notifies once and a later pause again.
+ */
+export function pausedPush(p: Pick<PauseInfo, "kind" | "why" | "at">, root: string, project: string | null): { title: string; body: string; hash: string; tag: string } {
+  const folder = root.split("/").filter(Boolean).pop() ?? root;
+  return {
+    title: `The merge queue paused · ${folder}`,
+    body: `${p.why[0]?.toUpperCase() ?? ""}${p.why.slice(1)}`,
+    hash: project ? `#/projects/${encodeURIComponent(project)}/merge-queue` : "#/projects",
+    tag: `sova:merge-paused:${project ?? root}:${p.at}`,
+  };
 }

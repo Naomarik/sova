@@ -85,6 +85,10 @@ export type ThreadEvent =
   | { kind: "idle"; entry: ThreadEntry; lastLanded?: { id: string; branch: string; sha: string }; head?: string }
   /** The project has no private-names list: pushes are held until the user answers the interview. */
   | { kind: "names"; file: string; target: string }
+  /** The scan before pushing found things that look private (§app.merge-queue/names-step): where and what kind, never
+   *  the text. `entry` is the held landing (absent: a held push of landings already in). The user asked (Ask the
+   *  Merge Thread), or a held push. */
+  | { kind: "names-hit"; target: string; entry?: ThreadEntry; run?: string; hits: string[] }
   /** The user's answer to a merge.ask, relayed by the chat it was asked in (or typed on the tab). */
   | { kind: "answer"; ask: Pick<MergeThreadAsk, "id" | "question" | "branch">; text: string; from: string };
 
@@ -127,6 +131,18 @@ export interface ThreadRecord {
   history?: ThreadHistoryItem[];
 }
 
+/** How the project's thread answers (§chat.merge-queue/thread-health), kept beside its record even with no thread. */
+export interface ThreadHealthRecord {
+  /** Deliveries that failed (refused, given up, couldn't start a thread), newest last, at most HEALTH_KEPT. */
+  failures?: { at: number; kind: string; error: string; branch?: string }[];
+  /** Fresh threads Sova started by itself because something waited too long, newest last, at most HEALTH_KEPT. */
+  restarts?: { at: number; why: string; ok: boolean; error?: string }[];
+  /** When an event last reached it. */
+  deliveredAt?: number;
+}
+/** How many failures and restarts the record keeps. */
+export const HEALTH_KEPT = 20;
+
 /** A new question id. */
 export const newAskId = (): string => `ak_${randomBytes(6).toString("hex")}`;
 
@@ -134,7 +150,7 @@ export const newAskId = (): string => `ak_${randomBytes(6).toString("hex")}`;
 export const ASKS_MAX = 50;
 
 /** What the record file holds per project: the current thread, or only the history after Start Fresh. */
-type StoredThread = (ThreadRecord | { history: ThreadHistoryItem[]; sessionId?: undefined }) & { asks?: MergeThreadAsk[] };
+type StoredThread = (ThreadRecord | { history: ThreadHistoryItem[]; sessionId?: undefined }) & { asks?: MergeThreadAsk[]; health?: ThreadHealthRecord };
 
 
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -247,6 +263,7 @@ export const READ_AS_YOU_GO: Readonly<Record<ThreadEvent["kind"], string>> = {
   paused: "Paused",
   idle: "Idle",
   names: "Names",
+  "names-hit": "Names",
   answer: "Answer",
 };
 
@@ -392,6 +409,16 @@ function eventBody(ev: ThreadEvent): string {
         `Names: this project has no private-names list, so every push of ${ev.target} is held. Landings go on.`,
         `Run the names interview (references/names.md): merge.names {action: "discover"} (Sova fills the project's names file and answers kinds and counts), then ask the user what else must never reach the public repo with merge.ask {text, entry?} (the newest landed entry, so its branch's chat asks them). Never wait for them in your chat, and never put a name in a question, a note or anywhere but that file.`,
       ].join("\n");
+    case "names-hit": {
+      const e = ev.entry;
+      return [
+        e
+          ? `Private names: entry ${e.id} · ${e.branch} at ${short(e.commit)} passed its checks, but the scan before pushing${ev.run ? ` (run ${ev.run}, its "Private names and secrets" step)` : ""} found things that look private. The user asked you which names they are:`
+          : `Private names: ${ev.target} wasn't pushed: the scan before pushing found things that look private in what the remote lacks:`,
+        ...ev.hits,
+        `Read the project's names file (references/names.md) and the places named, and tell the user in this chat which name or secret each is, and whether it looks like a real leak (merge.note on the entry says it in a line). Never repeat a matched text in a question, a note, or anywhere but this chat. Allow, Send Back and No private names are the user's own clicks on their page: never ask for them through a verb.`,
+      ].join("\n");
+    }
     case "answer":
       return [
         `Answer to your question ${ev.ask.id}${ev.ask.branch ? ` (about ${ev.ask.branch})` : ""}, from ${ev.from}:`,
@@ -410,7 +437,7 @@ export function firstText(root: string, playbook: string, ev: ThreadEvent): stri
   return [
     `You are the merge thread for the project at ${root}. ${read}, and read their references as they say. The method's scripts are in ${join(DEFAULT_PLAYBOOK_DIR, "scripts")}.`,
     `You act only through the merge verbs (the project verbs tool), on your own: you never wait for the user in this chat. When you need them, ask with merge.ask {text, entry?}: Sova asks in the branch's own chat and their answer comes back to you as a message. The user may still write to you here; answer them when they do.`,
-    `You never move ${"entry" in ev ? ev.entry.target : "target" in ev ? ev.target : "the target branch"}, never run git that writes in the main checkout, and never land anything: Sova does that.`,
+    `You never move ${"entry" in ev && ev.entry ? ev.entry.target : "target" in ev ? ev.target : "the target branch"}, never run git that writes in the main checkout, and never land anything: Sova does that.`,
     `Your tools run in a sandbox that writes only in your own temp folder and has no network: read anything, try things in a scratch clone there (delete it when done), and do everything else through the merge verbs, which Sova runs for you.`,
     "",
     eventText(ev),
@@ -453,15 +480,49 @@ export class MergeThread {
   private chains = new Map<string, Promise<void>>();
   constructor(readonly deps: ThreadDeps) {}
 
-  /** Tell the project's thread about an event. Returns at once; never throws; never awaited by a run. */
-  notify(root: string, ev: ThreadEvent): void {
+  /** Tell the project's thread about an event. Returns at once; never throws; never awaited by a run. `fresh`: start
+   *  a fresh thread for it instead of waking the one there (why: it didn't answer in time; §chat.merge-queue/thread-health). */
+  notify(root: string, ev: ThreadEvent, opts: { fresh?: string } = {}): void {
     try {
       const prev = this.chains.get(root) ?? Promise.resolve();
-      const next = prev.then(() => this.deliver(root, ev)).catch((err) => this.say(`${root}: ${ev.kind} not delivered: ${err instanceof Error ? err.message : String(err)}`));
+      const next = prev
+        .then(() => this.deliver(root, ev, opts.fresh))
+        .catch((err) => {
+          const error = err instanceof Error ? err.message : String(err);
+          this.say(`${root}: ${ev.kind} not delivered: ${error}`);
+          this.noteFailure(root, ev, error);
+          // A fresh thread that couldn't start: the queue's next recheck reads it here and tells the user.
+          if (opts.fresh) this.noteRestart(root, { why: opts.fresh, ok: false, error });
+        });
       this.chains.set(root, next);
     } catch (err) {
       this.say(`${root}: ${ev.kind} not delivered: ${String(err)}`);
     }
+  }
+
+  /** The project's thread health record (failures, fresh starts, last delivery). */
+  health(root: string): ThreadHealthRecord {
+    return readStored(this.deps.file)[root]?.health ?? {};
+  }
+
+  private writeHealth(root: string, fn: (h: ThreadHealthRecord) => ThreadHealthRecord): void {
+    try {
+      const all = readStored(this.deps.file);
+      const cur = all[root] ?? { history: [] };
+      all[root] = { ...cur, health: fn({ ...(cur.health ?? {}) }) };
+      writeRecords(this.deps.file, all);
+    } catch (err) {
+      this.say(`${root}: health not recorded: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private noteFailure(root: string, ev: ThreadEvent, error: string): void {
+    const branch = "entry" in ev && ev.entry ? { branch: ev.entry.branch } : {};
+    this.writeHealth(root, (h) => ({ ...h, failures: [...(h.failures ?? []), { at: this.deps.now(), kind: ev.kind, error: error.slice(0, 300), ...branch }].slice(-HEALTH_KEPT) }));
+  }
+
+  private noteRestart(root: string, r: { why: string; ok: boolean; error?: string }): void {
+    this.writeHealth(root, (h) => ({ ...h, restarts: [...(h.restarts ?? []), { at: this.deps.now(), why: r.why, ok: r.ok, ...(r.error ? { error: r.error.slice(0, 300) } : {}) }].slice(-HEALTH_KEPT) }));
   }
 
   /** Resolves once every event handed to `root` so far was delivered or given up (tests). */
@@ -584,15 +645,16 @@ export class MergeThread {
     (this.deps.log ?? ((l: string) => console.warn(`[merge-thread] ${l}`)))(line);
   }
 
-  private async deliver(root: string, ev: ThreadEvent): Promise<void> {
+  private async deliver(root: string, ev: ThreadEvent, fresh?: string): Promise<void> {
     const ms = this.deps.timeoutMs ?? DELIVERY_TIMEOUT_MS;
     const now = this.deps.now();
     const rec = readRecords(this.deps.file)[root];
-    const s = rec ? await withTimeout(this.deps.session(rec.sessionId, rec.path), ms, "reading the thread") : null;
-    let why = replaceReason(rec, s, now);
+    const s = rec && !fresh ? await withTimeout(this.deps.session(rec.sessionId, rec.path), ms, "reading the thread") : null;
+    // A thread that didn't answer in time is replaced, whatever it looks like.
+    let why = fresh && rec ? fresh : replaceReason(rec, s, now);
     const playbook = playbookDir(root, this.deps.exists ?? existsSync);
     const hash = playbookHash(playbook);
-    const last = { kind: ev.kind, at: now, ...("entry" in ev ? { entry: ev.entry.id, branch: ev.entry.branch } : {}) };
+    const last = { kind: ev.kind, at: now, ...("entry" in ev && ev.entry ? { entry: ev.entry.id, branch: ev.entry.branch } : {}) };
     if (!why && rec) {
       const changed = !!rec.playbookHash && rec.playbookHash !== hash;
       const text = changed ? `${rereadLine(playbook)}\n\n${eventText(ev)}` : eventText(ev);
@@ -601,17 +663,21 @@ export class MergeThread {
         const all = readStored(this.deps.file);
         const cur = all[root];
         if (cur?.sessionId === rec.sessionId) {
-          all[root] = { ...(cur as ThreadRecord), playbookHash: hash, playbook, lastEvent: last };
+          all[root] = { ...(cur as ThreadRecord), playbookHash: hash, playbook, lastEvent: last, ...(cur.health ? { health: { ...cur.health, deliveredAt: now } } : { health: { deliveredAt: now } }) };
           writeRecords(this.deps.file, all);
         }
         return;
       }
+      this.noteFailure(root, ev, `it refused the message three times (${r.error})`);
       why = `it refused messages (${r.error})`;
       this.say(`${root}: the thread refused a message three times (${r.error}); starting a fresh one`);
     } else if (rec) this.say(`${root}: a fresh thread, since ${why}`);
     const r = await withTimeout(this.deps.create(root, firstText(root, playbook, ev), mergeThreadTitle(root, now)), ms, "starting the thread");
     if (!r.ok) throw new Error(`couldn't start a thread: ${r.error}`);
     const history = rec ? this.retireRecord(root, rec, why ?? "replaced", false) : (readStored(this.deps.file)[root]?.history ?? []);
+    // The thread that didn't answer is archived like any replaced one (it keeps its verbs for the grace time).
+    if (fresh && rec) await this.deps.retire?.(rec.path).catch((err) => this.say(`${root}: the old thread wasn't archived: ${err instanceof Error ? err.message : String(err)}`));
+    if (fresh) this.noteRestart(root, { why: fresh, ok: true });
     const all = readStored(this.deps.file);
     all[root] = {
       sessionId: r.id,
@@ -624,6 +690,7 @@ export class MergeThread {
       ...(rec ? { previous: { sessionId: rec.sessionId, until: now + THREAD_GRACE_MS } } : {}),
       ...(history.length ? { history } : {}),
       ...(all[root]?.asks?.length ? { asks: all[root]!.asks } : {}),
+      health: { ...(all[root]?.health ?? {}), deliveredAt: now },
     };
     writeRecords(this.deps.file, all);
   }
@@ -650,7 +717,7 @@ export function threadOf(root: string): { session: string; startedAt: string } |
 }
 
 /** The Merge thread card's facts for `root` (null: no thread now). `busy`: its turn is running. */
-export function threadInfo(keeper: Pick<MergeThread, "record" | "openAsk"> | null, root: string, busy: (path: string) => boolean = () => false): import("../../shared/merge-queue").MergeThreadInfo | null {
+export function threadInfo(keeper: (Pick<MergeThread, "record" | "openAsk"> & Partial<Pick<MergeThread, "health">>) | null, root: string, busy: (path: string) => boolean = () => false): import("../../shared/merge-queue").MergeThreadInfo | null {
   const rec = keeper?.record(root);
   if (!rec) return null;
   const ask = keeper!.openAsk(root);
@@ -668,6 +735,21 @@ export function threadInfo(keeper: Pick<MergeThread, "record" | "openAsk"> | nul
     state: ask ? "asking" : working ? "working" : "idle",
     ...(rec.lastEvent ? { lastEvent: { kind: rec.lastEvent.kind, at: new Date(rec.lastEvent.at).toISOString(), ...(rec.lastEvent.branch ? { branch: rec.lastEvent.branch } : {}) } } : {}),
     ...(ask ? { ask } : {}),
+    ...healthInfo(keeper!.health?.(root)),
+  };
+}
+
+/** The card's health facts from the record (the queue adds what waits on the thread and the state, queue.ts). */
+function healthInfo(h: ThreadHealthRecord | undefined): Pick<import("../../shared/merge-queue").MergeThreadInfo, "health"> {
+  if (!h) return {};
+  const iso = (t: number) => new Date(t).toISOString();
+  return {
+    health: {
+      state: "ok",
+      deadlineMin: 15,
+      failures: (h.failures ?? []).slice(-5).map((f) => ({ at: iso(f.at), kind: f.kind, error: f.error, ...(f.branch ? { branch: f.branch } : {}) })),
+      restarts: (h.restarts ?? []).slice(-5).map((r) => ({ at: iso(r.at), why: r.why, ok: r.ok, ...(r.error ? { error: r.error } : {}) })),
+    },
   };
 }
 

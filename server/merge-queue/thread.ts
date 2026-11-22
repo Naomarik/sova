@@ -1,7 +1,7 @@
 /**
  * The merge thread: one chat per project that follows the project's merge-queue playbook, started by
  * Sova. The queue tells it what happens (an entry queued, a conflict, a red run, a pause) and it acts
- * only through the merge verbs: a note on each landing, extra checks picked by blast radius, a
+ * only through the merge verbs: a note on each landing, extra checks beyond the project's folder rules, a
  * judgement on each conflict, an explanation of each failure; and, when a project has no private-names
  * list, the names interview with the user in its own chat.
  *
@@ -274,7 +274,7 @@ function eventBody(ev: ThreadEvent): string {
       return [
         `Queued: entry ${e.id} · ${e.branch} at ${short(e.commit)}, onto ${e.target}${ev.base ? ` (at ${short(ev.base)})` : ""}.`,
         `Read what it changes (\`git diff ${base}...${e.commit}\`, read only; it may land before you finish). Then, in one short turn:`,
-        `1. pick extra checks by blast radius (the method's scripts/blast-radius.mjs --base ${base} --tip ${e.commit}, references/picks.md) and add them with merge.extend {entry: "${e.id}", checks: [id], why, select} (select is part of the pick: copy the pick's select whenever it has one: a pick of a check the project marks as needing a selection is refused without one; skip when nothing beyond the floor fits; "landed" or "busy" means too late: go on to the note);`,
+        `1. Sova applies the project's folder rules itself (the rules of the merge section in .sova/project.json, as this branch has them: \`git show ${e.commit}:.sova/project.json\`): what they set off runs as Triggered. Add only a declared check they miss, with merge.extend {entry: "${e.id}", checks: [id], why, select} (references/picks.md; select is part of the pick: a check the project marks as needing a selection is refused without one; skip when nothing beyond the rules fits; a refusal saying the run is landing or the entry landed means too late: go on to the note);`,
         `2. write its note with merge.note {entry: "${e.id}", note} ("What's worth noting" in the playbook; an empty note when nothing is).`,
       ].join("\n");
     }

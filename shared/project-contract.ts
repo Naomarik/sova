@@ -357,6 +357,9 @@ export interface MergeCheckDecl {
   requires: string[];
   optional?: true;
   needsSelect?: true;
+  /** Takes one selection per run: folder rules hitting it with different selections run it once per selection,
+   *  instead of once with every selection joined. */
+  perSelector?: true;
 }
 /** The definition's `merge` section. `checks`: the required set, `"none"` (declared: no automated tests), or absent
  *  (the queue falls back to `test.run`, else the project isn't set up). `target`: the branch it lands on (absent: the
@@ -376,7 +379,21 @@ export interface MergeDecl {
   reuse?: boolean;
   /** Automatic cleanup deletes a landed branch as well as its folder (§chat.worktrees/retirement). Absent: false. */
   deleteBranches?: boolean;
+  /** Folder rules: when one of `paths` changes, the run adds `check` (with `select`). Sova applies them itself at the
+   *  start of each run, read from the branch being landed. Needs `checks` to be a list. */
+  rules?: MergeRuleDecl[];
 }
+
+/** One folder rule: a changed path matching one of `paths` (globs relative to the repository root: `**` any depth,
+ *  `*` within a folder, `?` one character) adds the merge check `check` to the run, narrowed by `select` (appended to
+ *  its command), with `why` shown beside it. A check that declares `needsSelect` must be given a `select`. */
+export interface MergeRuleDecl {
+  paths: string[];
+  check: string;
+  select?: string[];
+  why: string;
+}
+export const MERGE_RULES_MAX = 100;
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
 export interface ShareDecl {
@@ -518,8 +535,9 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches"],
-  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches", "rules"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect", "perSelector"],
+  mergeRule: ["paths", "check", "select", "why"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
   releaseCheck: ["id", "label", "run", "timeout", "rerun", "requires"],
@@ -955,9 +973,10 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
       if (x.rerun !== undefined && typeof x.rerun !== "boolean") throw new DefinitionError(`${path}.rerun`, "must be true or false");
       if (x.optional !== undefined && typeof x.optional !== "boolean") throw new DefinitionError(`${path}.optional`, "must be true or false");
       if (x.needsSelect !== undefined && typeof x.needsSelect !== "boolean") throw new DefinitionError(`${path}.needsSelect`, "must be true or false");
+      if (x.perSelector !== undefined && typeof x.perSelector !== "boolean") throw new DefinitionError(`${path}.perSelector`, "must be true or false");
       const requires = strList(x.requires, `${path}.requires`);
       for (const r of requires) if (!services.some((s) => s.name === r)) throw new DefinitionError(`${path}.requires`, `names no service "${r}"`);
-      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}), ...(x.needsSelect === true ? { needsSelect: true as const } : {}) };
+      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}), ...(x.needsSelect === true ? { needsSelect: true as const } : {}), ...(x.perSelector === true ? { perSelector: true as const } : {}) };
     });
     if (!out.checks.some((c) => !c.optional)) throw new DefinitionError("$.merge.checks", "at least one check is required (not optional)");
     if (new Set(out.checks.map((c) => c.id)).size !== out.checks.length) throw new DefinitionError("$.merge.checks", "check ids must be unique");
@@ -983,7 +1002,38 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
     if (typeof o.deleteBranches !== "boolean") throw new DefinitionError("$.merge.deleteBranches", "must be true or false");
     out.deleteBranches = o.deleteBranches;
   }
+  if (o.rules !== undefined) out.rules = mergeRules(o.rules, out.checks);
   return out;
+}
+
+/** A folder rule's path glob: relative to the repository root, inside it, no empty segment. */
+function ruleGlob(v: unknown, path: string): string {
+  if (typeof v !== "string" || !v.trim() || v.length > 300) throw new DefinitionError(path, "must be a path glob (1 to 300 characters)");
+  if (v.startsWith("/") || v.includes("\\") || v.includes("\0")) throw new DefinitionError(path, "must be relative to the repository root");
+  if (v.split("/").some((s) => s === ".." || s === "")) throw new DefinitionError(path, "must stay inside the repository (no .., no empty folder)");
+  return v;
+}
+
+function mergeRules(v: unknown, checks: MergeDecl["checks"]): MergeRuleDecl[] {
+  if (!Array.isArray(v)) throw new DefinitionError("$.merge.rules", "must be a list of rules {paths, check, select?, why}");
+  if (v.length > MERGE_RULES_MAX) throw new DefinitionError("$.merge.rules", `at most ${MERGE_RULES_MAX} rules`);
+  if (v.length && !Array.isArray(checks)) throw new DefinitionError("$.merge.rules", "rules name merge checks: declare merge.checks as a list first");
+  const decls = Array.isArray(checks) ? checks : [];
+  return v.map((r, i) => {
+    const path = `$.merge.rules[${i}]`;
+    const x = obj(r, path);
+    keysOnly(x, K.mergeRule, path);
+    if (!Array.isArray(x.paths) || !x.paths.length) throw new DefinitionError(`${path}.paths`, "must be a non-empty list of path globs");
+    const paths = x.paths.map((p, j) => ruleGlob(p, `${path}.paths[${j}]`));
+    if (typeof x.check !== "string" || !x.check) throw new DefinitionError(`${path}.check`, "must name a merge check by its id");
+    const c = decls.find((d) => d.id === x.check);
+    if (!c) throw new DefinitionError(`${path}.check`, `names no merge check "${x.check}"`);
+    const select = strList(x.select, `${path}.select`);
+    for (const [j, s] of select.entries()) if (s.startsWith("-")) throw new DefinitionError(`${path}.select[${j}]`, "a selector never starts with - (it would read as a flag)");
+    if (c.needsSelect && !select.length) throw new DefinitionError(`${path}.select`, `"${c.id}" runs with a selection: name what it runs (its groups, files or walkthroughs)`);
+    if (typeof x.why !== "string" || !x.why.trim() || x.why.length > 200) throw new DefinitionError(`${path}.why`, "say why, in one line (1 to 200 characters): it is shown beside the check");
+    return { paths, check: c.id, ...(select.length ? { select } : {}), why: x.why.trim() };
+  });
 }
 
 // ---- release (shared/release.ts) -----------------------------------------------------------------

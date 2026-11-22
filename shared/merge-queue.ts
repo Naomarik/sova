@@ -284,6 +284,8 @@ export interface CheckPick {
   why?: string;
   /** picked: test selectors for that check (files, names), when the thread narrows it. */
   select?: string[];
+  /** A pick that arrived after its run started (q9): when it arrived. It still runs in that run, before the push. */
+  addedAt?: string;
 }
 
 /** The merge thread's judgement of a conflict (merge.resolve). */
@@ -588,11 +590,29 @@ export interface MergeRun {
   endedAt?: string;
   /** "No checks declared": the project said so. */
   noChecks?: true;
+  /** The folder rules the run applied (§app.merge-queue/rules); absent on a run from before them, or one that
+   *  stopped before its checks. */
+  rules?: RunRules;
   /** The plan worked out before the run started (§app.merge-queue/plan): every step it will take and every one it
    *  won't, each with why, and the fingerprint of its inputs. Absent on runs from before plans. */
   plan?: RunPlan;
   /** What the run ran with: tool versions, what it reused, the settings in force. Filled in as the run goes. */
   ranWith?: RunRanWith;
+}
+
+/** The folder rules a run applied: read from the branch being landed, so a rule edit takes effect on its own landing. */
+export interface RunRules {
+  /** "branch": the branch's own rules; "target": the target's (`why` says why the branch's couldn't be read). */
+  from: "branch" | "target";
+  /** How many rules there are. */
+  count: number;
+  /** The branch changed its own rules: each change in one line ("added: src/** → e2e (…): why"). */
+  changed?: string[];
+  /** More changes than `changed` lists. */
+  more?: number;
+  why?: string;
+  /** Rules that matched but named a check the target doesn't declare: they apply once it does. */
+  unknown?: string[];
 }
 
 // ---- the run plan (al_1 step 11): worked out before a run starts ---------------------------------
@@ -888,7 +908,8 @@ export type PauseKind =
   | "main-checkout-dirty" // the project's main folder has uncommitted edits: master landed, the folder not moved
   | "reviewer" // the reviewer failed twice
   | "recovery" // a landing in flight at a stop could not be reconciled
-  | "definition-invalid"; // the target's .sova/project.json doesn't parse: nothing runs until it is fixed
+  | "definition-invalid" // the target's .sova/project.json doesn't parse: nothing runs until it is fixed
+  | "time-limit"; // a check ran past its time limit with the branch and on the target alone too: the user decides
 export interface PauseInfo {
   kind: PauseKind;
   why: string;

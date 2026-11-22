@@ -37,6 +37,8 @@ export interface PlannedCheck {
   select?: string[];
   /** The merge thread picked it: it runs with SOVA_MERGE_PICKED=1, so a check that runs only when triggered runs. */
   picked?: true;
+  /** A pick added after its run started (q9): when. */
+  addedAt?: string;
 }
 
 const fromDecl = (c: MergeCheckDecl, source: CheckSource, why?: string, select?: string[]): PlannedCheck => ({
@@ -52,12 +54,14 @@ const fromDecl = (c: MergeCheckDecl, source: CheckSource, why?: string, select?:
 });
 
 /**
- * The checks a run runs, in order: the required ones (declaration order), then each pick. A pick naming a required
- * check with no selectors marks it picked (source and why shown; it runs even when nothing triggers it); with
+ * The checks a run runs, in order: the required ones (declaration order), then each folder rule's trigger
+ * (rules.ts ruleTriggers, source "trigger"), then each of the merge thread's picks. A trigger or pick naming a
+ * required check with no selectors marks it (source and why shown; it runs even when its own script would skip); with
  * selectors it runs again narrowed; naming an optional check runs that check; naming nothing declared is dropped (the
- * thread can't add commands, nor drop one). `"none"` and `"unset"` give an empty list.
+ * thread can't add commands, nor drop one). One that asks for exactly what the list already runs (same check, same
+ * selection) adds its reason to that one instead of a second run. `"none"` and `"unset"` give an empty list.
  */
-export function planChecks(def: ProjectDef | null, picks: readonly CheckPick[] = [], release: readonly MergeCheckDecl[] = []): PlannedCheck[] {
+export function planChecks(def: ProjectDef | null, picks: readonly CheckPick[] = [], release: readonly MergeCheckDecl[] = [], triggers: readonly CheckPick[] = []): PlannedCheck[] {
   const declared = checksOf(def);
   if (declared === "unset") return [];
   if (declared === "none") return withRelease([], release);
@@ -66,20 +70,33 @@ export function planChecks(def: ProjectDef | null, picks: readonly CheckPick[] =
       ? (def!.merge!.checks as MergeCheckDecl[])
       : [{ id: "test", label: "Tests", run: def!.test!.run, timeout: def!.test!.timeout, rerun: true, requires: def!.test!.requires }];
   const out = decls.filter((c) => !c.optional).map((c) => fromDecl(c, "required"));
-  for (const p of picks) {
+  const of = (c: PlannedCheck, id: string) => c.id === id || c.id.startsWith(`${id}+`);
+  for (const p of [...triggers.map((t) => ({ ...t, source: "trigger" as const })), ...picks.map((x) => ({ ...x, source: "picked" as const }))]) {
     const d = decls.find((c) => c.id === p.id);
     if (!d) continue;
+    const source = p.source;
     const select = (p.select ?? []).filter((s) => typeof s === "string" && s && !s.startsWith("-"));
     if (!d.optional && !select.length) {
       const req = out.find((c) => c.id === d.id)!;
-      if (!req.picked) Object.assign(req, { source: "picked" as const, picked: true as const, ...(p.why ? { why: p.why } : {}) });
+      if (!req.picked) Object.assign(req, { source, picked: true as const, ...(p.why ? { why: p.why } : {}) });
+      else if (p.why && req.why !== p.why) req.why = joinWhy(req.why, p.why);
       continue;
     }
-    const id = out.some((c) => c.id === d.id) ? `${d.id}+${out.filter((c) => c.id === d.id || c.id.startsWith(`${d.id}+`)).length}` : d.id;
-    out.push({ ...fromDecl(d, "picked", p.why, select), picked: true, id, label: select.length ? `${d.label} (${select.length === 1 ? select[0] : `${select.length} selected`})` : d.label });
+    const same = out.find((c) => of(c, d.id) && c.picked && JSON.stringify(c.select ?? []) === JSON.stringify(select));
+    if (same) {
+      if (p.why && same.why !== p.why) same.why = joinWhy(same.why, p.why);
+      continue;
+    }
+    const id = out.some((c) => c.id === d.id) ? `${d.id}+${out.filter((c) => of(c, d.id)).length}` : d.id;
+    out.push({ ...fromDecl(d, source, p.why, select), picked: true, id, label: select.length ? `${d.label} (${select.length === 1 ? select[0] : `${select.length} selected`})` : d.label });
   }
   return withRelease(out, release);
 }
+
+const joinWhy = (a: string | undefined, b: string): string => {
+  const s = a ? `${a}; ${b}` : b;
+  return s.length > 300 ? `${s.slice(0, 299)}…` : s;
+};
 
 /** A release entry's gating checks (the release section's, resolved), after the merge set, in order; one the list
  *  already runs in full (a required merge check the release names again) runs once. */
@@ -92,9 +109,21 @@ function withRelease(out: PlannedCheck[], release: readonly MergeCheckDecl[]): P
   return out;
 }
 
+/** The entry's picks a run's checks didn't cover (q9): a pick of the same check and selection that ran picked. A pick
+ *  of a check that isn't declared any more is covered by nothing and never asked again (planChecks drops it). Pure. */
+export function uncoveredPicks(picks: readonly CheckPick[], ran: readonly CheckPick[], def?: ProjectDef | null): CheckPick[] {
+  const base = (id: string) => id.replace(/\+\d+$/, "");
+  const declared = def === undefined ? null : Array.isArray(def?.merge?.checks) ? def!.merge!.checks.map((c) => c.id) : def?.test ? ["test"] : [];
+  return picks.filter((p) => {
+    if (declared && !declared.includes(p.id)) return false;
+    const sel = JSON.stringify((p.select ?? []).filter((s) => typeof s === "string" && s && !s.startsWith("-")));
+    return !ran.some((c) => base(c.id) === p.id && JSON.stringify(c.select ?? []) === sel && c.source !== "required");
+  });
+}
+
 /** The CheckPick list the queue shows (hooks.checks). */
 export const picksOf = (list: readonly PlannedCheck[]): CheckPick[] =>
-  list.map((c) => ({ id: c.id, label: c.label, source: c.source, ...(c.why ? { why: c.why } : {}), ...(c.select ? { select: c.select } : {}) }));
+  list.map((c) => ({ id: c.id, label: c.label, source: c.source, ...(c.why ? { why: c.why } : {}), ...(c.select ? { select: c.select } : {}), ...(c.addedAt ? { addedAt: c.addedAt } : {}) }));
 
 // ---- environment ----------------------------------------------------------------------------------
 

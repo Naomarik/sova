@@ -62,7 +62,8 @@ The queue merges each approved commit onto the newest `target` in a merge copy b
 (`<parent of the main checkout>/.worktrees/<repo>-merge`), runs `setup`, the install when needed, the
 spec land when the project has a spec, the checks and the review there, and only then moves the
 target (or opens a request). **The queue reads this section from the target's head, never from the
-branch being landed.**
+branch being landed**, with one exception: `rules`, which are read from the branch, so a rule edit
+takes effect on its own landing (the run says "This branch changed its own rules" and what changed).
 
 | key | value |
 |---|---|
@@ -75,8 +76,9 @@ branch being landed.**
 | `request` | the request kit's folder: how a pull/merge request's title and body are written. Only with a request `land` |
 | `reuse` | `true` / `false`. Absent or `true`: a check whose runner supports it may reuse passes from identical code (same argv and inputs). `false`: every check runs in full on every landing (`SOVA_FRESH=1`). A trial follows it too |
 | `deleteBranches` | `true` / `false`. Absent or `false`: automatic cleanup removes a landed branch's folder and keeps the branch. `true`: it deletes the branch too, its last commit staying restorable. |
+| `rules` | folder rules, at most 100: `{paths, check, select?, why}` each. When a branch changes a path matching one of `paths` (globs from the repository root: `**` any depth, `*` within a folder, `?` one character), Sova adds the check `check` (a `checks` id) to the run, with `select` appended to its command, and shows it as Triggered with `why` and the matched paths. Needs `checks` to be a list. A rule naming an undeclared check, or a `needsSelect` check without `select`, is refused. Rules hitting one check join into one run (their selections joined; a rule with no `select` runs it whole), except a `perSelector` check, which runs once per selection. The merge thread may add checks on top, never remove one |
 
-**A check**: `{id, label?, run, timeout?, rerun?, requires?, optional?, needsSelect?}`.
+**A check**: `{id, label?, run, timeout?, rerun?, requires?, optional?, needsSelect?, perSelector?}`.
 - `id`: a name, unique among the checks (and among the release's own).
 - `label`: what the queue shows, 1–60 characters, default the id.
 - `run`: an argv. Templates: the definition's own (`${checkout}` is the merge copy, `${main}` the main
@@ -90,13 +92,15 @@ branch being landed.**
   target's, or the branch's). A check whose runner names no files (a build, a typecheck) leaves it off.
 - `requires`: services of `services` brought up in the merge copy, in its own slot and ports, before
   the check, and stopped after the checks.
-- `optional: true`: out of the required set; runs only when the merge thread picks it for a branch
-  (by the project's blast-radius map in `.sova/playbook-config/merge-queue/`, or its judgement). A trial
+- `optional: true`: out of the required set; runs only when a folder rule (`rules`) or the merge thread
+  adds it for a branch. A trial
   runs every optional check with no selection appended, so one that takes a selection (a group, files,
   walkthroughs) must not fail without one: it works out what the branch calls for (from
   `$SOVA_MERGE_TARGET` and the branch's changes since the merge base) or exits 0 with
   `{"skipped": "<why>"}` in `$SOVA_OUT`. A check that exits 2 with no selection fails every trial.
-- `needsSelect` (`true`): a pick of it must name its selection; the merge thread's pick without one
+- `perSelector` (`true`): it takes one selection per run (one slow group): folder rules hitting it with
+  different selections run it once per selection, not once with them joined.
+- `needsSelect` (`true`): a pick of it (and a folder rule naming it) must name its selection; the merge thread's pick without one
   (`merge.extend` with no `select`) is refused. A trial still runs it with none, as above.
 
 **What a check sees.** It runs in the merge copy (cwd its root) with an allow-list environment:

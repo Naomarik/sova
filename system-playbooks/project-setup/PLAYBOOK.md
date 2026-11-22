@@ -100,8 +100,10 @@ the releases and the deploys **fresh** each time you start a change.
      is no release setup yet);
    - `.sova/bin/` scripts a check, a release step or a deploy step runs, only where the user agreed to
      one (their text is part of what they land);
-   - the merge thread's project additions (`.sova/playbook-config/merge-queue/PLAYBOOK.md` and its
-     blast-radius map) when you add optional checks; a review kit only when the user asked for one;
+   - folder rules (`merge.rules`: the paths that call for each optional check, or for a narrowed run of
+     a required one) when you add optional checks, and the merge thread's project additions
+     (`.sova/playbook-config/merge-queue/PLAYBOOK.md`) only for what is worth noting or what a check
+     costs; a review kit only when the user asked for one;
    - a services change only by the Project verbs method, proven by `conform {ref: <your branch>}`.
 7. **Check.** `project-setup.mjs fmt`, then `project-setup.mjs check --base <target>` until it exits
    0. With a deploy: `deploy.check {ref: <your branch>}` (at most 3 runs; missing host values and

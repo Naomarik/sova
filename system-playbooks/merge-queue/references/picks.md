@@ -1,17 +1,15 @@
-# Picks: checks by blast radius
+# Picks: checks beyond the folder rules
 
-The project declares its required checks (they always run) and, apart from them, optional checks the thread may add (checks marked `"optional": true` in `.sova/project.json`'s merge section; a pick of a required check makes it run even where it would skip itself, and shows your reason). You add the optional checks a branch's change can reach, each with one line saying why. You never remove or replace a required check.
+The project declares its required checks (they always run), optional checks (`"optional": true` in `.sova/project.json`'s merge section: they run only when something adds them), and folder rules (`rules` in the merge section: "when these paths change, run this check with this selection", each with its reason). Sova applies the rules itself at the start of every run, reading them from the branch being landed, so a branch that edits a rule lands under its own edit; the run shows those checks as Triggered, with the rule's reason and the paths that matched. You add only what the rules miss, each with one line saying why. You never remove or replace a check, a rule's or a required one, and never invent a command: you name check ids the project declares.
 
 ## How
-1. `node scripts/blast-radius.mjs --base <base> --tip <commit> --repo <project root>` (`<base>`: the target's commit Sova's message names) prints `{picks: [{id, why, select?}]}` from the project's map (`.sova/playbook-config/merge-queue/references/blast-radius.json`, or the same file under the old `.sova/playbooks/merge-queue/`). No map: no picks; go on from the diff alone.
-2. Read the diff against each pick:
-   - keep a pick the change can really reach;
-   - drop one the map matched on a path the change only touches trivially (a comment, a rename of a test fixture the check doesn't read) and say so in no note;
-   - add one the map missed, when the change reaches a check's area through a path the map doesn't list (a shared helper the composer imports, say). Its `why` names the path and the reach.
-3. `merge.extend {entry, checks: [id], why, select}` for each pick (one call per reason; picks sharing a reason may share a call). `select` is part of the pick: copy the map's `select` whenever the pick has one. It narrows a check to files, groups or tours where the check takes them; a check that takes one selector per run (the map's `perSelector`) gets one call per selector. A check whose definition declares `needsSelect` is refused when the pick names no `select` ("… runs with a selection: send the pick's select"): send it again with one. Only a trial runs such a check bare, where it runs whatever it works out for itself or skips, saying why ("skipped: no walkthrough selected").
+1. Read the rules as the branch has them: `git show <commit>:.sova/project.json` (the `rules` of its merge section). No rules: every pick is yours, from the diff alone.
+2. Read the diff against them. Add a pick when the change reaches a check's area through a path no rule lists (a shared helper the composer imports, say); its `why` names the path and the reach. A pick that asks for exactly what a rule already runs only adds your reason to it, so don't repeat the rules.
+3. `merge.extend {entry, checks: [id], why, select}` for each pick (one call per reason; picks sharing a reason may share a call). `select` narrows a check to files, groups or walkthroughs where the check takes them; a check that takes one selection per run (`"perSelector": true` on it) gets one call per selection. A check whose definition declares `needsSelect` is refused when the pick names no `select` ("… runs with a selection: send the pick's select"): send it again with one. Only a trial runs such a check bare.
+4. A rule the project should have (the same pick, landing after landing): say so in the entry's note for the user; never edit `.sova/project.json` yourself.
 
 ## Timing
-Picks count only when they reach Sova before the entry's run starts its checks; after that `merge.extend` answers `busy` and the run goes on with the required checks and their triggers alone. That is by design: never ask Sova to wait.
+A pick that reaches Sova before the entry's run starts is in its plan. One that arrives while the run's checks run is added to that run after the planned checks, shown with when it arrived, and the run doesn't land or push until it ran and passed. Once every check has run and the review has answered, the landing has begun: `merge.extend` is refused ("… is landing: this pick runs on no run"). Never ask Sova to wait.
 
 ## The reason line
-Plain, short, specific: "statecharts/src/org.cljs changed: compile them and run their tests". The run page shows it beside the check as "picked by merge thread".
+Plain, short, specific: "src/lib/ws.ts changed: the composer reads it, drive its walkthroughs". The run page shows it beside the check as picked by the merge thread.

@@ -398,7 +398,11 @@ export function pipelineRows(def, extras = {}) {
   rows.push({ lane, label: "Landing", tone: served ? "ok" : "error", steps: s, outcome: served ? `${required.length || (checks === "none" ? 0 : 1)} required check(s)` : "not served" });
   if (required.length) rows.push(...chunk({ lane, label: "Required checks", tone: "ok", steps: required.map((c) => ({ text: checkText(c) })), outcome: "every branch" }));
   const optional = Array.isArray(checks) ? checks.filter((x) => x.optional) : [];
-  if (optional.length) rows.push(...chunk({ lane, label: "Picked by the merge thread", tone: "info", steps: optional.map((c) => ({ text: checkText(c) })), outcome: "only when picked" }));
+  if (optional.length) rows.push(...chunk({ lane, label: "Optional checks", tone: "info", steps: optional.map((c) => ({ text: checkText(c) })), outcome: "when a folder rule or the merge thread adds them" }));
+  // Folder rules (merge.rules): Sova runs each rule's check when its paths change, read from the branch being landed.
+  const rules = def.merge?.rules ?? [];
+  const ruleText = (r) => `${short(r.paths.join(", "), 50)} → ${r.check}${r.select?.length ? ` (${short(r.select.join(", "), 40)})` : ""}`;
+  if (rules.length) rows.push(...chunk({ lane, label: "Folder rules", tone: "info", steps: rules.map((r) => ({ text: ruleText(r) })), outcome: "when their paths change" }));
   if (def.release) {
     const r = def.release;
     const phase = { prepare: "Before publish", check: "Before publish", after: "After publish", withdraw: "After a withdraw" };
@@ -544,7 +548,11 @@ export function mergeProblems(raw, def, root) {
     const rawCheck = (Array.isArray(raw?.merge?.checks) ? raw.merge.checks : []).concat(Array.isArray(raw?.release?.checks) ? raw.release.checks.filter(isObj) : []).find((x) => isObj(x) && x.id === c.id);
     if (rawCheck && rawCheck.timeout === undefined) notes.push(`${where}: no timeout, so 600 s; set it to about twice the time you measured (at most 1800)`);
   }
-  if (checks.some((c) => c.optional) && !existsSync(join(root, mergePlaybookDir(root), "PLAYBOOK.md"))) notes.push("optional checks run only when the merge thread picks them; with no .sova/playbook-config/merge-queue/PLAYBOOK.md (a blast-radius map) it picks by judgement alone");
+  // An optional check runs only when a folder rule (merge.rules) or the merge thread adds it: one no rule names runs by
+  // the thread's judgement alone.
+  const ruled = new Set((m?.rules ?? []).map((r) => r.check));
+  const unruled = checks.filter((c) => c.optional && !ruled.has(c.id));
+  if (unruled.length) notes.push(`optional check${unruled.length === 1 ? "" : "s"} ${unruled.map((c) => c.id).join(", ")} ${unruled.length === 1 ? "is" : "are"} named by no folder rule (merge.rules): ${unruled.length === 1 ? "it runs" : "they run"} only when the merge thread picks ${unruled.length === 1 ? "it" : "them"} by judgement; add a rule for the paths that call for ${unruled.length === 1 ? "it" : "them"}`);
   if (m?.review && !existsSync(join(root, m.review, "PLAYBOOK.md"))) problems.push(`merge.review: ${m.review}/PLAYBOOK.md is missing: the review step would have no kit`);
   if (m?.request && !existsSync(join(root, m.request))) problems.push(`merge.request: ${m.request} is missing`);
   for (const f of m?.install?.inputs ?? []) if (!existsSync(join(root, f))) problems.push(`merge.install.inputs: ${f} is not in the checkout`);

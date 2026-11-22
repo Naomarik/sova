@@ -71,7 +71,7 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
     case "requested":
       return `${e.branch} passed Sova's checks and its request is open on the host${e.request?.url ? ` (${e.request.url})` : ""}; it lands when the host merges it.`;
     case "pushed":
-      return `${e.branch} passed Sova's checks and was pushed to origin at ${short(e.request?.publishedHead)}; open its request on the host.`;
+      return `${e.branch} passed Sova's checks and was pushed to the project's remote at ${short(e.request?.publishedHead)}; open its request on the host.`;
     case "closed":
       return `${e.branch}'s request was closed on the host without merging; land it again to open or update it.`;
     case "drafts-changed":

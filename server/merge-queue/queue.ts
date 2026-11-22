@@ -92,7 +92,7 @@ import { approvalHow, effectiveHow, landHowSetting, opensRequest, publishes, typ
 import { checkPublishText, draftText, type Hosting, hostMismatch, pollRequest, publishEntry, type PublishOutcome, publishSettings as publishSettingsRequest, reconcilePublish, requestInfo } from "./strategy-run";
 import { fetchTarget, localBehind, updateLocalMain as updateMainTip } from "./publish";
 import type { Drafter } from "./hosts/request-kit";
-import { type HostAdapter, type HostKind, type HostRepo, NO_HOST_WORDS, NO_ORIGIN_WORDS } from "./hosts/types";
+import { type HostAdapter, type HostKind, type HostRepo, NO_HOST_WORDS, noRemoteWords } from "./hosts/types";
 import { githubAdapter } from "./hosts/github";
 import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
@@ -1690,7 +1690,10 @@ export class ProjectQueue {
       // typed word, that can't open one there, or a computer not signed in to it, is refused now.
       if (opensRequest(approvalHow(approval))) {
         const host = await this.hosting();
-        if (!host) throw new MergeFailure("invalid-request", (await this.git(["remote", "get-url", await this.remoteName()], this.root)).code === 0 ? NO_HOST_WORDS : NO_ORIGIN_WORDS);
+        if (!host) {
+          const name = await this.remoteName();
+          throw new MergeFailure("invalid-request", (await this.git(["remote", "get-url", name], this.root)).code === 0 ? NO_HOST_WORDS : noRemoteWords(name));
+        }
         if (approval.via) approval.via = host.repo.kind === "github" ? "github-pr" : "gitlab-mr";
         const mismatch = hostMismatch(approvalHow(approval) as RequestHow, host);
         if (mismatch) throw new MergeFailure("invalid-request", mismatch);
@@ -4338,7 +4341,7 @@ export class ProjectQueue {
             this.holdUntil = this.now() + (this.deps.retryDelayMs ?? 60_000);
             this.save();
             this.later(this.deps.retryDelayMs ?? 60_000, () => this.kickSoon());
-          } else this.pauseNow("machine", `${f.why}: ${e.branch} can't be tested against origin's ${this.q.target}. No branch is blamed.`);
+          } else this.pauseNow("machine", `${f.why}: ${e.branch} can't be tested against ${await this.remoteName()}'s ${this.q.target}. No branch is blamed.`);
           return;
         }
         base = f.sha;

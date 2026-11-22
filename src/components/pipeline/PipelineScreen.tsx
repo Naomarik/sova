@@ -59,6 +59,7 @@ export function PipelineScreen(props: { projectId: string; root: string; name: s
   });
   // The head's live facts: what's in line, what's landing, what landed this week.
   const inLine = () => (v()?.waiting.length ?? 0) + (v()?.checking.length ?? 0);
+  const forYou = () => v()?.needsYou.length ?? 0;
   const landedWeek = () => (v()?.recent ?? []).filter((l) => l.entry.landed && Date.now() - Date.parse(l.entry.landed.at) < 7 * DAY).length;
   const lastLanded = () => v()?.recent[0]?.entry.landed?.at;
   const rel = () => props.releases.data();
@@ -117,6 +118,12 @@ export function PipelineScreen(props: { projectId: string; root: string; name: s
             <span>
               <span class="text-num">{inLine()}</span> {inLine() === 1 ? "branch" : "branches"} in the queue
             </span>
+            <Show when={forYou()}>
+              <span class="pl-sep">·</span>
+              <span>
+                <span class="text-num">{forYou()}</span> waiting for you
+              </span>
+            </Show>
             <span class="pl-sep">·</span>
             <span>{v()?.current ? "1 landing now" : v()?.state === "paused" ? "paused" : "nothing landing"}</span>
             <span class="pl-sep">·</span>

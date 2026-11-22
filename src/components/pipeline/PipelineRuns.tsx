@@ -369,6 +369,7 @@ export function HealthSummary(props: { health?: MergeQueueHealth }) {
 /** The flaky tests the queue counted across landings, most often first, each with Fix in New Chat. */
 function FlakyList(props: { projectId: string; view: MergeQueueView }) {
   const [all, { refetch }] = createResource(() => getFlakyTests(props.projectId).catch(() => null));
+  createEffect(on(mergeChanged, () => refetch(), { defer: true }));
   const tests = (): MergeFlakyTest[] => all()?.tests ?? props.view.flaky ?? [];
   const [busy, setBusy] = createSignal<string | null>(null);
   const fix = async (t: MergeFlakyTest) => {

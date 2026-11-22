@@ -1,6 +1,8 @@
 # Consultant picks one change, builder commits it
 
-Each cycle starts fresh consultants (one per rival), so none carries a long context. Give each: the round to read, the record (`node scripts/record.mjs show <name>`, pasted or saved to a file), the knobs allowed this cycle, and the file to write the proposal to (`rounds/<n>/proposals/<arm>.md`). Never a sealed case.
+The consultants started at the last report and wrote their outlooks (`phases/score.md`, `phases/baseline.md`); each cycle has its own, so none carries a long context. On the user's go-ahead, give each the knobs as answered and the file to write the proposal to (`rounds/<n>/proposals/<arm>.md`). A consultant that is gone is started fresh with the round to read, the record (`node scripts/record.mjs show <name>`), its saved outlook (`rounds/<n-1>/outlooks/<seat>.md`) and the same go-ahead. Never a sealed case.
+
+Only consultants whose outlook isn't futile propose: their `next` lines are this round's rival changes (`phases/stop-rule.md` when all are futile).
 
 The record comes before a new idea:
 

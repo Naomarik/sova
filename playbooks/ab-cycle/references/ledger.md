@@ -9,7 +9,9 @@ rounds/<n>/arms.json     the arms round n runs (round 0: master alone)
 rounds/<n>/results/<arm>/<model>/<case>.json   one reply each (runner.mjs)
 rounds/<n>/grades/<arm>/<model>/<case>.json    one verdict each (score.mjs)
 rounds/<n>/blind/        replies for the grader, unlabelled; blind-key.json beside it, never shown to the grader
-rounds/<n>/proposals/    the consultants' proposals
+rounds/<n>/outlooks/<seat>.md   each consultant's outlook after the round's report
+rounds/<n>/outlook.json  their closing blocks, one entry per seat (below)
+rounds/<n>/proposals/    the consultants' proposals for the next round
 rounds/<n>/shots/<arm>/<model>/<case>.png      screenshots (shoot.mjs)
 rounds/<n>/scores.json   the round's totals and each arm's prediction beside what it did; rounds/<n>/chart.md its chart
 ledger.jsonl             one row per round: arms, what changed, pass rates, predictions, best arm, note
@@ -89,6 +91,14 @@ A candidate arm carries its consultant's prediction (`references/record.md`, "A 
 - Master's arm has no prediction, and a round run on the sealed cases writes none.
 
 `chart.mjs` prints it as the table Predicted vs observed, one row per arm, under the round's chart. The ledger row keeps the counts without the ids.
+
+## outlook.json
+
+```json
+[{ "seat": "1", "improve": "likely", "lost": "...", "next": "...", "gain": "+2 cases", "recommend": "cycle", "needs": "none" }]
+```
+
+Each consultant's closing block as written (`references/record.md`, "An outlook's line"); `seat` only with rivals. `record.mjs outlook` writes it into the record; the next round's `chart.mjs` shows each `gain` beside what that round did.
 
 ## Blind grading
 

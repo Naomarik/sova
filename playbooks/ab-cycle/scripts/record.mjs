@@ -7,7 +7,9 @@
 //                                        the record as markdown, grouped by problem; no name: every record
 //   node record.mjs add   <campaign> --round <n> --outcome carried|dropped [--note "..."] [--replace]
 //                                        one line per candidate arm of a scored round
-//   node record.mjs close <campaign> --verdict land|cycle|park [--confirm <round>] [--note "..."]
+//   node record.mjs outlook <campaign> --round <n> [--replace]
+//                                        one line per consultant seat of the round's outlook (rounds/<n>/outlook.json)
+//   node record.mjs close <campaign> --verdict land|cycle|park|keep [--confirm <round>] [--note "..."]
 //                                        the campaign's closing line
 //   node record.mjs check [<name>] [--project <root>] [--campaign <campaign>]
 //                                        nothing private in a record; exit 1 naming each line and field
@@ -20,12 +22,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { args, campaign, die, listDir, readJson } from "./lib.mjs";
-import { RECORD_DIR, RECORD_NAME, attemptLine, checkLine, checkRecord, closeLine, corpusOf, parseRecord, projectOf, recordFile, recordSummary, showRecord } from "./record-lib.mjs";
+import { RECORD_DIR, RECORD_NAME, VERDICTS, attemptLine, checkLine, checkRecord, closeLine, corpusOf, outlookLine, parseRecord, projectOf, recordFile, recordSummary, showRecord } from "./record-lib.mjs";
 
-const SUBS = ["show", "add", "close", "check"];
+const SUBS = ["show", "add", "outlook", "close", "check"];
 const { pos, opt } = args();
 const sub = pos.shift();
-if (!SUBS.includes(sub)) die("usage: record.mjs show [<name>] | add <campaign> --round <n> --outcome carried|dropped | close <campaign> --verdict land|cycle|park | check [<name>]", 3);
+if (!SUBS.includes(sub)) die("usage: record.mjs show [<name>] | add <campaign> --round <n> --outcome carried|dropped | outlook <campaign> --round <n> | close <campaign> --verdict land|cycle|park|keep | check [<name>]", 3);
 
 const today = () => new Date().toISOString().slice(0, 10);
 const text = (v) => (typeof v === "string" ? v : undefined);
@@ -144,9 +146,31 @@ function doAdd() {
   console.log(`${recordSummary(name, linesOf(file))}.`);
 }
 
+function doOutlook() {
+  const { K, name, file, id } = open(pos[0]);
+  if (opt.round === undefined) die("usage: record.mjs outlook <campaign> --round <n> [--replace]", 3);
+  const n = Number(opt.round);
+  if (!Number.isInteger(n) || n < 0) die(`--round must be a round number: ${opt.round}`, 3);
+  const at = join(K.round(n), "outlook.json");
+  const entries = readJson(at, null) ?? die(`round ${n} has no outlook yet: save each consultant's closing block to ${at} first`, 3);
+  if (!Array.isArray(entries) || !entries.length) die(`${at} must be a list, one entry per consultant seat`, 3);
+  if (entries.length > 1 && new Set(entries.map((e) => e?.seat)).size !== entries.length) die(`${at}: with more than one consultant, each entry needs its own seat`, 3);
+  const had = linesOf(file);
+  const mine = (l) => l.kind === "outlook" && l.campaign === id && l.round === n;
+  if (had.some(mine) && !opt.replace) die(`round ${n}'s outlook of ${id} is already in the record (${had.filter(mine).length} lines): --replace rewrites it`, 3);
+  const words = corpus(K);
+  const lines = entries.map((entry) => outlookLine({ campaign: id, round: n, entry, date: today() }));
+  lines.forEach((line, i) => {
+    const bad = checkLine(line, words);
+    if (bad.length) refuse(`round ${n}'s outlook${line.seat ? `, seat ${line.seat}` : entries.length > 1 ? `, entry ${i + 1}` : ""}`, bad);
+  });
+  write(file, [...had.filter((l) => !mine(l)), ...lines]);
+  console.log(`${join(RECORD_DIR, `${name}.jsonl`)}: round ${n}'s outlook of ${id}: ${lines.map((l) => `${l.seat ? `${l.seat} ` : ""}${l.improve}, ${l.recommend}`).join("; ")}`);
+}
+
 function doClose() {
   const { K, name, file, id } = open(pos[0]);
-  if (!["land", "cycle", "park"].includes(opt.verdict)) die("--verdict is land, cycle or park", 3);
+  if (!Object.hasOwn(VERDICTS, opt.verdict)) die(`--verdict is ${Object.keys(VERDICTS).join(", ")}`, 3);
   const had = linesOf(file);
   // Master's commit: the one its arm was cut from (`base`); its `ref` is that plus the commit removing the record.
   const arm0 = Object.values(K.arms(0)).find((a) => a.baseline);
@@ -164,7 +188,7 @@ function doClose() {
   const bad = checkLine(line, corpus(K));
   if (bad.length) refuse(`the closing line of ${id}`, bad);
   write(file, [...had, line]);
-  console.log(`${join(RECORD_DIR, `${name}.jsonl`)}: ${id} closed (${opt.verdict})`);
+  console.log(`${join(RECORD_DIR, `${name}.jsonl`)}: ${id} closed (${VERDICTS[opt.verdict]})`);
   console.log(`Keep it: commit ${join(RECORD_DIR, `${name}.jsonl`)} alone, by that path, on the campaign's own branch (never git add -A).`);
 }
 
@@ -188,5 +212,6 @@ function doCheck() {
 
 if (sub === "show") doShow();
 if (sub === "add") doAdd();
+if (sub === "outlook") doOutlook();
 if (sub === "close") doClose();
 if (sub === "check") doCheck();

@@ -259,11 +259,11 @@
     },
     "fix": {
       "label": "Fix",
-      "goal": "Propose one change per arm, the fewest words that fix it, and commit it as an experiment",
+      "goal": "After each round, say whether it can still improve and what next; on your go-ahead, one change per arm, the fewest words, committed as an experiment",
       "members": {
         "consultant": {
           "label": "Consultant",
-          "brief": "A strong model that reads the failing replies and proposes exactly one change",
+          "brief": "A strong model that reads each round's failing replies, sends a short outlook, then on your go-ahead proposes exactly one change",
           "kind": "planning",
           "models": [
             {
@@ -345,7 +345,7 @@
       "members": {
         "reviewer": {
           "label": "Landing reviewer",
-          "brief": "Has no part in the campaign and gives Land, Another cycle or Park with evidence",
+          "brief": "Has no part in the campaign, reads the last outlook, and gives Land, Another cycle, Park or Baseline kept with evidence",
           "kind": "planning",
           "models": [
             {
@@ -393,13 +393,17 @@
     },
     {
       "id": "baseline",
-      "label": "Baseline on master, once",
+      "label": "Baseline on master, once; its outlook follows",
       "stop": "always",
+      "asks": [
+        "every consultant's outlook says further changes are futile"
+      ],
       "report": "chart",
       "phase": "phases/baseline.md",
       "teams": [
         "run",
-        "grade"
+        "grade",
+        "fix"
       ]
     },
     {
@@ -431,11 +435,15 @@
         },
         {
           "id": "score",
-          "label": "Score and chart the round",
+          "label": "Score and chart the round; its outlook follows",
+          "asks": [
+            "every consultant's outlook says further changes are futile"
+          ],
           "report": "chart",
           "phase": "phases/score.md",
           "teams": [
-            "grade"
+            "grade",
+            "fix"
           ]
         }
       ]
@@ -463,7 +471,7 @@
     },
     {
       "id": "decide",
-      "label": "Land, cycle again or park",
+      "label": "Land, cycle again, park or keep the baseline",
       "stop": "always",
       "report": "table",
       "phase": "phases/decide.md"

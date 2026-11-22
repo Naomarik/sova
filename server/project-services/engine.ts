@@ -2117,8 +2117,8 @@ export class ProjectEngine {
         const p = await this.probe(def, sc, s, unit);
         // A process service's own memory now, as the resource monitor measures it (a container's lives in its engine, not its unit).
         const rss = kind === "process" ? ownMemoryOf(this.driver.pids(unit)) : null;
-        // `restarting` only between tries (activating: auto-restart), never while a run is up and serving.
-        out.push({ name: s.name, scope: s.scope, kind, state: p.ok ? "ready" : st.state === "activating" ? "starting" : "degraded", unit, pid: st.pid, ports, ready: p, ...(rss !== null ? { rssBytes: rss } : {}), ...(limit.restarting && st.state !== "active" ? { restarting: limit.restarting } : {}) });
+        // `restarting` between tries and while a try's run comes up, never once it is ready and serving.
+        out.push({ name: s.name, scope: s.scope, kind, state: p.ok ? "ready" : st.state === "activating" ? "starting" : "degraded", unit, pid: st.pid, ports, ready: p, ...(rss !== null ? { rssBytes: rss } : {}), ...(limit.restarting && !p.ok ? { restarting: limit.restarting } : {}) });
       } else {
         const state = st.state === "failed" ? "failed" : this.heldElsewhere(sc, s, ports) ? "external" : "stopped";
         out.push({ name: s.name, scope: s.scope, kind, state, unit, pid: null, ports, ...(st.detail && st.state === "failed" ? { detail: st.detail } : {}), ...(limit.restarting && st.state === "failed" ? { restarting: limit.restarting } : {}) });

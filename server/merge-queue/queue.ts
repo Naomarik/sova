@@ -5574,7 +5574,7 @@ export class ProjectQueue {
     } else if (!names.exists && def?.merge?.push !== false && origin) {
       p = { state: "not-pushed", why: PUSH_HELD_NAMES };
       if (e) this.wake("names", e, undefined, { namesFile: names.file });
-    } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold"), remote, scan: (at, to) => this.scanBeforePush(at, to) });
+    } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold"), remote, scan: (at, to) => this.scanBeforePush(remote, at, to) });
     if (p.state === "not-pushed" && p.scan) {
       // §app.merge-queue/names-step: the landings are in, their push waits for the user (Allow on the tab).
       const first = !this.q.heads.pushScan;
@@ -5582,7 +5582,7 @@ export class ProjectQueue {
       if (first) {
         const hits = p.scan.state === "hits";
         this.log(hits ? `push held: the scan before pushing found ${thingsThatLook(p.scan.hits?.length)} private` : `push held: the scan before pushing couldn't look (${p.scan.why ?? "unknown"})`);
-        this.record({ kind: "names", by: "queue", ...(e ? { entry: e.id, branch: e.branch } : {}), step: "push", what: "push-scan-hit", hits: p.scan.hits?.length ?? 0, why: `${this.q.target} wasn't pushed: the scan before pushing found things that look private` });
+        this.record({ kind: "names", by: "queue", ...(e ? { entry: e.id, branch: e.branch } : {}), step: "push", what: "push-scan-hit", hits: p.scan.hits?.length ?? 0, why: hits ? `${this.q.target} wasn't pushed: the scan before pushing found ${thingsThatLook(p.scan.hits?.length)} private` : `${this.q.target} wasn't pushed: the scan before pushing couldn't look (${(p.scan.why ?? "unknown").split("\n")[0]!.slice(0, 200)})` });
         if (e && hits) this.wake("names-hit", e, undefined, { hits: hitLines(p.scan.hits ?? [], 50) });
         try {
           this.deps.alert?.({ title: `The merge queue needs you · ${this.root.split("/").pop() ?? this.root}`, body: hits ? `${this.q.target} wasn't pushed: the scan before pushing found ${thingsThatLook(p.scan.hits?.length)} private. Allow ${p.scan.hits?.length === 1 ? "it" : "them"} on the Merge Queue tab, or fix ${this.q.target}.` : `${this.q.target} wasn't pushed: the scan before pushing couldn't look (${p.scan.why ?? "unknown"}). Nothing is pushed until a scan passes: Retry on the Merge Queue tab.`, tag: `sova:merge-push-scan:${this.id}` }, this.root);
@@ -5609,10 +5609,10 @@ export class ProjectQueue {
   }
 
   /** The scan right before a push: what the remote lacks (`<remote>..<tip>`), fail-closed. A remote without the branch
-   *  yet: each landing's own run scanned what it added (its "Private names and secrets" step). */
-  private async scanBeforePush(remote: string | null, tip: string): Promise<null | { why: string; facts?: ScanFacts }> {
-    if (!remote) return null;
-    const r = await scanPublication(this.git, { repo: this.root, range: `${remote}..${tip}`, namesFile: this.names().file, allowed: allowedKeys(allowFileOf(this.store.dir)) });
+   *  yet: everything the push would publish, every commit no ref of that remote holds (too many to read: held). */
+  private async scanBeforePush(name: string, remote: string | null, tip: string): Promise<null | { why: string; facts?: ScanFacts }> {
+    const range = remote ? `${remote}..${tip}` : [tip, "--not", `--remotes=${name}`];
+    const r = await scanPublication(this.git, { repo: this.root, range, namesFile: this.names().file, allowed: allowedKeys(allowFileOf(this.store.dir)) });
     if (r.ok) return null;
     // Hits, or a scan that couldn't look (fail-closed): either holds the push, and the user is told.
     return { why: r.why, facts: factsOf(r) };

@@ -45,7 +45,8 @@ export type ScanResult =
 export interface ScanInput {
   repo: string;
   /** `<from>..<to>`: what the host lacks. */
-  range: string;
+  /** One rev-list range (`<base>..<tip>`), or its arguments (`[tip, "--not", "--remotes=<remote>"]`). */
+  range: string | string[];
   /** The project's private names file (store.ts namesFileOf); absent or unreadable: refused. */
   namesFile?: string | undefined;
   /** Text published beside the commits (a request's title and body). */
@@ -135,8 +136,8 @@ export async function scanPublication(git: Git, o: ScanInput): Promise<ScanResul
   for (const t of o.texts ?? []) t.text.split("\n").forEach((line, i) => check(line, `${t.label} line ${i + 1}`, { scope: t.label, line: i + 1 }));
   const extra = { ...(noNames ? { names: false as const } : {}) };
 
-  const list = await git(["rev-list", "--reverse", o.range], o.repo);
-  if (list.code !== 0) return refuse(`the scan couldn't list ${o.range} (${list.stderr.trim().split("\n")[0] ?? ""}): nothing is published`);
+  const list = await git(["rev-list", "--reverse", ...(Array.isArray(o.range) ? o.range : [o.range])], o.repo);
+  if (list.code !== 0) return refuse(`the scan couldn't list ${Array.isArray(o.range) ? o.range.join(" ") : o.range} (${list.stderr.trim().split("\n")[0] ?? ""}): nothing is published`);
   const commits = list.stdout.split("\n").filter(Boolean);
   if (commits.length > (o.maxCommits ?? 2000)) return refuse(`${commits.length} commits to publish is more than the scan reads at once: nothing is published`);
   for (const c of commits) {

@@ -278,6 +278,30 @@ describe("the scan right before a push", () => {
       assert.equal(v.heads.pushScan?.state, "unreadable");
       assert.equal(alerts.length, 1);
       assert.match(alerts[0]!, /couldn't look/);
+      const held = q.events({ entry: entry.id }).events.find((x) => x.kind === "names" && x.step === "push");
+      assert.match(held?.why ?? "", /wasn't pushed: the scan before pushing couldn't look \(/, "never recorded as a find");
+    } finally {
+      await k.done();
+    }
+  });
+});
+
+describe("the scan right before a first push", () => {
+  test("a remote without the target branch yet: what no remote ref holds is scanned, and a hit holds the push", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      sh(k.repo.origin, "update-ref", "-d", `refs/heads/${k.repo.target}`);
+      k.repo.branch("feat/k", { "k.ts": "const k = 'AKIA" + "ABCDEFGHIJKLMNOP';\n" });
+      const { entry } = await q.add({ branch: "feat/k", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(entry.id)).state === "landed", "landed");
+      const v = await until(async () => {
+        const x = await q.view();
+        return x.heads.pushWhy ? x : null;
+      }, "the push held");
+      assert.equal(sh(k.repo.root, "ls-remote", k.repo.origin, `refs/heads/${k.repo.target}`), "", "nothing pushed");
+      assert.equal(v.heads.pushScan?.state, "hits");
+      assert.match(v.heads.pushWhy ?? "", /found 1 thing that looks private/);
     } finally {
       await k.done();
     }

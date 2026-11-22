@@ -89,6 +89,9 @@ export interface QueueFile {
   /** Dry runs (by run) a stopping server ended: their starting chats are told at the next load (the wake may not reach
    *  them while Sova goes down). */
   trialWakes?: string[];
+  /** Clean runs: the next run starts from an empty merge copy (asked for by Clean Run; `entry`: the entry it was asked
+   *  on), and the last run that did (the weekly one is due a week after it). */
+  clean?: NonNullable<import("./clean-run").CleanState>;
   /** A release holds the queue: only its entries land, nothing is pushed (queue.ts freezeForRelease). */
   release?: import("../../shared/merge-queue").MergeReleaseHold & { checks?: import("../../shared/project-contract").MergeCheckDecl[] };
 }

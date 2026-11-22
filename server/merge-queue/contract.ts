@@ -62,6 +62,9 @@ export interface RunInput {
   trialTarget?: { def: ProjectDef; head: string };
   /** Run the review step (the project declares a kit and the approval didn't skip it). */
   review: boolean;
+  /** Start from an empty merge copy (Clean Run, or the weekly one): everything beyond the tracked files removed (ignored
+   *  ones too), the setup cache forgotten, every check fresh. Absent: the copy is reused. */
+  clean?: import("../../shared/merge-queue-health").CleanWhy;
   /** Aborted when the run is voided (master moved, cancelled, server stopping). */
   signal: AbortSignal;
   /** The review step's agent posts its verdict through `merge.review {run}`: this resolves with it (rejects on the
@@ -127,6 +130,10 @@ export interface RunOutcome {
   conflict?: { files: string[] };
   /** Notes for the landing: flaky, master-red, review notes, no-checks. */
   notes: MergeNote[];
+  /** Each test (or file, or whole check) that failed and then passed on its rerun: the flaky store counts them. */
+  flaky?: import("./flaky").FlakySeen[];
+  /** The run started from an empty copy, and why (asked for, weekly, or the copy was cut new). Absent: it reused it. */
+  clean?: import("../../shared/merge-queue-health").CleanWhy;
   review?: ReviewVerdict;
   /** unattributed: each check that couldn't name its failures and failed on both sides (`step`: its log, merge.logs). */
   unclear?: { check: string; label: string; step: string; why?: string }[];

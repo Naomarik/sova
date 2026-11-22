@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 657 |
-| Routes a catalogue entry points at | 220 |
-| Catalogue entries | 293 |
+| Routes registered | 662 |
+| Routes a catalogue entry points at | 225 |
+| Catalogue entries | 298 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -231,6 +231,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.merge-queue.landing-summary` | Show Landings | looks | `GET /api/merge-queue/landing-summary` | sessions |
 | `project.merge-queue.run-logs` | Show Run Logs Size | looks | `GET /api/merge-queue/run-logs` | sessions |
 | `project.merge-queue.run-logs.clean` | Clean Logs | changes | `POST /api/merge-queue/run-logs/clean` | admin |
+| `project.merge-queue.clean-run` | Clean Run | changes | `POST /api/merge-queue/projects/:project/clean-run` | admin |
+| `project.merge-queue.flaky` | Show Flaky Tests | looks | `GET /api/merge-queue/projects/:project/flaky` | sessions |
+| `project.merge-queue.flaky.fix` | Fix in New Chat | changes | `POST /api/merge-queue/projects/:project/flaky/fix` | admin |
+| `project.merge-queue.history` | Show Older | looks | `GET /api/merge-queue/projects/:project/history` | sessions |
+| `project.merge-queue.health` | Show Queue Health | looks | `GET /api/merge-queue/projects/:project/health` | sessions |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
 | `overseer.abilities` | Show Overseer Abilities | looks | `GET /api/overseer/abilities` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
@@ -939,10 +944,15 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/merge-queue/entries/:id/publish` | admin | `project.merge-queue.request.publish` |
 | `GET /api/merge-queue/landing-summary` | sessions | `project.merge-queue.landing-summary` |
 | `POST /api/merge-queue/projects/:project/branch-summary` | admin | `project.merge-queue.branch-summary.retry` |
+| `POST /api/merge-queue/projects/:project/clean-run` | admin | `project.merge-queue.clean-run` |
 | `POST /api/merge-queue/projects/:project/discard-branch` | admin | `project.merge-queue.discard-branch` |
 | `POST /api/merge-queue/projects/:project/dry-run` | admin | `project.merge-queue.dry-run.start` |
 | `POST /api/merge-queue/projects/:project/dry-run/stop` | admin | `project.merge-queue.dry-run.stop` |
 | `POST /api/merge-queue/projects/:project/fix` | admin | `project.merge-queue.fix`, `project.merge-queue.fix.new-chat` |
+| `GET /api/merge-queue/projects/:project/flaky` | sessions | `project.merge-queue.flaky` |
+| `POST /api/merge-queue/projects/:project/flaky/fix` | admin | `project.merge-queue.flaky.fix` |
+| `GET /api/merge-queue/projects/:project/health` | sessions | `project.merge-queue.health` |
+| `GET /api/merge-queue/projects/:project/history` | sessions | `project.merge-queue.history` |
 | `PUT /api/merge-queue/projects/:project/land-how` | admin | `project.merge-queue.land-how.set` |
 | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin | `project.merge-queue.land-how.clear` |
 | `PUT /api/merge-queue/projects/:project/models` | admin | `project.merge-queue.models.set` |

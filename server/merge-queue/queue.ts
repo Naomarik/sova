@@ -61,6 +61,10 @@ import { type MergeNoticeKind, nothingToLandWords } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { cleanChoices, fingerprintOf, isRuling, resolveVerdict, RULING_TEXT_MAX, RULING_WAIT_MS, type Ruling, sendBackText } from "./rulings";
 import { estimateFromRuns } from "./estimate";
+import { afterRun, cleanFor, cleanInfo } from "./clean-run";
+import { FlakyStore } from "./flaky";
+import { healthOf, historyPage } from "./health";
+import type { MergeHistoryPage, MergeQueueHealth } from "../../shared/merge-queue-health";
 import { deliverReview } from "./review-step";
 import { applyReviewEvent, openReview, reportText, reviewNoteText, reviewRecord, type ReviewEvent } from "./review-record";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
@@ -328,7 +332,7 @@ interface Current {
   entry: string;
   ac: AbortController;
   /** Why it was aborted, if it was. */
-  voidWhy: null | "master-moved" | "cancelled" | "superseded" | "stopping" | "release";
+  voidWhy: null | "master-moved" | "cancelled" | "superseded" | "stopping" | "release" | "clean-run";
   watch: ReturnType<typeof setInterval> | null;
   done: Promise<void>;
   /** The local target's head at the run's start: what the watch compares (a request project's base is origin's). */
@@ -346,6 +350,8 @@ export function optionalPicks(def: ProjectDef): CheckPick[] {
 
 export class ProjectQueue {
   readonly store: QueueStore;
+  /** The flaky tests this project's runs have seen, across landings (flaky.ts). */
+  readonly flaky: FlakyStore;
   private q!: QueueFile;
   private readonly git: Git;
   private current: Current | null = null;
@@ -380,6 +386,7 @@ export class ProjectQueue {
     this.deps = { ...deps, notify: (kind, e, extra) => (this.recordNotice(kind, e, extra), deps.notify?.(kind, e, extra)) };
     this.git = deps.git ?? realGit;
     this.store = new QueueStore(deps.base, root);
+    this.flaky = new FlakyStore(this.store.dir);
   }
 
   private now(): number {
@@ -864,7 +871,7 @@ export class ProjectQueue {
     // What retirement did here, as it last wrote it: no git (§chat.worktrees/retirement).
     // Switched off (../cleanup-switch.ts): the ledger only, never the saved list.
     const retirement = viewWhileOff(retirementViewOf(this.root, pendingWhileOff()));
-    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...this.trialFields(), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}), ...this.eventFields() };
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...this.trialFields(), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}), ...this.knownFields(), ...this.eventFields() };
   }
 
   /**
@@ -4087,6 +4094,11 @@ export class ProjectQueue {
       ...(e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? { releaseChecks: structuredClone(this.q.release.checks) } : {}),
       ...(this.names().exists ? { namesFile: this.names().file } : {}),
       review: d.review && !e.approval.withoutReview,
+      // An empty merge copy when Clean Run asked for one, or the weekly one is due (clean-run.ts).
+      ...(() => {
+        const clean = cleanFor(this.q.clean, this.now(), e.branch);
+        return clean ? { clean } : {};
+      })(),
       signal: ac.signal,
       awaitReview: () =>
         new Promise<ReviewVerdict>((resolve, reject) => {
@@ -4161,6 +4173,83 @@ export class ProjectQueue {
   }
 
   /** A run's end: "run ended" is recorded first, then what came of it (sent back, landed, restarted…). */
+  /** The view's clean-run standing and the flakiest tests (at most 10, most often first). */
+  private knownFields(): Pick<MergeQueueView, "clean" | "flaky"> {
+    const flaky = this.flaky.list().slice(0, 10);
+    return { clean: cleanInfo(this.q.clean, this.now()), ...(flaky.length ? { flaky } : {}) };
+  }
+
+  /** What a run tells the queue's known state, whatever its verdict: it started from an empty copy (the next clean run
+   *  is a week after it), and the flaky tests it found (counted across landings, flaky.ts). A voided run counts no
+   *  flaky test: its reruns may be cut short. */
+  private knownState(cur: Current, out: RunOutcome): void {
+    const run = cur.run;
+    const e = this.entry(cur.entry);
+    // A voided run spends no Clean Run (the one restarted for it, above all): its next run is clean again.
+    const voided = !!cur.voidWhy || out.verdict === "void";
+    if (out.clean && !voided) {
+      this.q.clean = afterRun(this.q.clean, { id: run.id, branch: run.branch, startedAt: run.startedAt, clean: out.clean });
+      this.record({ kind: "clean-run", by: "queue", cleanWhy: out.clean, run: run.id, entry: cur.entry, ...(e ? { branch: e.branch } : {}), step: "copy", why: out.clean === "weekly" ? "Weekly clean run: started from an empty merge copy" : out.clean === "new" ? "The merge copy was cut new: nothing to reuse" : "Clean run you asked for: started from an empty merge copy" });
+    }
+    if (!out.flaky?.length || voided) return;
+    try {
+      const counted = this.flaky.record(out.flaky, { run: run.id, entry: cur.entry, branch: e?.branch ?? run.branch, at: run.startedAt });
+      for (const t of counted)
+        this.record({ kind: "flaky", by: "queue", check: t.check, ...(t.file ? { file: t.file } : {}), ...(t.name ? { name: t.name } : {}), run: run.id, entry: cur.entry, branch: e?.branch ?? run.branch, step: t.check.startsWith("setup:") ? t.check : `check:${t.check}`, why: `${t.name ?? t.file ?? t.checkLabel} failed, then passed on its rerun (flaky ${t.count} time${t.count === 1 ? "" : "s"} so far)` });
+    } catch (err) {
+      this.log(`flaky tests not recorded: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /**
+   * Clean Run (the user's own click): the next run starts from an empty merge copy. On the entry checking now, that run
+   * stops and starts again, clean; on a failed run's entry whose Land still stands (back with its chat), it goes back
+   * in line at its commit, clean, counting no try; otherwise (the head of the line, none named, an entry whose Land no
+   * longer stands) the next run is clean.
+   */
+  cleanRun(entryId?: string): Promise<MergeQueueView> {
+    return this.serial(async () => {
+      const e = entryId ? this.mustEntry(entryId) : undefined;
+      this.q.clean = { ...this.q.clean, next: { why: "operator", at: this.iso(), ...(e ? { entry: e.id, branch: e.branch } : {}) } };
+      this.record({ kind: "clean-run", by: "user", cleanWhy: "operator", ...(e ? { entry: e.id, branch: e.branch } : {}), why: e?.state === "checking" ? "You asked for a clean run: this run stops and starts again from an empty merge copy" : "You asked for a clean run: the next run starts from an empty merge copy" });
+      if (e?.state === "checking" && this.current?.entry === e.id && !this.landing) {
+        this.current.voidWhy = "clean-run";
+        this.current.ac.abort();
+      } else if (e?.state === "with-chat") {
+        this.clearRulingTimer(e.id);
+        delete e.ruling;
+        delete e.standing;
+        delete e.reason;
+        delete e.sentBackFor;
+        delete e.sentBackDrafts;
+        this.toFront(e);
+      }
+      this.save();
+      this.kickSoon();
+      return this.view();
+    });
+  }
+
+  /** One page of the history (newest first; Show Older passes the previous page's `next` as `before`). */
+  historyPage(o: { branch?: string; before?: string; limit?: number } = {}): MergeHistoryPage {
+    const h = this.store.history;
+    return historyPage(h.months(), (m) => h.readMonth(m), o);
+  }
+
+  /** The health summary over the last `days` (history rows, the runs on disk, the flaky store). */
+  health(days = 30): MergeQueueHealth {
+    const now = this.iso();
+    const since = new Date(this.now() - days * 86_400_000).toISOString();
+    const h = this.store.history;
+    const rows = h.months().filter((m) => m >= since.slice(0, 7)).flatMap((m) => h.readMonth(m));
+    const runs = this.store.runIds().flatMap((id) => {
+      const r = this.store.readRun(id);
+      return r ? [r] : [];
+    });
+    return healthOf({ rows, runs, flaky: this.flaky.list(), now, days });
+  }
+
+  /** A run's end: "run ended" is recorded first, then what came of it (sent back, landed, restarted…). */
   private async finish(cur: Current, out: RunOutcome): Promise<void> {
     const held: MergeEventInput[] = [];
     this.heldEvents = held;
@@ -4183,6 +4272,7 @@ export class ProjectQueue {
       w.reject(new Error("run ended"));
     }
     run.endedAt = this.iso();
+    this.knownState(cur, out);
     if (out.mergeSha) run.mergeSha = out.mergeSha;
     if (out.tip) run.tip = out.tip;
     if (out.copy) run.copy = out.copy;
@@ -4206,14 +4296,14 @@ export class ProjectQueue {
     if (cur.voidWhy || e.state === "cancelled") {
       const why = cur.voidWhy ?? "cancelled";
       run.verdict = why === "cancelled" ? "cancelled" : "void";
-      run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : why === "release" ? "a release started: it waits for the release" : "cancelled";
+      run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : why === "release" ? "a release started: it waits for the release" : why === "clean-run" ? "you asked for a clean run: it starts again from an empty merge copy" : "cancelled";
       this.store.writeRun(run);
       if (e.state === "checking" && (why === "master-moved" || why === "stopping" || why === "release")) this.record(countRestart(e, restartCauseOf(why), run.id, run.why));
       if (why === "master-moved" && e.state === "checking") {
         this.toFront(e);
         const head = await this.targetHead();
         this.pauseNow("master-moved", `${this.q.target} moved outside the queue (${run.base.slice(0, 7)} → ${(head ?? "?").slice(0, 7)}) while ${e.branch} was checking: that run was voided; resume once that is intended`, run.id);
-      } else if ((why === "stopping" || why === "release") && e.state === "checking") {
+      } else if ((why === "stopping" || why === "release" || why === "clean-run") && e.state === "checking") {
         this.toFront(e);
         if (why === "release") e.reason = this.waitingWords();
       }

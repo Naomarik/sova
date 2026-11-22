@@ -293,7 +293,12 @@
     "project.merge-queue.dry-run.stop",
     "project.merge-queue.fix",
     "project.merge-queue.fix.new-chat",
-    "project.verb.merge.stop-try"
+    "project.verb.merge.stop-try",
+    "project.merge-queue.clean-run",
+    "project.merge-queue.flaky",
+    "project.merge-queue.flaky.fix",
+    "project.merge-queue.history",
+    "project.merge-queue.health"
   ],
   "retired": [
     "settings.agents.get",

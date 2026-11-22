@@ -512,6 +512,71 @@ const PROJECTS_SWEEP: CommandEntry[] = [
   }),
 ];
 
+/** The queue's known state and numbers: Clean Run, the flaky tests and Fix in New Chat on one, the history's pages
+ *  and the health summary. Clean Run and the fix are the user's own click on Sova's page. */
+const MERGE_KNOWN: CommandEntry[] = [
+  {
+    id: "project.merge-queue.clean-run",
+    label: "Clean Run",
+    summary: "Run from an empty merge copy: no installed packages, build output or setup kept from earlier runs, every check fresh. On the branch checking now, its run starts again clean; on a failed run whose Land still stands, it checks the same commit again, clean; otherwise the next run is clean. Your own page only.",
+    effect: "changes",
+    params: { project: mqProject, entry: { type: "string", description: "The queue entry (mq_…) it is pressed on; absent: the next run", in: "body" } },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/clean-run" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.flaky",
+    label: "Show Flaky Tests",
+    summary: "Every test that failed in a merge run and then passed on its rerun, across landings: how often, first and last seen, and the runs that saw it.",
+    effect: "looks",
+    params: { project: mqProject },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/flaky" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.flaky.fix",
+    label: "Fix in New Chat",
+    summary: "Start a new coding chat on a new branch to fix one flaky test, told the test, how often it failed and the runs and logs that saw it. Your own page only.",
+    effect: "changes",
+    params: { project: mqProject, key: { type: "string", description: "The flaky test's key, as Show Flaky Tests gives it", in: "body", required: true } },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/flaky/fix" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.history",
+    label: "Show Older",
+    summary: "A page of the merge queue's history, newest first: each finished branch, how long it took to land, its runs and why it was sent back. `before` the previous page's `next`; `branch` searches by branch.",
+    effect: "looks",
+    params: {
+      project: mqProject,
+      branch: { type: "string", description: "Only branches whose name contains this", in: "query" },
+      before: { type: "string", description: "The previous page's next", in: "query" },
+      limit: { type: "integer", description: "Rows per page (1–100, default 20)", in: "query" },
+    },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/history" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.health",
+    label: "Show Queue Health",
+    summary: "The merge queue's health over the last days: time to land, pass rate, the slowest checks, the flakiest tests, the usual reasons branches are sent back, and clean runs.",
+    effect: "looks",
+    params: { project: mqProject, days: { type: "integer", description: "How many days back (1–366, default 30)", in: "query" } },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/health" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
 export const PROJECT_ENTRIES: CommandEntry[] = [
   {
     id: "project.services.view",
@@ -529,4 +594,5 @@ export const PROJECT_ENTRIES: CommandEntry[] = [
   ...MERGE_SETTINGS,
   ...MERGE_LANDING,
   ...MERGE_SUMMARY,
+  ...MERGE_KNOWN,
 ];

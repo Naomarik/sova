@@ -7,6 +7,7 @@ import type { RunMerge, WakeThread } from "./contract";
 import { MergeFailure, type MergeQueues, type ProjectQueue } from "./queue";
 import { registerLiveMergeSettingsRoutes } from "./settings-routes";
 import { registerLiveMergeLandingRoutes } from "./routes-landing";
+import { registerLiveMergeKnownRoutes } from "./routes-known";
 import { registerLiveRunLogsRoutes } from "./run-logs-routes";
 import { registerLiveMergeEventsRoutes } from "./routes-events";
 import { NOT_SERVED } from "./served";
@@ -727,6 +728,8 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
   registerLiveMergeLandingRoutes(app);
   // The merge thread's Run Logs chip: the run folders' size and Clean Logs (run-logs-routes.ts).
   registerLiveRunLogsRoutes(app);
+  // Clean Run, the flaky tests and their Fix in New Chat, the history's pages and the health summary (routes-known.ts).
+  registerLiveMergeKnownRoutes(app);
   // The event memory's read: every recorded change of the queue, an entry, a run or a branch (routes-events.ts).
   registerLiveMergeEventsRoutes(app);
   // Try Again on a branch summary that failed (branch-summaries.ts): {branch, commit}; refused for one that worked.

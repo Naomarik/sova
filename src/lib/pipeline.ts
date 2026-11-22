@@ -185,12 +185,12 @@ export function queueStages(m: SetupMap, health?: MergeQueueHealth | null): Stag
     out.push({
       id: "review",
       name: "Review",
-      line: `The review kit in ${r.kit} reads the diff${r.model ? ` with ${r.model}` : ""}, beside the checks.`,
+      line: `The review kit in ${r.kit} reads the diff${r.model ? ` with ${r.model} (unless a review model is picked in Settings)` : ""}, beside the checks.`,
       back: true,
       rule: "The branch’s own review kit runs, so a branch that changes it shows that on its run. A finding goes back to the branch’s chat; nothing lands until it’s answered.",
       facts: [
         { label: "Kit", value: r.kit, mono: true },
-        { label: "Model", value: r.model ? `${r.model}${r.thinking ? ` · ${r.thinking}` : ""}` : "The review model picked in Settings." },
+        { label: "Model", value: r.model ? `${r.model}${r.thinking ? ` · ${r.thinking}` : ""}, unless a review model is picked in Settings (that one runs)` : "The review model picked in Settings." },
         { label: "Passes", value: `${r.passes ?? 1} ${(r.passes ?? 1) === 1 ? "reviewer" : "reviewers in turn"}` },
         { label: "Time limit", value: `${r.timeLimitMin ?? 20}m per reviewer` },
         { label: "Tools", value: r.tools?.length ? r.tools.join(", ") : "Read-only" },

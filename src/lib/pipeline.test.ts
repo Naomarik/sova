@@ -97,3 +97,9 @@ test("a branch's story is one attempt per run, in the order recorded", () => {
     ],
   );
 });
+
+test("the Setup view's review names the kit's model only as the one used when no review model is picked in Settings", () => {
+  const r = queueStages(mapOf({ checks, review: ".sova/playbook-config/review" }, { review: { model: "zai/glm-5.3" } })).find((x) => x.id === "review")!;
+  assert.match(r.line, /with zai\/glm-5\.3 \(unless a review model is picked in Settings\)/);
+  assert.equal(r.facts.find((f) => f.label === "Model")?.value, "zai/glm-5.3, unless a review model is picked in Settings (that one runs)");
+});

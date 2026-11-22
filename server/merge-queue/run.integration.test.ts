@@ -499,6 +499,19 @@ describe("a merge run", () => {
     expect(callsAt(fx, "setup")).toHaveLength(0);
   });
 
+  test("a branch rule naming a check the target runs only with a selection, with none, is refused: the branch's, no check runs", async () => {
+    const fx = fixture({ moreChecks: [{ id: "e2e", label: "Walkthroughs", run: ["node", "checks/unit.mjs"], optional: true, needsSelect: true }] });
+    // The branch's own copy of e2e drops needsSelect, so its file parses; the target's still says it needs one.
+    const def = fx.definition() as { merge: { checks: { id: string; needsSelect?: boolean }[]; rules?: unknown[] } };
+    for (const c of def.merge.checks) if (c.id === "e2e") delete c.needsSelect;
+    def.merge.rules = [{ paths: ["src/**"], check: "e2e", why: "the UI changed" }];
+    const br = fx.branch("rules", { ".sova/project.json": JSON.stringify(def, null, 2), "src/list.txt": "x\n" });
+    const r = await run(fx, br);
+    expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r.out.why).toBe(`your branch's folder rules are refused: src/** → e2e: "e2e" runs with a selection on ${fx.target} and this rule names none`);
+    expect(callsAt(fx, "unit")).toHaveLength(0);
+  });
+
   test("a check past its time limit is timed on the target alone (never a void); an abort voids the run", async () => {
     const fx = fixture();
     const def = fx.definition();

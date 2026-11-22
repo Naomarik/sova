@@ -38,7 +38,7 @@ import { removeReviewChange, reviewChangeDir, writeReviewChange } from "./review
 import { conflictsBetween } from "./conflicts";
 import { factsOf, runScan, SCAN_STEP_ID, SCAN_STEP_LABEL, scanDetail, scanResultOf } from "./names-step";
 import type { ScanResult } from "./publish-scan";
-import { branchRulesOf, ruleTriggers, withUnknown } from "./rules";
+import { branchRulesOf, ruleTriggers, ruleWords, withUnknown } from "./rules";
 
 export interface RunDeps extends ReviewDeps {
   /** The state root and home the copy must stay out of (tests move them). */
@@ -411,6 +411,10 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   rulesShown = rulesNow;
   hooks.rules?.(rulesNow);
   if (ruled.refused) return out({ verdict: "failed", blame: input.resolution ? "resolution" : "branch", why: `your branch's .sova/project.json is refused: ${ruled.refused}`, copy, mergeSha });
+  // A branch rule that names a check the target runs only with a selection, and gives none, is refused the same way
+  // (§app.merge-queue/rules): the branch's own copy of the check may say otherwise, the target's decides.
+  if (trig.refused.length)
+    return out({ verdict: "failed", blame: input.resolution ? "resolution" : "branch", why: `your branch's folder rules are refused: ${trig.refused.map((x) => `${ruleWords(x)}: "${x.check}" runs with a selection on ${target} and this rule names none`).join("; ")}`, copy, mergeSha });
 
   // Whose is a setup failure: rerun setup on the target alone, from nothing cached.
   const setupBlame = async (what: string, failedStep: RunStep): Promise<RunOutcome> => {

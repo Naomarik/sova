@@ -85,6 +85,10 @@ export interface RunningCopy {
   createdBy: string;
   /** Degraded only because a service is still starting (`isStarting`). */
   starting?: true;
+  /** A service of it failed and is retrying within its restart limit (status's `restarting`): it reads Restarting, as on the tab. */
+  restarting?: true;
+  /** A service of it gave up retrying (status's `gaveUp`): it reads Failed, as on the tab. */
+  gaveUp?: true;
   /** The unit an adopted slot 0 runs as: no Stop is offered. */
   adopted?: string;
   /** Where a person opens it, as on the tab, and whether the entry's own service is ready (this view lists no services). */

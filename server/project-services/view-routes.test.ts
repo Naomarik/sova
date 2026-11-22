@@ -7,6 +7,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import type { InstanceSummary, ProjectDef, ServiceView } from "../../shared/project-contract";
 import { parseDefinition } from "../../shared/project-contract";
+import type { RunningProject } from "../../shared/services-view";
+import { copyChip } from "../../src/lib/services-view";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-view-routes-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -104,6 +106,22 @@ test("a degraded copy whose only trouble is a service still starting is marked s
   assert.equal(starting.copies[0]!.starting, true);
   const failed = runningOf(base, [inst("a", 1, "degraded", [svc("web", "checkout", "failed", {}), svc("api", "checkout", "starting", {})])])!;
   assert.equal(failed.copies[0]!.starting, undefined);
+});
+
+test("Running branches carries a copy's retrying and given-up services, so its chip reads as on the tab", () => {
+  const base = { projectId: "prj_1", name: "P", root: "/p" };
+  const retry = { ...svc("api", "checkout", "starting", {}), restarting: { try: 3, of: 5 as const } };
+  const gave = { ...svc("worker", "checkout", "failed", {}), gaveUp: true as const, giveUp: { rule: "in-a-row" as const, tries: 5, at: "2026-11-22T10:00:00Z", exit: 1, lines: [] } };
+  const chip = (c: RunningProject["copies"][number]) => copyChip(c.state, !!c.starting, !!c.gaveUp, !!c.restarting).word;
+  const one = (...services: ServiceView[]) => runningOf(base, [inst("a", 1, "degraded", services)])!.copies[0]!;
+  assert.equal(chip(one(svc("web", "checkout", "ready", {}), retry)), "Restarting");
+  assert.equal(chip(one(svc("web", "checkout", "ready", {}), gave)), "Failed");
+  assert.equal(chip(one(retry, gave)), "Failed");
+  assert.equal(chip(one(svc("web", "checkout", "ready", {}), svc("api", "checkout", "starting", {}))), "Starting");
+  const plain = one(svc("web", "checkout", "failed", {}));
+  assert.equal(plain.restarting, undefined);
+  assert.equal(plain.gaveUp, undefined);
+  assert.equal(chip(plain), "Degraded");
 });
 
 test("the adopt stand-in as :4930 answered it: its definition's adopt names the unit on the main copy", () => {

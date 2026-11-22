@@ -407,6 +407,8 @@ function follow(parent: DesignParent, label: string, chatId: string): void {
           x.sessionEnded = true;
           x.workerState = "ended";
         });
+        // Its turn is over: the session that replaces it starts with no design_stream call made.
+        changeDesigns(parent.sessionId, (s) => void delete s.internal?.[label]?.streamed);
         clearLivePage(parent.sessionId, label);
         if (d.versions.length && (atWork(d) || readDesigns(parent.sessionId).internal?.[label]?.by === "refine")) noteUnchanged(parent.sessionId, label, f.detail ?? "Its session stopped before it finished.");
         if (atWork(d)) {
@@ -446,8 +448,10 @@ async function writtenThisTurn(sid: string, label: string, d: DesignRecord): Pro
     const problem = landingProblem(sid, pending);
     return problem ? { page: null, problem } : { page: pending, problem: null };
   }
-  // A page written whole but never handed in (its session lost its tools, or stopped short) is still a page.
-  const live = livePage(sid, label)?.text;
+  // A page written whole but never handed in (its session lost its tools, or stopped short) is still a page. Not on
+  // the tool route once design_stream ran this turn: the live page is then a call it turned away, or the draft itself.
+  const toolLess = d.route === "reply" || !readDesigns(sid).internal?.[label]?.streamed;
+  const live = toolLess ? livePage(sid, label)?.text : undefined;
   const problem = live ? pageProblem(live) : null;
   if (live && !problem) return { page: live, problem: null };
   if (branch) {
@@ -471,7 +475,10 @@ async function settled(parent: DesignParent, label: string, state: WorkerState):
   const refused = changeDesigns(sid, (s) => {
     const i = s.internal?.[label];
     const out = i?.refused ?? null;
-    if (i) delete i.refused;
+    if (i) {
+      delete i.refused;
+      delete i.streamed;
+    }
     return out;
   });
   if (wrote.page && designOf(sid, label)) commitVersion(parent, label, wrote.page, undefined);
@@ -778,6 +785,16 @@ export function assertTakesPages(sid: string, label: string): void {
   if (d && (d.status === "stopped" || d.removed)) throw new Error("This design was stopped, so this page isn't kept. Stop now.");
 }
 
+/** A design_stream call came in this turn, kept or turned away: its tools are there, so the turn's end takes only its
+    draft, never the live page. */
+export function streamCalled(sid: string, label: string): void {
+  if (readDesigns(sid).internal?.[label]?.streamed) return;
+  changeDesigns(sid, (s) => {
+    const i = s.internal?.[label];
+    if (i) i.streamed = true;
+  });
+}
+
 /** A new request was taken up: the draft left from before it is no page anyone is working on. */
 function dropDraft(sid: string, label: string): void {
   changeDesigns(sid, (s) => {
@@ -996,6 +1013,7 @@ export function retryDesign(parent: DesignParent, label: string, by: DesignActor
     if (i) {
       delete i.fixes;
       delete i.refused;
+      delete i.streamed;
     }
   });
   const run = runOf(parent.sessionId, d.runId);
@@ -1076,6 +1094,7 @@ function halt(parent: DesignParent, label: string, by: DesignActor, toolCallId?:
     i.by = "chat";
     delete i.fixes;
     delete i.refused;
+    delete i.streamed;
     delete i.historyId;
   });
   if (sessionId) void workers(parent).stop(sessionId, "design stopped").catch(() => {});

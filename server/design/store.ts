@@ -42,6 +42,8 @@ export interface DesignInternal {
   context?: number;
   /** The key of a request that drops the draft left from before it, once its session takes it up. */
   dropDraftOn?: string;
+  /** A design_stream call came in this turn (kept or turned away), until the turn ends. */
+  streamed?: true;
   /** Why a design tool refused a page this turn, until the turn ends. */
   refused?: string;
   /** Stills kept of this design so far: the next one's number is one more. */

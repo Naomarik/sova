@@ -228,6 +228,7 @@ test("F2: a part added to the end goes on in the same document: 'AB' then 'CD' i
 
 test("a part told again from its start (the link came back) goes on from the draft, not from the page's start", async () => {
   slice(1, 0, "AB");
+  store.setPendingPage(sid, label, "AB");
   part(2, 0, "CD");
   part(2, 0, "CDE");
   assert.equal(livePage(sid, label)!.text, "ABCDE");
@@ -291,4 +292,16 @@ test("under a part added to the end, the estimate charges only what this reply w
   assert.equal(d.live!.chars, 39_600, "the tile counts the whole page");
   // $0.50 spent, $0.01 of input, and 1,000 tokens written now at $36 a million: $0.036. The draft's 10,000 were charged.
   assert.ok(Math.abs(d.live!.estimateUsd! - 0.546) < 1e-9, String(d.live!.estimateUsd));
+});
+
+test("a part added after a turned-away call goes on from the saved draft, not from what that call streamed", async () => {
+  store.setPendingPage(sid, label, "<p>D</p>");
+  slice(1, 0, "<p>X</p>");
+  const f = await reader(await urlFor());
+  await settle();
+  const r = part(2, 0, "<p>P</p>");
+  assert.ok(r?.began, "drawn again from the draft");
+  assert.equal(livePage(sid, label)!.text, "<p>D</p><p>P</p>");
+  await f.ended();
+  assert.equal(f.text().includes("<p>P</p>"), false, "the turned-away document isn't written onto");
 });

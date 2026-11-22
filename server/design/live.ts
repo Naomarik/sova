@@ -116,8 +116,19 @@ export function applySlice(sessionId: string, label: string, version: number, f:
     // A new page starts at 0; a later slice of one this server never held waits for the resync.
     if (f.at !== 0) return null;
     if (f.append) {
-      // A part added to the end: the same document goes on, from the draft as it stands.
-      b ??= seed(sessionId, label, version);
+      // A part added to the end: the same document goes on, from the draft as it stands. What is on show but isn't the
+      // draft (a call that was turned away streamed it) is drawn again from the draft first.
+      const draft = pendingPage(sessionId, label);
+      if (!draft) return null;
+      if (!b) {
+        // This server held none (it restarted): the document the tile already shows, when it is this version's.
+        const live = designOf(sessionId, label)?.live;
+        b = seed(sessionId, label, version, live?.version === version ? live.draw : undefined);
+      } else if (b.text !== draft) {
+        endFollowers(key);
+        b = seed(sessionId, label, version);
+        began = true;
+      }
       if (!b) return null;
       b.gen = f.gen;
       b.base = b.text.length;

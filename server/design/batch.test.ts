@@ -1392,3 +1392,33 @@ test("a reply-route turn that ends on a broken reply page with no hand-in goes b
   await handInTool(label).execute("t", { label, note: NOTE }, undefined, undefined, ctx([...fixTurn, entry("tool-result", "ok", { tool: "design_stream" })]));
   assert.equal(store.readPage(parent.sessionId, label), BROKEN.replace("var a = ;", "var a = 1;"));
 });
+
+test("F2: on the tool route a page whose design_stream call was turned away is no page: not at the hand-in, not at the turn's end", async () => {
+  const f = await start();
+  // The page streamed live as the call's html, and the call was refused (html and edits at once).
+  onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: PAGE });
+  assert.equal(livePage(parent.sessionId, "A")?.text, PAGE);
+  await assert.rejects(stream("A", { html: PAGE, edits: [{ find: "hi", replace: "x" }] }), /one of html, append or edits/);
+  await assert.rejects(handInTool("A").execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined), /no page to hand in/);
+  assert.equal(stat("A").versions.length, 0);
+  settle(f);
+  await waitFor(() => stat("A").fix?.attempt === 2);
+  assert.equal(stat("A").versions.length, 0, "the turn's end keeps no version from it either");
+});
+
+test("F2 at the turn's end: with no hand-in, a whole live page whose design_stream call was turned away keeps no version and goes back", async () => {
+  const f = await start();
+  onLiveFrame(f.rec.chatId, { gen: 1, at: 0, text: PAGE });
+  await assert.rejects(stream("A", { html: PAGE, edits: [{ find: "hi", replace: "x" }] }), /one of html, append or edits/);
+  assert.equal(livePage(parent.sessionId, "A")?.text, PAGE, "the live page is still there when the turn ends");
+  settle(f);
+  await waitFor(() => stat("A").status === "fixing");
+  assert.equal(stat("A").versions.length, 0);
+  assert.equal(stat("A").fix?.attempt, 1);
+  assert.equal(fixSends(f).length, 1);
+  // The mark is the turn's: the next turn, with no design_stream call, keeps a whole live page again.
+  onLiveFrame(f.rec.chatId, { gen: 2, at: 0, text: PAGE });
+  settle(f);
+  await waitFor(() => stat("A").versions.length === 1);
+  assert.equal(store.readPage(parent.sessionId, "A"), PAGE);
+});

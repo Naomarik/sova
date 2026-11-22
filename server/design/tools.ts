@@ -13,7 +13,7 @@ import { chatHandle } from "../chat-handle";
 import { sharedFolderOf } from "../../pi-config/extensions/sandbox/shared-folder.ts";
 import { designSectionName } from "../../shared/design-models";
 import type { DesignRun } from "../../shared/design";
-import { assertTakesPages, DESIGN_HAND_IN_TOOL, draftNow, editBase, handIn, landingProblem, readingSkill, refusedPage, savePage, takeLook, type DesignParent } from "./batch";
+import { assertTakesPages, DESIGN_HAND_IN_TOOL, draftNow, streamCalled, editBase, handIn, landingProblem, readingSkill, refusedPage, savePage, takeLook, type DesignParent } from "./batch";
 import { listSkillFiles, readSkillFile, runSkills, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
 import { livePage } from "./live";
 import { lookAtDesign } from "./look";
@@ -374,6 +374,7 @@ function allSessionTools(parent: DesignParent, label: string, reply = false): To
       },
       async execute(_id, params: { label?: string; html?: unknown; append?: unknown; edits?: Edit[] }, _signal, _update, ctx) {
         own(params?.label);
+        streamCalled(parent.sessionId, label);
         const sent = (["html", "append", "edits"] as const).filter((k) => params[k] !== undefined);
         if (reply && (params.html !== undefined || params.append !== undefined))
           throw new Error(`Your page is written in your reply, between the line ${DESIGN_PAGE_START} and the line ${DESIGN_PAGE_END}; design_stream takes only edits.`);
@@ -440,7 +441,9 @@ function allSessionTools(parent: DesignParent, label: string, reply = false): To
         if (!note) throw new Error("note needs layout, sections, type and color.");
         // Its draft; on the reply route a page written between its markers in a reply of this turn since, not always this call's.
         let html = draftNow(parent.sessionId, label, ctx ? ctx.branch() : null);
-        if (html === null) html = livePage(parent.sessionId, label)?.text ?? null;
+        // On the reply route the page may stand only in what its reply streamed; on the tool route only the draft counts:
+        // a live page there is a design_stream call that was turned away.
+        if (html === null && reply) html = livePage(parent.sessionId, label)?.text ?? null;
         if (html === null) refusedPage(parent, label, "You have no page to hand in yet.");
         // The checks run here: a refused page stays the draft, so the fix can be a small edit.
         const problem = landingProblem(parent.sessionId, html);

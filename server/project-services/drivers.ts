@@ -2,6 +2,7 @@ import { execFile, execFileSync, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from "node:fs";
 import { setPriority } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import type { GiveUpView } from "../../shared/project-contract";
 import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
 import { logsDir, procsDir } from "./store";
 
@@ -30,9 +31,33 @@ export interface UnitStatus {
   /** The signal that ended the main process (`SIGKILL`), when the driver saw it. */
   signal?: string;
   detail?: string;
-  /** It failed RESTART_BURST starts in a row and is not started again until someone starts it (up, apply): the
-      start limit (§app.project-services/supervisor). Kept by the supervisor, so it holds through a server restart. */
+  /** The restart limit gave up on it (§app.project-services/supervisor): systemd's own start limit stopped it
+      (start-limit-hit), or the detached driver's watch did. Not started again until someone starts it (up, apply). */
   gaveUp?: true;
+  /** The detached driver's record of that give-up, which holds through a server restart. */
+  giveUp?: GiveUpView;
+  /** The detached driver's count: its failures in a row now, while it waits for or is in its next try. */
+  failuresInRow?: number;
+  /** systemd's facts the restart limit counts from (the engine's watch, restart-limit.ts). */
+  restarts?: RestartFacts;
+}
+
+/** What systemd says of a restarted unit's failures (`systemctl show`), counted by the engine's watch. */
+export interface RestartFacts {
+  /** `NRestarts`: the automatic restarts since it was started. */
+  restarts: number;
+  /** Its last run failed and it has not started again yet: waiting to (auto-restart), or left failed. */
+  failing: boolean;
+  /** systemd's own start limit stopped it (`Result=start-limit-hit`). */
+  limitHit: boolean;
+  /** When its current or last run started (ms), null when unknown. */
+  startAt: number | null;
+  /** When its last run ended (ms), null when unknown; before `startAt` while a later run is under way. */
+  exitAt: number | null;
+  /** That run's exit code; null when a signal ended it or none is known. */
+  exit: number | null;
+  /** `StartLimitBurst`: the starts its own start limit allows. */
+  burst: number;
 }
 
 /** The delay before a failed service is started again, in seconds (systemd's `RestartSec=`, the detached driver's default). */
@@ -55,8 +80,19 @@ export const restartTickMs = (restartMs: number) => Math.max(100, Math.min(resta
  * can give up sooner than the detached driver's count would.
  */
 export const startLimitIntervalSec = () => RESTART_BURST * (RESTART_SEC + STABLE_RUN_SEC);
-/** What a gave-up unit's status says. */
-export const GAVE_UP_DETAIL = `start limit hit: ${RESTART_BURST} failed starts in a row; it waits to be started again`;
+/** After this many failures within any hour, its quick ones included, a unit is given up on too. */
+export const HOURLY_LIMIT = 10;
+export const HOUR_MS = 3_600_000;
+/** What a gave-up unit's status says (§app.project-services/status-logs). */
+export function giveUpDetail(g: Pick<GiveUpView, "rule" | "tries">): string {
+  const why =
+    g.rule === "in-a-row"
+      ? `failed ${g.tries} times in a row and stopped retrying`
+      : g.rule === "in-an-hour"
+        ? `failed ${g.tries} times in an hour and stopped retrying`
+        : `stopped by the system limit after ${g.tries} tries`;
+  return `${why}; it waits to be started again`;
+}
 
 export interface RunOnceResult {
   code: number | null;
@@ -97,6 +133,8 @@ export interface Driver {
   units(prefix: string): Promise<string[]>;
   /** At a server start, after reconcile: take charge of the units already running (the detached driver's restart watch). */
   adopt?(): Promise<void>;
+  /** systemd only: each named unit's status with its restart facts, in one read; null when this driver has none. */
+  restartFacts?(units: string[]): Promise<Map<string, UnitStatus> | null>;
 }
 
 export class DriverError extends Error {}
@@ -151,8 +189,9 @@ export function envFileText(env: Record<string, string>): string {
 
 /** The `systemd-run` argv that starts `spec` as a transient user service (pure, for tests). A waited-for run is
     not `--quiet`: its summary on exit carries the memory peak. A restarted service carries its start limit
-    (RESTART_BURST starts within startLimitIntervalSec) and no `--collect`: a unit that gave up stays loaded as failed
-    (start-limit-hit) until it is started or stopped again (both reset it), so a server restart still sees it.
+    (RESTART_BURST starts within startLimitIntervalSec), so a quick crash loop also ends while the server is down, and no
+    `--collect`: a unit that hit it stays loaded as failed (start-limit-hit) until the server's restart-limit watch
+    records the give-up and stops it (restart-limit.ts).
     A command named by a relative path
     (`.sova/bin/setup`) is made absolute against `cwd`: systemd-run resolves it against its own
     directory, not the unit's, and refuses to start the unit when it is not there. */
@@ -179,7 +218,18 @@ export function systemdRunArgv(spec: UnitSpec, once?: { timeoutSec: number }, un
   return a;
 }
 
-/** `systemctl show`'s `Key=Value` lines → the unit's status (pure, for tests). */
+/** What a service unit's status reads from `systemctl show` (with `--timestamp=us+utc`). */
+export const SHOW_PROPERTIES = "Id,LoadState,ActiveState,SubState,MainPID,ExecMainStatus,ExecMainCode,Result,NRestarts,ExecMainStartTimestamp,ExecMainExitTimestamp,StartLimitBurst";
+
+/** A `--timestamp=us+utc` time (`Sun 2026-11-22 07:15:40.123456 UTC`) in ms; null when unset (pure, for tests). */
+export function parseUsUtc(v: string | undefined): number | null {
+  const m = /(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d)(?:\.(\d+))? UTC$/.exec(v?.trim() ?? "");
+  if (!m) return null;
+  const ms = Date.parse(`${m[1]}T${m[2]}Z`);
+  return Number.isFinite(ms) ? ms + Number(`0.${m[3] ?? "0"}`) * 1000 : null;
+}
+
+/** `systemctl show`'s `Key=Value` lines → the unit's status, with its restart facts when it reads them (pure, for tests). */
 export function parseShow(text: string): UnitStatus {
   const kv: Record<string, string> = {};
   for (const line of text.split("\n")) {
@@ -191,9 +241,35 @@ export function parseShow(text: string): UnitStatus {
   const exit = kv.ExecMainStatus !== undefined && kv.ExecMainStatus !== "" ? Number(kv.ExecMainStatus) : null;
   const active = kv.ActiveState;
   const state: UnitState = active === "active" ? "active" : active === "activating" || active === "reloading" ? "activating" : active === "failed" ? "failed" : "inactive";
+  const limitHit = state === "failed" && kv.Result === "start-limit-hit";
+  const restarts: RestartFacts | undefined =
+    kv.NRestarts !== undefined && /^\d+$/.test(kv.NRestarts)
+      ? {
+          restarts: Number(kv.NRestarts),
+          failing: state === "failed" || (state === "activating" && (kv.SubState ?? "").startsWith("auto-restart")),
+          limitHit,
+          startAt: parseUsUtc(kv.ExecMainStartTimestamp),
+          exitAt: parseUsUtc(kv.ExecMainExitTimestamp),
+          // CLD_EXITED is 1; a signal (2, 3) leaves no exit code.
+          exit: exit !== null && (kv.ExecMainCode === undefined || kv.ExecMainCode === "1") ? exit : null,
+          burst: Number(kv.StartLimitBurst) > 0 ? Number(kv.StartLimitBurst) : RESTART_BURST,
+        }
+      : undefined;
+  const facts = restarts ? { restarts } : {};
   // systemd gave up starting it again: its start limit (§app.project-services/supervisor).
-  if (state === "failed" && kv.Result === "start-limit-hit") return { state, pid, exit, gaveUp: true, detail: GAVE_UP_DETAIL };
-  return { state, pid, exit, ...(kv.SubState ? { detail: `${active}/${kv.SubState}${kv.Result && kv.Result !== "success" ? ` (${kv.Result})` : ""}` } : {}) };
+  if (limitHit) return { state, pid, exit, gaveUp: true, detail: giveUpDetail({ rule: "system-limit", tries: restarts?.burst ?? RESTART_BURST }), ...facts };
+  return { state, pid, exit, ...(kv.SubState ? { detail: `${active}/${kv.SubState}${kv.Result && kv.Result !== "success" ? ` (${kv.Result})` : ""}` } : {}), ...facts };
+}
+
+/** `systemctl show` of several units (blocks split by a blank line, each with its `Id=`) → each unit's status by its name
+    without `.service` (pure, for tests). */
+export function parseShowMany(text: string): Map<string, UnitStatus> {
+  const out = new Map<string, UnitStatus>();
+  for (const block of text.split(/\n\s*\n/)) {
+    const id = /^Id=(.+)$/m.exec(block)?.[1]?.trim();
+    if (id) out.set(id.replace(/\.service$/, ""), parseShow(block));
+  }
+  return out;
 }
 
 /** `systemd-run --wait`'s "Memory peak: 1.2G" in bytes (base 1024), or null (pure, for tests). */
@@ -357,8 +433,18 @@ export class SystemdDriver implements Driver {
     await this.exec("systemctl", ["--user", "reset-failed", `${unit}.service`]);
   }
   async status(unit: string) {
-    const r = await this.exec("systemctl", ["--user", "show", `${unit}.service`, "--property=LoadState,ActiveState,SubState,MainPID,ExecMainStatus,Result"]);
+    const r = await this.exec("systemctl", ["--user", "show", `${unit}.service`, "--timestamp=us+utc", `--property=${SHOW_PROPERTIES}`]);
     return r.code === 0 ? parseShow(r.stdout) : { state: "missing" as const, pid: null };
+  }
+  /** Every named unit's status and restart facts in one `systemctl show`; a unit systemd doesn't know reads missing. */
+  async restartFacts(units: string[]) {
+    const out = new Map<string, UnitStatus>();
+    if (!units.length) return out;
+    const r = await this.exec("systemctl", ["--user", "show", ...units.map((u) => `${u}.service`), "--timestamp=us+utc", `--property=${SHOW_PROPERTIES}`]);
+    if (r.code !== 0) return null;
+    const got = parseShowMany(r.stdout);
+    for (const u of units) out.set(u, got.get(u) ?? { state: "missing", pid: null });
+    return out;
   }
   async signal(unit: string, sig: string) {
     const r = await this.exec("systemctl", ["--user", "kill", `--signal=SIG${sig}`, "--kill-whom=main", `${unit}.service`]);
@@ -578,8 +664,12 @@ interface ProcRecord {
   /** To start it again after a crash, as the engine started it. */
   env?: Record<string, string>;
   at: string;
-  /** When it hit the start limit (ISO): failed, never started again by the watch or reconcile until a start writes a new record. */
+  /** When it hit the restart limit (ISO): failed, never started again by the watch or reconcile until a start writes a new record. */
   gaveUp?: string;
+  /** That give-up: which rule, how many tries, the last try's exit and log lines (none in a record from before it was kept). */
+  giveUp?: GiveUpView;
+  /** When its failures within the last hour happened, on the driver's clock (ms), this run's start's included. */
+  fails?: number[];
   /** The restart watch's start: how many runs before this one failed in a row (none for a start by someone). */
   failed?: number;
   /** When this run started on the driver's clock (ms), to tell how long it stayed up before it failed. */
@@ -613,9 +703,10 @@ export interface DetachedOptions {
  * the process table has no session ids (macOS's `ps`), the unit is its leader's process tree and
  * the groups its members created. A process that starts a session of its own escapes. With
  * `restart`, a unit that ends with a failure is started again after 2 s; after RESTART_BURST failed starts
- * in a row (however long each ran) its record keeps that it gave up, so it stays failed through a server
- * restart until it is started again. A run that stayed up STABLE_RUN_SEC before it failed begins a fresh
- * count. The count is in the unit's record, so a server restart doesn't reset it.
+ * in a row (however long each ran), or HOURLY_LIMIT failures within an hour, its record keeps that it gave up
+ * (the rule, the tries, the last exit and log lines), so it stays failed through a server restart until it is
+ * started again. A run that stayed up STABLE_RUN_SEC before it failed begins a fresh count in a row. The
+ * counts are in the unit's record, so a server restart doesn't reset them.
  */
 export class DetachedDriver implements Driver {
   readonly id = "detached" as const;
@@ -639,6 +730,10 @@ export class DetachedDriver implements Driver {
     this.restartMs = opts.restartMs ?? RESTART_SEC * 1000;
     this.stableMs = opts.stableMs ?? STABLE_RUN_SEC * 1000;
     this.now = opts.now ?? Date.now;
+  }
+  /** A time on the driver's clock on the wall clock (the same clock unless a test steps a fake one). */
+  private wallOf(t: number): number {
+    return this.opts.now ? Date.now() - (this.now() - t) : t;
   }
   private procsDir = () => (this.opts.procsDir ?? procsDir)();
   private logsDir = () => (this.opts.logsDir ?? logsDir)();
@@ -716,10 +811,10 @@ export class DetachedDriver implements Driver {
       });
     });
   }
-  private async spawnRecorded(spec: UnitSpec, failed?: number): Promise<void> {
+  private async spawnRecorded(spec: UnitSpec, failed?: number, fails?: number[]): Promise<void> {
     const rec = await this.spawnUnit(spec);
     // The record holds the unit's env: only its owner reads it.
-    writeWhole(this.recFile(spec.unit), `${JSON.stringify(failed ? { ...rec, failed } : rec)}\n`, 0o600);
+    writeWhole(this.recFile(spec.unit), `${JSON.stringify({ ...rec, ...(failed ? { failed } : {}), ...(fails?.length ? { fails } : {}) })}\n`, 0o600);
     this.down.delete(spec.unit);
   }
   async start(spec: UnitSpec) {
@@ -766,19 +861,30 @@ export class DetachedDriver implements Driver {
       // the count afresh; one whose start time isn't recorded (an older record) counts as a quick failure.
       const ran = r.t !== undefined ? since - r.t : 0;
       const failed = (ran >= this.stableMs ? 0 : (r.failed ?? 0)) + 1;
-      if (failed >= RESTART_BURST) {
+      // Its failures within the hour (§app.project-services/supervisor), the quick ones included.
+      const fails = [...(r.fails ?? []).filter((t) => since - t < HOUR_MS), since].slice(-HOURLY_LIMIT);
+      const rule = failed >= RESTART_BURST ? "in-a-row" : fails.length >= HOURLY_LIMIT ? "in-an-hour" : null;
+      if (rule) {
         // Nothing of it is left running (as systemd stops a failed unit's cgroup), and its record keeps that it
         // gave up: a server restart (the watch, reconcile) leaves it failed too.
         if (this.members(r).length) await this.killSession(r);
-        writeWhole(this.recFile(unit), `${JSON.stringify({ ...r, gaveUp: new Date().toISOString() } satisfies ProcRecord)}\n`, 0o600);
+        const exit = this.exits.get(unit);
+        const giveUp: GiveUpView = {
+          rule,
+          tries: rule === "in-a-row" ? failed : fails.length,
+          at: new Date(this.wallOf(since)).toISOString(),
+          exit: typeof exit === "number" ? exit : null,
+          lines: tailLines(this.logFile(unit), 5).map((l) => l.text),
+        };
+        writeWhole(this.recFile(unit), `${JSON.stringify({ ...r, fails, gaveUp: new Date().toISOString(), giveUp } satisfies ProcRecord)}\n`, 0o600);
         this.down.delete(unit);
-        did.push(`${unit}: start limit hit`);
+        did.push(`${unit}: ${giveUpDetail(giveUp)}`);
         continue;
       }
       // What is left of its session goes first, as systemd's restart stops the whole unit.
       if (this.members(r).length) await this.killSession(r);
       try {
-        await this.spawnRecorded({ unit, argv: r.argv, cwd: r.cwd, env: r.env ?? {} }, failed);
+        await this.spawnRecorded({ unit, argv: r.argv, cwd: r.cwd, env: r.env ?? {} }, failed, fails);
         did.push(`${unit}: started again`);
       } catch (err) {
         did.push(`${unit}: ${(err as Error).message}`);
@@ -824,11 +930,20 @@ export class DetachedDriver implements Driver {
   async status(unit: string): Promise<UnitStatus> {
     const r = this.rec(unit);
     if (!r) return { state: "missing", pid: null };
-    if (this.live(r)) return { state: "active", pid: r.pid };
+    // A restart's run under way, until it has stayed up long enough to start a fresh count.
+    if (this.live(r)) return { state: "active", pid: r.pid, ...(r.failed && (r.t === undefined || this.now() - r.t < this.stableMs) ? { failuresInRow: r.failed } : {}) };
     const exit = this.exits.get(unit);
-    if (r.gaveUp) return { state: "failed", pid: null, ...(exit !== undefined ? { exit } : {}), gaveUp: true, detail: GAVE_UP_DETAIL };
-    // Waiting to be started again, as systemd's auto-restart.
-    if (this.opts.restart && this.watch && r.env && exit !== 0) return { state: "activating", pid: null, ...(exit !== undefined ? { exit } : {}), detail: "auto-restart" };
+    if (r.gaveUp) {
+      // A record from before the give-up's facts were kept: 5 in a row, as the watch then gave up only on that.
+      const giveUp: GiveUpView = r.giveUp ?? { rule: "in-a-row", tries: RESTART_BURST, at: r.gaveUp, exit: typeof exit === "number" ? exit : null, lines: tailLines(this.logFile(unit), 5).map((l) => l.text) };
+      return { state: "failed", pid: null, ...(exit !== undefined ? { exit } : {}), gaveUp: true, giveUp, detail: giveUpDetail(giveUp) };
+    }
+    // Waiting to be started again, as systemd's auto-restart: its failures in a row, this one included.
+    if (this.opts.restart && this.watch && r.env && exit !== 0) {
+      const since = this.down.get(unit) ?? this.now();
+      const failuresInRow = (r.t !== undefined && since - r.t >= this.stableMs ? 0 : (r.failed ?? 0)) + 1;
+      return { state: "activating", pid: null, ...(exit !== undefined ? { exit } : {}), detail: "auto-restart", failuresInRow };
+    }
     const signal = this.signals.get(unit);
     return {
       state: exit === 0 ? "inactive" : "failed",

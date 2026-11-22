@@ -50,7 +50,9 @@ import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
 import { copyContentsArgv } from "./copy-tree";
-import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, ownMemoryOf, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec, type UnitStatus } from "./drivers";
+import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, giveUpDetail, ownMemoryOf, RESTART_BURST, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec, type UnitStatus } from "./drivers";
+import { assess, forgetLimit, freshRecord, LIMIT_BUSY_TICK_MS, LIMIT_TICK_MS, limitUnits, readLimit, restartingOf, sameCount, writeLimit } from "./restart-limit";
+import type { GiveUpView, RestartingView } from "../../shared/project-contract";
 import type { ArchiveCopy, ArchiveCopyService } from "../../shared/projects";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
@@ -448,6 +450,10 @@ export class ProjectEngine {
   private readonly scheduleRestart: (unit: string) => Promise<string | null>;
   private readonly projectArchived: (root: string) => Promise<boolean>;
   private sharedChain = new Map<string, Promise<unknown>>();
+  /** Per unit: bumped by each start or stop by hand, so the restart-limit watch never acts on a count a verb just cleared. */
+  private limitEpoch = new Map<string, number>();
+  private limitTimer: ReturnType<typeof setTimeout> | null = null;
+  private limitOn = false;
   /** The conformance runner (server/project-services/conform.ts), wired at startup. */
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
   /** The deploy verbs (server/project-services/deploy.ts), wired at startup. */
@@ -1403,6 +1409,7 @@ export class ProjectEngine {
       } else {
         const st = await this.driver.status(unit);
         if (st.state !== "missing") await this.driver.stop(unit);
+        this.forgetCount(unit);
         if (st.state !== "missing" && st.state !== "inactive") did.push(unit);
       }
       const c = rec.containers?.[name];
@@ -1455,6 +1462,7 @@ export class ProjectEngine {
       const ports = Object.values(readRegistry().shared.find((x) => x.project === project)?.ports[name] ?? {});
       await this.step(run, `stop:${name}`, "stop", async () => {
         if (st.state !== "missing") await this.driver.stop(unit);
+        this.forgetCount(unit);
         // As after any stop: its ports released before anything starts on them (at most 5 s).
         for (const until = this.clock.now() + 5_000; ports.some((p) => this.portOwner(p) !== "none") && this.clock.now() < until; ) await this.clock.sleep(50);
         return { result: "done", detail: `shared, no longer in any definition: ${alive ? unit : "marked stopped"}` };
@@ -1497,6 +1505,8 @@ export class ProjectEngine {
       this.noteContainer(run, def, scope, s);
       const vars = this.vars(def, scope);
       const spec: UnitSpec = { unit, argv: s.cmd!.map((a) => render(a, vars)), cwd: join(scope.checkout, s.cwd), env: this.env(def, scope, { service: s }) };
+      // A start by hand runs it again with a fresh count, its give-up cleared (§app.project-services/supervisor).
+      this.freshCount(unit);
       try {
         await this.driver.start(spec);
       } catch (err) {
@@ -1517,6 +1527,8 @@ export class ProjectEngine {
       const st = await this.driver.status(unit);
       const had = st.state !== "missing";
       if (had) await this.driver.stop(unit);
+      // A stop by hand (down) clears the restart limit's count and give-up.
+      this.forgetCount(unit);
       if (s?.container && def) await this.removeContainer(def, scope, s);
       if (had && s && def) await this.portsReleased(def, scope, s);
       return had && st.state !== "inactive" ? { result: "done", detail: unit } : { result: "skipped" };
@@ -1790,6 +1802,7 @@ export class ProjectEngine {
           this.preflight(def, scope, s);
           this.noteContainer(run, def, scope, s);
           const vars = this.vars(def, scope);
+          this.freshCount(unit);
           await this.driver.start({ unit, argv: s.cmd!.map((a) => render(a, vars)), cwd: join(scope.checkout, s.cwd), env: this.env(def, scope, { service: s }) });
           return { result: "done", detail: "restarted" };
         }
@@ -2090,14 +2103,18 @@ export class ProjectEngine {
         continue;
       }
       const st = await this.driver.status(unit);
-      if (st.state === "active" || st.state === "activating") {
+      const limit = await this.limitView(unit, st);
+      if (limit.giveUp) {
+        // Given up: failed through Sova's restarts until a start or down clears it, whatever its unit reads (stopped, unloaded).
+        out.push({ name: s.name, scope: s.scope, kind, state: "failed", unit, pid: null, ports, detail: giveUpDetail(limit.giveUp), gaveUp: true, giveUp: limit.giveUp });
+      } else if (st.state === "active" || st.state === "activating") {
         const p = await this.probe(def, sc, s, unit);
         // A process service's own memory now, as the resource monitor measures it (a container's lives in its engine, not its unit).
         const rss = kind === "process" ? ownMemoryOf(this.driver.pids(unit)) : null;
-        out.push({ name: s.name, scope: s.scope, kind, state: p.ok ? "ready" : st.state === "activating" ? "starting" : "degraded", unit, pid: st.pid, ports, ready: p, ...(rss !== null ? { rssBytes: rss } : {}) });
+        out.push({ name: s.name, scope: s.scope, kind, state: p.ok ? "ready" : st.state === "activating" ? "starting" : "degraded", unit, pid: st.pid, ports, ready: p, ...(rss !== null ? { rssBytes: rss } : {}), ...(limit.restarting ? { restarting: limit.restarting } : {}) });
       } else {
         const state = st.state === "failed" ? "failed" : this.heldElsewhere(sc, s, ports) ? "external" : "stopped";
-        out.push({ name: s.name, scope: s.scope, kind, state, unit, pid: null, ports, ...(st.detail && st.state === "failed" ? { detail: st.detail } : {}), ...(st.gaveUp && st.state === "failed" ? { gaveUp: true as const } : {}) });
+        out.push({ name: s.name, scope: s.scope, kind, state, unit, pid: null, ports, ...(st.detail && st.state === "failed" ? { detail: st.detail } : {}), ...(limit.restarting && st.state === "failed" ? { restarting: limit.restarting } : {}) });
       }
     }
     // What the definition no longer declares but still runs is never hidden (§app.project-services/status-logs).
@@ -2346,6 +2363,118 @@ export class ProjectEngine {
     return [...declared, ...recorded];
   }
 
+  // ---- the restart limit (§app.project-services/supervisor) -------------------------------------------
+
+  /** A start by hand: the unit's count starts from nothing and its give-up is cleared. */
+  private freshCount(unit: string): void {
+    this.limitEpoch.set(unit, (this.limitEpoch.get(unit) ?? 0) + 1);
+    writeLimit(unit, freshRecord(this.clock.now()));
+  }
+  /** A stop by hand (down): nothing of its count or give-up is kept. */
+  private forgetCount(unit: string): void {
+    this.limitEpoch.set(unit, (this.limitEpoch.get(unit) ?? 0) + 1);
+    forgetLimit(unit);
+  }
+
+  /**
+   * What the restart limit says of `unit` now (§app.project-services/status-logs): its give-up (Sova's record of
+   * the copy, the detached driver's unit record, or systemd's start limit hit), else the try it waits for or is in.
+   * A read: the count is the watch's to write.
+   */
+  private async limitView(unit: string, st: UnitStatus): Promise<{ restarting?: RestartingView; giveUp?: GiveUpView }> {
+    const rec = readLimit(unit);
+    if (rec?.giveUp) return { giveUp: rec.giveUp };
+    if (st.giveUp) return { giveUp: st.giveUp };
+    const lines = async () => (await this.driver.logs(unit, 5)).map((l) => l.text);
+    if (st.restarts) {
+      const a = assess(rec, st.restarts, this.clock.now());
+      if (a.reached) return { giveUp: { rule: a.reached.rule, tries: a.reached.tries, at: new Date(a.reached.at).toISOString(), exit: a.reached.exit, lines: await lines() } };
+      const restarting = restartingOf(a.rec.inRow);
+      return restarting ? { restarting } : {};
+    }
+    // A start limit hit that a driver reports with no facts to count from.
+    if (st.gaveUp) return { giveUp: { rule: "system-limit", tries: RESTART_BURST, at: new Date(this.clock.now()).toISOString(), exit: st.exit ?? null, lines: await lines() } };
+    const restarting = st.failuresInRow !== undefined ? restartingOf(st.failuresInRow) : undefined;
+    return restarting ? { restarting } : {};
+  }
+
+  /**
+   * One look of the restart-limit watch over this state hash's own service units (one `systemctl show` for all
+   * of them): each one's count moves on from systemd's facts, and a unit that reached the limit is given up on:
+   * the give-up recorded first, then its unit stopped, so a server stopped in between finishes the stop at its
+   * next look. `busy`: a unit is failing or in a try, so the next look comes sooner. systemd only: the detached
+   * driver's own watch holds its units to the same limit.
+   */
+  async limitTick(): Promise<{ did: string[]; busy: boolean }> {
+    const did: string[] = [];
+    let busy = false;
+    if (this.driver.id !== "systemd" || !this.driver.restartFacts) return { did, busy };
+    const prefix = this.unitPrefix();
+    const loaded = (await this.driver.units(prefix)).filter((u) => u.startsWith(prefix));
+    const epochs = new Map(loaded.map((u) => [u, this.limitEpoch.get(u) ?? 0]));
+    const facts = await this.driver.restartFacts(loaded);
+    if (!facts) return { did, busy };
+    const untouched = (unit: string) => (this.limitEpoch.get(unit) ?? 0) === epochs.get(unit);
+    const now = this.clock.now();
+    for (const unit of loaded) {
+      const st = facts.get(unit);
+      if (!st?.restarts || !untouched(unit)) continue;
+      const rec = readLimit(unit);
+      if (rec?.giveUp) {
+        if (st.state !== "inactive" && st.state !== "missing") {
+          await this.driver.stop(unit);
+          did.push(`${unit}: stopped (${giveUpDetail(rec.giveUp)})`);
+        }
+        continue;
+      }
+      const a = assess(rec, st.restarts, now);
+      if (a.reached) {
+        const lines = (await this.driver.logs(unit, 5)).map((l) => l.text);
+        if (!untouched(unit)) continue;
+        const giveUp: GiveUpView = { rule: a.reached.rule, tries: a.reached.tries, at: new Date(a.reached.at).toISOString(), exit: a.reached.exit, lines };
+        writeLimit(unit, { ...a.rec, giveUp });
+        await this.driver.stop(unit);
+        did.push(`${unit}: ${giveUpDetail(giveUp)}`);
+        continue;
+      }
+      if (!sameCount(rec, a.rec)) writeLimit(unit, a.rec);
+      if (a.rec.inRow > 0 || st.restarts.failing) busy = true;
+    }
+    // A record of a unit no longer loaded, with no give-up, has nothing left to count (a start's record waits a minute for its unit).
+    for (const unit of limitUnits(prefix)) {
+      if (epochs.has(unit)) continue;
+      const r = readLimit(unit);
+      if (r && !r.giveUp && now - r.at > 60_000) forgetLimit(unit);
+    }
+    return { did, busy };
+  }
+
+  /** Start the restart-limit watch (at a server start, after reconcile): a look now, then every LIMIT_TICK_MS, every
+      LIMIT_BUSY_TICK_MS while a unit is failing or in a try. */
+  startLimitWatch(): void {
+    if (this.limitOn) return;
+    this.limitOn = true;
+    const loop = async () => {
+      let busy = false;
+      try {
+        const t = await this.limitTick();
+        busy = t.busy;
+        for (const d of t.did) console.log(`[project-services] restart limit: ${d}`);
+      } catch (err) {
+        console.error("[project-services] restart limit watch:", err instanceof Error ? err.message : err);
+      }
+      if (!this.limitOn) return;
+      this.limitTimer = setTimeout(() => void loop(), busy ? LIMIT_BUSY_TICK_MS : LIMIT_TICK_MS);
+      this.limitTimer.unref?.();
+    };
+    void loop();
+  }
+  stopLimitWatch(): void {
+    this.limitOn = false;
+    if (this.limitTimer) clearTimeout(this.limitTimer);
+    this.limitTimer = null;
+  }
+
   // ---- reconcile (§app.project-services/reconcile) ------------------------------------------------------
 
   /** Bring every instance back to its desired state after a server start. Returns what it did. A service that gave up
@@ -2359,7 +2488,7 @@ export class ProjectEngine {
       if (!archivedOf.has(project)) archivedOf.set(project, this.projectArchived(project).catch(() => false));
       return archivedOf.get(project)!;
     };
-    const gaveUp = async (unit: string, s: ServiceDecl) => s.static === undefined && !!(await this.driver.status(unit)).gaveUp;
+    const gaveUp = async (unit: string, s: ServiceDecl) => s.static === undefined && !!(await this.limitView(unit, await this.driver.status(unit))).giveUp;
     // This server as its own project's adopted slot 0: nothing to start, its start noted (§app.project-services/adopt).
     for (const rec of reg.instances.filter((i) => i.slot === 0 && i.project === this.selfCheckout())) {
       const s = this.bare(rec).def;

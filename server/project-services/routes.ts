@@ -79,4 +79,6 @@ export async function reconcileProjectServices(): Promise<void> {
   } catch (err) {
     console.error("[project-services] reconcile failed:", err instanceof Error ? err.message : err);
   }
+  // The server holds its own copies' units to the restart limit, whatever start limit each was started with.
+  projectEngine().startLimitWatch();
 }

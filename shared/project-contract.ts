@@ -1316,6 +1316,27 @@ export interface ServiceView {
   /** It failed too often in a short time and gave up restarting (the start limit, §app.project-services/supervisor):
       `failed` until someone starts it again (up, apply), through a server restart too. */
   gaveUp?: true;
+  /** It failed and waits for, or is in, its next try within the restart limit (§app.project-services/supervisor). */
+  restarting?: RestartingView;
+  /** Sova's record of the give-up, with `gaveUp` (§app.project-services/status-logs). */
+  giveUp?: GiveUpView;
+}
+/** `try`: the try now under way or waited for, its failures in a row plus 1 (the first restart is try 2). */
+export interface RestartingView {
+  try: number;
+  of: 5;
+}
+export type GiveUpRule = "in-a-row" | "in-an-hour" | "system-limit";
+export interface GiveUpView {
+  rule: GiveUpRule;
+  /** How many tries it failed. */
+  tries: number;
+  /** The last try's time (ISO). */
+  at: string;
+  /** The last try's exit code, null when none is known. */
+  exit: number | null;
+  /** Its last 5 log lines, oldest first. */
+  lines: string[];
 }
 export interface DataView {
   name: string;

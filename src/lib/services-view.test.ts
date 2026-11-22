@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isStarting } from "../../shared/services-view";
-import { adoptedLine, archivedVerbs, copyChip, gaveUp, costLine, usableLine, gbWord, limitHint, limitInputProblem, limitLine, limitSource, placesLine, copyMemory, copyName, createdByWord, endpointNotRunning, entryHref, openEntry, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
+import { adoptedLine, archivedVerbs, copyChip, failedBlocks, gaveUp, giveUpHeading, lastTryLine, restarting, START_AGAIN, costLine, usableLine, gbWord, limitHint, limitInputProblem, limitLine, limitSource, placesLine, copyMemory, copyName, createdByWord, endpointNotRunning, entryHref, openEntry, rowVerbs, shareOffered, endpointPort, httpHref, linkLine, notReadyLine, refusalLine, sentence, SHARE_SENSITIVE, shareBlocked, verbGroups, portLabel } from "./services-view";
 
 test("a copy is named main at slot 0, else by its branch, else by its folder", () => {
   assert.equal(copyName({ slot: 0, branch: "master", checkout: "/p" }), "main");
@@ -27,6 +27,49 @@ test("the services not ready are named; none when all are", () => {
   assert.equal(notReadyLine([s("web", "ready")]), null);
   assert.equal(notReadyLine([s("web", "ready"), s("api", "failed"), s("db", "stopped")]), "api failed · db stopped");
   assert.equal(notReadyLine([s("web", "ready"), { ...s("flaky", "failed"), gaveUp: true as const }]), "flaky failed and stopped retrying; Start runs it again");
+  // Retrying within its restart limit, whether between tries (failed) or in one (starting).
+  const retry = (name: string, state: "failed" | "starting" | "ready", n: number) => ({ ...s(name, "failed"), state, restarting: { try: n, of: 5 as const } });
+  assert.equal(notReadyLine([s("web", "ready"), retry("api", "failed", 2)]), "api failed · restarting, try 2 of 5");
+  assert.equal(notReadyLine([retry("api", "starting", 4), s("db", "stopped")]), "api failed · restarting, try 4 of 5 · db stopped");
+  // Up again but not yet 60 s: still its try, still named.
+  assert.equal(notReadyLine([retry("api", "ready", 2)]), "api failed · restarting, try 2 of 5");
+  // A give-up with Sova's record is the failed block's, never this line's.
+  const gave = { ...s("api", "failed"), gaveUp: true as const, giveUp: { rule: "in-a-row" as const, tries: 5, at: "2026-11-22T10:00:00Z", exit: 1, lines: [] } };
+  assert.equal(notReadyLine([s("web", "ready"), gave]), null);
+  assert.equal(notReadyLine([gave, retry("worker", "failed", 3)]), "worker failed · restarting, try 3 of 5");
+});
+
+test("the chip: Failed over Restarting over Starting, each in its own tone", () => {
+  const states = ["running", "degraded", "stopped", "absent"] as const;
+  for (const state of states)
+    for (const starting of [false, true]) {
+      assert.deepEqual(copyChip(state, starting, true, true), { word: "Failed", tone: "error" });
+      assert.deepEqual(copyChip(state, starting, true, false), { word: "Failed", tone: "error" });
+      assert.deepEqual(copyChip(state, starting, false, true), { word: "Restarting", tone: "warn" });
+    }
+  assert.deepEqual(copyChip("degraded", true, false, false), { word: "Starting", tone: "info" });
+  assert.deepEqual(copyChip("degraded", false, false, false), { word: "Degraded", tone: "warn" });
+  assert.equal(restarting([{}, { restarting: { try: 2, of: 5 } }]), true);
+  assert.equal(restarting([{}]), false);
+});
+
+test("the failed block says which rule gave up, the last try and its exit, and the last 5 lines", () => {
+  assert.equal(giveUpHeading("api", { rule: "in-a-row", tries: 5 }), "api failed 5 times in a row and stopped retrying");
+  assert.equal(giveUpHeading("api", { rule: "in-an-hour", tries: 10 }), "api failed 10 times in an hour and stopped retrying");
+  assert.equal(giveUpHeading("api", { rule: "system-limit", tries: 6 }), "api was stopped by the system limit after 6 tries");
+  const at = new Date(2026, 10, 22, 14, 6).getTime();
+  assert.equal(lastTryLine({ at: new Date(at).toISOString(), exit: 1 }, at + 60_000), "Last try: 2:06 PM · exit 1");
+  assert.equal(lastTryLine({ at: new Date(at).toISOString(), exit: null }, at + 60_000), "Last try: 2:06 PM · exit unknown");
+  assert.equal(lastTryLine({ at: new Date(at).toISOString(), exit: 0 }, at + 2 * 86_400_000), "Last try: Nov 22 2:06 PM · exit 0");
+  assert.equal(START_AGAIN, "Start runs it again.");
+  const lines = ["l1", "l2", "l3", "l4", "l5", "l6"];
+  const svcs = [
+    { name: "web" },
+    { name: "api", gaveUp: true as const, giveUp: { rule: "in-a-row" as const, tries: 5, at: new Date(at).toISOString(), exit: 2, lines } },
+    { name: "old", gaveUp: true as const },
+  ];
+  assert.deepEqual(failedBlocks(svcs, at), [{ service: "api", heading: "api failed 5 times in a row and stopped retrying", lastTry: "Last try: 2:06 PM · exit 2", lines: ["l2", "l3", "l4", "l5", "l6"] }]);
+  assert.deepEqual(failedBlocks([{ name: "web" }]), []);
 });
 
 test("an HTTP port links on the page's host, an IPv6 host bracketed", () => {
@@ -70,6 +113,12 @@ test("a row offers what its state allows: Start when stopped or degraded, Stop w
   assert.deepEqual(rowVerbs({ slot: 1, state: "running" }), ["down", "teardown"]);
   assert.deepEqual(rowVerbs({ slot: 1, state: "degraded" }), ["up", "down", "teardown"]);
   assert.deepEqual(rowVerbs({ slot: 0, state: "running" }), ["down"]);
+  // A copy that gave up: Stop only while another of its services still runs.
+  assert.deepEqual(rowVerbs({ slot: 1, state: "degraded", services: [{ state: "failed", gaveUp: true }] }), ["up", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 0, state: "degraded", services: [{ state: "failed", gaveUp: true }, { state: "stopped" }] }), ["up"]);
+  for (const other of ["ready", "starting", "degraded"] as const)
+    assert.deepEqual(rowVerbs({ slot: 1, state: "degraded", services: [{ state: other }, { state: "failed", gaveUp: true }] }), ["up", "down", "teardown"]);
+  assert.deepEqual(rowVerbs({ slot: 1, state: "degraded", services: [{ state: "failed" }] }), ["up", "down", "teardown"]);
   // An adopted main runs as a unit of its own: the row offers no verb, and says where it is restarted.
   assert.deepEqual(rowVerbs({ slot: 0, state: "running", adopted: "sova-runtime.service" }), []);
   assert.equal(adoptedLine("sova-runtime.service"), "Runs as sova-runtime.service.");

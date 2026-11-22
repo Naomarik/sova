@@ -48,6 +48,7 @@
    "merge.rule",
    "merge.respond",
    "merge.stop-try",
+   "merge.events",
    "release.status",
    "release.logs",
    "release.request",

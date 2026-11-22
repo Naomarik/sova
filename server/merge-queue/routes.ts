@@ -72,7 +72,7 @@ export interface MergerDeps {
   now?: () => number;
 }
 
-const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask", "merge.hold", "merge.rule", "merge.restart", "merge.test", "merge.names"];
+const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.events", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask", "merge.hold", "merge.rule", "merge.restart", "merge.test", "merge.names"];
 const REVIEWER_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.review"];
 
 interface Req {
@@ -396,6 +396,9 @@ function recordAct(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQueue,
       case "merge.status":
         if (thread) q.noteThreadRead(req.entry ? `status of ${req.entry}` : "the queue's status");
         return;
+      case "merge.events":
+        if (thread) q.noteThreadRead(`events of ${req.entry ?? req.run ?? req.branch ?? "the queue"}`);
+        return;
       case "merge.logs":
         if (thread) q.noteThreadRead(`log of ${report.run?.id ?? req.run ?? req.entry ?? "a run"}${req.step ? ` step ${req.step}` : ""}`);
         return;
@@ -470,6 +473,11 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       };
       // Its recorded changes, the history's included (§app.merge-queue/activity), newest first.
       return { changed: false, report: { view: narrowed, ...(kept ? { history: kept } : {}), events: q.events({ entry: req.entry, limit: 100 }) } };
+    }
+    case "merge.events": {
+      // The event memory (§app.merge-queue/activity): an entry's, a run's, a branch's or the queue's, newest first.
+      const events = q.events({ ...(req.entry ? { entry: req.entry } : {}), ...(req.run ? { run: req.run } : {}), ...(req.branch ? { branch: req.branch } : {}), limit: req.lines ?? 50 });
+      return { changed: false, report: { events } };
     }
     case "merge.logs": {
       const runId = req.run ?? (req.entry ? (q.entry(req.entry)?.run ?? historyRun(q.historyEntry(req.entry))) : undefined);

@@ -386,7 +386,6 @@ export class ProjectQueue {
   private readonly git: Git;
   private current: Current | null = null;
   /** Per entry: how many runs went again for a pick after their last look (LATE_RESTARTS_MAX). */
-  private lateRestarts = new Map<string, number>();
   private chain: Promise<unknown> = Promise.resolve();
   private holdUntil = 0;
   /** The entry whose run started or that was cancelled last since the thread was last told the queue went idle
@@ -1953,7 +1952,7 @@ export class ProjectQueue {
       // q9: a pick while the entry's run checks is added to that run; one after the run's last look runs it again
       // before anything lands (finish). Once the entry has landed it is final: refused above. Bounded: after
       // LATE_RESTARTS_MAX such reruns, the entry's run takes no more picks (never an endless rerun).
-      if (this.current?.entry === e.id && (this.lateRestarts.get(e.id) ?? 0) >= LATE_RESTARTS_MAX) throw new MergeFailure("invalid-request", `${e.branch}'s run has already run again ${LATE_RESTARTS_MAX} times for picks added after its last look: this run takes no more picks`);
+      if (this.lateRerunsOf(e) >= LATE_RESTARTS_MAX && this.testedOrTesting(e)) throw new MergeFailure("invalid-request", `${e.branch}'s run has already run again ${LATE_RESTARTS_MAX} times for picks added after its last look: this run takes no more picks`);
       for (const c of found) {
         const id = c.id;
         e.picks = e.picks.filter((p) => !(p.id === id && JSON.stringify(p.select ?? []) === JSON.stringify(select ?? [])));
@@ -4743,6 +4742,7 @@ export class ProjectQueue {
       w.reject(new Error("run ended"));
     }
     run.endedAt = this.iso();
+    run.picksSeen = [...cur.seenPicks];
     this.knownState(cur, out);
     if (out.mergeSha) run.mergeSha = out.mergeSha;
     if (out.tip) run.tip = out.tip;
@@ -4969,20 +4969,6 @@ export class ProjectQueue {
         return;
       }
       case "passed": {
-        // q9: a pick that reached the queue after the run's last look for picks still runs before anything lands: the
-        // run goes again from the start with it planned, at the front of the line (§app.merge-queue/picks).
-        const missed = e.picks.filter((p) => !cur.seenPicks.has(pickKey(p)));
-        if (missed.length) {
-          this.lateRestarts.set(e.id, (this.lateRestarts.get(e.id) ?? 0) + 1);
-          run.verdict = "void";
-          run.why = `${missed.map((p) => p.label).join(", ")} ${missed.length === 1 ? "was" : "were"} added after the run's last look for picks: running again with ${missed.length === 1 ? "it" : "them"} before anything lands`;
-          this.store.writeRun(run);
-          this.record(countRestart(e, "aborted", run.id, run.why));
-          this.toFront(e);
-          this.save();
-          this.kickSoon();
-          return;
-        }
         run.verdict = "passed";
         this.store.writeRun(run);
         if (out.review) e.review = out.review;
@@ -5116,10 +5102,40 @@ export class ProjectQueue {
     this.conflictTimers.delete(id);
   }
 
+  /** q9: the late-pick reruns this entry's commit has had (a new commit starts again at none). */
+  private lateRerunsOf(e: Entry): number {
+    return e.lateReruns?.commit === e.commit ? e.lateReruns.count : 0;
+  }
+
+  /** The entry's run checks now, or its tested tip waits to land (a resume, Allow or Land Anyway): a pick now would
+   *  run that commit again. */
+  private testedOrTesting(e: Entry): boolean {
+    if (this.current?.entry === e.id) return true;
+    if (e.state !== "checking" && e.state !== "needs-user" && e.state !== "unattributed") return false;
+    const run = e.run ? this.store.readRun(e.run) : null;
+    return !!run?.tip && run.commit === e.commit;
+  }
+
   /** Land a passed run's tip (the entry is `checking`). */
   async landTested(e: Entry, run: MergeRun): Promise<void> {
     // The run's end is known now: its events go before the landing's (and the push's) waits.
     this.heldEvents?.flush();
+    // q9: a pick that reached the queue after the run's last look for picks (while it ran, or while its tested tip
+    // waited for Allow, Land Anyway or a resume) still runs before anything lands or is pushed: the run goes again from
+    // the start with it planned, at the front of the line (§app.merge-queue/picks). Every landing passes here.
+    const missed = run.picksSeen ? e.picks.filter((p) => !run.picksSeen!.includes(pickKey(p))) : [];
+    if (missed.length) {
+      e.lateReruns = { commit: e.commit, count: this.lateRerunsOf(e) + 1 };
+      run.verdict = "void";
+      run.why = `${missed.map((p) => p.label).join(", ")} ${missed.length === 1 ? "was" : "were"} added after the run's last look for picks: running again with ${missed.length === 1 ? "it" : "them"} before anything lands`;
+      this.store.writeRun(run);
+      this.record(countRestart(e, "aborted", run.id, run.why));
+      delete e.reason;
+      this.toFront(e);
+      this.save();
+      this.kickSoon();
+      return;
+    }
     // Landing by request or by push (al_3): the target never moves here; the tested work is published instead.
     // Never a tip whose "Private names and secrets" step found something the user hasn't marked fine, published by
     // request or landed and pushed alike.

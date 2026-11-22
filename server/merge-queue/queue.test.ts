@@ -1237,6 +1237,28 @@ describe("notes and picks", () => {
     }
   });
 
+  test("q9: a pick while a tested tip waits to land (a dirty main folder) runs before the landing; the cap is kept on the entry", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      k.repo.branch("feat/a", { "b.txt": "b\n" });
+      writeFileSync(join(k.repo.root, "a.txt"), "edited by hand\n");
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      await until(() => q.isPaused(), "paused with the tested tip");
+      await q.extend(entry.id, ["statecharts"], "picked while it waited");
+      sh(k.repo.root, "checkout", "--", "a.txt");
+      await q.resume();
+      await landed(k, entry.id);
+      assert.equal(k.run.inputs.length, 2, "the waiting tip never landed without the pick: one rerun with it");
+      assert.deepEqual(k.run.inputs[1]!.picks.map((p) => p.id), ["statecharts"]);
+      const e = await k.entry(entry.id);
+      assert.deepEqual(e.lateReruns, { commit: e.commit, count: 1 }, "the count is the entry's, saved");
+      assert.match(q.store.readRun(e.runs[0]!)!.why!, /added after the run's last look for picks/);
+    } finally {
+      await k.done();
+    }
+  });
+
   test("q9: a thread picking after every run's last look gets at most 2 reruns, then that run takes no more picks", async () => {
     const k = makeKit();
     try {

@@ -431,6 +431,9 @@ export interface MergeEntry {
   restarts?: Partial<Record<RestartCause, number>>;
   /** Checks the merge thread added (merge.extend); never removes a required one. */
   picks: CheckPick[];
+  /** q9: how often runs of this commit went again for picks added after their last look (at most 2, then its runs
+   *  take no more picks); a new commit starts again at none. */
+  lateReruns?: { commit: string; count: number };
   /** conflict: the files the last merge conflicted on (before any judgement). */
   conflictFiles?: string[];
   conflict?: ConflictJudgement;
@@ -693,6 +696,9 @@ export interface MergeRun {
   rules?: RunRules;
   /** The review kit the run's review ran with (§app.merge-queue/review-kit). */
   review?: ReviewKitStamp;
+  /** q9: every pick the run read (its plan's and the late ones it took in), each as [id, select]; a tested tip lands
+   *  only when the entry's picks are all among them. Absent on runs from before late picks. */
+  picksSeen?: string[];
 }
 
 // ---- the run plan (al_1 step 11): worked out before a run starts ---------------------------------

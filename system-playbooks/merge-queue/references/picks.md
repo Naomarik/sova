@@ -9,7 +9,7 @@ The project declares its required checks (they always run), optional checks (`"o
 4. A rule the project should have (the same pick, landing after landing): say so in the entry's note for the user; never edit `.sova/project.json` yourself.
 
 ## Timing
-A pick that reaches Sova before the entry's run starts is in its plan. One that arrives while the run's checks run is added to that run after the planned checks, shown with when it arrived, and the run doesn't land or push until it ran and passed. Once every check has run and the review has answered, the landing has begun: `merge.extend` is refused ("… is landing: this pick runs on no run"). Never ask Sova to wait.
+A pick that reaches Sova before the entry's run starts is in its plan. One that arrives while the run's checks run is added to that run after the planned checks, shown with when it arrived, and the run doesn't land or push until it ran and passed. One that arrives after every check ran, while the tested tip waits to land (for the user's Allow or Land Anyway, or a resume), sends the run again from the start with it planned: nothing lands or is pushed without it. After two such reruns of one commit its runs take no more picks ("… has already run again 2 times …"), and once the entry landed `merge.extend` is refused ("… is landed: nothing to extend"). Never ask Sova to wait.
 
 ## The reason line
 Plain, short, specific: "src/lib/ws.ts changed: the composer reads it, drive its walkthroughs". The run page shows it beside the check as picked by the merge thread.

@@ -494,12 +494,21 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
 
   // 6. checks, with the review beside them: the required ones, the folder rules' triggers, the thread's picks.
   // The plan's list when the queue worked one out (§app.merge-queue/plan); the run's own reading of the same inputs
-  // should agree, and a difference is recorded, never silent. The plan's list is what runs.
+  // should agree, and a difference is recorded, never silent. The plan's list runs, with every check the run's own
+  // reading adds to it (the plan couldn't read the folder rules, say): never fewer than the copy's rules set off.
   const own = planChecks(def, input.picks, input.releaseChecks, trig.picks);
   const list = input.planned ? structuredClone(input.planned) : own;
   if (input.planned) {
     const words = (l: PlannedCheck[]) => l.map((c) => `${c.id}${c.select?.length ? `(${c.select.join(",")})` : ""}`).join(" ");
-    if (words(list) !== words(own)) hooks.event?.({ kind: "note", by: "queue", note: "plan-differs", step: "checks", why: `the run read its checks differently from its plan: planned ${words(list) || "none"}; read in the copy ${words(own) || "none"}. The plan's run.` });
+    const planned = words(list);
+    const key = (c: PlannedCheck) => JSON.stringify([c.id.replace(/\+\d+$/, ""), c.select ?? []]);
+    const added = own.filter((c) => !list.some((x) => key(x) === key(c)));
+    for (const c of added) {
+      const b = c.id.replace(/\+\d+$/, "");
+      const k = list.filter((x) => x.id.replace(/\+\d+$/, "") === b).length;
+      list.push({ ...c, id: k ? `${b}+${k}` : b });
+    }
+    if (planned !== words(own)) hooks.event?.({ kind: "note", by: "queue", note: "plan-differs", step: "checks", why: `the run read its checks differently from its plan: planned ${planned || "none"}; read in the copy ${words(own) || "none"}. ${added.length ? `The plan's run, and the copy's ${words(added)} with them.` : "The plan's run."}` });
   }
   if (rulesNow.changed?.length) hooks.event?.({ kind: "note", by: "queue", note: "rules-changed", why: `this branch changed its own rules: ${rulesNow.changed.join("; ")}` });
   const release = isReleaseRun(input);

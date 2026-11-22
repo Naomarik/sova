@@ -10,6 +10,7 @@ import type { RunInput, RunOutcome } from "./contract";
 import { mergeCopyPath } from "./copy";
 import { Fixture, REPO_ROOT } from "./testing/repo";
 import { makeRunMerge } from "./run";
+import { planChecks } from "./checks";
 
 const fixtures: Fixture[] = [];
 after(() => {
@@ -22,7 +23,7 @@ const fixture = (o: ConstructorParameters<typeof Fixture>[0] = {}) => {
 };
 
 let n = 0;
-async function run(fx: Fixture, br: { branch: string; commit: string }, o: { clean?: RunInput["clean"] } = {}) {
+async function run(fx: Fixture, br: { branch: string; commit: string }, o: { clean?: RunInput["clean"]; planned?: (def: RunInput["project"]["def"]) => RunInput["planned"] } = {}) {
   const runId = `mr_k${++n}`;
   const runDir = join(fx.root, "runs", runId);
   mkdirSync(runDir, { recursive: true });
@@ -30,10 +31,11 @@ async function run(fx: Fixture, br: { branch: string; commit: string }, o: { cle
   const def = parseDefinition(fx.fileAt(base, ".sova/project.json")!);
   const entry = { id: `me_${n}`, project: "p1", target: fx.target, branch: br.branch, commit: br.commit, approval: { by: "land-button", at: new Date().toISOString(), commit: br.commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: "", updatedAt: "" } as MergeEntry;
   const steps = new Map<string, RunStep>();
-  const input: RunInput = { runId, entry, project: { id: "p1", root: fx.project, target: fx.target, def }, base, commit: br.commit, runDir, picks: [], review: false, signal: new AbortController().signal, awaitReview: () => new Promise(() => {}), ...(o.clean ? { clean: o.clean } : {}) };
+  const input: RunInput = { runId, entry, project: { id: "p1", root: fx.project, target: fx.target, def }, base, commit: br.commit, runDir, picks: [], review: false, signal: new AbortController().signal, awaitReview: () => new Promise(() => {}), ...(o.clean ? { clean: o.clean } : {}), ...(o.planned ? { planned: o.planned(def) } : {}) };
   let ranWith: Record<string, unknown> = {};
-  const out: RunOutcome = await makeRunMerge({ specCore: join(REPO_ROOT, "pi-config/extensions/spec/core") })(input, { step: (s) => void steps.set(s.id, s), checks: () => {}, ranWith: (p) => void (ranWith = { ...ranWith, ...p }) });
-  return { out, steps, ranWith };
+  const notes: string[] = [];
+  const out: RunOutcome = await makeRunMerge({ specCore: join(REPO_ROOT, "pi-config/extensions/spec/core") })(input, { step: (s) => void steps.set(s.id, s), checks: () => {}, ranWith: (p) => void (ranWith = { ...ranWith, ...p }), event: (ev) => void notes.push(`${(ev as { note?: string }).note ?? ev.kind}: ${ev.why}`) });
+  return { out, steps, ranWith, notes };
 }
 
 const unitCalls = (fx: Fixture, mark: number) => fx.callsSince(mark).filter((c) => c.script === "unit");
@@ -69,6 +71,19 @@ describe("a clean run", () => {
     const after = await run(fx, fx.branch("four", { "src/app.txt": "4\n" }));
     expect(after.out.clean).toBeUndefined();
     expect(after.steps.get("setup:prep")!.result).toBe("skipped");
+  });
+});
+
+describe("the plan and the run's own reading", () => {
+  test("a plan that couldn't read the folder rules runs with what the copy's rules set off too, never the required checks only", async () => {
+    const lint = { id: "lint", label: "Lint", run: ["node", "checks/build.mjs"], optional: true };
+    const fx = fixture({ moreChecks: [lint], merge: { rules: [{ paths: ["src/**"], check: "lint", why: "src changed" }] } });
+    // The plan as worked out when the merged read failed: no triggers, the required checks only.
+    const r = await run(fx, fx.branch("ruled", { "src/app.txt": "1\n" }), { planned: (def) => planChecks(def, [], [], []) });
+    expect(r.out.verdict).toBe("passed");
+    expect(r.out.checks?.map((c) => c.id)).toEqual(["build", "unit", "lint"]);
+    expect(r.steps.get("check:lint")?.result).toBe("passed");
+    expect(r.notes.find((n) => n.startsWith("plan-differs"))).toMatch(/The plan's run, and the copy's lint with them\./);
   });
 });
 

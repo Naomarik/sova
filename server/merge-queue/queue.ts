@@ -5120,10 +5120,11 @@ export class ProjectQueue {
     // The run's end is known now: its events go before the landing's (and the push's) waits.
     this.heldEvents?.flush();
     // Landing by request or by push (al_3): the target never moves here; the tested work is published instead.
-    if (publishes(approvalHow(e.approval))) return this.landByRequest(e, run);
-    // Never a tip whose "Private names and secrets" step found something the user hasn't marked fine.
+    // Never a tip whose "Private names and secrets" step found something the user hasn't marked fine, published by
+    // request or landed and pushed alike.
     const hits = openHits(run.steps, allowFileOf(this.store.dir));
     if (hits.length) return this.holdForNames(e, run, hits);
+    if (publishes(approvalHow(e.approval))) return this.landByRequest(e, run);
     const tip = run.tip!;
     const d = await this.declared();
     this.landing = true;
@@ -5190,7 +5191,7 @@ export class ProjectQueue {
 
   private async publishCtx(how: RequestHow): Promise<import("./strategy-run").PublishCtx> {
     const names = this.names();
-    return { git: this.git, root: this.root, target: this.q.target, namesFile: names.exists ? names.file : undefined, holdFile: join(this.store.dir, "push-hold"), host: how === "push-branch" ? null : await this.hosting(), remote: await this.remoteName() };
+    return { git: this.git, root: this.root, target: this.q.target, namesFile: names.exists ? names.file : undefined, allowFile: allowFileOf(this.store.dir), holdFile: join(this.store.dir, "push-hold"), host: how === "push-branch" ? null : await this.hosting(), remote: await this.remoteName() };
   }
 
   /** A passed run on a request or push project (the entry is `checking`): its request's text drafted for the user's

@@ -27,6 +27,8 @@ export interface PublishCtx {
   target: string;
   /** The project's private names file (absent: none yet, so nothing is published). */
   namesFile?: string | undefined;
+  /** The matches this project marked fine (names-step.ts Allow): the publication's scan skips them. */
+  allowFile?: string;
   /** The push hold (a release in progress). */
   holdFile?: string;
   /** The host (request strategies); null: origin isn't on a host Sova opens requests on. */
@@ -134,7 +136,7 @@ export async function publishEntry(ctx: PublishCtx, o: PublishInput, intent: (st
   const head = p.head;
   intent("push", head);
   const texts = o.text ? [{ label: "the request's title", text: o.text.title }, { label: "the request's description", text: o.text.body }] : undefined;
-  const pushed = await pushBranch(ctx.git, ctx.root, { branch: o.branch, tip: head, base: o.base, namesFile: ctx.namesFile, ...(ctx.holdFile ? { holdFile: ctx.holdFile } : {}), ...(texts ? { texts } : {}), ...(ctx.remote ? { remote: ctx.remote } : {}) });
+  const pushed = await pushBranch(ctx.git, ctx.root, { branch: o.branch, tip: head, base: o.base, namesFile: ctx.namesFile, ...(ctx.allowFile ? { allowFile: ctx.allowFile } : {}), ...(ctx.holdFile ? { holdFile: ctx.holdFile } : {}), ...(texts ? { texts } : {}), ...(ctx.remote ? { remote: ctx.remote } : {}) });
   if (pushed.state === "refused") {
     const textHit = !!pushed.hits?.length && pushed.hits.every((h) => h.startsWith("the request's"));
     const branchHit = !!pushed.hits?.length && !textHit;
@@ -255,7 +257,7 @@ export async function publishSettings(ctx: PublishCtx, o: { how: RequestHow; fil
   }
   if (!(await revParse(ctx.git, ctx.root, commit))) return { state: "refused", why: "the settings commit wasn't made" };
   const texts = [{ label: "the request's title", text: o.message }, { label: "the request's description", text: o.body }];
-  const pushed = await pushBranch(ctx.git, ctx.root, { branch, tip: commit, base, namesFile: ctx.namesFile, ...(ctx.holdFile ? { holdFile: ctx.holdFile } : {}), texts, ...(ctx.remote ? { remote: ctx.remote } : {}) });
+  const pushed = await pushBranch(ctx.git, ctx.root, { branch, tip: commit, base, namesFile: ctx.namesFile, ...(ctx.allowFile ? { allowFile: ctx.allowFile } : {}), ...(ctx.holdFile ? { holdFile: ctx.holdFile } : {}), texts, ...(ctx.remote ? { remote: ctx.remote } : {}) });
   if (pushed.state === "refused") return { state: "refused", why: pushed.why };
   if (o.how === "push-branch" || !ctx.host) return { state: "pushed", branch, commit };
   const r = await openOrFind(ctx.host, { head: branch, base: ctx.target, text: { title: o.message, body: o.body }, pushedHead: commit });

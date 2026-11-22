@@ -11,6 +11,7 @@ import { realGit } from "./guard";
 import { allowFileOf, allowMatches, factsOf, openHits, readAllowed, runScan, SCAN_STEP_ID, SCAN_STEP_LABEL, scanPlanned, scanResultOf } from "./names-step";
 import { scanPublication } from "./publish-scan";
 import { merger } from "./routes";
+import { writeOverride } from "./strategy";
 import { makeKit, makeRepo, sh, standInRun, until } from "./testing/queue-kit";
 
 const SECRET_NAME = "zorblaxcorp";
@@ -69,7 +70,9 @@ describe("the scan's facts", () => {
     assert.deepEqual(scanPlanned({ def: null, how: "local", hasRemote: true }), { run: true });
     assert.equal(scanPlanned({ def: null, how: "local", hasRemote: false }).run, false);
     assert.equal(scanPlanned({ def: { merge: { push: false } } as never, how: "local", hasRemote: true }).run, false);
-    assert.equal(scanPlanned({ def: null, how: "github-pr", hasRemote: true }).run, false);
+    assert.equal(scanPlanned({ def: null, how: "github-pr", hasRemote: true }).run, true, "a request publishes the branch");
+    assert.equal(scanPlanned({ def: { merge: { push: false } } as never, how: "push-branch", hasRemote: true }).run, true, "merge.push is the target's push, not the branch's");
+    assert.equal(scanPlanned({ def: null, how: "push-branch", hasRemote: false }).run, false);
   });
 });
 
@@ -251,6 +254,27 @@ describe("the scan right before a push", () => {
       assert.equal(v.heads.pushScan?.state, "unreadable");
       assert.equal(alerts.length, 1);
       assert.match(alerts[0]!, /couldn't look/);
+    } finally {
+      await k.done();
+    }
+  });
+});
+
+describe("a branch published by request or by push", () => {
+  test("a hit holds it before anything is published; Allow publishes it, with the publication's own scan skipping the allowed match", async () => {
+    const { k, decided } = namesKit();
+    try {
+      const q = await k.q();
+      writeOverride(q.store.dir, "push-branch");
+      const b = k.repo.branch("feat/pb", { "pb.txt": `${SECRET_NAME}\n` });
+      const { entry } = await q.add({ branch: "feat/pb", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(entry.id)).state === "needs-user", "held for names");
+      assert.equal((await k.entry(entry.id)).decision?.kind, "private-names");
+      assert.deepEqual(decided, ["private-names"]);
+      assert.equal(sh(k.repo.root, "ls-remote", k.repo.origin, "refs/heads/feat/pb"), "", "nothing published");
+      await q.answer(entry.id, "allow");
+      await until(async () => (await k.entry(entry.id)).state === "pushed", "pushed after Allow");
+      assert.equal(sh(k.repo.origin, "rev-parse", "refs/heads/feat/pb"), b.head);
     } finally {
       await k.done();
     }

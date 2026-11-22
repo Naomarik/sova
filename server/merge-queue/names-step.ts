@@ -23,8 +23,8 @@ export const ALLOW_FILE = "names-allowed.json";
 
 /** Does a run of this landing push (and so scan)? The plan reads this too, so planned and actual agree. */
 export function scanPlanned(o: { def: ProjectDef | null; how: LandHow; hasRemote: boolean }): { run: true } | { run: false; why: string } {
-  if (o.how !== "local") return { run: false, why: "lands by request: what is published is scanned as it is published" };
-  if (o.def?.merge?.push === false) return { run: false, why: "this project doesn't push from the queue" };
+  // A request or a pushed branch publishes the branch whatever merge.push says (that is the target's push).
+  if (o.how === "local" && o.def?.merge?.push === false) return { run: false, why: "this project doesn't push from the queue" };
   if (!o.hasRemote) return { run: false, why: "no remote to push to" };
   return { run: true };
 }

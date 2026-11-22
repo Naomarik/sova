@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { NO_BACKGROUND_CLEANUP, noBackgroundCleanupEnv } from "../git-no-background";
 import { countBetween, type Git, isAncestor, revParse, statusArgs, worktreesOf } from "./guard";
 import { firstParents, landTip } from "./land";
+import { allowedKeys } from "./names-step";
 import { scanPublication } from "./publish-scan";
 
 /**
@@ -92,7 +93,7 @@ export type BranchPushResult = { state: "pushed"; sha: string; from: string | nu
  * everything origin's `base` lacks up to the tip (and `texts`, the request's words), fast-forward only. A branch
  * origin already has must be in the tip's history (Land Again adds on top, never rewrites; q6).
  */
-export async function pushBranch(git: Git, root: string, o: { branch: string; tip: string; base: string; namesFile?: string | undefined; holdFile?: string; texts?: { label: string; text: string }[]; remote?: string }): Promise<BranchPushResult> {
+export async function pushBranch(git: Git, root: string, o: { branch: string; tip: string; base: string; namesFile?: string | undefined; allowFile?: string; holdFile?: string; texts?: { label: string; text: string }[]; remote?: string }): Promise<BranchPushResult> {
   const to = o.remote ?? "origin";
   const remotes = await git(["remote"], root);
   if (!remotes.stdout.split("\n").includes(to)) return { state: "refused", why: `no remote named ${to}: nothing to publish to` };
@@ -110,7 +111,7 @@ export async function pushBranch(git: Git, root: string, o: { branch: string; ti
     if (!(await revParse(git, root, remote))) return { state: "refused", why: `${to}'s ${o.branch} (${remote.slice(0, 7)}) has commits this repository doesn't: someone pushed to it; never forced` };
     if (!(await isAncestor(git, root, remote, o.tip))) return { state: "refused", why: `${to}'s ${o.branch} (${remote.slice(0, 7)}) isn't in the tested commit's history: never forced` };
   }
-  const scan = await scanPublication(git, { repo: root, range: `${o.base}..${o.tip}`, namesFile: o.namesFile, ...(o.texts ? { texts: o.texts } : {}) });
+  const scan = await scanPublication(git, { repo: root, range: `${o.base}..${o.tip}`, namesFile: o.namesFile, ...(o.texts ? { texts: o.texts } : {}), ...(o.allowFile ? { allowed: allowedKeys(o.allowFile) } : {}) });
   if (!scan.ok) return { state: "refused", why: scan.why, hits: scan.hits };
   if (remote === o.tip) return { state: "pushed", sha: o.tip, from: remote };
   const r = await git(["push", "--porcelain", to, `${o.tip}:refs/heads/${o.branch}`], root, { timeoutMs: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...noBackgroundCleanupEnv() } });

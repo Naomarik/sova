@@ -1237,6 +1237,28 @@ describe("notes and picks", () => {
     }
   });
 
+  test("q9: a thread picking after every run's last look gets at most 2 reruns, then that run takes no more picks", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      k.repo.branch("feat/a", { "a.txt": "a\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      const refused: string[] = [];
+      // Each run, as it ends, gets one more pick it never saw (a new selection each time).
+      k.run.set(async () => {
+        const n = k.run.inputs.length;
+        await q.extend(entry.id, ["statecharts"], `pick ${n}`, [`s${n}`]).catch((err: Error) => refused.push(err.message));
+        return {};
+      });
+      await landed(k, entry.id);
+      assert.equal(k.run.inputs.length, 3, "the first run and two reruns, then it lands");
+      assert.equal(refused.length, 1);
+      assert.match(refused[0]!, /has already run again 2 times for picks added after its last look: this run takes no more picks/);
+    } finally {
+      await k.done();
+    }
+  });
+
   test("extend refuses a pick of a check that needs a selection when it names none, and adds nothing of that call", async () => {
     const group = { id: "integration-group", label: "Slow test group", run: ["true"], timeout: 60, rerun: false, requires: [], optional: true, needsSelect: true };
     const def = { ...DEF, merge: { ...DEF.merge!, checks: [...(DEF.merge!.checks as object[]), group] } } as typeof DEF;

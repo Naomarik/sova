@@ -347,6 +347,9 @@ export interface AddRequest {
 /** A pick as the queue tells picks apart: its check and its selection. */
 const pickKey = (p: { id: string; select?: string[] }): string => JSON.stringify([p.id, p.select ?? []]);
 
+/** How many times one entry's run goes again for picks that arrived after its last look before it takes no more (q9). */
+const LATE_RESTARTS_MAX = 2;
+
 interface Current {
   run: MergeRun;
   entry: string;
@@ -378,6 +381,8 @@ export class ProjectQueue {
   private q!: QueueFile;
   private readonly git: Git;
   private current: Current | null = null;
+  /** Per entry: how many runs went again for a pick after their last look (LATE_RESTARTS_MAX). */
+  private lateRestarts = new Map<string, number>();
   private chain: Promise<unknown> = Promise.resolve();
   private holdUntil = 0;
   /** The entry whose run started or that was cancelled last since the thread was last told the queue went idle
@@ -1941,7 +1946,9 @@ export class ProjectQueue {
         return c;
       });
       // q9: a pick while the entry's run checks is added to that run; one after the run's last look runs it again
-      // before anything lands (finish). Once the entry has landed it is final: refused above.
+      // before anything lands (finish). Once the entry has landed it is final: refused above. Bounded: after
+      // LATE_RESTARTS_MAX such reruns, the entry's run takes no more picks (never an endless rerun).
+      if (this.current?.entry === e.id && (this.lateRestarts.get(e.id) ?? 0) >= LATE_RESTARTS_MAX) throw new MergeFailure("invalid-request", `${e.branch}'s run has already run again ${LATE_RESTARTS_MAX} times for picks added after its last look: this run takes no more picks`);
       for (const c of found) {
         const id = c.id;
         e.picks = e.picks.filter((p) => !(p.id === id && JSON.stringify(p.select ?? []) === JSON.stringify(select ?? [])));
@@ -4870,6 +4877,7 @@ export class ProjectQueue {
         // run goes again from the start with it planned, at the front of the line (§app.merge-queue/picks).
         const missed = e.picks.filter((p) => !cur.seenPicks.has(pickKey(p)));
         if (missed.length) {
+          this.lateRestarts.set(e.id, (this.lateRestarts.get(e.id) ?? 0) + 1);
           run.verdict = "void";
           run.why = `${missed.map((p) => p.label).join(", ")} ${missed.length === 1 ? "was" : "were"} added after the run's last look for picks: running again with ${missed.length === 1 ? "it" : "them"} before anything lands`;
           this.store.writeRun(run);

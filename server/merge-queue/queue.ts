@@ -5122,7 +5122,7 @@ export class ProjectQueue {
     this.heldEvents?.flush();
     // q9: a pick that reached the queue after the run's last look for picks (while it ran, or while its tested tip
     // waited for Allow, Land Anyway or a resume) still runs before anything lands or is pushed: the run goes again from
-    // the start with it planned, at the front of the line (§app.merge-queue/picks). Every landing passes here.
+    // the start with it planned, at the front of the line. Every landing passes here.
     const missed = run.picksSeen ? e.picks.filter((p) => !run.picksSeen!.includes(pickKey(p))) : [];
     if (missed.length) {
       e.lateReruns = { commit: e.commit, count: this.lateRerunsOf(e) + 1 };

@@ -10,4 +10,4 @@ Otherwise:
 4. Run the noise check on master now (`references/noise.md`): later rounds are judged against it.
 5. Set the baseline beside the record. A test model that fails here and that none of the record's attempts ran is a new test model: its first cycle re-tests the recorded fixes that aren't in master, before any new idea (`phases/fix.md`).
 
-Report: the chart, the failure kinds by count, the noise you measured, and the first change you'd try (for a new test model: which recorded fixes come first). Then stop.
+Report: the chart, the failure kinds by count, and the noise you measured. Then stop. The outlook follows as for any round (`phases/score.md`, steps 7 and 8): is the bar reachable from here, and what round 1 should do (for a new test model: which recorded fixes come first). When every outlook says futile, ask as `phases/stop-rule.md` says.

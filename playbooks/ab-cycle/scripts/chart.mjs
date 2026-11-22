@@ -8,10 +8,11 @@
 // Higher is better everywhere: every number is the share of cases that passed, so 100% is the goal.
 // Under the table, Predicted vs observed: one row per candidate arm, what its fix was expected to fix
 // and to risk beside what it did (score.mjs total counts it). An arm that stated no prediction says so.
-import { writeFileSync } from "node:fs";
+// When the round before has an outlook (rounds/<n-1>/outlook.json), its expected gain beside what this round did.
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { args, campaign, die, modelText, readJson, slug } from "./lib.mjs";
-import { predictionTable, samplePredictionTable } from "./record-lib.mjs";
+import { gainTable, predictionTable, samplePredictionTable } from "./record-lib.mjs";
 
 const { pos, opt } = args();
 if (!pos[0] || (opt.round === undefined && !opt.sample)) die("usage: chart.mjs <campaign> --round <n> | --sample", 3);
@@ -90,6 +91,10 @@ const predicted = Object.entries(scores.arms)
   .filter(([, v]) => v.prediction)
   .map(([a, v]) => ({ arm: a, prediction: v.prediction }));
 if (predicted.length) parts.push(predictionTable(predicted, label));
+// What the round before's outlook expected this round to gain.
+const outlookAt = n > 0 ? join(K.round(n - 1), "outlook.json") : null;
+const outlooks = outlookAt && existsSync(outlookAt) ? readJson(outlookAt, null) : null;
+if (Array.isArray(outlooks) && outlooks.length) parts.push(gainTable(n - 1, outlooks, predicted));
 if (scores.best) parts.push(`Best this round: **${scores.best}** (${scores.arms[scores.best]?.all.rate}% over every test model).`);
 
 const md = parts.join("\n\n");

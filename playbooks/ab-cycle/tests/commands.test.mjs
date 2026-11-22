@@ -212,3 +212,49 @@ test("the commands refuse, and write nothing: a line repeating a case, a predict
   assert.equal(own.status, 3);
   assert.match(own.stderr, /arm A: .* is inside the campaign's own worktree, where the record is written/);
 });
+
+test("each round's outlook goes into the record one line per seat, a private one writing nothing; the next chart shows its expected gain; a campaign closes as baseline kept", () => {
+  const seats = [
+    { seat: "1", improve: "likely", lost: "Master reads the guide rule as optional", next: "Make reading the guide a condition of drawing", gain: "+2 cases", recommend: "cycle", needs: "none" },
+    { seat: "2", improve: "unlikely", lost: "The failures look like a limit of the model", next: "Shorten the description to its first rule", gain: "+10 points on pass rate", recommend: "cycle", needs: "tool-code" },
+  ];
+  put(join(campaign, "rounds", "0", "outlook.json"), seats);
+  const r = run("record", "outlook", campaign, "--round", "0");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /vis-demo\.jsonl: round 0's outlook of demo: 1 likely, cycle; 2 unlikely, cycle/);
+  const mine = () => lines().filter((l) => l.kind === "outlook");
+  assert.deepEqual(mine().map((l) => ({ ...l, date: "" })), [
+    { v: 1, kind: "outlook", date: "", campaign: "demo", round: 0, seat: "1", improve: "likely", lost: seats[0].lost, next: seats[0].next, gain: "+2 cases", recommend: "cycle" },
+    { v: 1, kind: "outlook", date: "", campaign: "demo", round: 0, seat: "2", improve: "unlikely", lost: seats[1].lost, next: seats[1].next, gain: "+10 points on pass rate", recommend: "cycle", needs: "tool-code" },
+  ]);
+  const again = run("record", "outlook", campaign, "--round", "0");
+  assert.equal(again.status, 3);
+  assert.match(again.stderr, /round 0's outlook of demo is already in the record \(2 lines\): --replace rewrites it/);
+
+  // One seat's free text names a case: nothing is written, the other seat's line neither.
+  const before = readFileSync(record, "utf8");
+  put(join(campaign, "rounds", "0", "outlook.json"), [{ ...seats[0], improve: "futile", recommend: "keep" }, { ...seats[1], next: "Fix it the way arrow-labels needs" }]);
+  const leak = run("record", "outlook", campaign, "--round", "0", "--replace");
+  assert.equal(leak.status, 1);
+  assert.match(leak.stderr, /round 0's outlook, seat 2 isn't written:\n {2}next holds a case id \(arrow-labels\)/);
+  assert.equal(readFileSync(record, "utf8"), before);
+  put(join(campaign, "rounds", "0", "outlook.json"), seats);
+
+  const chart = run("chart", campaign, "--round", "1");
+  assert.equal(chart.status, 0, chart.stderr);
+  assert.match(chart.stdout, /\*\*Predicted vs observed\*\*[\s\S]*\*\*Expected gain vs observed\*\* \(Round 0's outlook\)/);
+  assert.match(chart.stdout, /^\| 1 \| likely \| \+2 cases \| B \+1 case \(2 fixed, 1 broken\), \+20 points; C 0 cases \(0 fixed, 0 broken\), 0 points \|$/m);
+  assert.match(chart.stdout, /^\| 2 \| unlikely \| \+10 points on pass rate \| B /m);
+  assert.ok(!/Expected gain/.test(run("chart", campaign, "--round", "0").stdout), "Round 0 has no outlook before it");
+
+  const close = run("record", "close", campaign, "--verdict", "keep");
+  assert.equal(close.status, 0, close.stderr);
+  assert.match(close.stdout, /demo closed \(baseline kept\)/);
+  assert.equal(lines().at(-1).verdict, "keep");
+  const show = run("record", "show", "vis-demo", "--project", project);
+  assert.match(show.stdout, /^- demo · .* · baseline kept · 1 round · master at /m);
+  assert.match(show.stdout, /^### Outlooks$/m);
+  assert.match(show.stdout, /; last outlook: unlikely, run another cycle\.$/m);
+  assert.equal(run("record", "close", campaign, "--verdict", "parked").status, 3);
+  assert.equal(run("record", "check", "--campaign", campaign).status, 0);
+});

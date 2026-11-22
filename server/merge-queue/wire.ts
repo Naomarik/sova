@@ -781,7 +781,7 @@ export async function startMergeQueue(
       case "drafts-changed":
         return { kind: "drafts-changed", entry, ...(ev.names ? { names: ev.names } : {}), ...(ev.request ? { request: ev.request } : {}), ...base };
       case "fix":
-        return { kind: "fix", entry, request: ev.request ?? "", asked: ev.asked ?? "", ...(ev.fixCommit ? { commit: ev.fixCommit } : {}), ...(ev.drafts ? { drafts: true } : {}), ...(ev.summary ? { summary: ev.summary } : {}), ...base };
+        return { kind: "fix", entry, request: ev.request ?? "", asked: ev.asked ?? "", ...(ev.fixCommit ? { commit: ev.fixCommit } : {}), ...(ev.drafts ? { drafts: true } : {}), ...(ev.summary ? { summary: ev.summary } : {}), ...(ev.by ? { by: ev.by } : {}), ...base };
       case "chat-answer":
         return { kind: "chat-answer", entry, request: ev.request ?? "", answer: ev.answer ?? "cant", text: ev.text ?? "", ...(ev.otherTried ? { otherTried: true } : {}) };
       default:

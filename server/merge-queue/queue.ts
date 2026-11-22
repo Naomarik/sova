@@ -16,6 +16,7 @@ import {
   type MergeAnswer,
   type MergeApproval,
   type MergeChatAnswer,
+  type MergeReviewRecord,
   type MergeChatRequest,
   type MergeRequestKind,
   type MergeStanding,
@@ -40,6 +41,7 @@ import {
   type PauseKind,
   type PushState,
   type ReviewFinding,
+  type ReviewKitStamp,
   type ReviewVerdict,
   type RunRules,
   type RunStep,
@@ -68,7 +70,7 @@ import { FlakyStore } from "./flaky";
 import { healthOf, historyPage } from "./health";
 import type { MergeHistoryPage, MergeQueueHealth } from "../../shared/merge-queue-health";
 import { deliverReview } from "./review-step";
-import { applyReviewEvent, openReview, reportText, reviewNoteText, reviewRecord, type ReviewEvent } from "./review-record";
+import { applyReviewEvent, openReview, reportText, reviewerFixText, reviewNoteText, reviewRecord, type ReviewEvent } from "./review-record";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { hasOrigin, publishGit, revertCommit, withdrawGit } from "./release-git";
@@ -89,7 +91,8 @@ import { suggestLanding } from "./hosts/repo";
 // reviewKitDirAt and projectPlaybookRel read the old place too. Temporary (migrations/manifest.json: playbook-config-old-place).
 import { changeWords, editSettingsText, isEmptyChange, reviewKitDirAt, SettingsEditError } from "./settings-edit";
 import { projectPlaybookRel } from "./thread";
-import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
+import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, REVIEW_FIX_REFS, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
+import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { commitResolution } from "./resolve-content";
 import { dropRunDrafts } from "./run-logs";
 import { isTestCheck, uncoveredPicks } from "./checks";
@@ -2218,6 +2221,82 @@ export class ProjectQueue {
     }
   }
 
+  /**
+   * The run's reviewer fixed its own blocking findings (merge.reviewFixes, §app.merge-queue/review-kit): its commit goes
+   * on the branch, then the same way as a chat's Fixed answer to the review's request: one try counted, the merge thread
+   * checks that it changes only what the findings asked (merge.rule checked), Land's checks run on it, and the approval
+   * is re-pinned at it with no new Land (fixRuling, requeueFix). The chat is told, as a request already answered. False,
+   * nothing changed, when the fix can't go on the branch (it moved, its folder has uncommitted files): the review then
+   * goes to the thread and the chat as any blocking review does. The caller is inside serial.
+   */
+  private async reviewerFixed(e: Entry, run: MergeRun, rec: MergeReviewRecord, fix: string, why: string, report: string): Promise<boolean> {
+    const not = await this.putReviewFix(e, fix);
+    await this.dropReviewFix(e.id);
+    if (not) {
+      this.log(`the reviewer's fix ${fix.slice(0, 7)} didn't go on ${e.branch}: ${not}`);
+      this.record({ kind: "review", what: "fixed", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "review", sha: fix, why: `The reviewer's fix ${fix.slice(0, 7)} didn't go on ${e.branch} (${not}): its findings go to the chat as usual` });
+      delete rec.fix;
+      return false;
+    }
+    const fingerprint = this.failurePrint({ cause: "review", why, review: report }, run, rec.findings);
+    const t = this.countTry(e, fingerprint);
+    rec.try = t.tries;
+    rec.of = t.max;
+    rec.fix = { commit: fix };
+    const at = this.iso();
+    const summary = `the reviewer's own fix of its findings: commit ${fix.slice(0, 7)}`;
+    const req = this.addRequest(e, { kind: "fix", cause: "review", text: reviewerFixText(e, fix, report), try: t.tries, fingerprint });
+    // Asked when the run started: the reviewer's commits came after it, so none reads as work the queue never asked for.
+    req.at = run.startedAt;
+    const answer: MergeChatAnswer = { kind: "fixed", changed: "commit", commit: fix, summary, at, by: "reviewer" };
+    req.answer = answer;
+    rec.request = req.id;
+    this.reviewEvent(e, { kind: "handed" });
+    delete e.conflict;
+    delete e.conflictFiles;
+    e.state = "with-chat";
+    e.sentBackFor = "review";
+    e.reason = `${why}; the reviewer fixed it itself (${fix.slice(0, 7)}): the merge thread checks the fix`;
+    delete e.standing;
+    const base = await this.mergeBase(fix);
+    const told = this.wake("fix", e, run.id, { request: req.id, asked: report, fixCommit: fix, summary, by: "reviewer", ...(base ? { base } : {}) });
+    e.fix = { request: req.id, told, at };
+    this.setPhase(e, { phase: "waiting-thread", answer });
+    e.updatedAt = at;
+    this.save();
+    this.record({ kind: "review", what: "fixed", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "review", sha: fix, why: `The reviewer's fix ${fix.slice(0, 7)} is on ${e.branch} now: the merge thread checks it like a chat's fix` });
+    // The chat's branch (and its folder) moved: it is told, as a request it needn't answer.
+    this.deps.notify?.("request", e, { run, logDir: this.store.runDir(run.id), root: this.root, request: req });
+    this.armFixTimer();
+    return true;
+  }
+
+  /** Put the reviewer's fix on the branch: a fast-forward from the approved commit, in the folder that has the branch
+   *  checked out (clean only), else of the branch's ref alone. Null when done, else why not. */
+  private async putReviewFix(e: Entry, fix: string): Promise<string | null> {
+    const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
+    if (!tip) return `${e.branch} is gone`;
+    if (tip !== e.commit) return `${e.branch} moved to ${tip.slice(0, 7)} since the run started`;
+    if (!(await isAncestor(this.git, this.root, e.commit, fix))) return `the fix isn't on top of ${e.commit.slice(0, 7)}`;
+    const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === e.branch)?.path;
+    if (wt) {
+      const st = await this.git(statusArgs("--porcelain"), wt);
+      if (st.code !== 0) return `its folder ${wt} can't be read`;
+      const n = st.stdout.split("\n").filter(Boolean).length;
+      if (n) return `${n} uncommitted file${n === 1 ? "" : "s"} in its folder`;
+      const m = await this.git([...NO_BACKGROUND_CLEANUP, "merge", "--ff-only", "--quiet", fix], wt);
+      return m.code === 0 ? null : `git merge --ff-only failed: ${(m.stderr || m.stdout).trim().split("\n")[0] || `exit ${m.code}`}`;
+    }
+    const u = await this.git(["update-ref", `refs/heads/${e.branch}`, fix, e.commit], this.root);
+    return u.code === 0 ? null : `git update-ref failed: ${(u.stderr || u.stdout).trim().split("\n")[0] || `exit ${u.code}`}`;
+  }
+
+  /** The hidden ref that kept the reviewer's fix (run.ts) goes once the fix is on the branch, or not taken. */
+  private async dropReviewFix(entry: string): Promise<void> {
+    const ref = `${REVIEW_FIX_REFS}${entry}`;
+    if ((await this.git(["rev-parse", "--verify", "--quiet", ref], this.root)).code === 0) await this.git(["update-ref", "-d", ref], this.root);
+  }
+
   /** The entry's newest review record takes an event (review-record.ts): its card follows; the caller saves. */
   private reviewEvent(e: Entry, ev: ReviewEvent): void {
     applyReviewEvent(e, ev, this.iso());
@@ -2944,8 +3023,9 @@ export class ProjectQueue {
     if (drafts) e.approval.drafts = { hash: drafts.hash, names: drafts.names };
     else delete e.approval.drafts;
     delete e.approval.blocked;
+    const byReviewer = request ? (() => { const a = this.requestOf(request)?.request.answer; return a?.kind === "fixed" && a.by === "reviewer"; })() : false;
     const evidence = request && this.fixWhy?.request === request ? this.fixWhy : null;
-    if (request) e.approval.fixes = [...(e.approval.fixes ?? []), { request, ...(moved ? { commit } : {}), ...(drafts ? { drafts: drafts.hash } : {}), checkedAt: this.iso(), ...(evidence?.why ? { why: evidence.why } : {}), ...(evidence?.read.length ? { read: evidence.read } : {}) }];
+    if (request) e.approval.fixes = [...(e.approval.fixes ?? []), { request, ...(moved ? { commit } : {}), ...(drafts ? { drafts: drafts.hash } : {}), checkedAt: this.iso(), ...(evidence?.why ? { why: evidence.why } : {}), ...(evidence?.read.length ? { read: evidence.read } : {}), ...(byReviewer ? { by: "reviewer" as const } : {}) }];
     // A resolution of the old commit's conflict doesn't fit the new one: the next run judges afresh.
     if (moved) {
       delete e.conflict;
@@ -4179,6 +4259,10 @@ export class ProjectQueue {
         run.rules = structuredClone(r);
         persist();
       },
+      review: (stamp: ReviewKitStamp) => {
+        run.review = structuredClone(stamp);
+        persist();
+      },
     };
     // The target moving under a run voids it (the queue pauses and flags it).
     cur.watch = setInterval(() => {
@@ -4501,6 +4585,13 @@ export class ProjectQueue {
           const report = reportText(rec);
           // Its try would run out (the last one, or the same findings twice): it waits for the user, nothing to hand on.
           const waits = this.triesOut(e, this.failurePrint({ cause: "review", why, review: report }, run, rec.findings));
+          // The reviewer fixed it itself (merge.reviewFixes): its fix goes the way a chat's Fixed answer goes.
+          const fix = out.review?.fix?.commit;
+          if (fix && !waits && (await this.reviewerFixed(e, run, rec, fix, why, report))) {
+            this.kickSoon();
+            return;
+          }
+          if (fix) await this.dropReviewFix(e.id);
           if (waits) {
             this.sendBack(e, { cause: "review", why, runId: run.id, review: report });
             this.wake("review", e, run.id, { findings: report, waits });

@@ -77,7 +77,7 @@ export type ThreadEvent =
   /** The branch's spec drafts changed since the user's Land. */
   | { kind: "drafts-changed"; entry: ThreadEntry; names?: string[]; request?: string; base?: string }
   /** The branch's chat answered a request Fixed: check the fix changes only what was asked. */
-  | { kind: "fix"; entry: ThreadEntry; request: string; asked: string; commit?: string; drafts?: boolean; summary?: string; base?: string }
+  | { kind: "fix"; entry: ThreadEntry; request: string; asked: string; commit?: string; drafts?: boolean; summary?: string; base?: string; by?: "reviewer" }
   /** The branch's chat answered a request "Can't" or "Needs you". `otherTried`: the thread already tried another approach. */
   | { kind: "chat-answer"; entry: ThreadEntry; request: string; answer: "cant" | "needs-you"; text: string; otherTried?: boolean }
   | { kind: "paused"; why: string }
@@ -351,7 +351,9 @@ function eventBody(ev: ThreadEvent): string {
       const e = ev.entry;
       const what = [ev.commit ? `commit ${short(ev.commit)}` : "", ev.drafts ? "its spec drafts" : ""].filter(Boolean).join(" and ") || "its branch";
       return [
-        `Fix: entry ${e.id} · ${e.branch}'s chat answered request ${ev.request} Fixed, changing ${what}${ev.summary ? `: ${ev.summary}` : ""}.`,
+        ev.by === "reviewer"
+          ? `Fix: entry ${e.id} · the run's reviewer fixed its own blocking findings on ${e.branch} (request ${ev.request}), changing ${what}${ev.summary ? `: ${ev.summary}` : ""}. Check it exactly as you check a chat's fix.`
+          : `Fix: entry ${e.id} · ${e.branch}'s chat answered request ${ev.request} Fixed, changing ${what}${ev.summary ? `: ${ev.summary}` : ""}.`,
         `What was asked: ${ev.asked}`,
         `Check the fix (references/fixes.md)${ev.commit ? `: \`git range-diff ${ev.base ? short(ev.base) : e.target} ${short(e.commit)} ${short(ev.commit)}\` in the project (the branch as approved against the branch now, each against the target; \`git diff ${ev.base ? short(ev.base) : e.target}...${short(ev.commit)}\` is the whole branch now)` : ""}: does it change only what was asked, and does it decide nothing that is the user's? Then rule, in one call:`,
         `- only what was asked, and nothing of the user's decided: merge.rule {entry: "${e.id}", request: "${ev.request}", ruling: "checked"} — it goes back in line on the user's Land;`,

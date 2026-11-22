@@ -69,7 +69,7 @@ export type MergeRequestKind =
 
 /** The chat's answer to a request (merge.respond). */
 export type MergeChatAnswer =
-  | { kind: "fixed"; changed: "commit" | "drafts" | "both"; commit?: string; drafts?: { hash: string; names: string[] }; summary: string; at: string }
+  | { kind: "fixed"; changed: "commit" | "drafts" | "both"; commit?: string; drafts?: { hash: string; names: string[] }; summary: string; at: string; /** The run's reviewer made the fix itself (merge.reviewFixes), not the chat. */ by?: "reviewer" }
   | { kind: "needs-you"; question: string; options: string[]; at: string }
   | { kind: "cant"; why: string; at: string };
 
@@ -120,6 +120,8 @@ export interface MergeFix {
   commit?: string;
   drafts?: string;
   checkedAt: string;
+  /** The run's reviewer made it (merge.reviewFixes), not the chat. */
+  by?: "reviewer";
   /** The merge thread's reason for accepting it, and what it read before it did (runs, steps, files). */
   why?: string;
   read?: string[];
@@ -332,6 +334,46 @@ export interface ReviewVerdict {
   /** The merge commit it reviewed. */
   commit: string;
   at: string;
+  /** The kit it ran with and the model it ran on (§app.merge-queue/review-kit). */
+  kit?: ReviewKitStamp;
+  /** The reviewer fixed its blocking findings itself (merge.reviewFixes): its commit on top of the branch's. */
+  fix?: { commit: string };
+}
+
+/** What a review kit may declare in its PLAYBOOK.md frontmatter (§app.merge-queue/review-kit); absent: the default. */
+export interface ReviewKitDecl {
+  /** "provider/model": used when this computer has no review model picked for the project. */
+  model?: string;
+  thinking?: string;
+  /** Reviewers in turn, each a fresh chat (1..3; default 1). */
+  passes?: number;
+  /** One reviewer's limit, minutes (1..120; default 20). */
+  timeLimitMin?: number;
+  /** More than reading: "shell" (it then works in a folder of its own, never the merge copy). */
+  tools?: ReviewKitTool[];
+}
+export const REVIEW_KIT_TOOLS = ["shell"] as const;
+export type ReviewKitTool = (typeof REVIEW_KIT_TOOLS)[number];
+
+/** Which kit a review ran with, and on what: recorded on each verdict, review record and run. */
+export interface ReviewKitStamp {
+  /** The kit's folder, relative to the repository. */
+  path: string;
+  /** git's tree hash of that folder at the commit reviewed. */
+  hash: string;
+  /** The model the reviewer ran on ("provider/model"; absent: unknown) and its thinking. */
+  model?: string;
+  thinking?: string;
+  /** What the kit declared (absent: nothing, the default reviewer). */
+  decl?: ReviewKitDecl;
+  /** The project lets the reviewer fix what it finds (merge.reviewFixes). */
+  fixes?: true;
+  /** The branch changed its own review: the kit's files it changed against the target (git's status letter, path). */
+  changed?: { status: string; path: string }[];
+  /** The branch's kit gave its reviewer a shell the target's kit doesn't. */
+  shellByBranch?: true;
+  /** It ran read-only instead of with the shell or fixes asked for, and why (its sandbox couldn't be turned on). */
+  limited?: string;
 }
 
 /** Blame for a red run, earned the way the decisions say: a failure is the branch's only once the same check passes
@@ -498,6 +540,10 @@ export interface MergeReviewRecord {
   stoppedFor?: string;
   /** The request that carried it to the chat, once it went. */
   request?: string;
+  /** The kit it ran with and the model (§app.merge-queue/review-kit). */
+  kit?: ReviewKitStamp;
+  /** The reviewer fixed it itself: its commit, put on the branch. */
+  fix?: { commit: string };
   at: string;
   updatedAt: string;
 }
@@ -598,6 +644,8 @@ export interface MergeRun {
   plan?: RunPlan;
   /** What the run ran with: tool versions, what it reused, the settings in force. Filled in as the run goes. */
   ranWith?: RunRanWith;
+  /** The review kit the run's review ran with (§app.merge-queue/review-kit). */
+  review?: ReviewKitStamp;
 }
 
 /** The folder rules a run applied: read from the branch being landed, so a rule edit takes effect on its own landing. */
@@ -1626,7 +1674,8 @@ export function newerWords(n: number | undefined): string | null {
 /** The merge queue's own chats, by the profile Sova started them on (never by title): the project's merge
     thread and each run's reviewer. A rename, a move or a restart keeps the mark; any other chat has none. */
 export type QueueChatRole = "thread" | "reviewer";
-export const QUEUE_CHAT_PROFILES: Readonly<Record<string, QueueChatRole>> = { "merge-thread": "thread", "merge-reviewer": "reviewer" };
+/** Sova's queue chat profiles by role: the reviewer's three (read-only, with a shell, the fixer: review-kit.ts). */
+export const QUEUE_CHAT_PROFILES: Readonly<Record<string, QueueChatRole>> = { "merge-thread": "thread", "merge-reviewer": "reviewer", "merge-reviewer-shell": "reviewer", "merge-reviewer-fix": "reviewer" };
 export function queueChatRole(profile: { id?: string; source?: string; builtin?: boolean } | null | undefined): QueueChatRole | undefined {
   if (!profile || typeof profile.id !== "string") return undefined;
   const sova = profile.source === "sova" || (profile.source === undefined && profile.builtin === true);

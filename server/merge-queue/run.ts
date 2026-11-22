@@ -15,7 +15,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
-import type { CheckPick, MergeNote, ReviewVerdict, RunRules, RunStep, RunStepKind, StepResult } from "../../shared/merge-queue";
+import type { CheckPick, MergeNote, ReviewKitStamp, ReviewVerdict, RunRules, RunStep, RunStepKind, StepResult } from "../../shared/merge-queue";
 import type { ProjectDef, StepDecl } from "../../shared/project-contract";
 import { render } from "../../shared/project-contract";
 import { slotLayoutOf } from "../../shared/project-slots";
@@ -30,6 +30,9 @@ import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, firstOutputLi
 import type { RunHooks, RunInput, RunMerge, RunOutcome } from "./contract";
 import { assertCopyOutsideState, CopyRefused, fillLfs, fillSubmodules, gitOut, gitProc, mergeCopyPath, modulesOf, moveCopy, prepareCopy, runProc } from "./copy";
 import { reviewStep, type ReviewDeps } from "./review-step";
+import { kitChangedBy, kitDeclAt, kitDiff, kitHashAt, ownFolder, ownReviewWords, readKitDecl, reviewerFixIn, reviewerProfileOf } from "./review-kit";
+import { dropReviewCopy, makeScratchCopy, REVIEW_FIX_REFS } from "./scratch";
+import { realGit } from "./guard";
 import { removeReviewChange, reviewChangeDir, writeReviewChange } from "./review-change";
 import { conflictsBetween } from "./conflicts";
 import { branchRulesOf, ruleTriggers, withUnknown } from "./rules";
@@ -92,6 +95,11 @@ class Step {
     private readonly hooks: RunHooks,
   ) {}
   log = (chunk: string) => writeFileSync(this.file, chunk, { flag: "a" });
+  /** Change a running step's facts (its why), telling the screens. */
+  update(extra: Partial<RunStep>): void {
+    Object.assign(this.s, extra);
+    this.hooks.step({ ...this.s });
+  }
   /** Change an ended step's result (and detail) after the fact, keeping its time: a red check later found broken on
    *  the target reads skipped. */
   mark(result: StepResult, extra: Partial<RunStep> = {}): RunStep {
@@ -478,7 +486,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     }
     return added;
   };
-  const review = input.review ? startReview({ input, copy, tip, steps, deps, def }) : null;
+  const review = input.review ? startReview({ input, copy, tip, steps, deps, def, hooks }) : null;
   const finish = async (o: RunOutcome): Promise<RunOutcome> => {
     await review?.cancel();
     return o;
@@ -989,7 +997,7 @@ function reviewed(r: ReviewResult | null, o: RunOutcome): RunOutcome {
 
 type ReviewResult = { ok: true; verdict: ReviewVerdict } | { ok: false; why: string };
 
-function startReview(o: { input: RunInput; copy: string; tip: string; steps: Steps; deps: RunDeps; def: ProjectDef }): { result: Promise<ReviewResult>; settled: Promise<void>; cancel: () => Promise<void> } {
+function startReview(o: { input: RunInput; copy: string; tip: string; steps: Steps; deps: RunDeps; def: ProjectDef; hooks: RunHooks }): { result: Promise<ReviewResult>; settled: Promise<void>; cancel: () => Promise<void> } {
   const kit = o.def.merge?.review;
   const st = o.steps.start("review", "review", "Review", { why: kit ? `review kit ${kit}` : undefined });
   const ctl = new AbortController();
@@ -1001,18 +1009,79 @@ function startReview(o: { input: RunInput; copy: string; tip: string; steps: Ste
       st.end("skipped", { detail: kit ? `no review kit at ${kit} on ${o.input.project.target}` : "no review kit declared" });
       return { ok: true as const, verdict: { verdict: "ok" as const, commit: o.tip, at: now(), text: "no review kit" } };
     }
-    // The reviewer has no shell: Sova writes the change it reads, and removes it when the review ends.
+    // The branch's own kit (the merge copy is at the merged tip): what it declares, its hash, and whether the branch
+    // changed it (§app.merge-queue/review-kit).
+    const { decl, problems } = await readKitDecl(join(o.copy, kit));
+    for (const p of problems) st.log(`review kit: ${p} (left out)\n`);
+    const fixes = o.def.merge?.reviewFixes === true && !o.input.entry.release;
+    const changed = await kitChangedBy(o.copy, o.input.base, o.tip, kit);
+    // A shell the target's kit doesn't give: the branch gave it to its own reviewer, said as plainly.
+    const shellByBranch = !!changed.length && !!decl.tools?.includes("shell") && !(await kitDeclAt(o.copy, o.input.base, kit)).tools?.includes("shell");
+    const stamp: ReviewKitStamp = { path: kit, hash: (await kitHashAt(o.copy, o.tip, kit)) ?? "", ...(Object.keys(decl).length ? { decl } : {}), ...(fixes ? { fixes: true as const } : {}), ...(changed.length ? { changed } : {}), ...(shellByBranch ? { shellByBranch: true as const } : {}) };
+    if (changed.length) {
+      st.log(`${ownReviewWords(changed)}${shellByBranch ? "; this branch gave its reviewer a shell" : ""}\n${await kitDiff(o.copy, o.input.base, o.tip, kit)}\n`);
+      st.update({ why: `review kit ${kit}; ${ownReviewWords(changed)}${shellByBranch ? "; this branch gave its reviewer a shell" : ""}` });
+    }
+    o.hooks.review?.(stamp);
+    const event = (ev: { what: "started" | "kit-changed" | "fixed" | "verdict"; why: string; model?: string; sha?: string; verdict?: ReviewVerdict["verdict"] }) =>
+      (o.hooks as { event?: (e: import("../../shared/merge-queue").MergeEventInput) => void }).event?.({ kind: "review", by: "reviewer", step: "review", kit: stamp.hash, ...ev });
+    if (changed.length) event({ what: "kit-changed", why: `${ownReviewWords(changed)}${shellByBranch ? "; this branch gave its reviewer a shell" : ""}` });
+    // A reviewer that can run or write works in a folder of its own, never the merge copy the checks run in: at the
+    // tip, or at the branch's commit when it may fix (its commits there are its fix).
+    const own = ownFolder(decl, fixes) ? { at: fixes ? o.input.commit : o.tip, fixes } : undefined;
+    let folder = o.copy;
+    if (own) {
+      try {
+        folder = await makeScratchCopy(realGit, { root: o.input.project.root, entry: o.input.entry.id, base: own.at, kind: "review" });
+        st.log(`reviewer's own folder: ${folder} at ${own.at.slice(0, 12)}\n`);
+      } catch (err) {
+        const why = `couldn't make the reviewer's own folder: ${err instanceof Error ? err.message : String(err)}`;
+        st.end("failed", { detail: why });
+        return { ok: false as const, why };
+      }
+    }
+    // Sova writes the change it reads (a read-only reviewer has no shell), and removes it when the review ends.
     const changeDir = reviewChangeDir(o.input.runDir);
     let r: ReviewResult;
     try {
       const change = await writeReviewChange(o.copy, o.input.base, o.tip, changeDir, ctl.signal);
-      r = await reviewStep({ awaitReview: o.input.awaitReview, runId: o.input.runId, projectId: o.input.project.id, root: o.input.project.root, copy: o.copy, base: o.input.base, commit: o.tip, branch: o.input.entry.branch, kit, target: o.input.project.target, change, log: st.log, signal: ctl.signal }, o.deps);
+      const kitModel = decl.model || decl.thinking ? { ...(decl.model ? { model: decl.model } : {}), ...(decl.thinking ? { thinking: decl.thinking } : {}) } : undefined;
+      const step = await reviewStep(
+        { awaitReview: o.input.awaitReview, runId: o.input.runId, projectId: o.input.project.id, root: o.input.project.root, copy: folder, base: o.input.base, commit: o.tip, branch: o.input.entry.branch, kit, target: o.input.project.target, change, log: st.log, signal: ctl.signal, decl, profile: reviewerProfileOf(decl, fixes), ...(kitModel ? { kitModel } : {}), ...(own ? { own } : {}), ...(decl.tools?.includes("shell") || fixes ? { shell: true } : {}) },
+        o.deps,
+      );
+      if (step.ok) {
+        if (step.model) stamp.model = step.model;
+        if (step.thinking) stamp.thinking = step.thinking;
+        if (step.limited) stamp.limited = step.limited;
+        o.hooks.review?.(stamp);
+        event({ what: "started", why: `The review ran with kit ${kit} (${stamp.hash.slice(0, 7) || "no hash"})${stamp.model ? ` on ${stamp.model}` : ""}${decl.passes && decl.passes > 1 ? `, ${decl.passes} reviewers` : ""}${step.limited ? `; ${step.limited}` : ""}`, ...(stamp.model ? { model: stamp.model } : {}) });
+        let verdict: ReviewVerdict = { ...step.verdict, kit: structuredClone(stamp) };
+        // The fixer's commits on top of the branch's commit are its fix: taken with a blocking verdict only, pinned
+        // under a hidden ref until the queue puts it on the branch (its folder goes when the review ends).
+        if (own?.fixes && !step.limited) {
+          const fix = await reviewerFixIn(folder, o.input.commit);
+          if (fix && "none" in fix) st.log(`${fix.none}\n`);
+          else if (fix && verdict.verdict !== "blocking") st.log(`the reviewer committed ${fix.commit.slice(0, 7)} with a ${verdict.verdict} verdict: only a blocking verdict's fix is taken, so it was left out\n`);
+          else if (fix) {
+            const pin = await gitProc(o.input.project.root, ["update-ref", `${REVIEW_FIX_REFS}${o.input.entry.id}`, fix.commit]);
+            if (pin.code === 0) {
+              verdict = { ...verdict, fix };
+              event({ what: "fixed", why: `The reviewer fixed its blocking findings itself: commit ${fix.commit.slice(0, 7)}`, sha: fix.commit });
+              st.log(`the reviewer's fix: ${fix.commit}\n`);
+            } else st.log(`couldn't keep the reviewer's fix ${fix.commit.slice(0, 7)}: ${pin.out.trim().split("\n")[0]}\n`);
+          }
+        }
+        event({ what: "verdict", why: `The review's verdict: ${verdict.verdict}${verdict.summary ? `: ${clip(verdict.summary, 200)}` : ""}`, verdict: verdict.verdict, ...(stamp.model ? { model: stamp.model } : {}) });
+        r = { ok: true, verdict };
+      } else r = step;
     } catch (err) {
       r = { ok: false, why: `couldn't write the change for the reviewer: ${err instanceof Error ? err.message : String(err)}` };
     } finally {
       removeReviewChange(changeDir);
+      if (own) await dropReviewCopy(realGit, o.input.project.root, o.input.entry.id);
     }
-    if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.text ? `: ${clip(r.verdict.text, 200)}` : ""}` });
+    if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.fix ? ` (fixed by the reviewer: ${r.verdict.fix.commit.slice(0, 7)})` : ""}${r.verdict.text ? `: ${clip(r.verdict.text, 200)}` : ""}` });
     else st.end("failed", { detail: r.why });
     return r;
   })().finally(() => {

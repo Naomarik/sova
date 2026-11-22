@@ -96,6 +96,8 @@ export interface RunHooks {
   event?(ev: import("../../shared/merge-queue").MergeEventInput): void;
   /** What the run ran with, as it learns it (MergeRun.ranWith): merged into what the queue recorded at the start. */
   ranWith?(patch: Partial<import("../../shared/merge-queue").RunRanWith>): void;
+  /** The review kit the review runs with (§app.merge-queue/review-kit), once read, and again with the model it ran on. */
+  review?(stamp: import("../../shared/merge-queue").ReviewKitStamp): void;
 }
 
 export type RunOutcomeVerdict =
@@ -209,6 +211,8 @@ export interface ThreadEvent {
   fixCommit?: string;
   drafts?: boolean;
   summary?: string;
+  /** fix: the run's reviewer made it itself (merge.reviewFixes), not the chat. */
+  by?: "reviewer";
   /** drafts-changed: the drafts' names now. */
   names?: string[];
   /** chat-answer: which answer, its text, and whether the thread already tried another approach for it. */

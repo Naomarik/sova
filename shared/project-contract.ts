@@ -390,6 +390,10 @@ export interface MergeDecl {
   reuse?: boolean;
   /** Automatic cleanup deletes a landed branch as well as its folder (§chat.worktrees/retirement). Absent: false. */
   deleteBranches?: boolean;
+  /** The reviewer may fix what it finds itself (a shell and edit tools, in a folder of its own at the branch's commit):
+   *  its fix is committed on the branch and goes the way a chat's fix goes (the merge thread checks it, the checks run
+   *  again, the approval is re-pinned). Read from the target's definition only. Absent: false (a read-only reviewer). */
+  reviewFixes?: boolean;
   /** Folder rules: when one of `paths` changes, the run adds `check` (with `select`). Sova applies them itself at the
    *  start of each run, read from the branch being landed. Needs `checks` to be a list. */
   rules?: MergeRuleDecl[];
@@ -550,7 +554,7 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches", "rules", "remote", "squash", "reviewFixes"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches", "rules", "remote", "squash", "reviewFixes", "reviewFixes"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect", "perSelector", "cwd", "env", "report", "rerunTest"],
   mergeReport: [["junit"], ["tap"]],
   mergeRule: ["paths", "check", "select", "why"],
@@ -1045,6 +1049,11 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
   if (o.deleteBranches !== undefined) {
     if (typeof o.deleteBranches !== "boolean") throw new DefinitionError("$.merge.deleteBranches", "must be true or false");
     out.deleteBranches = o.deleteBranches;
+  }
+  if (o.reviewFixes !== undefined) {
+    if (typeof o.reviewFixes !== "boolean") throw new DefinitionError("$.merge.reviewFixes", "must be true or false");
+    if (o.reviewFixes && o.review === undefined) throw new DefinitionError("$.merge.reviewFixes", "needs a review kit (merge.review)");
+    out.reviewFixes = o.reviewFixes;
   }
   if (o.rules !== undefined) out.rules = mergeRules(o.rules, out.checks);
   if (o.remote !== undefined) {

@@ -4758,6 +4758,9 @@ export class ProjectQueue {
     this.noteBroken(run, cur.voidWhy ? { ...out, verdict: "void", broken: [] } : out);
     const e = this.entry(cur.entry);
     this.current = null;
+    // A reviewer's fix (its hidden ref, run.ts) is taken only from a run whose review flagged it as its outcome; any
+    // other end (a failed check, a void, a cancel) drops it, so none is left behind.
+    if (out.verdict !== "review-flagged" || cur.voidWhy || !e || e.state === "cancelled") await this.dropReviewFix(cur.entry);
     if (!e) {
       run.verdict = "void";
       this.store.writeRun(run);

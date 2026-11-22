@@ -1259,6 +1259,23 @@ describe("notes and picks", () => {
     }
   });
 
+  test("a reviewer's fix kept for a run that ends any other way than review-flagged (a check failed too) is dropped, never left behind", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      k.run.set(async (input) => {
+        sh(input.project.root, "update-ref", `refs/sova-mq/review-fix/${input.entry.id}`, input.commit);
+        return { verdict: "failed", blame: "branch", why: "unit failed" };
+      });
+      k.repo.branch("feat/a", { "a.txt": "a\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(entry.id)).state !== "checking" && (await k.entry(entry.id)).state !== "queued", "the run ended");
+      assert.equal(sh(k.repo.root, "for-each-ref", "refs/sova-mq/review-fix/"), "");
+    } finally {
+      await k.done();
+    }
+  });
+
   test("q9: a thread picking after every run's last look gets at most 2 reruns, then that run takes no more picks", async () => {
     const k = makeKit();
     try {

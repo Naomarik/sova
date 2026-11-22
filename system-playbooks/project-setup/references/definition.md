@@ -118,7 +118,8 @@ takes effect on its own landing (the run says "This branch changed its own rules
   that starts `TAP version` is read without one.
 - `rerunTest`: an argv appended to rerun one failing test by its name, holding `${test}`
   (`["-k", "${test}"]` for pytest, `["--test-name-pattern", "${test}"]` for node/bun). Without it a
-  rerun names files only.
+  rerun names files only. A rerun by name counts a test passed only when the check's report lists it as
+  run and passed (a JUnit or TAP case, or `passedTests` in `$SOVA_OUT`); otherwise it stays failing.
 
 **What a check sees.** It runs in the merge copy (cwd its root, or its `cwd`) with an allow-list environment:
 `PATH`, `HOME`, `USER`, `LANG`, `TZ`, `TMPDIR`, the XDG dirs, `MISE_*`, plus `SOVA_V`, `SOVA_SLOT`,
@@ -128,7 +129,7 @@ changed paths), `SOVA_MERGE_PICKED=1` when the thread picked it, `SOVA_OUT` and 
 **No secret and no chat variable reaches it**: a test that needs an API key reads it from a
 gitignored file a `setup` step copies from the main checkout, or it is not a landing check. A check
 writes its counts to `$SOVA_OUT` as JSON, `{"passed": n, "failed": n, "skipped"?: n | "<why>",
-"failures"?: [{name, message?, file?, line?}]}`; one with nothing to do for this change exits 0 and
+"failures"?: [{name, message?, file?, line?}], "passedTests"?: [name]}`; one with nothing to do for this change exits 0 and
 writes `{"passed": 0, "failed": 0, "skipped": "<why>"}` (a lint of changed files when none changed).
 Without a report only the exit counts.
 

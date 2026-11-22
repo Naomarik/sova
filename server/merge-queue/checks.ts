@@ -228,6 +228,9 @@ export interface CheckReport {
   /** Every failing test's name (uncapped, unique, as testKey reads it), for a runner that names tests but no file
    *  (Kaocha). */
   failingNames: string[];
+  /** Every test that ran and passed, by name in failingNames' form, when the report names passing tests (a JUnit or
+   *  TAP case, SOVA_OUT's `passedTests`); the proof a rerun by name ran the tests it named. */
+  passedNames?: string[];
   /** Each failing test as a rerun by name takes it (`test` the runner's bare name: a JUnit case's `name`, a TAP point's
    *  description, a SOVA_OUT failure's `name`), with its file when known; from a report that names tests. */
   failingTests?: { test: string; file?: string }[];
@@ -324,6 +327,7 @@ export function readCheckOut(file: string): CheckReport | null {
   const failingNames = [...new Set((Array.isArray(o.failures) ? o.failures : []).flatMap((f) => (f && typeof f === "object" && typeof (f as Record<string, unknown>).name === "string" && (f as Record<string, unknown>).name ? [testKey(String((f as Record<string, unknown>).name).slice(0, 500))] : [])).filter(Boolean))];
   const skippedWhy = typeof o.skipped === "string" && o.skipped ? o.skipped.slice(0, 300) : undefined;
   const ranFiles = Array.isArray(o.ranFiles) ? [...new Set(o.ranFiles.filter((f): f is string => typeof f === "string" && !!f))] : undefined;
+  const passedNames = Array.isArray(o.passedTests) ? [...new Set(o.passedTests.filter((f): f is string => typeof f === "string" && !!f).map((f) => testKey(f.slice(0, 500))))] : undefined;
   const reused = readReused(o.reused);
   return {
     passed: n(o.passed),
@@ -336,6 +340,7 @@ export function readCheckOut(file: string): CheckReport | null {
     failingNames,
     ...(failures.some((f) => f.name) ? { failingTests: failures.flatMap((f) => (f.name ? [{ test: f.name, ...(f.file ? { file: f.file } : {}) }] : [])) } : {}),
     ...(ranFiles ? { ranFiles } : {}),
+    ...(passedNames ? { passedNames } : {}),
     ...(reused ? { reused } : {}),
     notes: Array.isArray(o.notes) ? o.notes.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 300)).slice(0, 10) : [],
   };

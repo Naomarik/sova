@@ -665,7 +665,11 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const unrun = files.filter((f) => (ranTip ? !ranTip.includes(f) : !anyRan));
       // A whole or by-name rerun whose report says no test ran at all proves nothing either.
       const ranNothing = !files.length && ranNothingIn(r2.report);
-      if (r2.proc.code === 0 && !unrun.length && !ranNothing) {
+      // A rerun by name counts a test passed only when its report lists that test as one that ran and passed (a runner
+      // may take only the last of several name filters, or match none): any other name stays failing, never flaky.
+      const proof = tests.length ? new Set(r2.report?.passedNames ?? []) : null;
+      const unproven = proof ? names.filter((n) => !proof.has(n)) : [];
+      if (r2.proc.code === 0 && !unrun.length && !ranNothing && !unproven.length) {
         again.end("passed", { detail: "passes on a rerun: flaky" });
         const each = files.length ? files : names;
         flakySeen.push(...(each.length ? each.map(seenAs) : [{ check: check.id, label: check.label }]));
@@ -675,11 +679,12 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       if (names.length) {
         const n2 = idsOf(r2);
         // A rerun that fails naming nothing tells nothing apart: every name is still failing.
-        const stillN = n2.length ? names.filter((n) => n2.includes(n)) : names;
+        const stillN = proof ? names.filter((n) => n2.includes(n) || !proof.has(n)) : n2.length ? names.filter((n) => n2.includes(n)) : names;
         const flakyN = names.filter((n) => !stillN.includes(n));
         // Names the rerun alone fails are followed too (their flakiness can't be told from one run).
         const extra = n2.filter((n) => !names.includes(n));
-        again.end("failed", { detail: `${stillN.length} still failing${flakyN.length ? `, ${flakyN.length} passed` : ""}${extra.length ? `, ${extra.length} new` : ""}` });
+        const notShown = proof ? stillN.filter((x) => !n2.includes(x)).length : 0;
+        again.end("failed", { detail: `${stillN.length} still failing${notShown ? ` (${notShown} not shown run by the rerun)` : ""}${flakyN.length ? `, ${flakyN.length} passed` : ""}${extra.length ? `, ${extra.length} new` : ""}` });
         if (flakyN.length) blames.push({ id: check.id, label: check.label, files: flakyN.map((file) => ({ file, blame: "flaky" as const })) });
         flakySeen.push(...flakyN.map(seenAs));
         if (!stillN.length && !extra.length) continue;

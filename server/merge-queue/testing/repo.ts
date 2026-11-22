@@ -132,11 +132,14 @@ const argv = process.argv.slice(2);
 const sel = [];
 const byName = [];
 for (let i = 0; i < argv.length; i++) argv[i] === "--name" ? byName.push(argv[++i]) : sel.push(argv[i]);
+// unit.last-name at the root: only the last of several --name filters counts (as pytest's -k does).
+if (existsSync("unit.last-name")) byName.splice(0, byName.length - 1);
 const all = existsSync("tests") ? readdirSync("tests").filter((f) => f.endsWith(".txt")).sort().map((f) => "tests/" + f) : [];
 const files = (sel.length ? all.filter((f) => sel.includes(f)) : all).filter((f) => !byName.length || byName.includes(f.replace(/^tests\\//, "")));
 // unit.basename: a selector that names no repo path can't be loaded, as nasabii's test.bb errors on "handler_test.clj".
 if (existsSync("unit.basename") && sel.length && !files.length) { console.log("unit: could not locate " + sel.join(" ")); out({ passed: 0, failed: 0, errors: 1, skipped: 0, failures: [{ name: "test run", message: "could not locate " + sel.join(" ") }] }); log("fail"); process.exit(1); }
 const failures = [];
+const passedTests = [];
 let passed = 0;
 // "reused": a file that already passed on identical code (as Sova's runner reuses one), unless SOVA_FRESH=1.
 const reused = [];
@@ -163,10 +166,10 @@ for (const f of files) {
   const base = f.replace(/^tests\\//, "");
   const name = existsSync("unit.kaocha") ? "FAIL in (app.unit-test/" + base.replace(/\\.txt$/, "") + ") (unit_test.clj:" + readFileSync(f, "utf8").split("\\n").length + ")" : base;
   if (bad) { failures.push({ ...named, name, message: "expected pass, got " + c }); console.log("not ok " + f); }
-  else { passed++; console.log("ok " + f); }
+  else { passed++; passedTests.push(name); console.log("ok " + f); }
 }
 const at = "2026-11-05T14:02:00.000Z";
-out({ passed, failed: failures.length, errors: 0, skipped: 0, failures, ...(reused.length ? { reused: { files: reused.length, of: files.length, rechecked: 0, at, from: "feat/x's chat", list: reused.map((file) => ({ file, at, from: "feat/x's chat", run: "t_src" })) } } : {}) });
+out({ passed, failed: failures.length, errors: 0, skipped: 0, failures, passedTests, ...(reused.length ? { reused: { files: reused.length, of: files.length, rechecked: 0, at, from: "feat/x's chat", list: reused.map((file) => ({ file, at, from: "feat/x's chat", run: "t_src" })) } } : {}) });
 log(failures.length ? "fail" : "pass");
 process.exit(failures.length ? 1 : 0);
 `;

@@ -99,6 +99,16 @@ describe("narrow reruns", () => {
     expect(r.out.flaky).toEqual([{ check: "unit", label: "Unit tests", name: "a.txt", file: "tests/a.txt" }]);
   });
 
+  test("a rerun by name counts a test flaky only when its report shows that test ran and passed: a runner taking only the last name filter never lands the other", async () => {
+    // A runner that keeps only the last of its name filters.
+    const fx = fixture({ unit: { rerun: false, rerunTest: ["--name", "${test}"] }, files: { "unit.last-name": "1\n" } });
+    const r = await run(fx, fx.branch("two-red", { "tests/a.txt": "fail\n", "tests/b.txt": "flaky\n" }));
+    expect(r.steps.get("rerun-tip:unit")).toMatchObject({ result: "failed", detail: "1 still failing (1 not shown run by the rerun), 1 passed" });
+    expect(r.out.flaky).toEqual([{ check: "unit", label: "Unit tests", name: "b.txt", file: "tests/b.txt" }]);
+    expect(r.out.verdict).toBe("failed");
+    expect(r.out.blame).toBe("branch");
+  });
+
   test("a check that reruns by file reruns only the failing file; the flaky test is its file", async () => {
     const fx = fixture();
     const mark = fx.calls().length;

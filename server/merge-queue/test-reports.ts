@@ -259,6 +259,7 @@ export function reportOfCases(cases: readonly TestCase[], o: { cwd: string; copy
     failingNames: [...new Set(failed.map((x) => x.name.slice(0, 500)))],
     ...(failed.length ? { failingTests: failed.slice(0, 200).map((x) => ({ test: x.c.name.slice(0, 500), ...(x.file ? { file: x.file } : {}) })) } : {}),
     ...(allNamed ? { ranFiles: [...new Set(named.map((x) => x.file!))] } : {}),
+    passedNames: [...new Set(named.filter((x) => x.c.status === "passed").map((x) => x.name.slice(0, 500)))],
     notes: [`read from the ${o.format === "junit" ? "JUnit XML" : "TAP"} report`],
   };
 }

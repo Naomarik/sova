@@ -44,6 +44,35 @@ const EDITS: [string, Record<string, unknown>, SetupChange["stage"]][] = [
   ["reuse", { ...base, reuse: false }, "copy"],
 ];
 
+// Each field the screen draws for a check, and a definition edit that changes only it (id is the check itself: an
+// edit of it is a removal and an addition).
+const full = { ...unit, rerun: true, requires: [], needsSelect: true, perSelector: true, cwd: "web", report: { tap: "stdout" }, rerunTest: ["pnpm", "test", "-t", "${test}"] };
+const CHECK_FIELD_EDITS: Record<string, Record<string, unknown>> = {
+  label: { label: "Units" },
+  run: { run: ["pnpm", "vitest"] },
+  timeoutSec: { timeout: 1200 },
+  optional: { optional: true },
+  requires: { requires: ["db"] },
+  needsSelect: { needsSelect: false },
+  perSelector: { perSelector: false },
+  rerun: { rerun: false },
+  cwd: { cwd: "app" },
+  report: { report: { junit: "out.xml" } },
+  rerunByName: { rerunTest: undefined },
+};
+
+test("every field a check shows is a change when it changes", () => {
+  const first = { id: "typecheck", label: "Typecheck", run: ["tsc"], timeout: 60 };
+  const was = setupMapOf(def({ checks: [first, full] }), facts());
+  assert.deepEqual(Object.keys(CHECK_FIELD_EDITS).sort(), Object.keys(was.checks[1]!).filter((k) => k !== "id").sort(), "a field the map draws has no edit here");
+  for (const [field, edit] of Object.entries(CHECK_FIELD_EDITS)) {
+    const now = setupMapOf(def({ checks: [first, { ...full, ...edit }] }, field === "requires" ? { services: { db: { cmd: ["true"], ports: { http: { base: 4100 } } } } } : {}), facts());
+    const ch = setupChanges(was, now);
+    assert.equal(ch.length, 1, `${field}: ${JSON.stringify(ch)}`);
+    assert.equal(ch[0]!.tag, "change", field);
+  }
+});
+
 test("every edit shows as exactly one change, on the stage it touches", () => {
   const a = setupMapOf(def(base), facts());
   for (const [what, merge, stage] of EDITS) {

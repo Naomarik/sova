@@ -236,6 +236,10 @@ export function setupChanges(a: SetupMap, b: SetupMap): SetupChange[] {
     if ((was.cwd ?? "") !== (c.cwd ?? "")) diffs.push(`runs in ${was.cwd ?? "the root"} → ${c.cwd ?? "the root"}`);
     if (was.rerun !== c.rerun) diffs.push(c.rerun ? "failing tests now rerun narrowly" : "no narrow rerun");
     if (!!was.needsSelect !== !!c.needsSelect) diffs.push(c.needsSelect ? "a pick must now name its selection" : "a pick needs no selection");
+    if (!!was.perSelector !== !!c.perSelector) diffs.push(c.perSelector ? "now runs once per selection" : "no longer runs once per selection");
+    if (!!was.rerunByName !== !!c.rerunByName) diffs.push(c.rerunByName ? "a failing test now reruns by name" : "a failing test reruns with its file");
+    const report = (r: SetupCheck["report"]) => (r ? `${r.format} (${r.at})` : "none");
+    if (report(was.report) !== report(c.report)) diffs.push(`test report ${report(was.report)} → ${report(c.report)}`);
     if (words(was.requires) !== words(c.requires)) diffs.push(`services ${was.requires.join(", ") || "none"} → ${c.requires.join(", ") || "none"}`);
     if (diffs.length) out.push({ tag: "change", stage: "checks", name: `Check ${c.label}`, detail: diffs.join("; ") });
   }

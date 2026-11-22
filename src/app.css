@@ -2111,6 +2111,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .transcript-header .banner { flex-wrap: nowrap; min-width: 0; width: 100%; max-width: calc(var(--measure) + var(--space-9) - var(--space-6)); margin: 0 auto; }
 .transcript-header .banner-main { flex: 1 1 0; min-width: 0; }
 .transcript-header .banner-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* From 3 pairings they fold into one line; Show All opens them in a list under it, which scrolls once
+   the header passes about 40% of the pane. */
+.transcript-header:has(> .pair-list) { display: flex; flex-direction: column; max-height: 40%; }
+.pair-list { min-height: 0; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 
 /* A card head with a chip (a Paired queue batch) on a phone: the name gives way (ellipsis) so the
    chip and time stay in. */

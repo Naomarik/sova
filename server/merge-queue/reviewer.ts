@@ -139,18 +139,27 @@ export async function startMergeReviewer(request: AppRequest): Promise<void> {
   (t as { unref?: () => void }).unref?.();
 }
 
-/** Turn a reviewer chat's own sandbox on (raising it needs no click) and wait for it to be enforced: full or partial
- *  enforcement counts; anything else is why not. */
+/** What a reviewer chat's sandbox state means for a shell or a fix: only full enforcement confines it (an unattended
+ *  chat never runs on a partial one, as the sandbox's own unattended paths refuse it); null while it is still coming on. */
+export function confinedBy(info: { on: boolean; enforcement: string; status: string; starting?: true } | null): { ok: true; status: string } | { ok: false; why: string } | null {
+  if (info?.on && info.enforcement === "full") return { ok: true, status: info.status };
+  if (!info || info.starting) return null;
+  if (info.on === false) return { ok: false, why: info.status || "it stayed off" };
+  if (info.enforcement === "partial") return { ok: false, why: `its enforcement is only partial${info.status ? ` (${info.status})` : ""}` };
+  if (info.enforcement === "unavailable") return { ok: false, why: info.status || "nothing enforces it here" };
+  return null;
+}
+
+/** Turn a reviewer chat's own sandbox on (raising it needs no click) and wait for it to be enforced in full; anything
+ *  else is why not. */
 async function confineLive(path: string): Promise<{ ok: true; status: string } | { ok: false; why: string }> {
   const { acquireChatHandle } = await import("../chat-handle");
   const chat = await acquireChatHandle(path);
   const applied = await chat.applySandbox("on");
   if (applied.outcome === "unsupported") return { ok: false, why: "this runtime has no sandbox" };
   for (let i = 0; i < 40; i++) {
-    const info = await chat.sandboxInfo();
-    if (info?.on && (info.enforcement === "full" || info.enforcement === "partial")) return { ok: true, status: info.status };
-    if (info && !info.starting && info.on === false) return { ok: false, why: info.status || "it stayed off" };
-    if (info && !info.starting && info.enforcement === "unavailable") return { ok: false, why: info.status || "nothing enforces it here" };
+    const v = confinedBy(await chat.sandboxInfo());
+    if (v) return v;
     await new Promise((res) => setTimeout(res, 250));
   }
   return { ok: false, why: "it didn't come on within 10 s" };

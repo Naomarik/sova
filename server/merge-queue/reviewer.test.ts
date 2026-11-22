@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReviewerStart } from "./review-step";
-import { reviewerModel, reviewerStarter, reviewerTitle, sweepReviewers, type ReviewerDeps } from "./reviewer";
+import { confinedBy, reviewerModel, reviewerStarter, reviewerTitle, sweepReviewers, type ReviewerDeps } from "./reviewer";
 
 const o: ReviewerStart = {
   runId: "mr_7",
@@ -184,4 +184,13 @@ test("the reviewer's model: this computer's pick, else the kit's when usable her
   assert.deepEqual(await reviewerModel("/r", { model: "off/model" }, { picked: none, check }), { opening: null, ran: { model: "zai/glm-5.3", thinking: "low" } }, "a kit model turned off here: the default");
   assert.deepEqual(await reviewerModel("/r", { thinking: "xhigh" }, { picked: none, check }), { opening: { model: "zai/glm-5.3", thinking: "xhigh" }, ran: { model: "zai/glm-5.3", thinking: "xhigh" } }, "effort alone: the default model at it");
   assert.deepEqual(await reviewerModel("/r", undefined, { picked: none, check }), { opening: null, ran: { model: "zai/glm-5.3", thinking: "low" } });
+});
+
+test("a shell or fix reviewer's sandbox counts only in full: partial enforcement is a no (the read-only fallback), as for every unattended chat", () => {
+  assert.deepEqual(confinedBy({ on: true, enforcement: "full", status: "bwrap" }), { ok: true, status: "bwrap" });
+  assert.deepEqual(confinedBy({ on: true, enforcement: "partial", status: "no seccomp" }), { ok: false, why: "its enforcement is only partial (no seccomp)" });
+  assert.deepEqual(confinedBy({ on: false, enforcement: "none", status: "" }), { ok: false, why: "it stayed off" });
+  assert.deepEqual(confinedBy({ on: true, enforcement: "unavailable", status: "" }), { ok: false, why: "nothing enforces it here" });
+  assert.equal(confinedBy({ on: true, enforcement: "unavailable", status: "", starting: true }), null, "still coming on: wait");
+  assert.equal(confinedBy(null), null);
 });

@@ -8,10 +8,12 @@ import { servicesRoot } from "./store";
  * The restart limit, as Sova's server holds a systemd unit to it (§app.project-services/supervisor): 5 failures
  * in a row (a run that stayed up STABLE_RUN_SEC before it failed starts a fresh count), or HOURLY_LIMIT within
  * any hour. It counts from systemd's own facts (NRestarts, the last run's start and exit), never by sampling
- * the unit's state, so failures that come and go between two looks are each counted. Its record of each unit
- * (`<state root>/project-services/limits/<unit>.json`) holds the count and, once it gave up, the give-up: the
- * source of truth, since stopping a transient unit unloads it and systemd forgets it. The detached driver keeps
- * its own count in its unit records (drivers.ts).
+ * the unit's state, so failures that come and go between two looks are each counted. The count of each unit is
+ * kept in `<state root>/project-services/limits/<unit>.json` (rewritten as often as once a second during a loop,
+ * so not in the registry), so a server restart doesn't reset it. The give-up is kept in Sova's record of the copy
+ * (the registry's instance or shared record, `giveUps`; the engine writes it): the source of truth, since
+ * stopping a transient unit unloads it and systemd forgets it. The detached driver keeps its own count and
+ * give-up in its unit records (drivers.ts).
  */
 
 /** The watch's tick, and its tick while a unit fails or is in a try: each failure then seen on its own (RestartSec is 2 s). */
@@ -32,7 +34,7 @@ export interface LimitRecord {
   inRow: number;
   /** When its failures within the last hour happened (ms). */
   recent: number[];
-  /** Once the limit is reached: the give-up, kept until a start or down clears it. */
+  /** Once the limit is reached, for a unit no copy records: its give-up, kept until a start or down clears it. */
   giveUp?: GiveUpView;
 }
 
@@ -55,9 +57,11 @@ export interface Reached {
  * run systemd describes, its length known. The others ran unseen between the last look and the current run's
  * start: if they can't have lasted STABLE_RUN_SEC together they were quick, each counted in a row; if all but
  * the first can't, the first may have been slow and the rest count from it; else the last may have been slow
- * and the count starts afresh from it (never a give-up a slow service didn't earn). With no record, they
- * count in a row while the unit is failing or its current run is younger than STABLE_RUN_SEC (a loop under
- * way: a unit already over the limit gives up at once), else not at all.
+ * and the count starts afresh from it (never a give-up a slow service didn't earn). With no record (a unit
+ * from before the watch, or one whose systemd count was reset outside Sova), only what its facts prove
+ * counts: the failure it waits to restart after, never its earlier restarts, whose times are unknown (a unit
+ * that failed now and then over weeks never gives up at the first look); a loop under way is counted from
+ * that look on, a look a second while it fails.
  */
 export function assess(prev: LimitRecord | null, f: RestartFacts, now: number): { rec: LimitRecord; reached: Reached | null } {
   const R = RESTART_SEC * 1000;
@@ -72,13 +76,8 @@ export function assess(prev: LimitRecord | null, f: RestartFacts, now: number): 
     const unseen = k - (f.failing ? 1 : 0);
     const before = f.startAt ?? now;
     if (unseen > 0) {
-      if (r.runAt === null) {
-        // No record of an earlier look: a loop under way counts in a row.
-        if (f.failing || f.startAt === null || now - f.startAt < STABLE) {
-          r.inRow += unseen;
-          for (let i = 0; i < unseen; i++) r.recent.push(before - R);
-        } else r.inRow = 0;
-      } else {
+      // No record of an earlier look: when its earlier failures happened is unknown, so none of them counts.
+      if (r.runAt !== null) {
         // The unseen runs began after the last look's run started (after the look, when that run had already failed).
         const from = r.failing ? r.at : r.runAt;
         const firstAtLeast = r.failing ? 0 : Math.max(0, r.at - r.runAt);
@@ -112,6 +111,12 @@ export function assess(prev: LimitRecord | null, f: RestartFacts, now: number): 
         : null;
   return { rec: r, reached };
 }
+
+/** How long after a run starts the watch looks every LIMIT_BUSY_TICK_MS: a quick loop is then counted by Sova's own
+    rule before systemd's start limit, two seconds after its fifth failure, would stop it. */
+export const WATCH_START_MS = 15_000;
+/** Whether the watch's next look comes sooner: the unit is failing, in a try, or started a moment ago. */
+export const watchBusy = (rec: LimitRecord, f: RestartFacts, now: number): boolean => rec.inRow > 0 || f.failing || (f.startAt !== null && now - f.startAt < WATCH_START_MS);
 
 /** The try a unit is in or waits for while it is within the limit, from its failures in a row; none when it has none. */
 export const restartingOf = (inRow: number): RestartingView | undefined => (inRow > 0 && inRow < RESTART_BURST ? { try: inRow + 1, of: 5 } : undefined);

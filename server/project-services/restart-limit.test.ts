@@ -8,7 +8,7 @@ import { after, before, test } from "node:test";
 import { HOUR_MS, HOURLY_LIMIT, RESTART_BURST, STABLE_RUN_SEC, SystemdDriver, type RestartFacts } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
-import { assess, freshRecord, LIMIT_BUSY_TICK_MS, LIMIT_TICK_MS, limitsDir, readLimit, restartingOf, type LimitRecord, type Reached } from "./restart-limit";
+import { assess, freshRecord, LIMIT_BUSY_TICK_MS, LIMIT_TICK_MS, limitsDir, readLimit, restartingOf, watchBusy, type LimitRecord, type Reached } from "./restart-limit";
 import { readRegistry } from "./store";
 import { FakeSystemd, referenceCount, SimUnit, type SimLimits } from "./systemd-sim.test.helper";
 
@@ -61,7 +61,7 @@ const SCENARIOS: Scenario[] = [
   { name: "a server restart mid-count: the record carries it on", run: () => 4 * S, gap: [5 * S, 17 * S], expect: { rule: "in-a-row", tries: 5 } },
   { name: "systemd's own limit stops it while the server is down", run: quick, gap: [3 * S, 40 * S], expect: { rule: "system-limit", tries: 5 } },
   { name: "the old start limit, looping while the server is down", run: quick, limits: LEGACY, gap: [3 * S, 40 * S], expect: { rule: "in-a-row" } },
-  { name: "found looping at a server start, no record: gives up at once", run: quick, limits: LEGACY, record: "none", firstLook: 30 * S, expect: { rule: "in-a-row" } },
+  { name: "found looping at a server start, no record: counted from the first look, to exactly 5", run: quick, limits: LEGACY, record: "none", firstLook: 30 * S, expect: { rule: "in-a-row", tries: 5 } },
   { name: "found with no record, up and stable after old failures: no give-up", run: (n) => (n < 7 ? 400 : null), limits: LEGACY, record: "none", firstLook: 30 * 60 * S, expect: null },
 ];
 const PHASES = [0, 250, 500, 1_000, 1_700, 3_300, 9_900];
@@ -72,13 +72,10 @@ function watch(sc: Scenario, phase: number, counter: Counter = assess) {
   const u = new SimUnit(T0, sc.run, sc.limits);
   let rec: LimitRecord | null = sc.record === "none" ? null : freshRecord(T0);
   let t = T0 + (sc.firstLook ?? 0) + phase;
-  // Found with no record and up past the stable run: its earlier failures' times are unknowable, so none counts (a
-  // healthy service with old restarts is never given up on). Left out of the reference too, on purpose.
-  let since = Number.NEGATIVE_INFINITY;
-  if (sc.record === "none") {
-    const f = u.facts(t);
-    if (!f.failing && t - f.startAt! >= STABLE_RUN_SEC * S) since = f.startAt!;
-  }
+  // Found with no record: when its earlier failures happened is unknowable, so only those from the run it is in (or
+  // failed) at the first look on count: a service that failed now and then never gives up on old restarts. The
+  // reference leaves them out too, on purpose.
+  const since = sc.record === "none" ? u.facts(t).startAt! : Number.NEGATIVE_INFINITY;
   while (t <= T0 + 3 * HOUR_MS) {
     let busy = false;
     if (!sc.gap || t < T0 + sc.gap[0] || t >= T0 + sc.gap[1]) {
@@ -89,7 +86,7 @@ function watch(sc: Scenario, phase: number, counter: Counter = assess) {
       if (a.reached || ref.rule) return { at, got: a.reached, want: ref };
       if (a.rec.inRow !== ref.inRow || a.rec.recent.length !== ref.recent) return { at, differs: { got: [a.rec.inRow, a.rec.recent.length], want: [ref.inRow, ref.recent] } };
       rec = a.rec;
-      busy = a.rec.inRow > 0 || u.facts(t).failing;
+      busy = watchBusy(a.rec, u.facts(t), t);
     }
     t += busy ? LIMIT_BUSY_TICK_MS : LIMIT_TICK_MS;
   }
@@ -125,6 +122,20 @@ test("a counter that samples the unit's state instead misses failures between it
   assert.ok(misses.length > 0, "the rule check catches it");
 });
 
+test("no record (a unit from before the watch): its old restarts never count, only the failure its facts prove", () => {
+  const now = T0 + 30 * 24 * HOUR_MS;
+  // Flaky over weeks, 7 restarts, back up 10 s ago: nothing to give up on, no try shown.
+  const up = assess(null, { restarts: 7, failing: false, limitHit: false, startAt: now - 10 * S, exitAt: now - 12 * S, exit: 3, burst: 5 }, now);
+  assert.equal(up.reached, null);
+  assert.equal(restartingOf(up.rec.inRow), undefined);
+  // Failing now after days up: one failure, try 2 waited for.
+  const down = assess(null, { restarts: 7, failing: true, limitHit: false, startAt: now - 3 * 24 * HOUR_MS, exitAt: now - S, exit: 3, burst: 5 }, now);
+  assert.equal(down.reached, null);
+  assert.deepEqual(restartingOf(down.rec.inRow), { try: 2, of: 5 });
+  // Failing now after a quick run: still only the one it proves.
+  assert.equal(assess(null, { restarts: 40, failing: true, limitHit: false, startAt: now - 1_400, exitAt: now - S, exit: 3, burst: 5 }, now).rec.inRow, 1);
+});
+
 test("restarting: the try under way or waited for is the failures in a row plus 1, while within the limit", () => {
   assert.equal(restartingOf(0), undefined);
   for (let n = 1; n < RESTART_BURST; n++) assert.deepEqual(restartingOf(n), { try: n + 1, of: 5 });
@@ -157,10 +168,11 @@ before(() => {
 });
 after(() => rmSync(parent, { recursive: true, force: true }));
 
-/** Step the clock as the watch's timer would and look, until `done` or `max` looks. */
+/** Step the clock as the watch's timer would and look, until `done` or `max` looks; the first look comes soon, as after
+    a start (or the server's own start). */
 async function looks(e: ProjectEngine, done: (did: string[]) => boolean | Promise<boolean>, max = 200): Promise<string[]> {
   const all: string[] = [];
-  let busy = false;
+  let busy = true;
   for (let i = 0; i < max; i++) {
     await host.clock.sleep(busy ? LIMIT_BUSY_TICK_MS : LIMIT_TICK_MS);
     const t = await e.limitTick();
@@ -188,10 +200,14 @@ test("the watch gives up on a crash loop at its 5th failure in a row: status say
   const seen = new Set<string>();
   const did = await looks(engine, async (d) => {
     const s = await web();
-    if (s.restarting) seen.add(`try ${s.restarting.try} of ${s.restarting.of}`);
+    seen.add(`${s.state}${s.restarting ? `: try ${s.restarting.try} of ${s.restarting.of}` : ""}`);
     return d.length > 0;
   });
   assert.deepEqual(did, [`${unit}: ${GAVE_UP}`]);
+  // Between its tries `restarting`; while a try's run is up and serving, none.
+  assert.ok(seen.has("starting: try 5 of 5"), [...seen].join(", "));
+  assert.ok(seen.has("ready") && ![...seen].some((x) => x.startsWith("ready:")), [...seen].join(", "));
+  assert.ok(readRegistry().instances.find((i) => i.id === inst)!.giveUps?.web, "recorded in Sova's record of the copy");
   assert.equal(systemd.units.has(unit), false, "nothing of it left running: stopped and unloaded");
   const s = await web();
   assert.equal(s.state, "failed");
@@ -223,7 +239,7 @@ test("through a server restart: still failed, the startup pass leaves it failed 
   assert.equal(s.state, "ready");
   assert.equal(s.gaveUp, undefined);
   assert.equal(s.giveUp, undefined);
-  assert.equal(readLimit(unit)?.giveUp, undefined, "the give-up is cleared");
+  assert.equal(readRegistry().instances.find((i) => i.id === inst)!.giveUps, undefined, "the give-up is cleared");
   assert.equal(readLimit(unit)?.inRow, 0);
 });
 
@@ -243,6 +259,7 @@ test("down clears the give-up: stopped, and the startup pass leaves it stopped",
   assert.equal(s.state, "stopped");
   assert.equal(s.giveUp, undefined);
   assert.equal(existsSync(join(limitsDir(), `${unit}.json`)), false, "nothing of its count is kept");
+  assert.equal(readRegistry().instances.find((i) => i.id === inst)!.giveUps, undefined);
   assert.ok(!(await newEngine().reconcile()).some((d) => d.includes("web")), "nothing to start or leave");
 });
 
@@ -258,19 +275,28 @@ test("an apply restart is a fresh count", async () => {
   assert.equal((await web()).restarting, undefined);
 });
 
-test("a unit from before the watch (the old 10 s start limit), already looping at a server start, gives up at the first look; another state root's units are never touched", async () => {
+test("a unit from before the watch (the old 10 s start limit), already looping at a server start, is counted from the first look and gives up at exactly 5; another state root's units are never touched", async () => {
   assert.equal((await engine.run("down", { instance: inst }, op)).ok, true);
-  // Loaded as an older server left it: looping 0.4 s / 2 s under the old limit, which never trips; no record.
+  // Loaded as an older server left it: looping 0.4 s / 2 s under the old limit, which never trips; no count record.
   systemd.load(unit, new SimUnit(host.clock.now() - 30 * S, quick, LEGACY));
   const foreign = unit.replace(/^sova-svc-[0-9a-f]{6}-/, "sova-svc-ffffff-");
   systemd.load(foreign, new SimUnit(host.clock.now() - 30 * S, quick, LEGACY));
-  const reg = readRegistry().instances.find((i) => i.id === inst)!;
-  assert.equal(reg.desired.web, "stopped");
   engine = newEngine();
-  const t = await engine.limitTick();
-  assert.equal(t.did.length, 1, JSON.stringify(t.did));
-  assert.match(t.did[0]!, new RegExp(`^${unit}: failed \\d+ times in a row and stopped retrying; it waits to be started again$`));
+  const did = await looks(engine, (d) => d.length > 0, 30);
+  assert.deepEqual(did, [`${unit}: ${GAVE_UP}`]);
   assert.equal(systemd.units.has(unit), false);
   assert.equal(systemd.units.has(foreign), true, "another Sova's unit runs on");
   assert.ok(!systemd.calls.some((c) => c.some((a) => a.includes("ffffff"))), "never even read");
+});
+
+test("a unit from before the watch that failed now and then over weeks, back up 10 s ago: never given up on, no try shown", async () => {
+  assert.equal((await engine.run("down", { instance: inst }, op)).ok, true);
+  const DAY = 24 * HOUR_MS;
+  // Seven runs of a day each, each failing, then the eighth, up for good, started 10 s ago.
+  systemd.load(unit, new SimUnit(host.clock.now() - 7 * (DAY + 2 * S) - 10 * S, (n) => (n < 7 ? DAY : null), LEGACY));
+  assert.equal(systemd.units.get(unit)!.facts(host.clock.now()).restarts, 7);
+  engine = newEngine();
+  assert.deepEqual(await looks(engine, () => false, 20), []);
+  assert.equal(systemd.units.has(unit), true, "it runs on");
+  assert.equal(readLimit(unit)?.inRow, 0);
 });

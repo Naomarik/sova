@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { NO_BACKGROUND_CLEANUP, noBackgroundCleanupEnv } from "../git-no-background";
 import { type Git, isAncestor, revParse, statusArgs, worktreesOf } from "./guard";
+import type { ScanFacts } from "../../shared/merge-queue";
 
 /**
  * Moving the target, the only place the queue writes the project's repository outside its merge copy.
@@ -83,7 +84,11 @@ export async function firstParents(git: Git, root: string, from: string, to: str
 
 // ---- push ---------------------------------------------------------------------------------------
 
-export type PushResult = { state: "pushed"; sha: string } | { state: "not-pushed"; why: string; remote?: string } | { state: "no-remote"; why: string };
+export type PushResult = { state: "pushed"; sha: string } | { state: "not-pushed"; why: string; remote?: string; scan?: ScanFacts } | { state: "no-remote"; why: string };
+
+/** The scan right before a push (§app.merge-queue/names-step): what the remote lacks, `<remote>..<tip>` (null: the remote has
+ *  no such branch yet). Null: nothing found; otherwise the push is refused with its words and facts. */
+export type PushScan = (remote: string | null, tip: string) => Promise<null | { why: string; facts?: ScanFacts }>;
 
 /**
  * Push the target to the project's remote (origin, or merge.remote): fast-forward only (never forced), only when origin's target is an ancestor of the tip
@@ -96,7 +101,7 @@ export async function pushTip(
   root: string,
   target: string,
   tip: string,
-  opts: { landed: ReadonlySet<string>; push?: boolean; holdFile?: string; remote?: string },
+  opts: { landed: ReadonlySet<string>; push?: boolean; holdFile?: string; remote?: string; scan?: PushScan },
 ): Promise<PushResult> {
   if (opts.push === false) return { state: "not-pushed", why: "the project doesn't push from the queue" };
   const to = opts.remote ?? "origin";
@@ -120,6 +125,8 @@ export async function pushTip(
     const foreign = between.filter((c) => !opts.landed.has(c));
     if (foreign.length) return { state: "not-pushed", why: `${target} has ${foreign.length} commit${foreign.length === 1 ? "" : "s"} the queue didn't land (${foreign[0]!.slice(0, 7)}${foreign.length > 1 ? ", …" : ""}): a release or a hand commit is pushed by its own owner`, remote };
   }
+  const scanned = opts.scan ? await opts.scan(remote, tip) : null;
+  if (scanned) return { state: "not-pushed", why: scanned.why, ...(remote ? { remote } : {}), ...(scanned.facts ? { scan: scanned.facts } : {}) };
   const r = await git(["push", "--porcelain", to, `${tip}:refs/heads/${target}`], root, { timeoutMs: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...noBackgroundCleanupEnv() } });
   if (r.code !== 0) return { state: "not-pushed", why: `${to} refused the push: ${(r.stderr || r.stdout).trim().split("\n").filter((l) => !l.startsWith("To ")).slice(0, 2).join(" ")}`, ...(remote ? { remote } : {}) };
   return { state: "pushed", sha: tip };

@@ -113,6 +113,8 @@ interface Req {
   request?: string;
   drafts?: boolean;
   contents?: Record<string, string>;
+  /** merge.answer allow / merge.names allow: the scan's matches (ScanHit.key) to mark fine; none: every one shown. */
+  matches?: string[];
 }
 
 const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings" | "map"> = {
@@ -152,6 +154,7 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings" | "map
   request: "string",
   drafts: "boolean",
   contents: "map",
+  matches: "strings",
 };
 
 /** A string key's length limit. merge.review's `text` carries a whole review, whose own format bounds it below this
@@ -575,8 +578,8 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
     }
     case "merge.answer": {
       const a = need(req.answer, "answer");
-      if (!(MERGE_ANSWERS as readonly string[]).includes(a)) throw new MergeFailure("invalid-request", 'answer is "accept", "land-anyway", "try-again" or "land"');
-      const e = await q.answer(need(req.entry, "entry"), a as MergeAnswer, req.why);
+      if (!(MERGE_ANSWERS as readonly string[]).includes(a)) throw new MergeFailure("invalid-request", 'answer is "accept", "land-anyway", "try-again", "land", "allow", "send-back" or "ask-thread"');
+      const e = await q.answer(need(req.entry, "entry"), a as MergeAnswer, req.why, req.matches);
       return { changed: true, report: { entry: e, view: await viewOf() } };
     }
     case "merge.review": {
@@ -673,8 +676,16 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       return { changed: false, report: { test: r } };
     }
     case "merge.names": {
-      const action = need(req.action, 'action ("discover", "add" or "show")');
-      if (action !== "discover" && action !== "add" && action !== "show") throw new MergeFailure("invalid-request", '"action" is "discover", "add" or "show"');
+      const action = need(req.action, 'action ("discover", "add", "show", "none" or "allow")');
+      // §app.merge-queue/names-step: No private names and Allow are the user's own click (their page), never the merge
+      // thread's: a thread that could Allow could let a leak through.
+      if (action === "none" || action === "allow") {
+        if (caller.kind !== "operator") throw new MergeFailure("forbidden", `merge.names ${action} is the user's own click on their page, never the merge thread's`);
+        if (action === "none") return { changed: true, report: { names: { action, summary: `answered: no private names (${(await q.noPrivateNames()).file}); held pushes go now` } } };
+        const r = await q.allowPushHits(req.matches);
+        return { changed: true, report: { names: { action, summary: `${r.allowed} match${r.allowed === 1 ? "" : "es"} marked fine for this project; the held push is tried again`, count: r.allowed } } };
+      }
+      if (action !== "discover" && action !== "add" && action !== "show") throw new MergeFailure("invalid-request", '"action" is "discover", "add", "show", "none" or "allow"');
       if (action === "add" && !req.text?.trim()) throw new MergeFailure("invalid-request", "say the names to add (text: one `<kind>: <value>` per line)");
       if (!deps.names) throw new MergeFailure("unsupported", "this server runs no names step");
       return { changed: action !== "show", report: { names: await deps.names(q, action, req.text) } };

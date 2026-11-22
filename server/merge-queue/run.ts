@@ -36,6 +36,8 @@ import { dropReviewCopy, makeScratchCopy, REVIEW_FIX_REFS } from "./scratch";
 import { realGit } from "./guard";
 import { removeReviewChange, reviewChangeDir, writeReviewChange } from "./review-change";
 import { conflictsBetween } from "./conflicts";
+import { factsOf, runScan, SCAN_STEP_ID, SCAN_STEP_LABEL, scanDetail, scanResultOf } from "./names-step";
+import type { ScanResult } from "./publish-scan";
 import { branchRulesOf, ruleTriggers, withUnknown } from "./rules";
 
 export interface RunDeps extends ReviewDeps {
@@ -78,6 +80,8 @@ class Steps {
     private readonly hooks: RunHooks,
   ) {
     mkdirSync(join(dir, "logs"), { recursive: true });
+    // A later set of steps of the same run (the scan, after the run's outcome) numbers its logs after the ones there.
+    this.n = readdirSync(join(dir, "logs")).length;
   }
   start(id: string, kind: RunStepKind, label: string, extra: Partial<RunStep> = {}): Step {
     const file = `logs/${String(++this.n).padStart(2, "0")}-${id.replace(/[^A-Za-z0-9._+-]/g, "_")}.log`;
@@ -255,6 +259,28 @@ export function engineServices(engine: { run: (verb: string, body: unknown, call
       },
     };
   };
+}
+
+/** The outcomes whose tip may land (Land Anyway lands an unattributed or flagged one): each gets the scan step. */
+const SCANNED: readonly RunOutcome["verdict"][] = ["passed", "unattributed", "review-flagged"];
+
+/**
+ * The run's last step, "Private names and secrets" (names-step.ts, §app.merge-queue/names-step), in every run whose
+ * landing pushes (RunInput.scan): what the landing adds, `<base>..<tip>` in the merge copy. It never changes the
+ * verdict: the queue holds a tip with hits from landing (queue.ts landTested).
+ */
+async function withScan(input: RunInput, hooks: RunHooks, o: RunOutcome): Promise<RunOutcome> {
+  if (!input.scan || !o.tip || !o.copy || !SCANNED.includes(o.verdict) || input.signal.aborted) return o;
+  const st = new Steps(input.runDir, hooks).start(SCAN_STEP_ID, "scan", SCAN_STEP_LABEL, { why: `what this landing adds (${short(input.base)}..${short(o.tip)}): private names and secrets, before anything is pushed` });
+  const r = await runScan(realGit, { copy: o.copy, base: input.base, tip: o.tip, ...(input.scan.namesFile ? { namesFile: input.scan.namesFile } : {}), allowFile: input.scan.allowFile }).catch((err): ScanResult => ({ ok: false, why: `the scan stopped: ${err instanceof Error ? err.message : String(err)}`, hits: [] }));
+  const facts = factsOf(r);
+  st.log(`range ${input.base}..${o.tip}\n`);
+  if (facts.state === "unanswered") st.log("no private names list yet: secrets only; the push waits for the names interview\n");
+  for (const h of facts.hits ?? []) st.log(`${h.where} · ${h.what}\n`);
+  if (facts.allowed) st.log(`${facts.allowed} match${facts.allowed === 1 ? "" : "es"} marked fine for this project, skipped\n`);
+  if (facts.state === "unreadable") st.log(`${facts.why ?? ""}\n`);
+  st.end(scanResultOf(facts), { detail: scanDetail(facts), scan: facts });
+  return { ...o, scan: facts };
 }
 
 /** engineServices over the server's own engine (server/project-services/routes.ts), loaded on first use. */

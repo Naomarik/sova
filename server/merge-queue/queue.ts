@@ -5,7 +5,7 @@ import { copyShapeOf } from "./copy";
 import { hostProblem } from "./host-sendback";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type LandHow,
   type CheckPick,
@@ -46,6 +46,8 @@ import {
   type RunRules,
   type RunStep,
   type SentBackFor,
+  type ScanFacts,
+  type ScanHit,
   type MergeHistoryRow,
   type MergeEventInput,
   type RunRanWith,
@@ -61,6 +63,8 @@ import { type BranchLeft, branchLanded, branchLeft, type LandingRecords, NO_LAND
 import type { GitRunner } from "../worktrees";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
 import { recordLandedDrafts } from "./landed-drafts";
+import { allowedKeys, allowFileOf, allowMatches, factsOf, hitLines, namesListEmpty, openHits, scanPlanned } from "./names-step";
+import { scanPublication } from "./publish-scan";
 import { type MergeNoticeKind, nothingToLandWords } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { cleanChoices, fingerprintOf, isRuling, resolveVerdict, RULING_TEXT_MAX, RULING_WAIT_MS, type Ruling, sendBackText } from "./rulings";
@@ -171,6 +175,9 @@ const ANSWERABLE: readonly string[] = ["with-chat", "queued", "checking"];
 export const FIX_RECHECK_MS = 60_000;
 /** A fix the merge thread was told of but hasn't ruled on is handed to it again after this long. */
 export const FIX_REWAKE_MS = 15 * 60_000;
+/** A fix or conflict that waited this long on the merge thread with no ruling: Sova starts a fresh thread for it; the
+ *  fresh one failing to start, or not answering in this long either, tells the user (§chat.merge-queue/thread-health). */
+export const THREAD_DEADLINE_MS = 15 * 60_000;
 
 /** A request telling the chat what still keeps its approved branch out of line (§app.merge-queue/approve, q7). */
 export function blockedText(e: Pick<MergeEntry, "branch" | "target" | "commit">, why: string): string {
@@ -232,6 +239,11 @@ export interface QueueDeps {
   fixOffer?: (o: { root: string; branch: string; worktree?: string; session?: string; shared: boolean }) => Promise<FixOffer>;
   /** The queue paused itself (every pause but the operator's own): its one notification for the user (wire.ts). */
   pausedSelf?: (p: PauseInfo, root: string) => void;
+  /** One notification for the user (wire.ts notifyOnce; its tag keeps it to one per cause): a push held by the scan,
+   *  a merge thread that isn't answering (§app.merge-queue/names-step, §chat.merge-queue/thread-health). */
+  alert?: (a: { title: string; body: string; tag: string }, root: string) => void;
+  /** The project's merge thread health record (thread.ts health): the fresh threads Sova started, and whether each did. */
+  threadHealth?: (root: string) => { restarts?: { at: number; ok: boolean; error?: string }[] } | null;
   /** Wake the merge thread; false: none was asked. */
   thread?: WakeThread;
   /** The chat that owns a branch, when the approval named none (Land on the Merge Queue tab); null: no known chat. */
@@ -882,7 +894,26 @@ export class ProjectQueue {
     // What retirement did here, as it last wrote it: no git (§chat.worktrees/retirement).
     // Switched off (../cleanup-switch.ts): the ledger only, never the saved list.
     const retirement = viewWhileOff(retirementViewOf(this.root, pendingWhileOff()));
-    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...this.trialFields(), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}), ...this.knownFields(), ...this.eventFields() };
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...this.trialFields(), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}), ...this.knownFields(), ...this.eventFields(), ...(await this.publishFields(v, thread, d.def)) };
+  }
+
+  /** §chat.merge-queue/thread-health and §app.merge-queue/names-step on the view: what waits on the merge thread and
+   *  since when, the names interview's state, and a held push's scan. */
+  private async publishFields(v: MergeQueueView, thread: MergeQueueView["thread"] | null, def: ProjectDef | null): Promise<Partial<MergeQueueView>> {
+    const out: Partial<MergeQueueView> = {};
+    if (this.q.heads.pushScan) v.heads.pushScan = structuredClone(this.q.heads.pushScan);
+    if (def?.merge?.push !== false && (await this.hasRemote(remoteOf(def)))) {
+      const n = this.names();
+      out.names = !n.exists ? "unanswered" : namesListEmpty(n.file) ? "none" : "answered";
+    }
+    if (thread && (thread.health || this.q.entries.some((e) => e.threadWait && !isFinal(e)))) {
+      const waits = this.q.entries.filter((e) => e.threadWait && !isFinal(e)).sort((a, b) => a.threadWait!.since.localeCompare(b.threadWait!.since));
+      const w = waits[0];
+      const h = thread.health ?? { state: "ok" as const, deadlineMin: THREAD_DEADLINE_MS / 60_000, failures: [], restarts: [] };
+      const state = waits.some((e) => e.threadWait!.notified || e.threadWait!.fresh?.ok === false) ? "failed" : waits.some((e) => e.threadWait!.fresh) ? "slow" : w ? "waiting" : "ok";
+      out.thread = { ...thread, health: { ...h, state, ...(w ? { waiting: { what: w.threadWait!.what, since: w.threadWait!.since, entry: w.id, branch: w.branch } } : {}) } };
+    }
+    return out;
   }
 
   /**
@@ -2563,10 +2594,12 @@ export class ProjectQueue {
 
   /** The user's click on a decision (merge.answer, their own click only): Accept, Land Anyway, Try Again or Land.
    *  Remove from Queue is merge.cancel. Nothing goes to the chat. */
-  answer(entryId: string, answer: MergeAnswer, why?: string): Promise<MergeEntry> {
+  answer(entryId: string, answer: MergeAnswer, why?: string, matches?: readonly string[]): Promise<MergeEntry> {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
       void why;
+      // Allow, Send Back and Ask the Merge Thread answer only the scan's private names (Send Back is retired elsewhere).
+      if ((answer === "allow" || answer === "send-back" || answer === "ask-thread") && e.decision?.kind === "private-names") return this.answerNames(e, answer, matches);
       if (answer === "accept") {
         if (e.state !== "behaviour-differs") throw new MergeFailure("invalid-request", `Accept answers a conflict whose sides differ; ${e.branch} is ${e.state}`);
         if (!e.conflict?.commit) throw new MergeFailure("invalid-request", "there is no proposed resolution to accept: answer in the branch's chat, or Remove from Queue");
@@ -2633,7 +2666,123 @@ export class ProjectQueue {
         }
         return e;
       }
-      throw new MergeFailure("invalid-request", 'answer is "accept", "land-anyway", "try-again" or "land"');
+      throw new MergeFailure("invalid-request", answer === "allow" || answer === "send-back" || answer === "ask-thread" ? `answer is "accept", "land-anyway", "try-again" or "land" here: ${answer} answers only the scan's private names, and ${e.branch} is ${e.state}` : 'answer is "accept", "land-anyway", "try-again", "land", "allow", "send-back" or "ask-thread"');
+    });
+  }
+
+  // ---- §app.merge-queue/names-step: the "Private names and secrets" step ---------------------------------------
+
+  /** The run input's scan, when this landing pushes (the plan reads the same: names-step.ts scanPlanned). */
+  private async scanInput(e: Entry, def: ProjectDef | null): Promise<Pick<RunInput, "scan">> {
+    if (e.release) return {};
+    const hasRemote = await this.hasRemote(remoteOf(def));
+    if (!scanPlanned({ def, how: approvalHow(e.approval), hasRemote }).run) return {};
+    const names = this.names();
+    return { scan: { ...(names.exists ? { namesFile: names.file } : {}), allowFile: allowFileOf(this.store.dir) } };
+  }
+
+  /** A tested tip with hits: it waits for the user (Allow / Send Back / Ask the Merge Thread); the line moves on. */
+  private holdForNames(e: Entry, run: MergeRun, hits: readonly ScanHit[]): void {
+    run.verdict = "waiting";
+    run.why = `the scan before pushing found ${hits.length} thing${hits.length === 1 ? "" : "s"} that look private`;
+    this.store.writeRun(run);
+    const question = [`${e.branch} passed its checks, but the scan before pushing found ${hits.length} thing${hits.length === 1 ? "" : "s"} that look like private names or secrets:`, ...hitLines(hits, 6), "Allow (they're fine for this project), send it back to its chat to remove them, or ask the merge thread which names they are?"].join("\n");
+    this.raiseDecision(e, { kind: "private-names", question, choices: [], raisedBy: "queue", actions: ["allow", "send-back", "ask-thread"], run: run.id }, "needs-user", run.why);
+    this.log(`${e.branch}: held for private names (${hits.length} hit${hits.length === 1 ? "" : "s"})`);
+    this.record({ kind: "names", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "hits", hits: hits.length, why: `${run.why}: it waits for the user (Allow, Send Back or Ask the Merge Thread)` });
+    this.kickSoon();
+  }
+
+  /** The user's Allow, Send Back or Ask the Merge Thread on a private-names decision (their own click only). */
+  private async answerNames(e: Entry, answer: "allow" | "send-back" | "ask-thread", matches?: readonly string[]): Promise<MergeEntry> {
+    const d = e.decision;
+    if (e.state !== "needs-user" || d?.kind !== "private-names" || d.answered) throw new MergeFailure("invalid-request", `${answer === "allow" ? "Allow" : answer === "send-back" ? "Send Back" : "Ask the Merge Thread"} answers the scan's private names; ${e.branch} is ${e.state}`);
+    const run = this.store.readRun(d.run ?? e.run ?? "");
+    if (!run) throw new MergeFailure("invalid-request", `the run that found them (${d.run ?? e.run ?? "?"}) is gone: remove it from the queue and land it again`);
+    const file = allowFileOf(this.store.dir);
+    const hits = openHits(run.steps, file);
+    if (answer === "ask-thread") {
+      const told = this.wake("names-hit", e, run.id, { hits: hitLines(hits, 50) });
+      if (!told) throw new MergeFailure("unsupported", "no merge thread runs for this project now: Allow or Send Back");
+      e.notes = e.notes.filter((n) => !(n.kind === "operator" && n.text.startsWith("You asked the merge thread")));
+      e.notes.push({ kind: "operator", text: "You asked the merge thread which private names the scan found: its answer comes in its chat.", at: this.iso() });
+      this.record({ kind: "names", by: "user", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "asked-thread", hits: hits.length, why: "You asked the merge thread which private names the scan found" });
+      e.updatedAt = this.iso();
+      this.save();
+      return e;
+    }
+    if (answer === "send-back") {
+      this.answerDecision(e, "send-back");
+      this.record({ kind: "names", by: "user", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "sent-back", hits: hits.length, why: "You sent it back to its chat to remove what looks private" });
+      this.sendBack(e, { cause: "names", why: `the scan before pushing found ${hits.length} thing${hits.length === 1 ? "" : "s"} that look private`, runId: run.id });
+      this.save();
+      this.kickSoon();
+      return e;
+    }
+    const chosen = matches?.length ? hits.filter((h) => matches.includes(h.key)) : hits;
+    if (matches?.length && !chosen.length) throw new MergeFailure("invalid-request", "none of those matches waits on this run: they were allowed already, or belong to another");
+    allowMatches(file, chosen, { at: this.iso(), run: run.id, entry: e.id });
+    this.log(`${e.branch}: ${chosen.length} match${chosen.length === 1 ? "" : "es"} marked fine for this project`);
+    this.record({ kind: "names", by: "user", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "allowed", hits: chosen.length, why: `You marked ${chosen.length} match${chosen.length === 1 ? "" : "es"} fine for this project` });
+    const left = openHits(run.steps, file);
+    if (left.length) {
+      // Some still wait: the decision stays open, now naming only those.
+      e.decision = { ...d, question: [`${left.length} thing${left.length === 1 ? "" : "s"} that look private still wait:`, ...hitLines(left, 6), "Allow, send it back, or ask the merge thread?"].join("\n") };
+      e.updatedAt = this.iso();
+      this.save();
+      this.republish();
+      return e;
+    }
+    this.answerDecision(e, "allow");
+    delete e.reason;
+    // The tested tip lands only onto the target it was tested on; the line moved on meanwhile: rerun it first.
+    if (run.tip && !this.current && (await this.targetHead()) === run.base) {
+      run.verdict = "passed";
+      this.store.writeRun(run);
+      e.state = "checking";
+      e.updatedAt = this.iso();
+      this.save();
+      await this.landTested(e, run);
+    } else {
+      this.toFront(e);
+      this.save();
+      this.kickSoon();
+    }
+    return e;
+  }
+
+  /** merge.names {action: "none"}: the user's one-click answer to the interview, No private names (an empty list). */
+  noPrivateNames(): Promise<{ file: string }> {
+    return this.serial(async () => {
+      const n = this.names();
+      if (n.exists) throw new MergeFailure("invalid-request", "the private names were answered already: the merge thread's names step changes the list");
+      mkdirSync(dirname(n.file), { recursive: true });
+      writeFileSync(n.file, `${JSON.stringify({ v: 1, privateNames: [], answered: { by: "user", how: "no-private-names", at: this.iso() } }, null, 2)}\n`, { mode: 0o600 });
+      this.log("private names answered: none");
+      this.record({ kind: "names", by: "user", what: "no-names", why: "You answered No private names: held pushes go now" });
+      this.settingsChanged();
+      await this.pushHeld();
+      this.save();
+      return { file: n.file };
+    });
+  }
+
+  /** merge.names {action: "allow"}: the held push's hits marked fine (the user's own click), then the push is tried. */
+  allowPushHits(matches?: readonly string[]): Promise<{ allowed: number }> {
+    return this.serial(async () => {
+      const f = this.q.heads.pushScan;
+      const file = allowFileOf(this.store.dir);
+      const ok = allowedKeys(file);
+      const hits = (f?.hits ?? []).filter((h) => !ok.has(h.key));
+      if (!hits.length) throw new MergeFailure("invalid-request", "no scan holds the push now");
+      const chosen = matches?.length ? hits.filter((h) => matches.includes(h.key)) : hits;
+      if (!chosen.length) throw new MergeFailure("invalid-request", "none of those matches holds the push");
+      const n = allowMatches(file, chosen, { at: this.iso() });
+      if (chosen.length === hits.length) delete this.q.heads.pushScan;
+      else this.q.heads.pushScan = { ...f!, hits: hits.filter((h) => !chosen.includes(h)) };
+      this.save();
+      if (!this.q.heads.pushScan) await this.pushHeld();
+      return { allowed: n };
     });
   }
 
@@ -3111,6 +3260,80 @@ export class ProjectQueue {
     this.armFixTimer();
   }
 
+  /** Entries whose next wake starts a fresh merge thread (THREAD_DEADLINE_MS passed): why. */
+  private freshFor = new Map<string, string>();
+
+  /** What `e` waits on the merge thread for: its fix to be checked, or its conflict to be judged; null: nothing. */
+  private waitsOnThread(e: Entry): "fix" | "conflict" | null {
+    if (e.release || !e.approval.standing) return null;
+    if (e.state === "conflict") return "conflict";
+    if (e.state === "with-chat" && e.fix && e.fix.request !== CONFLICT_WAIT && e.standing?.phase === "waiting-thread") return "fix";
+    return null;
+  }
+
+  /**
+   * §chat.merge-queue/thread-health: a fix or conflict that waited THREAD_DEADLINE_MS on the merge thread gets a fresh
+   * thread (its wake below starts one: the old one is retired, "it didn't answer for 15 minutes"); a fresh one that
+   * couldn't start, or didn't answer within the deadline either, tells the user once. Nothing lands unchecked
+   * meanwhile, and a conflict never goes to the chat unjudged. True while something waits (the recheck keeps going).
+   * The caller saves.
+   */
+  private threadDeadline(e: Entry): boolean {
+    const what = this.waitsOnThread(e);
+    if (!what) {
+      if (e.threadWait) {
+        delete e.threadWait;
+        this.save();
+      }
+      return false;
+    }
+    const now = this.now();
+    if (!e.threadWait || e.threadWait.what !== what) {
+      e.threadWait = { what, since: e.fix?.at && what === "fix" ? e.fix.at : this.iso() };
+      this.save();
+    }
+    const tw = e.threadWait;
+    const mins = Math.round(THREAD_DEADLINE_MS / 60_000);
+    if (!tw.fresh && now - Date.parse(tw.since) >= THREAD_DEADLINE_MS) {
+      const why = `it didn't answer for ${mins} minutes (${e.branch}'s ${what === "fix" ? "fix" : "conflict"} waited on it)`;
+      tw.fresh = { at: this.iso() };
+      this.freshFor.set(e.id, why);
+      // Its wake goes again now, to a fresh thread: the fix below, or the conflict (waitForThread hands it over again).
+      if (what === "fix" && e.fix) e.fix = { ...e.fix, told: false, at: this.iso() };
+      if (what === "conflict") {
+        this.clearConflictTimer(e.id);
+        e.fix = { request: CONFLICT_WAIT, told: false, at: this.iso() };
+      }
+      this.log(`${e.branch}: the merge thread didn't answer for ${mins} minutes: a fresh thread is started`);
+      this.recordHealth(e, "fresh-thread", `${what === "fix" ? "Its fix" : "Its conflict"} waited ${mins} min on the merge thread with no ruling: Sova starts a fresh thread for it`, now - Date.parse(tw.since), what);
+      this.save();
+      return true;
+    }
+    if (tw.fresh && !tw.notified) {
+      const failed = (this.deps.threadHealth?.(this.root)?.restarts ?? []).find((r) => r.at >= Date.parse(tw.fresh!.at) && !r.ok);
+      if (failed) tw.fresh = { ...tw.fresh, ok: false, ...(failed.error ? { error: failed.error } : {}) };
+      const unanswered = now - Date.parse(tw.fresh.at) >= THREAD_DEADLINE_MS;
+      if (failed || unanswered) {
+        tw.notified = this.iso();
+        const head = failed ? `a fresh merge thread couldn't start (${failed.error ?? "unknown"})` : `a fresh merge thread didn't answer in ${mins} minutes either`;
+        this.log(`${e.branch}: ${head}; the user is told`);
+        this.recordHealth(e, failed ? "fresh-failed" : "fresh-unanswered", `${head}: the user is told; ${what === "fix" ? "the fix is never landed unchecked" : "the conflict never goes to the chat unjudged"}`, now - Date.parse(tw.since), what);
+        try {
+          this.deps.alert?.({ title: `The merge thread isn't answering · ${this.root.split("/").pop() ?? this.root}`, body: `${e.branch}'s ${what === "fix" ? "fix" : "conflict"} has waited ${Math.round((now - Date.parse(tw.since)) / 60_000)} min for the merge thread, and ${head}. ${what === "fix" ? "It is never landed unchecked" : "It never goes to the chat unjudged"}: Start Fresh on the Merge Queue tab.`, tag: `sova:merge-thread-down:${this.id}` }, this.root);
+        } catch (err) {
+          this.log(`thread notification failed: ${err instanceof Error ? err.message : err}`);
+        }
+        this.save();
+      }
+    }
+    return true;
+  }
+
+  /** A "thread-health" event (events-plan's record), when the event log is there. */
+  private recordHealth(e: Entry, what: "fresh-thread" | "fresh-failed" | "fresh-unanswered", why: string, waitedMs: number, waitingOn: "fix" | "conflict"): void {
+    this.record({ kind: "thread-health", by: "queue", entry: e.id, branch: e.branch, why, what, waitedMs, waitingOn });
+  }
+
   /** Look at the entries with their chats again now (tests; a thread that just started). */
   recheckNow(): Promise<void> {
     return this.serial(() => this.recheckWithChat());
@@ -3124,6 +3347,7 @@ export class ProjectQueue {
   private async recheckWithChat(): Promise<void> {
     let more = false;
     for (const e of this.q.entries) {
+      if (this.threadDeadline(e)) more = true;
       // A conflict's wait for the thread ends once the thread judged it (or it left the conflict state any other way).
       if (e.fix?.request === CONFLICT_WAIT && e.state !== "conflict") {
         delete e.fix;
@@ -3134,7 +3358,9 @@ export class ProjectQueue {
         more = true;
         if (e.fix.told) continue;
         const scratch = this.deps.thread ? await this.makeScratch(e, (await this.targetHead()) ?? e.commit) : {};
-        const told = this.wake("conflict", e, e.run, { files: e.conflictFiles ?? [], ...scratch });
+        const fresh = this.freshFor.get(e.id);
+        this.freshFor.delete(e.id);
+        const told = this.wake("conflict", e, e.run, { files: e.conflictFiles ?? [], ...scratch, ...(fresh ? { fresh } : {}) });
         if (told) {
           e.fix = { ...e.fix, told: true, at: this.iso() };
           this.save();
@@ -3163,7 +3389,9 @@ export class ProjectQueue {
         const a = r?.answer;
         if (r && a?.kind === "fixed") {
           const fixBase = a.commit ? await this.mergeBase(a.commit) : undefined;
-          e.fix.told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(a.commit ? { fixCommit: a.commit } : {}), ...(a.changed !== "commit" ? { drafts: true } : {}), summary: a.summary, ...(fixBase ? { base: fixBase } : {}) });
+          const fresh = this.freshFor.get(e.id);
+          this.freshFor.delete(e.id);
+          e.fix.told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(a.commit ? { fixCommit: a.commit } : {}), ...(a.changed !== "commit" ? { drafts: true } : {}), summary: a.summary, ...(fixBase ? { base: fixBase } : {}), ...(fresh ? { fresh } : {}) });
           if (e.fix.told) this.save();
         }
         continue;
@@ -4213,6 +4441,8 @@ export class ProjectQueue {
       ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}),
       ...(e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? { releaseChecks: structuredClone(this.q.release.checks) } : {}),
       ...(this.names().exists ? { namesFile: this.names().file } : {}),
+      // §app.merge-queue/names-step: a landing that pushes ends its run with "Private names and secrets".
+      ...(await this.scanInput(e, d.def)),
       review: d.review && !e.approval.withoutReview,
       // An empty merge copy when Clean Run asked for one, or the weekly one is due (clean-run.ts).
       ...(() => {
@@ -4701,6 +4931,8 @@ export class ProjectQueue {
 
   private armConflictTimer(e: Entry, run?: Pick<MergeRun, "id">): void {
     this.clearConflictTimer(e.id);
+    // The thread's deadline (threadDeadline) is watched by the recheck, from now on while the conflict waits.
+    this.armFixTimer();
     const ms = this.deps.conflictWaitMs ?? 20 * 60_000;
     const t = setTimeout(() => {
       this.conflictTimers.delete(e.id);
@@ -4774,6 +5006,9 @@ export class ProjectQueue {
   async landTested(e: Entry, run: MergeRun): Promise<void> {
     // Landing by request or by push (al_3): the target never moves here; the tested work is published instead.
     if (publishes(approvalHow(e.approval))) return this.landByRequest(e, run);
+    // Never a tip whose "Private names and secrets" step found something the user hasn't marked fine.
+    const hits = openHits(run.steps, allowFileOf(this.store.dir));
+    if (hits.length) return this.holdForNames(e, run, hits);
     const tip = run.tip!;
     const d = await this.declared();
     this.landing = true;
@@ -5206,7 +5441,22 @@ export class ProjectQueue {
     } else if (!names.exists && def?.merge?.push !== false && origin) {
       p = { state: "not-pushed", why: PUSH_HELD_NAMES };
       if (e) this.wake("names", e, undefined, { namesFile: names.file });
-    } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold"), remote });
+    } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold"), remote, scan: (at, to) => this.scanBeforePush(at, to) });
+    if (p.state === "not-pushed" && p.scan) {
+      // §app.merge-queue/names-step: the landings are in, their push waits for the user (Allow on the tab).
+      const first = !this.q.heads.pushScan;
+      this.q.heads.pushScan = p.scan;
+      if (first) {
+        this.log(`push held: the scan before pushing found ${p.scan.hits?.length ?? 0} thing(s) that look private`);
+        this.record({ kind: "names", by: "queue", ...(e ? { entry: e.id, branch: e.branch } : {}), step: "push", what: "push-scan-hit", hits: p.scan.hits?.length ?? 0, why: `${this.q.target} wasn't pushed: the scan before pushing found things that look private` });
+        if (e) this.wake("names-hit", e, undefined, { hits: hitLines(p.scan.hits ?? [], 50) });
+        try {
+          this.deps.alert?.({ title: `The merge queue needs you · ${this.root.split("/").pop() ?? this.root}`, body: `${this.q.target} wasn't pushed: the scan before pushing found ${p.scan.hits?.length ?? "some"} thing${p.scan.hits?.length === 1 ? "" : "s"} that look private. Allow them on the Merge Queue tab, or fix ${this.q.target}.`, tag: `sova:merge-push-scan:${this.id}` }, this.root);
+        } catch (err) {
+          this.log(`push scan notification failed: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    } else if (p.state === "pushed" || p.state === "no-remote") delete this.q.heads.pushScan;
     if (p.state === "pushed") {
       this.q.heads.pushed = tip;
       delete this.q.heads.pushWhy;
@@ -5222,6 +5472,16 @@ export class ProjectQueue {
       if (p.state === "not-pushed" && "remote" in p && p.remote) this.q.heads.pushed = p.remote;
     }
     this.save();
+  }
+
+  /** The scan right before a push: what the remote lacks (`<remote>..<tip>`), fail-closed. A remote without the branch
+   *  yet: each landing's own run scanned what it added (its "Private names and secrets" step). */
+  private async scanBeforePush(remote: string | null, tip: string): Promise<null | { why: string; facts?: ScanFacts }> {
+    if (!remote) return null;
+    const r = await scanPublication(this.git, { repo: this.root, range: `${remote}..${tip}`, namesFile: this.names().file, allowed: allowedKeys(allowFileOf(this.store.dir)) });
+    if (r.ok) return null;
+    const facts = factsOf(r);
+    return { why: r.why, ...(facts.state === "hits" ? { facts } : {}) };
   }
 
   /** A push held back earlier goes now if it can (resume, retry). */

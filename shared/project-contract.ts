@@ -117,7 +117,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
     type: "string",
     mergeOnly: true,
     tool: { name: "answer", description: "merge.respond (the branch's chat, answering a merge queue request by its id): fixed | needs-you | cant." },
-    cli: { flag: "answer", description: "merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant" },
+    cli: { flag: "answer", description: "merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant" },
   },
   { wire: "request", type: "string", mergeOnly: true, tool: { name: "request", description: "merge.respond / merge.rule: a merge queue request, by its id (rq_…, in the merge queue's note)." }, cli: { flag: "request", description: "A merge queue request id" } },
   { wire: "drafts", type: "boolean", mergeOnly: true, tool: { name: "drafts", description: "merge.respond with fixed: you changed the branch's spec drafts (that needs no commit)." }, cli: { flag: "drafts", description: "merge.respond: the fix changed spec drafts" } },
@@ -140,7 +140,9 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "requires", type: "list", mergeOnly: true, cli: { flag: "requires", description: "merge.setup: services that must start first, comma-separated" } },
   { wire: "dryRun", type: "boolean", mergeOnly: true, cli: { flag: "dry-run", description: "merge.setup: run the checks on the target in the merge copy, saving nothing" } },
   { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; merge.respond: what you changed (fixed), the question for your user (needs-you) or why you can't (cant); release.notes: the release notes, in full." }, cli: { flag: "text", description: "Text" } },
-  { wire: "action", type: "string", mergeOnly: true, tool: { name: "action", description: "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on." }, cli: { flag: "action", description: "merge.hold: set | clear" } },
+  { wire: "action", type: "string", mergeOnly: true, tool: { name: "action", description: "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on." }, cli: { flag: "action", description: "merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches)" } },
+  // The user's own click only (merge.answer allow, merge.names allow): on no agent's tool.
+  { wire: "matches", type: "list", mergeOnly: true, cli: { flag: "matches", description: "merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown)" } },
   { wire: "ask", type: "string", mergeOnly: true, tool: { name: "ask", description: "merge.reply (the user's page only): the merge thread's question the user answers, by its id (ak_…)." }, cli: { flag: "ask", description: "A merge thread question id" } },
   { wire: "contents", type: "map", mergeOnly: true, tool: { name: "contents", description: "merge.resolve, verdict no-behaviour-change only: each conflicted file's merged text, by its path in the repository; Sova merges the approved commit in the entry's scratch copy, writes these files and commits the resolution there. chat-fixes and needs-user carry none." } },
   // The release verbs' own keys (shared/release.ts). On no generic tool: the release chat's tool lists them.
@@ -167,7 +169,7 @@ export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy
   release: ["project", "release", "tag", "step", "state", "summary", "detail", "facts", "text", "commit", "why", "lines", "confirm", "dismiss"],
   instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
   deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
-  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask", "action", "request", "drafts", "ruling", "choices"],
+  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask", "action", "request", "drafts", "ruling", "choices", "matches"],
 };
 
 export const ERROR_CODES = [

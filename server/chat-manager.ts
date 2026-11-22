@@ -80,7 +80,7 @@ import { deeperContextExtension } from "./harness/pi/deeper-context";
 import { inProjectHere, skillDescentAllowed } from "./skill-descent";
 import { backgroundJobsExtension } from "./harness/pi/background-jobs";
 import { mcpExtension } from "./harness/pi/mcp";
-import { nothingDeclared } from "./mcp/folder";
+import { askedList } from "./mcp/folder";
 import { NO_MCP, normalizeChatList, type McpChatList } from "./mcp/list";
 import type { McpListAsk } from "./mcp/chat";
 import type { McpNote } from "../shared/mcp";
@@ -5189,7 +5189,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               mcpExtension({
                 label: () => titleOf(read.branch()),
                 list: async (cwd, sandboxOn) =>
-                  snap?.remove.includes("mcp") || nothingDeclared(cwd) ? NO_MCP : (chatHosts.mcpList ?? mcpListHere)({ path, cwd, sandboxOn, offMcp: loadout.data?.offMcp ?? [], onMcp: loadout.data?.onMcp ?? [] }),
+                  snap?.remove.includes("mcp") ? NO_MCP : askedList({ path, cwd, sandboxOn, offMcp: loadout.data?.offMcp ?? [], onMcp: loadout.data?.onMcp ?? [] }, chatHosts.mcpList ?? mcpListHere),
               }),
               // Its workers' and hidden chats' host (§app.chat-processes/workers).
               { name: "sova-worker-host", factory: workerHostExtension() },

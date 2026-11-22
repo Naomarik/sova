@@ -954,3 +954,41 @@ test("a chat's open names its steps in order, and its server hears them; a fast 
   assert.equal(logged.result.status, "fulfilled");
   assert.match(logged.lines.find((l) => l.includes(`${s.id}: started in`)) ?? "", /: started in \d+\.\d s \(answered after \d+\.\d s, ready after \d+\.\d s, opened after \d+\.\d s\)$/);
 });
+
+// An ask that needs the chat's handle is left for it (held by the link until the handle listens): the archive and
+// idle-stop tests above fail when the open swallows the asks a real chat makes as it opens.
+test("a chat's MCP list, asked while it opens, is answered before its open is, so no start waits on it; an ask that needs its handle isn't answered during the open", async () => {
+  // A chat process that asks the server for its MCP list and for its links during its open (session_start runs
+  // before `opened`, server/harness/pi/mcp.ts) and answers the open only once the list is answered or 2 s pass.
+  const answers: { method: string; frame: unknown }[] = [];
+  let t: ReturnType<typeof setup>;
+  t = setup({
+    deps: { openWaitMs: 5_000 },
+    wrap: () =>
+      (async (sock: string, opts: { build: string }) => {
+        const spec = [...t.driver.started].reverse().find((s) => s.env.SOVA_CHAT_SOCK === sock)!;
+        const [a, b] = pair(true);
+        const runtimeEnd = new Link(a as never, { log: quiet });
+        const link = new Link(b as never, { log: quiet });
+        made.links.push(runtimeEnd, link);
+        const hello = { t: "hello" as const, proto: CHAT_WIRE_PROTO, minProto: CHAT_WIRE_MIN_PROTO, epoch: 0, build: opts.build, pid: 4242, startedAt: 1, unit: spec.unit, sessionId: spec.env.SOVA_CHAT_ID!, path: spec.env.SOVA_CHAT_PATH!, state: "ready", seq: 0 };
+        const methods = new Map([["q1", "mcp.list"], ["q2", "special.runStart"]]);
+        runtimeEnd.on("answer", (f) => void answers.push({ method: methods.get(f.id) ?? f.id, frame: f }));
+        runtimeEnd.on("open", (f) => {
+          runtimeEnd.send({ t: "ask", id: "q1", method: "mcp.list", args: { path: f.path, cwd, sandboxOn: false, offMcp: [], onMcp: [] } });
+          runtimeEnd.send({ t: "ask", id: "q2", method: "special.runStart", args: { leafId: null } });
+          const until = Date.now() + 2_000;
+          const answerOpen = () => {
+            if (!answers.some((x) => x.method === "mcp.list") && Date.now() < until) return void setTimeout(answerOpen, 10);
+            runtimeEnd.send({ t: "opened", id: f.id, ok: false, error: { message: "scripted: the open ends here" } });
+          };
+          answerOpen();
+        });
+        return { link, hello };
+      }) as never,
+  });
+  const s = session();
+  await routerLog(() => t.router.acquire(s.path, false));
+  // A folder with no servers lists none: the server's own answer, as request() frames it.
+  assert.deepEqual(answers, [{ method: "mcp.list", frame: { t: "answer", id: "q1", ok: true, result: { v: 1, servers: [] } } }]);
+});

@@ -1109,7 +1109,8 @@ export class ProjectQueue {
     return rows;
   }
 
-  /** Whether the project has origin, and origin's copy of the target as last fetched (its remote-tracking ref; never a fetch). */
+  /** Whether the project has its remote, and the remote's copy of the target as last fetched (its remote-tracking ref;
+   *  never a fetch). The remote is origin unless the target's definition names another (merge.remote). */
   private async originFacts(): Promise<{ has: boolean; tracking: string | null }> {
     const remote = await this.remoteName();
     const has = await this.hasRemote(remote);
@@ -5384,7 +5385,7 @@ export class ProjectQueue {
         }
         if (e.state !== "requested" || !e.request?.number) continue;
         const ctx = await this.publishCtx(e.request.how);
-        const from = await revParse(this.git, this.root, `refs/remotes/origin/${this.q.target}`);
+        const from = await revParse(this.git, this.root, `refs/remotes/${ctx.remote ?? "origin"}/${this.q.target}`);
         const r = await pollRequest(ctx, { number: e.request.number, from });
         if (r.kind === "unknown") {
           this.log(`${e.branch}: the host couldn't be read: ${r.why}`);

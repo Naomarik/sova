@@ -121,4 +121,8 @@ export class SelectedDriver implements Driver {
     const s = await this.pending;
     await s.driver?.adopt?.();
   }
+  async restartFacts(units: string[]) {
+    const s = await this.pending;
+    return s.driver?.restartFacts ? s.driver.restartFacts(units) : null;
+  }
 }

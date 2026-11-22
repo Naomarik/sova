@@ -299,7 +299,7 @@ function RunningCopies() {
                                     </Show>
                                   </span>
                                   <span class="services-row-chip">
-                                    <Chip tone={copyChip(c.state, !!c.starting).tone}>{copyChip(c.state, !!c.starting).word}</Chip>
+                                    <Chip tone={copyChip(c.state, !!c.starting, !!c.gaveUp, !!c.restarting).tone}>{copyChip(c.state, !!c.starting, !!c.gaveUp, !!c.restarting).word}</Chip>
                                   </span>
                                   <span class="services-row-meta">
                                     <span>slot {c.slot}</span>

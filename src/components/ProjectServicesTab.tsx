@@ -23,6 +23,7 @@ import {
   doneLine,
   entryHref,
   entryTitle,
+  failedBlocks,
   gaveUp,
   httpHref,
   limitHint,
@@ -36,9 +37,11 @@ import {
   openEntry,
   portLabel,
   refusalLine,
+  restarting,
   rowVerbs,
   type RowVerb,
   SERVICE_CHIP,
+  START_AGAIN,
   SHARE_DAY_CHOICES,
   SHARE_SENSITIVE,
   endpointNotRunning,
@@ -698,7 +701,8 @@ export function ProjectServicesTab(props: {
  */
 function CopyRow(props: { copy: CopyView; why?: string; archived: boolean; said: string | null; verbs(v: RowVerb, quiet: boolean): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
   const c = () => props.copy;
-  const chip = () => copyChip(c().state, isStarting(c().state, c().services), gaveUp(c().services));
+  const chip = () => copyChip(c().state, isStarting(c().state, c().services), gaveUp(c().services), restarting(c().services));
+  const failed = () => failedBlocks(c().services);
   const entry = () => openEntry(c());
   const groups = () => verbGroups(props.archived ? archivedVerbs(rowVerbs(c())) : rowVerbs(c()), !!entry());
   const ported = () => c().services.filter((s) => Object.keys(s.ports).length);
@@ -728,6 +732,23 @@ function CopyRow(props: { copy: CopyView; why?: string; archived: boolean; said:
           </p>
         </Show>
         <Show when={c().state !== "stopped" && c().state !== "absent" && notReadyLine(c().services)}>{(line) => <p class="list-meta">{line()}</p>}</Show>
+        {/* What gave up retrying, how many times, its last try and log lines; Start (on the row) runs it again. */}
+        <Show when={failed().length}>
+          <div class="services-failed">
+            <For each={failed()}>
+              {(f) => (
+                <div class="services-failed-one">
+                  <p class="services-failed-head">{f.heading}</p>
+                  <p class="list-meta">{f.lastTry}</p>
+                  <Show when={f.lines.length}>
+                    <pre class="services-failed-lines" aria-label={`Last log lines of ${f.service}`}>{f.lines.join("\n")}</pre>
+                  </Show>
+                </div>
+              )}
+            </For>
+            <p class="list-meta">{START_AGAIN}</p>
+          </div>
+        </Show>
         <Show when={c().adopted}>{(unit) => <p class="list-meta">{adoptedLine(unit())}</p>}</Show>
         <Show when={props.said}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
       </div>

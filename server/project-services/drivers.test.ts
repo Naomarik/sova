@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DetachedDriver, parseShow, RESTART_BURST, RESTART_SEC, SLICE, STABLE_RUN_SEC, startLimitIntervalSec, sliceCgroupPath, SystemdDriver, systemdRunArgv, unitCgroupPids, userManagerCgroup, type Exec } from "./drivers";
+import { DetachedDriver, parseShow, parseShowMany, parseUsUtc, RESTART_BURST, RESTART_SEC, SLICE, STABLE_RUN_SEC, startLimitIntervalSec, sliceCgroupPath, SystemdDriver, systemdRunArgv, unitCgroupPids, userManagerCgroup, type Exec } from "./drivers";
 import type { ProcEntry, ProcTable } from "./proctable";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-drivers-"));
@@ -51,7 +51,26 @@ test("systemctl show parses into the unit's state", () => {
   const limit = parseShow("LoadState=loaded\nActiveState=failed\nSubState=failed\nMainPID=0\nExecMainStatus=3\nResult=start-limit-hit\n");
   assert.equal(limit.state, "failed");
   assert.equal(limit.gaveUp, true, "systemd's start limit: it gave up");
-  assert.match(limit.detail!, /start limit hit: 5 failed starts in a row/);
+  assert.equal(limit.detail, "stopped by the system limit after 5 tries; it waits to be started again");
+});
+
+test("systemctl show's restart facts: NRestarts, whether it is failing, the last run's times and exit, for one unit or several", () => {
+  const unit = (id: string, more: string) => `Id=${id}.service\nLoadState=loaded\n${more}\nStartLimitBurst=5\n`;
+  const text = [
+    unit("a", "ActiveState=activating\nSubState=auto-restart\nResult=exit-code\nNRestarts=3\nExecMainStatus=3\nExecMainCode=1\nExecMainStartTimestamp=Sun 2026-11-22 07:15:40.250000 UTC\nExecMainExitTimestamp=Sun 2026-11-22 07:15:40.650000 UTC"),
+    unit("b", "ActiveState=active\nSubState=running\nMainPID=9\nNRestarts=1\nExecMainStatus=9\nExecMainCode=2\nExecMainStartTimestamp=Sun 2026-11-22 07:15:42.650000 UTC\nExecMainExitTimestamp=Sun 2026-11-22 07:15:40.650000 UTC"),
+    unit("c", "ActiveState=failed\nSubState=failed\nResult=start-limit-hit\nNRestarts=5\nExecMainStatus=3\nExecMainCode=1\nExecMainStartTimestamp=Sun 2026-11-22 07:15:40.250000 UTC\nExecMainExitTimestamp="),
+    "Id=gone.service\nLoadState=not-found\nActiveState=inactive\nNRestarts=0\n",
+  ].join("\n");
+  const got = parseShowMany(text);
+  const at = (s: string) => Date.parse(`2026-11-22T07:15:${s}Z`);
+  assert.deepEqual(got.get("a")!.restarts, { restarts: 3, failing: true, limitHit: false, startAt: at("40.250"), exitAt: at("40.650"), exit: 3, burst: 5 });
+  assert.deepEqual(got.get("b")!.restarts, { restarts: 1, failing: false, limitHit: false, startAt: at("42.650"), exitAt: at("40.650"), exit: null, burst: 5 }, "a signal leaves no exit code");
+  assert.deepEqual([got.get("c")!.restarts!.failing, got.get("c")!.restarts!.limitHit, got.get("c")!.restarts!.exitAt], [true, true, null]);
+  assert.equal(got.get("gone")!.state, "missing");
+  assert.equal(parseUsUtc("Sun 2026-11-22 07:15:40 UTC"), at("40.000"));
+  assert.equal(parseUsUtc(""), null);
+  assert.equal(parseShow("LoadState=loaded\nActiveState=active\n").restarts, undefined, "no facts read, none made up");
 });
 
 test("the systemd driver only ever names its own unit, by argv", async () => {

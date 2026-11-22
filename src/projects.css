@@ -449,6 +449,24 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-port { color: var(--color-ink-muted); }
 .services-port a { color: var(--color-accent); }
 .services-said { margin: 0; }
+/* The failed block: what gave up retrying, its last try, its last log lines in mono, then how it runs again. */
+.services-failed { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.services-failed-one { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.services-failed-head { margin: 0; color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+.services-failed-lines {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.services-failed > .list-meta,
+.services-failed-one > .list-meta { margin: 0; white-space: normal; overflow-wrap: anywhere; }
 /* The sentences under a row (not ready, Runs as…, why Share is off) wrap; never cut. */
 .services-row-main > .list-meta,
 .services-row-share > .list-meta { margin: 0; white-space: normal; overflow-wrap: anywhere; }

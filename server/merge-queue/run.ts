@@ -85,7 +85,8 @@ class Steps {
   }
   start(id: string, kind: RunStepKind, label: string, extra: Partial<RunStep> = {}): Step {
     const file = `logs/${String(++this.n).padStart(2, "0")}-${id.replace(/[^A-Za-z0-9._+-]/g, "_")}.log`;
-    const step: RunStep = { id, kind, label, result: "running", startedAt: now(), ms: 0, log: file, ...extra };
+    const plan = planStepOf(id);
+    const step: RunStep = { id, kind, label, result: "running", startedAt: now(), ms: 0, log: file, ...(plan ? { plan } : {}), ...extra };
     writeFileSync(join(this.dir, file), `== ${label} (${id}) · ${step.startedAt}\n`);
     this.all.push(step);
     this.hooks.step({ ...step });
@@ -119,6 +120,15 @@ class Step {
     this.hooks.step({ ...this.s });
     return this.s;
   }
+}
+
+/** The plan step a rerun carries out (its check's, or the copy, setup or install step it repeats on the target alone);
+ *  undefined for a step that is its own plan step. */
+export function planStepOf(id: string): string | undefined {
+  const m = /^rerun-(?:tip|master):(.+)$/.exec(id);
+  if (!m) return undefined;
+  const rest = m[1]!;
+  return rest === "copy" || rest === "install" || rest === "services" || rest.startsWith("setup:") ? rest : `check:${rest}`;
 }
 
 /** The slot a merge copy's processes number their ports by: above every copy's and conformance's. */

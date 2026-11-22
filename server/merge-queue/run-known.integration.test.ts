@@ -88,6 +88,15 @@ describe("the plan and the run's own reading", () => {
 });
 
 describe("narrow reruns", () => {
+  test("every rerun step names the plan step it carries out: its check's, or the copy's and setup's on the target alone", async () => {
+    const fx = fixture();
+    const r = await run(fx, fx.branch("broken", { "tests/a.txt": "fail\n" }));
+    expect(r.out.verdict).toBe("failed");
+    const named = Object.fromEntries([...r.steps.values()].filter((s) => s.id.startsWith("rerun-")).map((s) => [s.id, s.plan]));
+    expect(named).toEqual({ "rerun-tip:unit": "check:unit", "rerun-master:copy": "copy", "rerun-master:setup:prep": "setup:prep", "rerun-master:unit": "check:unit" });
+    expect([...r.steps.values()].filter((s) => !s.id.startsWith("rerun-") && s.plan)).toEqual([]);
+  });
+
   test("a check that reruns by name reruns only the failing test, and the flaky test is named with its file", async () => {
     const fx = fixture({ unit: { rerun: false, rerunTest: ["--name", "${test}"] } });
     const mark = fx.calls().length;

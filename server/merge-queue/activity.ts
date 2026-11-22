@@ -48,7 +48,7 @@ export function noticeEvent(kind: MergeNoticeKind, e: MergeEntry, extra: { run?:
     case "requested":
       return { kind: "pushed", by: "queue", ...ref(e), ...(run ? { run } : {}), sha: e.request?.publishedHead ?? "", why: `Its request is open on the host${e.request?.number ? ` (#${e.request.number})` : ""}.` };
     case "pushed":
-      return { kind: "pushed", by: "queue", ...ref(e), ...(run ? { run, step: "push" } : {}), sha: e.request?.publishedHead ?? "", why: `The branch was pushed at ${short(e.request?.publishedHead)}; its request is the user's to open.` };
+      return { kind: "pushed", by: "queue", ...ref(e), ...(run ? { run, step: "land" } : {}), sha: e.request?.publishedHead ?? "", why: `The branch was pushed at ${short(e.request?.publishedHead)}; its request is the user's to open.` };
     case "closed":
       return { kind: "note", by: "queue", ...ref(e), note: "closed", why: "Its request was closed on the host without merging." };
     default:

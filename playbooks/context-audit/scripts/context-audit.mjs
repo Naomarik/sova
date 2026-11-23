@@ -6,32 +6,29 @@
 // Node builtins only, plus git for HEAD and uncommitted files.
 //
 //   node scripts/context-audit.mjs inventory [--root <checkout>] [--scope <folder|skill>]… [--personal]
-//                                            [--switches <file>] [--run <id>] [--json]
+//                                            [--switches <file>] [--run <id>] [--out <folder>] [--json]
 //     every item the project can load: where it is, when it loads, its size, whether it is on; the
 //     always-loaded total, each skill's entry page in its band, the subjects for the readers and how many.
 //     --switches: the answers of Sova's project.context-files.get and project.skills.get, saved to one file
 //     ({"files": [...], "skills": [...], "asking": bool}): an item they show off is listed off and not counted.
-//     Writes the detail to <state root>/playbooks/context-audit/<run>/inventory.json and names it. First it
-//     deletes every other run's folder there last changed over a day ago: what a run stopped before its cleanup
-//     left behind. A recent one may be a run still going, and stays.
+//     Writes the detail to <folder>/inventory.json and names it: --out's folder, else
+//     $SOVA_SHARED_DIR/context-audit/<run>/ (the run chat's shared folder, gone when that chat is archived).
+//     With neither it refuses (exit 2) before reading anything. It never deletes anything.
 //   node scripts/context-audit.mjs links [--root …] [--scope …]… [--json]
 //     the reference graph: broken links, stale mentions (a named path or package script that doesn't exist),
 //     links out of the project, and pages nothing points to.
 //   node scripts/context-audit.mjs repeats [--root …] [--scope …]… [--min <chars>] [--json]
 //     passages (normalised paragraphs of at least --min characters, default 160) found in more than one place.
 //   node scripts/context-audit.mjs check [--root …] --before <inventory.json> [--base <rev>]
-//                                        [--moved <old path>=<new path>,<new path>]… [--clean] [--json]
+//                                        [--moved <old path>=<new path>,<new path>]… [--json]
 //     the re-check: the numbers before and after, and for each layout change, that every paragraph of the old
-//     page (read at --base, default the before inventory's HEAD) is on exactly one of the new pages. --clean
-//     deletes the run's working folder (the before file's, under the state root) when nothing failed.
-//   node scripts/context-audit.mjs clean --before <inventory.json> [--json]
-//     deletes the run's working folder whatever the last check said: the run's last step, always.
+//     page (read at --base, default the before inventory's HEAD) is on exactly one of the new pages.
 //
 // Exit 0: nothing to act on. 1: found something to act on. 2: couldn't check (treat as not known to be fine).
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -104,51 +101,17 @@ export const stateRoot = () => {
   return join(agent, "sova");
 };
 const agentDirOf = () => dirname(stateRoot());
-/** Where each run keeps its working folder, `<run>/`. */
-const runsDir = () => join(stateRoot(), "playbooks", "context-audit");
-/** The run folder a before file sits in, when it is one under runsDir(); else null. */
-const runDirOf = (before) => {
-  const dir = dirname(resolve(before));
-  return inside(runsDir(), dir) && dir !== runsDir() ? dir : null;
-};
-/** How long a run folder goes unchanged before it counts as a stopped run's leftover. */
-export const LEFTOVER_MS = 24 * 60 * 60 * 1000;
-/** When a folder last changed: its own time or any of its entries', the latest. */
-const lastChanged = (d) => {
-  let t = statSync(d).mtimeMs;
-  for (const n of readdirSync(d)) {
-    try {
-      t = Math.max(t, statSync(join(d, n)).mtimeMs);
-    } catch {
-      // gone meanwhile
-    }
-  }
-  return t;
-};
 /**
- * Deletes the run folders but `keep` that last changed over a day ago: the ones a run stopped before its cleanup
- * left. A more recent one may belong to a run still going, so it stays. Returns what went.
+ * The run's working folder, where its inventory (and the switches file) go: `out` when given, else
+ * `<shared>/context-audit/<run>/` in the run chat's shared folder (`SOVA_SHARED_DIR`), which Sova removes when that
+ * chat is archived. Null when neither is known, or when the run name would lead out of the shared folder.
  */
-export function dropLeftoverRuns(keep, now = Date.now()) {
-  let names;
-  try {
-    names = readdirSync(runsDir());
-  } catch {
-    return [];
-  }
-  const gone = [];
-  for (const n of names) {
-    const d = join(runsDir(), n);
-    if (d === keep) continue;
-    try {
-      if (!statSync(d).isDirectory() || now - lastChanged(d) <= LEFTOVER_MS) continue;
-    } catch {
-      continue;
-    }
-    rmSync(d, { recursive: true, force: true });
-    gone.push(d);
-  }
-  return gone;
+export function workFolder({ out, run, shared = process.env.SOVA_SHARED_DIR }) {
+  if (out) return resolve(out);
+  if (!shared || !isAbsolute(shared)) return null;
+  const base = join(shared, "context-audit");
+  const dir = resolve(base, run);
+  return inside(base, dir) && dir !== base ? dir : null;
 }
 
 // ── front matter ────────────────────────────────────────────────────────────────────────────────
@@ -870,7 +833,7 @@ export function parseArgs(argv) {
     else if (a === "--before") o.before = val();
     else if (a === "--base") o.base = val();
     else if (a === "--moved") o.moved.push(val());
-    else if (a === "--clean") o.clean = true;
+    else if (a === "--out") o.out = val();
     else throw new Error(`unknown argument ${a}`);
   }
   return o;
@@ -903,17 +866,26 @@ export function main(argv, out = (s) => process.stdout.write(s + "\n"), err = (s
   const opts = { scope: o.scope, personal: o.personal, switches, minRepeat: o.min, depth: o.depth };
   switch (cmd) {
     case "inventory": {
+      // Where the detail goes is settled first: with nowhere to keep it, nothing is read.
+      const run = o.run ?? (git(root, "rev-parse", "HEAD")?.trim().slice(0, 12) || "no-head");
+      const dir = workFolder({ out: o.out, run });
+      if (!dir)
+        return (
+          err(
+            process.env.SOVA_SHARED_DIR
+              ? `context-audit: --run ${run} leads out of $SOVA_SHARED_DIR/context-audit; name the run by its branch`
+              : "context-audit: nowhere to keep the inventory: SOVA_SHARED_DIR isn't set; pass --out <the run chat's shared folder>/context-audit/<run>",
+          ),
+          2
+        );
       const r = inventory(root, opts);
       if (r.error) return err(`context-audit: ${r.error}`), 2;
-      let detail = null;
+      const detail = join(dir, "inventory.json");
       try {
-        const dir = join(runsDir(), o.run ?? (r.head ? r.head.slice(0, 12) : "no-head"));
-        dropLeftoverRuns(dir);
         mkdirSync(dir, { recursive: true });
-        detail = join(dir, "inventory.json");
         writeFileSync(detail, JSON.stringify(r, null, 2) + "\n");
-      } catch {
-        detail = null;
+      } catch (e) {
+        return err(`context-audit: can't write ${detail}: ${e.message}`), 2;
       }
       out(o.json ? JSON.stringify(r, null, 2) : inventoryDigest(r, detail));
       return somethingToAct(r) ? 1 : 0;
@@ -969,6 +941,7 @@ export function main(argv, out = (s) => process.stdout.write(s + "\n"), err = (s
       const n0 = before?.numbers;
       const n1 = after.numbers;
       const failed = moves.some((m) => m.missing.length || m.doubled.length);
+      // Nothing is deleted here: the working folder goes with the run chat's shared folder.
       if (o.json) out(JSON.stringify({ before: n0 ?? null, after: n1, moves }, null, 2));
       else {
         const row = (label, a, b) => out(`${label}: ${a === undefined ? "?" : num(a)} → ${num(b)}`);
@@ -989,26 +962,10 @@ export function main(argv, out = (s) => process.stdout.write(s + "\n"), err = (s
           for (const x of m.doubled) out(`  on ${x.on.join(", ")} (old line ${x.line}): "${x.text}"`);
         }
       }
-      // The run's working folder goes once the recheck is clean: nothing is kept between runs.
-      if (o.clean && o.before && !failed) {
-        const dir = runDirOf(o.before);
-        if (dir) {
-          rmSync(dir, { recursive: true, force: true });
-          if (!o.json) out(`cleaned: ${dir}`);
-        }
-      }
       return failed ? 1 : 0;
     }
-    case "clean": {
-      if (!o.before) return err("context-audit: clean needs --before <inventory.json>"), 2;
-      const dir = runDirOf(o.before);
-      if (!dir) return err(`context-audit: ${o.before} is not in a run folder under ${runsDir()}`), 2;
-      rmSync(dir, { recursive: true, force: true });
-      out(o.json ? JSON.stringify({ cleaned: dir }) : `cleaned: ${dir}`);
-      return 0;
-    }
     default:
-      err("usage: context-audit.mjs inventory|links|repeats|check|clean [--root <checkout>] … (see the header)");
+      err("usage: context-audit.mjs inventory|links|repeats|check [--root <checkout>] … (see the header)");
       return 2;
   }
 }

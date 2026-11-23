@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -9,21 +9,24 @@ import * as ca from "../scripts/context-audit.mjs";
 
 /**
  * The Context audit playbook's driver (../scripts/context-audit.mjs), called in-process through its `main` (the command
- * line's own entry) and its exports, on throwaway git projects: one finding type per fixture. Everything, its state
- * root included, is under this file's throwaway root (./scratch.mjs); nothing here reads the real home, agent dir or
- * the user's projects.
+ * line's own entry) and its exports, on throwaway git projects: one finding type per fixture. Everything, the run
+ * chat's shared folder included, is under this file's throwaway root (./scratch.mjs); nothing here reads the real home,
+ * agent dir, shared folder or the user's projects.
  */
 
 const dir = scratchRoot("context-audit-scripts-");
 const tmp = join(dir, "work");
 mkdirSync(tmp);
 const BUNDLE = fileURLToPath(new URL("..", import.meta.url));
-const stateDir = join(process.env.PI_CODING_AGENT_DIR, "sova", "playbooks", "context-audit");
+const shared = join(dir, "shared");
+mkdirSync(shared);
+process.env.SOVA_SHARED_DIR = shared;
+const runsDir = join(shared, "context-audit");
 const git = (cwd, ...a) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "init.defaultBranch=main", "-c", "commit.gpgSign=false", ...a], { cwd, stdio: "pipe", encoding: "utf8" });
 
-test("these tests run in a throwaway home, and the script's state root is in it", () => {
+test("these tests run in a throwaway home, and the run chat's shared folder is in it", () => {
   assert.equal(process.env.HOME, join(dir, "home"));
-  assert.ok(stateDir.startsWith(dir), stateDir);
+  assert.ok(process.env.SOVA_SHARED_DIR.startsWith(dir + "/"), process.env.SOVA_SHARED_DIR);
 });
 
 let n = 0;
@@ -180,12 +183,12 @@ test("scope narrows what is counted and says how much was left out", () => {
   assert.equal(inv.totals.leftOut, 2);
 });
 
-test("the command line: exit 0 nothing to act on, 1 something found, 2 couldn't check; the digest names the detail file under the state root", () => {
+test("the command line: exit 0 nothing to act on, 1 something found, 2 couldn't check; the digest names the detail file in the shared folder", () => {
   const clean = project({ "AGENTS.md": "# Fine\n" });
   const ok = run("inventory", "--root", clean, "--run", "t-clean");
   assert.equal(ok.code, 0, ok.out);
   assert.match(ok.out, /always loaded ≈2: AGENTS\.md ≈2/);
-  const detail = join(stateDir, "t-clean", "inventory.json");
+  const detail = join(runsDir, "t-clean", "inventory.json");
   assert.match(ok.out, new RegExp(`detail: ${detail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
   assert.equal(JSON.parse(readFileSync(detail, "utf8")).root, clean);
 
@@ -202,12 +205,12 @@ test("the command line: exit 0 nothing to act on, 1 something found, 2 couldn't 
   assert.equal(run("check", "--root", clean).code, 2, "check needs --before or --moved");
 });
 
-test("the moved-text check: every old paragraph on exactly one new page, else exit 1 naming it; --clean deletes the run's folder only when nothing failed", () => {
+test("the moved-text check: every old paragraph on exactly one new page, else exit 1 naming it; the check deletes nothing", () => {
   const old = `# Skill\n\n${LONG}\n\nSecond rule about naming branches after the task.\n\nThird rule about commits.\n`;
   const r = project({ ".agents/skills/s/SKILL.md": skill("s", old) });
   const before = run("inventory", "--root", r, "--run", "t-moved");
   assert.equal(before.code, 0, before.out);
-  const inv = join(stateDir, "t-moved", "inventory.json");
+  const inv = join(runsDir, "t-moved", "inventory.json");
   const entry = ".agents/skills/s/SKILL.md";
   // A good split: the index keeps one rule, the rest moves word for word.
   writeFileSync(join(r, entry), skill("s", `# Skill\n\nThird rule about commits.\n\n- naming: \`naming.md\`\n`));
@@ -216,47 +219,48 @@ test("the moved-text check: every old paragraph on exactly one new page, else ex
   assert.equal(good.code, 0, good.out);
   assert.match(good.out, /every paragraph on exactly one new page/);
   assert.match(good.out, /^skill s: \d+ lines ≈\d+ \(fine\) → \d+ lines ≈\d+ \(fine\)$/m);
+  assert.ok(existsSync(inv), "a passing check keeps the inventory: the shared folder's lifetime is the chat's");
   // A lost paragraph and a doubled one.
   writeFileSync(join(r, ".agents/skills/s/naming.md"), `${LONG}\n\nThird rule about commits.\n`);
-  const bad = run("check", "--root", r, "--before", inv, "--moved", `${entry}=${entry},.agents/skills/s/naming.md`, "--clean");
+  const bad = run("check", "--root", r, "--before", inv, "--moved", `${entry}=${entry},.agents/skills/s/naming.md`);
   assert.equal(bad.code, 1);
   assert.match(bad.out, /missing \(old line \d+\): "Second rule about naming/);
   assert.match(bad.out, /on \.agents\/skills\/s\/SKILL\.md, \.agents\/skills\/s\/naming\.md .*"Third rule/);
-  assert.ok(existsSync(inv), "a failed check keeps the working folder");
-  const done = run("check", "--root", r, "--before", inv, "--clean");
-  assert.equal(done.code, 0);
-  assert.equal(existsSync(dirname(inv)), false, "nothing is kept between runs");
+  assert.equal(run("check", "--root", r, "--before", inv, "--clean").code, 2, "--clean is gone");
+  assert.equal(run("clean", "--before", inv).code, 2, "clean is gone");
+  assert.ok(existsSync(inv));
 });
 
-test("a run stopped before its cleanup: the next inventory deletes its folder once over a day old, never a recent one", () => {
+test("where the inventory goes: the shared folder's context-audit/<run>/, or --out; never another run's folder touched; nowhere to keep it refuses", () => {
   const r = project({ "AGENTS.md": "# Fine\n" });
-  assert.equal(run("inventory", "--root", r, "--run", "t-left").code, 0);
-  assert.equal(run("inventory", "--root", r, "--run", "t-going").code, 0);
-  const old = new Date(Date.now() - ca.LEFTOVER_MS - 60_000);
-  for (const p of [join(stateDir, "t-left", "inventory.json"), join(stateDir, "t-left")]) utimesSync(p, old, old);
-  mkdirSync(join(stateDir, "t-next"), { recursive: true });
-  writeFileSync(join(stateDir, "t-next", "switches.json"), "{}\n");
-  const next = run("inventory", "--root", r, "--run", "t-next");
-  assert.equal(next.code, 0, next.out);
-  assert.equal(existsSync(join(stateDir, "t-left")), false, "the stopped run's folder, unchanged for over a day, is gone");
-  assert.ok(existsSync(join(stateDir, "t-going", "inventory.json")), "a recent folder may be a run still going: kept");
-  assert.ok(existsSync(join(stateDir, "t-next", "switches.json")), "what this run saved before its inventory stays");
-  assert.ok(existsSync(join(stateDir, "t-next", "inventory.json")));
-});
+  mkdirSync(join(runsDir, "t-other"), { recursive: true });
+  writeFileSync(join(runsDir, "t-other", "inventory.json"), "{}\n");
+  mkdirSync(join(runsDir, "t-mine"), { recursive: true });
+  writeFileSync(join(runsDir, "t-mine", "switches.json"), "{}\n");
+  assert.equal(run("inventory", "--root", r, "--run", "t-mine").code, 0);
+  assert.deepEqual(readdirSync(join(runsDir, "t-mine")).sort(), ["inventory.json", "switches.json"], "what the run saved first stays beside it");
+  assert.equal(readFileSync(join(runsDir, "t-other", "inventory.json"), "utf8"), "{}\n", "another run's folder is never touched");
+  assert.equal(run("inventory", "--root", r, "--run", "feat/x").code, 0);
+  assert.ok(existsSync(join(runsDir, "feat", "x", "inventory.json")), "a branch name is a run name");
+  assert.equal(run("inventory", "--root", r, "--run", "../../escape").code, 2, "a run name that leads out of the shared folder");
 
-test("clean: the run's last step deletes its folder even after a failed check; only a run folder under the state root", () => {
-  const r = project({ ".agents/skills/s/SKILL.md": skill("s", `# Skill\n\n${LONG}\n`) });
-  assert.equal(run("inventory", "--root", r, "--run", "t-clean-fail").code, 0);
-  const inv = join(stateDir, "t-clean-fail", "inventory.json");
-  writeFileSync(join(r, ".agents/skills/s/SKILL.md"), skill("s", "# Skill\n"));
-  assert.equal(run("check", "--root", r, "--before", inv, "--moved", ".agents/skills/s/SKILL.md=.agents/skills/s/SKILL.md", "--clean").code, 1);
-  assert.ok(existsSync(inv), "a failed check keeps it");
-  const c = run("clean", "--before", inv);
-  assert.equal(c.code, 0, c.err);
-  assert.equal(existsSync(dirname(inv)), false);
-  assert.equal(run("clean").code, 2, "clean needs --before");
-  assert.equal(run("clean", "--before", join(r, "inventory.json")).code, 2, "never a folder outside the state root");
-  assert.ok(existsSync(r));
+  const out = join(tmp, "explicit");
+  const o = run("inventory", "--root", r, "--run", "t-out", "--out", out);
+  assert.equal(o.code, 0, o.err);
+  assert.match(o.out, new RegExp(`detail: ${join(out, "inventory.json").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+  assert.equal(existsSync(join(runsDir, "t-out")), false, "--out wins over the shared folder");
+
+  delete process.env.SOVA_SHARED_DIR;
+  try {
+    const none = run("inventory", "--root", r, "--run", "t-none");
+    assert.equal(none.code, 2);
+    assert.match(none.err, /SOVA_SHARED_DIR isn't set; pass --out/);
+    assert.equal(none.out, "", "refused before reading anything");
+    assert.equal(run("inventory", "--root", r, "--run", "t-none", "--out", join(tmp, "explicit2")).code, 0, "--out alone is enough");
+  } finally {
+    process.env.SOVA_SHARED_DIR = shared;
+  }
+  assert.equal(existsSync(join(runsDir, "t-none")), false);
 });
 
 test("the playbook itself: an index-sized entry page, and every page reached by its own inventory", () => {

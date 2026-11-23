@@ -2824,14 +2824,20 @@ class ChatSession {
     return null;
   }
 
-  async switchSubagentProfile(id: unknown) {
+  /** `named`: a library-only pick on the empty screen (§chat.profiles/applying), which puts the chat on that
+      library profile, so its name is written too, even when the helpers already are its. */
+  async switchSubagentProfile(id: unknown, opts: { named?: boolean } = {}) {
     if (this.disposed || this.overseer || this.specialRefuses("mode") || this.hasForeignWrites()) throw new ModeRefusedError();
     assertNotLive(this.path);
     const profile = requireSubagentProfile(id);
     if (!this.hasModeOwner()) throw new ModeRefusedError("Modes aren't available in this chat.");
     this.flushDeferredAppends();
     const entry = pickEntryFor(this.extensionBranch(), profile);
-    if (entry) {
+    if (opts.named) {
+      if (entry) this.harness.state.append(SUBAGENT_PROFILE, entry.data);
+      const name = this.subagentProfileInfo().profiles.find((p) => p.id === profile)?.name ?? profile;
+      this.harness.state.append(CHAT_PROFILE, { v: 1, id: profile, key: `library:${profile}`, name });
+    } else if (entry) {
       // Only the helpers move (§chat.subagent-profiles/overseer): a chat that names its profile only by its
       // helper pick (or by nothing) first records the profile it is on, so the new pick doesn't rename it.
       if (!this.profileOnBranch()) {

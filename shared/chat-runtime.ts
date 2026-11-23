@@ -344,7 +344,7 @@ export interface ChatMethods {
   saveModeDefault: { args: Record<string, never>; result: ModeInfo };
   subagentProfileInfo: { args: Record<string, never>; result: SubagentProfilesInfo };
   subagentSwitchRefusal: { args: Record<string, never>; result: string | null };
-  switchSubagentProfile: { args: { id: unknown }; result: SubagentProfilesInfo & { applies: "now" | "after-turn" } };
+  switchSubagentProfile: { args: { id: unknown; named?: boolean }; result: SubagentProfilesInfo & { applies: "now" | "after-turn" } };
   /** The whole Models part, all at once (§chat.profiles/switch); a refusal is data, nothing written. */
   switchProfile: { args: { target: ProfileSwitchTarget }; result: ({ ok: true } & ProfileSwitchResult) | { ok: false; status: 400 | 409; error: string } };
   cancelProfileSwitch: { args: Record<string, never>; result: { cancelled: boolean; state: ChatProfileState } };

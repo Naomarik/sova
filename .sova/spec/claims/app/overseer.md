@@ -1422,6 +1422,11 @@ other short notes, which arrive between turns. Nothing else about either chat ch
 gains or loses a tool, and its system prompt stays as it was, so a pairing costs neither chat its
 prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes (§chat/topics).
 
+- §app.overseer/pairs-rules — How a pairing works
+- §app.overseer/pairs-lines — What a paired chat shows
+
+## §app.overseer/pairs-rules — How a pairing works
+
 - **The tool.** `sova_pair {op: "pair" | "unpair" | "resume" | "list", …}`. `pair {a, b, job_a,
   job_b}` pairs sessions `a` and `b`, `job_a` saying in the Overseer's words what `a` does (it is
   told to `b`), `job_b` what `b` does. `unpair {pairing}` ends one. `resume {pairing, direction?}`
@@ -1474,15 +1479,29 @@ prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes
   `unpair`, or when either chat is archived. Both topics close and the notes still waiting on them
   are dropped. Neither chat is told: a later push to the closed topic is refused,
   `This pairing has ended.` (§chat.topics/push). Unarchiving a chat doesn't bring a pairing back.
-- **What the user sees.** Each paired chat shows a line **Paired with <partner's title>** (the
-  title a link to the partner) with an **Unpair** button, and **Paused: note limit reached** with
-  **Resume** while a direction toward or from it is paused; one line per pairing. The lines sit
-  above the transcript in their own space, never covering it, and each stays one row: a long title
-  is cut with an ellipsis so the buttons keep their place. A chat with no pairing shows nothing
-  there, not even an empty strip, and a chat never shows another chat's lines, even when reading its
-  own pairings fails. In the Overseer's
-  transcript the `pair` and `unpair` calls show as action cards naming both chats, and "Hide tool
-  calls" never folds them.
+
+## §app.overseer/pairs-lines — What a paired chat shows
+
+A paired chat shows its pairings above its transcript, and the Overseer's pairing calls show in its
+own transcript.
+
+- **The lines.** Each paired chat shows a line **Paired with <partner's title>** (the title a link
+  to the partner) with an **Unpair** button, and **Paused: note limit reached** with **Resume**
+  while a direction toward or from it is paused; one line per pairing.
+- **Three or more fold.** With 1 or 2 pairings those lines show as they are. With 3 or more they
+  fold into one line, **Paired with N chats** with a **Show All** button, in the info tone; while
+  any of them is paused that line takes the warning tone and says **N paused** under it, so a pause
+  never hides in the fold. Show All opens the lines, unchanged, in a list under it and becomes
+  **Hide**; past about 40% of the pane the list scrolls. Unpair and Resume are only on each
+  pairing's own line: there is no Unpair All. A chat always opens folded: Show All lasts while you
+  stay on that chat, moving to another chat folds it again, and nothing is stored. When the count
+  falls to 2 the lines show as they are again, and rising to 3 folds them.
+- **Where they sit.** The lines sit above the transcript in their own space, never covering it,
+  and each stays one row: a long title is cut with an ellipsis so the buttons keep their place. A
+  chat with no pairing shows nothing there, not even an empty strip, and a chat never shows another
+  chat's lines, even when reading its own pairings fails.
+- **In the Overseer's transcript.** The `pair` and `unpair` calls show as action cards naming both
+  chats, and "Hide tool calls" never folds them.
 
 ## §app.overseer/sent-marker — Prompts the Overseer sent
 

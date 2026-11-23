@@ -1,7 +1,9 @@
 // The merge queue's card in a branch's chat: its words, its actions, its rows and their folding.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cardActionLabel, cardActions, cardDecision, cardFacts, cardPill, foldedLine, isNewest, notPushed, queueCardRows, queueRowOf, cardNewer, cardPlaceRow, mergeQueueBatchLabel, type QueueCard } from "./merge-queue-card";
+import { cardActionDone, cardActionLabel, cardActionRoute, cardActions, cardDecision, cardFacts, cardPill, foldedLine, isNewest, notPushed, queueCardRows, queueRowOf, cardNewer, cardPlaceRow, mergeQueueBatchLabel, type CardAction, type CardRoute, type QueueCard } from "./merge-queue-card";
+import { MERGE_ANSWERS } from "../../shared/merge-queue";
+import { DECISION_ACTION_LABEL, DECISION_LABEL } from "./merge-standing";
 import { placeFold, placeLine } from "./branch-place";
 
 const SHA = "a".repeat(40);
@@ -140,8 +142,45 @@ test("newer commits are said only on a landed card: while its chat fixes it, the
   assert.equal(cardNewer(card({ state: "needs-fix", newerCommits: 3 })), null);
   assert.equal(cardNewer(card({ state: "with-chat", newerCommits: 3 })), null);
   assert.equal(cardNewer(card({ state: "landed", newerCommits: 2 })), "2 newer commits not included", "a landed card keeps its words");
-  assert.equal(cardActionLabel("remove"), "Remove from Queue");
-  assert.equal(cardActionLabel("try-again"), "Try Again");
+});
+
+/** A button's word: Title Case words ("Remove from Queue", "Ask the Merge Thread"). */
+const CARD_WORDS = /^[A-Z][a-z]*( [A-Za-z][a-z]*)*$/;
+test("every action a card offers, in every state and every decision, has its word, and only a Land with no decision or Land Again ever lands", () => {
+  // The rule: the three private-names answers (and every other decision answer) go to merge.answer as themselves;
+  // merge.add only for Land with no decision and Land Again; the done words never blank.
+  const lands = (r: CardRoute) => r.verb === "land";
+  const ruleHolds = (a: CardAction, decided: boolean, r: CardRoute) =>
+    lands(r) === ((a === "land" && !decided) || a === "land-again") && (a === "allow" || a === "send-back" || a === "ask-thread" ? r.verb === "answer" && r.answer === a : true);
+  const offered: { a: CardAction; decided: boolean }[] = [];
+  const states = ["queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "needs-fix", "with-chat", "needs-user", "landed", "cancelled"] as const;
+  for (const state of states) for (const a of cardActions(card({ state, newerCommits: 2 }))) offered.push({ a, decided: false });
+  // Every decision kind with every set of answers the queue may raise it with (private-names: Allow, Send Back, Ask the Merge Thread).
+  const answers = [...MERGE_ANSWERS, "remove"] as const;
+  for (const kind of Object.keys(DECISION_LABEL) as (keyof typeof DECISION_LABEL)[])
+    for (let mask = 0; mask < 1 << answers.length; mask++) {
+      const actions = answers.filter((_, i) => mask & (1 << i));
+      const c = card({ state: "needs-user", decision: { id: "dc_1", kind, question: "?", choices: [], raisedBy: "queue", actions, at: "2026-11-02T10:00:00Z" } });
+      for (const a of cardActions(c)) offered.push({ a, decided: true });
+    }
+  // The queue tab's waiting rows route by the same function, offering any decision answer, decided or not.
+  for (const a of Object.keys(DECISION_ACTION_LABEL) as CardAction[]) for (const decided of [true, false]) offered.push({ a, decided });
+  for (const { a, decided } of offered) {
+    assert.ok(cardActionLabel(a).trim() && CARD_WORDS.test(cardActionLabel(a)), `${a}: a word on its button`);
+    assert.ok(ruleHolds(a, decided, cardActionRoute(a, decided)), `${a} (decision: ${decided}) goes where it says`);
+    assert.ok(cardActionDone(a, "feat/x").trim() && !cardActionDone(a, "feat/x").includes("undefined"), `${a}: its done words`);
+  }
+  assert.ok(["allow", "send-back", "ask-thread"].every((x) => offered.some((o) => o.a === x)), "the private names' answers are among those offered");
+  // The rule catches the old routing, where any action it didn't know fell through to a Land.
+  const old = (a: CardAction, decided: boolean): CardRoute =>
+    a === "cancel" || a === "remove" ? { verb: "cancel" } : a === "accept" || a === "land-anyway" || a === "try-again" ? { verb: "answer", answer: a } : a === "land" && decided ? { verb: "answer", answer: "land" } : { verb: "land", commit: a === "land-again" ? "head" : "approved" };
+  assert.ok(offered.some(({ a, decided }) => !ruleHolds(a, decided, old(a, decided))));
+  // Anything the card doesn't know does nothing, and reads as itself.
+  assert.equal(cardActionRoute("merge-it", true).verb, "none");
+  assert.equal(cardActionRoute("merge-it", false).verb, "none");
+  assert.equal(cardActionLabel("merge-it" as CardAction), "merge-it");
+  // The scan's answers read as the queue's tab names them.
+  assert.deepEqual(["allow", "send-back", "ask-thread"].map((a) => cardActionLabel(a as CardAction)), ["Allow", "Send Back", "Ask the Merge Thread"]);
 });
 
 test("Land Again only for real work the server counted, never once the entry settled", () => {

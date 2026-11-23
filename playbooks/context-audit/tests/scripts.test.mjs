@@ -228,6 +228,33 @@ test("the moved-text check: every old paragraph on exactly one new page, else ex
   assert.equal(existsSync(dirname(inv)), false, "nothing is kept between runs");
 });
 
+test("a run stopped before its cleanup: the next inventory deletes the folder it left, keeping its own", () => {
+  const r = project({ "AGENTS.md": "# Fine\n" });
+  assert.equal(run("inventory", "--root", r, "--run", "t-left").code, 0);
+  mkdirSync(join(stateDir, "t-next"), { recursive: true });
+  writeFileSync(join(stateDir, "t-next", "switches.json"), "{}\n");
+  const next = run("inventory", "--root", r, "--run", "t-next");
+  assert.equal(next.code, 0, next.out);
+  assert.equal(existsSync(join(stateDir, "t-left")), false, "the stopped run's folder is gone");
+  assert.ok(existsSync(join(stateDir, "t-next", "switches.json")), "what this run saved before its inventory stays");
+  assert.ok(existsSync(join(stateDir, "t-next", "inventory.json")));
+});
+
+test("clean: the run's last step deletes its folder even after a failed check; only a run folder under the state root", () => {
+  const r = project({ ".agents/skills/s/SKILL.md": skill("s", `# Skill\n\n${LONG}\n`) });
+  assert.equal(run("inventory", "--root", r, "--run", "t-clean-fail").code, 0);
+  const inv = join(stateDir, "t-clean-fail", "inventory.json");
+  writeFileSync(join(r, ".agents/skills/s/SKILL.md"), skill("s", "# Skill\n"));
+  assert.equal(run("check", "--root", r, "--before", inv, "--moved", ".agents/skills/s/SKILL.md=.agents/skills/s/SKILL.md", "--clean").code, 1);
+  assert.ok(existsSync(inv), "a failed check keeps it");
+  const c = run("clean", "--before", inv);
+  assert.equal(c.code, 0, c.err);
+  assert.equal(existsSync(dirname(inv)), false);
+  assert.equal(run("clean").code, 2, "clean needs --before");
+  assert.equal(run("clean", "--before", join(r, "inventory.json")).code, 2, "never a folder outside the state root");
+  assert.ok(existsSync(r));
+});
+
 test("the playbook itself: an index-sized entry page, and every page reached by its own inventory", () => {
   const entryLines = ca.linesOf(readFileSync(join(BUNDLE, "PLAYBOOK.md"), "utf8"));
   assert.equal(ca.bandOf(entryLines), "fine", `PLAYBOOK.md is ${entryLines} lines: the index the playbook recommends`);

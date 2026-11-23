@@ -9,7 +9,7 @@
      [--scope <each folder or skill>] [--personal] [--switches <file>]
    ```
 
-   It writes the detail to `<state root>/playbooks/context-audit/<branch>/inventory.json` and names it on its last line. Keep that path: the read and recheck steps use it.
+   It writes the detail to `<state root>/playbooks/context-audit/<branch>/inventory.json` and names it on its last line. Keep that path: the read and recheck steps use it. It first deletes any other run's folder there, left by a run stopped before its cleanup.
 4. Size the investigation from the digest's `subjects` and `suggested readers`: one investigator per subject, at most the card's **Investigators at most**. Merge the smallest subjects when there are more subjects than investigators; one investigator for a small project.
 5. Say in two lines what you found (items, ≈ tokens, always-loaded, the heaviest skill) and who reads what, then go on: this step doesn't stop.
 

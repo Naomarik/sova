@@ -19,7 +19,7 @@ Your plan (choices, cast, steps, stop points) is in the run block Sova gave you:
 - **The user's own files are report only** (the card's switch): no branch covers them.
 - **Move text, never reword it.** A layout change is checked paragraph by paragraph (`check --moved`).
 - **Generated pages are read-only output.** Name their source and the command that builds them instead.
-- **The report lives in the chat only.** No report file anywhere; the run's working files are deleted at its end, also when the user stops the run early (`check --before <inventory.json> --clean`).
+- **The report lives in the chat only.** No report file anywhere; the run's working files are deleted at its end, whatever the last check said, and also when the user stops the run early (`clean --before <inventory.json>`). Any a stopped run still left are deleted by the next run's inventory.
 - **Out of scope:** whether instructions match the code (spec mode's job), style rewording, and the texts Sova itself adds to a chat.
 
 ## The script

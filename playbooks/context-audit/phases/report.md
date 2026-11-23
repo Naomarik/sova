@@ -6,4 +6,4 @@
 
 While the run waits here or at any later step, the user's questions about a finding go to the report writer: send it the question, post its answer. The writer stays until the run ends; never stop it while the user may still ask.
 
-Picking nothing ends the run as a report: run `check --root <worktree> --before <inventory.json> --clean` to delete the working files, and say the audit is done.
+Picking nothing ends the run as a report: run `clean --before <inventory.json>` to delete the working files, and say the audit is done.

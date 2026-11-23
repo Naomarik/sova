@@ -11,7 +11,8 @@
 //     always-loaded total, each skill's entry page in its band, the subjects for the readers and how many.
 //     --switches: the answers of Sova's project.context-files.get and project.skills.get, saved to one file
 //     ({"files": [...], "skills": [...], "asking": bool}): an item they show off is listed off and not counted.
-//     Writes the detail to <state root>/playbooks/context-audit/<run>/inventory.json and names it.
+//     Writes the detail to <state root>/playbooks/context-audit/<run>/inventory.json and names it. First it
+//     deletes every other run's folder there: those a run stopped before its cleanup left behind.
 //   node scripts/context-audit.mjs links [--root …] [--scope …]… [--json]
 //     the reference graph: broken links, stale mentions (a named path or package script that doesn't exist),
 //     links out of the project, and pages nothing points to.
@@ -22,6 +23,8 @@
 //     the re-check: the numbers before and after, and for each layout change, that every paragraph of the old
 //     page (read at --base, default the before inventory's HEAD) is on exactly one of the new pages. --clean
 //     deletes the run's working folder (the before file's, under the state root) when nothing failed.
+//   node scripts/context-audit.mjs clean --before <inventory.json> [--json]
+//     deletes the run's working folder whatever the last check said: the run's last step, always.
 //
 // Exit 0: nothing to act on. 1: found something to act on. 2: couldn't check (treat as not known to be fine).
 
@@ -100,6 +103,30 @@ export const stateRoot = () => {
   return join(agent, "sova");
 };
 const agentDirOf = () => dirname(stateRoot());
+/** Where each run keeps its working folder, `<run>/`. */
+const runsDir = () => join(stateRoot(), "playbooks", "context-audit");
+/** The run folder a before file sits in, when it is one under runsDir(); else null. */
+const runDirOf = (before) => {
+  const dir = dirname(resolve(before));
+  return inside(runsDir(), dir) && dir !== runsDir() ? dir : null;
+};
+/** Deletes every run folder but `keep`: the ones a run stopped before its cleanup left. Returns what went. */
+export function dropLeftoverRuns(keep) {
+  let names;
+  try {
+    names = readdirSync(runsDir());
+  } catch {
+    return [];
+  }
+  const gone = [];
+  for (const n of names) {
+    const d = join(runsDir(), n);
+    if (d === keep) continue;
+    rmSync(d, { recursive: true, force: true });
+    gone.push(d);
+  }
+  return gone;
+}
 
 // ── front matter ────────────────────────────────────────────────────────────────────────────────
 
@@ -857,7 +884,8 @@ export function main(argv, out = (s) => process.stdout.write(s + "\n"), err = (s
       if (r.error) return err(`context-audit: ${r.error}`), 2;
       let detail = null;
       try {
-        const dir = join(stateRoot(), "playbooks", "context-audit", o.run ?? (r.head ? r.head.slice(0, 12) : "no-head"));
+        const dir = join(runsDir(), o.run ?? (r.head ? r.head.slice(0, 12) : "no-head"));
+        dropLeftoverRuns(dir);
         mkdirSync(dir, { recursive: true });
         detail = join(dir, "inventory.json");
         writeFileSync(detail, JSON.stringify(r, null, 2) + "\n");
@@ -940,17 +968,24 @@ export function main(argv, out = (s) => process.stdout.write(s + "\n"), err = (s
       }
       // The run's working folder goes once the recheck is clean: nothing is kept between runs.
       if (o.clean && o.before && !failed) {
-        const mine = join(stateRoot(), "playbooks", "context-audit");
-        const dir = dirname(resolve(o.before));
-        if (inside(mine, dir) && dir !== mine) {
+        const dir = runDirOf(o.before);
+        if (dir) {
           rmSync(dir, { recursive: true, force: true });
           if (!o.json) out(`cleaned: ${dir}`);
         }
       }
       return failed ? 1 : 0;
     }
+    case "clean": {
+      if (!o.before) return err("context-audit: clean needs --before <inventory.json>"), 2;
+      const dir = runDirOf(o.before);
+      if (!dir) return err(`context-audit: ${o.before} is not in a run folder under ${runsDir()}`), 2;
+      rmSync(dir, { recursive: true, force: true });
+      out(o.json ? JSON.stringify({ cleaned: dir }) : `cleaned: ${dir}`);
+      return 0;
+    }
     default:
-      err("usage: context-audit.mjs inventory|links|repeats|check [--root <checkout>] … (see the header)");
+      err("usage: context-audit.mjs inventory|links|repeats|check|clean [--root <checkout>] … (see the header)");
       return 2;
   }
 }

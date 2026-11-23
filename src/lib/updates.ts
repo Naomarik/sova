@@ -1,6 +1,7 @@
 import { createEffect, createSignal, on, onCleanup } from "solid-js";
-import type { UpdateCheckResult, UpdatesState, UpdateTarget } from "../../shared/protocol";
+import type { UpdateCheckResult, UpdateJob, UpdatesState, UpdateTarget } from "../../shared/protocol";
 import { getUpdates } from "./api";
+import { relativeTime } from "./format";
 import { socketReconnects } from "./socket";
 
 /**
@@ -96,6 +97,18 @@ export function resultLine(result: UpdateCheckResult, source: UpdatesState["sett
 
 /** The banner's title on a withdrawn release: "v0.10.0 was withdrawn: <why>." */
 export const withdrawnTitle = (r: { tag: string; why: string }): string => `${r.tag} was withdrawn: ${r.why.trim().replace(/[.]$/, "")}.`;
+
+/** How long a finished upgrade's outcome stays in the section. */
+export const RECENT_JOB_MS = 24 * 60 * 60 * 1000;
+
+/** The job finished within RECENT_JOB_MS of `now`. Pure. */
+export const recentJob = (job: UpdateJob, now: number): boolean => job.state !== "running" && now - Date.parse(job.endedAt ?? job.startedAt) < RECENT_JOB_MS;
+
+/** A successful upgrade's one quiet line, for a day: "Upgraded to v0.18.0 2h ago."; null for any other job. Pure. */
+export function upgradedLine(job: UpdateJob | null, now: number): string | null {
+  if (!job || job.state !== "succeeded" || !recentJob(job, now)) return null;
+  return `Upgraded to ${job.to.label} ${relativeTime(job.endedAt ?? job.startedAt, now)}.`;
+}
 
 /** The go-back button on a withdrawn release: "Go Back to v0.9.0". */
 export const goBackLabel = (target: UpdateTarget): string => `Go Back to ${target.label}`;

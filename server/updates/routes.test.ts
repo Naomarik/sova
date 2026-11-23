@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { Hono } from "hono";
 import { OVERSEER_SENDER_HEADER, senderSecret } from "../overseer-sender";
 import { scratchRoot } from "../test-scratch";
 import { gitIn } from "./git";
-import { UpdatesManager } from "./manager";
+import { UpdatesManager, type UpdatesDeps } from "./manager";
 import { pageHeaders } from "../testing/page";
 import { jobEnvOf, registerUpdatesRoutes, setUpdatesForTest } from "./routes";
+import { makeRepos } from "./testing";
 
 /**
  * Only the operator acts on updates: a same-origin browser request on the
@@ -17,7 +19,7 @@ import { jobEnvOf, registerUpdatesRoutes, setUpdatesForTest } from "./routes";
 
 const root = scratchRoot("updates-routes-");
 const calls: string[] = [];
-const m = new UpdatesManager({
+const deps: UpdatesDeps = {
   file: join(root, "updates.json"),
   jobsDir: join(root, "jobs"),
   repo: "file:///nowhere",
@@ -39,7 +41,8 @@ const m = new UpdatesManager({
   jobEnv: () => ({}),
   serverLog: join(root, "app-server.log"),
   log: () => {},
-});
+};
+const m = new UpdatesManager(deps);
 setUpdatesForTest(m);
 after(() => setUpdatesForTest(null));
 
@@ -105,4 +108,52 @@ test("the job keeps the server's HOST and the tools' environment, and nothing el
   // A copy with no service is started again by the job: it must listen where it did (HOST), not on the default.
   const env = jobEnvOf({ HOST: "0.0.0.0", PATH: "/usr/bin", HOME: "/home/u", SOVA_UPDATES_REPO_URL: "file:///standin", ANTHROPIC_API_KEY: "secret", SOVA_CHAT_UNIT: "x" });
   assert.deepEqual(env, { HOST: "0.0.0.0", PATH: "/usr/bin", HOME: "/home/u", SOVA_UPDATES_REPO_URL: "file:///standin" });
+});
+
+test("GET /api/updates/notes: 404 with no changelog to show, so the button hides", async () => {
+  const r = await call("GET", "/api/updates/notes");
+  assert.equal(r.status, 404);
+  assert.deepEqual(await r.json(), { error: "This copy has no release notes to show." });
+  const s = (await (await call("GET", "/api/updates")).json()) as { notesAvailable: boolean };
+  assert.equal(s.notesAvailable, false);
+});
+
+test("GET /api/updates/notes: the running copy's releases, and a newer one a check found first, read like GET /api/updates", async () => {
+  const r = makeRepos();
+  const log = (...sections: string[]) => {
+    writeFileSync(join(r.origin, "CHANGELOG.md"), `# Changelog\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md).\n\n${sections.join("\n\n")}\n`);
+    r.git(r.origin, "add", "CHANGELOG.md");
+  };
+  log("## v0.1.0 — 2026-10-01\n\nThe first.");
+  r.commit(r.origin, "release v0.1.0");
+  r.tag(r.origin, "v0.1.0");
+  log("## v0.3.0 — 2026-10-20\n\nThe third.", "## v0.2.0 — 2026-10-10\n\nThe second.", "## v0.1.0 — 2026-10-01\n\nThe first.");
+  r.commit(r.origin, "release v0.3.0");
+  r.tag(r.origin, "v0.3.0");
+  r.tag(r.origin, "stable");
+  const copy = r.clone("at-v010", { ref: "v0.1.0" });
+  const dir = scratchRoot("updates-notes-");
+  const dev = new UpdatesManager({
+    ...deps,
+    file: join(dir, "updates.json"),
+    jobsDir: join(dir, "jobs"),
+    repo: r.url,
+    checksOff: false,
+    install: async () => ({ kind: "developer", whyNot: null, checkout: copy, unit: null, launcher: null, installPort: null, noExtensions: false, noAppEntry: false }),
+  });
+  setUpdatesForTest(dev);
+  try {
+    const before = (await (await call("GET", "/api/updates/notes")).json()) as { title: string; markdown: string };
+    assert.equal(before.title, "Release Notes");
+    assert.match(before.markdown, /^## v0\.1\.0 — 2026-10-01\n\nThe first\.\n$/, "no check yet: what runs, without the preamble");
+    await dev.check();
+    const res = await call("GET", "/api/updates/notes", { env: { incoming: {}, meshPeer: { name: "peer" } } });
+    assert.equal(res.status, 200, "a read: the mesh gate (not this route) decides a peer's need");
+    const after = (await res.json()) as { markdown: string; url: string | null };
+    assert.match(after.markdown, /^# New in v0\.3\.0, not installed yet\n\n---\n\n## v0\.3\.0[^\n]*\n\nThe third\.\n\n## v0\.2\.0[^\n]*\n\nThe second\.\n\n# You're on v0\.1\.0\n\n---\n\n## v0\.1\.0/);
+    assert.equal(after.url, null, "a stand-in repository has no GitHub page");
+    assert.equal(((await (await call("GET", "/api/updates")).json()) as { notesAvailable: boolean }).notesAvailable, true);
+  } finally {
+    setUpdatesForTest(m);
+  }
 });

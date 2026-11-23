@@ -292,6 +292,7 @@
     "GET /api/transcript": {"need":"sessions","is":"command","ids":["session.read"]},
     "GET /api/transcript/tool": {"need":"sessions","is":"page-plumbing"},
     "GET /api/updates": {"need":"full","is":"opted-out"},
+    "GET /api/updates/notes": {"need":"full","is":"opted-out"},
     "GET /api/usage/costs": {"need":"sessions","is":"command","ids":["usage.costs"]},
     "GET /api/usage/performance": {"need":"sessions","is":"command","ids":["usage.performance"]},
     "GET /api/usage/prices": {"need":"sessions","is":"command","ids":["usage.prices"]},

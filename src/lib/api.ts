@@ -135,7 +135,7 @@ import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, Host
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
-import type { RestartScheduled, UpdatesSettings, UpdatesState } from "../../shared/protocol";
+import type { RestartScheduled, UpdateNotes, UpdatesSettings, UpdatesState } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -527,6 +527,8 @@ export const putWebSettings = (settings: Partial<WebSettings>) =>
 /** This machine's updates: what runs, the last check, the job. Always this host's own. */
 export const getUpdates = () => request<UpdatesState>("/api/updates", { cache: "no-store" });
 /** Check Now: answers once the check is done. */
+/** The Release Notes window's document (404 when this copy has none). */
+export const getUpdateNotes = () => request<UpdateNotes>("/api/updates/notes", { cache: "no-store" });
 export const checkUpdates = () => request<UpdatesState>("/api/updates/check", { method: "POST" });
 /** Save the Updates form (a branch is looked up in Sova's repository first). */
 export const putUpdatesSettings = (settings: UpdatesSettings) => request<UpdatesState>("/api/updates/settings", { method: "PUT", body: JSON.stringify(settings) });

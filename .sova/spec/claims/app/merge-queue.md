@@ -1734,6 +1734,10 @@ The tabs' rows:
   - **A fix needs your OK**, a fix on top of your own work or too wide, with Land
     (§app.merge-queue/standing-approval);
   - **Drafts changed since you approved**, with Land and Remove from Queue;
+  - **Private names**, a hit of the Private names and secrets step, with **Allow**, **Send Back** and
+    **Ask the Merge Thread**, answered on the queue as on the run's step and the chat's card
+    (§app.merge-queue/names-step, §chat.merge-queue/decision); Ask the Merge Thread opens the merge
+    thread. A button the row doesn't recognize shows an error and sends nothing, never a Land;
   - **Review the request**, a request's words waiting for you before it goes to the host, with
     Review Request (§app.merge-queue/requests);
   - a **Conflict** while it is being judged;

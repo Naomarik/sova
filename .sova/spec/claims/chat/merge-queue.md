@@ -440,12 +440,14 @@ branch's head.
   names the check that failed on the merge and on the target alone, with its log, and offers **Land
   Anyway** and **Try Again** (§app.merge-queue/blame); **Out of tries** gives the reason with
   **Land** (§app.merge-queue/tries); a fix that needs your OK says why, with **Land**
-  (§app.merge-queue/standing-approval). Each also offers Remove from Queue. No card has a text box;
+  (§app.merge-queue/standing-approval); **Private names** offers **Allow**, **Send Back** and **Ask
+  the Merge Thread** (§app.merge-queue/names-step). Each also offers Remove from Queue. No card has a text box;
   a decision answered in words is answered from the chat's message box.
 
-There is no Send Back, Send Back to Chat, Land This Commit Again or Land Newest Commit on any card.
-Land, Land Again, Accept, Land Anyway, Try Again and Remove from Queue are the same actions as the
-composer's modal and the pane, kept in sync with them. They are catalogue commands over the merge
+Apart from a Private names decision's Send Back, there is no Send Back, Send Back to Chat, Land This
+Commit Again or Land Newest Commit on any card. Land, Land Again, Accept, Land Anyway, Try Again and
+Remove from Queue are the same actions as the composer's modal and the pane, kept in sync with them;
+Allow, Send Back and Ask the Merge Thread are the same answers as the Merge Queue tab's run view. They are catalogue commands over the merge
 verbs (§app.project-services/merge-verbs): they act on the queue directly, never type into the chat,
 and count only as the user's own click in Sova's page (§app.access/your-click).
 
@@ -741,7 +743,13 @@ Merge Queue tab's Needs you (§app.merge-queue/view) and in the landing bar
   decision is then answered: the card moves back to in-place updates ("Back with the chat") and the
   tab's and landing bar's Needs you drop it.
 - **Queue answers act at once.** Accept, Land Anyway, Try Again, Land and Remove from Queue on a
-  decision act on the queue directly, like the other card actions, and send nothing to the chat.
+  decision, and **Allow**, **Send Back** and **Ask the Merge Thread** on a Private names decision
+  (§app.merge-queue/names-step), act on the queue directly, like the other card actions and as the
+  Merge Queue tab's run view does, and send nothing to the chat: Allow marks the flagged places fine
+  for this project so the push goes on, Send Back sends them back to the branch's chat to remove,
+  and Ask the Merge Thread gives the merge thread the places and opens it. A toast names the action
+  taken. A card button the card doesn't recognize shows an error and does nothing: no card answer
+  ever falls back to a Land.
 - **Only the user answers.** A decision's buttons count only as the user's own click in Sova's page,
   and its answer only as the user's own message sent from the chat's message box
   (§app.access/your-click): never a chat's script, a tool, another session or the merge thread.

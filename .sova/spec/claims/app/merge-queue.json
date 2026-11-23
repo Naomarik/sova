@@ -1951,7 +1951,9 @@
       "§app.project-setup/proposal",
       "§chat.worktrees/nothing-left",
       "§app.merge-queue/dry-runs",
-      "§app.merge-queue/fix"
+      "§app.merge-queue/fix",
+      "§app.merge-queue/names-step",
+      "§chat.merge-queue/decision"
     ],
     "agreed": {
       "by": "user",
@@ -2007,7 +2009,9 @@
       "src/components/RetirementLists.tsx",
       "server/landed-branch-agreement.integration.test.ts",
       "server/cleanup-switch.ts",
-      "src/components/pipeline/LandedHistory.tsx"
+      "src/components/pipeline/LandedHistory.tsx",
+      "src/lib/merge-queue-card.ts",
+      "src/lib/merge-queue-card.test.ts"
     ]
   },
   "§app/merge-queue": {

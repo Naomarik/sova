@@ -59,7 +59,7 @@
   "§chat.merge-queue/card-states": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.merge-queue/chat-card",
       "§chat.merge-queue/decision",
@@ -70,7 +70,8 @@
       "§app.merge-queue/blame",
       "§app.project-services/merge-verbs",
       "§app.access/your-click",
-      "§app.project-setup/land-gate"
+      "§app.project-setup/land-gate",
+      "§app.merge-queue/names-step"
     ],
     "code": [
       "src/lib/merge-queue-card.ts",
@@ -87,9 +88,9 @@
       "server/merge-queue/view.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-19T07:07Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
+      "by": "user",
+      "at": "2026-11-23T18:45Z",
+      "source": "pi-session:a89b7801-d883-480f-b663-e5c494b8914e#221e7a9f"
     }
   },
   "§chat.merge-queue/chat-card": {
@@ -202,12 +203,13 @@
       "§app.notifications/delivery",
       "§app.access/your-click",
       "§chat.merge-queue/asks",
-      "§chat.worktrees/place"
+      "§chat.worktrees/place",
+      "§app.merge-queue/names-step"
     ],
     "agreed": {
-      "by": "the user (al_2 go)",
-      "at": "2026-11-09T10:27Z",
-      "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
+      "by": "user",
+      "at": "2026-11-23T18:45Z",
+      "source": "pi-session:a89b7801-d883-480f-b663-e5c494b8914e#221e7a9f"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -225,7 +227,9 @@
       "src/components/ChatView.tsx",
       "src/lib/merge-standing.ts",
       "src/lib/merge-standing.test.ts",
-      "src/lib/branch-place.ts"
+      "src/lib/branch-place.ts",
+      "src/components/MergeQueueTab.tsx",
+      "src/lib/merge-queue-card.test.ts"
     ]
   },
   "§chat.merge-queue/names-interview": {

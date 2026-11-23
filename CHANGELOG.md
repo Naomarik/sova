@@ -4,6 +4,59 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.18.0 — 2026-11-23
+
+Release notes inside Sova, a merge queue that explains itself, a Private names and secrets check on
+every push, a restart limit for running copies, and a new Context audit playbook. 18 commits on the
+main line since v0.17.1 (10 merged branches). The highlights:
+
+- **Release notes in Settings → Updates.** **Release Notes**, beside **Check Now**, opens every
+  release's notes in the reading window, newest first. A release you haven't installed yet comes
+  first, marked as not installed, and "You're on vX.Y.Z" marks the one you run. A successful upgrade
+  now shows as one quiet line under the last check; only a failed or rolled-back upgrade shows a
+  warning.
+- **The merge queue explains itself.** One screen shows the queue's setup stage by stage, each run's
+  plan beside what it actually ran, and each branch's history. **Landed** has a health summary, a
+  search by branch across the whole history and **Show Older**. Flaky tests are listed across
+  landings. A rerun counts a test as flaky only when its report shows that test ran and passed.
+  **Clean Run** checks a commit again from nothing. Each run has an **Activity** list of what
+  happened to it and why, and your answer to a decision shows as **You answered**.
+- **Private names and secrets, before anything is pushed.** Every run that pushes ends with a scan
+  for secrets and private names. This includes branches landed by request or by push, and a first
+  push to a new remote. A hit holds the branch for you: **Allow**, **Send Back** or **Ask the Merge
+  Thread**. When the scan can't look, the push is held with the reason.
+- **Merge queue for any project.** A project's folder rules now live in the `merge` section of
+  `.sova/project.json` (`merge.rules`: which paths set off which extra checks). Sova applies them
+  at the start of every run. A check may run in its own folder, with its own variables and a test
+  report (JUnit XML or TAP). The merge copy handles submodules and Git LFS, a branch can land as one
+  commit (`merge.squash`), and the queue's words name your project's remote when it isn't called
+  `origin`. The review kit can name its model, effort, passes and time limit. A project can let the
+  reviewer fix what it finds; a reviewer with a shell or fixes runs only under full sandbox
+  enforcement.
+- **Running Copies: a restart limit.** A service that keeps crashing is restarted only up to its
+  limit. While it retries, it shows **Restarting**; once Sova gives up, a fuller **Failed** block
+  says why. The Running branches list reads the same way.
+- **Playbooks.** A new **Context audit** playbook (`/context-audit`) lists what a project loads:
+  context files, skills and the references between them. It finds contradictions, broken links,
+  orphans, repeats and heavy skills, reports in the chat, and fixes only what you pick, on a branch
+  it never lands. The Playbooks dialog lists This project, then Yours, with Sova's own folded
+  behind one row. The **Spec review** and **Marketing** playbooks are gone. A campaign in the A/B cycle can
+  now close as "baseline kept".
+- **Smaller changes.** New chats open without waiting for their MCP servers to list their tools.
+  Three or more "Paired with" lines fold into one, with **Show All**. Spec search treats a topic
+  split into parts as one topic.
+
+**What you may need to do:** If you used the Spec review or Marketing playbooks, copy them from
+v0.17.1 (`playbooks/spec-review`, `playbooks/marketing`) into your project's `.sova/playbooks/` to
+keep them. Projects still keeping their merge-queue, release, review, request or project-setup
+files in `.sova/playbooks/` are still read there in this release.
+
+Going back to `v0.17.1` (`SOVA_REF=v0.17.1`) hasn't been tested on this release. v0.17.1 refuses a
+`.sova/project.json` that uses any of this release's new `merge` keys (`rules`, `remote`, `squash`,
+`reviewFixes`, or a check's `perSelector`, `cwd`, `env`, `report`, `rerunTest`): that project's
+running copies, merge queue and releases stop until you remove those keys. It also ignores the
+queue's event history, flaky-test list and health summary. Sessions and settings are untouched.
+
 ## v0.17.1 — 2026-11-20
 
 Release with Options and Cancel Release on the Releases tab, Lookbook designs on share links, and Regenerate Title in the session menus.

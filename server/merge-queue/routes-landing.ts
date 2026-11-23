@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { type LandHow, type MergeEntry, type MergeQueueView } from "../../shared/merge-queue";
+import { type LandHow, type MergeEntry, type MergeQueueView, type MergeRun, type MergeTrial, type MergeTrialWaiting } from "../../shared/merge-queue";
 import { pageOnlyRefusal } from "../page-only";
 import { isLandHow } from "./strategy";
 import type { DiscardDeps } from "../worktree-remove-discard";
@@ -14,6 +14,9 @@ import type { DiscardDeps } from "../worktree-remove-discard";
  *   DELETE /api/merge-queue/projects/:project/land-how/override      clear this computer's choice
  *   POST   /api/merge-queue/projects/:project/discard-branch {branch, commit, dryRun?: true, digest?}
  *                                                                     Discard Branch…: what goes (dry run), then folder, branch, chat
+ *   POST   /api/merge-queue/projects/:project/dry-run {branch, commit}  Run Dry Run: started, or waiting its turn
+ *   POST   /api/merge-queue/projects/:project/dry-run/stop {run} | {waiting}  Stop Dry Run
+ *   POST   /api/merge-queue/projects/:project/fix {branch, commit, run, newChat?, check?}  Fix / Fix in New Chat
  *
  * Refusals answer {error: {code, message}} with 400 (invalid-request), 404 (not-found), 409 (busy) or 501 (unsupported).
  */
@@ -25,6 +28,16 @@ export interface LandingQueue {
   setLandHow(how: LandHow, where: "project" | "computer"): Promise<{ state: "saved"; commit?: string } | { state: "waiting"; release?: string } | { state: "requested"; url: string } | { state: "pushed"; branch: string }>;
   clearLandHowOverride(): Promise<void>;
   view(): Promise<MergeQueueView>;
+  trial(req: { branch: string; commit: string; by: { kind: "operator" } }): Promise<{ trial?: MergeTrial; run?: MergeRun; waiting?: MergeTrialWaiting }>;
+  stopTrial(req: { run?: string; waiting?: string; by: { kind: "operator" } }): Promise<{ trial?: MergeTrial; waiting?: MergeTrialWaiting }>;
+}
+
+/** Fix / Fix in New Chat's answer. */
+export interface FixAnswer {
+  session: string;
+  path: string;
+  branch?: string;
+  worktree?: string;
 }
 
 export interface LandingRouteDeps {
@@ -37,7 +50,15 @@ export interface LandingRouteDeps {
   /** Discard Branch… (server/worktree-remove-discard.ts): a project's main checkout by id, the act's world, and its
    *  own page-only words (its dry run is the page's alone too: it lists a chat's files). */
   discard?: { rootOf(projectId: string): Promise<string | null>; deps(): Promise<DiscardDeps>; notPage(c: Context): string | null };
+  /** Fix (and Fix in New Chat): the failure of `run` sent to the branch's chat, or a fresh chat started with it. */
+  fix?: (projectId: string, req: { branch: string; commit: string; run: string; newChat: boolean; check?: string }) => Promise<FixAnswer>;
 }
+
+/** A text field of the wrong type, refused for itself before what's missing: its words, or null. */
+const textWrong = (b: Record<string, unknown>, keys: readonly string[]): string | null => {
+  for (const k of keys) if (b[k] !== undefined && typeof b[k] !== "string") return `"${k}" must be text`;
+  return null;
+};
 
 const STATUS: Record<string, 400 | 403 | 404 | 409 | 501> = { "invalid-request": 400, "not-found": 404, busy: 409, unsupported: 501, forbidden: 403, "needs-confirm": 400 };
 
@@ -145,6 +166,74 @@ export function registerMergeLandingRoutes(app: Hono<any>, deps: LandingRouteDep
     }
   });
 
+  const branchOk = (b: unknown): b is string => typeof b === "string" && !!b && b.length <= 255 && !b.startsWith("-") && !/[\s\0~^:?*[\\]|\.\.|@\{/.test(b);
+  const commitOk = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{40,64}$/.test(v);
+
+  // Run Dry Run / Run Dry Run Again: the operator's own click; while the copy is busy it waits its turn.
+  app.post("/api/merge-queue/projects/:project/dry-run", async (c) => {
+    const no = refused(c);
+    if (no) return no;
+    const b = await jsonBody(c);
+    const wrong = textWrong(b, DRY_RUN_TEXT_FIELDS);
+    if (wrong) return c.json({ error: { code: "invalid-request", message: wrong } }, 400);
+    if (!branchOk(b.branch)) return c.json({ error: { code: "invalid-request", message: '"branch" is a branch name' } }, 400);
+    if (!commitOk(b.commit)) return c.json({ error: { code: "invalid-request", message: '"commit" is the full commit the row showed' } }, 400);
+    const id = c.req.param("project");
+    const q = await deps.queueOf(id);
+    if (!q) return c.json(noProject(id), 404);
+    try {
+      return c.json(await q.trial({ branch: b.branch, commit: b.commit, by: { kind: "operator" } }));
+    } catch (err) {
+      const f = fail(err);
+      return c.json(f.body, f.status);
+    }
+  });
+
+  // Stop Dry Run: the running one (its run) or a waiting one (its id).
+  app.post("/api/merge-queue/projects/:project/dry-run/stop", async (c) => {
+    const no = refused(c);
+    if (no) return no;
+    const b = await jsonBody(c);
+    const wrong = textWrong(b, STOP_TEXT_FIELDS);
+    if (wrong) return c.json({ error: { code: "invalid-request", message: wrong } }, 400);
+    const run = typeof b.run === "string" && /^mr_[\w-]{1,64}$/.test(b.run) ? b.run : undefined;
+    const waiting = typeof b.waiting === "string" && /^tw_[\w-]{1,64}$/.test(b.waiting) ? b.waiting : undefined;
+    if (!run === !waiting) return c.json({ error: { code: "invalid-request", message: 'send the running dry run\'s "run" (mr_…) or a waiting one\'s "waiting" (tw_…)' } }, 400);
+    const id = c.req.param("project");
+    const q = await deps.queueOf(id);
+    if (!q) return c.json(noProject(id), 404);
+    try {
+      return c.json(await q.stopTrial({ ...(run ? { run } : {}), ...(waiting ? { waiting } : {}), by: { kind: "operator" } }));
+    } catch (err) {
+      const f = fail(err);
+      return c.json(f.body, f.status);
+    }
+  });
+
+  // Fix / Fix in New Chat on a failure holding a branch up: the operator's own click; nothing lands or is approved.
+  app.post("/api/merge-queue/projects/:project/fix", async (c) => {
+    const no = refused(c);
+    if (no) return no;
+    if (!deps.fix) return c.json({ error: { code: "unsupported", message: "Fix isn't wired in this server." } }, 501);
+    const b = await jsonBody(c);
+    const wrong = textWrong(b, FIX_TEXT_FIELDS);
+    if (wrong) return c.json({ error: { code: "invalid-request", message: wrong } }, 400);
+    if (b.newChat !== undefined && typeof b.newChat !== "boolean") return c.json({ error: { code: "invalid-request", message: '"newChat" must be true or false' } }, 400);
+    // A check broken on the target (Fix in New Chat only) is named by its check and run, never a branch.
+    const brokenCheck = b.newChat === true && typeof b.check === "string" && b.branch === undefined && b.commit === undefined;
+    if (!brokenCheck && !branchOk(b.branch)) return c.json({ error: { code: "invalid-request", message: '"branch" is a branch name' } }, 400);
+    if (!brokenCheck && !commitOk(b.commit)) return c.json({ error: { code: "invalid-request", message: '"commit" is the full commit the failure is at' } }, 400);
+    if (typeof b.run !== "string" || !/^mr_[\w-]{1,64}$/.test(b.run)) return c.json({ error: { code: "invalid-request", message: '"run" is the failed run (mr_…)' } }, 400);
+    if (b.newChat !== undefined && typeof b.newChat !== "boolean") return c.json({ error: { code: "invalid-request", message: '"newChat" must be true or false' } }, 400);
+    if (b.check !== undefined && (typeof b.check !== "string" || !b.check || b.check.length > 120)) return c.json({ error: { code: "invalid-request", message: '"check" is a check id' } }, 400);
+    try {
+      return c.json(await deps.fix(c.req.param("project"), { branch: brokenCheck ? "" : (b.branch as string), commit: brokenCheck ? "" : (b.commit as string), run: b.run, newChat: b.newChat === true, ...(typeof b.check === "string" ? { check: b.check } : {}) }));
+    } catch (err) {
+      const f = fail(err);
+      return c.json(f.body, f.status);
+    }
+  });
+
   app.delete("/api/merge-queue/projects/:project/land-how/override", async (c) => {
     const no = refused(c);
     if (no) return no;
@@ -168,6 +257,12 @@ const WRITE_WORDS = {
   script: "A script can't publish a request or change how branches land: do it yourself on the Merge Queue tab.",
   extension: "An extension can't publish a request or change how branches land: do it yourself on the Merge Queue tab.",
 };
+
+/** Run Dry Run's, Stop Dry Run's and Fix's text fields: each refused for its own wrong type. */
+const ROW_FIELDS = ["branch", "commit"] as const;
+const FIX_TEXT_FIELDS = ["run", "check", ...ROW_FIELDS] as const;
+const DRY_RUN_TEXT_FIELDS = ROW_FIELDS;
+const STOP_TEXT_FIELDS = ["run", "waiting"] as const;
 
 /** Discard Branch…'s text fields: each refused for its own wrong type. */
 const DISCARD_TEXT_FIELDS = ["branch", "commit", "digest"] as const;
@@ -213,5 +308,6 @@ export function registerLiveMergeLandingRoutes(app: Hono<any>): void {
       deps: async () => (await import("../worktree-remove-discard")).realDiscardDeps(),
       notPage: discardNotPage,
     },
+    fix: async (id, req) => (await import("./fix-live")).liveFix(id, req),
   });
 }

@@ -180,14 +180,14 @@ describe("Needs you rows", () => {
     });
   }
 
-  test("a Setup row's chip follows its trial on the row's one read: Running while it runs, Ready once it passed", async () => {
+  test("a Setup row's chip follows its dry run on the row's one read: Running while it runs, Ready once it passed", async () => {
     const o = await open(1280, "light", { items: [SETUP_ITEM], setup: setupRead("running") });
     try {
       const word = (w: string) => o.page.locator(`.ny-row[data-kind-word="${w}"]`).filter({ hasText: REVIEW.title });
       await word("Running").waitFor();
       assert.equal((await row(o.page, REVIEW.title).locator(".chip").textContent())?.trim(), "Running");
-      assert.equal(await word("Ready").count(), 0, "not Ready while its trial runs");
-      await row(o.page, REVIEW.title).getByText("Trial of 5bd95ab: running").waitFor();
+      assert.equal(await word("Ready").count(), 0, "not Ready while its dry run runs");
+      await row(o.page, REVIEW.title).getByText("Dry run of 5bd95ab: running").waitFor();
       o.setSetup(setupRead("passed"));
       await word("Ready").waitFor();
       await row(o.page, REVIEW.title).getByRole("button", { name: "Merge Branch sova/setup" }).waitFor();
@@ -204,7 +204,7 @@ describe("Needs you rows", () => {
       const orgRow = o.page.locator(".org-needs .ny-row").filter({ hasText: REVIEW.title });
       await o.page.locator('.org-needs .ny-row[data-kind-word="Running"]').waitFor();
       await o.page.locator('.sidebar-needs-you .ny-row[data-kind-word="Running"]').waitFor();
-      assert.equal(await orgRow.getByRole("button", { name: /Merge Branch|Run Trial|Land/ }).count(), 0);
+      assert.equal(await orgRow.getByRole("button", { name: /Merge Branch|Run Dry Run|Land/ }).count(), 0);
     } finally {
       await o.ctx.close();
     }

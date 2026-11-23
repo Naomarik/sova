@@ -85,3 +85,4 @@ A {"type":"event","event":{"type":"agent_end","messages":[{"role":"user","conten
 A {"type":"event","event":{"type":"agent_settled"}}
 B {"type":"event","v":2,"event":{"type":"run.settled"}}
 got next request's messages ["system: ","user: [The conversation passed from Operator (the operator) to Bob Golden]\n[From Bob Golden]\n first","assistant: ","user: [From Bob Golden]\n second","user: [From Bob Golden]\n third","user: [From Bob Golden]\n fourth"]
+sdk abort []

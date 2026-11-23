@@ -37,18 +37,18 @@
       "§app/project-setup"
     ],
     "code": [
-      "playbooks/project-deploy/PLAYBOOK.md",
-      "playbooks/project-deploy/references/deploy.md",
-      "playbooks/project-deploy/scripts/project-deploy.mjs",
+      "system-playbooks/project-deploy/PLAYBOOK.md",
+      "system-playbooks/project-deploy/references/deploy.md",
+      "system-playbooks/project-deploy/scripts/project-deploy.mjs",
       "server/project-services/deploy-playbook.test.ts",
       "server/project-services/deploy-playbook.integration.test.ts",
-      "playbooks/project-setup/references/questions.md",
+      "system-playbooks/project-setup/references/questions.md",
       "server/projects/onboard.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T04:53Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.project-runtime/deploy-standing": {
@@ -123,9 +123,9 @@
       "§app.project-overseer/coding-worktrees"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-05T06:42Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.project-runtime/playbook": {
@@ -133,16 +133,16 @@
     "authority": "accepted",
     "evidence": "verified",
     "code": [
-      "playbooks/project-verbs/PLAYBOOK.md",
-      "playbooks/project-verbs/scripts/project-verbs.mjs",
-      "playbooks/project-verbs/references/contract.md",
-      "playbooks/project-verbs/references/isolation.md",
-      "playbooks/project-verbs/references/recipes.md",
-      "playbooks/project-verbs/references/templates/nrepl-test.bb",
-      "playbooks/project-verbs/references/templates/bb.edn",
-      "playbooks/project-verbs/references/examples/static.json",
-      "playbooks/project-verbs/references/examples/node-app.json",
-      "playbooks/project-verbs/references/examples/motorsaif-like.json",
+      "system-playbooks/project-verbs/PLAYBOOK.md",
+      "system-playbooks/project-verbs/scripts/project-verbs.mjs",
+      "system-playbooks/project-verbs/references/contract.md",
+      "system-playbooks/project-verbs/references/isolation.md",
+      "system-playbooks/project-verbs/references/recipes.md",
+      "system-playbooks/project-verbs/references/templates/nrepl-test.bb",
+      "system-playbooks/project-verbs/references/templates/bb.edn",
+      "system-playbooks/project-verbs/references/examples/static.json",
+      "system-playbooks/project-verbs/references/examples/node-app.json",
+      "system-playbooks/project-verbs/references/examples/motorsaif-like.json",
       "server/projects/onboard-playbook.test.ts",
       "server/projects/onboard-playbook.integration.test.ts"
     ],
@@ -150,7 +150,12 @@
       "§chat.playbooks/bundles",
       "§app.project-services/contract",
       "§app.project-services/conform"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+    }
   },
   "§app.project-runtime/registry": {
     "kind": "behavior",
@@ -219,8 +224,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T21:21Z",
-      "source": "pi-session:4368877c-8704-42e1-8b6d-93f52ae7fb89#9680102b"
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§app.project-runtime/run-progress": {
@@ -263,9 +268,9 @@
       "§app.project-runtime/registry"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-18T20:26Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.project-runtime/software-card": {
@@ -289,9 +294,9 @@
       "§app.project-runtime/registry"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-16T16:31Z",
-      "source": "pi-session:a7186a10-5049-46ef-a82e-98966bf92a24#2bfdf484"
+      "by": "naomarik",
+      "at": "2026-11-18T20:26Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.project-runtime/standing": {
@@ -321,7 +326,7 @@
       "server/projects/onboard.test.ts",
       "server/project-coding-mode.ts",
       "server/project-overseer.ts",
-      "playbooks/project-verbs/PLAYBOOK.md",
+      "system-playbooks/project-verbs/PLAYBOOK.md",
       "statecharts/src/sova/statecharts/runtime.cljc",
       "statecharts/src/sova/statecharts/proj.cljc",
       "server/build-loadout.ts",
@@ -339,9 +344,9 @@
       "server/overseer-tools.ts",
       "server/projects/playbook-review.ts",
       "server/projects/folded-playbooks.test.ts",
-      "playbooks/project-setup/playbook.json",
-      "playbooks/project-deploy/playbook.json",
-      "playbooks/release-maker/playbook.json"
+      "system-playbooks/project-setup/playbook.json",
+      "system-playbooks/project-deploy/playbook.json",
+      "system-playbooks/release-maker/playbook.json"
     ],
     "requires": [
       "§app.project-runtime/onboard",

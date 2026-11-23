@@ -52,6 +52,8 @@ import { RowMenu } from "./SessionRowMenu";
 import { ContextRing } from "./ContextRing";
 import { CostsTab } from "./CostsTab";
 import { PerformanceTab } from "./PerformanceTab";
+import { TimeTab } from "./TimeTab";
+import { DEFAULT_TIME_QUERY, type TimeQuery, timeHref } from "../lib/time-totals";
 import { DEFAULT_PERF_QUERY, type PerfQuery, perfHref } from "../lib/perf";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
 import { TitleField } from "./TitleField";
@@ -460,22 +462,35 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   );
 }
 
-/** The Costs and Performance tabs' filters (and Performance's sort) when you last left them, for this tab's life: Board → Costs brings it back. */
+/** The Costs, Performance and Time Spent tabs' filters (and Performance's sort) when you last left them, for this tab's life: Board → Costs brings it back. */
 let lastCosts: CostsQuery = DEFAULT_COSTS_QUERY;
 let lastPerf: PerfQuery = DEFAULT_PERF_QUERY;
+let lastTime: TimeQuery = DEFAULT_TIME_QUERY;
 
-type AgentsTab = "board" | "costs" | "performance";
+type AgentsTab = "board" | "costs" | "performance" | "time";
 
-/** Board, Costs and Performance. Tabs switch views and the address says which; the tab bar is the
+/** Board, Costs, Performance and Time Spent. Tabs switch views and the address says which; the tab bar is the
     skill's (Left/Right move along it and wrap, Home/End jump, Enter or Space selects). */
 function AgentsTabs(props: { tab: AgentsTab }) {
   const tabs = [
     { id: "board", label: "Board", href: () => agentsHref() },
     { id: "costs", label: "Costs", href: () => costsHref(lastCosts) },
     { id: "performance", label: "Performance", href: () => perfHref(lastPerf) },
+    { id: "time", label: "Time Spent", href: () => timeHref(lastTime) },
   ] as const;
   const els: HTMLButtonElement[] = [];
   const selected = (id: string) => id === props.tab;
+  // A narrow strip scrolls sideways: the selected tab is brought fully into it (Time Spent, the
+  // last, would sit half cut off on a phone), moving the strip only, never the page.
+  createEffect(() => {
+    const el = els[tabs.findIndex((t) => t.id === props.tab)];
+    const bar = el?.parentElement;
+    if (!el || !bar) return;
+    const b = bar.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    if (r.right > b.right) bar.scrollLeft += r.right - b.right;
+    else if (r.left < b.left) bar.scrollLeft -= b.left - r.left;
+  });
   const onKey = (e: KeyboardEvent, i: number) => {
     const last = tabs.length - 1;
     const next = e.key === "ArrowRight" ? (i === last ? 0 : i + 1) : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : -1;
@@ -527,13 +542,16 @@ export function AgentsView(props: {
   costs: CostsQuery | null;
   /** The Performance tab's query, when `#/agents/performance` is the address; null elsewhere. */
   performance: PerfQuery | null;
+  /** The Time Spent tab's query, when `#/agents/time` is the address; null elsewhere. */
+  time: TimeQuery | null;
 }) {
-  /** Off the board: Costs or Performance. The board's polls and its head line rest there. */
-  const onCosts = () => props.costs !== null || props.performance !== null;
-  const tab = (): AgentsTab => (props.costs ? "costs" : props.performance ? "performance" : "board");
+  /** Off the board: Costs, Performance or Time Spent. The board's polls and its head line rest there. */
+  const onCosts = () => props.costs !== null || props.performance !== null || props.time !== null;
+  const tab = (): AgentsTab => (props.costs ? "costs" : props.performance ? "performance" : props.time ? "time" : "board");
   // Back on a tab from the board, the filter you left it with.
   createEffect(() => props.costs && (lastCosts = props.costs));
   createEffect(() => props.performance && (lastPerf = props.performance));
+  createEffect(() => props.time && (lastTime = props.time));
   const [costsTick, setCostsTick] = createSignal(0);
   const [filter, setFilter] = createSignal<BoardFilter | null>(null);
   const [query, setQuery] = createSignal("");
@@ -749,6 +767,7 @@ export function AgentsView(props: {
       <AgentsTabs tab={tab()} />
       <Show when={props.costs}>{(q) => <CostsTab query={q()} sessions={props.sessions} now={props.now} tick={costsTick()} />}</Show>
       <Show when={props.performance}>{(q) => <PerformanceTab query={q()} now={props.now} tick={costsTick()} />}</Show>
+      <Show when={props.time}>{(q) => <TimeTab query={q()} sessions={props.sessions} now={props.now} tick={costsTick()} />}</Show>
       <Show when={!onCosts()}>
       <div class="agents-tabpanel" id="agents-tabpanel" role="tabpanel" aria-labelledby="agents-tab-board">
       <Show when={props.sessions} fallback={<ListSkeleton groups={1} rows={3} />}>

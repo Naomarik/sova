@@ -46,8 +46,14 @@ environment every runner starts in, and the hermetic dev server.
 - A test sets its agent dir before any product module loads: import `server/testing/scratch-agent-dir.ts`
   first (or set `PI_CODING_AGENT_DIR` before dynamic imports), and build fixture paths from that dir,
   never from an imported constant such as `SESSIONS_DIR`.
-- pi-config's own extension tests (self-contained, outside the runner's GLOBS) are the one exception:
+- pi-config's own extension tests (self-contained, outside the runner's GLOBS) are an exception:
   run each with the command its guide names, nothing shorter.
+- So are a user-started playbook's own tests, `playbooks/<id>/tests/*.test.mjs` (plain `node:test`,
+  needing nothing from Sova, each file safe on its own through `tests/scratch.mjs`): run them as
+  `node --test playbooks/<id>/tests/*.test.mjs`, never another path. The runner's GLOBS never match
+  them; the merge queue's Playbook tests check (`scripts/merge-checks/playbook-tests.mjs`) runs those
+  of each playbook a branch changes. System playbooks' tests, and every test of how Sova reads or
+  shows a playbook, stay in Sova's suite.
 
 ### Two tiers, by file name (§app.server-runtime/test-tiers)
 

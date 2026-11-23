@@ -71,6 +71,7 @@ test("every address the edge's strict routes admit for a kind routes to that kin
     ["GET", `/s/${t}`, "s"],
     ["GET", `/api/s/${t}`, "s"],
     ["GET", `/api/s/${t}/img/12`, "s"],
+    ["GET", `/api/s/${t}/d/AB/12/tile-still`, "s"],
   ];
   const covered = new Set<number>();
   for (const [method, path, kind] of samples) {

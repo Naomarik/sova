@@ -4,7 +4,7 @@ import { request, type IncomingHttpHeaders, type IncomingMessage, type ServerRes
 import { join } from "node:path";
 import { ASSET_MAX_BYTES, ASSET_NAME_TYPES, ASSET_TYPES, type ShareGatewaySetting } from "../../shared/public-links";
 import { FRAME_HOST_NAME, frameHostHeaders } from "../../shared/vis-frame-host";
-import { SESSION_SHARE_IMAGE_MAX_BYTES } from "../../shared/session-share";
+import { SESSION_SHARE_DESIGN_MAX_BYTES, SESSION_SHARE_IMAGE_MAX_BYTES } from "../../shared/session-share";
 import { TOUR_LIMITS } from "../../shared/tour";
 import { findTourShare } from "../tours/shares";
 import { findLink, hashToken } from "../baton-links";
@@ -16,7 +16,7 @@ import { findPersonLink } from "../person-links";
 import { findShareLink } from "../session-shares";
 import { verifiedAddress } from "./destination";
 import { hashLabel, previewHashKnown } from "../preview-links";
-import { FILE_UPLOAD_TIMEOUT_MS, FORWARD_TIMEOUT_MS, inProcessShare, type ShareSocketKind, TOUR_IMAGE_PATH, UPLOAD_TIMEOUT_MS, type PreviewHooks, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
+import { FILE_UPLOAD_TIMEOUT_MS, FORWARD_TIMEOUT_MS, inProcessShare, type ShareSocketKind, SESSION_DESIGN_PATH, TOUR_IMAGE_PATH, UPLOAD_TIMEOUT_MS, type PreviewHooks, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
 import { refuse } from "../extensions";
 import { gatewayPreviewMatch, localPreviewOrigin, previewLabelOfHost } from "./preview-address";
 import { previewHopHeaders, previewHttpHop, previewUpgradeHop } from "./preview-hop";
@@ -606,7 +606,13 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     // A session share's image, and a gathering's photo (§app.baton/images), are capped here too,
     // counted while streaming (defense in depth: the origin caps it already, but an older or
     // misconfigured one might not).
-    const cap = TOUR_IMAGE_PATH.test(ctx.url.pathname) ? TOUR_LIMITS.assetBytes : (kind === "s" || kind === "h") && ctx.url.pathname.includes("/img/") ? imageMax : Infinity;
+    const cap = TOUR_IMAGE_PATH.test(ctx.url.pathname)
+      ? TOUR_LIMITS.assetBytes
+      : (kind === "s" || kind === "h") && ctx.url.pathname.includes("/img/")
+        ? imageMax
+        : kind === "s" && SESSION_DESIGN_PATH.test(ctx.url.pathname)
+          ? SESSION_SHARE_DESIGN_MAX_BYTES
+          : Infinity;
     return hop(req, res, ctx, hit, () => holds(hit.nodeId, h, kind, hit.ingressPort), (up) => {
       const declared = Number(up.headers["content-length"]);
       if (Number.isFinite(declared) && declared > cap) {

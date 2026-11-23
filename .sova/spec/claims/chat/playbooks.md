@@ -14,17 +14,18 @@ The dialog fetches once each time it opens.
 
 | Group | `source` | Folder | Notes |
 |---|---|---|---|
-| **Sova** | `sova` | `playbooks/` at the Sova repo root | Shipped with Sova |
-| **Yours** | `user` | `~/.pi/agent/sova/playbooks/` | Your own. An id that matches a shipped one **replaces** it: the shipped entry is dropped and yours carries `replacesSova: true`. The interface deliberately **does not render** that flag: the row already sits under the Yours heading, so a marker would only repeat it. The field exists in the data, asserted in `server/playbooks.test.ts` |
-| **This project** | `project` | `<project root>/.sova/playbooks/`, then `<project root>/.sova/marketing/playbooks/` | The session's project (§chat.profiles/projects): a worktree or subfolder reads its main checkout's. An id in both folders is listed once, from `.sova/playbooks/`. It never replaces anything. It is always its own group, even when an id matches one above |
+| **Sova** | `sova` | `playbooks/` at the Sova repo root | Shipped with Sova: the playbooks you start yourself. Sova's own playbooks, the ones only Sova starts, are in `system-playbooks/` beside it and never in this list (§chat.playbooks/system-playbooks) |
+| **Yours** | `user` | `~/.pi/agent/sova/playbooks/` | Your own. An id that matches one in `playbooks/` **replaces** it: the shipped entry is dropped and yours carries `replacesSova: true`. The interface deliberately **does not render** that flag: the row already sits under the Yours heading, so a marker would only repeat it. The field exists in the data, asserted in `server/playbooks.test.ts`. An id that matches one of Sova's own playbooks replaces nothing: it is listed here like any other of yours |
+| **This project** | `project` | `<project root>/.sova/playbooks/`, then `<project root>/.sova/marketing/playbooks/` | The session's project (§chat.profiles/projects): a worktree or subfolder reads its main checkout's. An id in both folders is listed once, from `.sova/playbooks/`. It never replaces anything. It is always its own group, even when an id matches one above. What a project adds to Sova's own chats is in `.sova/playbook-config/`, never listed (§chat.playbooks/playbook-config) |
 
-A playbook only Sova's own chats run is not listed: in the catalog, the Playbooks dialog and the
-`/` rows it is hidden (§chat.playbooks/unlisted). That covers `project-setup`, which only the Setup
-chat's own start sends, `release-maker` and `project-deploy`, its release and deploy halves, which
-run only inside it (§app/project-setup), and the recipes of the merge queue, the release, review
-and request.
+No playbook only Sova's own chats run is listed: the catalog, the Playbooks dialog and the `/` rows
+leave out everything in `system-playbooks/` (the merge thread's and the release chat's methods,
+`project-setup` with its release and deploy halves `release-maker` and `project-deploy`, and
+`project-verbs`, §chat.playbooks/system-playbooks) and everything in a project's
+`.sova/playbook-config/` (§chat.playbooks/playbook-config). Any other playbook whose description says
+`listed: false` is hidden too (§chat.playbooks/unlisted).
 
-**The grammar is the same in all three folders.** A playbook is a directory `<id>/` whose
+**The grammar is the same in every folder.** A playbook is a directory `<id>/` whose
 **entry file** is either `PLAYBOOK.md` or `SKILL.md`, plus whatever other files its entry tells
 the agent to read (§chat.playbooks/bundles). One file is the whole entry: Sova's keys go in its
 frontmatter either way, so a folder written as a pi or Claude Code skill is also a playbook.
@@ -74,6 +75,17 @@ The layout is a convention, and every part of it is optional:
 | `tests/` | The scripts' own tests |
 
 Older playbooks name `phases/` and `templates/`; those keep working, since any relative path does.
+
+**A playbook you start keeps its own tests.** A playbook a user starts in a chat keeps the tests
+of its own scripts in its own `tests/` folder:
+
+- They need nothing from Sova: `node --test <playbook>/tests/*.test.mjs` runs them with nothing installed.
+- They run on their own whenever the playbook is edited, and the merge queue runs them when a
+  branch changes that playbook (§app.merge-queue/checks).
+- They stay out of Sova's main test run.
+- Sova's own system playbooks (the merge queue, release, release maker, project setup, project
+  deploy and project verbs) and the tests of how Sova lists, shows or sends any playbook stay in
+  Sova's tests.
 
 **Sova never runs a playbook's scripts.** Listing, sending, a schedule's fire and a wake only
 read the entry file. A script runs when the agent, following the entry, calls it with its own
@@ -362,10 +374,76 @@ the chat's own model. A model Settings → Models turns off is skipped.
 
 ## §chat.playbooks/unlisted — Recipes only Sova's chats run are not listed
 
-A playbook whose description says `listed: false` is left out of the Playbooks dialog and the `/`
-rows. It is still found where Sova itself looks for it: the Setup chat still starts from
-`project-setup`, and the merge queue, release, review and request chats still read their own
-recipes. Since the dialog doesn't list it, it isn't offered for scheduling there either.
+A playbook of yours or a project's whose description says `listed: false` is left out of the
+Playbooks dialog and the `/` rows. It is still found where Sova itself looks for it: a project's
+merge queue, release, review and request folders still kept in its old place (§chat.playbooks/playbook-config)
+say so, and their chats still read them, as the Setup chat still reads the project's setup notes
+there. Since the dialog doesn't list it, it isn't offered for
+scheduling there either. Sova's own playbooks need no such flag: their folder keeps them out,
+whatever their own description says (§chat.playbooks/system-playbooks).
+
+## §chat.playbooks/system-playbooks — Sova's own playbooks are in `system-playbooks/`
+
+The six playbooks only Sova starts ship in `system-playbooks/` at the Sova repo root, beside
+`playbooks/`, which keeps only the ones you start (A/B cycle, Brandmaker, Marketing, Spec review):
+
+| Playbook | Folder | Started by |
+|---|---|---|
+| Merge thread's method | `system-playbooks/merge-queue/` | Sova, when a branch is queued (§chat.merge-queue/thread) |
+| Release method | `system-playbooks/release/` | Sova, when a release starts (§app.release/playbook) |
+| Project setup | `system-playbooks/project-setup/` | Sova, from Set Up with a Chat or Change Setup (§app.project-setup/context) |
+| Release playbook maker | `system-playbooks/release-maker/` | Sova, inside the Setup chat (§app.release/maker) |
+| Project deploy | `system-playbooks/project-deploy/` | Sova, inside the Setup chat (§app.project-runtime/deploy-playbook) |
+| Project verbs | `system-playbooks/project-verbs/` | Sova, from the project's Running Copies tab (§app.project-runtime/onboard) |
+
+- **Never listed.** Nothing in `system-playbooks/` is in the Playbooks dialog or the `/` rows, nor
+  offered for scheduling, whatever its own description says: the folder decides, never a flag.
+  Project verbs, listed in the dialog until the move, is no longer there.
+- **Started only from what Sova ships.** Sova finds each by its id in its own `system-playbooks/` and
+  nowhere else. A playbook of yours or a project's with the same id is just another playbook, listed
+  under Yours or This project like any other, and replaces nothing Sova runs. A project adjusts
+  Sova's own chats through its config folders (§chat.playbooks/playbook-config).
+- **Side by side.** The six read each other's pages and scripts as neighbouring folders
+  (`../project-verbs/…`) and Sova's shared code at the same depth as before, so they move together.
+- **Chats started before the move keep their instructions and tools.** Wherever Sova reads the
+  playbook folder a chat's first message names (whether it may use the project verbs, which
+  playbook a run follows, the merge thread's method), an old folder `<Sova repo>/playbooks/<id>/` of
+  one of the six is read as `<Sova repo>/system-playbooks/<id>/`. A Setup chat started before the
+  move gets a fresh Setup chat on its next Change Setup (§app.project-setup/chat), and the merge
+  thread is told the new folder, scripts included, on its next event (§chat.merge-queue/thread).
+  The old folders are read this way until a later version (§app.server-runtime/migrations).
+- **Their tests stay in Sova's test run**, in Sova's own test folders, pointed at the new folder.
+
+## §chat.playbooks/playbook-config — A project's config for Sova's own chats is in `.sova/playbook-config/`
+
+What a project adds to Sova's own chats lives in its `.sova/playbook-config/`, one folder each,
+never among the playbooks you start:
+
+| Folder | Read by |
+|---|---|
+| `.sova/playbook-config/merge-queue/` | the merge thread, after Sova's method (§chat.merge-queue/thread) |
+| `.sova/playbook-config/release/` | the release chat: the usual `release.playbook` (§app.release/settings) |
+| `.sova/playbook-config/review/` | the merge queue's review step: the usual review kit (§app.merge-queue/review) |
+| `.sova/playbook-config/request/` | requests: the usual request kit (§app.merge-queue/request-kit) |
+| `.sova/playbook-config/project-setup/` | the Setup chat: the project's own setup notes (§app.project-setup/context) |
+
+Nothing in `.sova/playbook-config/` is listed in the Playbooks dialog or the `/` rows, so a
+project's `.sova/playbooks/` holds only playbooks you start. A new setup writes these folders here,
+and the definition's defaults name them: turning review on in Settings → Merge Queue adds
+`.sova/playbook-config/review`, and the Setup chat's release half writes the release playbook to
+`.sova/playbook-config/release` (§app.release/maker). The Setup chat's references and Sova's
+contributor guide teach this place. Sova's own repository keeps its folders here, and its
+`.sova/project.json` names them.
+
+**The old place is still read, until a later version.** A project set up before the move keeps
+working untouched: where `.sova/playbook-config/<x>/` is absent, Sova reads `.sova/playbooks/<x>/`
+for `merge-queue`, `release`, `review`, `request` and `project-setup`, both for what Sova's chats read
+there (the merge thread's additions, the Setup chat's setup notes) and for a default the definition
+doesn't name (turning review on with only the old folder on the target adds
+`.sova/playbooks/review`). A definition that names a folder, old or new, is read as named. This
+lasts from 0.16.0 until a later version (0.18.0 proposed), tracked as `playbook-config-old-place`
+in Sova's migrations (§app.server-runtime/migrations); by then a project moves its folders, and the
+definition's paths, on a setup branch.
 
 ## §chat.playbooks/run-card — The playbook card
 
@@ -649,16 +727,64 @@ and show the result.
   script shared by every campaign, brief templates, a cost table against known prices, a noise and
   copy-effect check, and the ways an arm is made (a worktree with its own test copy of Sova, a
   prompt variant file, or a re-score of saved replies). Run output stays in the worktree's
-  ignored cache; experiment commits never land.
+  ignored cache and experiment commits never land; the subject's record (below) is the one thing
+  a campaign keeps.
 - **Rounds.** Master is the fixed baseline, "Round 0", in every chart; each cycle's winner is the
-  next cycle's base. Every cycle shows its chart.
+  next cycle's base. Every cycle shows its chart. Master's arm is always its own copy (master
+  plus one commit that only removes the record, so it behaves exactly as master), never the
+  campaign's own worktree.
+- **Predicted beside observed.** Each round's report shows, per arm, what its fix was expected to
+  fix and to risk beside what it did: expected fixes, unexpected fixes, expected breaks and
+  unexpected breaks. An arm with no prediction says so. A missed prediction is shown and recorded
+  only: the winner is still picked by pass rate, then cost.
+- **The consultant's outlook.** After the baseline and after each round is scored, the round's
+  report is shown at once and a fresh consultant starts by itself. It reads the results and the
+  failing replies and, while you decide, sends a short plain follow-up as its own message: whether
+  the subject can still improve (likely, unlikely or futile), why the last change won or lost,
+  what the next round should do, the expected gain against the bar, and a recommendation (another
+  cycle, keep the baseline, or run the confirm), with one more line when a better fix needs
+  something the cycle didn't allow. It names no case numbers, file names or code. On your
+  go-ahead the same consultant writes the next round's one change, from its outlook. An answer you
+  give before the outlook arrives is held: the outlook is posted, then you're asked to confirm or
+  change your answer.
+- **What an outlook can stop.** A futile outlook writes no change and pauses to ask you: keep the
+  baseline, run a round anyway, or allow more to change; with rivals, it pauses only when all of
+  them say futile. An outlook never ends a campaign by itself. Each outlook's expected gain is one
+  exact figure, shown beside what happened in the next round's report. At the last stop the report
+  comes first, then the outlook, then the landing reviewer's verdict, which reads it; the record is
+  closed after that.
+- **A record that outlives the campaign.** Each subject (such as "vis") has a record kept in the
+  project's repository, at `.sova/ab/<name>.jsonl`, and landed with Land: a winner's landing
+  carries it, and a campaign closed as "baseline kept" or parked lands it alone. A campaign
+  closes by landing a winner, running another cycle, keeping the baseline (shown as "baseline
+  kept", never as parked) or parking. The record holds every attempt, losing ones included: the
+  problem in general words, the change and why, the test models with their pass rates before and
+  after, expected and observed counts, whether it was carried or dropped, and its campaign and
+  round; it also keeps each round's outlook.
+- **No private text in the record.** It holds no real-chat text, case wording or case numbers,
+  and no machine details such as home folders or addresses; a check refuses such a line before
+  it is written. The check also refuses the campaign's own case names, whatever their style.
+- **Who reads the record.** A new campaign's first report says which record it continues and
+  what it holds. Consultants read it before proposing a change, and the landing reviewer reads
+  it and the campaign's outlooks before its verdict, which may be Baseline kept; the grader reads
+  neither. When a new test model fails, the recorded fixes are
+  re-tested before new ones are proposed.
+- **Test chats never see the record.** Each arm's copy removes it in a commit of its own that
+  never lands, so it is gone from the copy's files and its current commit; a round refuses to
+  start while any arm's copy still holds it, there or in its current commit.
+- **Its own tests.** The tests of its scripts sit in its own `tests/` folder
+  (§chat.playbooks/bundles), not in Sova's: `node --test playbooks/ab-cycle/tests/*.test.mjs` runs them
+  with nothing from Sova, and its entry file says so and that an edit to the playbook runs them.
+  Each test file works in a throwaway folder of its own, with a throwaway home and agent dir,
+  and refuses to run when that folder sits inside a Git repository.
 - **A screenshot collage.** Its report shows screenshots as one collage: each arm's result side
   by side per cycle, and the card at key moments. Its collage script builds that image.
 - **It requires an alignment first** (§chat.playbooks/align-first) on what fails today, what
-  counts as fixed, and how it's measured; their decisions fill those choices, which the card
-  shows read-only. Its run still stops to agree what is measured before the baseline.
-- **Choices** include what is under test, the test models, how many cycles run before it asks
-  you and the cap. Its runs never swap a test model for another, and its grader uses only the models listed for it.
+  counts as fixed, how it's measured, and which record the campaign continues (it lists the
+  project's existing records); their decisions fill those choices, which the card shows
+  read-only. Its run still stops to agree what is measured before the baseline.
+- **Choices** include what is under test, the record's name, the test models, how many cycles
+  run before it asks you and the cap. Its runs never swap a test model for another, and its grader uses only the models listed for it.
 
 ## §chat.playbooks/pi-upgrade — The pi upgrade playbook
 
@@ -708,8 +834,9 @@ Decided with the design and not in this release:
 - **One modal, never stacked.** Step 2 replaces step 1 inside the same `.modal`.
 - **Sending is the chat's send.** There is no separate endpoint or queue, and no special bubble.
   The one difference is the frame type: always `prompt`, never `steer`.
-- **Overrides are whole, and only Yours can make one.** A user playbook with a shipped id
-  replaces the shipped one outright. A project playbook replaces nothing.
+- **Overrides are whole, and only Yours can make one.** A user playbook with the id of one in
+  `playbooks/` replaces it outright; one with the id of Sova's own playbooks replaces nothing
+  (§chat.playbooks/system-playbooks). A project playbook replaces nothing.
 - **The header line is not optional.** Without it, a body beginning with `/` would run as a
   command.
 - **Typed text is never silently dropped, and never crosses playbooks.** It is kept per

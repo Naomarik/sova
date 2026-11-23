@@ -2047,6 +2047,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .mq-run p { margin: 0; }
 
+/* Dry runs (§app.merge-queue/dry-runs): the sentence and its What's a dry run? link beside every dry-run line, the
+   explainer's parts, and the checks a dry run left out. */
+.dry-run-what { margin: 0; }
+.dry-run-link { font-size: inherit; }
+@media (pointer: coarse) { .dry-run-link { min-height: var(--tap-min); } }
+.dry-run-explainer .modal-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.dry-run-explainer .modal-body h3 { margin: var(--space-2) 0 0; }
+.dry-run-explainer .modal-body p { margin: 0; }
+.dry-run-explainer .modal-foot { justify-content: space-between; }
+.mq-not-run { list-style: none; margin: var(--space-2) 0 0; padding: 0; }
+.mq-not-run .mq-step { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-height: var(--row-height); }
+
 /* The Setup chat: its button, its card line, and its proposal read from its branch. */
 .setup-chat-act { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .setup-chat-act .button,
@@ -2118,6 +2130,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .transcript-header .banner { flex-wrap: nowrap; min-width: 0; width: 100%; max-width: calc(var(--measure) + var(--space-9) - var(--space-6)); margin: 0 auto; }
 .transcript-header .banner-main { flex: 1 1 0; min-width: 0; }
 .transcript-header .banner-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* From 3 pairings they fold into one line; Show All opens them in a list under it, which scrolls once
+   the header passes about 40% of the pane. */
+.transcript-header:has(> .pair-list) { display: flex; flex-direction: column; max-height: 40%; }
+.pair-list { min-height: 0; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 
 /* A card head with a chip (a Paired queue batch) on a phone: the name gives way (ellipsis) so the
    chip and time stay in. */

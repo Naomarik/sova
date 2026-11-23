@@ -129,8 +129,16 @@
       "src/components/SessionTitleSettings.tsx",
       "server/overseer-tools.ts",
       "server/overseer-tools.test.ts",
-      "server/fixed-names.test.ts"
-    ]
+      "server/fixed-names.test.ts",
+      "src/components/SessionContextMenu.tsx",
+      "src/components/SessionRowMenu.tsx",
+      "src/lib/session-actions.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-18T22:28Z",
+      "source": "pi-session:ef5674c8-a3ed-4137-8353-bc5db57a35a1#44aed81b"
+    }
   },
   "§app.session-list/cleanup-org-guard": {
     "kind": "behavior",
@@ -254,7 +262,7 @@
       "§app.merge-queue/chats"
     ],
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "server/sessions-index.ts",
       "server/app.ts",
@@ -288,8 +296,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-17T18:25Z",
-      "source": "pi-session:db324931-6073-4928-bbcb-6efe7088a6cc#cd3727c2"
+      "at": "2026-11-18T22:28Z",
+      "source": "pi-session:ef5674c8-a3ed-4137-8353-bc5db57a35a1#44aed81b"
     }
   },
   "§app.session-list/group-picker": {
@@ -468,8 +476,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T21:21Z",
-      "source": "pi-session:4368877c-8704-42e1-8b6d-93f52ae7fb89#9680102b"
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§app.session-list/needs-you-dismiss": {
@@ -483,9 +491,9 @@
       "§app.notifications/delivery"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T01:40Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     },
     "code": [
       "server/needs-you-dismissed.ts",
@@ -649,17 +657,20 @@
       "§design/context-menus"
     ],
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "src/components/SessionContextMenu.tsx",
       "src/lib/session-context-menu.ts",
       "src/lib/session-context-menu.test.ts",
-      "src/components/Sidebar.tsx"
+      "src/components/Sidebar.tsx",
+      "src/lib/auto-title.ts",
+      "src/lib/session-actions.ts",
+      "src/lib/auto-title.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-16T16:07Z",
-      "source": "pi-session:5068e8f9-2d24-48d8-abd8-090a2bcad97b#94a91edd"
+      "at": "2026-11-18T22:28Z",
+      "source": "pi-session:ef5674c8-a3ed-4137-8353-bc5db57a35a1#44aed81b"
     }
   },
   "§app.session-list/search": {

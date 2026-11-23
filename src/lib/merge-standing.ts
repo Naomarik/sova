@@ -32,6 +32,7 @@ export const DECISION_LABEL: Record<CardDecision["kind"], string> = {
   "out-of-tries": "Out of tries",
   "fix-ok": "A fix needs your OK",
   "drafts-changed": "Drafts changed",
+  "private-names": "Private names and secrets",
 };
 
 export const DECISION_ACTION_LABEL: Record<DecisionAction, string> = {
@@ -40,6 +41,9 @@ export const DECISION_ACTION_LABEL: Record<DecisionAction, string> = {
   "try-again": "Try Again",
   land: "Land",
   remove: "Remove from Queue",
+  allow: "Allow",
+  "send-back": "Send Back",
+  "ask-thread": "Ask the Merge Thread",
 };
 
 /** A decision's answers on the queue, in order, Remove from Queue always last and once. */
@@ -86,6 +90,9 @@ export function standingWords(f: StandingFacts): { label: string; tone: Standing
       return { label: "Back with the chat", tone: "info", detail: "Fix waits for the run checking now", answer: answerWords(s.answer) ?? undefined };
     case "paused":
       return { label: "Paused: you stopped the chat", tone: "neutral" };
+    case "dry-run":
+      // A setup branch's Land: its dry run comes first, then it lands by itself (§app.project-setup/land-gate).
+      return { label: "Approved · dry run first", tone: "info", detail: s.run ? "Dry run running" : undefined };
   }
   return null;
 }

@@ -23,6 +23,7 @@ id_ed25519*
 .pgpass
 *credential*
 *secret*
+!server/decide-secret.ts
 
 # local, per-machine overrides and runtime state
 *.local

@@ -14,6 +14,8 @@ import { PROFILE, WORKTREES } from "../harness/state-kinds";
 import { queueChatRole } from "../../shared/merge-queue";
 import { stateView } from "../harness/state-view";
 import { playbookProposes } from "../playbooks";
+// Temporary (migrations/manifest.json: system-playbooks-old-paths).
+import { movedPlaybookDir } from "../../migrations/system-playbooks-old-paths/index.mjs";
 import { projectOf, projectRootOf } from "../project-root";
 import { chatStateRoot } from "../state-root";
 import type { Caller, CopyApproval, CreatorWorking, ProjectEngine, VerbAct } from "./engine";
@@ -134,7 +136,7 @@ const COPIES_HELP =
   "In the turn the user's click on a sova_card card opens, and only for a row whose chosen label names the act: teardown or reset of a copy you did not start while its conversation is still working (items.copies), and stop-leftover {project, port} of a leftover process (items.leftovers; Sova checks it is still the same process). A typed yes never answers such a card. A teardown keeps a folder's uncommitted edits in that folder (its worktree step says kept): tell them so. A project's main copy (slot 0) and stopping a shared service are never yours.";
 
 const ONBOARD_HELP =
-  " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you.";
+  " onboard {why} starts the Project verbs playbook as a coding session on its own branch (counted and held like a coding session's start): it writes or updates .sova/project.json, proves it with conform and proposes it on its branch; the operator merges it, never you. While the project's Project verbs chat is open and idle, the playbook's turn and your why go to that chat as its next message instead; while it works, waits on the user's answers or holds a proposal not merged, onboard is refused. Starting it fresh is the user's alone.";
 
 /** The playbook's start for a verb tool (the Overseers'): the text the model reads and the details. */
 export type OnboardRun = (why: string, params: Record<string, unknown>) => Promise<{ text: string; details: Record<string, unknown> }>;
@@ -165,7 +167,7 @@ const DEPLOY_HELP = {
     " Shipping is the operator's: deploy.run and deploy.rollback answer forbidden to this tool; deploy.plan is the operator's (yours in a turn the user started); to ask for a deploy, deploy.request {target, commit?, why} raises it for the operator.",
   session: " You never ship and never ask for a deploy: deploy.plan, deploy.run, deploy.rollback and deploy.request answer forbidden; say it in your report.",
   projectOverseer:
-    " Releases: release.status / release.logs read them; release.start {why?} starts one and release.publish {release} publishes one whose every gate passed, both through the project's release act (the release power On, held for the waiting period, which the operator may cancel; never past a failed gating check, no overrides); with the power Off, release.request {why} asks the operator. Withdraw, abandon, continue and retry are the operator's." +
+    " Releases: release.status / release.logs read them; release.start {why?} starts one and release.publish {release} publishes one whose every gate passed, both through the project's release act (the release power On, held for the waiting period, which the operator may cancel; never past a failed gating check, no overrides); with the power Off, release.request {why} asks the operator. Withdraw, Cancel Release (release.abandon), continue and retry are the operator's." +
     " To ship, deploy.run {target?, commit?, why} (deploy.plan is the same call) sets off the project's own deploy act: it needs the deploy power On, waits out the hold like any held act (the operator may cancel it), then the project's own recipe plans and runs it and decides whether it ships; there are no overrides (failing tests or a dirty tree refuse it). To leave it to the operator instead (or with the power Off), deploy.request {target, commit?, why} raises it for them. deploy.rollback is the operator's alone.",
 } as const;
 
@@ -208,7 +210,11 @@ export function renderResult(r: VerbResult, note?: string | null): string {
     : r.tests
       ? `test: passed${r.tests.passed !== null ? ` (${r.tests.passed} passed, ${r.tests.skipped ?? 0} skipped)` : ""} in ${(r.tests.ms / 1000).toFixed(1)}s, state ${r.state}`
       : `${r.verb}: ${r.changed ? "changed" : "nothing to change"}, state ${r.state}`;
-  const { lines, ...rest } = r;
+  const { lines: verbLines, ...rest0 } = r;
+  // A give-up's last log lines are the project's output too: read as untrusted, never inside the JSON.
+  const given = giveUpLinesOf(rest0);
+  const rest = given.result;
+  const lines = verbLines || given.lines.length ? [...(verbLines ?? []), ...given.lines] : undefined;
   const parts = [head, JSON.stringify(rest, null, 1)];
   if (lines)
     parts.push(
@@ -218,6 +224,21 @@ export function renderResult(r: VerbResult, note?: string | null): string {
     );
   if (note) parts.push(note);
   return fitMergeAnswer(r, parts.join("\n"), note);
+}
+
+/** The result with each give-up's `lines` taken out (§app.project-services/status-logs), and those lines as log lines
+    (`[<service> gave up]`), the instance's services first, then each listed instance's. */
+export function giveUpLinesOf<T extends Pick<VerbResult, "services" | "instances">>(r: T): { result: T; lines: { t: string; service: string; text: string }[] } {
+  const lines: { t: string; service: string; text: string }[] = [];
+  const strip = (services: VerbResult["services"], where: string) =>
+    services.map((s) => {
+      if (!s.giveUp) return s;
+      const { lines: ls, ...giveUp } = s.giveUp;
+      for (const text of ls) lines.push({ t: "", service: `${where}${s.name} gave up`, text });
+      return { ...s, giveUp: { ...giveUp, lines: `${ls.length} line(s), below as untrusted content` } } as unknown as typeof s;
+    });
+  const result = { ...r, services: strip(r.services, ""), ...(r.instances ? { instances: r.instances.map((i) => ({ ...i, services: strip(i.services, `${i.instance} `) })) } : {}) };
+  return { result, lines };
 }
 
 /** The most a merge verb's answer carries as a chat's tool returns it: under the size the Claude Code CLI saves to a file
@@ -385,7 +406,8 @@ async function ownCheckouts(ctx: ToolCtx | undefined): Promise<string[]> {
 /** Whether a message's text starts a playbook that proposes setup: sent by hand or by the Setup chat, or fired by a schedule. */
 async function startsSetupPlaybook(text: string): Promise<boolean> {
   const dirs = [...playbookDirsIn(text), ...parseBlockTags(text).flatMap((t) => (t.dir ? [t.dir] : []))];
-  for (const dir of dirs) if (isAbsolute(dir) && (await playbookProposes(dir))) return true;
+  // A chat started before Sova's own playbooks moved names the old folder (§chat.playbooks/system-playbooks).
+  for (const dir of dirs) if (isAbsolute(dir) && (await playbookProposes(movedPlaybookDir(dir)))) return true;
   return false;
 }
 

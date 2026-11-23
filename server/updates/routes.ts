@@ -149,6 +149,11 @@ export function setUpdatesForTest(m: UpdatesManager | null): void {
   manager = m;
 }
 
+/** Tests: pin what detectInstall would answer (no probe: it spawns `systemctl --user show`); null forgets it. */
+export function setInstallForTest(info: InstallInfo | null): void {
+  installCache = info ? { at: Infinity, info: Promise.resolve(info) } : null;
+}
+
 /** After listen: the real port, then the daily check's schedule. */
 export function startUpdates(port: number, host: string): void {
   listen = { port, host };

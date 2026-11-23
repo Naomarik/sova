@@ -211,8 +211,8 @@ included.
   A merge queue change in the settings history has no Undo: it is changed back in Settings → Merge Queue.
   Settings the
   queue keeps on this computer apply when the card does. Check commands, the install step, the target
-  and the kits go by Land (§chat.create-mode/card-or-land), once a trial of the branch's head passed
-  (§app.project-setup/land-gate). First setup stays the person's own, through the project's Setup
+  and the kits go by Land (§chat.create-mode/card-or-land), which runs a dry run of the branch's head
+  first (§app.project-setup/land-gate). First setup stays the person's own, through the project's Setup
   chat (Set Up with a Chat on the Merge Queue tab or in Settings → Merge Queue, §app/project-setup);
   Create never writes a first setup itself, and points at Change Setup for a later change of how the
   project lands, releases or ships.

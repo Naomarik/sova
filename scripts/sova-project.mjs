@@ -11,7 +11,7 @@
 //   e.g. share --instance <id> --endpoint web.http --days 3 --confirm; revoke --link <pv_…> | --instance <id> [--endpoint …]
 //   release (shared/release.ts): release.status; release.logs [--release <rl_…>] [--step <id>]; release.request --why <text>;
 //     release.start [--commit <sha>]; release.continue|retry --release <rl_…> --step <id>; release.publish --release <rl_…>
-//     --confirm; release.abandon --release <rl_…> --why <text> --confirm; release.withdraw --release <rl_…> | --tag <tag>
+//     --confirm; release.abandon --release <rl_…> [--why <text>] [--confirm] (Cancel Release: --confirm only once its commit landed); release.withdraw --release <rl_…> | --tag <tag>
 //     --why <text> --confirm (refused from a chat's own scripts: the operator's word only); release.note --text <note>
 //     saves the Release Note the next release.start sends its chat (--text "" clears it)
 //   deploy (§app.project-services/deploy): deploy.status [--target <name>]; deploy.logs --target <name> | --deploy <dp_…>;
@@ -28,7 +28,7 @@ import { resolve } from "node:path";
 import { exitOf } from "../shared/project-contract.ts";
 import { tokenHeaders } from "./sova-token.mjs";
 
-const VALUE = new Set(["project", "ask", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "via", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires", "action", "request", "ruling", "choices", "release", "tag", "state", "summary", "detail", "facts"]);
+const VALUE = new Set(["project", "ask", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "via", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires", "action", "request", "ruling", "choices", "release", "tag", "state", "summary", "detail", "facts", "matches"]);
 const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss", "without-specs", "without-review", "none", "dry-run", "drafts"]);
 const PATHS = new Set(["project", "checkout"]);
 

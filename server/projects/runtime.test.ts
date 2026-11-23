@@ -3,9 +3,9 @@
 // (the engine's conform stubbed: its own suite is the engine's tests); registration and drift. A throwaway PI_CODING_AGENT_DIR and repos in the OS temp dir.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { Hono } from "hono";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
@@ -102,10 +102,17 @@ test("a new project is born with its registry: unregistered while main declares 
   const host = hostOf(engineOf(pid)!);
   assert.ok(host.configuration(runtimeSid(pid)), "runtime/<p> exists");
   assert.equal(host.data(runtimeSid(pid))?.orgId, undefined, "no organization in it");
-  const v = await read();
-  assert.equal(v.standing, "unregistered");
-  assert.equal(v.playbookState, "idle");
-  assert.equal(v.can.onboard, true);
+  // A host whose model picker lists the playbook's first model: nothing refuses a start.
+  const { setOfferedRefsForTest, onboardModels } = await import("./onboard");
+  setOfferedRefsForTest(async () => [onboardModels()[0]!]);
+  try {
+    const v = await read();
+    assert.equal(v.standing, "unregistered");
+    assert.equal(v.playbookState, "idle");
+    assert.equal(v.can.onboard, true);
+  } finally {
+    setOfferedRefsForTest(null);
+  }
 });
 
 test("a definition on main conforms by itself, and a pass registers it with its memory", async () => {
@@ -155,14 +162,65 @@ test("an invalid definition on main is failed with the parser's error", async ()
   assert.ok(v.feed[0]!.line.startsWith("The definition on main is invalid: "), v.feed[0]!.line);
 });
 
-test("Run Playbook is refused for an archived project, and not offered", async () => {
+test("no model on this host: the line says the press's own sentence before any press", async () => {
+  const { setOfferedRefsForTest, noOnboardModel } = await import("./onboard");
+  setOfferedRefsForTest(async () => []);
+  try {
+    const v = await read();
+    assert.equal(v.can.onboard, false);
+    assert.equal(v.can.onboardWhy, noOnboardModel());
+    const r = await app.request(`/api/projects/${pid}/verbs/onboard`, json("POST", {}));
+    assert.equal(r.status, 409);
+    assert.equal(((await r.json()) as { error: string }).error, v.can.onboardWhy, "the press says the same");
+  } finally {
+    setOfferedRefsForTest(null);
+  }
+});
+
+test("the setup line's reason is read once per few seconds, the same answer a fresh read gives", async () => {
+  const { setOfferedRefsForTest, onboardRefusal, onboardRefusalCached, ONBOARD_REFUSAL_TTL_MS } = await import("./onboard");
+  let lists = 0;
+  setOfferedRefsForTest(async () => (lists++, []));
+  try {
+    const first = await read();
+    const second = await read();
+    assert.equal(lists, 1, "the second poll lists no models");
+    assert.deepEqual([first.can.onboardWhy, second.can.onboardWhy], [await onboardRefusal(pid), await onboardRefusal(pid)]);
+    lists = 0;
+    await onboardRefusalCached(pid, Date.now() + ONBOARD_REFUSAL_TTL_MS);
+    assert.equal(lists, 1, "past its time it is read again");
+  } finally {
+    setOfferedRefsForTest(null);
+  }
+});
+
+test("the registry's read writes nothing: a Project verbs chat no longer open stays in its record for a press to close", async () => {
+  const file = (await import("./verbs-chat")).verbsRecordFileForTest();
+  const before = `${JSON.stringify({ [pid]: { current: { sessionId: "gone", path: join(tmp, "gone.jsonl"), startedAt: "2026-01-01T00:00:00.000Z", run: "gone" }, history: [] } }, null, 2)}\n`;
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, before);
+  const { setOfferedRefsForTest, onboardModels } = await import("./onboard");
+  setOfferedRefsForTest(async () => [onboardModels()[0]!]);
+  try {
+    const v = await read();
+    assert.equal(v.can.onboard, true, "a chat no longer open isn't the one a press opens: a new start may go ahead");
+    assert.equal(readFileSync(file, "utf8"), before, "the record is as it was");
+  } finally {
+    setOfferedRefsForTest(null);
+    rmSync(file, { force: true });
+  }
+});
+
+test("Set Up with a Chat is refused for an archived project, and the line says why before any press", async () => {
   const a = await app.request(`/api/projects/${pid}/archive`, json("POST", {}));
   assert.equal(a.status, 200);
   const v = await read();
   assert.equal(v.can.onboard, false);
   const r = await app.request(`/api/projects/${pid}/verbs/onboard`, json("POST", { why: "first time" }));
   assert.equal(r.status, 409);
-  assert.match(((await r.json()) as { error: string }).error, /is archived\. Unarchive it first\.$/);
+  const said = ((await r.json()) as { error: string }).error;
+  assert.match(said, /is archived\. Unarchive it first\.$/);
+  assert.equal(v.can.onboardWhy, said, "the line says the press's own sentence");
   assert.equal((await read()).playbookState, "idle", "nothing started");
   await app.request(`/api/projects/${pid}/unarchive`, json("POST", {}));
 });
@@ -192,17 +250,15 @@ test("sova_project's Software block says what a proposed run's branch holds, by 
   assert.match(run(view("definition", "Project verbs", "sova/v"))!, /^Project verbs playbook: proposes a definition on sova\/v \(/);
 });
 
-test("an onboard build still open (working, waiting on questions, proposing, or ended with no change but not archived) holds a new start even when the runtime lost it", async () => {
+test("an onboard build still open (working, waiting on questions, proposing, or ended with no change but not archived) is found even when the runtime lost it", async () => {
   const { openOnboardRun } = await import("./runtime");
   const b = (data: Record<string, unknown>, configuration: string[] = ["build", "tree-open", "no-commits"], running = true) => ({ id: `build/p/${String(data.sessionId)}`, statechart: "build", configuration, running, data: { kind: "onboard", projectId: "p", ...data } });
   const none = () => false;
   // The D13 shape: the first turn's end heard without its questions ended the runtime's run; the build still waits on 11.
   assert.deepEqual(openOnboardRun([b({ sessionId: "s1", title: "Release playbook maker: acme", turn: "idle", questions: 11 })], "p", none), { sessionId: "s1", title: "Release playbook maker: acme" });
-  // Ended with no change while its chat is still open (an interview asking in plain chat): it holds a new start too,
-  // flagged ended, so the refusal says how to unblock it.
-  const { STILL_OPEN } = await import("./runtime");
+  // Ended with no change while its chat is still open: found, flagged ended. It refuses nothing: it is the project's
+  // standing Project verbs chat, which a press opens and an overseer's start messages (verbs-chat.ts).
   assert.deepEqual(openOnboardRun([b({ sessionId: "s1", title: "Maker", turn: "idle", questions: 0 })], "p", none), { sessionId: "s1", title: "Maker", ended: true });
-  assert.equal(STILL_OPEN("Maker"), 'The last setup run, "Maker", ended with no change but its chat is still open: open that chat to carry on, or archive it to start over.');
   assert.equal(openOnboardRun([b({ sessionId: "s1", turn: "working" })], "p", none)?.sessionId, "s1");
   assert.equal(openOnboardRun([b({ sessionId: "s1", turn: "idle" }, ["build", "tree-open", "unmerged"])], "p", none)?.sessionId, "s1", "a proposal waits for its review");
   // Ended runs, other kinds, other projects and archived chats never hold a new start.

@@ -8,6 +8,8 @@ import { isPlaybookRunId, type PlaybookCardEdits, type PlaybookChoiceOrigin, typ
 import type { PlaybookPlan } from "./plan";
 import { sessionsChanged } from "../list-generation";
 import { stateRoot } from "../state-root";
+// Temporary (migrations/manifest.json: system-playbooks-old-paths).
+import { movedPlaybookDir } from "../../migrations/system-playbooks-old-paths/index.mjs";
 
 export interface PlaybookRef {
   source: "sova" | "user" | "project";
@@ -178,10 +180,13 @@ export function openDraftOf(sessionId: string, playbook: { source: string; id: s
   return runsOfChat(sessionId).find((r) => r.state === "draft" && r.playbook.source === playbook.source && r.playbook.id === playbook.id);
 }
 
-/** The playbook a chat conducts a run of, newest first: the one its playbook block names when given. */
+/** The playbook a chat conducts a run of, newest first: the one its playbook block names when given. A folder of Sova's
+    own playbooks named before they moved to system-playbooks/, in the block or the record, is read at its new place. */
 export function conductedBy(sessionId: string, hint?: { id: string; dir?: string }): PlaybookRunRecord | undefined {
+  // Temporary (migrations/manifest.json: system-playbooks-old-paths).
+  const same = (a: string, b: string) => a === b || movedPlaybookDir(a) === movedPlaybookDir(b);
   return [...all().values()]
-    .filter((r) => r.started?.chat.id === sessionId && (!hint || (r.playbook.id === hint.id && (!hint.dir || r.playbook.dir === hint.dir))))
+    .filter((r) => r.started?.chat.id === sessionId && (!hint || (r.playbook.id === hint.id && (!hint.dir || same(r.playbook.dir, hint.dir)))))
     .sort((a, b) => (b.started!.at ?? "").localeCompare(a.started!.at ?? ""))[0];
 }
 

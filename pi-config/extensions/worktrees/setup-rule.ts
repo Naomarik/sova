@@ -4,7 +4,7 @@
  * merge check requires it), or the files of the project's release playbook folder.
  *
  * The one home of the rule. Sova's merge queue imports it for its land gate and trials; the `worktree` tool asks it
- * before a plain merge (a setup branch is merged only from its Setup card, after a passing trial). Read from Git alone,
+ * before a plain merge (a setup branch is merged only from its Setup card, after a passing dry run). Read from Git alone,
  * at the two commits, never a worktree's files.
  *
  * Node builtins only (the extension runs in every chat) and nothing of Sova.
@@ -18,7 +18,10 @@ export const SETUP_CONTRACT_FILE = ".sova/project.json";
 /** The definition's sections a setup branch changes. */
 export const PIPELINE_SECTIONS = ["merge", "release", "deploy"] as const;
 /** The release playbook folder when the definition names none. */
-export const DEFAULT_RELEASE_PLAYBOOK = ".sova/playbooks/release";
+export const DEFAULT_RELEASE_PLAYBOOK = ".sova/playbook-config/release";
+/** Its old place, still a default until Sova drops it (Sova's migrations/manifest.json: playbook-config-old-place;
+    inline, not imported: this file imports nothing of Sova). */
+export const OLD_RELEASE_PLAYBOOK = ".sova/playbooks/release";
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
@@ -80,10 +83,10 @@ export function changedSections(base: Record<string, unknown> | null, head: Reco
 	return out;
 }
 
-/** The release playbook folders a change could touch: the one each side names, else the default. Pure. */
+/** The release playbook folders a change could touch: the one each side names, else the default (and its old place). Pure. */
 export function releaseFolders(base: Record<string, unknown> | null, head: Record<string, unknown> | null): string[] {
 	const named = [obj(base?.release).playbook, obj(head?.release).playbook].filter((p): p is string => typeof p === "string" && !!p.trim());
-	return [...new Set([...named.map((p) => p.replace(/^\.\//, "").replace(/\/+$/, "")), DEFAULT_RELEASE_PLAYBOOK])];
+	return [...new Set([...named.map((p) => p.replace(/^\.\//, "").replace(/\/+$/, "")), DEFAULT_RELEASE_PLAYBOOK, OLD_RELEASE_PLAYBOOK])];
 }
 
 /** What makes a branch a setup branch: the sections it changes and the release playbook files; empty when it isn't one. */

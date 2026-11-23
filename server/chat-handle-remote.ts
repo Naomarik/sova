@@ -7,7 +7,7 @@
 // from this server's own sources.
 import { randomUUID } from "node:crypto";
 import { type ChatCall, type ChatId, type ChatMethod, type ChatMethods, type ChatReply, noAnswer, type ServerToolCall, unsentRefusal } from "../shared/chat-runtime";
-import type { ChatRuntimeMirror, ChatWireFrame, ExitCause, FrameOf } from "../shared/chat-runtime-wire";
+import type { ChatAskMethod, ChatRuntimeMirror, ChatWireFrame, ExitCause, FrameOf } from "../shared/chat-runtime-wire";
 import type { EntryId, HEntry, ToolResult } from "../shared/harness";
 import { CHAT_CLOSED_CLOSE_CODE, type ChatClientMessage, type ChatServerMessage } from "../shared/protocol";
 import {
@@ -80,6 +80,32 @@ export function holdRequests(link: Link): HeldRequests {
       for (const off of offs) off();
       return held.splice(0);
     },
+  };
+}
+
+/** Answer one of a chat's asks on `link`, from this server's own sources. */
+function answerAsk(link: Link, path: string, f: FrameOf<"ask">): void {
+  answerChatAsk(path, f.method, f.args).then(
+    (result) => link.send({ t: "answer", id: f.id, ok: true, result: result ?? null }),
+    (err) => link.send({ t: "answer", id: f.id, ok: false, error: { message: err instanceof Error ? err.message : String(err) } }),
+  );
+}
+
+/** The asks a chat makes while it opens that need no handle of it: its MCP list (its session_start asks it). */
+const OPEN_ASKS: ReadonlySet<ChatAskMethod> = new Set<ChatAskMethod>(["mcp.list"]);
+
+/** Answer those asks on `link` while the chat opens, before any handle binds it: its open waits on
+    them. Returns the stop, called before the handle takes the link: any other ask heard meanwhile is
+    handed back to the link, which holds it for the handle as it would have with no one listening. */
+export function answerOpenAsks(link: Link, path: string): () => void {
+  const others: FrameOf<"ask">[] = [];
+  const off = link.on("ask", (f) => {
+    if (OPEN_ASKS.has(f.method)) answerAsk(link, path, f);
+    else others.push(f);
+  });
+  return () => {
+    off();
+    link.handBack(others.splice(0));
   };
 }
 
@@ -252,11 +278,7 @@ export class RemoteChatHandle extends ChatHandle {
   private request(link: Link, f: RequestFrame): void {
     if (f.t === "tool.call") void this.runTool(f);
     else if (f.t === "tool.abort") this.running.get(f.effectId)?.abort();
-    else
-      answerChatAsk(this.path, f.method, f.args).then(
-        (result) => link.send({ t: "answer", id: f.id, ok: true, result: result ?? null }),
-        (err) => link.send({ t: "answer", id: f.id, ok: false, error: { message: err instanceof Error ? err.message : String(err) } }),
-      );
+    else answerAsk(link, this.path, f);
   }
 
   private failPending(): void {

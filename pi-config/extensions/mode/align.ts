@@ -1636,18 +1636,11 @@ const RUN_CONFIRM = /\b(?:merge|merging|push|release|restart|deploy|commit|rebas
 /** A leftover alignment block in the old markdown shape: its `## Alignment: <title>` anchor, colon and all. */
 const MARKDOWN_ALIGNMENT = /^\s*#{1,4}\s+alignment:\s*\S/im;
 const LIST_ITEM = /^\s*(?:\d+[.)]|[-*•])\s+\S/;
-/** The reply's working-notes fold (§chat.alignment/reply): a line reading exactly `### Working notes`, any case. */
-const WORKING_NOTES = /^### working notes[ \t]*$/im;
-
-/**
- * A reply without its working notes: everything from the first `### Working notes` line outside a code
- * fence to the end is dropped (§chat.alignment/reply), so what the user must read is what is judged.
- */
-export function withoutWorkingNotes(reply: string): string {
-	const masked = reply.replace(FENCED, (fence) => fence.replace(/[^\n]/g, " "));
-	const at = masked.search(WORKING_NOTES);
-	return at < 0 ? reply : reply.slice(0, at);
-}
+/** A paragraph that is one line and asks nothing: a report's closing note of where it looked. */
+const isClosingNote = (paragraph: string): boolean => !paragraph.includes("\n") && !paragraph.includes("?");
+/** A paragraph that is only a label: one heading or bold line, asking nothing. */
+const isLabelLine = (paragraph: string): boolean =>
+	isClosingNote(paragraph) && /^(?:#{1,6}\s+\S.*|\*\*[^*]+\*\*:?|__[^_]+__:?)$/.test(paragraph);
 
 /** What the nudge knows about the run beyond its reply. */
 export interface PlanContext {
@@ -1697,29 +1690,41 @@ function questionList(body: string): boolean {
  * the tool — or null when it doesn't:
  * - an old markdown alignment block (`## Alignment: <title>`; a heading or bold line that merely
  *   mentions alignment is not one);
- * - a last paragraph that ends in a question putting a decision to the user: labelled ("open
+ * - a last paragraph (above a closing one-line note that asks nothing, such as where the agent
+ *   looked) that ends in a question putting a decision to the user: labelled ("open
  *   questions"), a go-ahead ("should I go ahead", "take my recommendations") or a choice ("which do
  *   you prefer", unless the user's own prompt asked a question and the options answer it) — never a
  *   merge, push or restart confirmation;
+ * - a summary with such a question: what comes before the report's first heading (below a lone
+ *   label line such as "**Summary**"), or with no heading the first paragraph alone;
  * - a list of two or more items with such words anywhere, closed by a go-ahead ask ("Go?", or one
  *   of the above);
  * - or, wherever it sits, a labelled list of questions (questionList).
- * The reply's working notes (withoutWorkingNotes), code fences and the spec mode's "Also changes"
- * line are ignored. Calibrated offline against real
+ * The whole reply is judged (a `### Working notes` heading is ordinary text); code fences and the
+ * spec mode's "Also changes" line are ignored. Findings, as a list or table, with no decision put to
+ * the user never count. Calibrated offline against real
  * sessions (align.test.ts pins the shapes, false positives included).
  */
 export function planSignal(reply: string, context: PlanContext = {}): "markdown-alignment" | "question-list" | "asks-decision" | "list-then-decision" | null {
 	if (typeof reply !== "string") return null;
-	const body = withoutWorkingNotes(reply).replace(FENCED, " ").replace(SPEC_TRAILER, "").trim();
+	const body = reply.replace(FENCED, " ").replace(SPEC_TRAILER, "").trim();
 	if (MARKDOWN_ALIGNMENT.test(body)) return "markdown-alignment";
 	const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-	const last = paragraphs[paragraphs.length - 1] ?? "";
+	// A closing one-line note that asks nothing ("Looked in: server/export.ts.") is not the reply's end.
+	const closing = paragraphs.length > 1 && isClosingNote(paragraphs[paragraphs.length - 1]!) ? 1 : 0;
+	const last = paragraphs[paragraphs.length - 1 - closing] ?? "";
 	if (/\?\s*[*_)\]"'`]*\s*$/.test(last)) {
 		if (decisionAsk(last, context)) return "asks-decision";
 		const items = body.split("\n").filter((l) => LIST_ITEM.test(l)).length;
 		const anyDecisionWords = LABEL_ASK.test(body) || APPROVAL_ASK.test(body) || CHOICE_ASK.test(body);
 		if (items >= 2 && anyDecisionWords && BARE_GO.test(last) && !questionsOf(last).some((q) => RUN_CONFIRM.test(q))) return "list-then-decision";
 	}
+	// The summary: what comes before the report's first heading (below a lone label line such as
+	// "**Summary**" or "## Summary"); with no heading, the first paragraph alone.
+	const start = paragraphs.length > 1 && isLabelLine(paragraphs[0]!) ? 1 : 0;
+	const heading = paragraphs.findIndex((p, i) => i > start && /^#{1,6}\s/.test(p));
+	const summary = heading < 0 ? paragraphs.slice(start, start + 1) : paragraphs.slice(start, heading);
+	if (summary.some((p) => decisionAsk(p, context))) return "asks-decision";
 	return questionList(body) ? "question-list" : null;
 }
 

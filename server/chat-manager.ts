@@ -39,6 +39,7 @@ import { rowsOf, rowsOfEntry } from "./transcript";
 import { isShellMessage, onWire, onWire1, rowFor, withRows, type ReplyLookup } from "./wire-rows";
 import { perfRecordOf, ReplyTimer, type ReplyOutcome } from "./reply-timing";
 import { appendPerfRecord, replyTimingOf, type PerfKind } from "./perf-record";
+import { appendToolRunRecord, ToolRunTimer } from "./tool-run-record";
 import { replyTimingsOf } from "./reply-facts";
 import type { ReplyTiming } from "../shared/harness-wire";
 import { producerId } from "../pi-config/extensions/llm-inflight/tracker.ts";
@@ -79,7 +80,7 @@ import { deeperContextExtension } from "./harness/pi/deeper-context";
 import { inProjectHere, skillDescentAllowed } from "./skill-descent";
 import { backgroundJobsExtension } from "./harness/pi/background-jobs";
 import { mcpExtension } from "./harness/pi/mcp";
-import { nothingDeclared } from "./mcp/folder";
+import { askedList } from "./mcp/folder";
 import { NO_MCP, normalizeChatList, type McpChatList } from "./mcp/list";
 import type { McpListAsk } from "./mcp/chat";
 import type { McpNote } from "../shared/mcp";
@@ -1259,6 +1260,17 @@ class ChatSession {
   private modeActionsRef: ModeActions | undefined;
   /** Times each reply as it streams (§app.insights/reply-timing); a new one per bind. */
   private replyTimer = new ReplyTimer();
+  /** Times each top-level tool call and writes its record when it ends (server/tool-run-record.ts);
+      a stopped turn, a rebind or the chat going away closes the calls still open. */
+  private toolRuns = new ToolRunTimer({
+    who: () => {
+      const sid = this.harness.id;
+      const who = resolveUsageAttribution(sid);
+      const sk = who.routed && PERF_KINDS_SET.has(who.kind) ? (who.kind as PerfKind) : undefined;
+      return { sid, ...(sk ? { sk } : {}), device: readDeviceId(agentRoot()), producer: producerId() };
+    },
+    write: (record) => void appendToolRunRecord(record, agentRoot()),
+  });
   /** This session's measured replies by entry id: one load at bind (the store, through the server)
       plus each reply measured here. A wire-2 row's `reply` fact reads it. */
   private replyTimings = new Map<string, ReplyTiming>();
@@ -1519,8 +1531,8 @@ class ChatSession {
     sdk: {
       // The REAL queue (`hasQueued`, the agent's own) and the mirror, through the driving session
       // (P9 queue-one-bit, server/harness/pi/QUIRKS.md). Delivery is read from the real queue, never
-      // the mirror: the mirror is spliced late and skips empty text, so an image-only send never
-      // leaves it. The mirror is read ONLY as a change detector against our own earlier reading of
+      // the mirror: the mirror is spliced late and by text, so its entries are not the queued
+      // messages. The mirror is read ONLY as a change detector against our own earlier reading of
       // it (server/queue.ts sdkHolds); server/queue.ts's header has the full account.
       hasQueued: () => this.harness.queue.hasQueued(),
       mirrorTotal: () => this.harness.queue.mirrorTotal(),
@@ -1789,8 +1801,9 @@ class ChatSession {
    * branch exactly as ours would).
    *
    * `hasQueuedMessages()` is the REAL queue, deliberately, not `pendingMessageCount`: that is the
-   * mirror sum, and the mirror keeps empty-text entries for ever — so one image-only send would
-   * make every later rewind refuse for the life of the session.
+   * mirror sum, and the mirror can keep an entry for ever (it is spliced by text, quirk P9: a text
+   * rewritten on its way in never matches) — so one such send would make every later rewind
+   * refuse for the life of the session.
    */
   hasPendingSends(): boolean {
     return this.queue.size > 0 || this.harness.queue.hasQueued();
@@ -2185,6 +2198,7 @@ class ChatSession {
     );
     this.unsubscribe?.();
     this.replyTimer = new ReplyTimer();
+    this.toolRuns.settle();
     void this.loadReplyTimings();
     // Through the driving session: one pi listener, registered here, after the stream guard and the
     // extensions, as before; each event arrives once, in pi's tick (P12 message-end-before-persist).
@@ -2204,6 +2218,10 @@ class ChatSession {
       // process), start the next session listing afresh (§app.session-list/listing-reuse). A call
       // another tool made (nested) doesn't: its caller's end does, once.
       if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
+      // Tool-running time: each top-level call's record as it ends; a call a stop left open ends with the run.
+      if (event.type === "tool.start" && !event.nested && event.callId) this.toolRuns.start(event.callId, event.name);
+      else if (event.type === "tool.end" && !event.nested && event.callId) this.toolRuns.end(event.callId);
+      else if (event.type === "run.settled") this.toolRuns.settle();
       // A subfolder's skills join the / menu once offered, and leave with the block (§chat.subfolder-skills/command).
       if (event.type === "run.settled" || event.type === "compaction.end") {
         this.refreshCommands();
@@ -4567,6 +4585,7 @@ class ChatSession {
     if (this.guardTimer) clearInterval(this.guardTimer);
     if (this.workersTimer) clearInterval(this.workersTimer);
     this.unsubscribe?.();
+    this.toolRuns.settle();
     this.streamGuardOff?.();
     for (const p of this.pendingUi.values()) p.resolve(undefined);
     this.pendingUi.clear();
@@ -5170,7 +5189,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               mcpExtension({
                 label: () => titleOf(read.branch()),
                 list: async (cwd, sandboxOn) =>
-                  snap?.remove.includes("mcp") || nothingDeclared(cwd) ? NO_MCP : (chatHosts.mcpList ?? mcpListHere)({ path, cwd, sandboxOn, offMcp: loadout.data?.offMcp ?? [], onMcp: loadout.data?.onMcp ?? [] }),
+                  snap?.remove.includes("mcp") ? NO_MCP : askedList({ path, cwd, sandboxOn, offMcp: loadout.data?.offMcp ?? [], onMcp: loadout.data?.onMcp ?? [] }, chatHosts.mcpList ?? mcpListHere),
               }),
               // Its workers' and hidden chats' host (§app.chat-processes/workers).
               { name: "sova-worker-host", factory: workerHostExtension() },
@@ -5209,7 +5228,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
           },
       // The merge thread (its Sova profile): its sandbox On from its start, at the read-only level (its tools write only
       // in their tmp) and the main checkout it starts in never a writable root; the rest goes through the merge verbs.
-      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}) }),
+      // Sova's own machine-facing chats (the merge thread, its reviewers, the release thread): no reply shape (§chat.mode-menu/reply-shape).
+      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}), ...(sovaNamedKind(snap) ? { replyShapeOff: true } : {}) }),
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),

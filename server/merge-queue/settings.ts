@@ -1,15 +1,16 @@
 import type { ChecksDeclared } from "../../shared/merge-queue";
 import type { EffectiveModel, FolderRef, MergeFixedValues, MergeQueueSettings } from "../../shared/merge-queue-settings";
 import { HOOK_TIMEOUT_MAX, type ProjectDef } from "../../shared/project-contract";
-import { mergeCopyPath } from "./copy";
+import { copyShapeOf, mergeCopyPath } from "./copy";
 import type { Git } from "./guard";
-import { PROJECT_PLAYBOOK, THREAD_MAX_AGE_MS, THREAD_MAX_CONTEXT } from "./thread";
+import { projectPlaybookRel, THREAD_MAX_AGE_MS, THREAD_MAX_CONTEXT } from "./thread";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
 import { QueueStore } from "./store";
 import { landHowSetting } from "./strategy";
-import { REVIEW_KIT_DIR } from "./settings-edit";
+// reviewKitDirAt and projectPlaybookRel read the old place too. Temporary (migrations/manifest.json: playbook-config-old-place).
+import { reviewKitDirAt } from "./settings-edit";
 
 /**
  * The settings block of the queue's view (§app.merge-queue/settings): what the queue uses, read from the target's
@@ -22,7 +23,7 @@ import { REVIEW_KIT_DIR } from "./settings-edit";
  * (which the viewer shows): a tracked change, or a file the target hasn't.
  */
 export async function playbookDiffers(git: Git, root: string, head: string): Promise<boolean> {
-  const dir = PROJECT_PLAYBOOK.split("\\").join("/");
+  const dir = projectPlaybookRel(root);
   const tracked = await git(["diff", "--quiet", head, "--", dir], root);
   if (tracked.code === 1) return true;
   const untracked = await git(["ls-files", "--others", "--exclude-standard", "--", dir], root);
@@ -69,6 +70,8 @@ export interface SettingsInput {
   fixed: MergeFixedValues;
   /** How a branch lands (strategy.ts landHowSetting). */
   how?: MergeQueueSettings["how"];
+  /** What the target's tree needs beyond its files (copy.ts copyShapeOf). */
+  shape?: MergeQueueSettings["shape"];
 }
 
 export function buildSettings(a: SettingsInput): MergeQueueSettings {
@@ -82,7 +85,7 @@ export function buildSettings(a: SettingsInput): MergeQueueSettings {
   const kit = a.review && m?.review ? m.review : undefined;
   const folder = (label: string, dir: string): FolderRef | null => (a.projectId ? { label, source: { kind: "project", project: a.projectId, ref: a.head, dir } } : null);
   const kitFolder = kit ? folder("Review instructions", kit) : null;
-  const book = a.projectPlaybook ? folder("This project's playbook", PROJECT_PLAYBOOK.split("\\").join("/")) : null;
+  const book = a.projectPlaybook ? folder("This project's playbook", projectPlaybookRel(a.root)) : null;
   const projectBook = book ? { ...book, differsFromFolder: !!a.projectPlaybookDiffers } : null;
   return {
     at: a.head,
@@ -93,6 +96,7 @@ export function buildSettings(a: SettingsInput): MergeQueueSettings {
     checks: { mode: a.checks, list },
     reuse: m?.reuse !== false,
     deleteBranches: m?.deleteBranches === true,
+    squash: m?.squash === true,
     setup: { steps: (a.def?.setup ?? []).map((s) => ({ id: s.id })) },
     ...(m?.install ? { install: { inputs: [...m.install.inputs], timeoutSec: m.install.timeout } } : {}),
     review: {
@@ -109,6 +113,7 @@ export function buildSettings(a: SettingsInput): MergeQueueSettings {
     },
     fixed: a.fixed,
     ...(a.how ? { how: a.how } : {}),
+    ...(a.shape && (a.shape.submodules || a.shape.lfs) ? { shape: { ...a.shape } } : {}),
   };
 }
 
@@ -152,7 +157,7 @@ export async function bareSettings(root: string, d: BareSettingsDeps): Promise<M
     local = readFileSync(join(root, ".sova/project.json"), "utf8");
   } catch {}
   const picks = readModels(store.dir);
-  const playbook = existsSync(join(root, PROJECT_PLAYBOOK, "PLAYBOOK.md"));
+  const playbook = existsSync(join(root, projectPlaybookRel(root), "PLAYBOOK.md"));
   return buildSettings({
     root,
     projectId: d.projectIdOf(root),
@@ -162,13 +167,14 @@ export async function bareSettings(root: string, d: BareSettingsDeps): Promise<M
     checks: s.checks,
     review: false,
     kitFiles: [],
-    kitOnTarget: await has(REVIEW_KIT_DIR),
+    kitOnTarget: await has(await reviewKitDirAt(has)),
     projectPlaybook: playbook,
     ...(playbook ? { projectPlaybookDiffers: await playbookDiffers(d.git, root, s.head) } : {}),
     names: { setUp: names.exists, count },
     models: { review: await effectiveModel(picks.review, d.modelCheck), thread: await effectiveModel(picks.thread, d.modelCheck) },
     projectFileDiffers: (shown.code === 0 ? shown.stdout : null) !== local,
     fixed: fixedValues(root),
-    how: await landHowSetting({ dir: store.dir, root, projectHow: def?.merge?.land, ...(d.hosts ? { hosts: d.hosts } : {}) }),
+    how: await landHowSetting({ dir: store.dir, root, projectHow: def?.merge?.land, ...(def?.merge?.remote ? { remote: def.merge.remote } : {}), ...(d.hosts ? { hosts: d.hosts } : {}) }),
+    shape: await copyShapeOf(root, s.head).catch(() => undefined),
   });
 }

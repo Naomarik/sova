@@ -4,7 +4,9 @@
 Each project's merge queue (§app/merge-queue) has one **merge thread**. It is a chat Sova starts
 itself, on the **Merge thread** profile, to follow the merge playbook. It replaces the Merge
 Captain. It never lands anything itself, never moves the target and never runs git on it. It acts
-only through the merge verbs (§app.project-services/merge-verbs), and the queue never waits for it.
+only through the merge verbs (§app.project-services/merge-verbs), and the queue never waits for it
+beyond a fix or a conflict that only it can check: after 15 minutes of that, Sova starts a fresh
+thread (§chat.merge-queue/thread-health).
 
 The chat that built a branch follows its trip through the queue on one card per branch
 (§chat.merge-queue/chat-card), and its model hears of it without a message pretending to be the
@@ -16,8 +18,9 @@ decision, answered from the chat's message box (§chat.merge-queue/decision).
 
 ## §chat.merge-queue/thread — What the merge thread does
 
-**Its playbook.** Sova ships a method playbook (`playbooks/merge-queue/`), which the thread always
-follows. A project may add its own `.sova/playbooks/merge-queue/PLAYBOOK.md`. The thread reads it
+**Its playbook.** Sova ships a method playbook (`system-playbooks/merge-queue/`, one of Sova's own,
+§chat.playbooks/system-playbooks), which the thread always follows. A project may add its own
+`.sova/playbook-config/merge-queue/PLAYBOOK.md` (§chat.playbooks/playbook-config). The thread reads it
 after the method, and where the two differ, the project's wins. Both are playbook folders
 (§chat.playbooks/bundles). What is worth a note on a landing is what the project's playbook says.
 - Sova's says: server, shared or pi-config code, dependency or lockfile changes, migrations or
@@ -53,9 +56,11 @@ it is replaced.
 **When Sova calls it in.** The queue tells the thread itself, through no schedule and with no
 approval, when:
 - **an entry was queued.** It reads the branch's diff and its chat's intent. It may write the
-  landing's note (§app.merge-queue/note). It may also pick extra checks by blast radius with
-  `merge.extend`, each with its reason, add-only (§app.merge-queue/checks). Picks count only if they
-  arrive before the run's checks start. The message for every queued branch gives the full pick,
+  landing's note (§app.merge-queue/note). It may also pick extra checks with `merge.extend`, each with its
+  reason, add-only, on top of the checks the project's folder rules trigger, which Sova applies
+  itself at the start of every run (§app.merge-queue/rules); it never runs those rules itself, never
+  removes a check and never names a command no check declares (§app.merge-queue/checks). A pick that
+  arrives after the run started still runs in that run, before it lands. The message for every queued branch gives the full pick,
   `merge.extend {entry, checks: [id], why, select}`, and says `select` is part of it, to be copied
   whenever the pick has one; the tool's own help says the same (§app.project-services/merge-verbs).
   No setting governs this. A pick of a check the project marks `needsSelect` sent without a selection is
@@ -98,9 +103,10 @@ checks, judges conflicts and checks fixes, but never approves, lands or answers 
 **Off the critical path.** Sova starts each run by itself. Telling the thread is fire-and-forget: a
 delivery that hangs is given up after 60 seconds, and a failure is only logged. When the thread is
 missing, slow or failing:
-- the run uses the required checks and their triggers;
+- the run uses the required checks and the ones the folder rules trigger;
 - the landing has no note;
-- a conflict waits for it, never going to the chat unjudged (§app.merge-queue/conflicts);
+- a conflict waits for it, never going to the chat unjudged (§app.merge-queue/conflicts), and a
+  fix or a conflict that has waited 15 minutes gets a fresh thread (§chat.merge-queue/thread-health);
 - a failure goes back to the chat without a diagnosis;
 - a blocking review's report goes to the chat by itself after 5 minutes, without a note, or at once
   when no merge thread is running;
@@ -151,6 +157,10 @@ never reach the public repository:
 - keys;
 - client or person names;
 - anything else.
+
+Sova's page also offers **No private names**, one click: Sova records an empty list, which is an
+answer, and the held push goes. Only the user's own click on the page answers it this way: the
+thread, a chat, a chat's script or a card is refused.
 
 When their answer comes back, it has Sova add their names to the list (`merge.names`), then asks
 the same way whether the list is complete, giving only its kinds and counts. A question never quotes
@@ -250,6 +260,7 @@ a new one:
   and only a third refusal replaces it;
 - it is past half its context window (exactly half still reuses it; an unknown window never
   replaces it), kept only as a safety net, since memory keeps each turn small;
+- a fix or a conflict has waited on it for 15 minutes with no ruling (§chat.merge-queue/thread-health);
 - the user pressed **Start Fresh** on the Merge Queue tab's Merge thread card, and confirmed it
   (§app.merge-queue/chats).
 
@@ -269,10 +280,30 @@ hour's grace. Questions still open stay open across it (§chat.merge-queue/asks)
 `PLAYBOOK.md` and everything under its `references/`, Sova's method and the project's alike. When
 it changed since the thread last read it, the next event's message starts with one line: "The
 playbook changed since you read it: read {method PLAYBOOK.md} and {project PLAYBOOK.md} again
-first, with the references they name." Everything else (the branch, the queue, the logs) it reads
+first, with the references they name. The method's scripts are in {method scripts folder}.", as a
+new thread's first message says. Everything else (the branch, the queue, the logs) it reads
 fresh at each event, as before: its memory is for history, never for the queue's current state,
 nor for how to do a step: each event's message names the guide pages to read again now (Read as you
 go, §chat.merge-queue/thread).
+
+## §chat.merge-queue/thread-health — The merge thread's health, and a thread that doesn't answer
+
+**Recorded and shown.** Sova records when a message was last delivered to the thread, each delivery
+that failed (refused three times, or a thread that couldn't start) and each fresh thread it started;
+each of the thread's decisions is recorded with what it read (§app.merge-queue/activity). The Merge
+thread card (§app.merge-queue/chats) shows its health: its state (OK, waiting, slow or failed), any
+delivery that failed, its fresh starts, and what waits on it and for how long ("A fix on {branch} has waited on the merge thread for
+6 min").
+
+**Fifteen minutes, then a fresh thread.** When a fix or a conflict has waited on the merge thread
+for 15 minutes (from when it began to wait) with no ruling, Sova retires and archives that thread,
+recording why ("it didn't answer for 15 minutes ({branch}'s fix waited on it)",
+§chat.merge-queue/thread-life), starts a fresh one and gives it what waits. If that fails too (the
+fresh thread can't be started, or hasn't ruled 15 minutes later), the user is notified once ("The
+merge thread isn't answering · {project folder}", §app.notifications/merge-queue) and the Merge thread card
+says so, with Start Fresh. A fresh thread due just before Sova restarts is started after the
+restart. Meanwhile a fix is never landed unchecked, and a conflict never goes to
+the chat unjudged.
 
 ## §chat.merge-queue/chat-card — A branch's card in the chat that built it
 
@@ -377,11 +408,18 @@ Beside Queued, Checking and Landed (§chat.merge-queue/chat-card), the card read
   Queue** only: no Land, no re-land, no send-back. When the fix is checked it reads "Fix checked ·
   back in line" and moves on to Queued in place.
 - **Waiting for the merge thread** (in place), for a fix the merge thread can't check yet because it
-  isn't running or hasn't ruled (§app.merge-queue/standing-approval), or a conflict it hasn't judged
-  (§app.merge-queue/conflicts): the chat's answer, and Remove from Queue only. Once the thread is
+  isn't running or hasn't ruled (§app.merge-queue/standing-approval), a conflict it hasn't judged
+  (§app.merge-queue/conflicts), or a Can't tell whose failure it is still ruling on before any
+  question reaches the user (§app.merge-queue/needs-user: "Can't tell whose failure: the merge thread
+  is judging it; it asks you if it can't tell.", never Land Anyway or Try Again): the chat's answer,
+  and Remove from Queue only. Once the thread is
   back and has checked the fix it reads "Fix checked · back in line".
 - **Approved · waiting for a fix** (in place), for a finished branch the user landed while blocked
   (§app.merge-queue/approve): what blocks it, and Remove from Queue.
+- **Approved · dry run first** (in place), for a setup branch the user landed before a dry run of its
+  head passed (§app.project-setup/land-gate): its place, why it needs one, "Your Land stands: it lands
+  by itself once its dry run passes.", and Remove from Queue; while its dry run runs, "Dry run running ·
+  check {N} of {M}"; a failed one moves it to Back with the chat, as a failed check does.
 - **Paused: you stopped the chat** (in place), after Stop in the chat (§chat.merge-queue/requests):
   "Your next message lets the merge queue's requests through.", and Remove from Queue.
 - **Drafts changed** is a decision (§chat.merge-queue/decision), offering **Land** (a new approval
@@ -713,7 +751,7 @@ Merge Queue tab's Needs you (§app.merge-queue/view) and in the landing bar
 
 ## §chat.merge-queue/sova-restart — Sova's merge thread restarts Sova after landings
 
-Sova's own project playbook (`.sova/playbooks/merge-queue/`, its "When the queue is idle") has
+Sova's own project playbook (`.sova/playbook-config/merge-queue/`, its "When the queue is idle") has
 Sova's merge thread restart Sova after landings that change what its server runs, so new server code
 goes live without the operator pressing Restart Sova. The thread does it through one merge verb Sova
 runs for it, `merge.restart {project}`, never a script or command of its own
@@ -742,7 +780,7 @@ happens. `merge.live {project}` tells the thread, without reaching Sova's port, 
 and when it started, the target's head and the plan between them, and the Idle message carries the
 live commit too.
 - **Never during a release.** While a release is open (§app.release/checks) `merge.restart` builds
-  and restarts nothing. The release's hold lifting at Publish or Abandon sends Idle again, and the
+  and restarts nothing. The release's hold lifting at Publish or Cancel Release sends Idle again, and the
   thread catches up then. A release's own commit is never a reason to restart: trying a release
   live stays the operator's Apply (§app.release/sova).
 - **Page files only:** it runs `pnpm run build` in the main checkout and restarts nothing; on a

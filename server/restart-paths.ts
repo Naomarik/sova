@@ -65,12 +65,12 @@ export const INSTALL_FILES: readonly string[] = ["package.json", "pnpm-lock.yaml
 
 const DOC_OR_TEST = /\.md$|\.test\.[cm]?[jt]sx?$/;
 
-/** A changed file that needs the server restarted: server-side code (server/, shared/, pi-config/, the src/ files the
- *  server imports), the packages and the toolchain; never the page alone, docs or tests. */
+/** A changed file that needs the server restarted: server-side code (server/, shared/, pi-config/, migrations/, the src/
+ *  files the server imports), the packages and the toolchain; never the page alone, docs or tests. */
 export function needsRestart(file: string): boolean {
   if (INSTALL_FILES.includes(file)) return true;
   if (DOC_OR_TEST.test(file)) return false;
-  return /^(?:server|shared|pi-config)\//.test(file) || SERVER_SRC_IMPORTS.includes(file);
+  return /^(?:server|shared|pi-config|migrations)\//.test(file) || SERVER_SRC_IMPORTS.includes(file);
 }
 
 /** A changed file that needs `pnpm install --frozen-lockfile` first. */

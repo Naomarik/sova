@@ -1,5 +1,6 @@
 // The Releases tab's words and rules: pure, so the rules run under tsx --test and
 // the tab, the Overview card and the Deploy card read them alike. Types only from the wire.
+import { projectSessionHref } from "./projects-route";
 import { RELEASE_NOTE_MAX, type ReleaseHistoryItem, type ReleaseRecord, type ReleaseState, type ReleaseStep, type ReleaseView, type StepState } from "../../shared/release";
 
 export type ChipTone = "info" | "warn" | "error" | "success" | "accent" | undefined;
@@ -26,7 +27,7 @@ export const RELEASE_CHIP: Record<ReleaseState, ChipWord> = {
   ready: { word: "Ready to publish", tone: "warn" },
   publishing: { word: "Publishing", tone: "accent", live: true },
   published: { word: "Published", tone: "success" },
-  abandoned: { word: "Abandoned", tone: undefined },
+  abandoned: { word: "Cancelled", tone: undefined },
   withdrawn: { word: "Withdrawn", tone: "warn" },
 };
 
@@ -123,10 +124,15 @@ export function withdrawConfirmLine(item: Pick<ReleaseHistoryItem, "tag" | "chan
   return `${moves} ${item.tag} itself stays, marked withdrawn with your reason; copies running it are told so. Deploy targets keep running it until you roll them back on the Deploy card.`;
 }
 
-/** The Abandon confirm. */
-export function abandonConfirmLine(r: Pick<ReleaseRecord, "entry" | "commit" | "base">): string {
-  const landed = !!r.entry && !!r.commit && r.commit !== r.base;
-  return `The release chat stops and nothing is published.${landed ? " If its release commit already landed, it's reverted as a landing on the target." : ""} Landings waiting in the queue go ahead.`;
+/** Cancel Release's one confirm, asked by the server once the release commit landed: what it reverts, then what stays. */
+export function cancelConfirmLine(commit: string | null | undefined, target: string): string {
+  return `Cancelling reverts the release commit${commit ? ` ${shortSha(commit)}` : ""}, which already landed on ${target}, as a landing of its own. The release chat stops and nothing is published; landings waiting in the queue go ahead.`;
+}
+
+/** Start Release's words: with the note editor open on a changed draft, Start saves it first and says so. */
+export function startWords(draft: { text: string; changed: boolean } | null): string {
+  if (!draft?.changed) return "Start Release";
+  return draft.text ? "Start Release with This Note" : "Clear Note and Start Release";
 }
 
 /** The newest release before `tag` that isn't withdrawn: where Withdraw moves the channels. */
@@ -161,6 +167,10 @@ export function countdown(until: string, now: number): string {
 function list(xs: readonly string[]): string {
   return xs.length <= 1 ? (xs[0] ?? "") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
 }
+
+/** Where Open Release Chat goes: the chat's file route when the record has it, else the session id route. */
+export const releaseChatHref = (projectId: string, t: NonNullable<ReleaseRecord["thread"]>): string =>
+  t.path ? projectSessionHref(projectId, t.path) : `#/sid/${encodeURIComponent(t.session)}`;
 
 /** Who started it, in the record's own words. */
 export const startedByWord = (by: ReleaseRecord["startedBy"]): string => (by === "power" ? "the release power" : "you");

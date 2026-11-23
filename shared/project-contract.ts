@@ -12,10 +12,10 @@ export type Verb = (typeof VERBS)[number];
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
 /** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
-export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try", "merge.restart", "merge.live", "merge.test", "merge.names", "merge.rule", "merge.respond"] as const;
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold", "merge.try", "merge.restart", "merge.live", "merge.test", "merge.names", "merge.rule", "merge.respond", "merge.stop-try", "merge.events"] as const;
 export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
-export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.live"];
+export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.live", "merge.events"];
 /** The release verbs (shared/release.ts): a project's release in progress and its history, never an instance. */
 export const RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw", "release.note"] as const;
 export type ReleaseVerb = (typeof RELEASE_VERBS)[number];
@@ -70,7 +70,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "project", type: "path", tool: { name: "project", description: "The project: an absolute path inside it (default: this session's project)." }, cli: { flag: "project", description: "The project's root", deployDefault: "." } },
   { wire: "instance", type: "string", tool: { name: "instance", description: "An instance id (from status)." }, cli: { flag: "instance", description: "An instance id" } },
   { wire: "checkout", type: "path", tool: { name: "checkout", description: "create/up: an existing worktree (absolute path) to run as an instance." }, cli: { flag: "checkout", description: "A checkout's path" } },
-  { wire: "branch", type: "string", tool: { name: "branch", description: "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to trial (default your own)." }, cli: { flag: "branch", description: "A branch name" } },
+  { wire: "branch", type: "string", tool: { name: "branch", description: "create/up: a branch; Sova adds a worktree for it (new branches start at `from`). merge.try: the branch whose head to dry-run (default your own); merge.stop-try stops the dry run it started (by its run)." }, cli: { flag: "branch", description: "A branch name" } },
   { wire: "from", type: "string", tool: { name: "from", description: "create/up with a new branch: the commit it starts at (default the main checkout's HEAD)." }, cli: { flag: "from", description: "The ref a new branch starts from" } },
   { wire: "slot", type: "integer", cli: { flag: "slot", description: "A slot number" } },
   { wire: "services", type: "list", tool: { name: "services", description: "up/down/apply/logs: only these services." }, cli: { flag: "services", description: "Service names, comma-separated" } },
@@ -84,7 +84,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "days", type: "integer", tool: { name: "days", description: "share: how many days the link lasts (default 1, at most 7 or the definition's share.maxDays).", minimum: 1, maximum: 7 }, cli: { flag: "days", description: "How many days a share link lasts" } },
   { wire: "link", type: "string", tool: { name: "link", description: "revoke: one share link, by its id (pv_…)." }, cli: { flag: "link", description: "A share link id" } },
   { wire: "target", type: "string", tool: { name: "target", description: "deploy.*: the deploy target, by name (deploy.status lists them)." }, cli: { flag: "target", description: "A deploy target" } },
-  { wire: "commit", type: "string", tool: { name: "commit", description: "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to trial." }, cli: { flag: "commit", description: "A commit" } },
+  { wire: "commit", type: "string", tool: { name: "commit", description: "deploy.plan/deploy.request: the commit to ship (default the target branch's tip); merge.try: the commit to dry-run." }, cli: { flag: "commit", description: "A commit" } },
   { wire: "plan", type: "string", tool: { name: "plan", description: "deploy.run: a plan's id (pl_…); only the operator runs one." }, cli: { flag: "plan", description: "A plan id" } },
   { wire: "deploy", type: "string", tool: { name: "deploy", description: "deploy.logs: one deploy, by its id (dp_…; default the target's latest)." }, cli: { flag: "deploy", description: "A deploy id" } },
   {
@@ -117,7 +117,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
     type: "string",
     mergeOnly: true,
     tool: { name: "answer", description: "merge.respond (the branch's chat, answering a merge queue request by its id): fixed | needs-you | cant." },
-    cli: { flag: "answer", description: "merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant" },
+    cli: { flag: "answer", description: "merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant" },
   },
   { wire: "request", type: "string", mergeOnly: true, tool: { name: "request", description: "merge.respond / merge.rule: a merge queue request, by its id (rq_…, in the merge queue's note)." }, cli: { flag: "request", description: "A merge queue request id" } },
   { wire: "drafts", type: "boolean", mergeOnly: true, tool: { name: "drafts", description: "merge.respond with fixed: you changed the branch's spec drafts (that needs no commit)." }, cli: { flag: "drafts", description: "merge.respond: the fix changed spec drafts" } },
@@ -140,7 +140,9 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "requires", type: "list", mergeOnly: true, cli: { flag: "requires", description: "merge.setup: services that must start first, comma-separated" } },
   { wire: "dryRun", type: "boolean", mergeOnly: true, cli: { flag: "dry-run", description: "merge.setup: run the checks on the target in the merge copy, saving nothing" } },
   { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; merge.respond: what you changed (fixed), the question for your user (needs-you) or why you can't (cant); release.notes: the release notes, in full." }, cli: { flag: "text", description: "Text" } },
-  { wire: "action", type: "string", mergeOnly: true, tool: { name: "action", description: "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on." }, cli: { flag: "action", description: "merge.hold: set | clear" } },
+  { wire: "action", type: "string", mergeOnly: true, tool: { name: "action", description: "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on." }, cli: { flag: "action", description: "merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches)" } },
+  // The user's own click only (merge.answer allow, merge.names allow): on no agent's tool.
+  { wire: "matches", type: "list", mergeOnly: true, cli: { flag: "matches", description: "merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown)" } },
   { wire: "ask", type: "string", mergeOnly: true, tool: { name: "ask", description: "merge.reply (the user's page only): the merge thread's question the user answers, by its id (ak_…)." }, cli: { flag: "ask", description: "A merge thread question id" } },
   { wire: "contents", type: "map", mergeOnly: true, tool: { name: "contents", description: "merge.resolve, verdict no-behaviour-change only: each conflicted file's merged text, by its path in the repository; Sova merges the approved commit in the entry's scratch copy, writes these files and commits the resolution there. chat-fixes and needs-user carry none." } },
   // The release verbs' own keys (shared/release.ts). On no generic tool: the release chat's tool lists them.
@@ -167,7 +169,7 @@ export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy
   release: ["project", "release", "tag", "step", "state", "summary", "detail", "facts", "text", "commit", "why", "lines", "confirm", "dismiss"],
   instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
   deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
-  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask", "action", "request", "drafts", "ruling", "choices"],
+  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask", "action", "request", "drafts", "ruling", "choices", "matches"],
 };
 
 export const ERROR_CODES = [
@@ -357,6 +359,20 @@ export interface MergeCheckDecl {
   requires: string[];
   optional?: true;
   needsSelect?: true;
+  /** Takes one selection per run: folder rules hitting it with different selections run it once per selection,
+   *  instead of once with every selection joined. */
+  perSelector?: true;
+  /** The folder it runs in, relative to the repository root (a package of a multi-package repository); absent: the
+   *  root. Its report's files, its `select` and its reruns' files are read from there. */
+  cwd?: string;
+  /** Variables of its own, over what Sova gives every check (never a SOVA_* name); values may use the templates. */
+  env?: Record<string, string>;
+  /** The test report its runner writes, read when it writes no SOVA_OUT: a JUnit XML file or folder, or TAP in a file
+   *  or on its own output (`"stdout"`); a path relative to `cwd`. */
+  report?: { junit: string } | { tap: string };
+  /** How to rerun one failing test by name: argv appended once per failing test, `${test}` its name (pytest
+   *  `["-k", "${test}"]`, node/bun `["--test-name-pattern", "${test}"]`). Absent: reruns name files only. */
+  rerunTest?: Argv;
 }
 /** The definition's `merge` section. `checks`: the required set, `"none"` (declared: no automated tests), or absent
  *  (the queue falls back to `test.run`, else the project isn't set up). `target`: the branch it lands on (absent: the
@@ -376,7 +392,29 @@ export interface MergeDecl {
   reuse?: boolean;
   /** Automatic cleanup deletes a landed branch as well as its folder (§chat.worktrees/retirement). Absent: false. */
   deleteBranches?: boolean;
+  /** The reviewer may fix what it finds itself (a shell and edit tools, in a folder of its own at the branch's commit):
+   *  its fix is committed on the branch and goes the way a chat's fix goes (the merge thread checks it, the checks run
+   *  again, the approval is re-pinned). Read from the target's definition only. Absent: false (a read-only reviewer). */
+  reviewFixes?: boolean;
+  /** Folder rules: when one of `paths` changes, the run adds `check` (with `select`). Sova applies them itself at the
+   *  start of each run, read from the branch being landed. Needs `checks` to be a list. */
+  rules?: MergeRuleDecl[];
+  /** The remote the queue fetches from and pushes to; absent: `origin`. */
+  remote?: string;
+  /** Landing by merging locally: the branch lands as one commit on the target (a squash) instead of a merge commit. */
+  squash?: boolean;
 }
+
+/** One folder rule: a changed path matching one of `paths` (globs relative to the repository root: `**` any depth,
+ *  `*` within a folder, `?` one character) adds the merge check `check` to the run, narrowed by `select` (appended to
+ *  its command), with `why` shown beside it. A check that declares `needsSelect` must be given a `select`. */
+export interface MergeRuleDecl {
+  paths: string[];
+  check: string;
+  select?: string[];
+  why: string;
+}
+export const MERGE_RULES_MAX = 100;
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
 export interface ShareDecl {
@@ -518,8 +556,10 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches"],
-  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse", "deleteBranches", "rules", "remote", "squash", "reviewFixes"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional", "needsSelect", "perSelector", "cwd", "env", "report", "rerunTest"],
+  mergeReport: [["junit"], ["tap"]],
+  mergeRule: ["paths", "check", "select", "why"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
   releaseCheck: ["id", "label", "run", "timeout", "rerun", "requires"],
@@ -927,6 +967,10 @@ function* deployTemplates(d: DeployDecl): Generator<[string, string]> {
 /** Parse `.sova/project.json`'s text. Throws DefinitionError naming the first problem's path. */
 /** The variables a merge check's `run` may use beside the definition's own. */
 export const MERGE_VARS = ["merge.base", "merge.tip", "merge.target"] as const;
+/** A git remote's name as `merge.remote` takes it. */
+const REMOTE_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/;
+/** The remote the queue fetches from and pushes to: the project's `merge.remote`, else `origin`. */
+export const remoteOf = (def: { merge?: { remote?: string } } | null | undefined): string => def?.merge?.remote ?? "origin";
 /** `merge.land`'s values (shared/merge-queue.ts LandHow). */
 export const MERGE_LAND_HOWS = ["local", "github-pr", "gitlab-mr", "push-branch"] as const;
 
@@ -955,9 +999,34 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
       if (x.rerun !== undefined && typeof x.rerun !== "boolean") throw new DefinitionError(`${path}.rerun`, "must be true or false");
       if (x.optional !== undefined && typeof x.optional !== "boolean") throw new DefinitionError(`${path}.optional`, "must be true or false");
       if (x.needsSelect !== undefined && typeof x.needsSelect !== "boolean") throw new DefinitionError(`${path}.needsSelect`, "must be true or false");
+      if (x.perSelector !== undefined && typeof x.perSelector !== "boolean") throw new DefinitionError(`${path}.perSelector`, "must be true or false");
       const requires = strList(x.requires, `${path}.requires`);
       for (const r of requires) if (!services.some((s) => s.name === r)) throw new DefinitionError(`${path}.requires`, `names no service "${r}"`);
-      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}), ...(x.needsSelect === true ? { needsSelect: true as const } : {}) };
+      const cwd = x.cwd === undefined ? "." : relPath(x.cwd, `${path}.cwd`, true);
+      const env: Record<string, string> = {};
+      if (x.env !== undefined)
+        for (const [k, e] of Object.entries(obj(x.env, `${path}.env`))) {
+          if (!ENV_NAME.test(k) || k.startsWith("SOVA_")) throw new DefinitionError(`${path}.env.${k}`, "an env name is A-Z, 0-9 and _, and never a SOVA_ one (Sova sets those itself)");
+          if (typeof e !== "string") throw new DefinitionError(`${path}.env.${k}`, "must be a string");
+          env[k] = e;
+        }
+      let report: MergeCheckDecl["report"];
+      if (x.report !== undefined) {
+        const r = obj(x.report, `${path}.report`);
+        if ("junit" in r) {
+          keysOnly(r, K.mergeReport[0], `${path}.report`);
+          report = { junit: relPath(r.junit, `${path}.report.junit`, true) };
+        } else if ("tap" in r) {
+          keysOnly(r, K.mergeReport[1], `${path}.report`);
+          report = { tap: r.tap === "stdout" ? "stdout" : relPath(r.tap, `${path}.report.tap`, true) };
+        } else throw new DefinitionError(`${path}.report`, 'must be {junit: <file or folder>} or {tap: "stdout" | <file>}');
+      }
+      let rerunTest: Argv | undefined;
+      if (x.rerunTest !== undefined) {
+        rerunTest = argv(x.rerunTest, `${path}.rerunTest`);
+        if (!rerunTest.some((a) => a.includes("${test}"))) throw new DefinitionError(`${path}.rerunTest`, "must hold ${test} (the failing test's name)");
+      }
+      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}), ...(x.needsSelect === true ? { needsSelect: true as const } : {}), ...(x.perSelector === true ? { perSelector: true as const } : {}), ...(cwd !== "." ? { cwd } : {}), ...(Object.keys(env).length ? { env } : {}), ...(report ? { report } : {}), ...(rerunTest ? { rerunTest } : {}) };
     });
     if (!out.checks.some((c) => !c.optional)) throw new DefinitionError("$.merge.checks", "at least one check is required (not optional)");
     if (new Set(out.checks.map((c) => c.id)).size !== out.checks.length) throw new DefinitionError("$.merge.checks", "check ids must be unique");
@@ -983,7 +1052,51 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
     if (typeof o.deleteBranches !== "boolean") throw new DefinitionError("$.merge.deleteBranches", "must be true or false");
     out.deleteBranches = o.deleteBranches;
   }
+  if (o.reviewFixes !== undefined) {
+    if (typeof o.reviewFixes !== "boolean") throw new DefinitionError("$.merge.reviewFixes", "must be true or false");
+    if (o.reviewFixes && o.review === undefined) throw new DefinitionError("$.merge.reviewFixes", "needs a review kit (merge.review)");
+    out.reviewFixes = o.reviewFixes;
+  }
+  if (o.rules !== undefined) out.rules = mergeRules(o.rules, out.checks);
+  if (o.remote !== undefined) {
+    if (typeof o.remote !== "string" || !REMOTE_NAME.test(o.remote) || o.remote.includes("..") || o.remote.endsWith(".lock")) throw new DefinitionError("$.merge.remote", "must be a remote's name (letters, digits and . _ -)");
+    out.remote = o.remote;
+  }
+  if (o.squash !== undefined) {
+    if (typeof o.squash !== "boolean") throw new DefinitionError("$.merge.squash", "must be true or false");
+    out.squash = o.squash;
+  }
   return out;
+}
+
+/** A folder rule's path glob: relative to the repository root, inside it, no empty segment. */
+function ruleGlob(v: unknown, path: string): string {
+  if (typeof v !== "string" || !v.trim() || v.length > 300) throw new DefinitionError(path, "must be a path glob (1 to 300 characters)");
+  if (v.startsWith("/") || v.includes("\\") || v.includes("\0")) throw new DefinitionError(path, "must be relative to the repository root");
+  if (v.split("/").some((s) => s === ".." || s === "")) throw new DefinitionError(path, "must stay inside the repository (no .., no empty folder)");
+  return v;
+}
+
+function mergeRules(v: unknown, checks: MergeDecl["checks"]): MergeRuleDecl[] {
+  if (!Array.isArray(v)) throw new DefinitionError("$.merge.rules", "must be a list of rules {paths, check, select?, why}");
+  if (v.length > MERGE_RULES_MAX) throw new DefinitionError("$.merge.rules", `at most ${MERGE_RULES_MAX} rules`);
+  if (v.length && !Array.isArray(checks)) throw new DefinitionError("$.merge.rules", "rules name merge checks: declare merge.checks as a list first");
+  const decls = Array.isArray(checks) ? checks : [];
+  return v.map((r, i) => {
+    const path = `$.merge.rules[${i}]`;
+    const x = obj(r, path);
+    keysOnly(x, K.mergeRule, path);
+    if (!Array.isArray(x.paths) || !x.paths.length) throw new DefinitionError(`${path}.paths`, "must be a non-empty list of path globs");
+    const paths = x.paths.map((p, j) => ruleGlob(p, `${path}.paths[${j}]`));
+    if (typeof x.check !== "string" || !x.check) throw new DefinitionError(`${path}.check`, "must name a merge check by its id");
+    const c = decls.find((d) => d.id === x.check);
+    if (!c) throw new DefinitionError(`${path}.check`, `names no merge check "${x.check}"`);
+    const select = strList(x.select, `${path}.select`);
+    for (const [j, s] of select.entries()) if (s.startsWith("-")) throw new DefinitionError(`${path}.select[${j}]`, "a selector never starts with - (it would read as a flag)");
+    if (c.needsSelect && !select.length) throw new DefinitionError(`${path}.select`, `"${c.id}" runs with a selection: name what it runs (its groups, files or walkthroughs)`);
+    if (typeof x.why !== "string" || !x.why.trim() || x.why.length > 200) throw new DefinitionError(`${path}.why`, "say why, in one line (1 to 200 characters): it is shown beside the check");
+    return { paths, check: c.id, ...(select.length ? { select } : {}), why: x.why.trim() };
+  });
 }
 
 // ---- release (shared/release.ts) -----------------------------------------------------------------
@@ -1190,6 +1303,17 @@ export function parseDefinition(text: string): ProjectDef {
         const bad = unknownVars(a, mv);
         if (bad) throw new DefinitionError(`$.merge.checks[${i}].run[${j}]`, bad);
       }
+    for (const [i, c] of (Array.isArray(def.merge.checks) ? def.merge.checks : []).entries()) {
+      for (const [k, a] of Object.entries(c.env ?? {})) {
+        const bad = unknownVars(a, mv);
+        if (bad) throw new DefinitionError(`$.merge.checks[${i}].env.${k}`, bad);
+      }
+      const tv = new Set([...mv, "test"]);
+      for (const [j, a] of (c.rerunTest ?? []).entries()) {
+        const bad = unknownVars(a, tv);
+        if (bad) throw new DefinitionError(`$.merge.checks[${i}].rerunTest[${j}]`, bad);
+      }
+    }
     for (const [j, a] of (def.merge.install?.run ?? []).entries()) {
       const bad = unknownVars(a, vars);
       if (bad) throw new DefinitionError(`$.merge.install.run[${j}]`, bad);
@@ -1316,6 +1440,27 @@ export interface ServiceView {
   /** It failed too often in a short time and gave up restarting (the start limit, §app.project-services/supervisor):
       `failed` until someone starts it again (up, apply), through a server restart too. */
   gaveUp?: true;
+  /** It failed and waits for, or is in, its next try within the restart limit (§app.project-services/supervisor). */
+  restarting?: RestartingView;
+  /** Sova's record of the give-up, with `gaveUp` (§app.project-services/status-logs). */
+  giveUp?: GiveUpView;
+}
+/** `try`: the try now under way or waited for, its failures in a row plus 1 (the first restart is try 2). */
+export interface RestartingView {
+  try: number;
+  of: 5;
+}
+export type GiveUpRule = "in-a-row" | "in-an-hour" | "system-limit";
+export interface GiveUpView {
+  rule: GiveUpRule;
+  /** How many tries it failed. */
+  tries: number;
+  /** The last try's time (ISO). */
+  at: string;
+  /** The last try's exit code, null when none is known. */
+  exit: number | null;
+  /** Its last 5 log lines, oldest first. */
+  lines: string[];
 }
 export interface DataView {
   name: string;

@@ -115,8 +115,8 @@ test("progress colours what is known; a run that knows only started or stopped s
   assert.deepEqual(drawn(playbookFlowSource(MACHINE, { progress: { current: "research", done: ["find"] } })).nodes.filter((n) => n.tone).map((n) => [n.label, n.tone]), [["Find the version", "ok"], ["Research", "accent"]]);
 });
 
-test("the project playbooks draw cleanly: A/B cycle and Pi upgrade", () => {
-  for (const file of ["../.sova/playbooks/ab-cycle/playbook.json", "../.sova/playbooks/pi-upgrade/playbook.json"]) {
+test("the shipped playbooks draw cleanly: A/B cycle and Pi upgrade", () => {
+  for (const file of ["../playbooks/ab-cycle/playbook.json", "../.sova/playbooks/pi-upgrade/playbook.json"]) {
     const spec = ok(JSON.parse(readFileSync(new URL(file, import.meta.url), "utf8")));
     const d = drawn(playbookFlowSource(spec, { title: file }));
     const want = spec.machine ? spec.machine.states.map((x) => x.label) : stepsOf(spec.steps).map((x) => x.label);

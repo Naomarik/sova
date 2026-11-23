@@ -101,10 +101,10 @@ by argument list with no shell, locally only (a remote session refuses it).
   pushing the branch. In a repository the queue doesn't serve, `land` and `merge` both refuse a setup
   branch (one that changes the project's setup, by the land gate's rule as Sova's server answers it,
   §app.project-setup/land-gate), merging nothing: "This branch changes the project's setup: press
-  Merge Branch on its Setup card, which needs a passing trial first. Nothing was merged." When Git
+  Merge Branch on its Setup card, which needs a passing dry run first. Nothing was merged." When Git
   can't tell, they refuse too: "Sova can't confirm whether this branch changes the project's setup, so
-  nothing was merged. If it does, press Merge Branch on its Setup card, which needs a passing trial
-  first." The tool's description and guidance name no merge queue and no Land: they say `merge`
+  nothing was merged. If it does, press Merge Branch on its Setup card, which needs a passing dry
+  run first." The tool's description and guidance name no merge queue and no Land: they say `merge`
   merges into the main branch only as the turn's Sova landing note allows, and that on the user's
   typed "land it" or "merge it" the agent commits what's left and calls `land`, which lands the
   branch the way that note says (§chat.worktrees/landing-note).
@@ -424,7 +424,10 @@ A row with a readiness (§chat.worktrees/readiness) adds a chip after the status
 merge (the row's and the digest's words), Waiting for your OK, In progress, Blocked or Stale, with
 the reason as its `title` — and none while merged or removed, which the status chip already says.
 Its tone follows mergeability: Ready to merge and Waiting for your OK are success, In progress
-neutral, Blocked and Stale warn. A worktree that is Ready to land (§chat.worktrees/ready-to-land)
+neutral, Blocked and Stale warn. A setup branch's row also shows its dry run chip and line for its head, with the explainer's link
+and its actions, Run Dry Run, Stop Dry Run, or Fix with Fix in New Chat (§app.merge-queue/dry-runs,
+§app.merge-queue/fix); its branch card reads the newest commit, never an older one's dry run or
+check run as current (§chat.worktrees/newest-commit). A worktree that is Ready to land (§chat.worktrees/ready-to-land)
 reads **Ready** (success) in place of Ready to merge or Waiting for your OK, and its line starts
 "Ready to land". No other worktree reads Ready, and in a repository the queue serves none other
 counts as ready: one with real work says its own reading (Ready to merge, Waiting for your OK,
@@ -473,7 +476,8 @@ on a new folder and the hold for a test copy on a no-commit branch don't apply. 
 **In the merge queue** (§app/merge-queue) a worktree's chip and line read its entry's state instead,
 in the words the composer's worktrees control uses (§chat.composer/worktrees-control): Queued · 2nd
 (with "starts in ~N min · takes ~N min"), Checking, Conflict, Behaviour differs, Needs you, Can't
-tell whose failure, Out of tries, Drafts changed, Approved · waiting for a fix, Back with the chat
+tell whose failure, Out of tries, Drafts changed, Approved · waiting for a fix, Approved · dry run first (with its
+place), a dry run's own states (§app.merge-queue/dry-runs), Back with the chat
 ("try {n} of 3"), Waiting for the merge thread, Paused: you stopped the chat, and Landed with its
 commit, the fix commits that landed with the user's Land and its notes (§app.merge-queue/note) under
 it. A row reads Landed only while nothing is left (§chat.worktrees/nothing-left): a catch-up merge on
@@ -579,7 +583,9 @@ no model call (`server/merge-readiness.ts`):
   three or more uncommitted files, the branch has no commit of its own yet, it **conflicts with
   its base** (the trial merge git already runs for an unmerged branch reports conflicts), a
   commit subject on the branch starts with `TEMP`, `WIP`, `fixup!`, `squash!` or `amend!`, or the
-  session's newest check run (a `bash` call running a test, typecheck or build) failed.
+  session's newest check run of a kind (a `bash` call running a test, typecheck or build) failed at
+  the head commit or at an earlier one with no newer evidence since (a new commit alone, or a pass
+  of another kind, never clears it, §chat.worktrees/newest-commit).
 - **removed** — the worktree's folder is gone, and what its work came to is said plainly, never
   "in progress" or "active". A folder with no `.git` left in it (what a delete that stopped part way
   leaves) counts as gone. Only a folder that is gone is ever called
@@ -759,11 +765,10 @@ commit when, worked out with no model call beside its readiness (§chat.worktree
   (§chat.worktrees/blocks-landing): once the user lands it, the merge thread judges the conflict in
   line (§app.merge-queue/conflicts). The worktree's own readiness still says it conflicts until it
   has a landing;
-- the session's newest check run isn't failing, it has no open alignment question, and nothing runs
+- the session's newest check run of each kind (test run, typecheck, build) isn't failing (one at an
+  older commit keeps blocking until newer evidence clears it, never a new commit alone or a pass of
+  another kind, §chat.worktrees/newest-commit), it has no open alignment question, and nothing runs
   in it;
-- on a setup branch (one that changes the project's pipeline settings), a trial of its head commit
-  passed (§app.project-setup/land-gate); until then the note that names what still blocks landing
-  names the missing trial;
 - and **the work is finished**: the session's latest turn outcome for its last reply
   (§app.decisions/attention-signals, the turn card) says either that it did what was asked, which
   covers done and done-but-unverified, or that it waits only for the go-ahead to land, merge, push
@@ -773,6 +778,12 @@ commit when, worked out with no model call beside its readiness (§chat.worktree
   finished reply that asks "shall I merge?" or ends 'You can type "land it" here' is still Ready to
   land. When Decisions' attention signals are off, or turned off for the session's folder, there is
   no outcome to read, and the code-only conditions above decide alone.
+
+A setup branch (one that changes the project's pipeline settings) needs no passing dry run to read
+Ready to land: Land runs its dry run first, then lands by itself (§app.project-setup/land-gate), so
+its row says so beside Land, "Needs a dry run: {why}" (§app.merge-queue/dry-runs), and its chat is
+never told to start a dry run itself, nor sent a blocker for it. Its row reads the dry run state of
+its head (§chat.worktrees/newest-commit).
 
 Once a head commit is Ready to land it **stays** so for that commit, kept per session and worktree
 in `<state root>/ready-to-land.json`, even when a later reply asks nothing or its outcome says
@@ -848,7 +859,8 @@ conflicts, "It also conflicts with {base} in {n} files: don't resolve them yours
 presses Land, the merge thread judges them.". A failing check run is named as whose run it is and
 what failed, never as "a failing check run", here and in the worktree's readiness reason alike, so
 the chat reruns or fixes it rather than taking it for the queue's run: "this chat's last test run
-failed: 1 failing file, server/x.test.ts". The run is a "test run", a "typecheck" or, when its
+at {sha7} failed: 1 failing file, server/x.test.ts", naming the commit it ran at; a failing run at an
+older commit than the head still blocks until newer evidence clears it (§chat.worktrees/newest-commit). The run is a "test run", a "typecheck" or, when its
 output doesn't say, a "check run"; what failed is what its output names: "{n} failing files" with up
 to three named ("+{n} more" past them), "{n} failing tests", "{n} type errors" with their files, or
 nothing ("this chat's last check run failed"). It is told to fix them on its branch and answer the
@@ -885,6 +897,36 @@ When no reading can say (no owning chat, an archived one, a chat not read yet, n
 the reading, a merged or gone worktree, or a reading that is Ready to land at another commit), the
 queue's own checks answer: "its newest commit is a temporary commit ("…")" or "{n} uncommitted files
 in its folder: commit or remove them first", else nothing.
+
+## §chat.worktrees/newest-commit — A branch's row reads its newest commit
+
+Every row and card that speaks for a branch (the session pane's Worktrees rows and their branch card,
+the composer's worktrees control and its modal, the Merge Queue tab's rows and the chat's queue card)
+reads the branch's **newest commit**, never an older one's state as its current one:
+- **Its dry run.** The dry run state it shows (§app.merge-queue/dry-runs) is the one of the head
+  commit: a dry run of an older commit, passed, failed or stopped, is never shown as the branch's, so a
+  head with none reads Needs a dry run (or the dry run its Land waits for). An older commit's dry run
+  shows only on the Dry runs tab and its own run page. A failure the target shares never says "fix
+  it": it reads "Fails on {target} too: not this branch's" (§app.merge-queue/fix).
+- **The chat's own check run.** "this chat's last test run failed: …" (and its typecheck and check
+  run forms, §chat.worktrees/blocks-landing) names the commit the run was at, "this chat's last test
+  run at {sha7} failed: 1 failing test". A failing run **keeps blocking**, its line naming the commit
+  it ran at, until there is newer evidence: a newer run of the same kind in that chat (a run's kind
+  is its command's: a test run clears a test run, a typecheck a typecheck, a build a build, any other
+  check run only another check run; the newest of that kind counts, whatever its result), a passing
+  merge-queue run of a later commit of the branch, or a passing dry run of a later commit that ran a
+  check of that kind (for a test run, one that ran tests or the project's test command). A dry run of
+  setup steps only, or of checks of another kind, never clears it; nor does a passing run of another
+  kind, nor a new commit alone, since a chat runs its tests before committing what they tested. Until then it keeps the branch from Ready to land, makes it In progress and counts as
+  what still blocks landing, whatever commits came after it. Once a passing dry run or merge-queue
+  run of a later commit clears it, it shows only as history, "this chat's last test run at {sha7}, an
+  older commit, failed: 1 failing test". When Sova doesn't know the run's commit, it says when the
+  run was ("2h ago") and blocks the same way; a dry run or merge-queue run counts as of a later
+  commit when its commit was made after the run (its committer date).
+- **Its readiness and its notes.** A reason line, a "Not back in line yet" reason or a request text
+  written for an older head is read again for the new head, never kept: a new commit makes the row
+  read afresh within the time its reading takes (§chat.worktrees/readiness), and until then shows the
+  new head's commit with no stale verdict.
 
 ## §chat.worktrees/landing-answers — The typed go-ahead, kept and handed to the queue
 

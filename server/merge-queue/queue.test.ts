@@ -1212,6 +1212,92 @@ describe("notes and picks", () => {
     }
   });
 
+  test("q9: a pick after the run's last look runs it again before anything lands, once; one the run read lands with it", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      let open!: () => void;
+      const gate = new Promise<void>((r) => (open = r));
+      // The first run holds until the pick is in, reads no late picks, and passes: the pick is one it never saw.
+      k.run.set(async (input) => (k.run.inputs.length === 1 ? (await gate, {}) : (input.latePicks?.(), {})));
+      k.repo.branch("feat/a", { "a.txt": "a\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      await until(() => k.run.inputs.length === 1, "the first run");
+      await q.extend(entry.id, ["statecharts"], "late");
+      open();
+      await landed(k, entry.id);
+      const e = await k.entry(entry.id);
+      assert.equal(k.run.inputs.length, 2, "one rerun, never a loop");
+      assert.deepEqual(k.run.inputs[1]!.picks.map((p) => p.id), ["statecharts"], "the rerun has it planned");
+      assert.equal(e.runs.length, 2);
+      const first = q.store.readRun(e.runs[0]!)!;
+      assert.deepEqual([first.verdict, first.why], ["void", "Statecharts was added after the run's last look for picks: running again with it before anything lands"]);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("q9: a pick while a tested tip waits to land (a dirty main folder) runs before the landing; the cap is kept on the entry", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      k.repo.branch("feat/a", { "b.txt": "b\n" });
+      writeFileSync(join(k.repo.root, "a.txt"), "edited by hand\n");
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      await until(() => q.isPaused(), "paused with the tested tip");
+      await q.extend(entry.id, ["statecharts"], "picked while it waited");
+      sh(k.repo.root, "checkout", "--", "a.txt");
+      await q.resume();
+      await landed(k, entry.id);
+      assert.equal(k.run.inputs.length, 2, "the waiting tip never landed without the pick: one rerun with it");
+      assert.deepEqual(k.run.inputs[1]!.picks.map((p) => p.id), ["statecharts"]);
+      const e = await k.entry(entry.id);
+      assert.deepEqual(e.lateReruns, { commit: e.commit, count: 1 }, "the count is the entry's, saved");
+      assert.match(q.store.readRun(e.runs[0]!)!.why!, /added after the run's last look for picks/);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("a reviewer's fix kept for a run that ends any other way than review-flagged (a check failed too) is dropped, never left behind", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      k.run.set(async (input) => {
+        sh(input.project.root, "update-ref", `refs/sova-mq/review-fix/${input.entry.id}`, input.commit);
+        return { verdict: "failed", blame: "branch", why: "unit failed" };
+      });
+      k.repo.branch("feat/a", { "a.txt": "a\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(entry.id)).state !== "checking" && (await k.entry(entry.id)).state !== "queued", "the run ended");
+      assert.equal(sh(k.repo.root, "for-each-ref", "refs/sova-mq/review-fix/"), "");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("q9: a thread picking after every run's last look gets at most 2 reruns, then that run takes no more picks", async () => {
+    const k = makeKit();
+    try {
+      const q = await k.q();
+      k.repo.branch("feat/a", { "a.txt": "a\n" });
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      const refused: string[] = [];
+      // Each run, as it ends, gets one more pick it never saw (a new selection each time).
+      k.run.set(async () => {
+        const n = k.run.inputs.length;
+        await q.extend(entry.id, ["statecharts"], `pick ${n}`, [`s${n}`]).catch((err: Error) => refused.push(err.message));
+        return {};
+      });
+      await landed(k, entry.id);
+      assert.equal(k.run.inputs.length, 3, "the first run and two reruns, then it lands");
+      assert.equal(refused.length, 1);
+      assert.match(refused[0]!, /has already run again 2 times for picks added after its last look: this run takes no more picks/);
+    } finally {
+      await k.done();
+    }
+  });
+
   test("extend refuses a pick of a check that needs a selection when it names none, and adds nothing of that call", async () => {
     const group = { id: "integration-group", label: "Slow test group", run: ["true"], timeout: 60, rerun: false, requires: [], optional: true, needsSelect: true };
     const def = { ...DEF, merge: { ...DEF.merge!, checks: [...(DEF.merge!.checks as object[]), group] } } as typeof DEF;
@@ -1565,6 +1651,8 @@ describe("can't tell whose failure", () => {
       assert.equal(sh(k.repo.root, "rev-parse", `${k.repo.head()}^2`), n.entry.commit, "only feat/next landed");
       // The line moved on since its run: Land Anyway reruns it on the new target; again can't tell, so that tip lands.
       await q.answer(u.entry.id, "land-anyway");
+      const answered = q.events({ entry: u.entry.id }).events.find((x) => x.kind === "decision" && x.answered);
+      assert.deepEqual([answered?.by, answered?.kind === "decision" && answered.answered, answered?.why.startsWith("You answered with Land Anyway: ")], ["user", "land-anyway", true], "the answer is kept as an event");
       await landed(k, u.entry.id);
       const done = await k.entry(u.entry.id);
       assert.ok(done.approval.overUnattributed);
@@ -1617,7 +1705,17 @@ describe("can't tell whose failure", () => {
       await until(async () => (await k.entry(a.entry.id)).ruling?.unattributed, "the thread rules first");
       const waiting = await k.entry(a.entry.id);
       assert.equal(waiting.decision, undefined, "not raised to the user yet");
-      assert.ok(!(await q.view()).needsYou.some((x) => x.id === a.entry.id), "not in Needs you yet");
+      // Waiting for the thread's ruling, it shows in Needs you as such, and its branch's row says so: never Ready with Land.
+      const v = await q.view();
+      const row = v.needsYou.find((x) => x.id === a.entry.id);
+      assert.equal(row?.waitingRuling, true, "in Needs you as Waiting for the merge thread");
+      assert.equal(row?.decision, undefined);
+      const { worktreeQueueInfo } = await import("./view");
+      const info = worktreeQueueInfo(v, "feat/a");
+      assert.equal(info?.state, "unattributed");
+      assert.equal(info?.waitingRuling, true, "the branch's rows read it");
+      const { branchQueueOf } = await import("../../shared/merge-queue");
+      assert.equal(branchQueueOf(info!).waitingRuling, true, "and the session list's branch rows");
       await q.rule(a.entry.id, { ruling: "try-again", text: "the host ran out of temp space" });
       await landed(k, a.entry.id);
       assert.equal(k.notices.filter((n) => n.kind === "decision").length, 0, "the user never heard of it");

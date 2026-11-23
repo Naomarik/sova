@@ -22,6 +22,7 @@ const { rowOfEntry, rowState } = await import("./rows");
 const { chatListOf, setupOf, workerListOf } = await import("./list");
 const { parseRowId, rowId } = await import("./ids");
 const { mcpNamesOf, mcpToolOfRow } = await import("./tool-names");
+const folderMod: Record<string, unknown> = await import("./folder");
 
 const computer = { kind: "computer" } as const;
 const record = (...tools: string[]) => ({ protocolVersion: "1", serverInfo: { name: "s", version: "1" }, tools: tools.map((name) => ({ name, description: `d ${name}`, inputSchema: { type: "object" } })) });
@@ -325,6 +326,70 @@ describe("a chat's list", () => {
     assert.deepEqual(given.list.servers[0]!.record.tools.map((t) => t.name), ["x"]);
     assert.deepEqual(workerListOf(own, ["b"], "Chat"), { refused: "Chat's servers are a, so a worker can't have b." });
     assert.deepEqual(workerListOf({ v: 1, servers: [] }, ["b"], "Chat"), { refused: "Chat's servers are none, so a worker can't have b." });
+  });
+});
+
+describe("what a chat asks the server for its list", () => {
+  // The server's answer, told apart from anything the chat could work out itself.
+  const answer = { v: 1 as const, servers: [] as never[] };
+  type Ask = { path: string; cwd: string; sandboxOn: boolean; offMcp: string[]; onMcp: string[] };
+  const askedList = folderMod.askedList as (ask: Ask, server: (a: Ask) => Promise<typeof answer | null>) => Promise<unknown>;
+
+  test("it asks exactly when a server could be on in it, and then takes the server's answer as it is, even none", async () => {
+    const cases: { name: string; make(): { cwd: string; sandboxOn?: boolean; onMcp?: string[]; offMcp?: string[] }; asks: boolean }[] = [
+      { name: "nothing declared", make: () => ({ cwd: checkout() }), asks: false },
+      { name: "its one server waiting for approval", make: () => (putComputerEntry(normalizeEntry("w", { command: "w" }, "computer")), { cwd: checkout() }), asks: false },
+      {
+        name: "approved, never checked",
+        make: () => {
+          const e = normalizeEntry("u", { command: "u" }, "computer");
+          putComputerEntry(e);
+          approve(computer, "u", versionOf(e, agent));
+          return { cwd: checkout() };
+        },
+        asks: false,
+      },
+      { name: "approved and checked, off for new chats", make: () => (putComputerEntry(ready(computer, "o", { command: "o" })), changeRow(computer, "o", (r) => void (r.settings.newChats = false)), { cwd: checkout() }), asks: false },
+      { name: "off for new chats, switched on in this chat", make: () => (putComputerEntry(ready(computer, "o", { command: "o" })), changeRow(computer, "o", (r) => void (r.settings.newChats = false)), { cwd: checkout(), onMcp: ["o"] }), asks: true },
+      { name: "on for new chats, switched off in this chat", make: () => (putComputerEntry(ready(computer, "a", { command: "a" })), { cwd: checkout(), offMcp: ["a"] }), asks: false },
+      { name: "approved, checked and on", make: () => (putComputerEntry(ready(computer, "a", { command: "a" })), { cwd: checkout() }), asks: true },
+      { name: "an address server under Sandbox On", make: () => (putComputerEntry(ready(computer, "site", { url: "https://e/mcp" })), { cwd: checkout(), sandboxOn: true }), asks: false },
+      { name: "an address server, Sandbox Off", make: () => (putComputerEntry(ready(computer, "site", { url: "https://e/mcp" })), { cwd: checkout() }), asks: true },
+      {
+        name: "a .mcp.json at its checkout's top, every server in it waiting",
+        make: () => {
+          const dir = checkout();
+          mkdirSync(join(dir, ".git"));
+          list(dir, { p: { command: "p" } });
+          mkdirSync(join(dir, "sub"));
+          return { cwd: join(dir, "sub") };
+        },
+        asks: true,
+      },
+      {
+        name: "a .mcp.json above a folder in no checkout",
+        make: () => {
+          const dir = checkout();
+          list(dir, { p: { command: "p" } });
+          mkdirSync(join(dir, "sub"));
+          return { cwd: join(dir, "sub") };
+        },
+        asks: true,
+      },
+    ];
+    for (const c of cases) {
+      rmSync(join(agent, "mcp.json"), { force: true });
+      rmSync(join(agent, "sova"), { recursive: true, force: true });
+      const made = c.make();
+      const asked: Ask[] = [];
+      const got = await askedList({ path: "/s.jsonl", cwd: made.cwd, sandboxOn: made.sandboxOn ?? false, offMcp: made.offMcp ?? [], onMcp: made.onMcp ?? [] }, async (a) => (asked.push(a), answer));
+      assert.equal(asked.length, c.asks ? 1 : 0, c.name);
+      if (c.asks) assert.equal(got, answer, `${c.name}: the server's answer, as it is`);
+      else assert.deepEqual(got, { v: 1, servers: [] }, `${c.name}: none, unasked`);
+    }
+    // A chat that asks takes the server's word over its own: a remote chat's null stays null.
+    putComputerEntry(ready(computer, "a", { command: "a" }));
+    assert.equal(await askedList({ path: "/s.jsonl", cwd: checkout(), sandboxOn: false, offMcp: [], onMcp: [] }, async () => null), null);
   });
 });
 

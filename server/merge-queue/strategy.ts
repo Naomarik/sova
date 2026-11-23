@@ -81,6 +81,8 @@ export async function landHowSetting(o: {
   dir: string;
   root: string;
   projectHow: unknown;
+  /** The remote whose host it suggests (merge.remote); absent: origin. */
+  remote?: string;
   hosts?: {
     suggest: (root: string) => Promise<{ how: LandHow; why: string; repo?: import("./hosts/types").HostRepo }>;
     adapterFor: (kind: import("./hosts/types").HostKind) => import("./hosts/types").HostAdapter;
@@ -91,7 +93,7 @@ export async function landHowSetting(o: {
   if (!hosts) {
     // Not hosts/index.ts: its origin reader (workspace-git.ts) pulls the org layer into the queue (projects/seam.test.ts).
     const [repoMod, gh, gl, { execFile }] = await Promise.all([import("./hosts/repo"), import("./hosts/github"), import("./hosts/gitlab"), import("node:child_process")]);
-    const originOf = (r: string) => new Promise<string | null>((done) => execFile("git", ["remote", "get-url", "origin"], { cwd: r, timeout: 10_000 }, (err, out) => done(err ? null : String(out).trim() || null)));
+    const originOf = (r: string) => new Promise<string | null>((done) => execFile("git", ["remote", "get-url", o.remote ?? "origin"], { cwd: r, timeout: 10_000 }, (err, out) => done(err ? null : String(out).trim() || null)));
     hosts = { suggest: async (r) => repoMod.suggestLanding(await originOf(r)), adapterFor: (k) => (k === "github" ? gh.githubAdapter() : gl.gitlabAdapter()) };
   }
   const h = hosts;

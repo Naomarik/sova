@@ -25,9 +25,9 @@ restoring one, and new designs made from others.
 Not here: the mode menu and the vis minor mode itself (§chat/mode-menu, §chat.markdown/visuals),
 worker processes in general
 (§app.chat-processes/workers), the session pane's tabs (§app.subagents-pane/tabs), the verbs and
-their callers (§app.project-services/callers), tours' own recording (§app/tours). There is no Mix
-tray and no Mix button, and pointing at a part of a page and sharing prototypes outside the chat are
-later work.
+their callers (§app.project-services/callers), tours' own recording (§app/tours), and how a session
+share link shows a chat's finished designs, read only (§app.session-share/lookbook). There is no Mix
+tray and no Mix button, and pointing at a part of a page is later work.
 
 ## §chat.design-mode/turning-on — A Lookbook rides vis
 
@@ -562,6 +562,23 @@ the network. As the user decided: "Google Fonts only".
   it.
 - **Browsers.** A finished page runs only in a browser that supports the frame's `csp` attribute. In
   any other it isn't run, and the place it would be says so.
+- **On a shared page** (§app.session-share/lookbook-view) the same wall holds, without the share
+  page's own content policy ever being loosened, which a `srcdoc` frame would inherit. The share
+  serves each version as a document of its own from a token-scoped address
+  (§app.session-share/lookbook-serving): the two-frame shell above inside, under a header policy
+  that sandboxes it to an opaque origin with scripts allowed and lets only Google Fonts'
+  stylesheets and font files load. It is `nosniff`, `no-store` and `no-referrer`, and may be
+  framed only by its own host. Because the shell is served from an address under the link, the
+  page inside it is a `blob:` document the shell makes, never `srcdoc` (which would take the
+  shell's address as its base) nor a `data:` address (Chrome refuses navigation URLs over 2 MB,
+  and a page may be up to 32 MiB): nothing the page can read, its `baseURI`, `location`, `URL` or
+  referrer, holds the link's token. The shell's policy differs from the app's wall only by
+  `frame-src blob:`; the page's own policy still allows it no frame, and the share page's policy
+  is unchanged. The share page frames the shell with that policy as its sandbox and `csp`
+  attributes, so it runs in Chrome-family browsers only. In any other browser it is a still page:
+  the frame used while a page is written (an empty sandbox, inert, no scripts), with one quiet line
+  saying it is a still. The operator's preview frames the same document inline, under the same
+  attributes.
 
 **Drawn** means a finished page's fonts are in and its opening animations have run, so a page that
 fades in never shows as blank; one that never says so counts as drawn shortly after it loads.
@@ -862,8 +879,10 @@ As the user decided: "As long as the chat, only inside it". Designs follow the r
 - **Images too.** A chat's images follow this rule (§chat.design-mode/asset-storage).
 - **Archiving keeps them.** Only actual deletion of the chat removes them. Cleanup runs after a chat
   is confirmed gone, and uncertainty about whether it is gone never deletes anything.
-- **Not outside the chat.** They aren't on share links, and no other chat reads them. A peer computer
-  linked over the mesh doesn't get them for now.
+- **Not outside the chat, but for share links.** No other chat reads them, and a peer computer
+  linked over the mesh doesn't get them for now. The one exception, as the user decided: a session
+  share link shows the finished designs whose card is in its shared part, read only, and nothing
+  else of the run (§app.session-share/lookbook).
 
 ## §chat.design-mode/coordinator — One Creative Director per chat
 
@@ -1404,6 +1423,9 @@ As the user decided: "Signed-in pages: ask once on the card."
 When the page is behind a sign-in, capturing asks one extra question on the Creative Director's card, saying
 what will be saved and which model reads it. Hosts other than the link's own are approved one by one
 here: §chat.design-mode/link-reach's cover doesn't apply to a signed-in look.
+
+Designs holding such pictures may still go out on a session share link; its preview says that some
+pictures came from a signed-in page before any link is made (§app.session-share/sheet).
 
 ## §chat.design-mode/project-reach — What the Creative Director may do across your projects
 

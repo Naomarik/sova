@@ -774,7 +774,8 @@
       "server/approvals.ts",
       "server/create-settings-cards.test.ts",
       "server/projects/skills.ts",
-      "server/approvals.test.ts"
+      "server/approvals.test.ts",
+      "shared/merge-queue-settings.ts"
     ],
     "requires": [
       "§app.project-overseer/autonomy-levels",
@@ -788,9 +789,9 @@
       "§app.access/your-click"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-17T12:59Z",
-      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+      "by": "operator",
+      "at": "2026-11-20T09:50Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
     }
   },
   "§app.project-overseer/statechart-tools": {
@@ -1006,9 +1007,9 @@
       "§app.organizations/field-authority"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "by": "naomarik",
+      "at": "2026-11-18T20:26Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§app.project-overseer/watch-loop": {

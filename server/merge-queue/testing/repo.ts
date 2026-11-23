@@ -5,7 +5,8 @@
  * scripts whose pass or fail the test controls by file content in the commit being checked:
  *
  * - `setup.conf`: `ok` | `broken` (setup exits 1) | `broken-once` (fails on its first run only).
- * - `build.conf`: `ok` | `broken`: the `build` check fails with no file named (a typecheck/build kind).
+ * - `build.conf`: `ok` | `broken`: the `build` check fails with no file named (a typecheck/build kind) |
+ *   `broken-once` (fails its first run per commit, passes after).
  * - `tests/<name>.txt`: `pass` | `fail` | `flaky` (fails its first run per content, passes after) |
  *   `hang` (sleeps until killed): the `unit` check, which names its failing files in SOVA_OUT and reruns
  *   only the files passed as argv.
@@ -35,12 +36,17 @@ export interface FixtureOptions {
   requireService?: { portBase: number };
   /** A bare `origin` beside the project, pushed to at creation (default true). */
   remote?: boolean;
-  /** Ship a review kit at `.sova/playbooks/review/` and declare it. */
+  /** Ship a review kit at `.sova/playbook-config/review/` and declare it. */
   review?: boolean;
   /** declared only: also declare `test.run` as the unit check's own command, so `unit` is the project's test check. */
   unitIsTestCommand?: boolean;
   /** Extra `merge` section keys (merged over the defaults). */
   merge?: Record<string, unknown>;
+  /** declared only: the unit check's time limit in seconds (default 60), and more checks after build and unit. */
+  unitTimeout?: number;
+  moreChecks?: Record<string, unknown>[];
+  /** declared only: keys over the unit check's own (`rerun: false`, `rerunTest: ["--name", "${test}"]`). */
+  unit?: Record<string, unknown>;
   /** The repo's folder name (default `demo`). */
   name?: string;
   /** Files on the target's first commit, over the defaults (e.g. `{"setup.conf": "broken\n"}`: master already broken). */
@@ -111,7 +117,7 @@ log("pass");
 const BUILD = (s: string) => `${prelude(s, "build")}
 const c = conf("build.conf", "ok");
 console.log("build: " + c);
-if (c === "broken") { console.error("build: error TS2322 in src/app.ts"); log("fail"); process.exit(2); }
+if (c === "broken" || (c === "broken-once" && once("build-once:" + head))) { console.error("build: error TS2322 in src/app.ts"); log("fail"); process.exit(2); }
 log("pass");
 `;
 
@@ -121,12 +127,19 @@ const UNIT = (s: string) => `${prelude(s, "unit")}
 if (existsSync("unit.usage")) { console.error("unit: --groups needs a value"); console.error("usage: unit [--groups <name>] [files]"); out({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [], ranFiles: [] }); log("fail"); process.exit(2); }
 // unit.crash at the root: a runner that dies midway, or one that never writes a report: exit 1 and no report at all.
 if (existsSync("unit.crash")) { console.error("unit: segfault in the middle of the suite"); log("fail"); process.exit(1); }
-const sel = process.argv.slice(2);
+// "--name <test>": only the tests of that name (a test file's base name, "a.txt"), as a runner's name filter runs them.
+const argv = process.argv.slice(2);
+const sel = [];
+const byName = [];
+for (let i = 0; i < argv.length; i++) argv[i] === "--name" ? byName.push(argv[++i]) : sel.push(argv[i]);
+// unit.last-name at the root: only the last of several --name filters counts (as pytest's -k does).
+if (existsSync("unit.last-name")) byName.splice(0, byName.length - 1);
 const all = existsSync("tests") ? readdirSync("tests").filter((f) => f.endsWith(".txt")).sort().map((f) => "tests/" + f) : [];
-const files = sel.length ? all.filter((f) => sel.includes(f)) : all;
+const files = (sel.length ? all.filter((f) => sel.includes(f)) : all).filter((f) => !byName.length || byName.includes(f.replace(/^tests\\//, "")));
 // unit.basename: a selector that names no repo path can't be loaded, as nasabii's test.bb errors on "handler_test.clj".
 if (existsSync("unit.basename") && sel.length && !files.length) { console.log("unit: could not locate " + sel.join(" ")); out({ passed: 0, failed: 0, errors: 1, skipped: 0, failures: [{ name: "test run", message: "could not locate " + sel.join(" ") }] }); log("fail"); process.exit(1); }
 const failures = [];
+const passedTests = [];
 let passed = 0;
 // "reused": a file that already passed on identical code (as Sova's runner reuses one), unless SOVA_FRESH=1.
 const reused = [];
@@ -153,10 +166,10 @@ for (const f of files) {
   const base = f.replace(/^tests\\//, "");
   const name = existsSync("unit.kaocha") ? "FAIL in (app.unit-test/" + base.replace(/\\.txt$/, "") + ") (unit_test.clj:" + readFileSync(f, "utf8").split("\\n").length + ")" : base;
   if (bad) { failures.push({ ...named, name, message: "expected pass, got " + c }); console.log("not ok " + f); }
-  else { passed++; console.log("ok " + f); }
+  else { passed++; passedTests.push(name); console.log("ok " + f); }
 }
 const at = "2026-11-05T14:02:00.000Z";
-out({ passed, failed: failures.length, errors: 0, skipped: 0, failures, ...(reused.length ? { reused: { files: reused.length, of: files.length, rechecked: 0, at, from: "feat/x's chat", list: reused.map((file) => ({ file, at, from: "feat/x's chat", run: "t_src" })) } } : {}) });
+out({ passed, failed: failures.length, errors: 0, skipped: 0, failures, passedTests, ...(reused.length ? { reused: { files: reused.length, of: files.length, rechecked: 0, at, from: "feat/x's chat", list: reused.map((file) => ({ file, at, from: "feat/x's chat", run: "t_src" })) } } : {}) });
 log(failures.length ? "fail" : "pass");
 process.exit(failures.length ? 1 : 0);
 `;
@@ -255,13 +268,14 @@ export class Fixture {
       target: this.target,
       // The offline install a lockfile change needs (here: deps.lock).
       install: { run: ["node", "install.mjs"], inputs: ["deps.lock"] },
-      ...(this.opts.review ? { review: ".sova/playbooks/review" } : {}),
+      ...(this.opts.review ? { review: ".sova/playbook-config/review" } : {}),
       ...(this.opts.merge ?? {}),
     };
     if (checks === "declared") {
       merge.checks = [
         { id: "build", label: "Build", run: ["node", "checks/build.mjs"] },
-        { id: "unit", label: "Unit tests", run: ["node", "checks/unit.mjs"], rerun: true, timeout: 60 },
+        { id: "unit", label: "Unit tests", run: ["node", "checks/unit.mjs"], rerun: true, timeout: this.opts.unitTimeout ?? 60, ...(this.opts.unit ?? {}) },
+        ...(this.opts.moreChecks ?? []),
       ];
     } else if (checks === "none") merge.checks = "none";
     def.merge = merge;
@@ -291,7 +305,7 @@ export class Fixture {
     put("src/app.txt", "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\n");
     put("README.md", "# demo\n");
     if (this.opts.review) {
-      put(".sova/playbooks/review/SKILL.md", REVIEW_KIT);
+      put(".sova/playbook-config/review/SKILL.md", REVIEW_KIT);
       put("review.conf", "ok\n");
     }
     for (const [rel, text] of Object.entries(this.opts.files ?? {})) put(rel, text);

@@ -48,7 +48,7 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
   version pill, its release-page link and the footer. The install command, URL and script link
   stay on `stable` (`installRef`), the tag each release moves to itself. Re-check every claim on
   the page against the release commit, then update `verified` (the revision and date the footer
-  names). The repository's release playbook, `.sova/playbooks/release/PLAYBOOK.md`, does this
+  names). The repository's release playbook, `.sova/playbook-config/release/PLAYBOOK.md`, does this
   in its release commit; the deploy below follows the release, as its own step.
 - **The design tokens:** re-copy `src/design/tokens.css` into `src/styles/tokens.css`; don't edit
   values here.

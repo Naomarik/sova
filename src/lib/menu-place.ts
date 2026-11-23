@@ -55,7 +55,8 @@ export const MENU_RUN_TIMEOUT_MS = 10_000;
 
 /** Every label Sova's own items in the session menu can show: an extension entry may not take one,
     so no row of an extension's reads as Sova's (the reply chips' rule). The session row menu's test
-    fails when a label it draws is missing here. */
+    fails when a label it draws is missing here. A label that left the menu stays reserved (Open
+    Session, Use Gist as Title), so no extension row takes a name users knew as Sova's. */
 export const SESSION_MENU_NAMES: readonly string[] = [
   "Open Session",
   "Session Details",
@@ -63,6 +64,7 @@ export const SESSION_MENU_NAMES: readonly string[] = [
   "Open Subagents",
   "Rename…",
   "Use Gist as Title",
+  "Regenerate Title",
   "Reset to Original Title",
   "Move to Group…",
   "Archive",

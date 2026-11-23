@@ -5,16 +5,16 @@
  * row's path and reads the live row from the list on every change, so a refresh under it shows the
  * new title and a row that goes away closes it. Every row does what its existing door does: the
  * drop panel's archive, Undo and groups (lib/drag-overlay), the Agents board menu's titles
- * (lib/agents-board), the board's Copy Path. The rules are lib/session-context-menu.
+ * (lib/session-actions, lib/auto-title), the board's Copy Path. The rules are lib/session-context-menu.
  */
 import { createMemo, For, Show } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
-import { gistTitle } from "../lib/agents-board";
+import { regeneratingTitle } from "../lib/auto-title";
 import { archiveDragOf, archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { type DragInfo, dropTiles } from "../lib/drag-overlay";
 import { hostLabel, hostOf } from "../lib/mesh";
 import { groupRefusal } from "../lib/regions";
-import { renameSession } from "../lib/session-actions";
+import { regenerateSessionTitleNow, renameSession } from "../lib/session-actions";
 import { groupChoices, rowMenuOf } from "../lib/session-context-menu";
 import { groupNameOf, loadSessionGroups, quoted, sessionGroups } from "../lib/session-groups";
 import { copyText, localRunning } from "../lib/ui-state";
@@ -66,7 +66,7 @@ export function SessionContextMenu(props: {
         });
         const drag = createMemo(() => (row() ? dragOf(row()!) : null));
         const tiles = createMemo(() => (drag() ? dropTiles(drag()!, sessionGroups(), props.counts) : null));
-        const model = createMemo(() => (row() && drag() ? rowMenuOf(row()!, drag()!.archive, tiles()!) : null));
+        const model = createMemo(() => (row() && drag() ? rowMenuOf(row()!, drag()!.archive, tiles()!, regeneratingTitle(row()!.path)) : null));
         const { Item, run, screen, show } = api;
         const setTitle = (title: string | null) => {
           const r = row();
@@ -140,12 +140,12 @@ export function SessionContextMenu(props: {
                         <div class="model-menu-group" role="group" aria-label="Title">
                           <Item label="Rename…" aria={`Rename ${name()}`} icon={<Icon name="pencil" small />} stayOpen onRun={() => show("rename")} />
                           <Item
-                            label="Use Gist as Title"
-                            aria={`Use the gist as the title of ${name()}`}
-                            icon={<Icon name="pencil" small />}
-                            description={t().gist ?? undefined}
-                            disabled={t().gistDisabled}
-                            onRun={() => setTitle(gistTitle(r()))}
+                            label="Regenerate Title"
+                            aria={`Regenerate the title of ${name()}`}
+                            icon={<Icon name="refresh" small />}
+                            description={t().regenerateDesc}
+                            disabled={t().regenerateDisabled}
+                            onRun={() => void regenerateSessionTitleNow(r(), props.onRefresh)}
                           />
                           <Item
                             label="Reset to Original Title"

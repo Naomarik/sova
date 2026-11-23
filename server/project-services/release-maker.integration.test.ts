@@ -15,7 +15,7 @@ import { scratchRoot } from "../test-scratch";
  * the repository unignored; `init` never overwrites. Real processes (node), so an integration file.
  */
 
-const MAKER = new URL("../../playbooks/release-maker/scripts/release-maker.mjs", import.meta.url).pathname;
+const MAKER = new URL("../../system-playbooks/release-maker/scripts/release-maker.mjs", import.meta.url).pathname;
 const under = scratchRoot("sova-rel-maker-");
 const fixtures: ReleaseFixture[] = [];
 after(() => {
@@ -30,7 +30,7 @@ const fixture = (o: ConstructorParameters<typeof ReleaseFixture>[0] = {}) => {
   fixtures.push(fx);
   return fx;
 };
-const PB = ".sova/playbooks/release";
+const PB = ".sova/playbook-config/release";
 
 test("S2: init on a project with no releases writes the starter, which Sova's parsers read and check passes", () => {
   const fx = fixture({ kind: "bare" });

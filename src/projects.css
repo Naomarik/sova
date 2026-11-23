@@ -378,6 +378,11 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 /* "checked 2h ago" stays on one line: where the row is too narrow, the action wraps under it instead. */
 .services-setup-when { flex: 1 0 auto; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .services-setup-line > .button { min-height: var(--tap-min); }
+/* Never set up: what running copies are, above the line (§app.project-runtime/software-card). */
+.services-setup-unset { display: flex; flex-direction: column; gap: var(--space-1); }
+.services-setup-unset > p { margin: 0; }
+/* The Project verbs chat's head: why Start Fresh… waits while it works (§app.project-runtime/onboard). */
+.verbs-fresh-why { margin: 0; padding: var(--space-1) var(--space-4); border-bottom: var(--stroke-thin) solid var(--color-border); }
 .services-orphan { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 /* The groups: a side column (name, count, Free Up Slots) beside the group's list; stacked at folded width. */
 .services-groups { display: flex; flex-direction: column; }
@@ -444,6 +449,24 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-port { color: var(--color-ink-muted); }
 .services-port a { color: var(--color-accent); }
 .services-said { margin: 0; }
+/* The failed block: what gave up retrying, its last try, its last log lines in mono, then how it runs again. */
+.services-failed { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.services-failed-one { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.services-failed-head { margin: 0; color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+.services-failed-lines {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.services-failed > .list-meta,
+.services-failed-one > .list-meta { margin: 0; white-space: normal; overflow-wrap: anywhere; }
 /* The sentences under a row (not ready, Runs as…, why Share is off) wrap; never cut. */
 .services-row-main > .list-meta,
 .services-row-share > .list-meta { margin: 0; white-space: normal; overflow-wrap: anywhere; }
@@ -723,6 +746,37 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .rel-note-editor .field-hint { margin: 0; }
 .rel-note-count { margin-left: auto; font-variant-numeric: tabular-nums; }
 .rel-row .list-title { flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+/* Release with Options: the panel under the head. Each row is a checkbox whose label is two lines (its name with its
+   rough minutes, then what it does), box first; rows that can't be turned off are drawn checked and disabled. */
+.rel-options { display: flex; flex-direction: column; gap: var(--space-3); }
+.rel-options > p { margin: 0; }
+.rel-opt-kind { margin: 0; padding: 0; border: 0; min-width: 0; }
+.rel-opt-kind .field-hint { margin: 0; }
+.rel-opt-kinds { display: flex; flex-wrap: wrap; column-gap: var(--space-5); }
+/* The kinds are radios: round, the checked one a dot (as Settings' Text size), so they read apart from the checkboxes. */
+.rel-opt-kinds .toggle { justify-content: flex-start; }
+.rel-opt-kinds .toggle-box { border-radius: var(--r-full); }
+.rel-opt-kinds input:checked ~ .toggle-box { box-shadow: inset 0 0 0 3px var(--color-sunken); }
+.rel-opt-presets { gap: var(--space-2); }
+.rel-opt-presets .button[aria-pressed="true"] { border-color: var(--color-accent); background: var(--color-accent-tint); color: var(--color-accent); }
+.rel-opt-group { display: flex; flex-direction: column; border-top: var(--stroke-thin) solid var(--color-border); }
+/* A folded group's header: the whole 44px row is the toggle; its chevron says open or shut, and so does aria-expanded. */
+.rel-opt-head {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1) var(--space-2); width: 100%; min-height: var(--tap-min);
+  padding: var(--space-1) var(--space-2); margin: 0; box-sizing: border-box;
+  border: 0; border-radius: var(--r-md); background: none; color: var(--color-ink); font: inherit; text-align: left; cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.rel-opt-head:hover { background: var(--color-surface); }
+.rel-opt-head:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.rel-opt-head .icon { color: var(--color-ink-muted); }
+.rel-opt-body { display: flex; flex-direction: column; gap: var(--space-1); padding: 0 0 var(--space-2) var(--space-2); }
+.rel-opt-body > p { margin: 0; }
+.rel-opt-list { list-style: none; margin: 0; padding: 0; }
+.rel-opt-toggle { justify-content: flex-start; align-items: flex-start; padding: var(--space-1) 0; }
+.rel-opt-toggle .toggle-box { margin-top: 2px; }
+.rel-opt-words { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.rel-opt-total { margin: 0; }
 .deploy-release { display: block; margin-top: var(--space-1); }
 @media (max-width: 767px) {
   .rel-actions .rel-abandon { margin-left: 0; flex-basis: 100%; }

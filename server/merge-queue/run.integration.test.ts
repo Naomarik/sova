@@ -326,6 +326,37 @@ describe("a merge run", () => {
     expect(r3.steps.has("install")).toBe(false);
   });
 
+  // Sova's own setup step (scripts/copy-node-modules.mjs) matches a test copy's packages to its lockfile; in the
+  // landing copy it must not, or a lockfile the store can't install would fail as setup and never reach the offline
+  // install's "install it once". With the script's SOVA_VERB=merge skip removed, setup runs the stand-in pnpm, fails
+  // on the branch and passes on master alone: "setup (node-modules) fails with your branch", and the pnpm calls exist.
+  test("the package-matching setup step skips its install in the landing copy: a lockfile that can't install is still the offline install's", async () => {
+    const fx = fixture();
+    const def = fx.definition();
+    def.setup = [{ id: "node-modules", run: ["node", join(REPO_ROOT, "scripts/copy-node-modules.mjs"), "${main}/node_modules", "node_modules"], inputs: ["deps.lock"] }];
+    fx.commitIn(fx.project, { ".sova/project.json": JSON.stringify(def, null, 2) }, "setup copies node_modules and matches it");
+    mkdirSync(join(fx.project, "node_modules", "pkg"), { recursive: true });
+    writeFileSync(join(fx.project, "node_modules", "pkg", "index.js"), "main's\n");
+    // A stand-in pnpm first on PATH: it fails on a broken deps.lock, as an install of a lockfile the store lacks would.
+    const bin = join(fx.root, "bin");
+    const calls = join(fx.state, "pnpm-calls");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "pnpm"), `#!/bin/sh\necho "$PWD $*" >> ${JSON.stringify(calls)}\nif grep -q broken deps.lock; then echo "pnpm: not in the store"; exit 1; fi\n`, { mode: 0o755 });
+    const path = process.env.PATH;
+    process.env.PATH = `${bin}:${path}`;
+    try {
+      const r = await run(fx, fx.branch("deps-unknown", { "deps.lock": "broken\n" }));
+      expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+      expect(r.out.why).toContain("install it once");
+      expect(r.steps.get("setup:node-modules")).toMatchObject({ result: "passed" });
+      expect(r.log("setup:node-modules")).toContain("a landing copy");
+      expect(readFileSync(join(r.out.copy!, "node_modules", "pkg", "index.js"), "utf8")).toBe("main's\n");
+      expect(existsSync(calls)).toBe(false);
+    } finally {
+      process.env.PATH = path;
+    }
+  });
+
   test("the spec drafts become a docs commit on the merge before any check, and the checks run on it", async () => {
     const fx = fixture();
     await fx.withSpec();
@@ -468,15 +499,29 @@ describe("a merge run", () => {
     expect(callsAt(fx, "setup")).toHaveLength(0);
   });
 
-  test("a check that times out voids the run; an abort voids it too", async () => {
+  test("a branch rule naming a check the target runs only with a selection, with none, is refused: the branch's, no check runs", async () => {
+    const fx = fixture({ moreChecks: [{ id: "e2e", label: "Walkthroughs", run: ["node", "checks/unit.mjs"], optional: true, needsSelect: true }] });
+    // The branch's own copy of e2e drops needsSelect, so its file parses; the target's still says it needs one.
+    const def = fx.definition() as { merge: { checks: { id: string; needsSelect?: boolean }[]; rules?: unknown[] } };
+    for (const c of def.merge.checks) if (c.id === "e2e") delete c.needsSelect;
+    def.merge.rules = [{ paths: ["src/**"], check: "e2e", why: "the UI changed" }];
+    const br = fx.branch("rules", { ".sova/project.json": JSON.stringify(def, null, 2), "src/list.txt": "x\n" });
+    const r = await run(fx, br);
+    expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r.out.why).toBe(`your branch's folder rules are refused: src/** → e2e: "e2e" runs with a selection on ${fx.target} and this rule names none`);
+    expect(callsAt(fx, "unit")).toHaveLength(0);
+  });
+
+  test("a check past its time limit is timed on the target alone (never a void); an abort voids the run", async () => {
     const fx = fixture();
     const def = fx.definition();
     (def.merge as { checks: { timeout?: number }[] }).checks[1]!.timeout = 2;
     fx.commitIn(fx.project, { ".sova/project.json": JSON.stringify(def, null, 2) }, "unit times out at 2 s");
     const br = fx.branch("hang", { "tests/a.txt": "hang\n" });
     const r = await run(fx, br);
-    expect(r.out).toMatchObject({ verdict: "void" });
-    expect(r.out.why).toContain("timed out");
+    // §app.merge-queue/time-limit: it finishes on the target alone, so the time-out is the branch's.
+    expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r.out.why).toMatch(/^Unit tests ran past its 2 s time limit with your branch and finishes in \d+ s on master alone/);
     const ctl = new AbortController();
     const br2 = fx.branch("hang2", { "tests/b.txt": "hang\n" });
     const pending = run(fx, br2, { signal: ctl.signal });

@@ -6,6 +6,8 @@ import {
   type SessionShareAddRecipient,
   type SessionShareCreate,
   type SessionShareDays,
+  type SessionShareDesignKind,
+  type SessionShareLookbook,
   type SessionShareMinted,
   type SessionShareOutline,
   type SessionSharePatch,
@@ -18,6 +20,8 @@ import {
   type SharesOverview,
 } from "../../shared/session-share";
 import type { PreviewView } from "../../shared/preview-links";
+import type { DesignUrls } from "../share/lookbook-model";
+import { versionLabel } from "./design-frame";
 import { hostUrl } from "./mesh";
 import { rangeLabel } from "./share-slice";
 
@@ -150,13 +154,13 @@ export function thumbsLine(t: ThumbState): string | null {
  * with every image it shares actually loaded (§app.session-share/sheet). The preview is what the
  * snapshot will be; nothing is minted before the operator could see each image.
  */
-export function createBlocked(f: { title: string; recipients: number; max: number; preview: "loading" | "failed" | "ready"; thumbs: ThumbState }): string | null {
+export function createBlocked(f: { title: string; recipients: number; max: number; preview: "loading" | "failed" | "ready"; thumbs: ThumbState; designs?: ThumbState }): string | null {
   if (!f.title.trim()) return "Give the share a title.";
   if (f.recipients === 0) return "Add a person, or turn on Anyone with the link.";
   if (f.recipients > f.max) return `At most ${f.max} links per share.`;
   if (f.preview === "failed") return "The conversation couldn't be read, so nothing can be shared yet.";
   if (f.preview === "loading") return "Reading the conversation first.";
-  return imagesBlocked(f.thumbs);
+  return imagesBlocked(f.thumbs) ?? (f.designs ? designsBlocked(f.designs) : null);
 }
 
 /** Why a reviewed snapshot can't go out yet because of its images, or null once each one loaded. */
@@ -165,6 +169,86 @@ export function imagesBlocked(t: ThumbState): string | null {
   if (t.loaded.size < t.total) return "Loading the images first: every image is shown before anything is shared.";
   return null;
 }
+
+// ---- the reviewed snapshot's designs (§app.session-share/content) ----
+
+/** One finished version of one shared design, as the preview's checklist shows it. Its index in
+    `designTiles` is what a ThumbState counts. */
+export interface DesignTile {
+  lookbook: string;
+  label: string;
+  n: number;
+  /** "A", "A2" … */
+  name: string;
+  /** Style · layout, as far as it has them. */
+  direction: string;
+  modelName: string;
+}
+
+/** Every version of every design a preview shares, Lookbook by Lookbook, design by design, oldest
+    version first: what must be on screen before anything is shared. */
+export function designTiles(lookbooks: readonly SessionShareLookbook[]): DesignTile[] {
+  return lookbooks.flatMap((lb) =>
+    lb.designs.flatMap((d) =>
+      d.versions.map((v) => ({
+        lookbook: lb.id,
+        label: d.label,
+        n: v.n,
+        name: versionLabel(d.label, v.n),
+        direction: [d.style, d.layout].filter((s) => s && s.trim()).join(" · "),
+        modelName: d.modelName,
+      })),
+    ),
+  );
+}
+
+/** Every Lookbook a preview shares: each answer carries the whole view's (an older host: none). */
+export const previewLookbooks = (p: Pick<SessionShareView, "lookbooks">): SessionShareLookbook[] => p.lookbooks ?? [];
+
+/** The checklist's heading: "2 designs · 5 versions". */
+export function designsCount(tiles: readonly Pick<DesignTile, "lookbook" | "label">[]): string {
+  const designs = new Set(tiles.map((t) => `${t.lookbook}\u0000${t.label}`)).size;
+  return `${designs === 1 ? "1 design" : `${designs} designs`} · ${tiles.length === 1 ? "1 version" : `${tiles.length} versions`}`;
+}
+
+/** The line some pictures of the shared designs came with (§app.session-share/content). */
+export const SIGNED_IN_PICTURES = "Some pictures came from a signed-in page.";
+
+export function designsLine(t: ThumbState): string | null {
+  if (t.total === 0) return null;
+  if (t.failed.size > 0) return `${t.failed.size} of ${t.total} ${t.total === 1 ? "design" : "designs"} didn't load, so nothing can be shared until ${t.failed.size === 1 ? "it does" : "they do"}.`;
+  if (t.loaded.size < t.total) return `Loading designs · ${t.loaded.size} of ${t.total}`;
+  return null;
+}
+
+/** Why a reviewed snapshot can't go out yet because of its designs, or null once each version loaded. */
+export function designsBlocked(t: ThumbState): string | null {
+  if (t.failed.size > 0) return "A design didn't load. Retry it first: every design is shown before anything is shared.";
+  if (t.loaded.size < t.total) return "Loading the designs first: every design is shown before anything is shared.";
+  return null;
+}
+
+/** Why a reviewed snapshot can't go out yet, its images first, then its designs. */
+export const reviewBlocked = (images: ThumbState, designs: ThumbState): string | null => imagesBlocked(images) ?? designsBlocked(designs);
+
+/** A design document's address on an operator preview route: `<base>/d/<label>/<n>/<kind>`. */
+export type DesignDocUrl = (label: string, n: number, kind: SessionShareDesignKind) => string;
+
+/**
+ * A design document read whole, to frame as srcdoc: an operator preview route's answer reaches the
+ * app intact even through a peer's relay, which turns an HTML answer into a download and so can't be
+ * framed by its address. A non-200 answer, or an empty one, throws.
+ */
+export async function loadDesignDoc(url: string, signal?: AbortSignal): Promise<string> {
+  const res = await fetch(url, { cache: "no-store", signal });
+  if (!res.ok) throw new ShareApiError(`${res.status} ${res.statusText}`, res.status);
+  const html = await res.text();
+  if (!html) throw new ShareApiError("The design answered empty.", res.status);
+  return html;
+}
+
+/** The share page's DesignUrls over an operator preview route: no page of its own (no Open in New Tab). */
+export const previewDesignUrls = (doc: DesignDocUrl): DesignUrls => ({ doc, load: (label, n, kind) => loadDesignDoc(doc(label, n, kind)) });
 
 // ---- API ----------------------------------------------------------------------------------------
 
@@ -213,8 +297,8 @@ export const listSessionShares = (host: string | null, sessionId: string) => cal
 /** What a recipient would see, before any link exists. The first read (no `cut`) fixes the cut;
     its earlier pages pass it, so every page and image is of that one snapshot (409 stale-preview
     once the cut is gone from the file). `from` slices it (§app.session-share/slice). */
-export const previewNew = (host: string | null, sessionId: string, opts: { cut?: string; from?: string; before?: number } = {}) =>
-  call<SessionSharePreview>(host, `${base}/preview?${q(sessionId)}${param("cut", opts.cut)}${param("from", opts.from)}${opts.before === undefined ? "" : `&before=${opts.before}`}`);
+export const previewNew = (host: string | null, sessionId: string, opts: { cut?: string; designsAt?: string; from?: string; before?: number } = {}) =>
+  call<SessionSharePreview>(host, `${base}/preview?${q(sessionId)}${param("cut", opts.cut)}${param("designsAt", opts.designsAt)}${param("from", opts.from)}${opts.before === undefined ? "" : `&before=${opts.before}`}`);
 /** Image `n` of the preview built at `cut` (and sliced at `from`: its indices are the slice's). */
 export const previewNewImage = (host: string | null, sessionId: string, cut: string, n: number, from?: string) =>
   hostUrl(host, `${base}/preview/img/${n}?${q(sessionId)}${param("cut", cut)}${param("from", from)}`);
@@ -225,14 +309,23 @@ export const previewOutline = (host: string | null, sessionId: string, cut?: str
 export const previewShare = (host: string | null, shareId: string, before?: number) =>
   call<SessionShareView>(host, `${one(shareId)}/preview${before === undefined ? "" : `?before=${before}`}`);
 export const previewShareImage = (host: string | null, shareId: string, n: number) => hostUrl(host, `${one(shareId)}/preview/img/${n}`);
+/** A label is unique in its chat, so the address names no Lookbook. */
+const designPath = (label: string, n: number, kind: SessionShareDesignKind) => `d/${encodeURIComponent(label)}/${n}/${kind}`;
+/** A design version's document in the preview built at `cut` and `designsAt` (sliced at `from`), as a recipient gets it. */
+export const previewNewDesign = (host: string | null, sessionId: string, p: Pick<SessionSharePreview, "cut" | "designsAt" | "from">): DesignDocUrl => (label, n, kind) =>
+  hostUrl(host, `${base}/preview/${designPath(label, n, kind)}?${q(sessionId)}${param("cut", p.cut)}${param("designsAt", p.designsAt)}${param("from", p.from)}`);
+/** A design version's document as this share's recipients get it now. */
+export const previewShareDesign = (host: string | null, shareId: string): DesignDocUrl => (label, n, kind) => hostUrl(host, `${one(shareId)}/preview/${designPath(label, n, kind)}`);
 
 export const createShare = (host: string | null, input: SessionShareCreate) => send<SessionShareMinted>(host, "POST", base, input);
 export const patchShare = (host: string | null, id: string, patch: SessionSharePatch) => send<SessionShare>(host, "PATCH", one(id), patch);
 export const addRecipient = (host: string | null, id: string, who: SessionShareAddRecipient) => send<SessionShareMinted>(host, "POST", `${one(id)}/recipients`, who);
 export const relinkRecipient = (host: string | null, id: string, r: string) => send<SessionShareMinted>(host, "POST", `${rec(id, r)}/relink`);
 export const revokeRecipient = (host: string | null, id: string, r: string) => send<SessionShare>(host, "POST", `${rec(id, r)}/revoke`);
-/** Update to Now: the snapshot moves to `cut`, the previewed one (else the current leaf). */
-export const updateShare = (host: string | null, id: string, cut?: string) => send<SessionShare>(host, "POST", `${one(id)}/update`, cut === undefined ? {} : { cut });
+/** Update to Now: the snapshot moves to `cut`, the previewed one (else the current leaf), and its
+    designs to the preview's `designsAt` (else the host's now). */
+export const updateShare = (host: string | null, id: string, cut?: string, designsAt?: string) =>
+  send<SessionShare>(host, "POST", `${one(id)}/update`, { ...(cut === undefined ? {} : { cut }), ...(designsAt === undefined ? {} : { designsAt }) });
 export const extendShare = (host: string | null, id: string, days: SessionShareDays) => send<SessionShare>(host, "POST", `${one(id)}/extend`, { days });
 export const stopShare = (host: string | null, id: string) => send<SessionShare>(host, "POST", `${one(id)}/stop`);
 export const shareActivity = (host: string | null, id: string) => call<SessionShareActivity>(host, `${one(id)}/activity`);

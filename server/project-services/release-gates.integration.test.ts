@@ -58,9 +58,8 @@ test("S18 + S25: a failed release-only check refuses Publish; Abandon before any
   assert.deepEqual(fx.facts(), before, "no tag, channel, master or origin moved");
   assert.equal(fx.head(), base, "the failed release commit never landed");
 
-  const noConfirm = await k.verb("release.abandon", { project: fx.project, release: rec.id, why: "red" });
-  assert.equal(noConfirm.json.error?.code, "needs-confirm", JSON.stringify(noConfirm.json));
-  await abandon(fx, rec);
+  // Nothing landed: Cancel Release is one press, no confirm.
+  ok(await k.verb("release.abandon", { project: fx.project, release: rec.id, why: "red" }), "release.abandon without confirm");
   const gone = await waitRecord(k, fx, "abandoned", (x) => x.state === "abandoned", 60_000, rec.id);
   assert.equal(gone.abandoned?.revert ?? null, null, "nothing to revert");
   assert.equal(fx.tagAt("v0.2.0"), null);
@@ -80,6 +79,11 @@ test("S24: Abandon after the release commit landed reverts it as a queue landing
   assert.ok(fx.isAncestor(commit, landedRelease));
   assert.equal(fx.originHead(), originBase, "unpushed");
 
+  // Landed: cancelling reverts it, so it needs the confirm; without one nothing changes.
+  const noConfirm = await k.verb("release.abandon", { project: fx.project, release: rec.id, why: "test over" });
+  assert.equal(noConfirm.json.error?.code, "needs-confirm", JSON.stringify(noConfirm.json));
+  assert.equal(fx.head(), landedRelease, "no revert");
+  assert.notEqual((await view(k, fx)).open, null, "the release is still open");
   await abandon(fx, rec);
   const gone = await waitRecord(k, fx, "abandoned with its revert landed", (x) => x.state === "abandoned" && !!x.abandoned?.revert, 240_000, rec.id);
   const revert = await waitEntry(k, fx, "the revert landing", (e) => e.id === gone.abandoned?.revert && e.state === "landed", 240_000);

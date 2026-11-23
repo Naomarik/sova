@@ -2,6 +2,7 @@
 // urgent project, its step track, and the detail lines and actions its expansion shows. Pure: no Solid, no DOM. The
 // shapes are the queue's (shared/merge-queue.ts) and the release's (shared/release.ts); the store that feeds this is
 // lib/landing-bar-store.ts, the drawing components/LandingBar.tsx.
+import { heldDryRunLabel } from "./dry-run";
 import { WAITING_FOR_USER, entryStateWords, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../../shared/merge-queue";
 import type { ReleaseRecord, ReleaseStep } from "../../shared/release";
 import type { LandingQueueCut, LandingReleaseCut } from "../../shared/merge-queue";
@@ -260,13 +261,14 @@ function currentStepLine(run: Pick<MergeRun, "steps">, now: number): string | nu
 // ---- the merge queue's parts ----------------------------------------------------------------------
 
 // A decision waiting for the user counts wherever the view lists its entry; an entry back with its chat never does.
-const needsYouOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) => (WAITING_FOR_USER.includes(e.state) && e.state !== "review-flagged") || !!openDecision(e));
+// An entry the merge thread is still ruling on (whose failure is it?) asks nothing of you yet: it isn't the bar's.
+const needsYouOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) => !e.waitingRuling && ((WAITING_FOR_USER.includes(e.state) && e.state !== "review-flagged") || !!openDecision(e)));
 const conflictsOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) => e.state === "conflict");
 
 /** One needs-you entry, in the Merge Queue tab's words: branch, then one line of why. */
 const needsLine = (e: MergeEntry, pid: string): LandingLine => {
   const d = openDecision(e);
-  if (d) return { text: `${e.branch} · ${DECISION_LABEL[d.kind]}: ${stripDot(d.question)}`, tone: "warn", href: queueHref(pid, e.run) };
+  if (d) return { text: `${e.branch} · ${heldDryRunLabel(e)?.replace(/ · waiting for you$/, "") ?? DECISION_LABEL[d.kind]}: ${stripDot(d.question)}`, tone: "warn", href: queueHref(pid, e.run) };
   return { text: `${e.branch} · ${stripDot(entryStateWords(e))}${e.reason ? `: ${stripDot(e.reason)}` : ""}`, tone: "warn", href: queueHref(pid, e.run) };
 };
 
@@ -333,6 +335,43 @@ function landingBar(p: LandingProjectInput, q: LandingQueueCut, run: MergeRun, n
   };
 }
 
+/** A branch's dry run holding the merge copy (§app.merge-queue/landing-bar-states): "Dry run · {branch}", check N of
+ *  M, its track one segment per step it runs (the copy, setup, each check), and the entries waiting for it. It never
+ *  reads Landing: nothing lands from a dry run. */
+function dryRunBar(p: LandingProjectInput, q: LandingQueueCut, now: NonNullable<LandingQueueCut["trialNow"]>): LandingProjectBar {
+  const t = now.trial;
+  const run = now.run;
+  const branch = t.branch ?? short(t.commit);
+  // A dry run merges nothing and runs no install or spec docs step: only what it recorded, beside the copy and setup.
+  const segments = runSegments(run, { landsLocally: false }).filter((s) => !["merge", "install", "docs"].includes(s.id) || run.steps.some((x) => x.id === s.id));
+  const session = t.by.kind === "chat" ? t.by.session : undefined;
+  const sub = now.progress.of ? `check ${now.progress.at} of ${now.progress.of}` : "Starting";
+  const who = t.by.kind === "land" ? "your Land" : t.by.kind === "operator" ? "you" : "its chat";
+  const lines: LandingLine[] = [
+    { text: `${branch} at ${short(t.commit)} · started by ${who}`, mono: true },
+    ...(t.needs ? [{ text: `Needed: ${t.needs}` }] : []),
+    { text: "Nothing lands from a dry run." },
+    ...(currentStepLine(run, Date.now()) ? [{ text: currentStepLine(run, Date.now())!, mono: true as const }] : []),
+    ...nextLines(q),
+    ...needsYouOf(q).map((e) => needsLine(e, p.id)),
+  ];
+  return {
+    project: p.id,
+    name: p.name,
+    kind: "landing",
+    tone: "accent",
+    icon: "branch",
+    title: `Dry run · ${branch}`,
+    sub,
+    count: waitingCount(q),
+    segments,
+    lines,
+    peek: [...(t.needs ? [{ text: `Needed: ${t.needs}` }] : []), { text: `Started by ${who}` }, { text: "Nothing lands from a dry run." }],
+    actions: [...(session ? [branchChat(session)] : []), checks(p.id, run.id), queue(p.id)],
+    oneLine: `${p.name} · Dry run · ${branch}`,
+  };
+}
+
 function reviewLine(q: LandingQueueCut, run: MergeRun): LandingLine | null {
   const m = reviewMarker(run, q.reviewing?.run === run.id);
   if (!m) return null;
@@ -349,7 +388,7 @@ function mergeNeedsBar(p: LandingProjectInput, q: LandingQueueCut, needs: MergeE
     kind: "merge-needs",
     tone: "warn",
     icon: "alert-circle",
-    title: stripDot(entryStateWords(e)),
+    title: stripDot(heldDryRunLabel(e) ?? entryStateWords(e)),
     sub: `${e.branch}${e.reason ? ` · ${stripDot(e.reason)}` : ""}`,
     ...(rest > 0 ? { count: { text: `+${rest}`, label: `${rest} more need${rest === 1 ? "s" : ""} you` } } : {}),
     segments: [],
@@ -661,9 +700,10 @@ export function projectBar(p: LandingProjectInput, now: number, seen: ReadonlyMa
   if (lastRel && lastRel.kind === "release-needs") return lastRel;
   if (q) {
     const needs = needsYouOf(q);
-    if (!run && needs.length) return mergeNeedsBar(p, q, needs);
+    if (!run && !q.trialNow && needs.length) return mergeNeedsBar(p, q, needs);
     if (lastRel && lastRel.kind === "release") return lastRel;
     if (run) return landingBar(p, q, run, now);
+    if (q.trialNow) return dryRunBar(p, q, q.trialNow);
     if (q.state === "paused" || q.invalid) return pausedBar(p, q);
     const done = doneBar(p, q, now, seen, out.shown);
     if (lastRel && (!done || at(rv?.last?.publish?.at) >= at(q.recent[0]?.entry.landed?.at))) return lastRel;

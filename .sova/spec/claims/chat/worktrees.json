@@ -8,7 +8,8 @@
       "§chat.merge-queue/requests",
       "§chat.merge-queue/answers",
       "§chat.worktrees/tool",
-      "§app.merge-queue/view"
+      "§app.merge-queue/view",
+      "§chat.worktrees/newest-commit"
     ],
     "code": [
       "server/merge-readiness.ts",
@@ -21,8 +22,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T00:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§chat.worktrees/cleanup": {
@@ -305,6 +306,31 @@
       "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
     }
   },
+  "§chat.worktrees/newest-commit": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.merge-queue/dry-runs",
+      "§app.merge-queue/fix",
+      "§chat.worktrees/blocks-landing",
+      "§chat.worktrees/readiness"
+    ],
+    "code": [
+      "server/merge-readiness.ts",
+      "server/merge-queue/setup-branch.ts",
+      "src/lib/worktrees.ts",
+      "server/ready-to-land.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-readiness.test.ts",
+      "src/lib/dry-run.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-19T07:53Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#f5c08e13"
+    }
+  },
   "§chat.worktrees/nothing-left": {
     "kind": "behavior",
     "authority": "accepted",
@@ -343,7 +369,10 @@
       "§app.merge-queue/branch-summary",
       "§chat.worktrees/pane-queue",
       "§chat.worktrees/place",
-      "§chat.worktrees/nothing-left"
+      "§chat.worktrees/nothing-left",
+      "§app.merge-queue/dry-runs",
+      "§app.merge-queue/fix",
+      "§chat.worktrees/newest-commit"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -378,9 +407,9 @@
       "server/app.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-10T11:52Z",
-      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#e123a0b1"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§chat.worktrees/pane-queue": {
@@ -411,9 +440,9 @@
       "src/lib/merge-standing.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-10T12:12Z",
-      "source": "pi-session:01a1c4f0-984c-7287-92e3-568db48c8f91#3c462a8f"
+      "by": "naomarik",
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§chat.worktrees/place": {
@@ -496,8 +525,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "at": "2026-11-19T07:53Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#f5c08e13"
     }
   },
   "§chat.worktrees/ready-to-land": {
@@ -532,12 +561,14 @@
       "§app.project-setup/land-gate",
       "§chat.worktrees/landing-specs",
       "§chat.worktrees/blocks-landing",
-      "§chat.worktrees/nothing-left"
+      "§chat.worktrees/nothing-left",
+      "§app.merge-queue/dry-runs",
+      "§chat.worktrees/newest-commit"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T00:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#e2a66e41"
+      "at": "2026-11-19T07:53Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#f5c08e13"
     }
   },
   "§chat.worktrees/retirement": {
@@ -628,8 +659,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "at": "2026-11-19T07:07Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§chat.worktrees/workers": {

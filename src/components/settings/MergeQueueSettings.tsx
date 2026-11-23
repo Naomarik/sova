@@ -28,6 +28,7 @@ import {
   toProjectDraft,
   type ProjectDraft,
   deleteBranchesHint,
+  squashHint,
 } from "../../lib/merge-queue-settings";
 import { discardStaged, stagedDirty, stagedEdit, stageEdit } from "../../lib/merge-queue-settings-draft";
 import { sortProjects } from "../../lib/projects";
@@ -342,6 +343,12 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
         <Row label="Lands into" end={<Tag source="project" />}>
           <span class="text-mono">{target()}</span>
         </Row>
+        {/* Merging locally only: each branch lands as one commit (merge.squash). */}
+        <Show when={(s().how?.effective ?? "local") === "local"}>
+          <Row label="One commit per branch" end={<Tag source="project" />} hint={squashHint(draft().squash, target())}>
+            <Toggle label={draft().squash ? "On" : "Off"} checked={draft().squash} disabled={locked()} onChange={(on) => setDraft({ ...draft(), squash: on })} />
+          </Row>
+        </Show>
         <Show when={showsPushToOrigin(s().how?.effective)}>
           <Row label="Push after each landing" end={<Tag source="project" />} hint={!props.hasOrigin ? "This project has no origin, so nothing is pushed." : undefined}>
             <Toggle label={draft().push ? "On" : "Off"} checked={draft().push} disabled={locked() || !props.hasOrigin} onChange={(on) => setDraft({ ...draft(), push: on })} />
@@ -432,7 +439,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
       </Group>
 
       <Group title="Review">
-        <Row label="Review each landing" end={<Tag source="project" />} hint={!draft().review && !s().review.canTurnOn ? "Turning it on needs the review folder on the target: .sova/playbooks/review." : undefined}>
+        <Row label="Review each landing" end={<Tag source="project" />} hint={!draft().review && !s().review.canTurnOn ? "Turning it on needs the review folder on the target: .sova/playbook-config/review." : undefined}>
           <Toggle label={draft().review ? "On" : "Off"} checked={draft().review} disabled={locked() || (!s().review.on && !s().review.canTurnOn)} onChange={(on) => setDraft({ ...draft(), review: on })} />
         </Row>
         <Row
@@ -501,6 +508,22 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
         <Row label="Merge copy" end={<Tag source="sova" />}>
           <span class="text-mono">{tildePath(s().fixed.mergeCopy, home())}</span>
         </Row>
+        {/* What the target's tree needs beyond its own files (§app.merge-queue/project-shapes). */}
+        <Show when={s().shape?.submodules}>
+          <Row label="Submodules" end={<Tag source="project" />}>
+            Has submodules: each run checks them out from their own remotes.
+          </Row>
+        </Show>
+        <Show when={s().shape?.lfs}>
+          <Row label="Git LFS" end={<Tag source="project" />}>
+            <span>
+              Uses Git LFS: each run fetches its files.
+              <Show when={s().shape?.lfsMissing}>
+                {" "}git-lfs isn’t installed on this computer: landings fail until it is.
+              </Show>
+            </span>
+          </Row>
+        </Show>
       </Group>
 
       <Show when={changes() || problem() || said() || error()}>

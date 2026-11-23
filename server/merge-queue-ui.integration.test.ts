@@ -944,9 +944,9 @@ for (const width of [1280, 390]) {
       assert.equal(await waiting.getAttribute("aria-expanded"), "false");
       assert.doesNotMatch(text, /starts in ~6 min/);
       assert.equal(await tab.locator('[data-state="queued"]').count(), 0, "no waiting row while closed");
-      // The strip: every tab with its count but Landed; Ready to land shown first; no host tab on a local project.
+      // The strip: every tab with its count but Landed and Dry runs; Ready to land shown first; no host tab on a local project.
       const strip = tab.getByRole("tablist", { name: "Merge queue" });
-      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 2", "With its chat · 1", "Held · 0", "Landed", "Queue chats · 0"]);
+      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 2", "With its chat · 1", "Held · 0", "Landed", "Dry runs", "Queue chats · 0"]);
       assert.equal(await strip.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Ready to land · 1");
       assert.equal(await strip.locator(".mq-tab-count-warn").count(), 1, "one count warns");
       assert.equal(await strip.locator('[data-tab="needs-you"] .mq-tab-count-warn').count(), 1, "Needs you's, while it has anything");
@@ -1616,7 +1616,7 @@ for (const width of [1280, 390]) {
       const { page } = o;
       const strip = page.getByRole("tablist", { name: "Merge queue" });
       await strip.waitFor({ timeout: 20_000 });
-      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 3", "With its chat · 1", "Waiting on GitHub · 1", "Held · 0", "Landed", "Queue chats · 0"]);
+      assert.deepEqual(await strip.getByRole("tab").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label"))), ["Ready to land · 1", "Needs you · 3", "With its chat · 1", "Waiting on GitHub · 1", "Held · 0", "Landed", "Dry runs", "Queue chats · 0"]);
       assert.equal(await strip.getByRole("tab", { selected: true }).getAttribute("aria-label"), "Waiting on GitHub · 1");
       const panel = page.getByRole("tabpanel");
       await panel.locator('li[data-branch="feat/on-github"]').waitFor({ timeout: 20_000 });
@@ -1743,7 +1743,7 @@ for (const width of [1280, 390]) {
       await f.ctx.close();
     });
 
-    test("not set up: what the queue does and Set Up with a Chat, never the old form; the Setup chat's proposal offers Run Trial until a trial of its head passed, then Merge Branch", async () => {
+    test("not set up: what the queue does and Set Up with a Chat, never the old form; the Setup chat's proposal offers Run Dry Run until a dry run of its head passed, then Merge Branch", async () => {
       let status: SetupStatus = NO_SETUP;
       const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf({ checks: "unset", served: false, state: "idle", current: undefined, waiting: [], needsYou: [], needsFix: [], recent: [] }), setup: () => status });
       const { page } = o;
@@ -1758,21 +1758,22 @@ for (const width of [1280, 390]) {
       assert.equal(lastCall(o, "setup.open").body.fresh, undefined);
       await until("on its chat", async () => (await hashOf(page)).includes(encodeURIComponent(SESSION.path)));
       assert.equal(o.calls.filter((c) => c.verb === "merge.setup").length, 0, "the page never calls merge.setup");
-      // The chat proposes: no trial of its head yet, so Run Trial, not Merge Branch.
+      // The chat proposes: no dry run of its head yet, so Run Dry Run, not Merge Branch.
       status = setupProposed(null);
       await page.goto(`${ORIGIN}/#/projects/${PID}/merge-queue`);
       const card = page.getByRole("group", { name: "Setup proposal" });
       await card.waitFor({ timeout: 20_000 });
-      assert.equal(await card.getByRole("button", { name: /^(Merge Branch|Land) / }).count(), 0, "no Merge Branch before a passing trial");
-      assert.match(await words(card), /Run a trial of 5e7c0de first: it lands only once its own checks pass\./);
-      await card.getByRole("button", { name: `Run Trial of ${SETUP_BRANCH}` }).click();
-      await until("a trial", () => o.calls.some((c) => c.verb === "merge.try"));
+      assert.equal(await card.getByRole("button", { name: /^(Merge Branch|Land) / }).count(), 0, "no Merge Branch before a passing dry run");
+      assert.match(await words(card), /Run a dry run of 5e7c0de first: it merges only once its new checks pass\./);
+      assert.doesNotMatch(await words(card), /trial/i, "never 'trial' on screen");
+      await card.getByRole("button", { name: `Run Dry Run of ${SETUP_BRANCH}` }).click();
+      await until("a dry run", () => o.calls.some((c) => c.verb === "merge.try"));
       assert.deepEqual({ branch: lastCall(o, "merge.try").body.branch, commit: lastCall(o, "merge.try").body.commit }, { branch: SETUP_BRANCH, commit: SETUP_HEAD });
-      // The trial of that head passed: Merge Branch, pinned to the head and the proposal's hash.
+      // The dry run of that head passed: Merge Branch, pinned to the head and the proposal's hash.
       status = setupProposed("passed");
       await page.reload();
       await card.waitFor({ timeout: 20_000 });
-      assert.match(await words(card), /Trial of 5e7c0de: passed/);
+      assert.match(await words(card), /Dry run of 5e7c0de: passed/);
       assert.match(await words(card), /Changes 2 files against master; 1 outside the setup, which Merge Branch brings in too\./);
       assert.equal(await card.getByText("Outside the setup", { exact: true }).count(), 1, "one file marked outside the setup");
       await card.getByRole("button", { name: `Merge Branch ${SETUP_BRANCH}` }).click();

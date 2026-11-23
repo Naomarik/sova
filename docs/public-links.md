@@ -3,9 +3,34 @@
 [← Sova](../README.md)
 
 Public links let people who can't reach your machine open what you share with them: a read-only
-session share (`/s/`), and an organization's hand-off (`/h/`) and owner page (`/i/`) links. They open
-on an address you set up, such as `https://share.example.com`. Recipients need no account, no app
-and no tailnet.
+session share (`/s/`), a tour (`/t/`), an app preview, and an organization's hand-off (`/h/`) and
+owner page (`/i/`) links. Recipients need no account, no app and no tailnet.
+
+## The quickest way: Cloudflare Free
+
+With no address set up, links open through **Cloudflare Free**: a Cloudflare Quick Tunnel that Sova
+runs on this computer, with no account and no domain. The first time, press **Turn On** in
+Settings → Public links (or on the prompt a share screen shows); Sova asks once and never again.
+Until then a link is still made, but it isn't public yet. Sova needs `cloudflared` 2024.1.0 or
+later: it uses one already installed, or offers a one-time **Download**.
+
+- Nothing runs until a link needs it: the tunnel starts with the first link you hand out. A new
+  address can take a minute or two to answer from outside; until it does, a link says it is still
+  coming online.
+- The address is random, and it changes when the tunnel starts again (after a restart, for
+  example). Sova then names the sent links that no longer open, on the Shares page and in the Share
+  sheet, with **Copy New Link**.
+- Each previewed app gets a tunnel of its own.
+
+For an address that never changes, pick another option in Settings → Public links, which lists
+where every link from this computer opens: **Cloudflare** (**Free**, or **Account**, a tunnel in your
+own Cloudflare account that Sova runs from its token), **Tailscale** (**Funnel**, or **Through** another
+of your computers), **Your own web server** (Caddy or nginx, below) and **Off**. Your links stay on
+what works now until a new address is saved and passes **Verify Address**. **Off** turns sharing off
+on this computer entirely: Share buttons hide until you pick another option.
+
+The rest of this page is about serving links on an address you set up, such as
+`https://share.example.com`.
 
 Sova's own page never goes public. Public links use a separate **share port** (4802 by default) that
 binds `127.0.0.1` only and serves nothing but share pages, their data and their images. In front of

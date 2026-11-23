@@ -179,6 +179,7 @@ logged. Reasons: `ok`, `ok-ordinal-only`, `not-fullscreen`, `anchor-not-in-conte
 node test.mjs
 ```
 
-`transcript.test.mjs` (run by `test.mjs`) drives the real extension against a started
-`TuiAltScreen` behind pi's renderer proxy, pi's chat viewport, and pi's real message
-components at several terminal widths.
+`transcript.test.mjs`, the end-to-end test of the terminal's full-screen jump, was removed in
+07e60f622: no Sova screen uses that jump, and the test reached into pi's private terminal code.
+`outline.test.ts` still covers the matching and locating rules (its tests at lines 221, 504, 534
+and 547).

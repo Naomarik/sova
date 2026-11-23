@@ -2,14 +2,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PreviewView } from "../../shared/preview-links";
-import type { OrgLinkRow, SessionShare, SessionSharePresence, SharesOverview } from "../../shared/session-share";
+import type { OrgLinkRow, SessionShare, SessionShareLookbook, SessionSharePresence, SharesOverview } from "../../shared/session-share";
 import {
   cleanLabels,
   copyableLink,
   createBlocked,
   expiresWord,
+  designsBlocked,
+  designsCount,
+  designsLine,
+  designTiles,
   imagesBlocked,
   isShareChanged,
+  previewDesignUrls,
+  previewLookbooks,
+  previewNewDesign,
+  previewShareDesign,
+  reviewBlocked,
   isStalePreview,
   linkMoved,
   modeLine,
@@ -97,6 +106,61 @@ test("Create waits for the preview and for every image it shares to load; a fail
   // Update to Now and Stop Following Live use the image part alone.
   assert.equal(imagesBlocked(thumbs(1, [0])), null);
   assert.match(imagesBlocked(thumbs(1, [], [0])) ?? "", /didn't load/);
+});
+
+const lookbooks: SessionShareLookbook[] = [
+  {
+    id: "lb1",
+    after: 3,
+    designs: [
+      { label: "A", style: "Quiet ledger", layout: "Split", modelName: "GPT-5", versions: [{ n: 1, at: "2026-11-01T00:00:00Z" }, { n: 3, at: "2026-11-02T00:00:00Z" }] },
+      { label: "B", style: "Bold", modelName: "Claude", versions: [{ n: 1, at: "2026-11-01T00:00:00Z" }] },
+    ],
+  },
+  { id: "lb2", after: 9, designs: [{ label: "C", style: "Mono", layout: "Grid", modelName: "Gemini", versions: [{ n: 2, at: "2026-11-03T00:00:00Z" }] }] },
+];
+
+test("a preview's checklist holds every finished version of every design, in order, named as the share names it (§app.session-share/content)", () => {
+  const tiles = designTiles(lookbooks);
+  assert.deepEqual(
+    tiles.map((t) => [t.lookbook, t.name, t.direction, t.modelName]),
+    [
+      ["lb1", "A", "Quiet ledger · Split", "GPT-5"],
+      ["lb1", "A3", "Quiet ledger · Split", "GPT-5"],
+      ["lb1", "B", "Bold", "Claude"],
+      ["lb2", "C2", "Mono · Grid", "Gemini"],
+    ],
+  );
+  assert.equal(designsCount(tiles), "3 designs · 4 versions");
+  assert.equal(designsCount(tiles.slice(0, 1)), "1 design · 1 version");
+  assert.deepEqual(designTiles([]), []);
+  // Each answer carries the whole view's Lookbooks; an older host's none.
+  assert.equal(previewLookbooks({ lookbooks }).length, 2);
+  assert.deepEqual(previewLookbooks({}), []);
+});
+
+test("Create, Update to This and Stop Following Here wait for every design version too, after the images", () => {
+  assert.match(createBlocked({ ...ready, thumbs: thumbs(0, []), designs: thumbs(4, [0, 1]) }) ?? "", /^Loading the designs first/);
+  assert.match(createBlocked({ ...ready, thumbs: thumbs(0, []), designs: thumbs(4, [0, 1, 2], [3]) }) ?? "", /^A design didn't load/);
+  assert.equal(createBlocked({ ...ready, thumbs: thumbs(0, []), designs: thumbs(2, [0, 1]) }), null);
+  // Images are said first.
+  assert.match(createBlocked({ ...ready, thumbs: thumbs(1, []), designs: thumbs(1, []) }) ?? "", /^Loading the images first/);
+  assert.match(reviewBlocked(thumbs(1, [0]), thumbs(2, [0])) ?? "", /^Loading the designs first/);
+  assert.equal(reviewBlocked(thumbs(0, []), thumbs(0, [])), null);
+  assert.equal(designsBlocked(thumbs(0, [])), null);
+  assert.equal(designsLine(thumbs(0, [])), null);
+  assert.equal(designsLine(thumbs(4, [0])), "Loading designs · 1 of 4");
+  assert.equal(designsLine(thumbs(4, [0, 1], [2, 3])), "2 of 4 designs didn't load, so nothing can be shared until they do.");
+});
+
+test("a preview draws its designs from the operator's preview routes, with no page of their own", () => {
+  const urls = previewDesignUrls(previewNewDesign(null, "s 1", { cut: "e9", designsAt: "2026-11-03T10:00:00.000Z", from: "e2" }));
+  assert.equal(urls.page, undefined);
+  // Drawn as srcdoc from the document read whole, so a peer's relay can't turn it into a download.
+  assert.equal(typeof urls.load, "function");
+  assert.equal(urls.doc("A", 3, "tile-still"), "/api/session-shares/preview/d/A/3/tile-still?session=s%201&cut=e9&designsAt=2026-11-03T10%3A00%3A00.000Z&from=e2");
+  assert.equal(previewNewDesign(null, "s1", { cut: "e9" })("B", 1, "page"), "/api/session-shares/preview/d/B/1/page?session=s1&cut=e9");
+  assert.equal(previewShareDesign(null, "ss_1")("C", 2, "still"), "/api/session-shares/ss_1/preview/d/C/2/still");
 });
 
 test("the images line counts what loaded and what failed", () => {

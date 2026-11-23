@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { describe, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 // @ts-expect-error: the example kit's plain .mjs check, typed by use here
-import { problem } from "../../.sova/playbooks/request/scripts/check.mjs";
+import { problem } from "../../.sova/playbook-config/request/scripts/check.mjs";
 import { checkRequestText, DEFAULT_PLAYBOOK, draftRequest, loadRequestKit, plainRequestText, type RequestInput, type RequestKit, repoTemplate, requestBrief, SIGNATURE, signed } from "./hosts/request-kit";
 
 const INPUT: RequestInput = { host: "github", branch: "feat/x", base: "main", chatTitle: "Show the host's checks", note: "Cards follow the host.", checksPassed: ["unit", "integration"], reviewNotes: "ok", specsChanged: ["§app.merge-queue/view: the host group"] };
@@ -212,7 +212,7 @@ describe("checking and rewriting", () => {
   });
 });
 
-describe("the example kit's check (.sova/playbooks/request)", () => {
+describe("the example kit's check (.sova/playbook-config/request)", () => {
   const body = "## Why\nx\n\n## What changes\n- y\n\n## Checks\n- unit: passed\n\nOpened by Sova\n";
   test("passes the house style; names what to fix otherwise", () => {
     assert.equal(problem({ title: "Merge queue: show the host's checks", body }), null);

@@ -390,9 +390,9 @@
       "shared/time-spent.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-07T13:38Z",
-      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
+      "by": "user",
+      "at": "2026-11-18T15:42Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
     }
   },
   "§app.subagents-pane/time-spent-counting": {
@@ -463,12 +463,14 @@
       "server/commands-inventory/baseline.json",
       "server/commands-fuzz.test.ts",
       "server/create-guide-growth.json",
-      "docs/commands.md"
+      "docs/commands.md",
+      "server/time-spent-replay.ts",
+      "server/usage-helper/attention.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-07T13:38Z",
-      "source": "pi-session:b06e603a-07aa-4e97-9efa-361431fbfd1c#4ad7d02d"
+      "by": "user",
+      "at": "2026-11-18T15:42Z",
+      "source": "pi-session:474ae9c8-46cb-4945-8a26-1bdd8831d08a#a0c49521"
     }
   },
   "§app.subagents-pane/tokens": {

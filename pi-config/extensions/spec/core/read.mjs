@@ -2,6 +2,7 @@
 import { pullArgs, openGraph, titleOf, childrenInOrder, sizeOf, namedIn, kb, fingerprintOf, tokenFor, decodeToken,
   boundedRefusal, emit, sizeIn, agreedOf, agreedText, notOwnedOf, notOwnedText } from "./toc.mjs";
 import { embedsOf, aboutNotes, frameOf, frameSummary, frameLine } from "./fields.mjs";
+import { splitOf } from "./parts.mjs";
 
 const READ_NOTICE = "One passage, exact scope text; nothing it requires, contains or mentions is delivered. The footer names those links. Finish fragments at end == total.";
 
@@ -16,13 +17,18 @@ function codeOf(ctx, rec, codeState) {
   return { code: all.slice(0, CODE_SHOWN).map((path) => ({ path, state: codeState(ctx.root, path) })), ...(all.length > CODE_SHOWN ? { codeMore: all.length - CODE_SHOWN } : {}) };
 }
 
-function passage(ctx, id, embeddedIn, codeState) {
-  const d = ctx.decls.get(id), rec = ctx.claims.get(id);
+const labelsOf = (rec) => {
   const labels = {};
   if (rec.authority !== undefined) labels.authority = rec.authority;
   if (rec.evidence !== undefined) labels.evidence = rec.evidence;
-  return { id, kind: rec.kind, ...(Object.keys(labels).length ? { labels } : {}), ...agreedOf(rec), ...codeOf(ctx, rec, codeState), ...notOwnedOf(ctx, id), title: titleOf(d), file: d.file, lines: d.lines,
-    ...(embeddedIn ? { embeddedIn } : {}), text: d.text };
+  return Object.keys(labels).length ? { labels } : {};
+};
+// A split topic's passage names its parts (with their labels), so a reader that cannot follow the summary's § ids
+// still reaches them, a candidate part marked as one.
+function passage(ctx, id, embeddedIn, codeState) {
+  const d = ctx.decls.get(id), rec = ctx.claims.get(id), parts = splitOf(ctx).down.get(id);
+  return { id, kind: rec.kind, ...labelsOf(rec), ...agreedOf(rec), ...codeOf(ctx, rec, codeState), ...notOwnedOf(ctx, id), title: titleOf(d), file: d.file, lines: d.lines,
+    ...(embeddedIn ? { embeddedIn } : {}), ...(parts ? { parts: parts.map((p) => ({ id: p, title: titleOf(ctx.decls.get(p)), ...labelsOf(ctx.claims.get(p)) })) } : {}), text: d.text };
 }
 
 // What a read delivers: the asked passages, then each surface they embed, whole (lede and H2s), transitively.

@@ -136,7 +136,8 @@
     "kind": "behavior",
     "requires": [
       "§tools.spec/census-created",
-      "§tools.spec/where-lookup"
+      "§tools.spec/where-lookup",
+      "§tools.spec/split-topics"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -145,7 +146,9 @@
       "pi-config/extensions/spec/README.md",
       "pi-config/extensions/spec/core/README.md",
       "pi-config/extensions/spec/tests/census-rank.test.mjs",
-      "pi-config/extensions/spec/tests/core.test.mjs"
+      "pi-config/extensions/spec/tests/core.test.mjs",
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs"
     ],
     "agreed": {
       "by": "naomarik",
@@ -572,7 +575,7 @@
       "server/spec-draft-writer.ts",
       "server/conversation-draft.ts",
       "server/spec-tool-fake.ts",
-      ".sova/playbooks/release/scripts/docs-drift.mjs",
+      ".sova/playbook-config/release/scripts/docs-drift.mjs",
       "scripts/sim/lib/lookup-probe.ts",
       "pi-config/extensions/spec/core/README.md",
       "pi-config/extensions/spec/README.md",
@@ -625,14 +628,17 @@
     "evidence": "verified",
     "requires": [
       "§tools.spec/contents-view",
-      "§tools.spec/context-packets"
+      "§tools.spec/context-packets",
+      "§tools.spec/split-topics"
     ],
     "code": [
       "pi-config/extensions/spec/core/read.mjs",
       "pi-config/extensions/spec/core/toc.mjs",
       "pi-config/extensions/spec/core/sova-spec.mjs",
       "pi-config/extensions/spec/tests/toc.test.mjs",
-      "pi-config/extensions/spec/core/README.md"
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs"
     ]
   },
   "§tools.spec/span-promotion": {
@@ -677,12 +683,33 @@
       "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
     }
   },
+  "§tools.spec/split-topics": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [],
+    "code": [
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/toc.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/core/topic.mjs",
+      "pi-config/extensions/spec/tests/search/split-units.mjs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-20T10:51Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#4ff8b381"
+    }
+  },
   "§tools.spec/unread-landed": {
     "kind": "behavior",
     "requires": [
       "§tools.spec/census-note",
       "§tools.spec/census-rank",
-      "§tools.spec/no-turn-end-check"
+      "§tools.spec/no-turn-end-check",
+      "§tools.spec/split-topics"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -707,7 +734,8 @@
     "evidence": "verified",
     "requires": [
       "§tools.spec/contents-view",
-      "§tools.spec/inspection-safety"
+      "§tools.spec/inspection-safety",
+      "§tools.spec/split-topics"
     ],
     "code": [
       "pi-config/extensions/spec/core/where.mjs",
@@ -716,15 +744,23 @@
       "pi-config/extensions/spec/tests/map-fixture.mjs",
       "pi-config/extensions/spec/core/README.md",
       "pi-config/extensions/spec/tests/where.test.mjs",
-      "pi-config/extensions/spec/README.md"
-    ]
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-20T10:52Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#4ff8b381"
+    }
   },
   "§tools.spec/where-topic": {
     "kind": "behavior",
     "authority": "accepted",
     "evidence": "verified",
     "requires": [
-      "§tools.spec/where-lookup"
+      "§tools.spec/where-lookup",
+      "§tools.spec/split-topics"
     ],
     "code": [
       "pi-config/extensions/spec/core/where.mjs",
@@ -732,11 +768,15 @@
       "pi-config/extensions/spec/core/sova-spec.mjs",
       "pi-config/extensions/spec/tests/where.test.mjs",
       "pi-config/extensions/spec/core/README.md",
-      "pi-config/extensions/spec/README.md"
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs",
+      "pi-config/extensions/spec/tests/search/split-units.mjs"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-11T07:56Z"
+      "at": "2026-11-20T10:51Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#4ff8b381"
     }
   },
   "§tools.spec/worker-landed": {

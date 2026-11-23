@@ -6,14 +6,14 @@
  */
 import { createMemo, For, Show, useContext } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
-import { type BoardRow, gistTitle } from "../lib/agents-board";
+import type { BoardRow } from "../lib/agents-board";
+import { REGENERATE_TITLE_DESC, REGENERATING_LABEL, regeneratingTitle } from "../lib/auto-title";
 import { type MenuBuiltIn, type MenuEntry, menuGroups, runMenuEntry, sameGroups } from "../lib/menu-place";
 import { ExtensionsContext } from "../lib/reply-place";
 import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { hostOf } from "../lib/mesh";
-import { archiveSession, renameSession } from "../lib/session-actions";
+import { archiveSession, regenerateSessionTitleNow, renameSession } from "../lib/session-actions";
 import { groupNameOf, loadSessionGroups, quoted, sessionGroups, setSessionGroup } from "../lib/session-groups";
-import { summaryLineOf } from "../lib/summary-row";
 import { announce, copyText, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import { MenuAdded, MenuBuiltIns } from "./MenuPlace";
@@ -48,7 +48,6 @@ const runEntry = async (entry: MenuEntry, session: string) => {
 /** The ⋯ menu: every action the row has but opening it (its title link does), the only door to them at folded width. */
 export function RowMenu(props: { row: BoardRow; ctx: RowMenuCtx; archive: { label: string; blocked: string | null } | null }) {
   const s = () => props.row.session;
-  const gist = () => gistTitle(s());
   /** What extensions add, for a session on this host only: an extension is this host's. */
   const extensions = useContext(ExtensionsContext);
   const added = createMemo(() => (hostOf(s().path) === null ? menuGroups(extensions(), "session") : []), [], { equals: sameGroups });
@@ -92,12 +91,12 @@ export function RowMenu(props: { row: BoardRow; ctx: RowMenuCtx; archive: { labe
                 <div class="model-menu-group" role="group" aria-label="Title">
                   <menu.Item label="Rename…" aria={`Rename ${quoted(s().title)}`} icon={<Icon name="pencil" small />} keepFocus onRun={() => props.ctx.setRenaming(s().path)} />
                   <menu.Item
-                    label="Use Gist as Title"
-                    aria={`Use the gist as the title of ${quoted(s().title)}`}
-                    icon={<Icon name="pencil" small />}
-                    description={gist() ?? undefined}
-                    disabled={gist() ? "" : summaryLineOf(s()) ? "The gist is already the title." : "No gist yet."}
-                    onRun={() => void setTitle(gist())}
+                    label="Regenerate Title"
+                    aria={`Regenerate the title of ${quoted(s().title)}`}
+                    icon={<Icon name="refresh" small />}
+                    description={REGENERATE_TITLE_DESC}
+                    disabled={regeneratingTitle(s().path) ? REGENERATING_LABEL : ""}
+                    onRun={() => void regenerateSessionTitleNow(s(), props.ctx.onRefresh)}
                   />
                   <menu.Item
                     label="Reset to Original Title"

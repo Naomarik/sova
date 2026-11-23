@@ -56,6 +56,8 @@ export interface MergeSettingsChange {
   reuse?: boolean;
   /** Automatic cleanup deletes the branch too (`merge.deleteBranches`; false removes the key, the default). */
   deleteBranches?: boolean;
+  /** Merging locally, each branch lands as one commit (`merge.squash`; false removes the key, the default). */
+  squash?: boolean;
 }
 
 /** Sova's fixed values: shown, never changed here. */
@@ -92,6 +94,8 @@ export interface MergeQueueSettings {
   reuse?: boolean;
   /** Automatic cleanup deletes a landed branch as well as its folder (`merge.deleteBranches`). Absent: off. */
   deleteBranches?: boolean;
+  /** Merging locally, each branch lands as one commit (`merge.squash`). Absent: off (a merge commit). */
+  squash?: boolean;
   setup: { steps: { id: string; label?: string }[] };
   install?: { inputs: string[]; timeoutSec: number };
   review: {
@@ -114,6 +118,10 @@ export interface MergeQueueSettings {
   fixed: MergeFixedValues;
   /** How it lands (al_3): the choice in effect and where it comes from (server/merge-queue/strategy.ts landHowSetting). */
   how?: LandHowSetting;
+  /** What the target's tree needs beyond its own files, warned about at setup (§app.merge-queue/project-shapes):
+   *  submodules (each run checks them out from their own remotes), Git LFS files (each run fetches them), and
+   *  git-lfs missing on this computer (every landing fails until it is installed). Absent: neither. */
+  shape?: { submodules: boolean; lfs: boolean; lfsMissing?: true };
 }
 
 /** How a branch lands: this computer's choice ?? the project file's `merge.land` ?? local. */
@@ -145,4 +153,4 @@ export const SETTINGS_WAITING_WORDS = "Saves when the current branch finishes";
 /** The words for a waiting save: the release holding it when one does (`release`, as shown), else the branch's. */
 export const settingsWaitingWords = (release?: string): string => `Saves ${settingsWaitingClause(release)}`;
 /** The same, as a clause for a sentence of its own ("{how} saves to the project file {clause}."). */
-export const settingsWaitingClause = (release?: string): string => (release ? `once ${release} is published or abandoned` : "when the current branch finishes");
+export const settingsWaitingClause = (release?: string): string => (release ? `once ${release} is published or cancelled` : "when the current branch finishes");

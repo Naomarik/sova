@@ -84,6 +84,35 @@ A session's **Time Spent** tab, between Usage and Context in the session pane, s
 - **Alignments.** A line per alignment, with how long it was on screen.
 - **Your Messages.** With **Label your messages** on in Settings → Decisions (off by default), each message you type or dictate gets one label: Specifying, Directing, Reworking or Asking. Your time goes to the next message you send, and the rows show where it went; open a row for the messages it counted. Labelling a message sends its start and the end of the reply before it, redacted, to the Decisions providers (Jev, then the fallback model if you set one); nothing is sent while the switch is off, and the agent never sees a label.
 
+## Time across sessions
+
+The Agents page's **Time Spent** tab (`#/agents/time`) sums the same figures across every session on
+this computer, by day and by project. Pick `7d`, `30d` or `All` (30 days by default) and one project
+or all of them; both stay in the address, so a reload or a shared link keeps them.
+
+- **The headline.** **You**: your time at any session, with your average per day. **Agents**: how
+  long the agents worked, with the share their workers did. **Agent Hours Per Your Hour**: Agents
+  divided by You, over only the days that hold any of your time. **While You Were Away**: the agent
+  hours that fell while you were at no session.
+- **Hours per day.** One bar per day, the agents' hours with yours drawn inside it; over 62 days the
+  bars are weeks.
+- **Your Time.** The same rows as a session's tab (Reading, Typing, Dictating and the rest), summed.
+- **Your Messages.** With **Label your messages** on, how many messages of each label and the time
+  they got, across sessions.
+- **Agent Time.** Who worked (workers, main threads, the Overseer), on what (thinking and writing,
+  waiting for the model, running tools) and by model. Tool calls a session runs at once count once.
+  **Waiting On Workers**, a chat waiting on its own workers or team, is shown apart and never added,
+  so a chat waiting 2 hours on a worker that works those 2 hours adds 2 hours, not 4.
+- **By Project** and **Top Sessions.** Your time, the agents', their ratio and the cost at API
+  prices, per project as the Costs tab groups them, and for up to 20 sessions, their workers
+  included. A click opens the session.
+
+It counts this computer only, and only from the day each kind of time was first recorded: the foot
+of the tab names those days. Tool runs are timed from that day on; earlier days count reply time
+only. A session you delete keeps its hours in every total (in 15-minute buckets, never its name or
+any text); only its Top Sessions row and its own tab go. The figures are plain: nothing is flagged or
+ranked against a target.
+
 ## Subscription limits
 
 The **Usage** page (`#/usage`), from the Usage row at the foot of the session list, shows each

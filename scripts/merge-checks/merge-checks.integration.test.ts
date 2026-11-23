@@ -48,6 +48,7 @@ describe("merge checks", () => {
     const { root, tree, base } = repo();
     const cases: [string, RegExp][] = [
       ["ext-suites", /no change to a pi-config extension/],
+      ["playbook-tests", /no change to a playbook in playbooks\//],
       ["spec-replay", /no change to the spec core/],
       ["statecharts", /no change to the statecharts/],
       ["spec", /no \.sova\/spec in this tree/],
@@ -101,6 +102,29 @@ describe("merge checks", () => {
     const none = runCheck("ext-suites", tree, root, ["pi-config/extensions/other/x.ts"], base);
     expect(none.code).toBe(0);
     expect(none.report?.skipped).toMatch(/no Tests line for other/);
+  });
+
+  test("playbook-tests runs the tests/ folder of each changed playbook that has one, and fails on a failing file", () => {
+    const { root, tree, base } = repo();
+    const put = (p: string, text: string) => {
+      mkdirSync(join(tree, p, ".."), { recursive: true });
+      writeFileSync(join(tree, p), text);
+    };
+    put("playbooks/good/tests/a.test.mjs", "import { test } from 'node:test';\ntest('good ran', () => {});\n");
+    put("playbooks/good/tests/helper.mjs", "throw new Error('not a test file');\n");
+    put("playbooks/bad/tests/a.test.mjs", "import { test } from 'node:test';\ntest('bad', () => { throw new Error('bad failed'); });\n");
+    put("playbooks/plain/PLAYBOOK.md", "# plain\n");
+    const ok = runCheck("playbook-tests", tree, root, ["playbooks/good/PLAYBOOK.md", "playbooks/plain/PLAYBOOK.md"], base);
+    expect(ok.code, ok.out).toBe(0);
+    expect(ok.out).toContain("good ran");
+    expect(ok.report).toMatchObject({ passed: 1, failed: 0, notes: ["no tests/ folder: plain"] });
+    const bad = runCheck("playbook-tests", tree, root, ["playbooks/good/scripts/x.mjs", "playbooks/bad/tests/a.test.mjs"], base);
+    expect(bad.code, bad.out).toBe(1);
+    expect(bad.report).toMatchObject({ passed: 1, failed: 1 });
+    expect((bad.report?.failures as { name: string }[])[0]).toMatchObject({ name: "playbook bad: node --test playbooks/bad/tests/*.test.mjs", file: "playbooks/bad/tests" });
+    const none = runCheck("playbook-tests", tree, root, ["playbooks/plain/PLAYBOOK.md", "system-playbooks/good/tests/a.test.mjs"], base);
+    expect(none.code).toBe(0);
+    expect(none.report?.skipped).toMatch(/no tests\/ folder in the changed playbooks \(plain\)/);
   });
 
   test("leak-scan against origin: a clean range passes, a planted name fails without printing it, no names file fails closed", () => {

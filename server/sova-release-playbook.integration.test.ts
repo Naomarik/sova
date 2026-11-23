@@ -5,15 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 // @ts-expect-error: a plain .mjs driver, no types
-import * as sr from "../.sova/playbooks/release/scripts/sova-release.mjs";
+import * as sr from "../.sova/playbook-config/release/scripts/sova-release.mjs";
 
 /**
- * Sova's release driver (.sova/playbooks/release/scripts/sova-release.mjs) run as the program its release checks and
+ * Sova's release driver (.sova/playbook-config/release/scripts/sova-release.mjs) run as the program its release checks and
  * the site deploy target run: its usage and exit codes. Nothing here uploads, deploys or runs a release check; the
  * logic is in sova-release-playbook.test.ts.
  */
 
-const DRIVER = join(import.meta.dirname, "..", ".sova/playbooks/release/scripts/sova-release.mjs");
+const DRIVER = join(import.meta.dirname, "..", ".sova/playbook-config/release/scripts/sova-release.mjs");
 const dir = mkdtempSync(join(tmpdir(), "sova-release-int-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 const run = (args: string[], env: Record<string, string> = {}, cwd = dir) => spawnSync(process.execPath, [DRIVER, ...args], { encoding: "utf8", cwd, env: { ...process.env, ...env } });
@@ -50,7 +50,7 @@ test("site-video stops a deploy without its hero video: SOVA_SITE_VIDEO_DIR unse
 });
 
 test("docs-drift finds the trusted tools as spec-mode.md's line does: SOVA_SPEC_CORE, else the agent dir's (a leading ~ is home); none there: exit 2 naming where it looked", () => {
-  const drift = join(import.meta.dirname, "..", ".sova/playbooks/release/scripts/docs-drift.mjs");
+  const drift = join(import.meta.dirname, "..", ".sova/playbook-config/release/scripts/docs-drift.mjs");
   const looked = (env: Record<string, string>) => {
     const r = spawnSync(process.execPath, [drift, "--base", "HEAD", "--root", dir], { encoding: "utf8", cwd: dir, env: { PATH: process.env.PATH ?? "", HOME: dir, ...env } });
     assert.equal(r.status, 2, r.stderr);

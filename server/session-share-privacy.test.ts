@@ -18,6 +18,9 @@ import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import type { SessionShareView } from "../shared/session-share";
 import { formatLinkMessage } from "../shared/link-message";
+import { SESSION_SHARE_DESIGN_KINDS, type SessionShareLookbook } from "../shared/session-share";
+import { designPageDoc, designShellDoc, designStreamDoc } from "../src/lib/design-frame";
+import { LB, LB_AFTER_CUT, LB_OTHER_SESSION_ID, LB_RUN, LB_SESSION_ID, LB_SHOWN, writeLookbookChat } from "./session-share-lookbook.test.helper";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-session-share-leak-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -30,7 +33,7 @@ process.env.SOVA_SHARE_DIST = join(root, "dist-share");
 mkdirSync(process.env.SOVA_SHARE_DIST, { recursive: true });
 writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><title>Shared</title>");
 
-const { sessionShareView, sessionShareImage, currentLeaf, resetShareViewCache, SESSION_SHARE_TEXT_MAX, SESSION_SHARE_TEXT_CEILING, cutAtToken, withoutImagePaths } = await import("./session-share-view");
+const { sessionShareView, sessionShareImage, sessionShareDesign, currentLeaf, resetShareViewCache, SESSION_SHARE_TEXT_MAX, SESSION_SHARE_TEXT_CEILING, cutAtToken, withoutImagePaths } = await import("./session-share-view");
 const { normalizeEntries, toolContents } = await import("./transcript");
 const { parseLines } = await import("./harness/pi/reader");
 
@@ -201,6 +204,9 @@ async function everyPage(mode: "snapshot" | "live"): Promise<SessionShareView[]>
   return out;
 }
 
+/** Every key a recipient's view may carry; a Lookbook adds only its letter, names and finished versions. */
+const VIEW_KEYS = ["title", "sharedAt", "mode", "through", "items", "before", "images", "kind", "n", "text", "at", "mime", "lineage", "lookbooks", "id", "after", "designs", "label", "style", "layout", "modelName", "versions", "views"];
+
 /** What must never leave the host, beyond the markers. */
 const never = (): string[] => [SVG_B64, SESSION_ID, sessionPath, cwd, home, root, "thinking", "toolCall", "mimeType\":\"image/svg"];
 
@@ -244,7 +250,7 @@ describe("nothing private reaches a session share (§app.session-share/never)", 
         }
         for (const s of never()) assert.ok(!body.includes(s), `${mode}: ${s} leaked`);
         const keys = new Set([...body.matchAll(/"([A-Za-z]+)":/g)].map((m) => m[1]!));
-        for (const k of keys) assert.ok(["title", "sharedAt", "mode", "through", "items", "before", "images", "kind", "n", "text", "at", "mime", "lineage"].includes(k), `${mode}: unexpected key ${k}`);
+        for (const k of keys) assert.ok(VIEW_KEYS.includes(k), `${mode}: unexpected key ${k}`);
       }
     }
   });
@@ -359,5 +365,111 @@ describe("the view's code builds field by field", () => {
   test("never spreads an entry, a message or a block, and never uses the transcript's row builder", () => {
     assert.doesNotMatch(text, /\.\.\.(e|m|b|entry|message|block|msg|content)\b(?![.(\[])/);
     assert.doesNotMatch(text, /\bnormalizeEntr(y|ies)\b|\.raw\b/);
+  });
+});
+
+describe("a share's Lookbooks: letter, style, layout, model name and finished versions, nothing else (§app.session-share/lookbook, /never)", async () => {
+  // A chat with a Lookbook (server/session-share-lookbook.test.helper.ts): a marker in every field
+  // of its runs, designs, Creative Director, history and page assets; a removed design, a failed
+  // one, a stopped one with a still, one being refined (its page being written), a run on an
+  // abandoned branch, one after the snapshot's cut, one no card names, and another chat whose store
+  // reuses the run id and label A.
+  const fx = writeLookbookChat(join(root, "agent"));
+  const { viewOf, readStill, pendingPage } = await import("./design/store");
+  const { readHistory } = await import("./design/history");
+  const { readAssets } = await import("./design/assets");
+  const lbSrc = (mode: "snapshot" | "live", from: string | null = null) => ({ sessionPath: fx.sessionPath, sessionId: LB_SESSION_ID, cutEntryId: mode === "snapshot" ? fx.cut : null, from, title: "Lookbook", sharedAt: "2026-09-30T01:00:00.000Z", mode });
+  /** Every page of a view (the Lookbooks ride on each), oldest first. */
+  const pagesOf = async (mode: "snapshot" | "live", from: string | null = null): Promise<SessionShareView[]> => {
+    const out: SessionShareView[] = [];
+    let before: number | undefined;
+    do {
+      const v = await sessionShareView(lbSrc(mode, from), before === undefined ? {} : { before });
+      assert.ok(v, `${mode} view`);
+      out.unshift(v);
+      before = v.before;
+    } while (before !== undefined);
+    return out;
+  };
+  /** The documents a recipient could ask for: every label of either chat, every version up to 5, every kind. */
+  const everyDocument = async (mode: "snapshot" | "live"): Promise<[string, string | null][]> => {
+    const out: [string, string | null][] = [];
+    for (const label of ["A", "B", "C", "D", "E", "F", "G", "H", "I", "Z", "a", "", "../A"])
+      for (const n of [0, 1, 2, 3, 4, 5, -1, 1.5])
+        for (const kind of [...SESSION_SHARE_DESIGN_KINDS, "raw" as never]) out.push([`${mode} ${label}/${n}/${kind}`, await sessionShareDesign(lbSrc(mode), label, n, kind)]);
+    return out;
+  };
+  const barred = (mode: "snapshot" | "live"): [string, string][] => [...Object.entries(LB), ...(mode === "snapshot" ? Object.entries(LB_AFTER_CUT) : [])];
+  const lbNever = [LB_SESSION_ID, LB_OTHER_SESSION_ID, LB_RUN, "run_mkq7x", fx.sessionPath, join(root, "agent", "design"), '"status"', '"removed"', '"usage"', '"cost"', '"coordinator"', '"brief"'];
+  const iso = (s: number) => new Date(Date.UTC(2026, 8, 30, 0, 0, s)).toISOString();
+  const version = (n: number, s: number) => ({ n, at: iso(s), views: ["Pricing"] });
+  const shared = (mode: "snapshot" | "live"): SessionShareLookbook => ({
+    id: "lb1",
+    after: 0,
+    designs: [
+      { label: "A", style: LB_SHOWN.A.style, layout: LB_SHOWN.A.layout, modelName: LB_SHOWN.A.modelName, versions: [version(1, 5), version(2, 8), ...(mode === "live" ? [version(3, 20)] : [])] },
+      { label: "B", style: LB_SHOWN.B.style, modelName: LB_SHOWN.B.modelName, versions: [version(1, 6)] },
+    ],
+  });
+
+  test("positive control: every marker is in the chat's own files, and the operator's own design view carries the run's and designs' fields", () => {
+    const files = [fx.sessionPath, ...["state.json", "history.json", "assets/catalogue.json", "C/v1.html", "E/still1.html", "F/v1.html", "H/v1.html"].map((f) => join(root, "agent", "design", LB_SESSION_ID, f)), ...["state.json", "A/v1.html"].map((f) => join(root, "agent", "design", LB_OTHER_SESSION_ID, f))];
+    const disk = files.map((f) => readFileSync(f, "utf8")).join("\n") + Object.values(fx.pages).flatMap((p) => Object.values(p)).join("\n");
+    for (const [field, mark] of [...Object.entries(LB), ...Object.entries(LB_AFTER_CUT)]) assert.ok(disk.includes(mark), `${field} was planted`);
+    const own = JSON.stringify([viewOf(LB_SESSION_ID), readHistory(LB_SESSION_ID), readAssets(LB_SESSION_ID), readStill(LB_SESSION_ID, "E", 1), pendingPage(LB_SESSION_ID, "B")]);
+    for (const field of ["setupBrief", "modelRef", "briefPrompt", "runError", "coordinatorCard", "designSession", "designFile", "designError", "designFix", "deliveryError", "cost", "versionNote", "historyText", "captureUrl", "assetNote", "pending", "still", "removedStyle"] as const) assert.ok(own.includes(LB[field]), `${field} is in the operator's own view`);
+  });
+
+  test("the view carries exactly the shared run's shown designs, after the item its card follows; Follow live adds the version and the run after the cut", async () => {
+    const snap = await pagesOf("snapshot");
+    for (const page of snap) assert.deepEqual(page.lookbooks, [shared("snapshot")], "snapshot: A v1–v2 and B v1, by label");
+    assert.equal(snap.at(-1)!.items[0]!.text, "VISIBLE-LB-ASK make me a lookbook", "after: 0 is the ask its card follows");
+    const live = (await pagesOf("live")).at(-1)!;
+    assert.deepEqual(live.lookbooks, [shared("live"), { id: "lb2", after: 2, designs: [{ label: "G", style: LB_AFTER_CUT.runAfterCutStyle, modelName: "Mk After Model", versions: [version(1, 27)] }] }]);
+    assert.equal(live.items[2]!.text, "VISIBLE-LB-CUT before the cut");
+    assert.deepEqual(live.items.map((i) => i.n), [0, 1, 2, 3], "items are never renumbered");
+    // Without the session's id (an older share's source), none.
+    assert.deepEqual((await sessionShareView({ ...lbSrc("live"), sessionId: undefined }))!.lookbooks ?? [], []);
+  });
+
+  test("a slice shows a Lookbook only when its card is inside it", async () => {
+    assert.deepEqual((await pagesOf("snapshot", fx.beforeCard)).at(-1)!.lookbooks, [shared("snapshot")], "from the ask: its card is in");
+    for (const mode of ["snapshot", "live"] as const) {
+      const v = (await pagesOf(mode, fx.afterCard)).at(-1)!;
+      assert.ok(!(v.lookbooks ?? []).some((lb) => lb.designs.some((d) => d.label === "A" || d.label === "B")), `${mode}: from the reply after the card, the shared run is left out`);
+      for (const kind of SESSION_SHARE_DESIGN_KINDS) assert.equal(await sessionShareDesign(lbSrc(mode, fx.afterCard), "A", 1, kind), null, `${mode}: no A/1 ${kind} from a slice without its card`);
+    }
+  });
+
+  test("no marker, id, path or excluded field in any page of either mode", async () => {
+    for (const mode of ["snapshot", "live"] as const)
+      for (const page of await pagesOf(mode)) {
+        const body = JSON.stringify(page);
+        for (const [field, mark] of barred(mode)) assert.ok(!body.includes(mark), `${mode}: ${field} leaked`);
+        for (const x of lbNever) assert.ok(!body.includes(x), `${mode}: ${x} leaked`);
+        for (const k of new Set([...body.matchAll(/"([A-Za-z]+)":/g)].map((m) => m[1]!))) assert.ok(VIEW_KEYS.includes(k), `${mode}: unexpected key ${k}`);
+      }
+  });
+
+  test("documents: only a shown version, whole; never a removed, failed, stopped, abandoned, unanchored, other chat's, later or unfinished page", async () => {
+    // The page as served: the author's text with the known secret redacted and nothing else changed (a
+    // whole inlined font, an inline script and SVG included), in the app's wall for its kind.
+    const expected = (html: string, kind: string) => {
+      const text = html.split(LB.pageSecret).join("[redacted]");
+      return kind === "page" ? designShellDoc(designPageDoc(text, { motion: true }), { share: true }) : kind === "tile" ? designShellDoc(designPageDoc(text, { motion: false }), { share: true }) : designStreamDoc(text);
+    };
+    for (const mode of ["snapshot", "live"] as const) {
+      const docs = await everyDocument(mode);
+      const served = docs.filter(([, d]) => d !== null).map(([k]) => k);
+      const shown = [...LB_SHOWN.A[mode].map((n) => `A/${n}`), ...LB_SHOWN.B[mode].map((n) => `B/${n}`), ...(mode === "live" ? ["G/1"] : [])];
+      assert.deepEqual(served, shown.flatMap((lv) => SESSION_SHARE_DESIGN_KINDS.map((k) => `${mode} ${lv}/${k}`)), `${mode}: exactly the shown versions, every kind`);
+      for (const [key, doc] of docs) {
+        if (doc === null) continue;
+        const [label, n, kind] = key.split(" ")[1]!.split("/");
+        assert.equal(doc, expected(fx.pages[label!]![Number(n)]!, kind!), `${key} is its page, whole`);
+        for (const [field, mark] of barred(mode)) assert.ok(!doc.includes(mark), `${key}: ${field} leaked`);
+        for (const x of lbNever) assert.ok(!doc.includes(x), `${key}: ${x} leaked`);
+      }
+    }
   });
 });

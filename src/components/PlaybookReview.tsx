@@ -46,8 +46,9 @@ export function MergeRunButton(props: {
   class?: string;
   onDone?(view?: ProjectRuntimeView): void;
 }) {
-  // A Setup chat's proposal lands only once a trial of its head passed: the proposal card's own button, Run Trial and
-  // its reason included, wherever the run is offered (the banner, the Needs-you row).
+  // A Setup chat's proposal lands only once a dry run of its head passed (Land runs it first on a served project): the
+  // proposal card's own button, Run Dry Run and its reason included, wherever the run is offered (the banner, the
+  // Needs-you row).
   return (
     <Show when={props.run.proposes === "pipeline"} fallback={<PlainMergeRunButton {...props} />}>
       <SetupRunButton projectId={props.projectId} branch={props.run.branch} onDone={() => props.onDone?.()} />

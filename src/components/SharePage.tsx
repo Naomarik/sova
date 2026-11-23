@@ -19,7 +19,11 @@ import {
   createBlocked,
   createShare,
   daysWord,
-  imagesBlocked,
+  designTiles,
+  previewDesignUrls,
+  previewLookbooks,
+  previewNewDesign,
+  reviewBlocked,
   isShareChanged,
   isStalePreview,
   listSessionShares,
@@ -34,6 +38,7 @@ import { applyHint, bounds, canFollowLive, endsLine, HINT_WORDS, hints, inSlice,
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { ImagesShared, MintedLinks, NO_THUMBS, PreviewBody } from "./ShareSheet";
+import { DesignsShared } from "./ShareDesigns";
 import { OpensAtLine } from "./OpensAt";
 import { sharingOffHere } from "../lib/public-links";
 import { openSettings } from "../lib/settings-nav";
@@ -72,6 +77,8 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
   const [preview, setPreview] = createSignal<SessionSharePreview | null>(null);
   const [previewError, setPreviewError] = createSignal<string | null>(null);
   const [thumbs, setThumbs] = createSignal<ThumbState>(NO_THUMBS);
+  /** Which of the preview's design versions loaded (every one, before anything is shared). */
+  const [designThumbs, setDesignThumbs] = createSignal<ThumbState>(NO_THUMBS);
   const [stale, setStale] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -136,6 +143,7 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
     setPreview(null);
     setPreviewError(null);
     setThumbs(NO_THUMBS);
+    setDesignThumbs(NO_THUMBS);
     try {
       const p = await previewNew(host, sid, { cut: s.end ?? o.cut, ...(s.start ? { from: s.start } : {}) });
       if (!titleEdited && !title()) setTitle(p.title.slice(0, SHARE_TITLE_MAX));
@@ -190,11 +198,13 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
   };
   const previewState = () => (preview() ? "ready" : previewError() ? "failed" : "loading");
   const reviewThumbs = () => (preview() ? { ...thumbs(), total: preview()!.images } : NO_THUMBS);
+  const lookbooks = createMemo(() => (preview() ? previewLookbooks(preview()!) : []));
+  const reviewDesigns = () => (preview() ? { ...designThumbs(), total: designTiles(lookbooks()).length } : NO_THUMBS);
   const blocked = (): string | null => {
-    if (!changing()) return createBlocked({ title: title(), recipients: total(), max: RECIPIENTS_MAX, preview: previewState(), thumbs: reviewThumbs() });
+    if (!changing()) return createBlocked({ title: title(), recipients: total(), max: RECIPIENTS_MAX, preview: previewState(), thumbs: reviewThumbs(), designs: reviewDesigns() });
     if (previewState() === "failed") return "The conversation couldn't be read, so nothing can be saved yet.";
     if (previewState() === "loading") return "Reading the conversation first.";
-    return imagesBlocked(reviewThumbs());
+    return reviewBlocked(reviewThumbs(), reviewDesigns());
   };
 
   const submit = async () => {
@@ -212,6 +222,8 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
           if (cur.mode !== "live") patch.mode = "live";
         } else {
           patch.cut = p.cut;
+          // Its designs stop where the preview's did, as its messages stop at its cut.
+          if (p.designsAt) patch.designsAt = p.designsAt;
           if (cur.mode === "live") patch.mode = "snapshot";
         }
         await patchShare(host, cur.id, patch);
@@ -223,7 +235,7 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
           title: title().trim(),
           mode: live() ? "live" : "snapshot",
           // A snapshot is exactly the preview on screen; Follow live has no cut by design.
-          ...(live() ? {} : { cut: p.cut }),
+          ...(live() ? {} : { cut: p.cut, ...(p.designsAt ? { designsAt: p.designsAt } : {}) }),
           ...(s.start ? { from: s.start } : {}),
           expiresInDays: days(),
           recipients: labels(),
@@ -313,8 +325,9 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
                 <PreviewBody
                   first={p()}
                   title={title().trim() || undefined}
-                  read={(b) => previewNew(host, sid, { cut: p().cut, before: b, ...(p().from ? { from: p().from } : {}) })}
+                  read={(b) => previewNew(host, sid, { cut: p().cut, designsAt: p().designsAt, before: b, ...(p().from ? { from: p().from } : {}) })}
                   imageUrl={(n) => previewNewImage(host, sid, p().cut, n, p().from)}
+                  designs={previewDesignUrls(previewNewDesign(host, sid, p()))}
                 />
               )}
             </Show>
@@ -325,7 +338,7 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
           <div ref={top} class="share-page-col stack">
             <p class="usage-note">
               <strong>{rangeLabel(span())}.</strong>{" "}
-              {changing() ? "Open pages start over with the new slice." : "People you send a link to can read these messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs."}
+              {changing() ? "Open pages start over with the new slice." : `People you send a link to can read these messages and the replies, with their drawings and images${lookbooks().length > 0 ? ", and the designs below" : ""}. Never tool steps, thinking, paths or costs.`}
             </p>
             <Show when={!changing()}>
               <OpensAtLine host={host} />
@@ -359,6 +372,14 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
                   <Show when={`${p().cut}\u0000${p().from ?? ""}`} keyed>
                     {(_key) => <ImagesShared count={p().images} url={(n) => previewNewImage(host, sid, p().cut, n, p().from)} onState={setThumbs} />}
                   </Show>
+                </Show>
+              )}
+            </Show>
+            <Show when={preview() && lookbooks().length > 0 && preview()}>
+              {(p) => (
+                // Keyed on the cut and start, as the images: a new preview reviews its designs from scratch.
+                <Show when={`${p().cut}\u0000${p().designsAt ?? ""}\u0000${p().from ?? ""}`} keyed>
+                  {(_key) => <DesignsShared lookbooks={lookbooks()} signedIn={p().signedInPictures} url={previewNewDesign(host, sid, p())} onState={setDesignThumbs} />}
                 </Show>
               )}
             </Show>

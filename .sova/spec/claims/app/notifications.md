@@ -121,6 +121,16 @@ The merge queue sends its own notifications outside the delivery loop's kinds
   per check until a later run lifts its flag. Its title is "The merge queue needs you · {project
   folder}", its body "{flag line}. Branches skip it until it's fixed: start a chat to fix it.", its
   tag `sova:merge-broken:{project id}:{check}`, and a tap opens the project's Merge Queue tab.
+- **The queue paused itself** (§app.merge-queue/pausing) is sent the same way, once per pause.
+  Its title is "The merge queue paused · {project folder}", its body the reason, and a tap opens the
+  project's Merge Queue tab. A pause the user made sends nothing.
+- **A Private names and secrets hit** (§app.merge-queue/names-step) is sent as a merge queue
+  decision, above; its body says where, never the matched text. A hit in the scan right before a
+  push is sent the same way, titled "The merge queue needs you · {project folder}".
+- **A merge thread that isn't answering** (§chat.merge-queue/thread-health), once a fresh thread
+  hasn't helped, is sent the same way, once: "The merge thread isn't answering · {project folder}",
+  its body how long it waited and that nothing lands unchecked, and a tap opens the project's Merge
+  Queue tab.
 
 ## §app.notifications/settings — Settings → Notifications
 

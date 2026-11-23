@@ -51,6 +51,7 @@ import { removeAnywayOf } from "./worktree-leftovers";
 import { readCodingPass } from "./project-coding-read";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
+import { REPLY_SHAPE_INSTRUCTIONS } from "../pi-config/extensions/mode/prompt.ts";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
 import { cardsOnBranch, nowLine } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart } from "./overseer-opening";
@@ -640,7 +641,9 @@ export function projectOverseerPromptFrom(values: Readonly<Record<string, string
   const all: Record<string, string> = { ...values, TOOLS: toolCatalogue(tools) };
   const sections = Object.entries(values).filter(([k]) => k.startsWith("section:")).map(([, v]) => v);
   return (
-    template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => all[k] ?? "") +
+    template.replace(/\{\{([A-Z_]+)\}\}/g, (_, k: string) => all[k] ?? "").trimEnd() +
+    // It runs no modes, so the reply shape every chat a person talks to has rides its own prompt, after its rules.
+    `\n\n${REPLY_SHAPE_INSTRUCTIONS}` +
     sections.map((x) => `\n\n${x}`).join("") +
     (values.EXTRA ? `\n\n# The operator's extra instructions\n\n${values.EXTRA}` : "")
   );
@@ -947,9 +950,10 @@ function toolHost(rt: Rt): PoToolHost {
       return softwareLines(await readRuntime(projectId, { observe: false }));
     },
     async onboard(why) {
-      // The Project verbs playbook (§app.project-runtime/onboard): its level, checks, limits and hold are the statechart's.
-      const { startOnboard, onboardAnswer } = await import("./projects/runtime");
-      return onboardAnswer(await startOnboard(projectId, why ? { why } : {}, envelope()));
+      // The Project verbs playbook (§app.project-runtime/onboard): a new run's level, checks, limits and hold are the
+      // statechart's; with the project's Project verbs chat open and idle, its turn is that chat's next message.
+      const { overseerOnboard } = await import("./projects/runtime-routes");
+      return overseerOnboard(projectId, why, envelope());
     },
     async turnOffPreview(id) {
       // Never held, at any level: it only takes something away. Only this project's.
@@ -1651,6 +1655,16 @@ export async function startCoding(projectId: string, body: CodingStartInput): Pr
 }
 
 export const MODE_NOT_SET = "Started, but its mode could not be set. Set it from the chat's mode menu before you send.";
+
+/**
+ * Fix in New Chat (§app.merge-queue/fix): a fresh coding chat of the project with the failure's context as its first
+ * message, the operator's (`operator-coding`), with the project's own mode and model. `cwd`: on this branch, in its
+ * worktree; absent: on a new branch cut from the target's newest commit (the main checkout's head).
+ */
+export async function startFixChat(projectId: string, o: { prompt: string; title: string; cwd?: string }): Promise<{ path: string; sessionId: string; worktree?: unknown }> {
+  const made = await startCodingSession(projectId, { prompt: o.prompt, title: o.title.slice(0, 80), kind: "operator-coding", ...(o.cwd ? { cwd: canonicalPath(o.cwd), worktree: "later" as const } : {}) });
+  return { path: made.path, sessionId: made.sessionId, ...(made.worktree ? { worktree: made.worktree } : {}) };
+}
 
 /**
  * Start coding session: an ordinary session in the project root with the item as its first prompt,

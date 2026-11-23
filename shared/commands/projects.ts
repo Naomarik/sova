@@ -242,6 +242,70 @@ const MERGE_LANDING: CommandEntry[] = [
     meshNeed: "admin",
   },
   {
+    id: "project.merge-queue.dry-run.start",
+    label: "Run Dry Run",
+    summary: "Run Dry Run (Run Dry Run Again) on a setup branch's row: a dry run of the merge and release checks the branch adds or changes on its exact commit, in the merge copy; nothing lands and nothing is saved. While the copy is busy it waits its turn.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      branch: { type: "string", description: "The branch", in: "body", required: true },
+      commit: { type: "string", description: "The branch's tip the row showed (full commit)", in: "body", required: true },
+    },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/dry-run" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.dry-run.stop",
+    label: "Stop Dry Run",
+    summary: "Stop Dry Run: stops the running dry run (by its run) at once, freeing the merge copy, or takes a waiting one (by its id) out of the wait. Nothing is blamed; the branch needs a new dry run.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      run: { type: "string", description: "The running dry run's run (mr_…)", in: "body" },
+      waiting: { type: "string", description: "A waiting dry run's id (tw_…)", in: "body" },
+    },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/dry-run/stop" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.fix",
+    label: "Fix",
+    summary: "Fix on a branch a failure holds up (its dry run or its landing): sends the failure's whole context to the branch's own chat as your message, asking it to explain and propose a fix, then wait for you. Refused while that chat works or is open in a terminal.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      branch: { type: "string", description: "The branch", in: "body", required: true },
+      commit: { type: "string", description: "The commit the failure is at (full)", in: "body", required: true },
+      run: { type: "string", description: "The failed run (mr_…)", in: "body", required: true },
+    },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/fix" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.fix.new-chat",
+    label: "Fix in New Chat",
+    summary: "Fix in New Chat: starts a fresh coding chat with the failure's whole context as its first message, on a new branch from the target for a failure the target shares (or a check broken on it), else on this branch in its worktree.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      branch: { type: "string", description: "The branch (the target's name for a check broken on it)", in: "body", required: true },
+      commit: { type: "string", description: "The commit the failure is at (full)", in: "body", required: true },
+      run: { type: "string", description: "The failed run (mr_…)", in: "body", required: true },
+      newChat: { type: "boolean", description: "Always true: start a new chat", in: "body", required: true },
+      check: { type: "string", description: "A check broken on the target: its id", in: "body" },
+    },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/fix" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
     id: "project.merge-queue.request.publish",
     label: "Publish Request",
     summary: "Publish a checked branch's pull or merge request with the title and description you reviewed: the spec docs commit, the leak scan, the push, then the request.",
@@ -353,10 +417,24 @@ const PROJECTS_SWEEP: CommandEntry[] = [
     model: { type: "string", description: "Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra", in: "body" },
     thinking: { type: "string", description: "Its thinking level", in: "body" },
   }),
-  changes("project.setup.merge", "Merge Setup Branch", "Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: refused unless that head has a passing trial. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/setup/merge", {
+  changes("project.setup.merge", "Merge Setup Branch", "Merge Branch (or Land, on a project the merge queue serves) on the Setup chat's proposal at the commit shown: on a project the queue serves Land runs a dry run of that head first; Merge Branch refuses a head with no passing dry run. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/setup/merge", {
     pid,
     hash: { type: "string", description: "The proposal's hash as shown", in: "body", required: true },
     commit: { type: "string", description: "The branch head shown (Land pins it)", in: "body" },
+  }),
+  // The standing Project verbs chat (§app.project-runtime/onboard): Set Up with a Chat / Change Setup… on Running Copies.
+  changes("project.verbs.open", "Set Up Running Copies", "Open the project's Project verbs chat (Set Up with a Chat, or Change Setup… once set up): the one it has, sending nothing, else a new one on its own branch. Refused, with why, while the project is archived, its folder is elsewhere or missing, or it has no Git. playbook: another verb playbook the project lists runs as its own run.", "POST", "/api/projects/:pid/verbs/onboard", {
+    pid,
+    why: { type: "string", description: "A note for a new chat: what to set up or change (an open chat is opened as it is)", in: "body" },
+    model: { type: "string", description: "Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra", in: "body" },
+    thinking: { type: "string", description: "Its thinking level", in: "body" },
+    playbook: { type: "string", description: "Another verb playbook's id (default project-verbs)", in: "body" },
+  }),
+  looks("project.verbs.chat.get", "Show Project Verbs Chat", "A project's Project verbs chat as its head reads it: its session, branch, whether it works, its commits beyond the target, its edits not committed, and its earlier chats.", "/api/projects/:pid/verbs/chat"),
+  changes("project.verbs.chat.fresh", "Start Fresh Project Verbs Chat", "Start Fresh on the project's Project verbs chat: archive it and start a new one (carrying on its branch and proposal when the branch holds commits). Refused while it works or its worktree has edits not committed. The user's own page only: a chat, an Overseer or a script is refused.", "POST", "/api/projects/:pid/verbs/chat/fresh", {
+    pid,
+    model: { type: "string", description: "The new chat's model (provider/model)", in: "body" },
+    thinking: { type: "string", description: "Its thinking level", in: "body" },
   }),
   // A project's icon (§app.projects/icon): kept on this host only.
   looks("project.icon.get", "Show Project Icon", "What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder).", "/api/projects/:pid/icon/info"),
@@ -434,6 +512,122 @@ const PROJECTS_SWEEP: CommandEntry[] = [
   }),
 ];
 
+/** The queue's known state and numbers: Clean Run, the flaky tests and Fix in New Chat on one, the history's pages
+ *  and the health summary. Clean Run and the fix are the user's own click on Sova's page. */
+const MERGE_KNOWN: CommandEntry[] = [
+  {
+    id: "project.merge-queue.clean-run",
+    label: "Clean Run",
+    summary: "Run from an empty merge copy: no installed packages, build output or setup kept from earlier runs, every check fresh. On the branch checking now, its run starts again clean; on a failed run whose Land still stands, it checks the same commit again, clean; otherwise the next run is clean. Your own page only.",
+    effect: "changes",
+    params: { project: mqProject, entry: { type: "string", description: "The queue entry (mq_…) it is pressed on; absent: the next run", in: "body" } },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/clean-run" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.flaky",
+    label: "Show Flaky Tests",
+    summary: "Every test that failed in a merge run and then passed on its rerun, across landings: how often, first and last seen, and the runs that saw it.",
+    effect: "looks",
+    params: { project: mqProject },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/flaky" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.flaky.fix",
+    label: "Fix in New Chat",
+    summary: "Start a new coding chat on a new branch to fix one flaky test, told the test, how often it failed and the runs and logs that saw it. Your own page only.",
+    effect: "changes",
+    params: { project: mqProject, key: { type: "string", description: "The flaky test's key, as Show Flaky Tests gives it", in: "body", required: true } },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/flaky/fix" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.history",
+    label: "Show Older",
+    summary: "A page of the merge queue's history, newest first: each finished branch, how long it took to land, its runs and why it was sent back. `before` the previous page's `next`; `branch` searches by branch.",
+    effect: "looks",
+    params: {
+      project: mqProject,
+      branch: { type: "string", description: "Only branches whose name contains this", in: "query" },
+      before: { type: "string", description: "The previous page's next", in: "query" },
+      limit: { type: "integer", description: "Rows per page (1–100, default 20)", in: "query" },
+    },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/history" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.health",
+    label: "Show Queue Health",
+    summary: "The merge queue's health over the last days: time to land, pass rate, the slowest checks, the flakiest tests, the usual reasons branches are sent back, and clean runs.",
+    effect: "looks",
+    params: { project: mqProject, days: { type: "integer", description: "How many days back (1–366, default 30)", in: "query" } },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/health" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
+/** The queue screen's reads (§app.merge-queue/explainer): the setup in force beside the Setup chat's proposal, and the
+ *  setup's versions on the main branch. */
+const MERGE_SCREEN: CommandEntry[] = [
+  {
+    id: "project.merge-queue.setup-map",
+    label: "Show Queue Setup",
+    summary: "The merge queue's setup as its overview draws it: the checks and which run when (the folder rules), the review, how it lands and pushes, the private names step; beside it the Setup chat's proposal, read live from that chat's working copy, and what changes.",
+    effect: "looks",
+    params: { project: mqProject },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/setup-map" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.setup-history",
+    label: "Show Setup History",
+    summary: "Each version of the merge queue's setup on the main branch, newest first: the commit that brought it in, when, and what it changed.",
+    effect: "looks",
+    params: { project: mqProject, limit: { type: "integer", description: "How many versions (1–50, default 20)", in: "query" } },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/setup-history" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
+/** The event memory's read (§app.merge-queue/activity): every recorded change of the queue, an entry, a run or a branch. */
+const MERGE_EVENTS: CommandEntry[] = [
+  {
+    id: "project.merge-queue.events",
+    label: "Show Queue Activity",
+    summary: "What happened in the merge queue, newest first, each with its time, who did it and why: approvals, runs started and restarted, steps, sends back and answers, the merge thread's decisions with what it read, pauses, landings and pushes. Narrowed to an entry, a run, a branch, an actor or a kind; pages back with before.",
+    effect: "looks",
+    params: {
+      project: mqProject,
+      entry: { type: "string", description: "One entry's (mq_…)", in: "query" },
+      run: { type: "string", description: "One run's (mr_…)", in: "query" },
+      branch: { type: "string", description: "One branch's, every entry of it", in: "query" },
+      by: { type: "string", description: "One actor's: user, queue, thread, chat, reviewer or release", in: "query" },
+      kind: { type: "string", description: "One kind of change (run-restarted, ruled, paused…)", in: "query" },
+      before: { type: "integer", description: "Older than this seq (the last one of the page before)", in: "query" },
+      limit: { type: "integer", description: "How many (1–500, default 100)", in: "query" },
+    },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/events" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
 export const PROJECT_ENTRIES: CommandEntry[] = [
   {
     id: "project.services.view",
@@ -451,4 +645,7 @@ export const PROJECT_ENTRIES: CommandEntry[] = [
   ...MERGE_SETTINGS,
   ...MERGE_LANDING,
   ...MERGE_SUMMARY,
+  ...MERGE_KNOWN,
+  ...MERGE_EVENTS,
+  ...MERGE_SCREEN,
 ];

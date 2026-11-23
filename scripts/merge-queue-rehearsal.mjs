@@ -255,14 +255,15 @@ async function faults() {
 
   await kase("R5", "a blocking review: Review flagged, Send Back, master unmoved", async (ev) => {
     // Declare the review kit on master (outside the queue), from this worktree's kit.
-    const kit = join(HERE, ".sova/playbooks/review");
-    check(existsSync(kit), "the feature ships a review kit at .sova/playbooks/review");
-    sh("cp", ["-r", kit, join(PROJECT, ".sova/playbooks/")]);
+    const kit = join(HERE, ".sova/playbook-config/review");
+    check(existsSync(kit), "the feature ships a review kit at .sova/playbook-config/review");
+    mkdirSync(join(PROJECT, ".sova/playbook-config"), { recursive: true });
+    sh("cp", ["-r", kit, join(PROJECT, ".sova/playbook-config/")]);
     const pj = join(PROJECT, ".sova/project.json");
     const def = JSON.parse(readFileSync(pj, "utf8"));
-    def.merge = { ...(def.merge ?? {}), review: ".sova/playbooks/review" };
+    def.merge = { ...(def.merge ?? {}), review: ".sova/playbook-config/review" };
     writeFileSync(pj, JSON.stringify(def, null, 2) + "\n");
-    git(PROJECT, "add", ".sova/playbooks/review", ".sova/project.json");
+    git(PROJECT, "add", ".sova/playbook-config/review", ".sova/project.json");
     git(PROJECT, "commit", "-q", "-m", "rehearsal: declare the review kit (outside the queue)");
     git(PROJECT, "push", "-q", "origin", "master"); // its owner pushes a hand commit (the queue never pushes what it did not land)
     if ((await q.view())?.state === "paused") await q.resume();

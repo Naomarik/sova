@@ -181,34 +181,19 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
   scroll anchoring (`overflow-anchor`, on by default) holds your place.
 - **Author.** The `.live-dot` stays in the author row as in §chat/transcript, and there's no cursor glyph.
 
-## §chat.markdown/working-notes — Working notes fold closed
+## §chat.markdown/working-notes — No Working notes fold
 
-Raw HTML is never rendered (above), so a model's `<details>` shows as text and can't fold. The one
-fold a reply can ask for is a fixed heading: a line that reads exactly `### Working notes` (level
-3, those words, any case, nothing else on the line), outside a code block. On an **assistant-text**
-row, the first such heading and everything after it to the end of the reply render as one
-disclosure, **closed**: a twist and "Working notes" as its summary, the rest of the reply as its
-body, rendered as markdown like the rest. What comes before the heading renders as today.
+A reply never folds. A line that reads `### Working notes` is an ordinary level-3 heading wherever
+this renderer draws it, an **assistant-text** row included: the heading shows as an `h3` and the
+text after it renders open beneath it, like any other section of the reply, mid-stream too. There
+is no twist, no closed disclosure and no `md-working-notes` element.
 
-```html
-<details class="disclosure md-working-notes">
-  <summary class="disclosure-summary">
-    <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
-    Working notes
-  </summary>
-  <div class="disclosure-body">{rendered markdown after the heading}</div>
-</details>
-```
-
-- It is closed whenever the reply renders, mid-stream too; once the user opens it, it stays open
-  while the same reply streams on, and opening is never remembered past that.
-- A later `### Working notes` heading inside the fold is an ordinary heading there. With nothing
-  after it, the heading renders as nothing.
-- Only assistant-text rows fold. Every other place this renderer draws (the markdown viewer, report
-  rows, team messages, briefs, idea text) shows the heading as an ordinary `h3`; so do the TUI and a
-  copy of the reply, which take the reply's own text.
-- The chat's agents are asked to write it while align is on (§chat.alignment/reply); any assistant
-  reply that has the heading folds the same way.
+- **Old replies too.** A reply written while align asked for that fold renders open from its own
+  unchanged text, its heading included; nothing in a stored reply is rewritten.
+- Raw HTML is never rendered (above), so a model's `<details>` still shows as text and can't fold.
+- The markdown viewer, report rows, team messages, briefs, idea text, the TUI and a copy of the
+  reply showed the heading as ordinary text before and are unchanged.
+- No agent is asked to write such a heading (§chat.mode-menu/reply-shape).
 
 ## §chat.markdown/visuals — Inline visuals (`vis` fences)
 
@@ -386,7 +371,10 @@ broken block's source (§app.baton/outsider-view).
     accepts only the first such message from its parent, deletes `RTCPeerConnection` and its
     `webkit` alias (best effort: it closes the obvious path, not every one), and writes that
     document in place. The page's `frame-src 'self'` keeps the frame's own navigations on the
-    page's host;
+    page's host. A share's Lookbook designs are framed the same way, as same-host documents under a
+    header policy, each served whole from its own token-scoped address
+    (§app.session-share/lookbook-serving); only they also load Google Fonts
+    (§chat.design-mode/prototype-frame);
   - **no autoplay**: a motion gate runs before the model's code and holds CSS animations, SMIL,
     `requestAnimationFrame` and `setInterval` until the first pointer or key event in the frame
     (`setTimeout` loops and script-made SVG escape it; the guide asks for a Play/Step button);

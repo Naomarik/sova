@@ -1,18 +1,16 @@
 // Run: pnpm test:int server/merge-queue/thread.integration.test.ts
-// The merge thread's scripts as the thread runs them, as programs on a real repo: blast-radius.mjs
-// finds the project's own map from --repo and picks statecharts for a branch touching them;
-// conflict-hunks.mjs prints a stopped merge's hunks; the reviewer (no shell) gets the change written
-// for it on a real repo (review-change.ts).
+// The merge thread's scripts as the thread runs them, as programs on a real repo: conflict-hunks.mjs prints a
+// stopped merge's hunks; the reviewer (no shell) gets the change written for it on a real repo (review-change.ts).
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { removeReviewChange, reviewChangeDir, writeReviewChange } from "./review-change";
 
 const REPO = join(import.meta.dirname, "..", "..");
-const SCRIPTS = join(REPO, "playbooks", "merge-queue", "scripts");
+const SCRIPTS = join(REPO, "system-playbooks", "merge-queue", "scripts");
 const git = (cwd: string, ...args: string[]) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 function project(): string {
@@ -30,30 +28,6 @@ function commit(r: string, file: string, text: string): string {
   git(r, "commit", "-q", "-m", file);
   return git(r, "rev-parse", "HEAD");
 }
-
-test("blast-radius.mjs reads the project's own map from --repo and picks statecharts with its reason; no map, no picks", () => {
-  const r = project();
-  commit(r, "README.md", "x\n");
-  git(r, "checkout", "-q", "-b", "feat/charts");
-  commit(r, "statecharts/src/org.cljs", "(ns org)\n");
-  const run = () => JSON.parse(execFileSync("node", [join(SCRIPTS, "blast-radius.mjs"), "--base", "master", "--tip", "feat/charts", "--repo", r], { encoding: "utf8" }));
-  const none = run();
-  assert.deepEqual(none.picks, []);
-  assert.equal(none.map, null);
-  const own = join(r, ".sova", "playbooks", "merge-queue", "references");
-  mkdirSync(own, { recursive: true });
-  copyFileSync(join(REPO, ".sova", "playbooks", "merge-queue", "references", "blast-radius.json"), join(own, "blast-radius.json"));
-  const out = run();
-  assert.deepEqual(out.picks.map((p: { id: string }) => p.id), ["statecharts"]);
-  assert.match(out.picks[0].why, /statecharts changed/);
-  assert.equal(out.paths, 1);
-  // The same from a list on stdin.
-  const piped = JSON.parse(execFileSync("node", [join(SCRIPTS, "blast-radius.mjs"), "--map", join(own, "blast-radius.json")], { input: "statecharts/a.cljs\nREADME.md\n", encoding: "utf8" }));
-  assert.deepEqual(piped.picks.map((p: { id: string }) => p.id), ["statecharts"]);
-  const bad = spawnSync("node", [join(SCRIPTS, "blast-radius.mjs"), "--map", join(r, "missing.json")], { input: "", encoding: "utf8" });
-  assert.equal(bad.status, 2);
-  assert.match(bad.stderr, /can't read the map/);
-});
 
 test("conflict-hunks.mjs lists a stopped merge's hunks, with the base under diff3, and writes nothing", () => {
   const r = project();

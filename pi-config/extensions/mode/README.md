@@ -102,11 +102,10 @@ writer**).
   and trade-offs), then stops and waits for the user's answers; nothing is
   built before it is confirmed. Explicit commands, pointed-at one-liners, a
   user's "skip alignment" and a follow-up that plainly confirms (only an answer
-  to an existing card, or the go-ahead for a command to run) are exempt. Every reply opens
-  with a short part the user reads (the answer, what changed, what they must
-  decide, warnings and what went unchecked; about 80 words), and any working
-  detail goes after a line reading exactly `### Working notes`, which Sova
-  shows as a closed fold. Text in `minor.ts`; see **Alignments**.
+  to an existing card, or the go-ahead for a command to run) are exempt. A reply
+  that opens an alignment is a sentence or two naming it; every other reply
+  follows the reply shape every main chat gets (**Behaviour**). Text in
+  `minor.ts`; see **Alignments**.
 - **spec** — every behavior change is spec'd: the agent finds its roots in the
   project's `.sova/spec/` documentation with `map` and `where`, looks at their
   contents with `toc`, runs `impact --near` on what it will change, and `read`s
@@ -321,8 +320,8 @@ they are listed, and a recommendation that names an option by its label reads
   only, that the agent marked as a change request (a `change_request` op, or
   any align call naming an op other than `get`, refused or not; never guessed
   from the prompt's or the reply's words; under Eager any run is judged, by the
-  Eagerness in effect when it settles), whose final reply without its `### Working notes` part
-  reads like a plan asking the user to decide (`planSignal`: an old
+  Eagerness in effect when it settles), whose whole final reply (its opening summary and its last paragraph; a
+  `### Working notes` heading in it is ordinary text) reads like a plan asking the user to decide (`planSignal`: an old
   `## Alignment: <title>` block; a closing question that asks for a decision or a
   go-ahead, never a merge, push or restart confirmation, and not options offered
   back to a user who asked a question; or questions listed under a label such as
@@ -359,10 +358,25 @@ While in delegate, the engine appends orchestration instructions to the system
 prompt on every turn (`before_agent_start`), so toggling takes effect on the
 next prompt without `/reload`.
 
+**The reply shape.** Every main chat's mode section ends with
+`REPLY_SHAPE_INSTRUCTIONS` (`prompt.ts`, a `# Replies` block), whatever its
+modes, Normal with nothing on included: open with a short scannable summary
+(the answer, what changed, what needs the user, warnings and what went
+unchecked), then the full report sized to the question, nothing folded; an
+instruction that sets a reply's own shape (align's sentence or two naming a new
+alignment, the Overseer's answer groups) wins. The engine adds it
+(`withReplyShape` in `modeBlock`), so `composePrompt` stays the mode blocks
+alone; a worker's section (`composeWorkerPrompt`) never has it, nor does the
+merge queue's own chats' or the release thread's (Sova launches its own named
+chats with `reply-shape-off`). The project overseer runs no modes, so it rides that
+chat's own prompt; the baton and the Project Assistant, which talk to
+non-technical people, never get it.
+
 How those instructions reach the model depends on the host. On pi >= 0.86 the
 handler writes the blocks into `systemPromptOptions.sections.mode`, which pi
 diffs against the section the model already has, and switching back to normal
-deletes the section so the instructions stop applying. On older hosts without
+with nothing on leaves the reply shape alone in it, so the other instructions
+stop applying (a worker with no mode of its own has no section at all). On older hosts without
 sections (pi < 0.86) there are no sections, and the blocks stay a whole-prompt
 append as before.
 
@@ -399,13 +413,16 @@ boundary. Clearing the writer tells the session to write its own draft and
 evidence. Align also changes the tool set (its `align` tool), which breaks the
 prefix on every provider and restarts the claude-code CLI regardless.
 
-The prompt is the same whoever started the turn. pi runs `before_agent_start`
-only for a turn the user's prompt starts; a turn an extension's message starts
-(`sendMessage(…, {triggerTurn: true})` — a subagent settling, a team question)
-skips it, and pi's own refresh before that turn's second request rebuilds the
-prompt from the session's *base* options, which know nothing of extension
-sections. Left alone, that patched the mode section out mid-turn and back in at
-the next user prompt, and the claude-code provider restarted its CLI (and
+The prompt is the same whoever started the turn. Through pi 1.1.0 pi ran
+`before_agent_start` only for a turn the user's prompt starts; a turn an
+extension's message starts (`sendMessage(…, {triggerTurn: true})` — a subagent
+settling, a team question) skipped it. From pi 1.2.0 the hook runs for such a
+turn too (`messageType: "custom"`), so the engine writes its section and takes
+its one-shot note there as on a user's turn. A run that starts with no hook (a
+queue's wake, `agent.continue()`) and every rebuild of the prompt between runs
+still build it from the session's *base* options, which know nothing of
+extension sections. Left alone, that patched the mode section out and back in
+at the next user prompt, and the claude-code provider restarted its CLI (and
 re-sent the whole history) at every switch. So the engine also keeps the
 block in the base options: they are reachable only through a command context
 (`ctx.getSystemPromptOptions`), which `/mode` and `/align` adopt (the quiet

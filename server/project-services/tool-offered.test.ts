@@ -19,7 +19,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 delete process.env.SOVA_CHAT_STATE_ROOT;
 
 const { projectVerbsOffered } = await import("./tools");
-const { atRegisteredPlace, offeredToolExtension } = await import("../served-tools");
+const { offeredToolExtension } = await import("../served-tools");
 const { playbookTurnText } = await import("../../shared/playbooks");
 const { renderBlock } = await import("../../shared/playbook-delivery");
 const { stateView } = await import("../harness/state-view");
@@ -63,6 +63,14 @@ const playbook = (front: string): { title: string; dir: string; body: string } =
   writeFileSync(join(dir, "PLAYBOOK.md"), `---\ntitle: T\n${front}---\n# Body\n`);
   return { title: "T", dir, body: "# Body\n" };
 };
+/** A chat started before Sova's own playbooks moved: its message names `<install>/playbooks/<id>`, now gone, while
+    the playbook is at `<install>/system-playbooks/<id>`. */
+const movedPlaybook = (id: string): { title: string; dir: string; body: string } => {
+  const install = join(base, `install${++n}`);
+  mkdirSync(join(install, "system-playbooks", id), { recursive: true });
+  writeFileSync(join(install, "system-playbooks", id, "PLAYBOOK.md"), "---\ntitle: T\nproposes: pipeline\n---\n# Body\n");
+  return { title: "T", dir: join(install, "playbooks", id), body: "# Body\n" };
+};
 const user = (text: string): HEntry => ({ kind: "user", blocks: [{ type: "text", text }] }) as unknown as HEntry;
 const ctxOf = (cwd: string, opts: { branch?: HEntry[]; trees?: string[] } = {}): HookCtx =>
   ({
@@ -86,6 +94,7 @@ const offers: [string, () => HookCtx | Promise<HookCtx>][] = [
   ["a setup playbook with the user's own text after it", () => ctxOf(folder(), { branch: [user(playbookTurnText(playbook("proposes: definition\n"), "only the API"))] }) ],
   ["a setup playbook a schedule fired, plain", () => ctxOf(folder(), { branch: [user(`Scheduled run.\n\n${playbookTurnText(playbook("proposes: deploy\n"), "")}`)] }) ],
   ["a setup playbook a schedule fired, as a block", () => { const p = playbook("proposes: release\n"); return ctxOf(folder(), { branch: [user(`Scheduled run.\n\n${renderBlock({ id: "x", dir: p.dir, entry: "PLAYBOOK.md" }, "abc", { load: "full", body: p.body }, [])}`)] }); }],
+  ["a chat started before the move names the setup playbook's old folder", () => ctxOf(folder(), { branch: [user(playbookTurnText(movedPlaybook("project-setup"), ""))] })],
 ];
 for (const [name, ctx] of offers) test(`offered: ${name}`, async () => assert.equal(await projectVerbsOffered(await ctx()), true));
 
@@ -99,6 +108,7 @@ const refuses: [string, () => HookCtx | Promise<HookCtx>][] = [
   ["a message that only mentions a setup playbook's folder", () => ctxOf(folder(), { branch: [user(`Playbook: T — ${playbook("proposes: pipeline\n").dir}`)] })],
   ["a playbook's head in the model's words, not a user's", () => ctxOf(folder(), { branch: [{ kind: "assistant", blocks: [{ type: "text", text: playbookTurnText(playbook("proposes: pipeline\n"), "") }] } as unknown as HEntry] })],
   ["a folder that doesn't exist", () => ctxOf(join(base, "gone"))],
+  ["an old folder of a playbook that never moved is not read at system-playbooks/", () => ctxOf(folder(), { branch: [user(playbookTurnText(movedPlaybook("brandmaker"), ""))] })],
   ["a relative folder", () => ctxOf("somewhere")],
   ["files on another computer, even with its project's definition, queue and copy", () => {
     // The placeholder is a real local folder holding all of them, so only its being another computer's can say no.
@@ -135,9 +145,10 @@ function gate(answers: boolean[]) {
   const pi = {
     getActiveTools: () => [...tools],
     getAllTools: () => REGISTERED.map((name) => ({ name })),
+    // pi's rule (1.5.0): the tools that stay active keep their place, a newly active one is appended.
     setActiveTools: (next: string[]) => {
       sets.push(next);
-      tools = [...next];
+      tools = [...tools.filter((t) => next.includes(t)), ...next.filter((t) => !tools.includes(t))];
     },
     on: (event: string, fn: (event: unknown, ctx: unknown) => Promise<unknown>) => void hooks.set(event, [...(hooks.get(event) ?? []), fn]),
   };
@@ -175,16 +186,17 @@ test("not offered: removed once as the chat opens, then no more changes however 
   assert.equal(g.asked.length, 7, "asked as it opens, at each message, after each step");
 });
 
-test("arriving: after a step, in a fresh chat's place, one change only, and it stays when the rule says no again", async () => {
+test("arriving: after a step, after the chat's other tools, one change only, and it stays when the rule says no again", async () => {
   const g = gate([false, false, true]);
   await g.fire("session_start");
   await g.fire("before_agent_start", { prompt: "go" });
   await g.fire("turn_end");
-  assert.deepEqual(g.tools(), REGISTERED, "the same tools in the same order as a chat that had it from its start");
+  const arrived = [...REGISTERED.filter((t) => t !== "project_verbs"), "project_verbs"];
+  assert.deepEqual(g.tools(), arrived, "the same tools as a chat that had it from its start, the arrival last");
   assert.equal(g.sets.length, 2, "the removal at opening and the one arrival");
   await g.fire("turn_end");
   await g.fire("before_agent_start", { prompt: "the definition is gone" });
-  assert.deepEqual(g.tools(), REGISTERED);
+  assert.deepEqual(g.tools(), arrived);
   assert.equal(g.sets.length, 2);
 });
 
@@ -218,12 +230,4 @@ test("a tool the registry doesn't hold (a profile's removal) is never set", asyn
   } as never);
   await hooks[0]!({}, { cwd: base, sessionManager: { getSessionId: () => "s", getLeafId: () => null, getBranch: () => [], getSessionFile: () => "/x.jsonl" } });
   assert.equal(sets, 0);
-});
-
-test("atRegisteredPlace: before the first active tool registered after it, whatever else was added or is missing", () => {
-  const reg = ["read", "bash", "a", "t", "b", "c"];
-  assert.deepEqual(atRegisteredPlace(["read", "bash", "a", "b", "c"], "t", reg), ["read", "bash", "a", "t", "b", "c"]);
-  assert.deepEqual(atRegisteredPlace(["read", "c", "b"], "t", reg), ["read", "t", "c", "b"], "an appended later tool stays where it is");
-  assert.deepEqual(atRegisteredPlace(["read", "bash"], "t", reg), ["read", "bash", "t"], "nothing later is active");
-  assert.deepEqual(atRegisteredPlace(["read", "b", "a"], "t", reg), ["read", "t", "b", "a"], "an earlier tool appended late doesn't count");
 });

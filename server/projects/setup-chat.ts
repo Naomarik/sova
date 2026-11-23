@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 import type { MergeRun, MergeTrial } from "../../shared/merge-queue";
 import { CONTRACT_FILE } from "../../shared/project-contract";
 import type { RuntimeRunReview } from "../../shared/project-runtime";
@@ -10,8 +10,10 @@ import { attentionChanged } from "../attention-memo";
 import { OrgError } from "../org-error";
 import type { Envelope } from "../org-envelope";
 import { realGit } from "../project-services/engine";
-import { stateRoot } from "../state-root";
+import { chatRecordStore, historyLine, type ChatRecord } from "./chat-record";
 import { SETUP_PLAYBOOK_ID } from "./onboard";
+import { playbookDirsIn } from "../../shared/playbooks";
+import { PLAYBOOK_ENTRIES } from "../../shared/protocol";
 import { projectArchived, readProject } from "./spaces";
 
 /**
@@ -38,48 +40,16 @@ export interface SetupCurrent {
   worktree?: string;
 }
 
-interface ProjectRecord {
-  current?: SetupCurrent;
-  history: SetupHistoryItem[];
-}
+const store = chatRecordStore<SetupCurrent, SetupHistoryItem>("setup-chats.json");
 
-const HISTORY_MAX = 20;
-
-const recordFile = (): string => join(stateRoot(), "setup-chats.json");
-
-function readAll(): Record<string, ProjectRecord> {
-  try {
-    const raw = JSON.parse(readFileSync(recordFile(), "utf8")) as Record<string, ProjectRecord>;
-    return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeAll(all: Record<string, ProjectRecord>): void {
-  const file = recordFile();
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(all, null, 2)}\n`, { mode: 0o600 });
-  renameSync(tmp, file);
-}
-
-export function setupRecordOf(projectId: string): ProjectRecord {
-  const r = readAll()[projectId];
-  return { ...(r?.current ? { current: r.current } : {}), history: Array.isArray(r?.history) ? r.history : [] };
-}
-
-function saveRecord(projectId: string, r: ProjectRecord): void {
-  const all = readAll();
-  all[projectId] = { ...(r.current ? { current: r.current } : {}), history: r.history.slice(-HISTORY_MAX) };
-  writeAll(all);
-}
+export const setupRecordOf = (projectId: string): ChatRecord<SetupCurrent, SetupHistoryItem> => store.of(projectId);
+const saveRecord = store.save;
 
 /** Every session file that is or was a project's Setup chat (the current one, and each one Start Fresh or an end
  *  replaced): Needs you never brings one back once it is archived. */
 export function setupChatPaths(): Set<string> {
   const out = new Set<string>();
-  for (const r of Object.values(readAll())) {
+  for (const r of Object.values(store.all())) {
     if (r?.current?.path) out.add(r.current.path);
     for (const h of Array.isArray(r?.history) ? r.history : []) if (h?.path) out.add(h.path);
   }
@@ -139,7 +109,7 @@ export function setupContext(f: SetupContextFacts): string {
   }
   out.push("## Earlier setup chats");
   if (!f.history.length) out.push("None: this is the project's first Setup chat.");
-  for (const h of [...f.history].reverse()) out.push(`- ${h.path} (started ${h.startedAt}, ${h.why === "fresh" ? "closed by Start Fresh" : "ended"} ${h.endedAt}${h.branch ? `, branch ${h.branch}` : ""})`);
+  for (const h of [...f.history].reverse()) out.push(historyLine(h));
   out.push("");
   out.push("## The user's note", f.why?.trim() || "None.");
   if (f.from) out.push("", `They came from ${FROM_WORDS[f.from]}.`);
@@ -371,7 +341,7 @@ export interface SetupMergeDeps {
 
 /**
  * Merge Branch on the Setup chat's proposal, the operator's alone: refused unless `hash` is the head's and `commit`
- * the head; then the land gate (a passing trial of that head). A project the queue serves gets Land: the operator's
+ * the head; then the land gate (a passing dry run of that head; on a served project, Land runs it first). A project the queue serves gets Land: the operator's
  * approval of that exact commit, landed by the queue; never a move of the target here. Otherwise the build's worktree
  * is merged, as Merge Branch on any run. Answers whether it was queued.
  */
@@ -384,9 +354,13 @@ export async function mergeSetup(projectId: string, hash: string, commit: string
   if (!cur || !open) throw new OrgError(NO_SETUP_PROPOSAL, 409);
   if (!open.read.hash || open.read.hash !== hash) throw new OrgError(SETUP_CHANGED_SINCE, 409);
   if (commit && commit !== open.read.commit) throw new OrgError(SETUP_BRANCH_MOVED, 409);
-  const untried = await (await import("../merge-queue/wire")).setupUntriedAt(root, open.read.commit);
-  if (untried) throw new OrgError(untried, 409);
+  const wire = await import("../merge-queue/wire");
+  const untried = await wire.setupUntriedAt(root, open.read.commit);
+  // Can't tell: refused, never let through. A project the queue serves takes Land, which runs the dry run first
+  // (§app.project-setup/land-gate); Merge Branch, with no line to wait in, refuses a head with no passing dry run.
+  if (untried === wire.TRIAL_UNREADABLE || untried === (await import("../merge-queue/setup-branch")).SETUP_UNREADABLE) throw new OrgError(untried, 409);
   if (await deps.land(projectId, root, cur.run, open.read.commit)) return { queued: true };
+  if (untried) throw new OrgError(untried, 409);
   await deps.merge(projectId, cur.run);
   return { queued: false };
 }
@@ -413,16 +387,35 @@ export interface SetupDeps {
   working: (path: string) => Promise<boolean>;
   /** Remove a build's empty worktree and its branch (no commits beyond the target). */
   removeEmpty: (projectId: string, sessionId: string, branch: string) => Promise<void>;
+  /** Whether the chat's playbook folder is gone (default: playbookFolderGone, below). */
+  playbookGone?: (path: string) => Promise<boolean>;
   now?: () => number;
 }
 
 export const STILL_WORKING = "The Setup chat is working: wait for its turn to end (or stop it), then Start Fresh.";
 
 /**
+ * Whether the chat at `path` follows a playbook folder that no longer holds a playbook: every folder its first message
+ * names has no entry file left (a Setup chat started before Sova's own playbooks moved to system-playbooks/). False
+ * when the message names none or the chat can't be read.
+ */
+export async function playbookFolderGone(path: string): Promise<boolean> {
+  try {
+    const { firstText, readBranch } = await import("../harness/pi/reader");
+    const first = (await readBranch(path)).find((h) => h.kind === "user");
+    const dirs = first ? playbookDirsIn(firstText(first) ?? "") : [];
+    return dirs.length > 0 && dirs.every((d) => !PLAYBOOK_ENTRIES.some((e) => existsSync(join(d, e))));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Set Up with a Chat / Change Setup / Start Fresh (POST /api/projects/:pid/setup). The open chat is reopened. Start
  * Fresh archives it. A chat that is archived (or Start Fresh'd) leaves its branch behind: with no commits beyond the
  * target, its empty worktree and branch are removed and a new chat starts on a fresh branch; with commits, a new chat
- * carries on in its folder on that branch, and its proposal stays. Never refused as already running.
+ * carries on in its folder on that branch, and its proposal stays. Never refused as already running. An open chat whose
+ * playbook folder is gone (it was started before the folder moved) is never reopened: it takes Start Fresh's path.
  */
 export async function openSetup(projectId: string, input: OpenSetupInput, deps: SetupDeps, envelope?: Envelope): Promise<SetupOpened> {
   const p = readProject(projectId);
@@ -430,15 +423,16 @@ export async function openSetup(projectId: string, input: OpenSetupInput, deps: 
   const iso = () => new Date(deps.now?.() ?? Date.now()).toISOString();
   const rec = setupRecordOf(projectId);
   const cur = stillOpen(rec.current) ? rec.current : undefined;
-  if (cur && !input.fresh) return { sessionId: cur.sessionId, path: cur.path, reopened: true, ...(cur.worktree && cur.branch ? { worktree: { path: cur.worktree, branch: cur.branch } } : {}) };
+  const fresh = !!input.fresh || (!!cur && (await (deps.playbookGone ?? playbookFolderGone)(cur.path)));
+  if (cur && !fresh) return { sessionId: cur.sessionId, path: cur.path, reopened: true, ...(cur.worktree && cur.branch ? { worktree: { path: cur.worktree, branch: cur.branch } } : {}) };
   const old = rec.current;
-  if (cur && input.fresh) {
+  if (cur && fresh) {
     if (await deps.working(cur.path)) throw new OrgError(STILL_WORKING, 409);
     const a = await deps.archive(cur.path);
     if (!a.ok) throw new OrgError(`The Setup chat couldn't be archived: ${a.error}`, 409);
   }
   if (old) {
-    rec.history.push({ sessionId: old.sessionId, path: old.path, startedAt: old.startedAt, endedAt: iso(), why: cur && input.fresh ? "fresh" : "ended", ...(old.branch ? { branch: old.branch } : {}) });
+    rec.history.push({ sessionId: old.sessionId, path: old.path, startedAt: old.startedAt, endedAt: iso(), why: cur && fresh ? "fresh" : "ended", ...(old.branch ? { branch: old.branch } : {}) });
     delete rec.current;
   }
   saveRecord(projectId, rec);
@@ -471,4 +465,4 @@ export async function openSetup(projectId: string, input: OpenSetupInput, deps: 
 }
 
 /** Tests: the record file. */
-export const setupRecordFileForTest = recordFile;
+export const setupRecordFileForTest = store.file;

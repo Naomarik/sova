@@ -50,7 +50,10 @@ them, a project's own modes as one row), and links to the feature, extending and
 The major and minor modes side by side, the three major modes in the mode menu's words, switching
 them per chat from the composer's mode menu,
 the default for new sessions (memory's type with it; never Create, which is chosen per chat),
-strict, that Sova runs every chat's modes with no switch and with no pi mode extension linked (§chat.mode-menu/sova-runs-modes), a short memory section that
+strict, how replies read in every chat you talk to, whatever its modes (a short summary; a quick question's
+answer in a line or two and nothing more, anything bigger the full report after it; nothing folded; a mode's own shape wins, workers, a project's assistant, a hand-off, the merge queue's own chats and a release's chat keep theirs, a playbook
+run follows its playbook's report where it sets one; §chat.mode-menu/reply-shape),
+that Sova runs every chat's modes with no switch and with no pi mode extension linked (§chat.mode-menu/sova-runs-modes), a short memory section that
 links to its own page (§site.docs/memory), that a pi terminal has no modes (§chat.mode-menu/terminal), what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
@@ -108,8 +111,9 @@ mode.
 The align minor mode: when an alignment opens (Eager, the default, for any request that implies
 work; Careful, only when the user wants the product changed or the agent can't tell, questions
 answered in chat; on both, nothing built before a confirmed card and a go-ahead to a plan sketched
-in chat opens a card first), how each reply opens with a short part for the user and folds its
-working notes, what an alignment holds, answering it, Settings → Alignment (eagerness, writing
+in chat opens a card first), that a reply recording an alignment is a sentence or two naming the
+card while every other reply opens with a short summary and then gives the full report, nothing
+folded (§chat.mode-menu/reply-shape), what an alignment holds, answering it, Settings → Alignment (eagerness, writing
 style, Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
 viewer.
 
@@ -374,8 +378,25 @@ sends problems back to the branch's chat by itself and the chat's checked fixes 
 up to three tries; the requests and the chat's Fixed, Needs you and Can't answers; each decision
 that waits for you (Behaviour differs, a question, Can't tell whose failure, Out of tries, a fix
 that needs your OK, Drafts changed) with its answers, from the card's buttons or the chat's message
-box; the Merge Queue tab; the merge thread and the queue's own chats; setting it up and
+box; the Merge Queue tab; dry runs of a branch that changes the project's pipeline settings, in a few
+lines linking to their own page (§site.docs/dry-runs); the merge thread and the queue's own chats;
+setting it up and
 Settings → Merge Queue, linking to its own page (§site.docs/merge-queue-settings); each run's page; the freeze while a release is open. Screenshots of the Merge Queue tab, a run's page and the branch's card in its chat, once captured.
+
+## §site.docs/dry-runs — Dry runs (`/docs/dry-runs/`)
+
+In Features after Merge queue, the in-app explainer's text in full (§app.merge-queue/dry-run-explainer):
+what a dry run is, why it differs from running the tests (a landing uses the main branch's checks, so a
+new or changed check is proved before it judges every branch after it), which branches need one and
+that each new commit needs a new one, and what it costs (only the new or changed checks and the setup
+steps; the merge copy is shared, so landings wait). Then what the user sees and does: the reason each
+branch's row gives ("Needs a dry run: adds the merge check …") and each state's words; that Land runs
+it first and then lands by itself; Run Dry Run, Run Dry Run Again and Stop Dry Run; a dry run shown on
+Checking now, the Dry runs tab, the branch's rows, the landing bar and its run page; the comparison
+with the main branch for a check that fails, and that a failure the main branch shares is never the
+branch's to fix: the dry run stops and asks you (Fix, Fix in New Chat, Run Dry Run Again, Land Anyway); Fix and Fix in New Chat, and that the chat explains and proposes, then waits for you;
+and that a restart shows a dry run stopped. Its words say "dry run", never "trial". A screenshot of
+Checking now during a dry run, once captured.
 
 ## §site.docs/merge-queue-settings — Merge queue settings (`/docs/merge-queue-settings/`)
 
@@ -409,7 +430,8 @@ What a release is and isn't (not a deploy); the release playbook doing the work 
 Sova holding what can't be undone; Set Up Releases; Start Release and the frozen merge queue; the
 steps and their states, Continue on a held step, Retry Step, the quiet warning; the release checks
 and that nothing overrides a failed one; Publish, all or nothing, Publish failed and Retry Publish;
-Abandon Release; after-publish steps and Plan Deploy of a release; Withdraw and the numbered tag that
+Cancel Release (one press before the release commit lands, one confirm once cancelling would revert
+it); after-publish steps and Plan Deploy of a release; Withdraw and the numbered tag that
 never moves; the release power and the Project Assistant's ask; the history on the Releases tab; a
 link to its settings page (§site.docs/release-settings). Screenshots of the Releases tab's history and of
 a release in progress (a held step, a failed step, Publish waiting).
@@ -425,7 +447,11 @@ model (with where a model's cost went) and project tables, top sessions, the pri
 Prices, and that it counts this computer only; today's spend in the Agents page's head. A project's
 Cost tab: the total as of its count, who started what, the most expensive sessions, the breakdown by
 kind and model, and its notes. A session's Usage tab: its spend, by model and where (main thread,
-side calls, subagents). The Usage page: one card per provider, each window's share used, reset, pace,
+side calls, subagents). The Agents page's Time Spent tab: range and project, the four headline
+figures (You, Agents, Agent Hours Per Your Hour, While You Were Away), hours per day, Your Time,
+Your Messages, Agent Time with Waiting On Workers apart, By Project and Top Sessions, that it counts
+this computer only from the day each kind of time was first recorded, and that a deleted session
+keeps its hours. The Usage page: one card per provider, each window's share used, reset, pace,
 run-out and last week, a Claude account's logins, a balance for prepaid credit, how it stays fresh
 and Refresh Usage; the glance at the foot of the session list. Screenshots, from the live app with
 real figures: the Costs tab's top, its By model table, a Claude account's limits and a project's

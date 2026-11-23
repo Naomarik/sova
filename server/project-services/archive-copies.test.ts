@@ -95,7 +95,7 @@ test("a copy that gave up restarting is failed, not listed, and holds no archive
   const st = await engine.run("status", { instance: b }, op);
   assert.equal(st.services.find((s) => s.name === "web")?.state, "failed");
   assert.equal(st.services.find((s) => s.name === "web")?.gaveUp, true, "marked for the Failed chip");
-  assert.equal(st.services.find((s) => s.name === "web")?.detail, "start limit hit");
+  assert.equal(st.services.find((s) => s.name === "web")?.detail, "stopped by the system limit after 5 tries; it waits to be started again");
   assert.deepEqual(
     (await engine.liveCopies(demo)).map((c) => c.instance),
     [a, null],

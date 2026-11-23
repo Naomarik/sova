@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { realGit } from "./guard";
@@ -31,9 +32,7 @@ import {
   type ThreadSession,
 } from "./thread";
 // @ts-expect-error: a plain .mjs script of the shipped playbook, typed by use here
-import { blastRadius } from "../../playbooks/merge-queue/scripts/blast-radius.mjs";
-// @ts-expect-error: as above
-import { hunksOf } from "../../playbooks/merge-queue/scripts/conflict-hunks.mjs";
+import { hunksOf } from "../../system-playbooks/merge-queue/scripts/conflict-hunks.mjs";
 
 const REPO = join(import.meta.dirname, "..", "..");
 const HOUR = 60 * 60 * 1000;
@@ -261,6 +260,7 @@ test("the playbook changed since the thread read it: its next event starts with 
   const [third, fourth] = [f.woken[1]!.text, f.woken[2]!.text];
   assert.ok(third.startsWith("The playbook changed since you read it: read "), third);
   assert.ok(third.includes(join(own, "PLAYBOOK.md")) && third.includes(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md")));
+  assert.ok(third.includes(`The method's scripts are in ${join(DEFAULT_PLAYBOOK_DIR, "scripts")}.`), "a thread started before a move learns where the scripts went");
   assert.match(third, /\n\nQueued: entry mq_3/);
   assert.match(fourth, /^Queued: entry mq_4/, "said once, then the new hash is the one read");
   assert.equal(f.created.length, 1, "a playbook change never replaces the thread");
@@ -347,7 +347,14 @@ test("with no thread wired, the server's notify is a no-op and no chat is a thre
 test("the project's own playbook is read after the method; without one the method alone", () => {
   const dir = scratchRoot("mq-thread-pb-");
   assert.equal(playbookDir(dir), DEFAULT_PLAYBOOK_DIR);
+  assert.equal(DEFAULT_PLAYBOOK_DIR, fileURLToPath(new URL("../../system-playbooks/merge-queue", import.meta.url)), "the method is Sova's own, in system-playbooks/");
+  // A project set up before .sova/playbook-config: its old folder is read while it is the only one.
+  const old = join(dir, ".sova", "playbooks", "merge-queue");
+  mkdirSync(old, { recursive: true });
+  writeFileSync(join(old, "PLAYBOOK.md"), "# old\n");
+  assert.equal(playbookDir(dir), old);
   const own = join(dir, PROJECT_PLAYBOOK);
+  assert.equal(PROJECT_PLAYBOOK, join(".sova", "playbook-config", "merge-queue"));
   mkdirSync(own, { recursive: true });
   writeFileSync(join(own, "PLAYBOOK.md"), "# x\n");
   assert.equal(playbookDir(dir), own);
@@ -398,7 +405,9 @@ test("queued: the diff and the picks read from the base the entry was queued aga
   const withBase = eventText({ kind: "queued", entry: entry("mq_9"), base: "b".repeat(40) });
   assert.match(withBase, /onto master \(at bbbbbbb\)\./);
   assert.ok(withBase.includes(`git diff ${"b".repeat(40)}...${"a".repeat(40)}`));
-  assert.ok(withBase.includes(`blast-radius.mjs --base ${"b".repeat(40)} --tip ${"a".repeat(40)}`));
+  // The folder rules are Sova's to apply; the thread reads them as the branch has them, and only adds.
+  assert.ok(withBase.includes(`git show ${"a".repeat(40)}:.sova/project.json`));
+  assert.match(withBase, /Sova applies the project's folder rules itself/);
   const without = eventText(queued("mq_9"));
   assert.ok(without.includes(`git diff master...${"a".repeat(40)}`), "no base: the target's name");
 });
@@ -452,19 +461,16 @@ type VerbCall = { verb: string; args: Record<string, unknown> };
 
 /**
  * A stand-in for the model: reads the event out of the message the way the playbook says and answers
- * through the (fake) merge verbs. Queued → the blast-radius script's rule (in process; the CLI itself
- * is driven in thread.integration.test.ts), then merge.extend per pick and merge.note.
+ * through the (fake) merge verbs. Queued → merge.note (Sova applies the folder rules itself; picks beyond them
+ * are the model's judgement, not scripted).
  * Conflict → a side worktree, the conflict-hunks script's parser, a judgement (only additions on both sides: no
  * behaviour change), then merge.resolve.
  */
-function standInModel(root: string, map: string, calls: VerbCall[]) {
+function standInModel(root: string, calls: VerbCall[]) {
   return async (text: string) => {
     const q = /Queued: entry (\S+) · (\S+) at \w+, onto (\S+)\./.exec(text);
     if (q) {
-      const [, id, branch, target] = q;
-      const paths = git(root, "diff", "--name-only", `${target}...${branch}`).split("\n").filter(Boolean);
-      const out = blastRadius(paths, JSON.parse(readFileSync(map, "utf8"))) as { picks: { id: string; why: string; select?: string[] }[] };
-      for (const p of out.picks) calls.push({ verb: "merge.extend", args: { entry: id, checks: [p.id], why: p.why, ...(p.select ? { select: p.select } : {}) } });
+      const [, id] = q;
       calls.push({ verb: "merge.note", args: { entry: id, note: "" } });
       return;
     }
@@ -527,31 +533,6 @@ function wiredThread(dir: string, model: (text: string) => Promise<void>) {
   return { t: new MergeThread(f.deps), f, settle: () => Promise.all(pending) };
 }
 
-test("blast radius: a branch touching statecharts gets the statecharts check picked, with its reason; one touching only docs gets none", async () => {
-  const dir = scratchRoot("mq-thread-pick-");
-  const r = repo(dir);
-  commitFile(r, "README.md", "x\n", "base");
-  git(r, "checkout", "-q", "-b", "feat/charts");
-  commitFile(r, "statecharts/src/org.cljs", "(ns org)\n", "chart");
-  commitFile(r, "docs/a.md", "a\n", "doc");
-  git(r, "checkout", "-q", "-b", "feat/docs", "master");
-  commitFile(r, "docs/b.md", "b\n", "doc");
-  git(r, "checkout", "-q", "master");
-  const calls: VerbCall[] = [];
-  const map = join(REPO, ".sova", "playbooks", "merge-queue", "references", "blast-radius.json");
-  const { t, settle } = wiredThread(dir, standInModel(r, map, calls));
-  t.notify(r, { kind: "queued", entry: entry("mq_charts", { branch: "feat/charts", commit: git(r, "rev-parse", "feat/charts") }) });
-  t.notify(r, { kind: "queued", entry: entry("mq_docs", { branch: "feat/docs", commit: git(r, "rev-parse", "feat/docs") }) });
-  await t.idle(r);
-  await settle();
-  const extend = calls.filter((c) => c.verb === "merge.extend");
-  assert.equal(extend.length, 1, JSON.stringify(calls));
-  assert.equal(extend[0]!.args.entry, "mq_charts");
-  assert.deepEqual(extend[0]!.args.checks, ["statecharts"]);
-  assert.match(String(extend[0]!.args.why), /statecharts changed.*statecharts\/src\/org\.cljs/);
-  assert.deepEqual(calls.filter((c) => c.verb === "merge.note").map((c) => c.args.entry), ["mq_charts", "mq_docs"]);
-});
-
 test("conflicts: both sides adding items is resolved as no behaviour change with a side commit on the target and the pinned commit; one value changed two ways waits for the user", async () => {
   const dir = scratchRoot("mq-thread-conflict-");
   const r = repo(dir);
@@ -563,7 +544,7 @@ test("conflicts: both sides adding items is resolved as no behaviour change with
   git(r, "checkout", "-q", "master");
   const targetHead = commitFile(r, "list.txt", "alpha\ngamma\nomega\n", "add gamma");
   const calls: VerbCall[] = [];
-  const { t, settle } = wiredThread(dir, standInModel(r, "/nonexistent", calls));
+  const { t, settle } = wiredThread(dir, standInModel(r, calls));
   const scratch = await makeScratchCopy(realGit, { root: r, entry: "mq_add", base: targetHead });
   t.notify(r, { kind: "conflict", entry: entry("mq_add", { branch: "feat/add", commit: pinned }), run: "mr_1", files: ["list.txt"], scratch });
   await t.idle(r);
@@ -618,6 +599,7 @@ test("every event tells the thread to read its moment's Read as you go row now, 
     { kind: "drafts-changed", entry: entry(), names: ["d"] },
     { kind: "fix", entry: entry(), request: "rq_1", asked: "fix the unit test", commit: "b".repeat(40) },
     { kind: "chat-answer", entry: entry(), request: "rq_1", answer: "cant", text: "no way" },
+    { kind: "names-hit", target: "master", entry: entry(), run: "mr_1", hits: ["- commit abc1234 · a.txt:1 · private name #1"] },
   ];
   assert.deepEqual(evs.map((e) => e.kind).sort(), Object.keys(READ_AS_YOU_GO).sort(), "every event kind the thread is sent has a moment");
   const method = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8");

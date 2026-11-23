@@ -1,7 +1,7 @@
 // An address server's copy in a chat: pi-mcp's HTTP client in the shape SnapshotTransport (./mcp.ts) runs a command
 // server's process in. Quirk P36. Nothing here is expanded: a value reaches the server as the string in the launch,
 // since pi's own expansion sits in its default transport, which a chat never uses.
-import { McpAuthRequiredError, McpSessionExpiredError, StreamableHttpTransport, type AuthProvider, type JsonRpcMessage } from "@earendil-works/pi-mcp";
+import { McpAbortError, McpAuthRequiredError, McpSessionExpiredError, StreamableHttpTransport, type AuthProvider, type JsonRpcMessage, type McpTransportSendOptions } from "@earendil-works/pi-mcp";
 import { McpOAuthAuthorizationRequiredError } from "@earendil-works/pi-mcp/oauth";
 import type { McpEntry } from "../../mcp/config";
 import { Events, type JsonRpc } from "../../mcp/transport";
@@ -17,6 +17,14 @@ export interface AddressLaunch {
 
 /** A request failed on a server that was up: there's no process to exit, so the copy ends here. */
 export class McpCallFailed extends Error {}
+
+/** What pi's client hands a transport with each message (pi-mcp 1.2.0): `signal` aborts once the sender no
+    longer waits for the reply (cancelled, timed out, answered, closed), and the message must not go out after. */
+export type McpSendOptions = McpTransportSendOptions;
+
+/** A request its sender gave up on before it went out (pi-mcp's McpAbortError): nothing was sent, and the
+    server and its other calls are as they were. */
+export class McpSendGivenUp extends Error {}
 
 /** Under this a header's value is a version or a flag, and masking it would eat the error line around it. */
 const SHORTEST_SECRET = 4;
@@ -67,22 +75,25 @@ export class AddressServer extends Events {
     return http;
   }
 
-  async send(message: JsonRpc): Promise<void> {
+  /** `options` is pi's, passed on: pi-mcp's client won't send a request its sender gave up on while it
+      waited for a token or a sign-in refresh. */
+  async send(message: JsonRpc, options?: McpSendOptions): Promise<void> {
     if (message.method === "initialize") this.hello = message;
     const http = this.http;
     if (!http) throw new Error("the server isn't reachable");
     try {
       try {
-        await http.send(message as JsonRpcMessage);
+        await http.send(message as JsonRpcMessage, options);
       } catch (error) {
         if (!(error instanceof McpSessionExpiredError) || message === this.hello) throw error;
         // The server restarted and didn't run this request, so it goes again on a new session.
         await (this.reopening ??= this.reopen(http).finally(() => {
           this.reopening = undefined;
         }));
-        await this.http!.send(message as JsonRpcMessage);
+        await this.http!.send(message as JsonRpcMessage, options);
       }
     } catch (error) {
+      if (error instanceof McpAbortError) throw new McpSendGivenUp("the request was given up before it was sent");
       throw new McpCallFailed(this.wording(error));
     }
   }

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import { join } from "node:path";
 import { readRunLogText } from "./run-logs";
 import { MergeHistory } from "./history";
+import { MergeEventLog } from "./events";
 import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeHistoryRow, type MergeRun, type PauseInfo } from "../../shared/merge-queue";
 
 /**
@@ -13,6 +14,7 @@ import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeHistoryRow, type 
  *   <state>/merge-queue/<key>/runs/<run>/run.json   MergeRun
  *   <state>/merge-queue/<key>/runs/<run>/<step>.log every step's log, from its first line
  *   <state>/merge-queue/<key>/history/YYYY-MM.jsonl  every truly final entry, for good (history.ts)
+ *   <state>/merge-queue/<key>/events/YYYY-MM.jsonl   every change to a branch or to the queue, for good (events.ts)
  *
  * Every write re-writes the whole file atomically (tmp + rename). A damaged queue.json is kept aside and read as
  * empty, with a warning. queue.json holds the open entries and the newest KEEP_FINAL truly final ones; every write
@@ -56,6 +58,8 @@ export interface QueueFile {
    *  live in the history only); a sent-back entry still waiting on its chat is always kept. */
   entries: (MergeEntry & { seq: number })[];
   paused?: PauseInfo;
+  /** What each queued entry was last recorded waiting behind (a `waiting` event is recorded only when it changes). */
+  waitingSaid?: Record<string, string>;
   /** The merge thread's hold (merge.hold): no new run starts until `until` (epoch ms) or its clear; cleared at start. */
   hold?: { at: string; until: number };
   intent?: LandIntent;
@@ -72,7 +76,7 @@ export interface QueueFile {
   /** A host's landings, per branch, newest first: its entry goes after the newest 60, but its pinned commit isn't on the
    *  target when the host squashed, so a later reading of the branch still needs it (§chat.worktrees/nothing-left). */
   hostPins?: Record<string, string[]>;
-  heads: { pushed?: string; pushWhy?: string; targetRed?: string[]; targetBroken?: import("../../shared/merge-queue").TargetBroken[] };
+  heads: { pushed?: string; pushWhy?: string; targetRed?: string[]; targetBroken?: import("../../shared/merge-queue").TargetBroken[]; pushScan?: import("../../shared/merge-queue").ScanFacts };
   /** Machine failures in a row, per entry (retry once, then pause). */
   machineTries: Record<string, number>;
   /** A settings save waiting for the branch checking now (applied at the next quiet point); `failed`: why it couldn't be. */
@@ -80,6 +84,14 @@ export interface QueueFile {
   seq: number;
   /** merge.try's trials, newest first (MERGE_TRIALS_KEPT), each pinned to its commit. */
   trials?: import("../../shared/merge-queue").MergeTrial[];
+  /** Dry runs asked for while the merge copy was busy, in the order they start (one per branch). */
+  trialsWaiting?: import("../../shared/merge-queue").MergeTrialWaiting[];
+  /** Dry runs (by run) a stopping server ended: their starting chats are told at the next load (the wake may not reach
+   *  them while Sova goes down). */
+  trialWakes?: string[];
+  /** Clean runs: the next run starts from an empty merge copy (asked for by Clean Run; `entry`: the entry it was asked
+   *  on), and the last run that did (the weekly one is due a week after it). */
+  clean?: NonNullable<import("./clean-run").CleanState>;
   /** A release holds the queue: only its entries land, nothing is pushed (queue.ts freezeForRelease). */
   release?: import("../../shared/merge-queue").MergeReleaseHold & { checks?: import("../../shared/project-contract").MergeCheckDecl[] };
 }
@@ -89,7 +101,7 @@ const KEEP_LANDED = 500;
 
 export const projectKey = (root: string): string => createHash("sha256").update(root).digest("hex").slice(0, 16);
 
-export function newId(prefix: "mq" | "mr" | "rq" | "dc"): string {
+export function newId(prefix: "mq" | "mr" | "rq" | "dc" | "tw"): string {
   // A request's id is the chat queue's own form (shared/topic-message.ts MERGE_REQUEST_ID_RE): the chat answers by it.
   if (prefix === "rq") return `rq_${randomBytes(6).toString("hex")}`;
   return `${prefix}_${Date.now().toString(36)}${randomBytes(4).toString("hex")}`;
@@ -104,12 +116,14 @@ function writeAtomic(file: string, text: string): void {
 export class QueueStore {
   readonly dir: string;
   readonly history: MergeHistory;
+  readonly events: MergeEventLog;
   constructor(
     base: string,
     readonly root: string,
   ) {
     this.dir = join(base, projectKey(root));
     this.history = new MergeHistory(this.dir);
+    this.events = new MergeEventLog(this.dir);
   }
 
   private get file(): string {

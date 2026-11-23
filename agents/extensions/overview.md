@@ -85,6 +85,11 @@ Extensions with no guide, and the contract Sova parses where there is one:
   only from an entry that exports the name: pi-ai's legacy names (`getApiProvider`, `getModel`, …) are on
   `@earendil-works/pi-ai/compat`, not its root. A new dependency is added to Sova's `package.json` at pi's
   own version. `server/harness/pi/extension-deps.integration.test.ts` fails on any extension pi translates.
+  pi's own loader gives an extension a different view of pi-ai than a native import does: from pi 1.5.0 the
+  real entry's `StringEnum` is a plain object, and `Type.Optional()` of one writes `"~optional": true` into
+  the tool's schema. An optional string enum goes through a TypeBox schema
+  (`extensions/subagents/string-enum.ts`, or `Type.Unsafe(StringEnum(…))`); Sova's loadout and modes tests
+  fail on a `"~…"` key in a tool declaration.
 - **No new extension for Sova features.** A new Sova agent feature is never a new pi-config extension, and
   never a new call to an extension's command handler; the existing ones are grandfathered (see
   [the harness guide](../server/harness/overview.md)).

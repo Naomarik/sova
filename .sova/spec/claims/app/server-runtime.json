@@ -66,6 +66,36 @@
       "at": "2026-10-13T12:56Z"
     }
   },
+  "§app.server-runtime/migrations": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [],
+    "code": [
+      "migrations/manifest.json",
+      "AGENTS.md",
+      "migrations/README.md",
+      "migrations/playbook-config-old-place/index.mjs",
+      "migrations/system-playbooks-old-paths/index.mjs",
+      "server/migrations.test.ts",
+      "migrations/playbook-config-old-place/index.d.mts",
+      "migrations/system-playbooks-old-paths/index.d.mts",
+      "package.json",
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/settings-edit.ts",
+      "server/project-services/tools.ts",
+      "system-playbooks/project-setup/scripts/project-setup.mjs",
+      "system-playbooks/release-maker/scripts/release-maker.mjs",
+      ".sova/project.json",
+      ".sova/playbook-config/release/scripts/sova-release.mjs",
+      ".sova/playbook-config/release/PLAYBOOK.md"
+    ],
+    "agreed": {
+      "by": "operator",
+      "at": "2026-11-20T08:13Z",
+      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
+    }
+  },
   "§app.server-runtime/pi-workers": {
     "kind": "behavior",
     "authority": "accepted",
@@ -234,7 +264,7 @@
       "scripts/test-groups.mjs",
       "scripts/test-groups.d.mts",
       "server/test-groups.test.ts",
-      ".sova/playbooks/release/references/checks.md",
+      ".sova/playbook-config/release/references/checks.md",
       "scripts/test-report.mjs",
       "scripts/test-env.mjs",
       "server/test-env.test.ts",
@@ -250,9 +280,9 @@
       "§app.server-runtime/slow-groups"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-13T20:59Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#d45e62e8"
+      "by": "naomarik",
+      "at": "2026-11-19T07:05Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
     }
   },
   "§app.server-runtime/typecheck-reuse": {

@@ -1,10 +1,11 @@
 import { retirementViewOf } from "../worktree-retire-view";
 import { pendingWhileOff, viewWhileOff } from "../cleanup-switch";
 import { queueQuietWork } from "./card-port";
+import { copyShapeOf } from "./copy";
 import { hostProblem } from "./host-sendback";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type LandHow,
   type CheckPick,
@@ -15,6 +16,7 @@ import {
   type MergeAnswer,
   type MergeApproval,
   type MergeChatAnswer,
+  type MergeReviewRecord,
   type MergeChatRequest,
   type MergeRequestKind,
   type MergeStanding,
@@ -26,31 +28,57 @@ import {
   type MergeReady,
   type MergeRun,
   type MergeTrial,
+  type MergeTrialNow,
+  ordinal,
+  type MergeTrialWaiting,
+  type BranchDryRun,
+  type BranchFailure,
+  type FixOffer,
+  type TrialBy,
   MERGE_TRIALS_KEPT,
   NOTE_MAX,
   type PauseInfo,
   type PauseKind,
   type PushState,
   type ReviewFinding,
+  type ReviewKitStamp,
   type ReviewVerdict,
+  type RunRules,
   type RunStep,
   type SentBackFor,
+  type ScanFacts,
+  type ScanHit,
   type MergeHistoryRow,
+  type MergeEventInput,
+  type RunRanWith,
+  type MergeEventsPage,
+  VIEW_EVENTS,
 } from "../../shared/merge-queue";
 import { historyWords } from "./history";
-import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
+import { mergedTree, planOf, reuseOf, settingsOf, toolsOf, toolVersion, treeShapes, withLatePicks, type PlanFacts } from "./plan";
+import { planRulesFor } from "./rules";
+import { kitChangedBy, kitHashAt } from "./review-kit";
+import { squashes } from "./run";
+import { countRestart, decisionAnsweredEvent, noticeEvent, pauseEvent, restartCauseOf, runEndedEvent, stepEnded, stepEvent } from "./activity";
+import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef, remoteOf } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, ThreadEvent, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, ownCommitsPast, realGit, revParse, statusArgs, worktreesOf } from "./guard";
 import { type BranchLeft, branchLanded, branchLeft, type LandingRecords, NO_LANDINGS, registerQueueReading } from "../nothing-left";
 import type { GitRunner } from "../worktrees";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
 import { recordLandedDrafts } from "./landed-drafts";
+import { allowedKeys, allowFileOf, allowMatches, factsOf, hitLines, namesListEmpty, openHits, scanPlanned } from "./names-step";
+import { scanPublication, thingsThatLook } from "./publish-scan";
 import { type MergeNoticeKind, nothingToLandWords } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { cleanChoices, fingerprintOf, isRuling, resolveVerdict, RULING_TEXT_MAX, RULING_WAIT_MS, type Ruling, sendBackText } from "./rulings";
 import { estimateFromRuns } from "./estimate";
+import { afterRun, cleanFor, cleanInfo, dropAsk } from "./clean-run";
+import { FlakyStore } from "./flaky";
+import { healthOf, historyPage } from "./health";
+import type { MergeHistoryPage, MergeQueueHealth } from "../../shared/merge-queue-health";
 import { deliverReview } from "./review-step";
-import { applyReviewEvent, openReview, reportText, reviewNoteText, reviewRecord, type ReviewEvent } from "./review-record";
+import { applyReviewEvent, openReview, reportText, reviewerFixText, reviewNoteText, reviewRecord, type ReviewEvent } from "./review-record";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { hasOrigin, publishGit, revertCommit, withdrawGit } from "./release-git";
@@ -64,16 +92,20 @@ import { approvalHow, effectiveHow, landHowSetting, opensRequest, publishes, typ
 import { checkPublishText, draftText, type Hosting, hostMismatch, pollRequest, publishEntry, type PublishOutcome, publishSettings as publishSettingsRequest, reconcilePublish, requestInfo } from "./strategy-run";
 import { fetchTarget, localBehind, updateLocalMain as updateMainTip } from "./publish";
 import type { Drafter } from "./hosts/request-kit";
-import { type HostAdapter, type HostKind, type HostRepo, NO_HOST_WORDS, NO_ORIGIN_WORDS } from "./hosts/types";
+import { type HostAdapter, type HostKind, type HostRepo, NO_HOST_WORDS, noRemoteWords } from "./hosts/types";
 import { githubAdapter } from "./hosts/github";
 import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
-import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
-import { PROJECT_PLAYBOOK } from "./thread";
-import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
+// reviewKitDirAt and projectPlaybookRel read the old place too. Temporary (migrations/manifest.json: playbook-config-old-place).
+import { changeWords, editSettingsText, isEmptyChange, reviewKitDirAt, SettingsEditError } from "./settings-edit";
+import { projectPlaybookRel } from "./thread";
+import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, REVIEW_FIX_REFS, scratchCopyPath, scratchMarkOf, sweepScratch } from "./scratch";
+import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { commitResolution } from "./resolve-content";
 import { dropRunDrafts } from "./run-logs";
-import { isSetupChange, SETUP_UNREADABLE, setupChangeOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
+import { isTestCheck } from "./checks";
+import { checkKindOf } from "../ready-to-land";
+import { changedServices, dryRunMergeChecks, dryRunReasons, dryRunWhyLine, isSetupChange, requiredServices, SETUP_UNREADABLE, setupChangeOf, stoppedByWords, trialEndedText, trialOf, trialReleaseChecks, untriedWhy } from "./setup-branch";
 
 /** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
 export const scratchRefusal = (what: string): string =>
@@ -147,6 +179,9 @@ const ANSWERABLE: readonly string[] = ["with-chat", "queued", "checking"];
 export const FIX_RECHECK_MS = 60_000;
 /** A fix the merge thread was told of but hasn't ruled on is handed to it again after this long. */
 export const FIX_REWAKE_MS = 15 * 60_000;
+/** A fix or conflict that waited this long on the merge thread with no ruling: Sova starts a fresh thread for it; the
+ *  fresh one failing to start, or not answering in this long either, tells the user (§chat.merge-queue/thread-health). */
+export const THREAD_DEADLINE_MS = 15 * 60_000;
 
 /** A request telling the chat what still keeps its approved branch out of line (§app.merge-queue/approve, q7). */
 export function blockedText(e: Pick<MergeEntry, "branch" | "target" | "commit">, why: string): string {
@@ -197,8 +232,22 @@ export interface QueueDeps {
   /** The chat's own newest check run fails (Ready to land's "the session's newest check run isn't failing"): its
    *  words ("this chat's last test run failed: …"), else null. Absent: not read. */
   chatCheckFailing?: (session: string, worktree: string | undefined) => Promise<string | null>;
-  /** A trial (merge.try) ended: the chat that started it is told (wire.ts). */
-  trialEnded?: (trial: MergeTrial, run: MergeRun, root: string) => void;
+  /** A dry run (merge.try) ended: the chats named are told, with `text` (wire.ts): the one that started it and the
+   *  branch's chat when a Land waits on it. */
+  trialEnded?: (trial: MergeTrial, run: MergeRun, root: string, tell: { sessions: string[]; text: string }) => void;
+  /** A dry run of `branch` started, ended or began waiting: the chats whose rows read it (the branch's owner, the one
+   *  that started it) read their readiness again now, so an open page follows it (wire.ts). */
+  trialMoved?: (o: { branch: string; by: TrialBy }, root: string) => void;
+  /** Fix / Fix in New Chat on a failure holding `branch` up (wire.ts: the branch's chat's state). `shared`: the target
+   *  shares it, so Fix in New Chat works on a new branch from the target. */
+  fixOffer?: (o: { root: string; branch: string; worktree?: string; session?: string; shared: boolean }) => Promise<FixOffer>;
+  /** The queue paused itself (every pause but the operator's own): its one notification for the user (wire.ts). */
+  pausedSelf?: (p: PauseInfo, root: string) => void;
+  /** One notification for the user (wire.ts notifyOnce; its tag keeps it to one per cause): a push held by the scan,
+   *  a merge thread that isn't answering (§app.merge-queue/names-step, §chat.merge-queue/thread-health). */
+  alert?: (a: { title: string; body: string; tag: string }, root: string) => void;
+  /** The project's merge thread health record (thread.ts health): the fresh threads Sova started, and whether each did. */
+  threadHealth?: (root: string) => { restarts?: { at: number; ok: boolean; error?: string }[] } | null;
   /** Wake the merge thread; false: none was asked. */
   thread?: WakeThread;
   /** The chat that owns a branch, when the approval named none (Land on the Merge Queue tab); null: no known chat. */
@@ -299,16 +348,25 @@ export interface AddRequest {
   via?: "github-pr" | "gitlab-mr";
 }
 
+/** A pick as the queue tells picks apart: its check and its selection. */
+const pickKey = (p: { id: string; select?: string[] }): string => JSON.stringify([p.id, p.select ?? []]);
+
+/** How many times one entry's run goes again for picks that arrived after its last look before it takes no more (q9). */
+const LATE_RESTARTS_MAX = 2;
+
 interface Current {
   run: MergeRun;
   entry: string;
   ac: AbortController;
   /** Why it was aborted, if it was. */
-  voidWhy: null | "master-moved" | "cancelled" | "superseded" | "stopping" | "release";
+  voidWhy: null | "master-moved" | "cancelled" | "superseded" | "stopping" | "release" | "clean-run";
   watch: ReturnType<typeof setInterval> | null;
   done: Promise<void>;
   /** The local target's head at the run's start: what the watch compares (a request project's base is origin's). */
   localBase: string;
+  /** Every pick the run was handed (at its start, or read through latePicks), by pickKey: a pick not among them when
+   *  the run passes reached the queue after its last look (q9). */
+  seenPicks: Set<string>;
 }
 
 type Entry = QueueFile["entries"][number];
@@ -317,14 +375,17 @@ type Entry = QueueFile["entries"][number];
  *  with no selection: a check that takes one runs bare (exported for the trial tests, which run these real picks). */
 export function optionalPicks(def: ProjectDef): CheckPick[] {
   const checks = def.merge?.checks;
-  return Array.isArray(checks) ? checks.filter((c) => c.optional).map((c) => ({ id: c.id, label: c.label, source: "picked" as const, why: "a trial runs every proposed check" })) : [];
+  return Array.isArray(checks) ? checks.filter((c) => c.optional).map((c) => ({ id: c.id, label: c.label, source: "picked" as const, why: "a dry run runs every check it keeps" })) : [];
 }
 
 export class ProjectQueue {
   readonly store: QueueStore;
+  /** The flaky tests this project's runs have seen, across landings (flaky.ts). */
+  readonly flaky: FlakyStore;
   private q!: QueueFile;
   private readonly git: Git;
   private current: Current | null = null;
+  /** Per entry: how many runs went again for a pick after their last look (LATE_RESTARTS_MAX). */
   private chain: Promise<unknown> = Promise.resolve();
   private holdUntil = 0;
   /** The entry whose run started or that was cancelled last since the thread was last told the queue went idle
@@ -346,13 +407,17 @@ export class ProjectQueue {
   /** Scratch copies are made and removed one at a time, in order (a retry's new copy never races the old one's removal). */
   private scratchChain: Promise<unknown> = Promise.resolve();
 
+  private readonly deps: QueueDeps;
   constructor(
-    private readonly deps: QueueDeps,
+    deps: QueueDeps,
     readonly root: string,
     readonly id: string,
   ) {
+    // Every notice to a branch's chat is a recorded change too (activity.ts noticeEvent): approved, landed, sent back…
+    this.deps = { ...deps, notify: (kind, e, extra) => (this.recordNotice(kind, e, extra), deps.notify?.(kind, e, extra)) };
     this.git = deps.git ?? realGit;
     this.store = new QueueStore(deps.base, root);
+    this.flaky = new FlakyStore(this.store.dir);
   }
 
   private now(): number {
@@ -380,6 +445,95 @@ export class ProjectQueue {
   /** The thread's or operator's note on an entry now ("" when none). */
   entryNote(entryId: string): string {
     return this.entry(entryId)?.notes.find((n) => n.kind === "thread" || n.kind === "operator")?.text ?? "";
+  }
+
+  // ---- the event memory (§app.merge-queue/activity) ---------------------------------------------
+
+  /** While a run's end is worked out, that run's follow-ups wait here, so "run ended" is recorded before what came of
+   *  it; anything else (another entry, the queue) is recorded at once. Flushed before the landing's long steps. */
+  private heldEvents: { entry: string; run: string; list: MergeEventInput[]; flush: () => void } | null = null;
+  /** The merge thread's reason for the fix it is checking now, and what it read before (requeueFix files it). */
+  private fixWhy: { request: string; why: string; read: string[] } | null = null;
+  /** What the merge thread read (merge.status, merge.logs) since its last ruling: the next ruling's evidence. */
+  private threadReads: string[] = [];
+
+  /** Record one change to a branch or to the queue: kept for good (events.ts), the view's newest list follows. Never
+   *  throws. Inside a run, call RunHooks.event instead (run, entry and branch filled in). */
+  record(ev: MergeEventInput): void {
+    const at = ev.at ?? this.iso();
+    const h = this.heldEvents;
+    if (h && (ev.entry === h.entry || ev.run === h.run)) {
+      h.list.push({ ...ev, at } as MergeEventInput);
+      return;
+    }
+    try {
+      this.store.events.record({ ...ev, at } as MergeEventInput, (l) => this.log(l));
+    } catch (err) {
+      this.log(`event not recorded: ${err instanceof Error ? err.message : err}`);
+    }
+    this.schedulePublish();
+  }
+
+  private recordNotice(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: MergeRun; request?: MergeChatRequest; press?: string }): void {
+    const ev = noticeEvent(kind, e, extra);
+    if (ev) this.record(ev);
+  }
+
+  /** What a queued entry waits behind now, in words; null: nothing (its run is about to start). */
+  private behindWords(e: Entry, i: number, line: readonly Entry[]): string | null {
+    const p = this.q.paused;
+    if (p) return `the queue is paused: ${p.why.split("\n")[0]!.slice(0, 160)}`;
+    if (this.q.release && !e.release) return this.waitingWords().replace(/^waits for /, "");
+    if (this.current && this.current.entry !== e.id) {
+      const cur = this.entry(this.current.entry);
+      return i === 0 ? `${cur?.branch ?? "another branch"}'s run` : `${line[i - 1]!.branch}, ahead of it in line (${cur?.branch ?? "another branch"} is checking)`;
+    }
+    if (this.trying) return `a dry run of ${this.trying.trial?.branch ?? this.trying.run.branch}`;
+    if (i > 0) return `${line[i - 1]!.branch}, ahead of it in line`;
+    if (this.q.hold && this.q.hold.until > this.now()) return "the merge thread's hold on new runs";
+    return null;
+  }
+
+  /** A `waiting` event for each queued entry whose blocker changed since it was last said (kept in queue.json). */
+  private sayWaiting(): void {
+    const said = this.q.waitingSaid ?? {};
+    const next: Record<string, string> = {};
+    const line = this.queued();
+    line.forEach((e, i) => {
+      const behind = this.behindWords(e, i, line);
+      if (!behind) return;
+      next[e.id] = behind;
+      if (said[e.id] === behind) return;
+      const ahead = i > 0 ? line[i - 1]!.id : this.current?.entry;
+      this.record({ kind: "waiting", by: "queue", entry: e.id, branch: e.branch, behind, ...(ahead && ahead !== e.id ? { ahead } : {}), position: i + 1, why: `Waiting behind ${behind}.` });
+    });
+    if (Object.keys(next).length || this.q.waitingSaid) this.q.waitingSaid = Object.keys(next).length ? next : undefined;
+    if (!this.q.waitingSaid) delete this.q.waitingSaid;
+  }
+
+  /** The view's newest recorded changes (VIEW_EVENTS), newest first. */
+  private eventFields(): Pick<MergeQueueView, "events"> {
+    const list = this.store.events.newest().slice(0, VIEW_EVENTS);
+    return list.length ? { events: structuredClone(list) } : {};
+  }
+
+  /** A page of the recorded changes (GET …/events, merge.status {entry}): newest first, the history's included. */
+  events(q: import("./events").EventQuery = {}): MergeEventsPage {
+    return this.store.events.read(q);
+  }
+
+  /** The merge thread read something (merge.status, merge.logs): named in its next ruling's evidence. */
+  noteThreadRead(what: string): void {
+    if (this.threadReads.includes(what)) return;
+    this.threadReads = [...this.threadReads, what].slice(-10);
+  }
+
+  /** A merge thread (or reviewer) act, recorded with its reason and what the thread read before it. */
+  ruled(o: { act: import("../../shared/merge-queue").ThreadAct; by?: "thread" | "reviewer"; entry?: string; run?: string; verdict?: string; why: string; text?: string; step?: string }): void {
+    const e = o.entry ? this.entry(o.entry) : undefined;
+    const read = this.threadReads;
+    this.threadReads = [];
+    this.record({ kind: "ruled", by: o.by ?? "thread", act: o.act, read, ...(o.entry ? { entry: o.entry } : {}), ...(e ? { branch: e.branch } : {}), ...(o.run ? { run: o.run } : {}), ...(o.step ? { step: o.step } : {}), ...(o.verdict ? { verdict: o.verdict } : {}), ...(o.text ? { text: o.text } : {}), why: o.why });
   }
 
   /** Load the records and work out the target. Recovery (recover.ts) runs after. */
@@ -410,6 +564,38 @@ export class ProjectQueue {
     for (const e of [...this.q.entries].filter((x) => x.state === "landed" && x.landed?.via === "host").sort((a, b) => a.landed!.at.localeCompare(b.landed!.at))) {
       if (!this.q.hostPins?.[e.branch]?.includes(e.commit)) this.keepHostPin(e.branch, e.commit);
     }
+    // A dry run is running only while this server runs it: one the records still call running stopped with the last
+    // server (§app.project-setup/trial), and so did its run.
+    let voided = false;
+    for (const t of this.q.trials ?? []) {
+      if (t.verdict !== "running") continue;
+      const at = this.iso();
+      t.verdict = "void";
+      t.why = "stopped by a Sova restart";
+      t.stopped = { by: "restart", at };
+      t.endedAt ??= at;
+      const run = this.store.readRun(t.run);
+      if (run && run.verdict === "running") {
+        run.verdict = "void";
+        run.why = "stopped by a Sova restart";
+        run.endedAt ??= at;
+        this.store.writeRun(run);
+      }
+      voided = true;
+    }
+    // The chat that started one is told (its turn may have ended waiting for the wake); a Land's reruns by itself. Both a
+    // crash's (voided just now) and a stop's (the stopping server owed it) are told once.
+    const owed = new Set(this.q.trialWakes ?? []);
+    if (voided || owed.size) {
+      for (const t of this.q.trials ?? []) {
+        const now = voided && t.stopped?.by === "restart" && t.endedAt === t.stopped.at;
+        if ((!now && !owed.has(t.run)) || t.by.kind !== "chat" || !t.by.session) continue;
+        const run = this.store.readRun(t.run);
+        if (run) this.deps.trialEnded?.(structuredClone(t), run, this.root, { sessions: [t.by.session], text: trialEndedText(t, run, { target: this.q.target }) });
+      }
+      delete this.q.trialWakes;
+      this.save();
+    }
     // Entries with their chats are looked at again: a fix the merge thread wasn't told of, a block that went away.
     if (this.q.entries.some((e) => e.state === "with-chat" || !!e.fix)) this.armFixTimer();
   }
@@ -438,6 +624,7 @@ export class ProjectQueue {
 
   save(): void {
     this.viewCache = null;
+    this.sayWaiting();
     const settled = this.settledCache || this.swept.size ? new Set(this.settled().keys()) : undefined;
     this.store.write(this.q, { ...(settled ? { settled } : {}), now: this.iso() });
     this.schedulePublish();
@@ -671,7 +858,10 @@ export class ProjectQueue {
       readRun: (id) => this.store.readRun(id),
       origin,
       settled,
+      holdMs: this.trialLeftMs(),
+      trying: !!this.trying?.trial,
     });
+    await this.attachDryRuns(v, ready, head);
     // Why each was sent back (an entry from before it was kept: inferred once), and which may land again as they are.
     for (const e of v.needsFix) {
       const cause = this.causeOf(e);
@@ -691,7 +881,7 @@ export class ProjectQueue {
     if (onHost.length) v.waitingOnHost = onHost;
     const requestProject = publishes(effectiveHow(d.def?.merge?.land, this.store.dir).effective) || this.q.entries.some((e) => !!e.request && !isFinal(e));
     if (requestProject && head) {
-      const behind = await localBehind(this.git, this.root, this.q.target);
+      const behind = await localBehind(this.git, this.root, this.q.target, await this.remoteName());
       if (behind) {
         v.heads.behind = behind;
         const co = await checkoutOf(this.git, this.root, this.q.target);
@@ -707,14 +897,33 @@ export class ProjectQueue {
     // Served by the queue (team mq-served-only, served.ts): on Sova's Projects list with its setup done.
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
     const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
-    // An entry the hold keeps waiting has no start time: it starts once the release is published or abandoned.
+    // An entry the hold keeps waiting has no start time: it starts once the release is published or cancelled.
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     const chats = this.deps.chatsOf?.(this.root) ?? {};
     const readyRows = this.attachSummaries(v, ready.filter((r) => !heldBack.has(r.branch)));
     // What retirement did here, as it last wrote it: no git (§chat.worktrees/retirement).
     // Switched off (../cleanup-switch.ts): the ledger only, never the saved list.
     const retirement = viewWhileOff(retirementViewOf(this.root, pendingWhileOff()));
-    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}) };
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...this.trialFields(), ...(settings ? { settings } : {}), ...(retirement ? { retirement } : {}), ...this.knownFields(), ...this.eventFields(), ...(await this.publishFields(v, thread, d.def)) };
+  }
+
+  /** §chat.merge-queue/thread-health and §app.merge-queue/names-step on the view: what waits on the merge thread and
+   *  since when, the names interview's state, and a held push's scan. */
+  private async publishFields(v: MergeQueueView, thread: MergeQueueView["thread"] | null, def: ProjectDef | null): Promise<Partial<MergeQueueView>> {
+    const out: Partial<MergeQueueView> = {};
+    if (this.q.heads.pushScan) v.heads.pushScan = structuredClone(this.q.heads.pushScan);
+    if (def?.merge?.push !== false && (await this.hasRemote(remoteOf(def)))) {
+      const n = this.names();
+      out.names = !n.exists ? "unanswered" : namesListEmpty(n.file) ? "none" : "answered";
+    }
+    if (thread && (thread.health || this.q.entries.some((e) => e.threadWait && !isFinal(e)))) {
+      const waits = this.q.entries.filter((e) => e.threadWait && !isFinal(e)).sort((a, b) => a.threadWait!.since.localeCompare(b.threadWait!.since));
+      const w = waits[0];
+      const h = thread.health ?? { state: "ok" as const, deadlineMin: THREAD_DEADLINE_MS / 60_000, failures: [], restarts: [] };
+      const state = waits.some((e) => e.threadWait!.notified || e.threadWait!.fresh?.ok === false) ? "failed" : waits.some((e) => e.threadWait!.fresh) ? "slow" : w ? "waiting" : "ok";
+      out.thread = { ...thread, health: { ...h, state, ...(w ? { waiting: { what: w.threadWait!.what, since: w.threadWait!.since, entry: w.id, branch: w.branch } } : {}) } };
+    }
+    return out;
   }
 
   /**
@@ -729,7 +938,7 @@ export class ProjectQueue {
     const landed = this.q.entries.filter((e) => e.state === "landed").sort((a, b) => (b.landed?.at ?? b.updatedAt).localeCompare(a.landed?.at ?? a.updatedAt));
     const keep = new Set(landed.slice(0, recentMax).map((e) => e.id));
     const q = { ...this.q, entries: this.q.entries.filter((e) => e.state !== "landed" || keep.has(e.id)) };
-    const v = buildView({ q, root: this.root, current: this.current?.run ?? null, checks: d.checks, review: d.review, head, takesMs: takes, now: this.now(), readRun: (id) => this.store.readRun(id) });
+    const v = buildView({ q, root: this.root, current: this.current?.run ?? null, checks: d.checks, review: d.review, head, takesMs: takes, now: this.now(), readRun: (id) => this.store.readRun(id), holdMs: this.trialLeftMs(), trying: !!this.trying?.trial });
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
     const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
@@ -741,6 +950,12 @@ export class ProjectQueue {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, recentMax)
       .map(({ seq: _seq, ...rest }) => structuredClone(rest) as MergeEntry);
+    // Each held entry's failure, read from the records alone (no Git): the bar says what holds it as the tab does.
+    for (const e of [...v.checking, ...v.waiting, ...v.needsYou]) {
+      const t = e.dryRunHold ? (this.q.trials ?? []).find((x) => x.run === e.dryRunHold!.run) : undefined;
+      const failure = t?.failure ?? this.landingFailure(e);
+      if (failure) e.failure = structuredClone(failure);
+    }
     return {
       project: v.project,
       root: v.root,
@@ -758,8 +973,103 @@ export class ProjectQueue {
       ...(hold ? { release: structuredClone(hold) } : {}),
       ...(reviewing ? { reviewing } : {}),
       heads: v.heads,
+      ...this.trialFields(),
       at: v.at,
     };
+  }
+
+  /** The view's dry-run fields: the one running now, and those waiting for the copy. */
+  private trialFields(): Pick<MergeQueueView, "trialNow" | "trialsWaiting"> {
+    const now = this.trialNowView();
+    const waiting = this.trialsWaitingView();
+    return { ...(now ? { trialNow: now } : {}), ...(waiting.length ? { trialsWaiting: waiting } : {}) };
+  }
+
+  /** What is left of the running dry run (ms), for the waiting estimates: its own past length (the newest ended dry
+   *  runs' median), less what it ran. 0 when none runs. */
+  private trialLeftMs(): number {
+    const t = this.trying?.trial;
+    if (!t) return 0;
+    const lengths = (this.q.trials ?? [])
+      .filter((x) => x.endedAt && x.verdict !== "void" && x.run !== t.run)
+      .slice(0, 5)
+      .map((x) => Date.parse(x.endedAt!) - Date.parse(x.startedAt))
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b);
+    const takes = lengths.length ? lengths[Math.floor(lengths.length / 2)]! : 5 * 60_000;
+    return Math.max(0, takes - (this.now() - Date.parse(t.startedAt)));
+  }
+
+  /**
+   * Each row's dry run (a setup branch's, at the row's commit), its failure and Fix offer: Ready rows at their head,
+   * entries at their commit; a landing failure (Can't tell whose, Out of tries) on its entry too.
+   */
+  private async attachDryRuns(v: MergeQueueView, ready: MergeReady[], head: string): Promise<void> {
+    if (!head) return;
+    for (const r of ready) {
+      const dr = await this.dryRunOf(r.branch, r.commit, head).catch(() => null);
+      if (!dr) continue;
+      if (dr.failure && this.deps.fixOffer) dr.fixOffer = await this.deps.fixOffer({ root: this.root, branch: r.branch, worktree: r.worktree, ...(r.session ? { session: r.session } : {}), shared: dr.failure.whose !== "branch" }).catch(() => undefined);
+      r.dryRun = dr;
+    }
+    const entries = [...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix];
+    for (const e of entries) {
+      if (e.settled) continue;
+      const dr = await this.dryRunOf(e.branch, e.commit, head).catch(() => null);
+      if (dr) e.dryRun = dr;
+      const failure = dr?.failure ?? this.landingFailure(e);
+      if (!failure) continue;
+      e.failure = failure;
+      if (this.deps.fixOffer) {
+        const offer = await this.deps.fixOffer({ root: this.root, branch: e.branch, ...(e.worktree ? { worktree: e.worktree } : {}), ...(e.session ? { session: e.session } : {}), shared: failure.whose !== "branch" }).catch(() => undefined);
+        if (offer) {
+          e.fixOffer = offer;
+          if (e.dryRun) e.dryRun.fixOffer = offer;
+        }
+      }
+    }
+    if (this.deps.fixOffer && v.heads.targetBroken?.length) {
+      const offer = await this.deps.fixOffer({ root: this.root, branch: this.q.target, shared: true }).catch(() => undefined);
+      if (offer) v.heads.targetBrokenFix = Object.fromEntries(v.heads.targetBroken.map((b) => [b.check, offer]));
+    }
+  }
+
+  /**
+   * What Fix sends about run `runId`: the failure (a dry run's, or a landing's held up by it), its branch and entry, and
+   * the branches it holds up (the line behind it). null: no failure of that run holds anything up.
+   */
+  async fixContext(runId: string): Promise<{ failure: BranchFailure; branch: string; entry?: MergeEntry; session?: string; worktree?: string; holdsUp: string[] } | null> {
+    const line = this.queued().map((e) => e.branch);
+    const t = (this.q.trials ?? []).find((x) => x.run === runId);
+    if (t?.failure && t.branch) {
+      const e = this.q.entries.find((x) => x.branch === t.branch && x.commit === t.commit && ENTRY_OPEN.includes(x.state));
+      // The branch's own chat and folder: its entry's, else its worktree's owner (the rule the Ready rows show).
+      const worktree = e?.worktree ?? (await worktreesOf(this.git, this.root).catch(() => [])).find((w) => w.branch === t.branch && w.path !== this.root)?.path;
+      const owner = !e?.session && worktree ? ownerId(await this.deps.ownerOf?.(this.root, t.branch, worktree).catch(() => null))?.session : undefined;
+      const session = e?.session ?? owner ?? (t.by.kind === "chat" ? t.by.session : undefined);
+      return { failure: structuredClone(t.failure), branch: t.branch, ...(e ? { entry: this.withPosition(e) } : {}), ...(session ? { session } : {}), ...(worktree ? { worktree } : {}), holdsUp: line.filter((b) => b !== t.branch) };
+    }
+    const e = this.q.entries.find((x) => x.run === runId);
+    const failure = e ? this.landingFailure(this.withPosition(e)) : undefined;
+    if (!e || !failure) return null;
+    return { failure, branch: e.branch, entry: this.withPosition(e), ...(e.session ? { session: e.session } : {}), ...(e.worktree ? { worktree: e.worktree } : {}), holdsUp: line.filter((b) => b !== e.branch) };
+  }
+
+  /** A landing's failure holding its entry up (Can't tell whose failure, Out of tries), from its run's failed checks. */
+  private landingFailure(e: MergeEntry): BranchFailure | undefined {
+    const unclear = e.state === "unattributed" && !e.dryRunHold;
+    if (!unclear && e.decision?.kind !== "out-of-tries") return undefined;
+    const run = e.run ? this.store.readRun(e.run) : null;
+    if (!run || run.entry === "trial") return undefined;
+    const failed = run.steps.filter((x) => x.kind === "check" && x.result === "failed");
+    if (!failed.length) return undefined;
+    const whose = unclear ? ("unclear" as const) : ("branch" as const);
+    const checks = failed.map((x) => ({ id: x.id.replace(/^check:/, ""), label: x.label, step: x.id, whose, ...(x.failures?.length ? { tests: x.failures.map((f) => ({ ...(f.file ? { file: f.file } : {}), ...(f.name ? { name: f.name } : {}), ...(f.message ? { message: f.message } : {}) })) } : {}) }));
+    const lead = checks[0]!;
+    const names = (lead.tests ?? []).map((x) => x.name ?? x.file).filter((x): x is string => !!x);
+    const fails = names.length ? `${names.length} failing test${names.length === 1 ? "" : "s"} (${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""})` : (failed[0]!.detail ?? "it fails");
+    const words = unclear ? `Can't tell whose failure: it fails on ${this.q.target} alone too.` : "This branch's change breaks it.";
+    return { kind: "landing", run: run.id, commit: e.commit, whose, line: `${lead.label} fails at ${e.commit.slice(0, 7)}${checks.length > 1 ? ` (and ${checks.length - 1} more)` : ""}: ${fails}. ${words}`, checks };
   }
 
   /** The view is read again and published (a branch summary started, was written or failed). */
@@ -798,10 +1108,23 @@ export class ProjectQueue {
     return rows;
   }
 
-  /** Whether the project has origin, and origin's copy of the target as last fetched (its remote-tracking ref; never a fetch). */
+  /** Whether the project has its remote, and the remote's copy of the target as last fetched (its remote-tracking ref;
+   *  never a fetch). The remote is origin unless the target's definition names another (merge.remote). */
   private async originFacts(): Promise<{ has: boolean; tracking: string | null }> {
-    const has = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
-    return { has, tracking: has ? await revParse(this.git, this.root, `refs/remotes/origin/${this.q.target}`) : null };
+    const remote = await this.remoteName();
+    const has = await this.hasRemote(remote);
+    return { has, tracking: has ? await revParse(this.git, this.root, `refs/remotes/${remote}/${this.q.target}`) : null };
+  }
+
+  /** The remote the queue fetches from and pushes to: the target's merge.remote, else origin. */
+  async remoteName(): Promise<string> {
+    return remoteOf((await this.declared()).def);
+  }
+
+  /** Whether the repository has a remote of that name (default: the queue's own). */
+  private async hasRemote(name?: string): Promise<boolean> {
+    const remote = name ?? (await this.remoteName());
+    return (await this.git(["remote"], this.root)).stdout.split("\n").includes(remote);
   }
 
   // ---- settings (the Settings dialog's Merge Queue tab) ----------------------------------------------
@@ -838,8 +1161,8 @@ export class ProjectQueue {
       checks: d.checks,
       review: d.review,
       kitFiles,
-      kitOnTarget: await at(REVIEW_KIT_DIR),
-      projectPlaybook: existsSync(join(this.root, PROJECT_PLAYBOOK, "PLAYBOOK.md")),
+      kitOnTarget: await at(await reviewKitDirAt(at)),
+      projectPlaybook: existsSync(join(this.root, projectPlaybookRel(this.root), "PLAYBOOK.md")),
       projectPlaybookDiffers: await playbookDiffers(this.git, this.root, head),
       names: { setUp: namesOf.exists, count },
       models: { review: await effectiveModel(picks.review, check), thread: await effectiveModel(picks.thread, check) },
@@ -847,7 +1170,8 @@ export class ProjectQueue {
       ...(file.blocked ? { editBlocked: file.blocked } : {}),
       ...(this.q.pendingSave ? { pendingSave: { ...this.q.pendingSave, ...(heldBy && !this.q.pendingSave.failed ? { release: heldBy } : {}) } } : {}),
       fixed: fixedValues(this.root, { ...(this.deps.retryDelayMs !== undefined ? { retryDelayMs: this.deps.retryDelayMs } : {}) }),
-      how: await landHowSetting({ dir: this.store.dir, root: this.root, projectHow: d.def?.merge?.land, ...(this.deps.hosts ? { hosts: this.deps.hosts } : {}) }),
+      how: await landHowSetting({ dir: this.store.dir, root: this.root, projectHow: d.def?.merge?.land, ...(d.def?.merge?.remote ? { remote: d.def.merge.remote } : {}), ...(this.deps.hosts ? { hosts: this.deps.hosts } : {}) }),
+      shape: await copyShapeOf(this.root, head).catch(() => undefined),
     });
     this.settingsCache = { key, at: this.now(), v };
     return structuredClone(v);
@@ -893,7 +1217,7 @@ export class ProjectQueue {
       if (file.blocked) throw new MergeFailure("invalid-request", file.blocked);
       // A project that lands by request or by pushing a branch never moves the target with a save: nothing to wait for.
       const how = effectiveHow((await this.declared()).def?.merge?.land, this.store.dir).effective;
-      // While a release holds the queue the target stays on the release commit: a save waits for Publish or Abandon.
+      // While a release holds the queue the target stays on the release commit: a save waits for Publish or Cancel Release.
       if (this.q.release || (!publishes(how) && (this.current || this.trying || this.landing))) {
         // A second save while one waits joins it (the later value of each setting wins).
         const was = this.q.pendingSave && !this.q.pendingSave.failed ? this.q.pendingSave.changes : {};
@@ -985,7 +1309,9 @@ export class ProjectQueue {
     const shown = await this.git(["show", `${head}:${SETTINGS_FILE}`], this.root);
     const text = shown.code === 0 ? shown.stdout : '{\n  "version": 1\n}\n';
     try {
-      return editSettingsText(text, changes, { kitExists: (await this.git(["cat-file", "-e", `${head}:${REVIEW_KIT_DIR}`], this.root)).code === 0 });
+      const has = async (rel: string) => (await this.git(["cat-file", "-e", `${head}:${rel}`], this.root)).code === 0;
+      const kitDir = await reviewKitDirAt(has);
+      return editSettingsText(text, changes, { kitExists: await has(kitDir), kitDir });
     } catch (err) {
       if (err instanceof SettingsEditError) throw new MergeFailure("invalid-request", err.message);
       throw err;
@@ -1104,16 +1430,18 @@ export class ProjectQueue {
     return facts;
   }
 
-  private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;
+  private readyCache: { at: number; head: string; heads: string; list: MergeReady[] } | null = null;
   /** The next view reads the Ready list afresh: a branch went outside the queue (Discard Branch…). */
   forgetReady(): void {
     this.readyCache = null;
   }
   /** Ready, not approved (the view's Land list), re-read at most every 15 s or when the target moves. */
   private async readyList(head: string, redrafted: ReadonlySet<string> = new Set()): Promise<MergeReady[]> {
-    if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
-    const out: MergeReady[] = [];
+    // Kept while neither the target nor any worktree's head moved (a new commit on a branch is read at once).
     const trees = await worktreesOf(this.git, this.root);
+    const heads = trees.map((w) => `${w.path}@${w.head ?? ""}`).join("\n");
+    if (this.readyCache && this.readyCache.head === head && this.readyCache.heads === heads && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
+    const out: MergeReady[] = [];
     const made = await this.queueMadeNow();
     // The answers are kept per head and target, so only a move of the target reads any again: a few at a time, since
     // the heads with work each run a trial merge.
@@ -1142,7 +1470,7 @@ export class ProjectQueue {
       const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
       out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(draftsOnly ? { draftsOnly } : {}), ...(left ? { left: { whole: left.whole, code: left.codeOnly } } : { left: { whole: "unknown", code: "unknown" } }), ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
-    this.readyCache = { at: this.now(), head, list: out };
+    this.readyCache = { at: this.now(), head, heads, list: out };
     return this.filterReady(out, redrafted);
   }
 
@@ -1325,9 +1653,11 @@ export class ProjectQueue {
       if (/^temp\b/i.test(subject)) throw new MergeFailure("invalid-request", `${branch}'s head is a TEMP commit ("${subject.slice(0, 60)}"): it isn't finished`);
       // Before the trial gate: a queue copy is never landed, so "run a trial" would be the wrong thing to tell anyone.
       if (wt && (await this.queueOwned(wt))) throw new MergeFailure("invalid-request", scratchRefusal(branch));
-      // A setup branch is checked by the target's checks, not its own: it lands only once a trial of this exact commit passed.
+      // A setup branch is checked by the target's checks, not its own: it lands only once a dry run of this exact commit
+      // passed. Under the user's Land it is taken, never refused for it: Approved · dry run first, the dry run at its turn.
       const untried = await this.setupUntried(head, commit);
-      if (untried) throw new MergeFailure("invalid-request", untried);
+      if (untried && (untried === SETUP_UNREADABLE || req.by === "release")) throw new MergeFailure("invalid-request", untried);
+      const dryRunFirst = !!untried && req.by !== "release";
       if (wt && commit === tip) {
         const st = await this.git(statusArgs("--porcelain"), wt);
         const n = st.stdout.split("\n").filter(Boolean).length;
@@ -1360,7 +1690,10 @@ export class ProjectQueue {
       // typed word, that can't open one there, or a computer not signed in to it, is refused now.
       if (opensRequest(approvalHow(approval))) {
         const host = await this.hosting();
-        if (!host) throw new MergeFailure("invalid-request", (await this.git(["remote", "get-url", "origin"], this.root)).code === 0 ? NO_HOST_WORDS : NO_ORIGIN_WORDS);
+        if (!host) {
+          const name = await this.remoteName();
+          throw new MergeFailure("invalid-request", (await this.git(["remote", "get-url", name], this.root)).code === 0 ? NO_HOST_WORDS : noRemoteWords(name));
+        }
         if (approval.via) approval.via = host.repo.kind === "github" ? "github-pr" : "gitlab-mr";
         const mismatch = hostMismatch(approvalHow(approval) as RequestHow, host);
         if (mismatch) throw new MergeFailure("invalid-request", mismatch);
@@ -1394,6 +1727,10 @@ export class ProjectQueue {
         if (open.state === "queued") {
           open.commit = commit;
           open.approval = approval;
+          if (dryRunFirst) {
+            open.standing = { phase: "dry-run", ...(this.trying?.trial?.commit === commit ? { run: this.trying.trial.run } : {}) };
+            this.supersedeTrials(branch, commit);
+          } else if (open.standing?.phase === "dry-run") delete open.standing;
           if (req.session) open.session = req.session;
           if (wt) open.worktree = wt;
           open.updatedAt = this.iso();
@@ -1434,7 +1771,7 @@ export class ProjectQueue {
       };
       // Land on a finished branch blocked only for what its chat can fix (conflicts, its failing check, drafts that
       // don't fit): Approved · waiting for a fix. It joins the line by itself once nothing blocks it (al_3 q7).
-      const blocked = approval.standing && wt ? await this.fixBlocked(e, commit, approval.drafts) : null;
+      const blocked = approval.standing && wt ? await this.fixBlocked(e, commit, approval.drafts, false) : null;
       // Already conflicting at the Land: it goes in line for the merge thread to judge, and sending it back for that
       // conflict counts no try (it is the wait Land on a blocked branch is, not a failed try).
       if (approval.standing && (await this.git(["merge-tree", "--write-tree", "--name-only", "--no-messages", head, commit], this.root)).code === 1) e.approval.conflictAtLand = true;
@@ -1443,7 +1780,8 @@ export class ProjectQueue {
         e.approval.blocked = true;
         e.standing = { phase: "waiting-fix", why: blocked };
         e.reason = blocked;
-      }
+      } else if (dryRunFirst) e.standing = { phase: "dry-run", ...(this.trying?.trial?.commit === commit ? { run: this.trying.trial.run } : {}) };
+      if (dryRunFirst) this.supersedeTrials(branch, commit);
       this.q.entries.push(e);
       // Approved again while checking: the newer commit goes first.
       if (open && this.current?.entry === open.id && !blocked) this.toFront(e);
@@ -1482,6 +1820,8 @@ export class ProjectQueue {
   cancel(entryId: string, note?: string): Promise<MergeEntry> {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
+      // A Clean Run asked on this entry goes with it.
+      this.q.clean = dropAsk(this.q.clean, e.id);
       // Remove from Queue: a sent-back entry leaves the queue; nothing of the branch's is deleted (its folder, commits,
       // drafts and run logs stay), and its chat's card gets a Removed revision.
       // Under the user's standing Land, an entry out of line (with its chat, waiting for their decision) is Removed too.
@@ -1535,9 +1875,19 @@ export class ProjectQueue {
   }
 
   private pauseNow(kind: PauseKind, why: string, run?: string): void {
-    this.q.paused = { kind, why, at: this.iso(), ...(run ? { run } : {}) };
+    // Every pause but the operator's own is the queue pausing itself: recorded so, and the user notified once.
+    const self = kind !== "operator";
+    this.q.paused = { kind, why, at: this.iso(), ...(run ? { run } : {}), ...(self ? { self: true as const } : {}) };
     this.save();
     this.log(`paused (${kind}): ${why}`);
+    this.record(pauseEvent(this.q.paused));
+    if (self) {
+      try {
+        this.deps.pausedSelf?.(structuredClone(this.q.paused), this.root);
+      } catch (err) {
+        this.log(`pause notification failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
   }
 
   /** merge.resume / merge.retry: lift the pause. A move of the target from outside is accepted from here on. */
@@ -1546,6 +1896,7 @@ export class ProjectQueue {
       const p = this.q.paused;
       if (!p) return;
       delete this.q.paused;
+      this.record({ kind: "resumed", by: "user", why: `Resumed after: ${p.why.split("\n")[0]!.slice(0, 200)}` });
       this.q.knownTarget = (await this.targetHead()) ?? this.q.knownTarget;
       this.q.machineTries = {};
       this.holdUntil = 0;
@@ -1601,6 +1952,10 @@ export class ProjectQueue {
         if ((c as { needsSelect?: true }).needsSelect && !select?.length) throw new MergeFailure("invalid-request", `"${id}" (${c.label}) runs with a selection: send the pick's select (its groups, files or walkthroughs)`);
         return c;
       });
+      // q9: a pick while the entry's run checks is added to that run; one after the run's last look runs it again
+      // before anything lands (finish). Once the entry has landed it is final: refused above. Bounded: after
+      // LATE_RESTARTS_MAX such reruns, the entry's run takes no more picks (never an endless rerun).
+      if (this.lateRerunsOf(e) >= LATE_RESTARTS_MAX && this.testedOrTesting(e)) throw new MergeFailure("invalid-request", `${e.branch}'s run has already run again ${LATE_RESTARTS_MAX} times for picks added after its last look: this run takes no more picks`);
       for (const c of found) {
         const id = c.id;
         e.picks = e.picks.filter((p) => !(p.id === id && JSON.stringify(p.select ?? []) === JSON.stringify(select ?? [])));
@@ -1919,6 +2274,82 @@ export class ProjectQueue {
     }
   }
 
+  /**
+   * The run's reviewer fixed its own blocking findings (merge.reviewFixes, §app.merge-queue/review-kit): its commit goes
+   * on the branch, then the same way as a chat's Fixed answer to the review's request: one try counted, the merge thread
+   * checks that it changes only what the findings asked (merge.rule checked), Land's checks run on it, and the approval
+   * is re-pinned at it with no new Land (fixRuling, requeueFix). The chat is told, as a request already answered. False,
+   * nothing changed, when the fix can't go on the branch (it moved, its folder has uncommitted files): the review then
+   * goes to the thread and the chat as any blocking review does. The caller is inside serial.
+   */
+  private async reviewerFixed(e: Entry, run: MergeRun, rec: MergeReviewRecord, fix: string, why: string, report: string): Promise<boolean> {
+    const not = await this.putReviewFix(e, fix);
+    await this.dropReviewFix(e.id);
+    if (not) {
+      this.log(`the reviewer's fix ${fix.slice(0, 7)} didn't go on ${e.branch}: ${not}`);
+      this.record({ kind: "review", what: "fixed", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "review", sha: fix, why: `The reviewer's fix ${fix.slice(0, 7)} didn't go on ${e.branch} (${not}): its findings go to the chat as usual` });
+      delete rec.fix;
+      return false;
+    }
+    const fingerprint = this.failurePrint({ cause: "review", why, review: report }, run, rec.findings);
+    const t = this.countTry(e, fingerprint);
+    rec.try = t.tries;
+    rec.of = t.max;
+    rec.fix = { commit: fix };
+    const at = this.iso();
+    const summary = `the reviewer's own fix of its findings: commit ${fix.slice(0, 7)}`;
+    const req = this.addRequest(e, { kind: "fix", cause: "review", text: reviewerFixText(e, fix, report), try: t.tries, fingerprint });
+    // Asked when the run started: the reviewer's commits came after it, so none reads as work the queue never asked for.
+    req.at = run.startedAt;
+    const answer: MergeChatAnswer = { kind: "fixed", changed: "commit", commit: fix, summary, at, by: "reviewer" };
+    req.answer = answer;
+    rec.request = req.id;
+    this.reviewEvent(e, { kind: "handed" });
+    delete e.conflict;
+    delete e.conflictFiles;
+    e.state = "with-chat";
+    e.sentBackFor = "review";
+    e.reason = `${why}; the reviewer fixed it itself (${fix.slice(0, 7)}): the merge thread checks the fix`;
+    delete e.standing;
+    const base = await this.mergeBase(fix);
+    const told = this.wake("fix", e, run.id, { request: req.id, asked: report, fixCommit: fix, summary, by: "reviewer", ...(base ? { base } : {}) });
+    e.fix = { request: req.id, told, at };
+    this.setPhase(e, { phase: "waiting-thread", answer });
+    e.updatedAt = at;
+    this.save();
+    this.record({ kind: "review", what: "fixed", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "review", sha: fix, why: `The reviewer's fix ${fix.slice(0, 7)} is on ${e.branch} now: the merge thread checks it like a chat's fix` });
+    // The chat's branch (and its folder) moved: it is told, as a request it needn't answer.
+    this.deps.notify?.("request", e, { run, logDir: this.store.runDir(run.id), root: this.root, request: req });
+    this.armFixTimer();
+    return true;
+  }
+
+  /** Put the reviewer's fix on the branch: a fast-forward from the approved commit, in the folder that has the branch
+   *  checked out (clean only), else of the branch's ref alone. Null when done, else why not. */
+  private async putReviewFix(e: Entry, fix: string): Promise<string | null> {
+    const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
+    if (!tip) return `${e.branch} is gone`;
+    if (tip !== e.commit) return `${e.branch} moved to ${tip.slice(0, 7)} since the run started`;
+    if (!(await isAncestor(this.git, this.root, e.commit, fix))) return `the fix isn't on top of ${e.commit.slice(0, 7)}`;
+    const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === e.branch)?.path;
+    if (wt) {
+      const st = await this.git(statusArgs("--porcelain"), wt);
+      if (st.code !== 0) return `its folder ${wt} can't be read`;
+      const n = st.stdout.split("\n").filter(Boolean).length;
+      if (n) return `${n} uncommitted file${n === 1 ? "" : "s"} in its folder`;
+      const m = await this.git([...NO_BACKGROUND_CLEANUP, "merge", "--ff-only", "--quiet", fix], wt);
+      return m.code === 0 ? null : `git merge --ff-only failed: ${(m.stderr || m.stdout).trim().split("\n")[0] || `exit ${m.code}`}`;
+    }
+    const u = await this.git(["update-ref", `refs/heads/${e.branch}`, fix, e.commit], this.root);
+    return u.code === 0 ? null : `git update-ref failed: ${(u.stderr || u.stdout).trim().split("\n")[0] || `exit ${u.code}`}`;
+  }
+
+  /** The hidden ref that kept the reviewer's fix (run.ts) goes once the fix is on the branch, or not taken. */
+  private async dropReviewFix(entry: string): Promise<void> {
+    const ref = `${REVIEW_FIX_REFS}${entry}`;
+    if ((await this.git(["rev-parse", "--verify", "--quiet", ref], this.root)).code === 0) await this.git(["update-ref", "-d", ref], this.root);
+  }
+
   /** The entry's newest review record takes an event (review-record.ts): its card follows; the caller saves. */
   private reviewEvent(e: Entry, ev: ReviewEvent): void {
     applyReviewEvent(e, ev, this.iso());
@@ -2077,7 +2508,9 @@ export class ProjectQueue {
 
   /** The user answered the entry's decision (a click on it, or their message sent with its held note). */
   private answerDecision(e: Entry, how: NonNullable<MergeDecision["answered"]>["how"]): void {
-    if (e.decision && !e.decision.answered) e.decision = { ...e.decision, answered: { at: this.iso(), how } };
+    if (!e.decision || e.decision.answered) return;
+    e.decision = { ...e.decision, answered: { at: this.iso(), how } };
+    this.record(decisionAnsweredEvent(e, e.decision, how));
   }
 
   /**
@@ -2179,16 +2612,41 @@ export class ProjectQueue {
 
   /** The user's click on a decision (merge.answer, their own click only): Accept, Land Anyway, Try Again or Land.
    *  Remove from Queue is merge.cancel. Nothing goes to the chat. */
-  answer(entryId: string, answer: MergeAnswer, why?: string): Promise<MergeEntry> {
+  answer(entryId: string, answer: MergeAnswer, why?: string, matches?: readonly string[]): Promise<MergeEntry> {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
       void why;
+      // Allow, Send Back and Ask the Merge Thread answer only the scan's private names (Send Back is retired elsewhere).
+      if ((answer === "allow" || answer === "send-back" || answer === "ask-thread") && e.decision?.kind === "private-names") return this.answerNames(e, answer, matches);
       if (answer === "accept") {
         if (e.state !== "behaviour-differs") throw new MergeFailure("invalid-request", `Accept answers a conflict whose sides differ; ${e.branch} is ${e.state}`);
         if (!e.conflict?.commit) throw new MergeFailure("invalid-request", "there is no proposed resolution to accept: answer in the branch's chat, or Remove from Queue");
         this.answerDecision(e, "accept");
         e.notes = e.notes.filter((n) => n.kind !== "resolved");
         e.notes.push({ kind: "resolved", text: `You accepted the resolution of ${e.conflict.files.join(", ") || "its conflict"}: ${e.conflict.proposal}`.slice(0, NOTE_MAX), at: this.iso() });
+        delete e.reason;
+        this.toFront(e);
+        this.save();
+        this.kickSoon();
+        return e;
+      }
+      if (answer === "try-again" && e.state === "unattributed" && e.dryRunHold) {
+        // A new dry run of the same commit, at its turn in line; the Land stands.
+        this.answerDecision(e, "try-again");
+        delete e.dryRunHold;
+        delete e.reason;
+        e.standing = { phase: "dry-run" };
+        this.toFront(e);
+        this.save();
+        this.kickSoon();
+        return e;
+      }
+      if (answer === "land-anyway" && e.state === "unattributed" && e.dryRunHold) {
+        // The dry run counts as passed for that commit: the landing goes on, still checked with the target's checks.
+        this.answerDecision(e, "land-anyway");
+        e.approval.dryRunWaived = e.dryRunHold.commit;
+        e.notes.push({ kind: "master-red", text: `Landed anyway: its dry run ${e.reason ?? "failed on the target too"}`.slice(0, NOTE_MAX), at: this.iso() });
+        delete e.dryRunHold;
         delete e.reason;
         this.toFront(e);
         this.save();
@@ -2226,7 +2684,123 @@ export class ProjectQueue {
         }
         return e;
       }
-      throw new MergeFailure("invalid-request", 'answer is "accept", "land-anyway", "try-again" or "land"');
+      throw new MergeFailure("invalid-request", answer === "allow" || answer === "send-back" || answer === "ask-thread" ? `answer is "accept", "land-anyway", "try-again" or "land" here: ${answer} answers only the scan's private names, and ${e.branch} is ${e.state}` : 'answer is "accept", "land-anyway", "try-again", "land", "allow", "send-back" or "ask-thread"');
+    });
+  }
+
+  // ---- §app.merge-queue/names-step: the "Private names and secrets" step ---------------------------------------
+
+  /** The run input's scan, when this landing pushes (the plan reads the same: names-step.ts scanPlanned). */
+  private async scanInput(e: Entry, def: ProjectDef | null): Promise<Pick<RunInput, "scan">> {
+    if (e.release) return {};
+    const hasRemote = await this.hasRemote(remoteOf(def));
+    if (!scanPlanned({ def, how: approvalHow(e.approval), hasRemote }).run) return {};
+    const names = this.names();
+    return { scan: { ...(names.exists ? { namesFile: names.file } : {}), allowFile: allowFileOf(this.store.dir) } };
+  }
+
+  /** A tested tip with hits: it waits for the user (Allow / Send Back / Ask the Merge Thread); the line moves on. */
+  private holdForNames(e: Entry, run: MergeRun, hits: readonly ScanHit[]): void {
+    run.verdict = "waiting";
+    run.why = `the scan before pushing found ${thingsThatLook(hits.length)} private`;
+    this.store.writeRun(run);
+    const question = [`${e.branch} passed its checks, but the scan before pushing found ${thingsThatLook(hits.length)} like private names or secrets:`, ...hitLines(hits, 6), "Allow (they're fine for this project), send it back to its chat to remove them, or ask the merge thread which names they are?"].join("\n");
+    this.raiseDecision(e, { kind: "private-names", question, choices: [], raisedBy: "queue", actions: ["allow", "send-back", "ask-thread"], run: run.id }, "needs-user", run.why);
+    this.log(`${e.branch}: held for private names (${hits.length} hit${hits.length === 1 ? "" : "s"})`);
+    this.record({ kind: "names", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "hits", hits: hits.length, why: `${run.why}: it waits for the user (Allow, Send Back or Ask the Merge Thread)` });
+    this.kickSoon();
+  }
+
+  /** The user's Allow, Send Back or Ask the Merge Thread on a private-names decision (their own click only). */
+  private async answerNames(e: Entry, answer: "allow" | "send-back" | "ask-thread", matches?: readonly string[]): Promise<MergeEntry> {
+    const d = e.decision;
+    if (e.state !== "needs-user" || d?.kind !== "private-names" || d.answered) throw new MergeFailure("invalid-request", `${answer === "allow" ? "Allow" : answer === "send-back" ? "Send Back" : "Ask the Merge Thread"} answers the scan's private names; ${e.branch} is ${e.state}`);
+    const run = this.store.readRun(d.run ?? e.run ?? "");
+    if (!run) throw new MergeFailure("invalid-request", `the run that found them (${d.run ?? e.run ?? "?"}) is gone: remove it from the queue and land it again`);
+    const file = allowFileOf(this.store.dir);
+    const hits = openHits(run.steps, file);
+    if (answer === "ask-thread") {
+      const told = this.wake("names-hit", e, run.id, { hits: hitLines(hits, 50) });
+      if (!told) throw new MergeFailure("unsupported", "no merge thread runs for this project now: Allow or Send Back");
+      e.notes = e.notes.filter((n) => !(n.kind === "operator" && n.text.startsWith("You asked the merge thread")));
+      e.notes.push({ kind: "operator", text: "You asked the merge thread which private names the scan found: its answer comes in its chat.", at: this.iso() });
+      this.record({ kind: "names", by: "user", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "asked-thread", hits: hits.length, why: "You asked the merge thread which private names the scan found" });
+      e.updatedAt = this.iso();
+      this.save();
+      return e;
+    }
+    if (answer === "send-back") {
+      this.answerDecision(e, "send-back");
+      this.record({ kind: "names", by: "user", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "sent-back", hits: hits.length, why: "You sent it back to its chat to remove what looks private" });
+      this.sendBack(e, { cause: "names", why: `the scan before pushing found ${thingsThatLook(hits.length)} private`, runId: run.id });
+      this.save();
+      this.kickSoon();
+      return e;
+    }
+    const chosen = matches?.length ? hits.filter((h) => matches.includes(h.key)) : hits;
+    if (matches?.length && !chosen.length) throw new MergeFailure("invalid-request", "none of those matches waits on this run: they were allowed already, or belong to another");
+    allowMatches(file, chosen, { at: this.iso(), run: run.id, entry: e.id });
+    this.log(`${e.branch}: ${chosen.length} match${chosen.length === 1 ? "" : "es"} marked fine for this project`);
+    this.record({ kind: "names", by: "user", entry: e.id, branch: e.branch, run: run.id, step: "scan", what: "allowed", hits: chosen.length, why: `You marked ${chosen.length} match${chosen.length === 1 ? "" : "es"} fine for this project` });
+    const left = openHits(run.steps, file);
+    if (left.length) {
+      // Some still wait: the decision stays open, now naming only those.
+      e.decision = { ...d, question: [`${thingsThatLook(left.length)} private ${left.length === 1 ? "still waits" : "still wait"}:`, ...hitLines(left, 6), "Allow, send it back, or ask the merge thread?"].join("\n") };
+      e.updatedAt = this.iso();
+      this.save();
+      this.republish();
+      return e;
+    }
+    this.answerDecision(e, "allow");
+    delete e.reason;
+    // The tested tip lands only onto the target it was tested on; the line moved on meanwhile: rerun it first.
+    if (run.tip && !this.current && (await this.targetHead()) === run.base) {
+      run.verdict = "passed";
+      this.store.writeRun(run);
+      e.state = "checking";
+      e.updatedAt = this.iso();
+      this.save();
+      await this.landTested(e, run);
+    } else {
+      this.toFront(e);
+      this.save();
+      this.kickSoon();
+    }
+    return e;
+  }
+
+  /** merge.names {action: "none"}: the user's one-click answer to the interview, No private names (an empty list). */
+  noPrivateNames(): Promise<{ file: string }> {
+    return this.serial(async () => {
+      const n = this.names();
+      if (n.exists) throw new MergeFailure("invalid-request", "the private names were answered already: the merge thread's names step changes the list");
+      mkdirSync(dirname(n.file), { recursive: true });
+      writeFileSync(n.file, `${JSON.stringify({ v: 1, privateNames: [], answered: { by: "user", how: "no-private-names", at: this.iso() } }, null, 2)}\n`, { mode: 0o600 });
+      this.log("private names answered: none");
+      this.record({ kind: "names", by: "user", what: "no-names", why: "You answered No private names: held pushes go now" });
+      this.settingsChanged();
+      await this.pushHeld();
+      this.save();
+      return { file: n.file };
+    });
+  }
+
+  /** merge.names {action: "allow"}: the held push's hits marked fine (the user's own click), then the push is tried. */
+  allowPushHits(matches?: readonly string[]): Promise<{ allowed: number }> {
+    return this.serial(async () => {
+      const f = this.q.heads.pushScan;
+      const file = allowFileOf(this.store.dir);
+      const ok = allowedKeys(file);
+      const hits = (f?.hits ?? []).filter((h) => !ok.has(h.key));
+      if (!hits.length) throw new MergeFailure("invalid-request", "no scan holds the push now");
+      const chosen = matches?.length ? hits.filter((h) => matches.includes(h.key)) : hits;
+      if (!chosen.length) throw new MergeFailure("invalid-request", "none of those matches holds the push");
+      const n = allowMatches(file, chosen, { at: this.iso() });
+      if (chosen.length === hits.length) delete this.q.heads.pushScan;
+      else this.q.heads.pushScan = { ...f!, hits: hits.filter((h) => !chosen.includes(h)) };
+      this.save();
+      if (!this.q.heads.pushScan) await this.pushHeld();
+      return { allowed: n };
     });
   }
 
@@ -2425,6 +2999,8 @@ export class ProjectQueue {
    */
   fixRuling(entryId: string, request: string | undefined, ok: boolean, text: string): Promise<MergeEntry> {
     return this.serial(async () => {
+      // The thread's reason and what it read go with the checked fix (MergeFix.why, read).
+      if (request) this.fixWhy = { request, why: clip(text), read: [...this.threadReads] };
       const found = request ? this.requestOf(request) : undefined;
       if (request && !found) throw new MergeFailure("not-found", `no merge queue request ${request}`);
       const e = found?.entry ?? this.mustEntry(entryId);
@@ -2548,9 +3124,21 @@ export class ProjectQueue {
    * What keeps the commit from going back in line by itself (Land's refusals, and what Ready to land checks itself:
    * conflicts with the target, the chat's own failing check run, drafts that don't fit), in words; null when nothing.
    */
-  private async fixBlocked(e: Pick<Entry, "branch" | "worktree" | "session" | "approval">, commit: string, drafts: { hash: string; names: string[] } | undefined): Promise<string | null> {
+  private async fixBlocked(e: Pick<Entry, "branch" | "worktree" | "session" | "approval">, commit: string, drafts: { hash: string; names: string[] } | undefined, dryRun = true): Promise<string | null> {
     const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
     if (!tip) return `${e.branch} is gone`;
+    // Its dry run of this commit failed, couldn't run or was stopped by a person: it waits for a new one (Run Dry Run
+    // Again, a fix), never a rerun by itself. A restart's stop doesn't hold it: in line it runs again.
+    if (dryRun && e.approval.dryRunWaived !== commit) {
+      const t = trialOf(this.q.trials, commit);
+      // A dry run that failed on its spec drafts, with the drafts changed since the Land pinned them (a drafts-only fix):
+      // it runs again at its turn, at the same commit, as a landing's drafts fix does. Their fit is checked below.
+      const draftsFixed = t?.verdict === "failed" && (drafts?.hash ?? null) !== (e.approval.drafts?.hash ?? null) && !!t.failure?.checks.some((c) => c.step === "docs");
+      if (t && !draftsFixed && (t.verdict === "failed" || t.verdict === "machine" || (t.verdict === "void" && (t.stopped?.by === "operator" || t.stopped?.by === "chat")))) {
+        const head = await this.targetHead();
+        if (head && (await this.dryRunNeeds(head, commit))?.setup) return t.verdict === "void" ? `Dry run stopped by ${stoppedByWords(t.stopped)}: nothing failed. Run it again.` : (t.failure?.line ?? untriedWhy(this.q.trials, commit) ?? "its dry run didn't pass");
+      }
+    }
     const wt = e.worktree && existsSync(e.worktree) ? e.worktree : undefined;
     if (wt && commit === tip) {
       const st = await this.git(statusArgs("--porcelain"), wt);
@@ -2608,7 +3196,9 @@ export class ProjectQueue {
     if (drafts) e.approval.drafts = { hash: drafts.hash, names: drafts.names };
     else delete e.approval.drafts;
     delete e.approval.blocked;
-    if (request) e.approval.fixes = [...(e.approval.fixes ?? []), { request, ...(moved ? { commit } : {}), ...(drafts ? { drafts: drafts.hash } : {}), checkedAt: this.iso() }];
+    const byReviewer = request ? (() => { const a = this.requestOf(request)?.request.answer; return a?.kind === "fixed" && a.by === "reviewer"; })() : false;
+    const evidence = request && this.fixWhy?.request === request ? this.fixWhy : null;
+    if (request) e.approval.fixes = [...(e.approval.fixes ?? []), { request, ...(moved ? { commit } : {}), ...(drafts ? { drafts: drafts.hash } : {}), checkedAt: this.iso(), ...(evidence?.why ? { why: evidence.why } : {}), ...(evidence?.read.length ? { read: evidence.read } : {}), ...(byReviewer ? { by: "reviewer" as const } : {}) }];
     // A resolution of the old commit's conflict doesn't fit the new one: the next run judges afresh.
     if (moved) {
       delete e.conflict;
@@ -2688,6 +3278,84 @@ export class ProjectQueue {
     this.armFixTimer();
   }
 
+  /** Entries whose next wake starts a fresh merge thread (THREAD_DEADLINE_MS passed): why. */
+  private freshFor = new Map<string, string>();
+
+  /** What `e` waits on the merge thread for: its fix to be checked, or its conflict to be judged; null: nothing. */
+  private waitsOnThread(e: Entry): "fix" | "conflict" | null {
+    if (e.release || !e.approval.standing) return null;
+    if (e.state === "conflict") return "conflict";
+    if (e.state === "with-chat" && e.fix && e.fix.request !== CONFLICT_WAIT && e.standing?.phase === "waiting-thread") return "fix";
+    return null;
+  }
+
+  /**
+   * §chat.merge-queue/thread-health: a fix or conflict that waited THREAD_DEADLINE_MS on the merge thread gets a fresh
+   * thread (its wake below starts one: the old one is retired, "it didn't answer for 15 minutes"); a fresh one that
+   * couldn't start, or didn't answer within the deadline either, tells the user once. Nothing lands unchecked
+   * meanwhile, and a conflict never goes to the chat unjudged. True while something waits (the recheck keeps going).
+   * The caller saves.
+   */
+  private threadDeadline(e: Entry): boolean {
+    const what = this.waitsOnThread(e);
+    if (!what) {
+      if (e.threadWait) {
+        delete e.threadWait;
+        this.save();
+      }
+      return false;
+    }
+    const now = this.now();
+    if (!e.threadWait || e.threadWait.what !== what) {
+      e.threadWait = { what, since: e.fix?.at && what === "fix" ? e.fix.at : this.iso() };
+      this.save();
+    }
+    const tw = e.threadWait;
+    const mins = Math.round(THREAD_DEADLINE_MS / 60_000);
+    if (!tw.fresh && now - Date.parse(tw.since) >= THREAD_DEADLINE_MS) {
+      const why = `it didn't answer for ${mins} minutes (${e.branch}'s ${what === "fix" ? "fix" : "conflict"} waited on it)`;
+      tw.fresh = { at: this.iso() };
+      this.freshFor.set(e.id, why);
+      // Its wake goes again now, to a fresh thread: the fix below, or the conflict (waitForThread hands it over again).
+      if (what === "fix" && e.fix) e.fix = { ...e.fix, told: false, at: this.iso() };
+      if (what === "conflict") {
+        this.clearConflictTimer(e.id);
+        e.fix = { request: CONFLICT_WAIT, told: false, at: this.iso() };
+      }
+      this.log(`${e.branch}: the merge thread didn't answer for ${mins} minutes: a fresh thread is started`);
+      this.recordHealth(e, "fresh-thread", `${what === "fix" ? "Its fix" : "Its conflict"} waited ${mins} min on the merge thread with no ruling: Sova starts a fresh thread for it`, now - Date.parse(tw.since), what);
+      this.save();
+      return true;
+    }
+    // A fresh start decided before a restart of Sova, whose wake never went: decided again (its why lived in memory).
+    if (tw.fresh && !tw.notified && !this.freshFor.has(e.id) && e.fix && !e.fix.told && !(this.deps.threadHealth?.(this.root)?.restarts ?? []).some((r) => r.at >= Date.parse(tw.fresh!.at))) {
+      this.freshFor.set(e.id, `it didn't answer for ${mins} minutes (${e.branch}'s ${what === "fix" ? "fix" : "conflict"} waited on it)`);
+    }
+    if (tw.fresh && !tw.notified) {
+      const failed = (this.deps.threadHealth?.(this.root)?.restarts ?? []).find((r) => r.at >= Date.parse(tw.fresh!.at) && !r.ok);
+      if (failed) tw.fresh = { ...tw.fresh, ok: false, ...(failed.error ? { error: failed.error } : {}) };
+      const unanswered = now - Date.parse(tw.fresh.at) >= THREAD_DEADLINE_MS;
+      if (failed || unanswered) {
+        tw.notified = this.iso();
+        const head = failed ? `a fresh merge thread couldn't start (${failed.error ?? "unknown"})` : `a fresh merge thread didn't answer in ${mins} minutes either`;
+        this.log(`${e.branch}: ${head}; the user is told`);
+        this.recordHealth(e, failed ? "fresh-failed" : "fresh-unanswered", `${head}: the user is told; ${what === "fix" ? "the fix is never landed unchecked" : "the conflict never goes to the chat unjudged"}`, now - Date.parse(tw.since), what);
+        try {
+          this.deps.alert?.({ title: `The merge thread isn't answering · ${this.root.split("/").pop() ?? this.root}`, body: `${e.branch}'s ${what === "fix" ? "fix" : "conflict"} has waited ${Math.round((now - Date.parse(tw.since)) / 60_000)} min for the merge thread, and ${head}. ${what === "fix" ? "It is never landed unchecked" : "It never goes to the chat unjudged"}: Start Fresh on the Merge Queue tab.`, tag: `sova:merge-thread-down:${this.id}` }, this.root);
+        } catch (err) {
+          this.log(`thread notification failed: ${err instanceof Error ? err.message : err}`);
+        }
+        this.save();
+      }
+    }
+    return true;
+  }
+
+  /** A "thread-health" event (events-plan's record), when the event log is there. */
+  private recordHealth(e: Entry, what: "fresh-thread" | "fresh-failed" | "fresh-unanswered", why: string, waitedMs: number, waitingOn: "fix" | "conflict"): void {
+    this.record({ kind: "thread-health", by: "queue", entry: e.id, branch: e.branch, why, what, waitedMs, waitingOn });
+  }
+
   /** Look at the entries with their chats again now (tests; a thread that just started). */
   recheckNow(): Promise<void> {
     return this.serial(() => this.recheckWithChat());
@@ -2701,6 +3369,7 @@ export class ProjectQueue {
   private async recheckWithChat(): Promise<void> {
     let more = false;
     for (const e of this.q.entries) {
+      if (this.threadDeadline(e)) more = true;
       // A conflict's wait for the thread ends once the thread judged it (or it left the conflict state any other way).
       if (e.fix?.request === CONFLICT_WAIT && e.state !== "conflict") {
         delete e.fix;
@@ -2711,7 +3380,9 @@ export class ProjectQueue {
         more = true;
         if (e.fix.told) continue;
         const scratch = this.deps.thread ? await this.makeScratch(e, (await this.targetHead()) ?? e.commit) : {};
-        const told = this.wake("conflict", e, e.run, { files: e.conflictFiles ?? [], ...scratch });
+        const fresh = this.freshFor.get(e.id);
+        this.freshFor.delete(e.id);
+        const told = this.wake("conflict", e, e.run, { files: e.conflictFiles ?? [], ...scratch, ...(fresh ? { fresh } : {}) });
         if (told) {
           e.fix = { ...e.fix, told: true, at: this.iso() };
           this.save();
@@ -2740,7 +3411,9 @@ export class ProjectQueue {
         const a = r?.answer;
         if (r && a?.kind === "fixed") {
           const fixBase = a.commit ? await this.mergeBase(a.commit) : undefined;
-          e.fix.told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(a.commit ? { fixCommit: a.commit } : {}), ...(a.changed !== "commit" ? { drafts: true } : {}), summary: a.summary, ...(fixBase ? { base: fixBase } : {}) });
+          const fresh = this.freshFor.get(e.id);
+          this.freshFor.delete(e.id);
+          e.fix.told = this.wake("fix", e, undefined, { request: r.id, asked: r.text, ...(a.commit ? { fixCommit: a.commit } : {}), ...(a.changed !== "commit" ? { drafts: true } : {}), summary: a.summary, ...(fixBase ? { base: fixBase } : {}), ...(fresh ? { fresh } : {}) });
           if (e.fix.told) this.save();
         }
         continue;
@@ -2832,7 +3505,7 @@ export class ProjectQueue {
     });
   }
 
-  private trying: { run: MergeRun; ac: AbortController; done: Promise<void> } | null = null;
+  private trying: { run: MergeRun; ac: AbortController; done: Promise<void>; trial?: MergeTrial; stop?: NonNullable<MergeTrial["stopped"]> } | null = null;
   private lastTry: string | null = null;
 
   /**
@@ -2891,7 +3564,7 @@ export class ProjectQueue {
         const runId = newId("mr");
         const runDir = this.store.runDir(runId);
         mkdirSync(runDir, { recursive: true });
-        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "A dry run of the checks on the target" };
+        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "A test run of the checks on the target" };
         this.store.writeRun(run);
         const ac = new AbortController();
         const stand: MergeEntry = { id: "setup", project: this.id, target: this.q.target, branch: this.q.target, commit: head, approval: { by: "land-button", at: this.iso(), commit: head }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
@@ -2942,7 +3615,7 @@ export class ProjectQueue {
         return { run: structuredClone(run) };
       }
       // Save: one commit on the target holding the new definition, moved to like a landing.
-      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: save the checks after Publish or Abandon`);
+      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: save the checks after Publish or Cancel Release`);
       const co = await checkoutOf(this.git, this.root, this.q.target);
       if (co) {
         const why = await dirtyWhy(this.git, co);
@@ -2980,9 +3653,9 @@ export class ProjectQueue {
         this.checksCache = null;
         // The setup commit isn't pushed on its own: it goes out with the next landing. The view says so meanwhile,
         // from the sha origin had (its remote-tracking ref), unless a push is already held for its own reason.
-        if ((await this.git(["remote"], this.root)).stdout.split("\n").includes("origin")) {
+        if (await this.hasRemote()) {
           if (!this.q.heads.pushed) {
-            const remote = await revParse(this.git, this.root, `refs/remotes/origin/${this.q.target}`);
+            const remote = await revParse(this.git, this.root, `refs/remotes/${await this.remoteName()}/${this.q.target}`);
             if (remote) this.q.heads.pushed = remote;
           }
           if (!this.q.heads.pushWhy) this.q.heads.pushWhy = PUSH_WAITS_NEXT_LANDING;
@@ -2997,7 +3670,7 @@ export class ProjectQueue {
     });
   }
 
-  /** Why `commit` can't land without a trial (a setup branch with no passing trial of that exact commit), or null. */
+  /** Why `commit` can't land without a dry run (a setup branch with no passing dry run of that exact commit), or null. */
   async setupUntried(head: string, commit: string): Promise<string | null> {
     const change = await setupChangeOf(this.git, this.root, head, commit);
     // Git can't tell whether it changes the setup: it waits, as a setup branch would (fail closed).
@@ -3010,109 +3683,450 @@ export class ProjectQueue {
     return structuredClone(this.q.trials ?? []);
   }
 
+  private needsCache = new Map<string, { setup: boolean; reasons: string[]; services: string[] }>();
+  /** Whether `commit` is a setup branch's against the target's `head`, why (its reasons) and the services a merge check
+   *  needs that it changes; null when Git can't tell. Kept per pair of commits (they never change). */
+  async dryRunNeeds(head: string, commit: string): Promise<{ setup: boolean; reasons: string[]; services: string[] } | null> {
+    const key = `${head}:${commit}`;
+    const hit = this.needsCache.get(key);
+    if (hit) return hit;
+    const change = await setupChangeOf(this.git, this.root, head, commit);
+    if (!change) return null;
+    let out = { setup: false, reasons: [] as string[], services: [] as string[] };
+    if (isSetupChange(change)) {
+      const raw = async (c: string): Promise<Record<string, unknown> | null> => {
+        const r = await this.git(["show", `${c}:.sova/project.json`], this.root);
+        try {
+          return r.code === 0 ? (JSON.parse(r.stdout) as Record<string, unknown>) : null;
+        } catch {
+          return null;
+        }
+      };
+      const defAt = async (c: string) => (await this.deps.definitionAt(this.root, c).catch(() => ({ def: null }))).def ?? null;
+      const [ra, rb, da, db] = await Promise.all([raw(head), raw(commit), defAt(head), defAt(commit)]);
+      const required = new Set([...requiredServices(ra), ...requiredServices(rb)]);
+      const services = changedServices(ra, rb).filter((n) => required.has(n));
+      out = { setup: true, reasons: dryRunReasons(db, da, { sections: change.sections.filter((x) => x !== "services"), services, playbook: change.files.length > 0 }), services };
+    }
+    if (this.needsCache.size > 200) this.needsCache.clear();
+    this.needsCache.set(key, out);
+    return out;
+  }
+
+  /** What holds the merge copy now, in words (a waiting dry run's "starts after …"). */
+  private holdsCopyWords(): string {
+    if (this.current) return `the landing of ${this.entry(this.current.entry)?.branch ?? this.current.run.branch}`;
+    if (this.trying) return this.trying.trial ? `the dry run of ${this.trying.trial.branch ?? this.trying.run.branch}` : "the test run of the checks";
+    if (this.q.release) return `the release ${this.releaseName()}`;
+    if (this.landing) return "a landing";
+    return "the run checking now";
+  }
+
+  /** The running dry run's check N of M (1-based). */
+  private trialProgress(): { at: number; of: number } {
+    const t = this.trying?.trial;
+    const run = this.trying?.run;
+    if (!t || !run) return { at: 0, of: 0 };
+    const of = t.ran?.length ?? run.checks.length;
+    const done = run.steps.filter((x) => x.kind === "check" && x.result !== "running" && x.result !== "pending").length;
+    return { at: Math.min(of, done + 1), of };
+  }
+
+  /** The dry run running now, as the view carries it. */
+  private trialNowView(): MergeTrialNow | null {
+    const t = this.trying?.trial;
+    if (!t || !this.trying) return null;
+    return { trial: structuredClone(t), run: structuredClone(this.trying.run), progress: this.trialProgress() };
+  }
+
+  /** The dry runs waiting for the copy, each with what holds it now. */
+  private trialsWaitingView(): MergeTrialWaiting[] {
+    const after = this.holdsCopyWords();
+    return (this.q.trialsWaiting ?? []).map((w) => ({ ...structuredClone(w), after }));
+  }
+
+  /** A Land of `branch` at `commit` supersedes the branch's dry run of another commit, running (stopped as superseded:
+   *  its chat is told the Land runs its own) or waiting its turn (dropped). A dry run of `commit` itself is adopted. */
+  private supersedeTrials(branch: string, commit: string): void {
+    const cur = this.trying?.trial;
+    if (cur && this.trying && cur.branch === branch && cur.commit !== commit && !this.trying.stop) {
+      this.trying.stop = { by: "superseded", at: this.iso() };
+      this.trying.ac.abort();
+    }
+    const w = (this.q.trialsWaiting ?? []).filter((x) => x.branch === branch);
+    if (!w.length) return;
+    this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((x) => x.branch !== branch);
+    for (const x of w) this.tellWaitingEnded(x, x.commit === commit ? "taken by your Land, which runs it at its turn in line" : `superseded by your Land of ${commit.slice(0, 7)}, which runs its own dry run`);
+  }
+
+  /** The chat that asked for a waiting dry run is told it won't start (stopped, or taken by a Land). */
+  private tellWaitingEnded(w: MergeTrialWaiting, how: string): void {
+    if (w.by.kind !== "chat" || !w.by.session) return;
+    const text = `The dry run of ${w.branch} at ${w.commit.slice(0, 7)} that waited for the merge copy won't start: ${how}. Nothing ran and nothing failed.`;
+    const trial: MergeTrial = { run: "", commit: w.commit, branch: w.branch, verdict: "void", by: w.by, startedAt: w.at, stopped: { by: "operator", at: this.iso() } };
+    const run: MergeRun = { id: "", entry: "trial", project: this.id, branch: w.branch, base: w.commit, commit: w.commit, steps: [], checks: [], verdict: "void", startedAt: w.at };
+    this.deps.trialEnded?.(trial, run, this.root, { sessions: [w.by.session], text });
+  }
+
+  /** A passing dry run, or a passing merge queue run, of a commit of `branch` later than `commit` (one descending from
+   *  it): newer evidence than a check run at `commit` (§chat.worktrees/newest-commit). */
+  async passedAfter(branch: string, commit: string, kind = "test run"): Promise<boolean> {
+    const later = new Set<string>();
+    // A dry run counts only when it ran a check of that kind (§chat.worktrees/newest-commit): for a test run, one that ran
+    // tests or is the project's test command; for a typecheck or a build, one whose command is that. Setup steps or
+    // checks of another kind alone prove nothing.
+    for (const t of this.q.trials ?? []) {
+      if (t.branch !== branch || t.verdict !== "passed" || t.commit === commit) continue;
+      const run = this.store.readRun(t.run);
+      const checks = (run?.steps ?? []).filter((x) => x.kind === "check" && x.result === "passed");
+      if (!checks.length) continue;
+      const def = (await this.deps.definitionAt(this.root, t.commit).catch(() => ({ def: null }))).def ?? null;
+      const decl = Array.isArray(def?.merge?.checks) ? def.merge.checks : [...(def?.release?.checks ?? [])];
+      const argvOf = (stepId: string) => [...decl, ...(def?.release?.checks ?? [])].find((c) => `check:${c.id}` === stepId)?.run ?? [];
+      const kindOf = (x: RunStep): string => {
+        const argv = argvOf(x.id);
+        if ((x.counts?.passed ?? 0) > 0 || isTestCheck(def, { run: argv })) return "test run";
+        return checkKindOf(argv.join(" "));
+      };
+      if (checks.some((x) => kindOf(x) === kind)) later.add(t.commit);
+    }
+    for (const e of this.q.entries) {
+      if (e.branch !== branch || e.commit === commit) continue;
+      const run = e.run ? this.store.readRun(e.run) : null;
+      if (e.state === "landed" || run?.verdict === "passed") later.add(e.commit);
+    }
+    for (const c of later) if (await isAncestor(this.git, this.root, commit, c)) return true;
+    return false;
+  }
+
   /**
-   * merge.try: a trial of a setup branch's head (or any commit) in the merge copy. The copy is reset to that commit,
-   * nothing is merged and nothing saved; the checks are that commit's own definition's (its merge checks and the
-   * services they require, then its release checks). It answers at once and runs on in the background (merge.logs
-   * reads its run). Refused while a landing, a run or another trial holds the copy, or while a release holds the queue.
+   * A setup branch's dry run state at `commit` (its newest, the caller's head), or null when the commit isn't a setup
+   * branch's (or Git can't tell). Never an older commit's as current: that one is only `older`.
    */
-  trial(req: { branch?: string; commit?: string; checkout?: string; checks?: string[]; by: MergeTrial["by"] }): Promise<{ trial: MergeTrial; run: MergeRun }> {
+  async dryRunOf(branch: string, commit: string, head?: string): Promise<BranchDryRun | null> {
+    const h = head || (await this.targetHead());
+    if (!h) return null;
+    const n = await this.dryRunNeeds(h, commit);
+    if (!n?.setup) return null;
+    const why = dryRunWhyLine(n.reasons);
+    const t = trialOf(this.q.trials, commit);
+    const old = (this.q.trials ?? []).find((x) => x.branch === branch && x.commit !== commit);
+    const entry = this.q.entries.find((e) => e.branch === branch && e.commit === commit && ENTRY_OPEN.includes(e.state) && !!e.approval.standing);
+    const base: BranchDryRun = { commit, why, state: "needed", ...(old ? { older: { commit: old.commit, verdict: old.verdict } } : {}), ...(entry ? { land: entry.id } : {}) };
+    const by = (x: MergeTrial) => ({ run: x.run, by: structuredClone(x.by) });
+    if (t?.verdict === "running") return { ...base, ...by(t), state: "running", ...(this.trying?.trial?.run === t.run ? { progress: this.trialProgress() } : {}) };
+    const w = (this.q.trialsWaiting ?? []).findIndex((x) => x.branch === branch && x.commit === commit);
+    if (w >= 0) return { ...base, state: "waiting", by: structuredClone(this.q.trialsWaiting![w]!.by), after: this.holdsCopyWords(), position: w + 1, waiting: this.q.trialsWaiting![w]!.id };
+    if (entry?.approval.dryRunWaived === commit) return { ...base, state: "passed" };
+    if (!t) return base;
+    if (t.verdict === "passed") return { ...base, ...by(t), state: "passed" };
+    if (t.verdict === "void") {
+      // A restart's stop of the dry run a Land waits on: it runs again by itself at its turn.
+      if (entry && entry.state === "queued" && t.stopped?.by !== "operator" && t.stopped?.by !== "chat") return { ...base, ...by(t) };
+      return { ...base, ...by(t), state: "stopped", ...(t.stopped ? { stopped: structuredClone(t.stopped) } : {}) };
+    }
+    return { ...base, ...by(t), state: t.verdict === "machine" ? "machine" : "failed", ...(t.failure ? { failure: structuredClone(t.failure) } : {}) };
+  }
+
+  /**
+   * merge.try (and Run Dry Run): a dry run of a setup branch's head (or any commit) in the merge copy, of the checks it
+   * adds or changes, merging and saving nothing. Answers at once: the dry run started (merge.logs reads its run); the
+   * one already running at that commit (a second press or a Land never races it); or, while the copy is busy, the dry
+   * run waiting its turn (it starts once the copy is free, one per branch: asking again re-pins its commit).
+   */
+  trial(req: { branch?: string; commit?: string; checkout?: string; checks?: string[]; by: TrialBy }): Promise<{ trial?: MergeTrial; run?: MergeRun; waiting?: MergeTrialWaiting }> {
     return this.serial(async () => {
-      if (this.current || this.trying || this.landing) throw new MergeFailure("busy", "a landing or a run is using the merge copy now: try again when it ends");
       let branch = req.branch?.replace(/^refs\/heads\//, "");
       if (!branch && !req.commit && req.checkout) {
         const r = await this.git(["symbolic-ref", "--quiet", "--short", "HEAD"], req.checkout);
         if (r.code === 0 && r.stdout.trim()) branch = r.stdout.trim();
       }
-      if (!branch && !req.commit) throw new MergeFailure("invalid-request", "name the branch or the commit to try");
+      if (!branch && !req.commit) throw new MergeFailure("invalid-request", "name the branch or the commit to dry-run");
       const commit = req.commit ? await revParse(this.git, this.root, req.commit) : await revParse(this.git, this.root, `refs/heads/${branch}`);
       if (!commit) throw new MergeFailure("not-found", req.commit ? `no commit ${req.commit} in ${this.root}` : `no branch ${branch} in ${this.root}`);
       if (branch && req.commit) {
         const tip = await revParse(this.git, this.root, `refs/heads/${branch}`);
         if (tip && commit !== tip && !(await isAncestor(this.git, this.root, commit, tip))) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} isn't on ${branch}`);
       }
-      const shown = await this.git(["show", `${commit}:.sova/project.json`], this.root);
-      if (shown.code !== 0) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} has no .sova/project.json: there is nothing to try`);
-      let def: ProjectDef;
-      try {
-        def = parseDefinition(shown.stdout);
-      } catch (err) {
-        throw new MergeFailure("invalid-request", `.sova/project.json at ${commit.slice(0, 7)} is invalid: ${err instanceof Error ? err.message : err}`);
-      }
-      // No merge checks declared: the trial is the copy and the setup alone, as "no automated tests" is.
-      if (this.deps.checksOf(def) === "unset") def = { ...def, merge: { ...(def.merge ?? {}), checks: "none" } } as ProjectDef;
-      // Release checks are long: a trial runs those new or changed against the target's release section, and the ones
-      // named for it; the rest are reported not run (unchanged).
-      const onTarget = (await this.declared()).def?.release?.checks ?? [];
-      const { run: releaseRun, notRun } = trialReleaseChecks(def.release?.checks ?? [], onTarget, req.checks ?? []);
-      const unknown = (req.checks ?? []).filter((id) => !(def.release?.checks ?? []).some((c) => c.id === id) && !(Array.isArray(def.merge?.checks) && def.merge.checks.some((c) => c.id === id)));
-      if (unknown.length) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} declares no check ${unknown.map((u) => `"${u}"`).join(", ")}`);
-      const runId = newId("mr");
-      const runDir = this.store.runDir(runId);
-      mkdirSync(runDir, { recursive: true });
-      const label = branch ?? commit.slice(0, 7);
-      const run: MergeRun = { id: runId, entry: "trial", project: this.id, branch: label, base: commit, commit, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: `Trial of ${label}` };
-      this.store.writeRun(run);
-      const trial: MergeTrial = { run: runId, commit, ...(branch ? { branch } : {}), verdict: "running", by: req.by, startedAt: run.startedAt, ...(notRun.length ? { notRun: notRun.map((c) => ({ id: c.id, label: c.label })) } : {}) };
-      this.q.trials = [trial, ...(this.q.trials ?? []).filter((t) => t.run !== runId)].slice(0, MERGE_TRIALS_KEPT);
-      this.save();
-      const ac = new AbortController();
-      const stand: MergeEntry = { id: "trial", project: this.id, target: this.q.target, branch: label, commit, approval: { by: "land-button", at: this.iso(), commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
-      const input: RunInput = {
-        runId,
-        entry: stand,
-        project: { id: this.id, root: this.root, target: this.q.target, def },
-        base: commit,
-        commit,
-        runDir,
-        // A trial runs every proposed check, the optional ones too.
-        picks: optionalPicks(def),
-        review: false,
-        tryOnly: true,
-        trialOf: label,
-        ...(releaseRun.length ? { releaseChecks: releaseRun } : {}),
-        signal: ac.signal,
-        awaitReview: () => Promise.reject(new Error("no review in a trial")),
-      };
-      const hooks = {
-        step: (st: RunStep) => {
-          const i = run.steps.findIndex((x) => x.id === st.id);
-          if (i >= 0) run.steps[i] = { ...st };
-          else run.steps.push({ ...st });
-          this.store.writeRun(run);
-        },
-        checks: (list: CheckPick[]) => void (run.checks = list),
-        copy: (path: string) => void (run.copy = path),
-      };
-      const done = (async () => {
-        let out: RunOutcome;
-        try {
-          out = await this.deps.runMerge(input, hooks);
-        } catch (err) {
-          out = { verdict: "machine", why: err instanceof Error ? err.message : String(err), notes: [], checks: [] };
-        }
-        run.verdict = out.verdict === "passed" ? "passed" : out.verdict === "void" ? "void" : out.verdict === "machine" ? "machine" : "failed";
-        run.why = out.verdict === "passed" ? `the proposed checks pass on ${label} at ${commit.slice(0, 7)}` : (out.why ?? "a check failed");
-        run.endedAt = this.iso();
-        if (out.noChecks) run.noChecks = true;
-        this.store.writeRun(run);
-        await this.serial(async () => {
-          const t = (this.q.trials ?? []).find((x) => x.run === runId);
-          if (t) {
-            t.verdict = run.verdict === "passed" ? "passed" : run.verdict === "void" ? "void" : run.verdict === "machine" ? "machine" : "failed";
-            t.why = run.why;
-            t.endedAt = run.endedAt;
-            this.save();
-            if (t.verdict !== "void") this.deps.trialEnded?.(structuredClone(t), structuredClone(run), this.root);
-          }
-          this.trying = null;
-          this.schedulePublish();
+      const def = await this.trialDef(commit, req.checks ?? []);
+      void def;
+      // The one running at this commit answers (a second press, a chat's merge.try of what a Land runs).
+      const cur = this.trying?.trial;
+      if (cur && this.trying && cur.commit === commit) return { trial: structuredClone(cur), run: structuredClone(this.trying.run) };
+      // A Land of this commit waiting on its dry run: this is that dry run, never a second one.
+      const land = branch ? this.q.entries.find((e) => e.branch === branch && e.commit === commit && e.state === "queued" && e.standing?.phase === "dry-run") : undefined;
+      const by: TrialBy = land ? { kind: "land", entry: land.id } : req.by;
+      const head = (await this.targetHead()) ?? "";
+      if (this.current || this.trying || this.landing || this.q.release || land) {
+        if (!branch) throw new MergeFailure("busy", "a landing or a dry run is using the merge copy now: try again when it ends (name the branch to have it wait its turn)");
+        const needs = dryRunWhyLine((head ? await this.dryRunNeeds(head, commit) : null)?.reasons ?? []);
+        if (land) {
+          // That dry run is the Land's: it runs at its turn in line, never a second one.
+          const pos = this.withPosition(land).position;
           this.kickSoon();
-        });
-      })();
-      this.trying = { run, ac, done };
-      this.schedulePublish();
-      return { trial: structuredClone(trial), run: structuredClone(run) };
+          return { waiting: { id: land.id, branch, commit, by, at: land.approval.at, after: `its turn in line (Approved · dry run first${pos ? ` · ${ordinal(pos)}` : ""})`, needs } };
+        }
+        const list = (this.q.trialsWaiting ?? []).filter((w) => w.branch !== branch);
+        const was = (this.q.trialsWaiting ?? []).find((w) => w.branch === branch);
+        const w: MergeTrialWaiting = { id: was?.id ?? newId("tw"), branch, commit, by: req.by, at: was?.at ?? this.iso(), after: "", needs };
+        const i = (this.q.trialsWaiting ?? []).findIndex((x) => x.branch === branch);
+        if (i >= 0) list.splice(i, 0, w);
+        else list.push(w);
+        this.q.trialsWaiting = list;
+        this.save();
+        this.schedulePublish();
+        this.deps.trialMoved?.({ branch, by: structuredClone(req.by) }, this.root);
+        return { waiting: { ...w, after: this.holdsCopyWords() } };
+      }
+      return this.startTrial({ ...(branch ? { branch } : {}), commit, by, checks: req.checks ?? [] });
+    });
+  }
+
+  /** The commit's definition as a dry run reads it; refused when it has none or it doesn't parse, or names a check it
+   *  doesn't declare. */
+  private async trialDef(commit: string, named: readonly string[]): Promise<ProjectDef> {
+    const shown = await this.git(["show", `${commit}:.sova/project.json`], this.root);
+    if (shown.code !== 0) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} has no .sova/project.json: there is nothing to dry-run`);
+    let def: ProjectDef;
+    try {
+      def = parseDefinition(shown.stdout);
+    } catch (err) {
+      throw new MergeFailure("invalid-request", `.sova/project.json at ${commit.slice(0, 7)} is invalid: ${err instanceof Error ? err.message : err}`);
+    }
+    const unknown = named.filter((id) => !(def.release?.checks ?? []).some((c) => c.id === id) && !(Array.isArray(def.merge?.checks) && def.merge.checks.some((c) => c.id === id)));
+    if (unknown.length) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} declares no check ${unknown.map((u) => `"${u}"`).join(", ")}`);
+    return def;
+  }
+
+  /** Start a dry run now (the copy is free; the caller is inside serial). */
+  private async startTrial(o: { branch?: string; commit: string; by: TrialBy; checks: readonly string[] }): Promise<{ trial: MergeTrial; run: MergeRun }> {
+    const { branch, commit } = o;
+    let def = await this.trialDef(commit, o.checks);
+    if (branch) this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((w) => w.branch !== branch);
+    // No merge checks declared: the dry run is the copy and the setup alone, as "no automated tests" is.
+    if (this.deps.checksOf(def) === "unset") def = { ...def, merge: { ...(def.merge ?? {}), checks: "none" } } as ProjectDef;
+    const declared = await this.declared();
+    const onTarget = declared.def;
+    const head = declared.head || (await this.targetHead()) || "";
+    const needs = head ? await this.dryRunNeeds(head, commit) : null;
+    // Only the merge checks it adds or changes (or whose required service it changes) run; the rest run in the landing.
+    const trimmed = dryRunMergeChecks(def, onTarget, needs?.services ?? []);
+    for (const id of o.checks) {
+      const c = trimmed.notRun.find((x) => x.id === id);
+      if (c) {
+        trimmed.notRun = trimmed.notRun.filter((x) => x !== c);
+        trimmed.run.push(c);
+      }
+    }
+    if (Array.isArray(def.merge?.checks)) def = { ...def, merge: { ...def.merge, checks: def.merge.checks.filter((c) => trimmed.run.includes(c)) } };
+    // Release checks are long: those new or changed against the target's release section, and the ones named for it.
+    const { run: releaseRun, notRun } = trialReleaseChecks(def.release?.checks ?? [], onTarget?.release?.checks ?? [], o.checks);
+    const runId = newId("mr");
+    const runDir = this.store.runDir(runId);
+    mkdirSync(runDir, { recursive: true });
+    // The branch's own spec drafts as they stand now, by a Land's rule (branchDrafts), made into docs in the copy before
+    // any check. No worktree to read (a bare commit): the drafts committed in it. A Land without its specs: none.
+    const landEntry = o.by.kind === "land" ? this.entry(o.by.entry) : undefined;
+    let draftsDir: string | undefined;
+    let draftsFromCommit = false;
+    if (!landEntry?.approval.withoutSpecs) {
+      const wt = branch ? (landEntry?.worktree && existsSync(landEntry.worktree) ? landEntry.worktree : (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path) : undefined;
+      if (wt) {
+        const drafts = await this.branchDrafts(wt, commit);
+        if (drafts) {
+          draftsDir = join(runDir, "drafts");
+          for (const n of drafts.names) {
+            const from = join(wt, ".sova", "spec", "drafts", n);
+            if (existsSync(from)) cpSync(from, join(draftsDir, n), { recursive: true });
+          }
+        }
+      } else draftsFromCommit = true;
+    }
+    const label = branch ?? commit.slice(0, 7);
+    const why = needs?.setup ? dryRunWhyLine(needs.reasons) : undefined;
+    const run: MergeRun = { id: runId, entry: "trial", project: this.id, branch: label, base: commit, commit, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: `Dry run of ${label}${why ? `: ${why}` : ""}` };
+    this.store.writeRun(run);
+    const ran = [...(Array.isArray(def.merge?.checks) ? def.merge.checks : []), ...releaseRun].map((c) => ({ id: c.id, label: c.label }));
+    const trial: MergeTrial = {
+      run: runId,
+      commit,
+      ...(branch ? { branch } : {}),
+      verdict: "running",
+      by: o.by,
+      startedAt: run.startedAt,
+      ...(why ? { needs: why } : {}),
+      ran,
+      ...(trimmed.notRun.length ? { skipped: trimmed.notRun.map((c) => ({ id: c.id, label: c.label })) } : {}),
+      ...(notRun.length ? { notRun: notRun.map((c) => ({ id: c.id, label: c.label })) } : {}),
+    };
+    this.q.trials = [trial, ...(this.q.trials ?? []).filter((t) => t.run !== runId)].slice(0, MERGE_TRIALS_KEPT);
+    // A Land waiting on it reads it as its own.
+    if (o.by.kind === "land") {
+      const e = this.entry(o.by.entry);
+      if (e) {
+        e.standing = { phase: "dry-run", run: runId };
+        e.updatedAt = this.iso();
+      }
+    }
+    this.save();
+    const ac = new AbortController();
+    const stand: MergeEntry = { id: "trial", project: this.id, target: this.q.target, branch: label, commit, approval: { by: "land-button", at: this.iso(), commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
+    const input: RunInput = {
+      runId,
+      entry: stand,
+      project: { id: this.id, root: this.root, target: this.q.target, def },
+      base: commit,
+      commit,
+      runDir,
+      // A dry run runs every proposed check it keeps, the optional ones too.
+      picks: optionalPicks(def),
+      review: false,
+      tryOnly: true,
+      trialOf: label,
+      ...(draftsDir ? { draftsDir } : draftsFromCommit ? { draftsFromCommit: true as const } : {}),
+      ...(onTarget && head ? { trialTarget: { def: onTarget, head } } : {}),
+      ...(releaseRun.length ? { releaseChecks: releaseRun } : {}),
+      signal: ac.signal,
+      awaitReview: () => Promise.reject(new Error("no review in a dry run")),
+    };
+    const hooks = {
+      step: (st: RunStep) => {
+        const i = run.steps.findIndex((x) => x.id === st.id);
+        if (i >= 0) run.steps[i] = { ...st };
+        else run.steps.push({ ...st });
+        this.store.writeRun(run);
+        this.schedulePublish();
+      },
+      checks: (list: CheckPick[]) => void (run.checks = list),
+      copy: (path: string) => void (run.copy = path),
+    };
+    const done = (async () => {
+      let out: RunOutcome;
+      try {
+        out = await this.deps.runMerge(input, hooks);
+      } catch (err) {
+        out = { verdict: "machine", why: err instanceof Error ? err.message : String(err), notes: [], checks: [] };
+      }
+      // The drafts copy is read only inside the run (its docs step).
+      dropRunDrafts(runDir);
+      const stop = this.trying?.run.id === runId ? this.trying.stop : undefined;
+      run.verdict = out.verdict === "passed" ? "passed" : out.verdict === "void" || stop ? "void" : out.verdict === "machine" ? "machine" : "failed";
+      run.why = run.verdict === "passed" ? `the new or changed checks pass on ${label} at ${commit.slice(0, 7)}` : run.verdict === "void" ? `stopped by ${stoppedByWords(stop ?? { by: "restart", at: this.iso() })}` : (out.why ?? "a check failed");
+      run.endedAt = this.iso();
+      if (out.noChecks) run.noChecks = true;
+      this.store.writeRun(run);
+      await this.serial(async () => {
+        const t = (this.q.trials ?? []).find((x) => x.run === runId);
+        if (t) {
+          t.verdict = run.verdict === "passed" ? "passed" : run.verdict === "void" ? "void" : run.verdict === "machine" ? "machine" : "failed";
+          t.why = run.why;
+          t.endedAt = run.endedAt;
+          if (t.verdict === "void") t.stopped = stop ?? { by: "restart", at: run.endedAt! };
+          if (t.verdict === "failed" && out.trialFailure) t.failure = { ...out.trialFailure, run: runId };
+          else if (t.verdict === "failed") t.failure = { kind: "dry-run", run: runId, commit, whose: "branch", line: `${run.why} at ${commit.slice(0, 7)}. This branch's change breaks it.`, checks: [] };
+          if (t.verdict === "machine") t.failure = { kind: "dry-run", run: runId, commit, whose: "machine", line: `Dry run couldn't run: ${run.why}. That's the machine, not this branch: run it again.`, checks: [] };
+          // Sova is stopping: the chat that started it hears of it from the next server, once it is up.
+          if (this.stopped && t.verdict === "void" && t.by.kind === "chat" && t.by.session) this.q.trialWakes = [...new Set([...(this.q.trialWakes ?? []), t.run])];
+          this.save();
+          if (!this.stopped) this.afterTrial(t, run);
+        }
+        this.trying = null;
+        if (branch && !this.stopped) this.deps.trialMoved?.({ branch, by: structuredClone(o.by) }, this.root);
+        this.schedulePublish();
+        this.kickSoon();
+      });
+    })();
+    this.trying = { run, ac, done, trial };
+    this.schedulePublish();
+    if (branch) this.deps.trialMoved?.({ branch, by: structuredClone(o.by) }, this.root);
+    return { trial: structuredClone(trial), run: structuredClone(run) };
+  }
+
+  /**
+   * A dry run ended (inside serial): the Lands waiting on it go on (a pass: in line to land), go back to the chat (the
+   * branch's own failure, as a failed check does), wait for the user (a failure the target shares, or can't tell), or
+   * wait stopped (stopped by a person, or the machine's); and the chats are told.
+   */
+  private afterTrial(t: MergeTrial, run: MergeRun): void {
+    const tell = new Set<string>();
+    if (t.by.kind === "chat" && t.by.session) tell.add(t.by.session);
+    const mine = (e: Entry) => e.branch === t.branch && e.commit === t.commit;
+    const lands = this.q.entries.filter((e) => mine(e) && ((e.state === "queued" && e.standing?.phase === "dry-run") || (t.by.kind === "land" && e.id === t.by.entry && e.state === "queued")));
+    let landCommit: string | undefined;
+    if (t.verdict === "void" && t.stopped?.by === "superseded") landCommit = this.q.entries.find((e) => e.branch === t.branch && e.state === "queued" && e.standing?.phase === "dry-run")?.commit;
+    for (const e of lands) if (e.session) tell.add(e.session);
+    if (t.verdict === "passed") {
+      // A Land held on this commit's dry run (waiting the user's answer, or stopped/couldn't run) goes on now.
+      for (const e of this.q.entries.filter((x) => mine(x) && x.approval.standing)) {
+        if (e.state === "unattributed" && e.dryRunHold) {
+          delete e.dryRunHold;
+          if (e.decision && !e.decision.answered) delete e.decision;
+          delete e.reason;
+          this.toFront(e);
+        } else if (e.state === "with-chat" && e.standing?.phase === "waiting-fix") this.armFixTimer(0);
+        if (e.standing?.phase === "dry-run") delete e.standing;
+      }
+    } else if (t.verdict === "void" && t.stopped && t.stopped.by !== "restart" && t.stopped.by !== "superseded") {
+      for (const e of lands) this.holdOnTrial(e, t, `Dry run stopped by ${stoppedByWords(t.stopped)}: nothing failed. Run it again.`);
+    } else if (t.verdict === "machine") {
+      for (const e of lands) this.holdOnTrial(e, t, t.failure?.line ?? `Dry run couldn't run: ${t.why}. That's the machine, not this branch: run it again.`);
+    } else if (t.verdict === "failed") {
+      const shared = t.failure?.whose === "master" || t.failure?.whose === "unclear";
+      for (const e of lands) {
+        if (shared) {
+          e.dryRunHold = { run: t.run, commit: t.commit };
+          e.run = t.run;
+          if (!e.runs.includes(t.run)) e.runs.push(t.run);
+          delete e.standing;
+          const line = t.failure!.line;
+          this.raiseDecision(e, { kind: "unattributed", question: `${e.branch}'s dry run at ${t.commit.slice(0, 7)}: ${line} Fix it in a new chat, run the dry run again, or land it anyway (its landing still runs ${this.q.target}'s checks).`, choices: [], raisedBy: "queue", actions: ["land-anyway", "try-again"], run: t.run }, "unattributed", line);
+        } else this.holdOnTrial(e, t, t.failure?.line ?? `Dry run failed at ${t.commit.slice(0, 7)}: ${t.why}`, true);
+      }
+    }
+    this.save();
+    const text = trialEndedText(t, run, { target: this.q.target, ...(landCommit ? { land: { commit: landCommit } } : {}), landWaits: lands.length > 0 });
+    if (tell.size && !(t.verdict === "void" && t.stopped?.by === "restart")) this.deps.trialEnded?.(structuredClone(t), structuredClone(run), this.root, { sessions: [...tell], text });
+  }
+
+  /** A Land waiting on a dry run that didn't pass: out of line with its chat (the Land standing), with why; the
+   *  branch's own failure is sent to the chat as a request. The caller is inside serial and saves. */
+  private holdOnTrial(e: Entry, t: MergeTrial, why: string, send = false): void {
+    e.state = "with-chat";
+    this.setPhase(e, { phase: "waiting-fix", why });
+    e.reason = why;
+    e.run = t.run;
+    if (!e.runs.includes(t.run)) e.runs.push(t.run);
+    e.updatedAt = this.iso();
+    if (send) this.request(e, "blocked", blockedText(e, `its dry run at ${t.commit.slice(0, 7)} failed: ${why} (merge.logs {run: "${t.run}"})`), {});
+    this.armFixTimer();
+  }
+
+  /**
+   * Stop Dry Run: the running dry run (by its run, or the project's running one) stops at once, freeing the copy; or a
+   * waiting one (by its id) leaves the wait. Nothing is blamed; the branch needs a new dry run. A chat may stop only one
+   * it started.
+   */
+  stopTrial(req: { run?: string; waiting?: string; by: { kind: "operator" } | { kind: "chat"; session?: string } }): Promise<{ trial?: MergeTrial; waiting?: MergeTrialWaiting }> {
+    return this.serial(async () => {
+      const mayStop = (b: TrialBy) => req.by.kind === "operator" || (b.kind === "chat" && !!req.by.session && b.session === req.by.session);
+      if (req.waiting) {
+        const w = (this.q.trialsWaiting ?? []).find((x) => x.id === req.waiting);
+        if (!w && this.entry(req.waiting)) throw new MergeFailure("invalid-request", "That dry run is your Land's: it runs at its turn in line. Remove from Queue takes the Land back.");
+        if (!w) throw new MergeFailure("not-found", `no dry run ${req.waiting} is waiting`);
+        if (!mayStop(w.by)) throw new MergeFailure("forbidden", "a chat stops only a dry run it started");
+        this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((x) => x !== w);
+        this.save();
+        this.schedulePublish();
+        this.deps.trialMoved?.({ branch: w.branch, by: structuredClone(w.by) }, this.root);
+        if (req.by.kind === "operator") this.tellWaitingEnded(w, "the user stopped it before it started");
+        return { waiting: { ...w, after: "" } };
+      }
+      const cur = this.trying?.trial;
+      if (!cur || !this.trying || (req.run && cur.run !== req.run)) throw new MergeFailure("not-found", req.run ? `the dry run ${req.run} isn't running` : "no dry run is running");
+      if (!mayStop(cur.by)) throw new MergeFailure("forbidden", "a chat stops only a dry run it started");
+      this.trying.stop = { by: req.by.kind, ...(req.by.kind === "chat" && req.by.session ? { session: req.by.session } : {}), at: this.iso() };
+      this.trying.ac.abort();
+      return { trial: { ...structuredClone(cur), stopped: structuredClone(this.trying.stop) } };
     });
   }
 
@@ -3238,6 +4252,40 @@ export class ProjectQueue {
     // A settings card held for the branch just checked, then a settings save, go before the next branch starts on the target.
     await this.quietCards();
     if (this.q.pendingSave) await this.applyPendingSave();
+    // A dry run that waited for the copy goes first once it is free (§app.project-setup/trial).
+    if (!this.q.release && this.q.trialsWaiting?.length) {
+      const w = this.q.trialsWaiting[0]!;
+      let why: string;
+      try {
+        const tip = await revParse(this.git, this.root, `refs/heads/${w.branch}`);
+        if (!tip) why = "the branch is gone";
+        else if (tip !== w.commit && !(await isAncestor(this.git, this.root, w.commit, tip))) why = `the branch moved to ${tip.slice(0, 7)}, a commit that doesn't follow it`;
+        else {
+          // The branch moved on: only a dry run of its head counts for it, so the head's runs, if it still needs one by
+          // the rule a Land's gate uses (a dry run asked of a commit that needed none runs at the head all the same).
+          if (tip !== w.commit) {
+            const head = await this.targetHead();
+            const was = head ? await this.dryRunNeeds(head, w.commit) : null;
+            const now = head ? await this.dryRunNeeds(head, tip) : null;
+            if (was?.setup && !now?.setup) why = `the branch moved on to ${tip.slice(0, 7)}, which needs no dry run`;
+          }
+          why ??= "";
+          if (!why) {
+            await this.startTrial({ branch: w.branch, commit: tip, by: w.by, checks: [] });
+            return;
+          }
+        }
+      } catch (err) {
+        why = err instanceof Error ? err.message : String(err);
+      }
+      this.log(`waiting dry run of ${w.branch} dropped: ${why}`);
+      this.q.trialsWaiting = (this.q.trialsWaiting ?? []).filter((x) => x !== w);
+      this.save();
+      this.schedulePublish();
+      this.deps.trialMoved?.({ branch: w.branch, by: structuredClone(w.by) }, this.root);
+      this.tellWaitingEnded(w, why);
+      this.kickSoon();
+    }
     if (this.q.paused) return;
     if (this.holdUntil > this.now()) return;
     if (this.held()) return;
@@ -3283,7 +4331,7 @@ export class ProjectQueue {
       // fetched just before, never the local one (which only Update Local Main moves).
       let base = head;
       if (publishes(approvalHow(e.approval))) {
-        const f = await fetchTarget(this.git, this.root, this.q.target);
+        const f = await fetchTarget(this.git, this.root, this.q.target, await this.remoteName());
         if ("why" in f) {
           const tries = (this.q.machineTries[e.id] ?? 0) + 1;
           this.q.machineTries[e.id] = tries;
@@ -3293,11 +4341,32 @@ export class ProjectQueue {
             this.holdUntil = this.now() + (this.deps.retryDelayMs ?? 60_000);
             this.save();
             this.later(this.deps.retryDelayMs ?? 60_000, () => this.kickSoon());
-          } else this.pauseNow("machine", `${f.why}: ${e.branch} can't be tested against origin's ${this.q.target}. No branch is blamed.`);
+          } else this.pauseNow("machine", `${f.why}: ${e.branch} can't be tested against ${await this.remoteName()}'s ${this.q.target}. No branch is blamed.`);
           return;
         }
         base = f.sha;
       }
+      // A setup branch with no passing dry run of its commit: its dry run runs at its turn, then (on a pass) its landing.
+      if (!e.release && e.approval.dryRunWaived !== e.commit) {
+        const n = await this.dryRunNeeds(head, e.commit);
+        if (n?.setup && trialOf(this.q.trials, e.commit)?.verdict !== "passed") {
+          try {
+            await this.startTrial({ branch: e.branch, commit: e.commit, by: { kind: "land", entry: e.id }, checks: [] });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            // The branch's own definition refused (its folder rules included, §app.merge-queue/rules): the branch's to fix,
+            // sent to its chat with the refusal; anything else is the machine's.
+            if (/^\.sova\/project\.json at \w+ is invalid: /.test(msg)) {
+              const why = `your branch's ${msg}: fix it in the branch`;
+              this.holdOnTrial(e, { run: e.run ?? "", commit: e.commit, verdict: "failed", by: { kind: "land", entry: e.id }, startedAt: this.iso() }, why);
+              this.request(e, "blocked", blockedText(e, why), {});
+            } else this.holdOnTrial(e, { run: e.run ?? "", commit: e.commit, verdict: "machine", by: { kind: "land", entry: e.id }, startedAt: this.iso() }, `Dry run couldn't run: ${msg}. That's the machine, not this branch: run it again.`);
+            this.save();
+          }
+          return;
+        }
+      }
+      if (e.standing?.phase === "dry-run") delete e.standing;
       await this.startRun(e, base, own ?? undefined, head);
       return;
     }
@@ -3337,6 +4406,74 @@ export class ProjectQueue {
     return { hash, names };
   }
 
+  /**
+   * The run's plan, before it starts (§app.merge-queue/plan): every step it will take and every one it won't, each with
+   * why, from the definition, the branch's folder rules and review kit as they read after the merge (one `git
+   * merge-tree` reading, rules.ts planRulesFor), the picks so far and the approval. Never throws: a plan that can't be
+   * worked out is null (the run plans its own checks, as before) and says so in the event memory.
+   */
+  private async planRun(e: Entry, base: string, d: { def: ProjectDef | null; review: boolean }, clean: PlanFacts["clean"]): Promise<{ facts: PlanFacts; plan: import("../../shared/merge-queue").RunPlan; planned: import("./checks").PlannedCheck[] } | null> {
+    try {
+      const def = d.def;
+      const resolution = e.conflict?.commit && (e.conflict.verdict === "no-behaviour-change" || e.notes.some((n) => n.kind === "resolved")) ? e.conflict.commit : undefined;
+      const commit = resolution ?? e.commit;
+      const rules = await planRulesFor({ root: this.root, base, commit, target: this.q.target, targetDef: def });
+      const tree = (rules as { tree?: string }).tree ?? (await mergedTree(this.root, base, commit));
+      // A refusal is the plan's Folder rules step (rules.ts rulesRefusal), never a line here too.
+      const unknown = [...rules.unknownWords, ...(rules.error ? [`the branch's folder rules couldn't be read before the run (${rules.error}): the run reads them in the merge copy`] : [])];
+      const kit = def?.merge?.review;
+      let review: PlanFacts["review"];
+      if (!d.review || !kit) review = { hash: null, skip: "no review kit declared" };
+      else if (e.approval.withoutReview) review = { kit, hash: null, skip: "landed without review" };
+      else {
+        const hash = tree ? await kitHashAt(this.root, tree, kit) : null;
+        review = hash ? { kit, hash, ...((await kitChangedBy(this.root, base, tree!, kit)).length ? { own: true } : {}) } : { kit, hash: null, skip: `the review kit ${kit} isn't there as the branch would land` };
+      }
+      const how = approvalHow(e.approval);
+      const hasRemote = await this.hasRemote(remoteOf(def));
+      const scan = e.release ? ({ run: false, why: "a release's own commit: its publication is checked by the release" } as const) : scanPlanned({ def, how, hasRemote });
+      const push: PlanFacts["push"] =
+        def?.merge?.push === false ? { will: "skip", why: "this project doesn't push from the queue" }
+        : !hasRemote ? { will: "skip", why: "no remote to push to" }
+        : this.q.release ? { will: "if", why: `held while ${this.holdWords()}` }
+        : !this.names().exists ? { will: "if", why: "held until the private names interview is answered" }
+        : { will: "run" };
+      const shapes = tree ? await treeShapes(this.root, tree) : { submodules: false, lfs: false };
+      const releaseChecks = e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? structuredClone(this.q.release.checks) : undefined;
+      const facts: PlanFacts = {
+        def,
+        target: this.q.target,
+        base,
+        commit: e.commit,
+        ...(resolution ? { resolution } : {}),
+        ...(e.release ? { release: { id: e.release, checks: releaseChecks ?? [] } } : {}),
+        ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}),
+        picks: structuredClone(e.picks),
+        rules: { hash: rules.hash, own: !!rules.info.changed?.length, triggers: rules.triggers, ...(unknown.length ? { unknown } : {}), ...(rules.refusal ? { refused: rules.refusal } : {}) },
+        changed: rules.changed,
+        review,
+        ...(clean ? { clean } : {}),
+        ...(e.approval.drafts && !e.approval.withoutSpecs ? { drafts: e.approval.drafts } : {}),
+        ...(e.approval.withoutSpecs ? { withoutSpecs: true } : {}),
+        how,
+        ...(squashes(def, { entry: e, ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}), ...(releaseChecks ? { releaseChecks } : {}) }) ? { squash: true } : {}),
+        scan,
+        push,
+        ...(shapes.submodules ? { submodules: true } : {}),
+        ...(shapes.lfs ? { lfs: true } : {}),
+      };
+      const { plan, planned } = planOf(facts, this.iso());
+      // Visibly the same plan: the entry's last run worked out the same fingerprint.
+      const prev = e.runs.length ? this.store.readRun(e.runs[e.runs.length - 1]!) : null;
+      if (prev?.plan?.fingerprint === plan.fingerprint) plan.sameAs = prev.id;
+      return { facts, plan, planned };
+    } catch (err) {
+      this.log(`plan of ${e.branch} not worked out: ${err instanceof Error ? err.message : err}`);
+      this.record({ kind: "note", by: "queue", entry: e.id, branch: e.branch, note: "plan-unread", why: `The run's plan couldn't be worked out before it started (${err instanceof Error ? err.message : err}): the run plans its own checks.` });
+      return null;
+    }
+  }
+
   /** `own`: the branch's own definition, when the target's doesn't parse and this branch fixes it. */
   private async startRun(e: Entry, base: string, own?: ProjectDef, localBase: string = base): Promise<void> {
     this.idleOwed = e.id;
@@ -3355,7 +4492,19 @@ export class ProjectQueue {
         if (existsSync(from)) cpSync(from, join(draftsDir, n), { recursive: true });
       }
     }
+    const clean = cleanFor(this.q.clean, this.now(), e.branch);
+    const worked = await this.planRun(e, base, d, clean ?? undefined);
     const run: MergeRun = { id: runId, entry: e.id, project: this.id, branch: e.branch, base, commit: e.commit, steps: [], checks: [], verdict: "running", startedAt: this.iso() };
+    if (worked) {
+      run.plan = worked.plan;
+      run.ranWith = { tools: [], copy: clean ? "fresh" : "reused", ...(clean ? { clean } : {}), setup: [], settings: settingsOf(worked.facts, worked.planned) };
+      // Tool versions as the server resolves them, from the run's own folder (never the copy): filled in when known.
+      const ranWith = run.ranWith;
+      void Promise.all(toolsOf(worked.facts.def, worked.planned).map(async (name) => ({ name, version: await toolVersion(name, runDir, this.now()) }))).then((tools) => {
+        ranWith.tools = tools;
+        this.store.writeRun(run);
+      });
+    }
     e.state = "checking";
     e.run = runId;
     this.reviewEvent(e, { kind: "checking" });
@@ -3367,10 +4516,11 @@ export class ProjectQueue {
     e.updatedAt = this.iso();
     this.store.writeRun(run);
     const ac = new AbortController();
-    const cur: Current = { run, entry: e.id, ac, voidWhy: null, watch: null, done: Promise.resolve(), localBase };
+    const cur: Current = { run, entry: e.id, ac, voidWhy: null, watch: null, done: Promise.resolve(), localBase, seenPicks: new Set(e.picks.map(pickKey)) };
     this.current = cur;
     this.save();
     this.log(`run ${runId}: ${e.branch} at ${e.commit.slice(0, 7)} onto ${this.q.target} ${base.slice(0, 7)}`);
+    this.record({ kind: "run-started", by: "queue", entry: e.id, branch: e.branch, run: runId, fingerprint: run.plan?.fingerprint ?? "", base, commit: e.commit, ...(run.plan?.sameAs ? { sameAs: run.plan.sameAs } : {}), why: `Run started: ${e.commit.slice(0, 7)} onto ${this.q.target} at ${base.slice(0, 7)}${run.plan ? `, plan ${run.plan.fingerprint}${run.plan.sameAs ? " (the same plan as its last run)" : ""}` : ""}.` });
     this.releaseEvent(e, "checking", undefined, runId);
     const resolution = e.conflict?.commit && (e.conflict.verdict === "no-behaviour-change" || e.notes.some((n) => n.kind === "resolved")) ? e.conflict.commit : undefined;
     const input: RunInput = {
@@ -3383,11 +4533,23 @@ export class ProjectQueue {
       runDir,
       ...(draftsDir ? { draftsDir } : {}),
       picks: [...e.picks],
+      // q9: the entry's picks as they are now; the run adds each new one to itself.
+      latePicks: () => {
+        const now = structuredClone(this.entry(e.id)?.picks ?? []);
+        for (const p of now) cur.seenPicks.add(pickKey(p));
+        return now;
+      },
       // A tag-only release's entry is the frozen target itself: its checks run there, nothing is merged or moved.
       ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}),
       ...(e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? { releaseChecks: structuredClone(this.q.release.checks) } : {}),
       ...(this.names().exists ? { namesFile: this.names().file } : {}),
+      // §app.merge-queue/names-step: a landing that pushes ends its run with "Private names and secrets".
+      ...(await this.scanInput(e, d.def)),
       review: d.review && !e.approval.withoutReview,
+      // An empty merge copy when Clean Run asked for one, or the weekly one is due (clean-run.ts).
+      ...(clean ? { clean } : {}),
+      // The plan's own check list: the run runs exactly these, and the picks that arrive late (q9).
+      ...(worked ? { plan: worked.plan, planned: worked.planned } : {}),
       signal: ac.signal,
       awaitReview: () =>
         new Promise<ReviewVerdict>((resolve, reject) => {
@@ -3411,20 +4573,38 @@ export class ProjectQueue {
     const hooks = {
       step: (s: RunStep) => {
         const i = run.steps.findIndex((x) => x.id === s.id);
+        if (stepEnded(i >= 0 ? run.steps[i] : undefined, s)) this.record(stepEvent(e, runId, s));
         if (i >= 0) run.steps[i] = { ...s };
         else run.steps.push({ ...s });
         persist();
       },
       checks: (list: CheckPick[]) => {
         run.checks = list.map((c) => ({ ...c }));
+        // A late pick joins the saved plan, marked with its arrival; the start's fingerprint stays.
+        const grown = run.plan ? withLatePicks(run.plan, list as (CheckPick & { addedAt?: string })[], this.entry(e.id)?.picks ?? []) : null;
+        if (grown) run.plan = grown;
         persist();
       },
       merged: (sha: string) => {
         run.mergeSha = sha;
         persist();
       },
+      // Inside the run (run.ts): a change worth the record, its run, entry and branch filled in.
+      event: (ev: MergeEventInput) => this.record({ entry: e.id, branch: e.branch, run: runId, ...ev } as MergeEventInput),
+      ranWith: (patch: Partial<RunRanWith>) => {
+        run.ranWith = { tools: [], copy: "reused", setup: [], settings: [], ...run.ranWith, ...patch };
+        persist();
+      },
       copy: (path: string) => {
         run.copy = path;
+        persist();
+      },
+      rules: (r: RunRules) => {
+        run.rules = structuredClone(r);
+        persist();
+      },
+      review: (stamp: ReviewKitStamp) => {
+        run.review = structuredClone(stamp);
         persist();
       },
     };
@@ -3454,7 +4634,111 @@ export class ProjectQueue {
     })();
   }
 
+  /** The view's clean-run standing and the flakiest tests (at most 10, most often first). */
+  private knownFields(): Pick<MergeQueueView, "clean" | "flaky"> {
+    const flaky = this.flaky.list().slice(0, 10);
+    return { clean: cleanInfo(this.q.clean, this.now()), ...(flaky.length ? { flaky } : {}) };
+  }
+
+  /** What a run tells the queue's known state, whatever its verdict: it started from an empty copy (the next clean run
+   *  is a week after it), and the flaky tests it found (counted across landings, flaky.ts). A voided run counts no
+   *  flaky test: its reruns may be cut short. */
+  private knownState(cur: Current, out: RunOutcome): void {
+    const run = cur.run;
+    const e = this.entry(cur.entry);
+    // A voided run spends no Clean Run (the one restarted for it, above all): its next run is clean again.
+    const voided = !!cur.voidWhy || out.verdict === "void";
+    if (out.clean && !voided) {
+      this.q.clean = afterRun(this.q.clean, { id: run.id, branch: run.branch, startedAt: run.startedAt, clean: out.clean });
+      this.record({ kind: "clean-run", by: "queue", cleanWhy: out.clean, run: run.id, entry: cur.entry, ...(e ? { branch: e.branch } : {}), step: "copy", why: out.clean === "weekly" ? "Weekly clean run: started from an empty merge copy" : out.clean === "new" ? "The merge copy was cut new: nothing to reuse" : "Clean run you asked for: started from an empty merge copy" });
+    }
+    if (!out.flaky?.length || voided) return;
+    try {
+      const counted = this.flaky.record(out.flaky, { run: run.id, entry: cur.entry, branch: e?.branch ?? run.branch, at: run.startedAt });
+      for (const t of counted)
+        this.record({ kind: "flaky", by: "queue", check: t.check, ...(t.file ? { file: t.file } : {}), ...(t.name ? { name: t.name } : {}), run: run.id, entry: cur.entry, branch: e?.branch ?? run.branch, step: t.check.startsWith("setup:") ? t.check : `check:${t.check}`, why: `${t.name ?? t.file ?? t.checkLabel} failed, then passed on its rerun (flaky ${t.count} time${t.count === 1 ? "" : "s"} so far)` });
+    } catch (err) {
+      this.log(`flaky tests not recorded: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /**
+   * Clean Run (the user's own click): the next run starts from an empty merge copy. On the entry checking now, that run
+   * stops and starts again, clean; on a failed run's entry whose Land still stands (back with its chat), it goes back
+   * in line at its commit, clean, counting no try; otherwise (the head of the line, none named, an entry whose Land no
+   * longer stands) the next run is clean.
+   */
+  cleanRun(entryId?: string): Promise<MergeQueueView> {
+    return this.serial(async () => {
+      const e = entryId ? this.mustEntry(entryId) : undefined;
+      this.q.clean = { ...this.q.clean, next: { why: "operator", at: this.iso(), ...(e ? { entry: e.id, branch: e.branch } : {}) } };
+      this.record({ kind: "clean-run", by: "user", cleanWhy: "operator", ...(e ? { entry: e.id, branch: e.branch } : {}), why: e?.state === "checking" ? "You asked for a clean run: this run stops and starts again from an empty merge copy" : "You asked for a clean run: the next run starts from an empty merge copy" });
+      if (e?.state === "checking" && this.current?.entry === e.id && !this.landing) {
+        this.current.voidWhy = "clean-run";
+        this.current.ac.abort();
+      } else if (e?.state === "with-chat") {
+        this.clearRulingTimer(e.id);
+        delete e.ruling;
+        delete e.standing;
+        delete e.reason;
+        delete e.sentBackFor;
+        delete e.sentBackDrafts;
+        this.toFront(e);
+      }
+      this.save();
+      this.kickSoon();
+      return this.view();
+    });
+  }
+
+  /** One page of the history (newest first; Show Older passes the previous page's `next` as `before`). */
+  historyPage(o: { branch?: string; before?: string; limit?: number } = {}): MergeHistoryPage {
+    const h = this.store.history;
+    return historyPage(h.months(), (m) => h.readMonth(m), o);
+  }
+
+  /** The health summary over the last `days` (history rows, the runs on disk, the flaky store). */
+  health(days = 30): MergeQueueHealth {
+    const now = this.iso();
+    const since = new Date(this.now() - days * 86_400_000).toISOString();
+    const h = this.store.history;
+    const rows = h.months().filter((m) => m >= since.slice(0, 7)).flatMap((m) => h.readMonth(m));
+    const runs = this.store.runIds().flatMap((id) => {
+      const r = this.store.readRun(id);
+      return r ? [r] : [];
+    });
+    return healthOf({ rows, runs, flaky: this.flaky.list(), now, days });
+  }
+
+  /** A run's end: "run ended" is recorded first, then what came of it (sent back, landed, restarted…). */
   private async finish(cur: Current, out: RunOutcome): Promise<void> {
+    // What the run reused, as its steps say; the copy fresh when the run says it started from an empty one.
+    if (cur.run.ranWith) {
+      const fresh = (out as { clean?: "operator" | "weekly" | "new" }).clean;
+      Object.assign(cur.run.ranWith, reuseOf(cur.run.steps), fresh ? { copy: "fresh", clean: fresh } : { copy: "reused" });
+      if (!fresh) delete cur.run.ranWith.clean;
+    }
+    const held = {
+      entry: cur.entry,
+      run: cur.run.id,
+      list: [] as MergeEventInput[],
+      flush: () => {
+        if (this.heldEvents !== held) return;
+        this.heldEvents = null;
+        const e = this.entry(cur.entry);
+        this.record(runEndedEvent(e ?? { id: cur.entry, branch: cur.run.branch }, cur.run));
+        for (const ev of held.list) this.record(ev);
+      },
+    };
+    this.heldEvents = held;
+    try {
+      await this.finishRun(cur, out);
+    } finally {
+      held.flush();
+    }
+  }
+
+  private async finishRun(cur: Current, out: RunOutcome): Promise<void> {
     if (cur.watch) clearInterval(cur.watch);
     const run = cur.run;
     const w = this.reviewWaiters.get(run.id);
@@ -3463,10 +4747,13 @@ export class ProjectQueue {
       w.reject(new Error("run ended"));
     }
     run.endedAt = this.iso();
+    run.picksSeen = [...cur.seenPicks];
+    this.knownState(cur, out);
     if (out.mergeSha) run.mergeSha = out.mergeSha;
     if (out.tip) run.tip = out.tip;
     if (out.copy) run.copy = out.copy;
     if (out.checks?.length) run.checks = out.checks;
+    if (out.rules) run.rules = out.rules;
     if (out.noChecks) run.noChecks = true;
     if (out.blame) run.blame = out.blame;
     if (out.why) run.why = out.why;
@@ -3476,6 +4763,9 @@ export class ProjectQueue {
     this.noteBroken(run, cur.voidWhy ? { ...out, verdict: "void", broken: [] } : out);
     const e = this.entry(cur.entry);
     this.current = null;
+    // A reviewer's fix (its hidden ref, run.ts) is taken only from a run whose review flagged it as its outcome; any
+    // other end (a failed check, a void, a cancel) drops it, so none is left behind.
+    if (out.verdict !== "review-flagged" || cur.voidWhy || !e || e.state === "cancelled") await this.dropReviewFix(cur.entry);
     if (!e) {
       run.verdict = "void";
       this.store.writeRun(run);
@@ -3486,13 +4776,14 @@ export class ProjectQueue {
     if (cur.voidWhy || e.state === "cancelled") {
       const why = cur.voidWhy ?? "cancelled";
       run.verdict = why === "cancelled" ? "cancelled" : "void";
-      run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : why === "release" ? "a release started: it waits for the release" : "cancelled";
+      run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : why === "release" ? "a release started: it waits for the release" : why === "clean-run" ? "you asked for a clean run: it starts again from an empty merge copy" : "cancelled";
       this.store.writeRun(run);
+      if (e.state === "checking" && (why === "master-moved" || why === "stopping" || why === "release" || why === "clean-run")) this.record(countRestart(e, restartCauseOf(why), run.id, run.why));
       if (why === "master-moved" && e.state === "checking") {
         this.toFront(e);
         const head = await this.targetHead();
         this.pauseNow("master-moved", `${this.q.target} moved outside the queue (${run.base.slice(0, 7)} → ${(head ?? "?").slice(0, 7)}) while ${e.branch} was checking: that run was voided; resume once that is intended`, run.id);
-      } else if ((why === "stopping" || why === "release") && e.state === "checking") {
+      } else if ((why === "stopping" || why === "release" || why === "clean-run") && e.state === "checking") {
         this.toFront(e);
         if (why === "release") e.reason = this.waitingWords();
       }
@@ -3520,6 +4811,7 @@ export class ProjectQueue {
       case "void":
         run.verdict = "void";
         this.store.writeRun(run);
+        this.record(countRestart(e, restartCauseOf(null, out.why), run.id, out.why));
         this.toFront(e);
         this.save();
         this.kickSoon();
@@ -3528,11 +4820,23 @@ export class ProjectQueue {
         run.verdict = "machine";
         run.blame = out.blame ?? "machine";
         this.store.writeRun(run);
+        if (out.overTime?.length) {
+          // §app.merge-queue/time-limit: past the limit on the target alone too. Not the branch's, and a retry would
+          // only run over again: the queue pauses at once and asks the user; the entry keeps its place.
+          this.toFront(e);
+          e.reason = out.why ?? "a check runs past its time limit on the target too";
+          delete this.q.machineTries[e.id];
+          const names = out.overTime.map((o) => `${o.label} (${o.limitSec} s)`).join(", ");
+          this.pauseNow("time-limit", `${names} ${out.overTime.length === 1 ? "runs" : "run"} past ${out.overTime.length === 1 ? "its" : "their"} time limit on ${this.q.target} alone too, so not ${e.branch}'s. Raise the limit in .sova/project.json or speed it up on ${this.q.target}, then resume.`, run.id);
+          this.wake("paused", e, run.id, { why: out.why ?? "time limit" });
+          return;
+        }
         const tries = (this.q.machineTries[e.id] ?? 0) + 1;
         this.q.machineTries[e.id] = tries;
         this.toFront(e);
         e.reason = out.why ?? "a machine failure";
         if (tries <= 1) {
+          this.record(countRestart(e, "machine-retry", run.id, `${out.why ?? "a machine failure"}; tried once more in a minute`));
           this.holdUntil = this.now() + (this.deps.retryDelayMs ?? 60_000);
           this.save();
           this.later(this.deps.retryDelayMs ?? 60_000, () => this.kickSoon());
@@ -3642,6 +4946,13 @@ export class ProjectQueue {
           const report = reportText(rec);
           // Its try would run out (the last one, or the same findings twice): it waits for the user, nothing to hand on.
           const waits = this.triesOut(e, this.failurePrint({ cause: "review", why, review: report }, run, rec.findings));
+          // The reviewer fixed it itself (merge.reviewFixes): its fix goes the way a chat's Fixed answer goes.
+          const fix = out.review?.fix?.commit;
+          if (fix && !waits && (await this.reviewerFixed(e, run, rec, fix, why, report))) {
+            this.kickSoon();
+            return;
+          }
+          if (fix) await this.dropReviewFix(e.id);
           if (waits) {
             this.sendBack(e, { cause: "review", why, runId: run.id, review: report });
             this.wake("review", e, run.id, { findings: report, waits });
@@ -3728,6 +5039,8 @@ export class ProjectQueue {
 
   private armConflictTimer(e: Entry, run?: Pick<MergeRun, "id">): void {
     this.clearConflictTimer(e.id);
+    // The thread's deadline (threadDeadline) is watched by the recheck, from now on while the conflict waits.
+    this.armFixTimer();
     const ms = this.deps.conflictWaitMs ?? 20 * 60_000;
     const t = setTimeout(() => {
       this.conflictTimers.delete(e.id);
@@ -3797,9 +5110,45 @@ export class ProjectQueue {
     this.conflictTimers.delete(id);
   }
 
+  /** q9: the late-pick reruns this entry's commit has had (a new commit starts again at none). */
+  private lateRerunsOf(e: Entry): number {
+    return e.lateReruns?.commit === e.commit ? e.lateReruns.count : 0;
+  }
+
+  /** The entry's run checks now, or its tested tip waits to land (a resume, Allow or Land Anyway): a pick now would
+   *  run that commit again. */
+  private testedOrTesting(e: Entry): boolean {
+    if (this.current?.entry === e.id) return true;
+    if (e.state !== "checking" && e.state !== "needs-user" && e.state !== "unattributed") return false;
+    const run = e.run ? this.store.readRun(e.run) : null;
+    return !!run?.tip && run.commit === e.commit;
+  }
+
   /** Land a passed run's tip (the entry is `checking`). */
   async landTested(e: Entry, run: MergeRun): Promise<void> {
+    // The run's end is known now: its events go before the landing's (and the push's) waits.
+    this.heldEvents?.flush();
+    // q9: a pick that reached the queue after the run's last look for picks (while it ran, or while its tested tip
+    // waited for Allow, Land Anyway or a resume) still runs before anything lands or is pushed: the run goes again from
+    // the start with it planned, at the front of the line. Every landing passes here.
+    const missed = run.picksSeen ? e.picks.filter((p) => !run.picksSeen!.includes(pickKey(p))) : [];
+    if (missed.length) {
+      e.lateReruns = { commit: e.commit, count: this.lateRerunsOf(e) + 1 };
+      run.verdict = "void";
+      run.why = `${missed.map((p) => p.label).join(", ")} ${missed.length === 1 ? "was" : "were"} added after the run's last look for picks: running again with ${missed.length === 1 ? "it" : "them"} before anything lands`;
+      this.store.writeRun(run);
+      this.record(countRestart(e, "aborted", run.id, run.why));
+      delete e.reason;
+      this.toFront(e);
+      this.save();
+      this.kickSoon();
+      return;
+    }
     // Landing by request or by push (al_3): the target never moves here; the tested work is published instead.
+    // Never a tip whose "Private names and secrets" step found something the user hasn't marked fine, published by
+    // request or landed and pushed alike.
+    const hits = openHits(run.steps, allowFileOf(this.store.dir));
+    if (hits.length) return this.holdForNames(e, run, hits);
     if (publishes(approvalHow(e.approval))) return this.landByRequest(e, run);
     const tip = run.tip!;
     const d = await this.declared();
@@ -3816,6 +5165,7 @@ export class ProjectQueue {
         run.verdict = "void";
         run.why = `${this.q.target} moved outside the queue before the landing`;
         this.store.writeRun(run);
+        this.record(countRestart(e, "target-moved", run.id, run.why));
         this.toFront(e);
         this.pauseNow("master-moved", `${this.q.target} moved outside the queue (${run.base.slice(0, 7)} → ${(pre.head ?? "?").slice(0, 7)}) before ${e.branch} landed: that run was voided; resume once that is intended`, run.id);
         return;
@@ -3837,6 +5187,7 @@ export class ProjectQueue {
       run.verdict = "void";
       run.why = `${this.q.target} moved outside the queue during the landing`;
       this.store.writeRun(run);
+      this.record(countRestart(e, "target-moved", run.id, run.why));
       this.toFront(e);
       this.pauseNow("master-moved", `${this.q.target} moved outside the queue during ${e.branch}'s landing: that run was voided; resume once that is intended`, run.id);
     } finally {
@@ -3852,7 +5203,7 @@ export class ProjectQueue {
     try {
       if (this.deps.hostRepo) repo = await this.deps.hostRepo(this.root);
       else {
-        const url = await this.git(["remote", "get-url", "origin"], this.root);
+        const url = await this.git(["remote", "get-url", await this.remoteName()], this.root);
         repo = url.code === 0 && url.stdout.trim() ? ((await suggestLanding(url.stdout.trim())).repo ?? null) : null;
       }
     } catch {
@@ -3865,7 +5216,7 @@ export class ProjectQueue {
 
   private async publishCtx(how: RequestHow): Promise<import("./strategy-run").PublishCtx> {
     const names = this.names();
-    return { git: this.git, root: this.root, target: this.q.target, namesFile: names.exists ? names.file : undefined, holdFile: join(this.store.dir, "push-hold"), host: how === "push-branch" ? null : await this.hosting() };
+    return { git: this.git, root: this.root, target: this.q.target, namesFile: names.exists ? names.file : undefined, allowFile: allowFileOf(this.store.dir), holdFile: join(this.store.dir, "push-hold"), host: how === "push-branch" ? null : await this.hosting(), remote: await this.remoteName() };
   }
 
   /** A passed run on a request or push project (the entry is `checking`): its request's text drafted for the user's
@@ -4059,7 +5410,7 @@ export class ProjectQueue {
         }
         if (e.state !== "requested" || !e.request?.number) continue;
         const ctx = await this.publishCtx(e.request.how);
-        const from = await revParse(this.git, this.root, `refs/remotes/origin/${this.q.target}`);
+        const from = await revParse(this.git, this.root, `refs/remotes/${ctx.remote ?? "origin"}/${this.q.target}`);
         const r = await pollRequest(ctx, { number: e.request.number, from });
         if (r.kind === "unknown") {
           this.log(`${e.branch}: the host couldn't be read: ${r.why}`);
@@ -4115,10 +5466,10 @@ export class ProjectQueue {
   updateLocalMain(): Promise<{ kind: "updated" | "current"; head: string }> {
     return this.serial(async () => {
       if (this.landing) throw new MergeFailure("busy", "a landing is moving the target now: try again in a moment");
-      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: update it after Publish or Abandon`);
+      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: update it after Publish or Cancel Release`);
       this.landing = true;
       try {
-        const r = await updateMainTip(this.git, this.root, this.q.target);
+        const r = await updateMainTip(this.git, this.root, this.q.target, await this.remoteName());
         if (r.kind === "refused") throw new MergeFailure("invalid-request", r.why);
         if (r.kind === "current") return { kind: "current" as const, head: r.head };
         for (const c of r.parents) if (!this.q.landed.includes(c)) this.q.landed.push(c);
@@ -4171,6 +5522,12 @@ export class ProjectQueue {
     this.reviewEvent(e, { kind: "landed" });
     delete e.reason;
     e.landed = { sha: tip, from: run.base, at: this.iso(), pushed: "pending" };
+    // Landed as one commit (merge.squash): the pinned commit isn't on the target, so its pin is kept past the entry,
+    // as a host's squash is (§chat.worktrees/nothing-left).
+    if (tip !== e.commit && !(await isAncestor(this.git, this.root, e.commit, tip))) {
+      e.landed.oneCommit = true;
+      if (!this.q.hostPins?.[e.branch]?.includes(e.commit)) this.keepHostPin(e.branch, e.commit);
+    }
     e.updatedAt = this.iso();
     const branchTip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
     const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await ownCommitsPast(this.git, this.root, e.commit, branchTip, tip, true) : 0;
@@ -4183,6 +5540,8 @@ export class ProjectQueue {
     if (e.release && e.releaseKind === "revert" && this.q.release?.id === e.release) this.liftNow();
     this.save();
     this.log(`landed ${e.branch} at ${tip.slice(0, 7)}`);
+    // Recorded as it lands (before its push); a host's landing is recorded from its notice (activity.ts).
+    this.record({ kind: "landed", by: "queue", entry: e.id, branch: e.branch, run: run.id, step: "land", sha: tip, from: run.base, why: `Landed on ${e.target} as ${tip.slice(0, 7)}.` });
     this.releaseEvent(e, "landed", undefined, run.id);
     await this.push(tip, def, e);
     this.deps.notify?.("landed", e, { run, root: this.root });
@@ -4216,13 +5575,30 @@ export class ProjectQueue {
   private async push(tip: string, def: ProjectDef | null, e?: Entry): Promise<void> {
     const names = this.names();
     let p: Awaited<ReturnType<typeof pushTip>>;
-    const origin = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
+    const remote = remoteOf(def);
+    const origin = await this.hasRemote(remote);
     if (this.q.release && def?.merge?.push !== false && origin) {
       p = { state: "not-pushed", why: `held: ${this.holdWords()}` };
     } else if (!names.exists && def?.merge?.push !== false && origin) {
       p = { state: "not-pushed", why: PUSH_HELD_NAMES };
       if (e) this.wake("names", e, undefined, { namesFile: names.file });
-    } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold") });
+    } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold"), remote, scan: (at, to) => this.scanBeforePush(remote, at, to) });
+    if (p.state === "not-pushed" && p.scan) {
+      // §app.merge-queue/names-step: the landings are in, their push waits for the user (Allow on the tab).
+      const first = !this.q.heads.pushScan;
+      this.q.heads.pushScan = p.scan;
+      if (first) {
+        const hits = p.scan.state === "hits";
+        this.log(hits ? `push held: the scan before pushing found ${thingsThatLook(p.scan.hits?.length)} private` : `push held: the scan before pushing couldn't look (${p.scan.why ?? "unknown"})`);
+        this.record({ kind: "names", by: "queue", ...(e ? { entry: e.id, branch: e.branch } : {}), step: "push", what: "push-scan-hit", hits: p.scan.hits?.length ?? 0, why: hits ? `${this.q.target} wasn't pushed: the scan before pushing found ${thingsThatLook(p.scan.hits?.length)} private` : `${this.q.target} wasn't pushed: the scan before pushing couldn't look (${(p.scan.why ?? "unknown").split("\n")[0]!.slice(0, 200)})` });
+        if (e && hits) this.wake("names-hit", e, undefined, { hits: hitLines(p.scan.hits ?? [], 50) });
+        try {
+          this.deps.alert?.({ title: `The merge queue needs you · ${this.root.split("/").pop() ?? this.root}`, body: hits ? `${this.q.target} wasn't pushed: the scan before pushing found ${thingsThatLook(p.scan.hits?.length)} private. Allow ${p.scan.hits?.length === 1 ? "it" : "them"} on the Merge Queue tab, or fix ${this.q.target}.` : `${this.q.target} wasn't pushed: the scan before pushing couldn't look (${p.scan.why ?? "unknown"}). Nothing is pushed until a scan passes: Retry on the Merge Queue tab.`, tag: `sova:merge-push-scan:${this.id}` }, this.root);
+        } catch (err) {
+          this.log(`push scan notification failed: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    } else if (p.state === "pushed" || p.state === "no-remote") delete this.q.heads.pushScan;
     if (p.state === "pushed") {
       this.q.heads.pushed = tip;
       delete this.q.heads.pushWhy;
@@ -4230,12 +5606,24 @@ export class ProjectQueue {
       for (const x of this.q.entries) if (x.state === "landed" && x.landed && x.landed.pushed !== "pushed" && (x.landed.sha === tip || (await isAncestor(this.git, this.root, x.landed.sha, tip)))) x.landed = { ...x.landed, pushed: "pushed" };
       if (e?.landed) e.landed = { ...e.landed, pushed: "pushed" };
       if (e?.landed) delete e.landed.pushWhy;
+      this.record({ kind: "pushed", by: "queue", ...(e ? { entry: e.id, branch: e.branch, ...(e.run ? { run: e.run } : {}) } : {}), step: "push", sha: tip, why: `Pushed ${this.q.target} at ${tip.slice(0, 7)}.` });
     } else {
+      if (p.state === "not-pushed") this.record({ kind: "push-held", by: "queue", ...(e ? { entry: e.id, branch: e.branch, ...(e.run ? { run: e.run } : {}) } : {}), step: "push", why: `Not pushed: ${p.why ?? "held"}.` });
       if (e?.landed) e.landed = { ...e.landed, pushed: p.state, pushWhy: p.why };
       this.q.heads.pushWhy = p.why;
       if (p.state === "not-pushed" && "remote" in p && p.remote) this.q.heads.pushed = p.remote;
     }
     this.save();
+  }
+
+  /** The scan right before a push: what the remote lacks (`<remote>..<tip>`), fail-closed. A remote without the branch
+   *  yet: everything the push would publish, every commit no ref of that remote holds (too many to read: held). */
+  private async scanBeforePush(name: string, remote: string | null, tip: string): Promise<null | { why: string; facts?: ScanFacts }> {
+    const range = remote ? `${remote}..${tip}` : [tip, "--not", `--remotes=${name}`];
+    const r = await scanPublication(this.git, { repo: this.root, range, namesFile: this.names().file, allowed: allowedKeys(allowFileOf(this.store.dir)) });
+    if (r.ok) return null;
+    // Hits, or a scan that couldn't look (fail-closed): either holds the push, and the user is told.
+    return { why: r.why, facts: factsOf(r) };
   }
 
   /** A push held back earlier goes now if it can (resume, retry). */
@@ -4289,11 +5677,12 @@ export class ProjectQueue {
 
   private waitingWords(): string {
     const h = this.q.release;
-    return h ? `waits for ${h.tag ?? (h.version ? `release ${h.version}` : "the open release")} to be published or abandoned` : "waiting";
+    return h ? `waits for ${h.tag ?? (h.version ? `release ${h.version}` : "the open release")} to be published or cancelled` : "waiting";
   }
   /** A reason the hold wrote (it is rewritten as the release's tag becomes known, and dropped when the hold lifts). */
   private isWaitingWords(r: string | undefined): boolean {
-    return !!r && r.startsWith("waits for ") && r.endsWith(" to be published or abandoned");
+    // "abandoned": the words before releases were cancelled, still on entries an older server wrote.
+    return !!r && r.startsWith("waits for ") && (r.endsWith(" to be published or cancelled") || r.endsWith(" to be published or abandoned"));
   }
   /** The holding release as the screens name it: its tag once picked, never its id ("the open release" until then). */
   private releaseName(): string {
@@ -4309,7 +5698,7 @@ export class ProjectQueue {
 
   /** Set or cleared, this computer's how-it-lands can't change under an open release: Publish must land as it started. */
   private refuseHowChangeWhileHeld(): void {
-    if (this.q.release) throw new MergeFailure("invalid-request", `how it lands can't change ${this.whileOpen()}: change it after Publish or Abandon`);
+    if (this.q.release) throw new MergeFailure("invalid-request", `how it lands can't change ${this.whileOpen()}: change it after Publish or Cancel Release`);
   }
 
   /** Release lands its commit on the target here and pushes it itself: a project that lands by request or by pushing a
@@ -4321,7 +5710,7 @@ export class ProjectQueue {
 
   private holdWords(): string {
     const h = this.q.release;
-    return h ? `${this.whileOpen().slice("while ".length)}: nothing is pushed until it is published or abandoned` : "";
+    return h ? `${this.whileOpen().slice("while ".length)}: nothing is pushed until it is published or cancelled` : "";
   }
   private holdFile(): string {
     return join(this.store.dir, "push-hold");
@@ -4482,9 +5871,9 @@ export class ProjectQueue {
       if (head !== p.commit) throw new MergeFailure("invalid-request", `${this.q.target} is at ${(head ?? "?").slice(0, 7)}, not the release commit ${p.commit.slice(0, 7)}`);
       await this.mustLandLocally();
       const def = (await this.declared()).def;
-      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root));
+      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root, remoteOf(def)));
       if (pushes && !this.names().exists) throw new MergeFailure("invalid-request", PUSH_HELD_NAMES);
-      const r = await publishGit(this.git, { root: this.root, target: this.q.target, commit: p.commit, tag: p.tag, channels: p.channels, message: p.notes, push: pushes, landed: new Set(this.q.landed) });
+      const r = await publishGit(this.git, { root: this.root, target: this.q.target, commit: p.commit, tag: p.tag, channels: p.channels, message: p.notes, push: pushes, landed: new Set(this.q.landed), remote: remoteOf(def) });
       if (!r.ok) {
         this.log(`publish of ${p.tag} failed: ${r.why}`);
         throw new MergeFailure("busy", r.why);
@@ -4523,7 +5912,7 @@ export class ProjectQueue {
           this.current.ac.abort();
         }
         e.state = "cancelled";
-        e.reason = `release abandoned${r.why ? `: ${r.why.split("\n")[0]!.slice(0, 160)}` : ""}`;
+        e.reason = `release cancelled${r.why ? `: ${r.why.split("\n")[0]!.slice(0, 160)}` : ""}`;
         e.updatedAt = this.iso();
       }
       const landed = [...mine].reverse().find((e) => (e.releaseKind ?? "release") === "release" && e.state === "landed" && e.landed);
@@ -4534,7 +5923,7 @@ export class ProjectQueue {
         return { revert: null };
       }
       if (head !== landed.landed!.sha) throw new MergeFailure("invalid-request", `${this.q.target} is at ${head.slice(0, 7)}, not the release commit ${landed.landed!.sha.slice(0, 7)}: undo it by hand`);
-      const sha = await revertCommit(this.git, this.root, head, landed.landed!.from, `Revert ${this.releaseName()} (abandoned)${r.why ? `\n\n${r.why}` : ""}`);
+      const sha = await revertCommit(this.git, this.root, head, landed.landed!.from, `Revert ${this.releaseName()} (cancelled)${r.why ? `\n\n${r.why}` : ""}`);
       if (typeof sha !== "string") throw new MergeFailure("busy", sha.error);
       const branch = `sova/release-revert-${r.release}`;
       const u = await this.git(["update-ref", `refs/heads/${branch}`, sha], this.root);
@@ -4571,8 +5960,8 @@ export class ProjectQueue {
   withdrawRelease(w: { tag: string; sha: string; channels: Record<string, string | null>; why: string }): Promise<{ pushed: "pushed" | "not-pushed" | "no-remote"; channelsFrom: Record<string, string | null> }> {
     return this.serial(async () => {
       const def = (await this.declared()).def;
-      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root));
-      const r = await withdrawGit(this.git, { root: this.root, channels: w.channels, tag: w.tag, sha: w.sha, why: w.why, push: pushes });
+      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root, remoteOf(def)));
+      const r = await withdrawGit(this.git, { root: this.root, channels: w.channels, tag: w.tag, sha: w.sha, why: w.why, push: pushes, remote: remoteOf(def) });
       if (!r.ok) throw new MergeFailure("busy", r.why);
       this.log(`withdrew ${w.tag}: ${Object.entries(w.channels).map(([c, to]) => `${c} → ${to ? to.slice(0, 7) : "none"}`).join(", ")}`);
       return { pushed: r.pushed === "pending" ? "not-pushed" : r.pushed, channelsFrom: r.channelsFrom };

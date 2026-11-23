@@ -9,13 +9,13 @@ import { parseDefinition } from "../shared/project-contract";
 import { parseFacts, parseReleaseManifest } from "../shared/release";
 import { releaseSetupAt } from "./projects/release-proposal";
 // @ts-expect-error: a plain .mjs script, no types
-import * as maker from "../playbooks/release-maker/scripts/release-maker.mjs";
+import * as maker from "../system-playbooks/release-maker/scripts/release-maker.mjs";
 // @ts-expect-error: a plain .mjs script, no types
-import * as rel from "../playbooks/release/scripts/release.mjs";
+import * as rel from "../system-playbooks/release/scripts/release.mjs";
 
 /**
- * Sova's release playbooks: the general method's driver (playbooks/release/scripts/release.mjs) and the Release
- * playbook maker (playbooks/release-maker, proposes release) with its driver, its starter, and the release setup's
+ * Sova's release playbooks: the general method's driver (system-playbooks/release/scripts/release.mjs) and the Release
+ * playbook maker (system-playbooks/release-maker, proposes release) with its driver, its starter, and the release setup's
  * hash a maker run's review is pinned to, called in-process (the drivers' exit codes: playbooks-release.integration.test.ts).
  * Every repository is a scratch one in a temp dir; nothing here tags, pushes or runs a candidate (each would leave a marker file).
  */
@@ -48,7 +48,7 @@ function project(extra: Record<string, string> = {}): string {
 test("the maker proposes release but is folded into the Setup chat: never listed; the general method is Sova's own (unlisted) and is not a verb playbook", async () => {
   const cat = await listPlaybooks(dir);
   assert.equal(cat.playbooks.find((p) => p.id === "release-maker"), undefined, "folded: only the Setup chat runs it");
-  const head = readFileSync(new URL("../playbooks/release-maker/PLAYBOOK.md", import.meta.url), "utf8").split("\n---")[0]!;
+  const head = readFileSync(new URL("../system-playbooks/release-maker/PLAYBOOK.md", import.meta.url), "utf8").split("\n---")[0]!;
   assert.match(head, /^title: Release playbook maker$/m);
   assert.match(head, /^proposes: release$/m);
   assert.equal(cat.playbooks.find((p) => p.id === "release"), undefined, "only release chats run it");
@@ -78,8 +78,8 @@ test("init writes Sova's starter, which both parsers take and check passes; it n
   const first = maker.init(r, { bump: ["package.json"] });
   assert.equal(first.ok, true, first.problems.join("\n"));
   const def = parseDefinition(readFileSync(join(r, ".sova/project.json"), "utf8"));
-  assert.deepEqual({ ...def.release, checks: undefined }, { playbook: ".sova/playbooks/release", tag: "v${version}", scheme: "semver", channels: ["stable"], commit: true, checks: undefined, checkIds: [], quietMin: 30 });
-  const m = parseReleaseManifest(readFileSync(join(r, ".sova/playbooks/release/release.json"), "utf8"));
+  assert.deepEqual({ ...def.release, checks: undefined }, { playbook: ".sova/playbook-config/release", tag: "v${version}", scheme: "semver", channels: ["stable"], commit: true, checks: undefined, checkIds: [], quietMin: 30 });
+  const m = parseReleaseManifest(readFileSync(join(r, ".sova/playbook-config/release/release.json"), "utf8"));
   assert.deepEqual(m.steps.map((s) => s.id), ["version", "notes", "bump", "commit"]);
   const ok = await maker.check(r);
   assert.equal(ok.ok, true, ok.problems.join("\n"));
@@ -87,8 +87,15 @@ test("init writes Sova's starter, which both parsers take and check passes; it n
   const again = maker.init(r, {});
   assert.equal(again.ok, false);
   assert.match(again.problems.join("\n"), /already exists: change it by editing/);
-  const m2 = readFileSync(join(r, ".sova/playbooks/release/release.json"), "utf8");
+  const m2 = readFileSync(join(r, ".sova/playbook-config/release/release.json"), "utf8");
   assert.equal(maker.formatManifest(m2), m2, "written in canonical form");
+});
+
+test("the canonical release.json: Release with Options' keys in order on each step's line, then the checks' hints one per line", () => {
+  const text = maker.formatManifest(JSON.stringify({ checks: { unit: { minutes: 1.4, about: "Unit" } }, steps: [{ minutes: 5, skippable: true, phase: "prepare", label: "Docs", id: "docs", about: "Pages" }], v: 1 }));
+  assert.equal(text, '{\n  "v": 1,\n  "steps": [\n    {"id": "docs", "label": "Docs", "phase": "prepare", "skippable": true, "about": "Pages", "minutes": 5}\n  ],\n  "checks": {\n    "unit": {"about": "Unit", "minutes": 1.4}\n  }\n}\n');
+  assert.equal(maker.formatManifest(text), text);
+  assert.deepEqual(parseReleaseManifest(text).checks, { unit: { about: "Unit", minutes: 1.4 } });
 });
 
 test("a tag-only starter has no commit step, keeps an existing definition, and checks clean", async () => {
@@ -98,7 +105,7 @@ test("a tag-only starter has no commit step, keeps an existing definition, and c
   assert.equal(def.release!.commit, false);
   assert.deepEqual(def.release!.channels, []);
   assert.deepEqual(def.services.map((s) => s.name), ["web"], "the rest of the definition kept");
-  const m = parseReleaseManifest(readFileSync(join(r, ".sova/playbooks/release/release.json"), "utf8"));
+  const m = parseReleaseManifest(readFileSync(join(r, ".sova/playbook-config/release/release.json"), "utf8"));
   assert.deepEqual(m.steps.map((s) => s.id), ["version", "notes"]);
   const out = await maker.check(r);
   assert.equal(out.ok, true, out.problems.join("\n"));
@@ -108,7 +115,7 @@ test("a tag-only starter has no commit step, keeps an existing definition, and c
 test("check refuses what the parsers can't see: tagging, pushing, calling Sova, a page before Publish, a stray artifact", async () => {
   const r = project();
   assert.equal(maker.init(r, {}).ok, true);
-  const pb = join(r, ".sova/playbooks/release");
+  const pb = join(r, ".sova/playbook-config/release");
   writeFileSync(
     join(pb, "release.json"),
     maker.formatManifest(
@@ -179,7 +186,7 @@ test("check fails on an invalid manifest and on a project without release settin
   assert.equal(none.ok, false);
   assert.match(none.problems.join("\n"), /\.sova\/project\.json is missing/);
   assert.equal(maker.init(r, {}).ok, true);
-  writeFileSync(join(r, ".sova/playbooks/release/release.json"), JSON.stringify({ v: 1, steps: [{ id: "publish", label: "Mine", phase: "after" }] }));
+  writeFileSync(join(r, ".sova/playbook-config/release/release.json"), JSON.stringify({ v: 1, steps: [{ id: "publish", label: "Mine", phase: "after" }] }));
   const bad = await maker.check(r);
   assert.equal(bad.ok, false);
   assert.match(bad.problems.join("\n"), /Sova's own step/);
@@ -255,7 +262,7 @@ test("a release setup's hash pins the section and every file of the playbook fol
   assert.deepEqual(a!.steps.map((s) => s.id), ["version", "notes", "commit"]);
   assert.deepEqual(a!.files.sort(), ["PLAYBOOK.md", "release.json"]);
   assert.deepEqual(a!.settings!.channels, ["stable"]);
-  writeFileSync(join(r, ".sova/playbooks/release/PLAYBOOK.md"), readFileSync(join(r, ".sova/playbooks/release/PLAYBOOK.md"), "utf8") + "\nOne more line.\n");
+  writeFileSync(join(r, ".sova/playbook-config/release/PLAYBOOK.md"), readFileSync(join(r, ".sova/playbook-config/release/PLAYBOOK.md"), "utf8") + "\nOne more line.\n");
   git(r, "commit", "-qam", "playbook line");
   const b = await releaseSetupAt(r, "HEAD");
   assert.notEqual(b!.hash, a!.hash, "a playbook line is a new hash");
@@ -265,7 +272,7 @@ test("a release setup's hash pins the section and every file of the playbook fol
   git(r, "commit", "-qam", "channel");
   const c = await releaseSetupAt(r, "HEAD");
   assert.notEqual(c!.hash, b!.hash, "a setting is a new hash");
-  writeFileSync(join(r, ".sova/playbooks/release/release.json"), "{}");
+  writeFileSync(join(r, ".sova/playbook-config/release/release.json"), "{}");
   git(r, "commit", "-qam", "break the manifest");
   const d = await releaseSetupAt(r, "HEAD");
   assert.equal(d!.hash, "");

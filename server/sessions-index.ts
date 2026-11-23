@@ -48,7 +48,7 @@ import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-
 import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
 import { removeSessionLabels } from "./message-labels";
-import { removeSessionTimeSpent } from "./time-spent";
+import { KEEP_WAIT_MS, keepSessionTimeSpent, removeSessionTimeSpent } from "./time-spent";
 import { removeSessionTours } from "./tours/lifecycle";
 import { removeDesignFiles } from "./design/store";
 import { byActivity } from "../src/lib/summary-diff";
@@ -2157,6 +2157,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         dropSessionTitles([s.id]);
         dropSessionTags([s.id]);
         removeSessionAttachments(s.id);
+        await keepSessionTimeSpent(s.id);
         removeSessionTimeSpent(s.id);
         removeSessionLabels(s.id);
         dropGroupAssignments([s.id]);
@@ -2257,6 +2258,8 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
   const cutoff = req.mode === "age" ? now - req.minAgeDays * 86_400_000 : 0;
   const skipped = { live: 0, busy: 0, recent: 0, failed: 0 };
   const deletedIds: string[] = [];
+  /** The usage helper keeps each deleted session's hours first (keepSessionTimeSpent), all under one deadline. */
+  let keepUntil: number | undefined;
   const refusals: { path: string; reason: string }[] = [];
   /** Ids whose file is really gone, so their group assignment goes too (one write after the loop). */
   const forgotten: string[] = [];
@@ -2347,6 +2350,9 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       dropSessionTitles([id]);
       dropSessionTags([id]);
       removeSessionAttachments(id);
+      // Every keep of this Clean Up shares one deadline: together they hold it at most KEEP_WAIT_MS.
+      keepUntil ??= Date.now() + KEEP_WAIT_MS;
+      await keepSessionTimeSpent(id, keepUntil);
       removeSessionTimeSpent(id);
       removeSessionLabels(id);
       sessionArchived(id);

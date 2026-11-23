@@ -40,7 +40,7 @@ export function cardPlaceRow(d: Pick<MergeCard, "state" | "target" | "worktree" 
 }
 
 /** The pill, from a state and place in line; a request's from its host facts when the card has them. */
-export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCard, "request" | "reason" | "removed">> & CardAutomation & { kind?: MergeCardRevision["kind"] }): { label: string; tone: CardTone; live?: boolean } {
+export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCard, "request" | "reason" | "removed" | "waitingRuling">> & CardAutomation & { kind?: MergeCardRevision["kind"] }): { label: string; tone: CardTone; live?: boolean } {
   if (isRequestState(d.state)) return requestChip(d.state, d.request, d.reason);
   // A decision that waits for the user names it; a standing approval with its chat reads where it stands.
   const dec = d.state === "landed" || d.state === "cancelled" ? null : decisionWords(d);
@@ -59,7 +59,8 @@ export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Part
     case "review-flagged":
       return { label: "Review flagged", tone: "warn" };
     case "unattributed":
-      return { label: "Can't tell whose failure", tone: "warn" };
+      // The merge thread rules on whose failure it is first: nothing asks you yet.
+      return d.waitingRuling ? { label: "Waiting for the merge thread", tone: "info" } : { label: "Can't tell whose failure", tone: "warn" };
     case "drafts-changed":
       return { label: "Drafts changed", tone: "warn" };
     case "needs-fix":
@@ -149,7 +150,7 @@ export function reviewPointer(c: Partial<Pick<MergeCard, "reviewFound" | "state"
  *  Queue at every stage of an approval that stands; a decision's own answers (Accept, Land Anyway, Try Again, Land)
  *  only on a decision; Land Again only on a Landed card for work after landing. */
 export type CardAction = "cancel" | "accept" | "land-anyway" | "try-again" | "land-again" | "land" | "remove";
-export function cardActions(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "settled" | "conflict">> & CardAutomation): CardAction[] {
+export function cardActions(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "settled" | "conflict" | "waitingRuling">> & CardAutomation): CardAction[] {
   // The server counts only real commits past the landing: a catch-up merge is none. Settled: its head is gone or a
   // later entry carries it.
   if (c.state === "landed") return c.newerCommits && !c.settled ? ["land-again"] : [];
@@ -169,7 +170,7 @@ export function cardActions(c: Pick<MergeCard, "state" | "newerCommits"> & Parti
       // Accept only when the merge thread proposed a resolution; otherwise it is answered in the chat.
       return c.conflict?.proposal ? ["accept", "remove"] : ["remove"];
     case "unattributed":
-      return ["land-anyway", "try-again", "remove"];
+      return c.waitingRuling ? ["remove"] : ["land-anyway", "try-again", "remove"];
     default:
       // Checking, a conflict being judged, review findings back with the chat, with its chat, waiting for a fix.
       return ["remove"];

@@ -327,7 +327,8 @@
       "src/app.css",
       "src/design/align-viewer.css",
       "src/lib/overseer-card-rows.test.ts",
-      "server/overseer-sender.ts"
+      "server/overseer-sender.ts",
+      "server/overseer-runtime.test.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -1084,6 +1085,54 @@
     "kind": "behavior",
     "authority": "accepted",
     "requires": [
+      "§app.overseer/pairs-rules",
+      "§app.overseer/pairs-lines"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T10:36Z",
+      "source": "pi-session:01a1ab3a-26bd-72b7-9a70-7646430041e9#56b7c1df"
+    },
+    "code": [
+      "server/topic-pairs.ts",
+      "server/overseer-pair-tools.ts"
+    ],
+    "evidence": "verified"
+  },
+  "§app.overseer/pairs-lines": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.overseer/pairs-rules"
+    ],
+    "code": [
+      "src/components/PairedLines.tsx",
+      "src/lib/pair-lines.ts",
+      "src/app.css",
+      "src/lib/pair-lines.browser.test.ts",
+      "src/components/Thread.tsx",
+      "src/lib/rendered.ts",
+      "src/lib/rendered.browser.test.ts",
+      "src/components/ChatView.tsx",
+      "src/components/OverseerCards.tsx",
+      "src/components/BuiltinKinds.tsx",
+      "src/components/LiveKinds.tsx",
+      "src/lib/hidden-rows.ts",
+      "src/lib/transcript-kinds.ts",
+      "src/lib/api.ts",
+      "src/lib/hidden-rows.test.ts"
+    ],
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-23T06:48Z",
+      "source": "pi-session:4e5f5861-e1f9-4af0-8eb6-b2421102c5a2#3b1a5f57"
+    }
+  },
+  "§app.overseer/pairs-rules": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
       "§app.overseer/tools",
       "§app.overseer/approvals",
       "§app.overseer/caps",
@@ -1113,22 +1162,8 @@
       "server/app.ts",
       "shared/protocol.ts",
       "shared/overseer-grants.ts",
-      "src/components/PairedLines.tsx",
-      "src/lib/pair-lines.ts",
-      "src/lib/pair-lines.browser.test.ts",
-      "src/components/Thread.tsx",
-      "src/lib/rendered.ts",
-      "src/lib/rendered.browser.test.ts",
-      "src/components/ChatView.tsx",
-      "src/components/OverseerCards.tsx",
-      "src/components/BuiltinKinds.tsx",
-      "src/components/LiveKinds.tsx",
-      "src/lib/hidden-rows.ts",
-      "src/lib/transcript-kinds.ts",
-      "src/lib/api.ts",
       "server/topic-pairs.test.ts",
-      "server/overseer-pair-tools.test.ts",
-      "src/lib/hidden-rows.test.ts"
+      "server/overseer-pair-tools.test.ts"
     ],
     "evidence": "verified"
   },
@@ -1263,7 +1298,8 @@
       "server/harness/pi/golden/session/S11-overseer.jsonl",
       "server/harness/pi/golden/state/G7-overseer-cleared.jsonl",
       "server/harness/pi/golden/state/G7-overseer-first.jsonl",
-      "server/attention.ts"
+      "server/attention.ts",
+      "server/overseer-runtime.test.ts"
     ],
     "requires": [
       "§app.overseer/confirm",
@@ -1274,8 +1310,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T02:49Z",
-      "source": "pi-session:01a1ac4a-4cc0-77e8-b78d-580fabeebc2e#f924065b"
+      "at": "2026-11-18T15:20Z",
+      "source": "pi-session:01a1eee3-521d-72bd-a0fb-7f5a567de2eb#c8245611"
     }
   },
   "§app.overseer/seen": {

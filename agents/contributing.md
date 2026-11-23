@@ -60,10 +60,11 @@ The full run is required however small the fix:
   earlier passes
 - `pnpm run build`
 - When the change touches pi-config extensions: `node scripts/merge-checks/ext-suites.mjs`
+- When the change touches a playbook in `playbooks/`: `node scripts/merge-checks/playbook-tests.mjs`
 - When the change touches statecharts: `node scripts/merge-checks/statecharts.mjs` (needs a JVM and the
   Clojure CLI)
 
-Those two scripts take no arguments when a local `master` exists; otherwise pass `--base <rev>`, for
+Those scripts take no arguments when a local `master` exists; otherwise pass `--base <rev>`, for
 example `--base origin/master`. They read committed changes only, so commit first. If one prints
 `skipped:`, it ran nothing.
 

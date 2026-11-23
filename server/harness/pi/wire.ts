@@ -42,7 +42,92 @@ export function withoutSignatures<T>(v: T): T {
     browser; message_end, turn_end and agent_end carry whole messages), and record_tour's supplied
     credentials (§app.tours/sites: every view of its arguments shows "[hidden]"). */
 export function toV1Event(event: any): unknown {
-  return hideTourCredentialsDeep(withoutSignatures(wireEvent(event)));
+  return hideTourCredentialsDeep(withoutSignatures(wireEvent(withoutNewerFields(event))));
+}
+
+const without = (o: any, key: string) => {
+  if (!o || typeof o !== "object" || !(key in o)) return o;
+  const { [key]: _dropped, ...rest } = o;
+  return rest;
+};
+
+/** `list` with `f` over each element; `list` itself when nothing changed, so the common case copies nothing. */
+const mapKept = <T>(list: T[], f: (x: T) => T): T[] => {
+  let out: T[] | null = null;
+  list.forEach((x, i) => {
+    const y = f(x);
+    if (y !== x) (out ??= list.slice())[i] = y;
+  });
+  return out ?? list;
+};
+
+/** A usage as pi 1.0.3 had it: its cost without `totalFromProvider` (pi-ai 1.5.0). */
+function v1Usage(usage: any): any {
+  const cost = without(usage?.cost, "totalFromProvider");
+  return cost === usage?.cost ? usage : { ...usage, cost };
+}
+
+/** A tool call as pi 1.0.3 had it: without `argumentsError` (pi-ai 1.5.0: arguments that did not parse). */
+const v1Block = (block: any) => (block?.type === "toolCall" ? without(block, "argumentsError") : block);
+
+/** A message as pi 1.0.3 had it, whatever its role: without the time it took (`durationMs`, on an
+    assistant's reply and a tool's result), its usage's `totalFromProvider`, and a tool call's
+    `argumentsError`. A tool result's `details` and `content` are the tool's own and pass whole. */
+function v1Message(message: any): any {
+  if (!message || typeof message !== "object") return message;
+  let out = without(message, "durationMs");
+  const usage = v1Usage(out.usage);
+  if (usage !== out.usage) out = { ...out, usage };
+  if (out.role === "assistant" && Array.isArray(out.content)) {
+    const content = mapKept(out.content, v1Block);
+    if (content !== out.content) out = { ...out, content };
+  }
+  return out;
+}
+
+/** `o` with `key`'s value mapped; `o` itself when the value came back as it was. */
+const withKey = (o: any, key: string, f: (v: any) => any) => {
+  if (!o || typeof o !== "object" || !(key in o)) return o;
+  const v = f(o[key]);
+  return v === o[key] ? o : { ...o, [key]: v };
+};
+const v1Messages = (list: unknown) => (Array.isArray(list) ? mapKept(list, v1Message) : list);
+
+/**
+ * Wire 1 is a fixed contract: older servers, peers and clients read its frames as pi 1.0.3 shaped them, so
+ * a field a later pi adds to an event stays out, by the place pi puts it (never by name at any depth: a
+ * tool's own `details` may hold the same word). Since 1.0.3 pi added: `aborted` on `agent_settled` and
+ * `structuredContent` on `tool_execution_end`'s result (1.1.0); `durationMs` on `tool_execution_end`, on a
+ * tool result's message and on an assistant's message (1.1.0, 1.5.0); `totalFromProvider` in a usage's
+ * cost and `argumentsError` on a tool call (pi-ai 1.5.0). A message reaches a frame in `message_start`,
+ * `message_end`, `turn_end` (its message and tool results), `agent_end`, an `entry_appended` message
+ * entry, and `message_update` (the frame's `usage`, a `toolcall_end`'s tool call, and the whole message a
+ * `done` or `error` carries; `partial` never goes out). Wire 2 is mapped from these frames by named
+ * fields (shared/wire-v1.ts), so it is unchanged too.
+ */
+function withoutNewerFields(event: any): any {
+  switch (event?.type) {
+    case "agent_settled":
+      return without(event, "aborted");
+    case "tool_execution_end":
+      return withKey(without(event, "durationMs"), "result", (r) => without(r, "structuredContent"));
+    case "message_start":
+    case "message_end":
+      return withKey(event, "message", v1Message);
+    case "turn_end":
+      return withKey(withKey(event, "message", v1Message), "toolResults", v1Messages);
+    case "agent_end":
+      return withKey(event, "messages", v1Messages);
+    case "entry_appended":
+      return withKey(event, "entry", (entry) => (entry?.type === "message" ? withKey(entry, "message", v1Message) : entry));
+    case "message_update": {
+      // Only what wireEvent sends on: the message's usage, and the stream event less its `partial`.
+      const e = withKey(event, "message", (m) => withKey(m, "usage", v1Usage));
+      return withKey(e, "assistantMessageEvent", (ame) => withKey(withKey(withKey(ame, "toolCall", v1Block), "message", v1Message), "error", v1Message));
+    }
+    default:
+      return event;
+  }
 }
 
 /** A server's tool on a streaming frame, from the names the chat's own list registered (never guessed). */

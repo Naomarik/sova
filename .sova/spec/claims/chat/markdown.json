@@ -548,7 +548,8 @@
       "src/vis/copy.ts",
       "src/vis/copy-plan.ts",
       "src/vis/copy-plan.test.ts",
-      "src/vis/snapshot.ts"
+      "src/vis/snapshot.ts",
+      "server/session-share-designs.ts"
     ],
     "requires": [
       "§chat.markdown/code-blocks",
@@ -556,19 +557,17 @@
       "§app/tours"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-16T13:15Z",
-      "source": "pi-session:02f36f42-fe72-46f4-b16d-5c9ac0af4715#a96b5ce8"
+      "by": "user",
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
     }
   },
   "§chat.markdown/working-notes": {
     "kind": "behavior",
     "code": [
       "src/lib/markdown.ts",
-      "src/components/Markdown.tsx",
-      "src/components/Thread.tsx",
+      "src/components/MessageRows.tsx",
       "src/design/base.css",
-      "src/components/ReplyMarkdown.tsx",
       "src/lib/working-notes.test.ts"
     ],
     "requires": [
@@ -577,8 +576,8 @@
     "authority": "accepted",
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-27T23:54Z",
-      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      "at": "2026-11-18T17:16Z",
+      "source": "pi-session:1dc90f4d-dc21-4c34-a8a7-51e9f129c066#2e53346c"
     },
     "evidence": "verified"
   },

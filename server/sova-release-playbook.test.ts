@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -8,15 +8,15 @@ import { parseDefinition } from "../shared/project-contract";
 import { parseReleaseManifest } from "../shared/release";
 import { defHashOf } from "./project-services/def-hash";
 // @ts-expect-error: a plain .mjs driver, no types
-import * as maker from "../playbooks/release-maker/scripts/release-maker.mjs";
+import * as maker from "../system-playbooks/release-maker/scripts/release-maker.mjs";
 // @ts-expect-error: a plain .mjs driver, no types
-import { formatText } from "../playbooks/project-verbs/scripts/project-verbs.mjs";
+import { formatText } from "../system-playbooks/project-verbs/scripts/project-verbs.mjs";
 // @ts-expect-error: a plain .mjs driver, no types
-import * as sr from "../.sova/playbooks/release/scripts/sova-release.mjs";
+import * as sr from "../.sova/playbook-config/release/scripts/sova-release.mjs";
 
 /**
  * Sova's own release setup: its `release` section and `site` deploy target (in .sova/project.json), its project release
- * playbook (.sova/playbooks/release) and that playbook's driver, scripts/sova-release.mjs. Scratch repositories in a temp
+ * playbook (.sova/playbook-config/release) and that playbook's driver, scripts/sova-release.mjs. Scratch repositories in a temp
  * dir; nothing here tags, pushes, deploys or runs a release check. The cases that run the driver as a program:
  * sova-release-playbook.integration.test.ts.
  */
@@ -37,9 +37,9 @@ const withoutReleaseSections = () => {
 };
 
 test("Sova's release settings and site target are in .sova/project.json, parse, and leave the definition's hash as it was", () => {
-  assert.equal(existsSync(join(ROOT, ".sova/playbooks/release/project-sections.json")), false, "the waiting fragment is gone");
+  assert.equal(existsSync(join(ROOT, ".sova/playbook-config/release/project-sections.json")), false, "the waiting fragment is gone");
   const def = parseDefinition(definitionText());
-  assert.equal(def.release?.playbook, ".sova/playbooks/release");
+  assert.equal(def.release?.playbook, ".sova/playbook-config/release");
   assert.deepEqual(def.release?.channels, ["stable"]);
   assert.equal(def.release?.commit, true);
   assert.deepEqual(def.release?.checkIds, ["release-notes", "release-integration", "release-extensions", "release-spec-replay", "release-site", "release-spec", "release-leaks"]);
@@ -54,7 +54,9 @@ test("Sova's release settings and site target are in .sova/project.json, parse, 
   try {
     base = git(ROOT, "show", "5ea4b141f:.sova/project.json");
   } catch {}
-  if (base !== null) assert.equal(defHashOf(def), defHashOf(parseDefinition(base)));
+  // The `node-modules` setup step changed since (copy, then match the branch's packages): that moves the hash on purpose.
+  // Everything else hashed is still as it was at 5ea4b141f.
+  if (base !== null) assert.equal(defHashOf(def), defHashOf(parseDefinition(JSON.stringify({ ...JSON.parse(base), setup: JSON.parse(definitionText()).setup }))));
 });
 
 test("every sova-release.mjs subcommand Sova's definition names exists, and the release check passes on Sova's setup", async () => {
@@ -64,17 +66,17 @@ test("every sova-release.mjs subcommand Sova's definition names exists, and the 
     ...Object.values(def.deploy.targets as Record<string, { build?: { run: string[] }[]; steps: { run: string[] }[]; credentials?: { check: string[] }[] }>).flatMap((t) => [...(t.build ?? []).map((s) => s.run), ...t.steps.map((s) => s.run), ...(t.credentials ?? []).map((c) => c.check)]),
   ];
   const known: string[] = sr.SUBCOMMANDS;
-  const named = runs.filter((r) => r.includes(".sova/playbooks/release/scripts/sova-release.mjs")).map((r) => r[r.indexOf(".sova/playbooks/release/scripts/sova-release.mjs") + 1]!);
+  const named = runs.filter((r) => r.includes(".sova/playbook-config/release/scripts/sova-release.mjs")).map((r) => r[r.indexOf(".sova/playbook-config/release/scripts/sova-release.mjs") + 1]!);
   assert.ok(named.length >= 7);
   for (const c of named) assert.ok(known.includes(c), `${c} is not a sova-release.mjs subcommand`);
-  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbooks/release/release.json"), "utf8"));
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbook-config/release/release.json"), "utf8"));
   const prepare = manifest.steps.filter((s) => s.phase === "prepare").map((s) => s.id);
   assert.equal(prepare.at(-1), "commit", "the commit step is the last prepare step");
   // The committed definition is in canonical form; a scratch repository holds it and Sova's playbook folder.
   assert.equal(formatText(definitionText()), definitionText(), "run release-maker fmt on .sova/project.json");
   const r = mkdtempSync(join(dir, "check-"));
   git(r, "init", "-q");
-  cpSync(join(ROOT, ".sova/playbooks/release"), join(r, ".sova/playbooks/release"), { recursive: true });
+  cpSync(join(ROOT, ".sova/playbook-config/release"), join(r, ".sova/playbook-config/release"), { recursive: true });
   writeFileSync(join(r, ".sova/project.json"), definitionText());
   const out = await maker.check(r);
   assert.deepEqual(out.problems, []);
@@ -154,13 +156,13 @@ test("the release checks' pure parts: the dated changelog entry, the built landi
 });
 
 test("the Docs step runs every release and finishes on its own; the Release Note is the operator's word, an ask only context", () => {
-  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbooks/release/release.json"), "utf8"));
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbook-config/release/release.json"), "utf8"));
   const docs = manifest.steps.find((s) => s.id === "docs");
   assert.ok(docs);
   assert.notEqual(docs.held, true, "the docs step is not held");
-  const playbook = readFileSync(join(ROOT, ".sova/playbooks/release/PLAYBOOK.md"), "utf8");
-  const ref = readFileSync(join(ROOT, ".sova/playbooks/release/references/docs.md"), "utf8");
-  const general = readFileSync(join(ROOT, "playbooks/release/PLAYBOOK.md"), "utf8");
+  const playbook = readFileSync(join(ROOT, ".sova/playbook-config/release/PLAYBOOK.md"), "utf8");
+  const ref = readFileSync(join(ROOT, ".sova/playbook-config/release/references/docs.md"), "utf8");
+  const general = readFileSync(join(ROOT, "system-playbooks/release/PLAYBOOK.md"), "utf8");
   const docsBullet = playbook.slice(playbook.indexOf("- `docs`:"), playbook.indexOf("- `commit`:"));
   assert.match(docsBullet, /every release unless the operator's Release Note/);
   for (const text of [docsBullet, ref]) {
@@ -185,4 +187,48 @@ test("the Docs step runs every release and finishes on its own; the Release Note
   assert.match(playbook, /No such label: there is no note/);
   assert.match(playbook, /It never contains the note/);
   assert.match(general, /ask from a Project Assistant or an overseer is the quoted `Asked by …` line, separate from the note/);
+});
+
+test("every script Sova's own config playbooks run by path (`node <path>`) is in the tree", () => {
+  const pages: string[] = [];
+  const walk = (d: string) => {
+    for (const n of readdirSync(d)) {
+      const p = join(d, n);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (n.endsWith(".md")) pages.push(p);
+    }
+  };
+  walk(join(ROOT, ".sova", "playbook-config"));
+  const named = pages.flatMap((p) => [...readFileSync(p, "utf8").matchAll(/node (\.sova\/[^\s`'"]+\.mjs)/g)].map((m) => [p.slice(ROOT.length + 1), m[1]!] as const));
+  assert.ok(named.length >= 3, "the release playbook names its scripts by path");
+  for (const [page, script] of named) assert.ok(existsSync(join(ROOT, script)), `${page} runs ${script}, which isn't in the tree`);
+});
+
+test("no release step or release check is about migrations: nothing stops a release over them", () => {
+  const def = parseDefinition(readFileSync(join(ROOT, ".sova/project.json"), "utf8"));
+  assert.ok(def.release?.checks.length, "the scan reads Sova's release checks");
+  for (const c of def.release?.checks ?? []) assert.doesNotMatch(`${c.id} ${c.label} ${c.run.join(" ")}`, /migration/i, c.id);
+  assert.ok(!sr.SUBCOMMANDS.some((x: string) => /migration/.test(x)), "the driver has no migrations subcommand");
+  assert.doesNotMatch(readFileSync(join(ROOT, ".sova/playbook-config/release/PLAYBOOK.md"), "utf8"), /migration/i, "the release playbook never mentions migrations");
+});
+
+test("Release with Options in the playbooks: the kind picks the number (major is 1.0.0), turned-off steps are reported skipped, landings freeze at Start, the chat says what it is", () => {
+  const playbook = readFileSync(join(ROOT, ".sova/playbook-config/release/PLAYBOOK.md"), "utf8");
+  const general = readFileSync(join(ROOT, "system-playbooks/release/PLAYBOOK.md"), "utf8");
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbook-config/release/release.json"), "utf8"));
+  // The steps the panel offers are the ones the playbook says what to do without.
+  const off = manifest.steps.filter((s) => s.skippable).map((s) => s.id);
+  assert.deepEqual(off, ["notes", "stamps", "docs", "try-live", "outside-checks"]);
+  const section = playbook.slice(playbook.indexOf("## Steps turned off at Start"), playbook.indexOf("## Steps\n"));
+  for (const id of off) assert.ok(section.includes(`\`${id}\``), `${id} named where turned-off steps are`);
+  assert.match(section, /report it `skipped`, summary "Turned off at Start"/);
+  assert.doesNotMatch(playbook, /never a major while 0\.x/);
+  assert.match(playbook, /a \*\*major\*\* \(1\.0\.0 from 0\.x\) only when the operator picks it/);
+  assert.match(playbook, /The kind the operator picked in Release with Options[^\n]*wins over this rule/);
+  assert.match(general, /From the moment the operator presses Start Release until Publish or Cancel Release/);
+  assert.doesNotMatch(general, /From the moment the release commit is queued/);
+  assert.match(general, /begin your reply with "I'm the release chat for this release; I only run its steps\."/);
+  assert.match(general, /Retry Step[^\n]*Continue[^\n]*Cancel Release[^\n]*Publish[^\n]*a new chat/);
+  assert.match(general, /"Retry can't pass\. Cancel the release, land it, start again\."/);
+  assert.match(general, /each \*\*turned-off step\*\* is never run: report it `skipped`/);
 });

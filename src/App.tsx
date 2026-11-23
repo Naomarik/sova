@@ -46,6 +46,7 @@ import { ListRows, ROW_STAMP_SLACK_MS } from "./lib/list-rows";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import type { CostsQuery } from "./lib/cost-history";
 import type { PerfQuery } from "./lib/perf";
+import type { TimeQuery } from "./lib/time-totals";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
 import { transcriptRoot } from "./lib/jump";
 import { groupRouteFromHash } from "./lib/group-route";
@@ -1294,6 +1295,7 @@ export function App() {
                     onOpenAgents={openAgentsFor}
                     costs={(insightsRoute() as { costs?: CostsQuery } | null)?.costs ?? null}
                     performance={(insightsRoute() as { performance?: PerfQuery } | null)?.performance ?? null}
+                    time={(insightsRoute() as { time?: TimeQuery } | null)?.time ?? null}
                   />
                 </Match>
                 {/* Every /explain page as a card (#/explanations[/<sessionId>]). */}

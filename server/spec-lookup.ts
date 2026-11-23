@@ -31,6 +31,10 @@ export const FIND_MAX = 12 * 1024;
 export const READ_MAX = 32 * 1024;
 export const CALLS_MAX = 30;
 export const OVERVIEW_MAX = 1500;
+/** Under a find row: the part of a split topic that matched best. */
+export const PART_LEAD = "best part:";
+/** After a split topic's text: its parts, each readable by its ref. */
+export const PARTS_HEAD = "Its parts (read each by its ref):";
 
 const GIT_TIMEOUT_MS = 10_000;
 
@@ -246,8 +250,20 @@ function cachedRun(line: MainLine, args: string[]): Promise<Record<string, any>>
   return p;
 }
 
-/** A passage's whole text, following the tool's cursor (bounded). */
-async function readPassage(line: MainLine, id: string): Promise<{ title: string; text: string; candidate: boolean; kind: string } | null> {
+/** A split topic's part, as the spec tools name it under its topic. */
+interface PartRef {
+  id: string;
+  title: string;
+  /** Its labels: a candidate part is marked as one, like any other line. */
+  labels?: { authority?: string };
+}
+const partsOf = (v: unknown): PartRef[] =>
+  Array.isArray(v)
+    ? v.filter((p) => typeof p?.id === "string").map((p) => ({ id: String(p.id), title: String(p.title ?? ""), ...(typeof p.labels?.authority === "string" ? { labels: { authority: String(p.labels.authority) } } : {}) }))
+    : [];
+
+/** A passage's whole text, following the tool's cursor (bounded), and a split topic's parts. */
+async function readPassage(line: MainLine, id: string): Promise<{ title: string; text: string; candidate: boolean; kind: string; parts: PartRef[] } | null> {
   let out = await cachedRun(line, ["read", id, "--no-frame", "--budget", "32768"]);
   const first = out.items?.[0];
   if (!first) return null;
@@ -259,7 +275,7 @@ async function readPassage(line: MainLine, id: string): Promise<{ title: string;
     text += String(more.text ?? "");
     if (more.fragment?.complete || more.fragment?.end === more.fragment?.total) break;
   }
-  return { title: String(first.title ?? ""), text, candidate: first.labels?.authority === "candidate", kind: String(first.kind ?? "") };
+  return { title: String(first.title ?? ""), text, candidate: first.labels?.authority === "candidate", kind: String(first.kind ?? ""), parts: partsOf(first.parts) };
 }
 
 // ---- per-conversation handles --------------------------------------------------------------------------------
@@ -398,6 +414,9 @@ export async function specLookup(ctx: LookupCtx, params: LookupParams): Promise<
       if (!l?.id || seen.has(l.id)) continue;
       seen.add(l.id);
       lines.push(lineOf(target, l, names));
+      // A split topic's row names the part that matched best: a ref of its own, so the part can be read straight away.
+      const [part] = partsOf(l.part ? [l.part] : []);
+      if (part) lines.push(`  ${PART_LEAD} ${lineOf(target, part, names).slice(2)}`);
     }
     return wrapSpec(defuse(paged(target, lines.length ? `Parts about "${words.join(" ")}":\n${lines.join("\n")}` : `Nothing about "${words.join(" ")}". Try other words, or outline.`, FIND_MAX)));
   }
@@ -414,7 +433,9 @@ export async function specLookup(ctx: LookupCtx, params: LookupParams): Promise<
     const p = await readPassage(line, ref!.id);
     if (!p) throw new LookupRefusal(target.view === "outsider" ? "That part wasn't found: look it up again." : `No ${ref!.id} on the main line.`);
     const body = target.view === "full" ? (p.candidate ? `(authority: candidate)\n${p.text}` : p.text) : projectOutsider(p.text, { names }, p.candidate);
-    return wrapSpec(defuse(paged(target, body, READ_MAX)));
+    // A split topic's own text is mostly the list of its parts: list them as refs, readable in either view.
+    const parts = p.parts.length ? `\n\n${PARTS_HEAD}\n${p.parts.map((x) => lineOf(target, x, names)).join("\n")}` : "";
+    return wrapSpec(defuse(paged(target, body + parts, READ_MAX)));
   }
   throw new LookupRefusal('op must be "find", "outline" or "read".');
 }

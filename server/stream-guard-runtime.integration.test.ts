@@ -1,11 +1,13 @@
-// Run: pnpm exec tsx --test server/stream-guard-runtime.integration.test.ts. The stream guard's
-// cost, measured: a local stub endpoint on 127.0.0.1 (server/stream-stub.ts) through pi's real
+// Run: pnpm test:int server/stream-guard-runtime.integration.test.ts. The stream guard over a real
+// socket: a local stub endpoint on 127.0.0.1 (server/stream-stub.ts) through pi's real
 // openai-completions provider, in a throwaway PI_CODING_AGENT_DIR; ~/.pi is never read or written and
-// no real model is called. The mechanism (the trip at exactly the cap, the abort, no retry, the stub
-// stopped) is checked in-process by stream-guard-runtime.test.ts; this file checks only what takes a
-// clock: the guarded turn costs the main thread little, and the same stream unguarded costs it
-// several times more. Main-thread CPU time is the measure (the harm is pi's parse on that thread),
-// so other load on the machine barely moves it; the loop's stalls are printed as evidence only.
+// no real model is called. The mechanism (the trip at exactly the cap, the abort, no retry) is checked
+// in-process by stream-guard-runtime.test.ts; this file checks only what takes a socket and a clock:
+// an endless stream is cut off (the stop reaches the stub's connection) at little cost to the main
+// thread, and the same stub with the caps raised runs to its end, so the stop was the guard's.
+// Through pi 1.4 the unguarded stream also cost the main thread many times more (pi re-parsed the
+// whole tool call at every piece, ~35x here); pi 1.5.0 parses a large call incrementally, so that
+// ratio is gone (1-2x) and is printed as evidence only, like the loop's stalls.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -85,7 +87,7 @@ const evidence: Record<string, unknown> = {};
 after(() => console.log(`[stream-guard evidence] ${JSON.stringify(evidence)}`));
 
 describe("the stream guard's cost against a runaway stream (real provider path, local stub over HTTP)", () => {
-  const guarded: { cpuMs: number; stallMs: number; ms: number }[] = [];
+  const guarded: { cpuMs: number; stallMs: number; ms: number; sent: number }[] = [];
 
   // One ordinary turn first: the provider's modules load lazily on the first request, and that
   // one-time stall is not the stream's.
@@ -105,17 +107,19 @@ describe("the stream guard's cost against a runaway stream (real provider path, 
       const chat = await acquireChat(ordinarySession(), true);
       await chat.setModelRef("stub/runaway");
       const r = await cost(() => chat.acceptPrompt("go").turn);
+      // The stub never ends by itself: its connection closing is the stop reaching the socket.
       await stub.closed();
+      assert.equal(stub.stats.finished, false, "cut off, not ended");
       assert.equal(lastAssistant(chat)?.message?.stopReason, "aborted");
       assert.equal(chat.lastStreamTrip?.chars, 8192);
-      guarded.push(r);
+      guarded.push({ ...r, sent: stub.stats.argChars });
     }
-    evidence.guarded = guarded.map((r) => ({ cpuMs: Math.round(r.cpuMs), stallMs: Math.round(r.stallMs), turnMs: Math.round(r.ms) }));
+    evidence.guarded = guarded.map((r) => ({ cpuMs: Math.round(r.cpuMs), stallMs: Math.round(r.stallMs), turnMs: Math.round(r.ms), argCharsSent: r.sent }));
     const best = Math.min(...guarded.map((r) => r.cpuMs));
     assert.ok(best < 250, `the guarded turn's main-thread CPU: ${best} ms (best of 3)`);
   });
 
-  test("control, with the caps raised: the same stub, finite (192 K), costs the main thread materially more", async () => {
+  test("control, with the caps raised: the same stub, finite (192 K), runs to its end, so the stop above was the guard's", async () => {
     assert.equal(guarded.length, 3, "runs after the guarded case");
     setStreamCapsForTest({ whitespaceRunChars: Infinity, toolArgChars: Infinity, starvedMs: Infinity });
     try {
@@ -126,9 +130,7 @@ describe("the stream guard's cost against a runaway stream (real provider path, 
       evidence.control = { cpuMs: Math.round(r.cpuMs), stallMs: Math.round(r.stallMs), turnMs: Math.round(r.ms), argCharsSent: stub.stats.argChars };
       assert.equal(stub.stats.finished, true, "the stream ran to its end: nothing stopped it");
       assert.equal(chat.lastStreamTrip, null);
-      // Against the guarded runs' worst, not their best: the ratio can't come from picking.
-      const guardedWorst = Math.max(...guarded.map((g) => g.cpuMs));
-      assert.ok(r.cpuMs >= 4 * guardedWorst, `control's main-thread CPU ${r.cpuMs} ms vs the guarded runs' worst ${guardedWorst} ms`);
+      assert.notEqual(lastAssistant(chat)?.message?.stopReason, "aborted", "and the reply ended by itself");
     } finally {
       setStreamCapsForTest(null);
     }

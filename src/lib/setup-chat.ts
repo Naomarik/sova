@@ -1,5 +1,5 @@
 // A project's Setup chat as the pages draw it: the one standing chat per project that investigates it, asks what it
-// can't find, draws the merge, release and deploy plan, trial-runs the proposed checks on its own branch, and proposes
+// can't find, draws the merge, release and deploy plan, proves the proposed checks with a dry run on its own branch, and proposes
 // the whole pipeline there for you to land. The words each surface says, and whether Land is offered. Pure.
 import type { SetupChatView, SetupProposal, SetupProposalFile, SetupStatus, SetupTrial, SetupTrialCheck } from "../../shared/setup-chat";
 import type { NeedsTone } from "./needs-you-row";
@@ -51,7 +51,7 @@ export function chatLine(c: SetupChatView | null | undefined): { word: string; t
   return null;
 }
 
-/** A check's trial result, as its chip says it. */
+/** A check's dry-run result, as its chip says it. */
 export function trialChip(c: SetupTrialCheck): { word: string; tone: "success" | "error" | "accent" | "neutral"; live?: true } {
   if (c.state === "passed") return { word: "Passed", tone: "success" };
   if (c.state === "failed") return { word: "Failed", tone: "error" };
@@ -61,7 +61,7 @@ export function trialChip(c: SetupTrialCheck): { word: string; tone: "success" |
   return { word: "Waiting", tone: "neutral" };
 }
 
-/** A duration in the trial's words: "48s", "3m 12s". */
+/** A duration in the dry run's words: "48s", "3m 12s". */
 export function durationWords(ms: number | undefined): string | null {
   if (ms === undefined || !Number.isFinite(ms) || ms < 0) return null;
   const s = Math.round(ms / 1000);
@@ -70,34 +70,40 @@ export function durationWords(ms: number | undefined): string | null {
   return s % 60 ? `${m}m ${s % 60}s` : `${m}m`;
 }
 
-/** The trial in one line: "Trial of {sha}: passed", failed or running; null before the first one. */
+/** The dry run in one line: "Dry run of {sha}: passed", failed, running, stopped or couldn't run; null before the
+    first one. */
 export function trialLine(p: Pick<SetupProposal, "trial">): string | null {
   const t = p.trial;
   if (!t) return null;
   const sha = t.commit.slice(0, 7);
-  if (t.state === "running") return `Trial of ${sha}: running`;
-  if (t.state === "passed") return `Trial of ${sha}: passed`;
-  if (t.state === "failed") return `Trial of ${sha}: failed`;
-  // Stopped by the machine, or called off: no result for the branch either way.
-  return `Trial of ${sha}: didn't finish${t.why ? `, ${t.why.replace(/[.]\s*$/, "")}` : ""}`;
+  if (t.state === "running") return `Dry run of ${sha}: running`;
+  if (t.state === "passed") return `Dry run of ${sha}: passed`;
+  if (t.state === "failed") return `Dry run of ${sha}: failed`;
+  // Stopped (by you, its chat or a restart), or the machine's: no result for the branch either way.
+  const why = t.why ? `, ${t.why.replace(/[.]\s*$/, "")}` : "";
+  return t.state === "void" ? `Dry run of ${sha}: stopped${why}` : `Dry run of ${sha}: couldn't run${why}`;
 }
 
-/** The trial shown tried an older commit than the branch's head (the host sends the head's own, so this is a guard). */
+/** The dry run shown ran on an older commit than the branch's head (the host sends the head's own, so this is a guard). */
 export const trialStale = (p: Pick<SetupProposal, "trial" | "commit">): boolean => !!p.trial && p.trial.commit !== p.commit;
 
 /**
- * What the proposal's main button is now, and the line beside it. A setup branch can be landed (a served project) or
- * merged (one the queue doesn't serve) only once a trial of its exact head passed: the queue checks a branch with the
- * target's checks, not the branch's own. Until then Run Trial stands in its place. The host's own word (`land`) has
- * the last say after that.
+ * What the proposal's main button is now, and the line beside it (§app.project-setup/land-gate). A setup branch lands
+ * (a served project) or is merged (one the queue doesn't serve) only once a dry run of its exact head passed: the
+ * queue checks a branch with the target's checks, not the branch's own. On a served project Land runs that dry run
+ * first, then lands by itself; on one the queue doesn't serve yet, Run Dry Run stands in Merge Branch's place. A dry
+ * run of the head that failed, stopped or couldn't run offers Run Dry Run Again (`again`). The host's own word
+ * (`land`) has the last say on Land and Merge Branch.
  */
-export function landState(p: SetupProposal): { action: "land" | "merge" | "trial" | "wait"; can: boolean; why?: string } {
+export function landState(p: SetupProposal): { action: "land" | "merge" | "trial" | "wait"; can: boolean; why?: string; again?: true } {
   const merge = p.served ? "land" : "merge";
   const sha = p.commit.slice(0, 7);
   if (p.problem) return { action: merge, can: false, why: `The setup on its branch doesn't read: ${p.problem.replace(/[.]\s*$/, "")}.` };
   const t = p.trial && p.trial.commit === p.commit ? p.trial : null;
-  if (t?.state === "running") return { action: "wait", can: false, why: `Trial of ${sha}: running` };
-  if (!t || t.state !== "passed") return { action: "trial", can: true, why: `Run a trial of ${sha} first: it lands only once its own checks pass.` };
+  if (t?.state === "running") return { action: "wait", can: false, why: `Dry run of ${sha}: running` };
+  if (!t && p.served) return p.land.can ? { action: "land", can: true, why: `A dry run of ${sha} runs first. Once it passes, it lands by itself.` } : { action: "land", can: false, why: p.land.why ?? "Not ready to land." };
+  if (!t) return { action: "trial", can: true, why: `Run a dry run of ${sha} first: it merges only once its new checks pass.` };
+  if (t.state !== "passed") return { action: "trial", can: true, again: true, why: t.state === "failed" ? `The dry run of ${sha} failed: run it again once it's fixed.` : `The dry run of ${sha} ${t.state === "void" ? "was stopped" : "couldn't run"}: run it again.` };
   if (!p.land.can) return { action: merge, can: false, why: p.land.why ?? "Not ready to land." };
   return { action: merge, can: true };
 }
@@ -115,6 +121,7 @@ export function setupRowChip(p: SetupProposal | null | undefined, queued: boolea
   const st = landState(p);
   if (st.action === "wait") return { word: "Running", tone: "accent" };
   if (st.action === "trial") return !trialStale(p) && p.trial?.state === "failed" ? { word: "Failed", tone: "error" } : { word: "Your turn", tone: "warn" };
+  // Served, no dry run of the head yet: Land runs one first, so it is Ready where Land is on offer.
   return st.can ? { word: "Ready", tone: "success" } : { word: "Blocked", tone: "warn" };
 }
 

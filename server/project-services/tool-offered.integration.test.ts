@@ -59,7 +59,7 @@ test("a chat in a folder with a definition has the tool from its first request",
   withSetup = first!.tools;
 });
 
-test("a chat in a folder with nothing never sees it; the step after it writes a definition has it, in the same place", async () => {
+test("a chat in a folder with nothing never sees it; the step after it writes a definition has it, after its other tools", async () => {
   const path = await open(folder());
   const [first, second] = await say(path, "[writes]", [WRITE_DEFINITION]);
   assert.deepEqual(first!.tools, withSetup.filter((t) => t !== "project_verbs"), "the same tools, one fewer");
@@ -91,7 +91,9 @@ test("a setup playbook started by hand has the tool in its first request; anothe
     return { title: name, dir, body: "# Body\n" };
   };
   const [setup] = await say(await open(folder()), "[setup-pb]", [], playbookTurnText(pb("setup-pb", "proposes: pipeline\n"), "[setup-pb]"));
-  assert.deepEqual(setup!.tools, withSetup);
+  // The tool arrives as that run starts, so it is the chat's newest: pi (1.5.0) keeps the tools that stay
+  // active where they are and appends a newly active one. The same tools as a chat that had it from its start.
+  assert.deepEqual(setup!.tools, [...withSetup.filter((t) => t !== "project_verbs"), "project_verbs"]);
   const [other] = await say(await open(folder()), "[other-pb]", [], playbookTurnText(pb("other-pb", ""), "[other-pb]"));
   assert.ok(!other!.tools.includes("project_verbs"), other!.tools.join());
 });

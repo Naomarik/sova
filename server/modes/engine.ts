@@ -43,7 +43,7 @@ import {
   type MinorMode,
 } from "../../pi-config/extensions/mode/minor.ts";
 import { ALIGN_SETTINGS_FILE, alignSettingsReader, resolveAlign, type AlignEagerness, type AlignStyle } from "../../pi-config/extensions/mode/align-settings.ts";
-import { applyModeSection, buildAlignEagernessNote, buildAlignStyleNote, buildModeNote, buildProjectModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, workerProjectModes } from "../../pi-config/extensions/mode/prompt.ts";
+import { applyModeSection, buildAlignEagernessNote, buildAlignStyleNote, buildModeNote, buildProjectModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, withReplyShape, workerProjectModes } from "../../pi-config/extensions/mode/prompt.ts";
 import { discoverProjectModes, readProjectMode } from "../../pi-config/extensions/mode/project-discovery.ts";
 import { PROJECT_MODE_PREFIX, PROJECT_MODES_DIR, projectModeArg, projectToolName, type ProjectModeListing, type ProjectModeProblem, type ProjectModeRef, type ProjectModeSnapshot } from "../../pi-config/extensions/mode/project-format.ts";
 import { isApproved } from "../../pi-config/extensions/mode/project-tools-approval.ts";
@@ -105,6 +105,8 @@ function withStrictRemoved(current: readonly string[], snapshot: readonly string
 /** The launch flags Sova passes per hosted session (index.ts REVIEW_FLAG, VISUALS_FLAG). */
 export const REVIEW_FLAG = "adversarial-review";
 export const VISUALS_FLAG = "align-visuals";
+/** Set by Sova for its own machine-facing chats (the merge thread, its reviewers, the release thread): no reply shape in their mode section. */
+export const REPLY_SHAPE_OFF_FLAG = "reply-shape-off";
 
 /** A switch's marker, without the snapshot recordSwitch adds (index.ts SwitchMarker). */
 type SwitchMarker = { mode: Mode } | { minor: MinorMode; on: boolean } | { project: string; on: boolean } | { strict: boolean };
@@ -375,18 +377,19 @@ export class ModeEngine {
     return this.copiesOf(projectModesOf(this.active));
   }
 
-  /** The `mode` section now (index.ts modeBlock). */
+  /** The `mode` section now (index.ts modeBlock): a worker's modes, or a main chat's blocks then the reply shape, which it
+      has whatever its modes, unless Sova launched it without (REPLY_SHAPE_OFF_FLAG: the merge thread, its reviewers, the release thread). */
   modeBlock(): string | undefined {
-    return this.workerRole
-      ? composeWorkerPrompt({ minorModes: this.headMinors() })
-      : composePrompt(
-          this.active,
-          this.routes,
-          this.writerRoute,
-          this.headMinors(),
-          this.alignOptions(this.headStyle ?? this.alignNow().style, this.headEagerness ?? this.alignNow().eagerness),
-          this.copiesOf(this.headProjects()).map((copy) => copy.text),
-        );
+    if (this.workerRole) return composeWorkerPrompt({ minorModes: this.headMinors() });
+    const blocks = composePrompt(
+      this.active,
+      this.routes,
+      this.writerRoute,
+      this.headMinors(),
+      this.alignOptions(this.headStyle ?? this.alignNow().style, this.headEagerness ?? this.alignNow().eagerness),
+      this.copiesOf(this.headProjects()).map((copy) => copy.text),
+    );
+    return this.port.flag(REPLY_SHAPE_OFF_FLAG) === true ? blocks : withReplyShape(blocks);
   }
 
   private fixHead(): void {

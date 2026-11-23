@@ -6,5 +6,7 @@
   "remove": ["web", "workers", "timers"],
   "grant": [],
   "singleton": false,
-  "overseerMayStart": false
+  "overseerMayStart": false,
+  "mode": "normal",
+  "minorModes": []
 }

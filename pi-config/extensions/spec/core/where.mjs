@@ -4,6 +4,7 @@ import { posix } from "node:path";
 import { whatOf, titleOf, fingerprintOf, boundedRefusal, emit } from "./toc.mjs";
 import { lookArgs, openSpec, refuse, indexOf, labelsOf, labelText, occurs, nameRe, paged, pageFields } from "./graph.mjs";
 import { topicIndex, topicRank } from "./topic.mjs";
+import { splitOf, topicOf, unitOf } from "./parts.mjs";
 
 const WHERE_NOTICE = "A shared token is a literal name match, never proof that the claim covers that code. Only a record's code list maps a file.";
 const TOPIC_NOTICE = "A topic row is a ranked match of the query's words in the claim's text, never proof of what the claim covers: read it to judge.";
@@ -14,6 +15,26 @@ const claimLine = (ix, id) => {
   const rec = ix.ctx.claims.get(id);
   return { id, title: titleOf(ix.ctx.decls.get(id)), kind: rec.kind, ...labelsOf(rec) };
 };
+const partLine = (ix, id) => ({ id, title: titleOf(ix.ctx.decls.get(id)), ...labelsOf(ix.ctx.claims.get(id)) });
+// The lookups' view of the claims: a split topic and its parts are one claim, its interface tokens theirs together,
+// each once, and a token's weight counts topics, never parts. With nothing split it is the index itself.
+function lookupView(ix) {
+  const split = splitOf(ix.ctx);
+  if (!split.up.size) return { ...ix, split };
+  // Built at the first file lookup: a word search never weighs a token.
+  let iface, df;
+  const built = () => {
+    if (iface) return;
+    iface = new Map(); df = new Map();
+    for (const id of ix.ids) if (!split.up.has(id)) {
+      const ts = [...new Set(unitOf(split, id).flatMap((x) => ix.ifaceOf(x)))];
+      iface.set(id, ts);
+      for (const t of ts) df.set(t, (df.get(t) ?? 0) + 1);
+    }
+  };
+  return { ...ix, split, ids: ix.ids.filter((id) => !split.up.has(id)),
+    ifaceOf: (id) => (built(), iface.get(id)), weight: (t) => (built(), Math.log((iface.size + 1) / (df.get(t) ?? 1))) };
+}
 // Interface tokens of id that occur in text, heaviest (rarest) first, with the score they sum to.
 function shared(ix, id, text) {
   const hit = ix.ifaceOf(id).filter((t) => occurs(text, t)).sort((a, b) => ix.weight(b) - ix.weight(a) || (a < b ? -1 : 1));
@@ -21,30 +42,43 @@ function shared(ix, id, text) {
 }
 const ranked = (a, b) => b.score - a.score || (a.id < b.id ? -1 : 1);
 
-// A path: every claim whose code lists it, ranked; or, when none does, unmapped candidates.
+// A path: every claim whose code lists it, ranked; or, when none does, unmapped candidates. A split topic is listed
+// once, when it or any of its parts lists the file, saying how many of its parts do.
 function byPath(ix, path, read) {
-  const listed = ix.code.get(path) ?? [];
+  const split = ix.split, own = ix.code.get(path) ?? [];
+  const listed = [...new Set(own.map((id) => topicOf(split, id)))];
+  const partsOf = (id) => {
+    const ps = split.down.get(id);
+    return ps ? { parts: { listing: ps.filter((p) => own.includes(p)).length, of: ps.length, ...(own.includes(id) ? {} : { topic: false }) } } : {};
+  };
   if (!listed.length) {
     if (read.text === undefined) return { list: [], counts: { claims: 0, ranked: 0, unranked: 0, candidates: 0 } };
     const cands = ix.ids.map((id) => ({ ...claimLine(ix, id), ...shared(ix, id, read.text) })).filter((c) => c.shared.length).sort(ranked);
     const list = cands.slice(0, TOP).map((c) => ({ type: "candidate", ...c }));
     return { list, counts: { claims: 0, ranked: 0, unranked: 0, candidates: cands.length } };
   }
-  const rows = listed.map((id) => ({ ...claimLine(ix, id), tokens: ix.ifaceOf(id).length, ...(read.text === undefined ? { shared: [], score: 0 } : shared(ix, id, read.text)) }));
+  const rows = listed.map((id) => ({ ...claimLine(ix, id), tokens: ix.ifaceOf(id).length, ...(read.text === undefined ? { shared: [], score: 0 } : shared(ix, id, read.text)), ...partsOf(id) }));
   const hit = rows.filter((r) => r.shared.length).sort(ranked), rest = rows.filter((r) => !r.shared.length).sort((a, b) => (a.id < b.id ? -1 : 1));
   const list = [...hit.map((r) => ({ type: "ranked", ...r })), ...rest.map((r) => ({ type: "unranked", ...r }))];
   return { list, counts: { claims: listed.length, ranked: hit.length, unranked: rest.length } };
 }
 
 // A token: the claims whose backticked spans equal it or hold it as a whole name; heading or first sentence = defines.
+// A split topic is one claim: its row is the topic's, naming the part that holds the name (one defining it first).
 function byToken(ix, token) {
-  const re = nameRe(token), defines = [], mentions = [];
-  for (const id of ix.ids) {
+  const re = nameRe(token), defines = [], mentions = [], split = ix.split;
+  const hitOf = (id) => {
     const spans = ix.tokens.get(id).filter((s) => s.token === token || (s.token.includes(token) && re.test(s.token)));
-    if (!spans.length) continue;
+    if (!spans.length) return null;
     const what = whatOf(ix.ctx.decls.get(id)).what;
-    const def = spans.some((s) => s.head || what.includes("`" + s.token));
-    (def ? defines : mentions).push({ type: def ? "defines" : "mentions", ...claimLine(ix, id), spans: spans.map((s) => s.token) });
+    return { id, def: spans.some((s) => s.head || what.includes("`" + s.token)), spans: spans.map((s) => s.token) };
+  };
+  for (const id of ix.ids) {
+    const hits = unitOf(split, id).map(hitOf).filter(Boolean);
+    if (!hits.length) continue;
+    const def = hits.some((h) => h.def), parts = hits.filter((h) => h.id !== id), part = parts.find((h) => h.def) ?? parts[0];
+    (def ? defines : mentions).push({ type: def ? "defines" : "mentions", ...claimLine(ix, id), spans: [...new Set(hits.flatMap((h) => h.spans))],
+      ...(part ? { part: partLine(ix, part.id) } : {}) });
   }
   return { list: [...defines, ...mentions], counts: { claims: defines.length + mentions.length, defines: defines.length, mentions: mentions.length } };
 }
@@ -53,6 +87,7 @@ const HEADS = { ranked: "ranked by interface tokens shared with the file", unran
   candidate: "UNMAPPED CANDIDATES: no record lists this file; these claims' interface tokens occur in it (a name match, not a mapping)",
   defines: "defines it (in its heading or first sentence)", mentions: "mentions it",
   topic: "TOPIC MATCHES: ranked by the query's words in heading, first sentence, names, prose and area heading (a word match, not a name match or a mapping)" };
+const partsText = (p) => (!p ? "" : p.topic === false ? ` · listed by ${p.listing} of its ${p.of} parts` : p.listing ? ` · ${p.listing} of its ${p.of} parts list it too` : ` · none of its ${p.of} parts lists it`);
 export function renderWhere(out) {
   const L = [], c = out.counts;
   if (out.mode === "path") {
@@ -69,10 +104,11 @@ export function renderWhere(out) {
   for (const e of out.lines) {
     if (e.type !== head) { head = e.type; L.push(HEADS[head]); }
     const base = `  ${e.id} — ${e.title}  ${e.kind} · ${labelText(e.labels)}`;
-    if (e.type === "ranked" || e.type === "candidate") L.push(`${base} · score ${e.score}`, `    shares: ${ticks(e.shared)}`);
+    if (e.type === "ranked" || e.type === "candidate") L.push(`${base} · score ${e.score}${partsText(e.parts)}`, `    shares: ${ticks(e.shared)}`);
     else if (e.type === "topic") L.push(`${base} · score ${e.score}`, `    matched: ${e.matched.join(", ")}`);
-    else if (e.type === "unranked") L.push(`${base}${e.tokens ? "" : " · no interface token"}`);
+    else if (e.type === "unranked") L.push(`${base}${e.tokens ? "" : " · no interface token"}${partsText(e.parts)}`);
     else L.push(`${base}`, `    as: ${ticks(e.spans)}`);
+    if (e.part) L.push(`    ${e.type === "topic" ? "best part" : "in part"}: ${e.part.id} — ${e.part.title}`);
   }
   if (out.notShown) L.push(`${out.notShown} more not shown: ${out.hint}`);
   if (out.next) L.push(`more: where '${out.query}'${out.mode === "token" ? " --token" : ""}${out.all ? " --all" : ""} --cursor ${out.next}`);
@@ -89,7 +125,7 @@ export function whereMain(argv, core) {
   if (o.usage || !o.pos.join(" ").trim()) return done(boundedRefusal("where", budget, "usage", { message: o.usage ?? "where takes a path, a token or topic words" }));
   const g = openSpec(o, core);
   if (g.refused) return done(refuse("where", budget, g));
-  const ix = indexOf(g.ctx, core.parentOf), query = o.pos.join(" ");
+  const ix = lookupView(indexOf(g.ctx, core.parentOf)), query = o.pos.join(" ");
   const path = posix.normalize(query.split("\\").join("/")).replace(/^\.\//, "");
   let mode = "token", read = {}, r;
   // Only a single argument can be a file; several words are one token and topic query.
@@ -104,7 +140,7 @@ export function whereMain(argv, core) {
     // Topic rows follow the name rows; a claim already listed by name is not repeated.
     const named = new Set(r.list.map((e) => e.id));
     topic = topicRank(topicIndex(ix), query.trim());
-    const rows = topic.rows.filter((t) => !named.has(t.id)).map((t) => ({ type: "topic", ...claimLine(ix, t.id), score: t.score, matched: t.matched }));
+    const rows = topic.rows.filter((t) => !named.has(t.id)).map((t) => ({ type: "topic", ...claimLine(ix, t.id), score: t.score, matched: t.matched, ...(t.part ? { part: partLine(ix, t.part) } : {}) }));
     r.counts.topic = rows.length;
     // Name rows keep their top ten unchanged; topic rows fill only the places they leave free.
     const names = o.all ? r.list.length : Math.min(r.list.length, TOP);

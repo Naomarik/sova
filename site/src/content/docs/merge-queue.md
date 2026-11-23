@@ -132,7 +132,8 @@ it, the queue's state with **Pause Queue** and **Queue Settings**, what is being
 check, a meter and how long it takes), and **Waiting**, the line of waiting branches, which opens and
 closes. Under them a strip of tabs sorts the rest: **Ready to land**, **Needs you**, **With its
 chat**, **Waiting on GitHub** or **GitLab** (for a project that lands there), **Held**, **Landed**,
-with each landing's notes and, under them, the **Retired** list with **Restore**, and **Queue chats**.
+with each landing's notes and, under them, the **Retired** list with **Restore**, **Dry runs** (the
+project's newest 20 [dry runs](/docs/dry-runs/)), and **Queue chats**.
 Each tab has its own address, so a reload or Back keeps it. While automatic cleanup is switched off,
 as it ships, one line says so and Held lists nothing; Retired and Restore still work.
 Every row opens its chat and has **Review Changes**, which shows the change in the changes viewer.
@@ -178,12 +179,22 @@ tab. That opens the project's Setup chat, one standing chat per project, working
 its own. It reads the project, asks what it can't find, and proposes the checks on a setup branch:
 listed checks, one test command, or no automated tests.
 
-The tab shows what the branch proposes, read from its files, and every file it changes. The branch
-can land only after a trial of its exact commit passed, because the queue checks a branch with the
-main branch's checks, not its own. Until then the proposal offers **Run Trial** in Land's place, and
-a newer commit needs a new trial. The same rule holds for any chat's branch that changes the
-project's merge, release or deploy setup. Once the checks are on the main branch, the project's
-branches land through the queue. **Change Setup** opens the same chat later.
+The tab shows what the branch proposes, read from its files, and every file it changes. Before it
+reaches the main branch, its new checks get a [dry run](/docs/dry-runs/) on its exact commit,
+because the queue checks a branch with the main branch's checks, not its own. A project the queue
+doesn't serve yet offers **Run Dry Run** in Merge Branch's place until one passes. Once the checks
+are on the main branch, the project's branches land through the queue. **Change Setup** opens the
+same chat later.
+
+## Dry runs
+
+A branch that changes the project's pipeline settings (its merge checks, release checks or
+playbook, deploy targets, or a service a merge check needs) gets a **dry run** of the checks it adds
+or changes before it lands. Its row says so and why ("Needs a dry run: adds the merge check …").
+Land runs the dry run first, then lands by itself; **Run Dry Run** and **Stop Dry Run** are on the
+branch's row. A running dry run shows in **Checking now**, the past ones on the **Dry runs** tab.
+When a failure holds a branch up, Land becomes **Fix**, with **Fix in New Chat** beside it.
+[Dry runs](/docs/dry-runs/) has the whole story.
 
 **Settings → Merge Queue** shows every value a project's queue uses, each tagged with where it
 lives (the project's file, this computer, or Sova), and lets you change them: how it lands, the

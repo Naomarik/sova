@@ -141,7 +141,8 @@
           "at": 1788256815000,
           "check": {
             "toolCallId": "call_c",
-            "ok": true
+            "ok": true,
+            "kind": "test run"
           }
         },
         {
@@ -233,8 +234,18 @@
       ],
       "lastCheck": {
         "at": 1788256815000,
-        "ok": true
+        "ok": true,
+        "what": "test run",
+        "kind": "test run"
       },
+      "checks": [
+        {
+          "at": 1788256815000,
+          "ok": true,
+          "what": "test run",
+          "kind": "test run"
+        }
+      ],
       "lastReply": {
         "id": "q0000012",
         "at": 1788256818000,
@@ -403,7 +414,8 @@
           "at": 1788256815000,
           "check": {
             "toolCallId": "call_c",
-            "ok": true
+            "ok": true,
+            "kind": "test run"
           }
         },
         {
@@ -495,8 +507,18 @@
       ],
       "lastCheck": {
         "at": 1788256815000,
-        "ok": true
+        "ok": true,
+        "what": "test run",
+        "kind": "test run"
       },
+      "checks": [
+        {
+          "at": 1788256815000,
+          "ok": true,
+          "what": "test run",
+          "kind": "test run"
+        }
+      ],
       "lastReply": {
         "id": "q0000012",
         "at": 1788256818000,

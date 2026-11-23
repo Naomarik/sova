@@ -15,7 +15,7 @@ import { stateRoot } from "./state-root";
  * names, all relative to that directory; §chat.playbooks/bundles). Sova only ever reads the entry:
  * a playbook's scripts are the agent's to run, never this server's.
  *
- *   - shipped:  playbooks/ at the repo root (source "sova")
+ *   - shipped:  playbooks/ at the repo root (source "sova"): the ones you start
  *   - user:     ~/.pi/agent/sova/playbooks/ (source "user"; an id that matches a shipped one
  *               REPLACES it, marked `replacesSova`, like a user theme replaces a built-in)
  *   - project:  <project root>/.sova/playbooks/, then <project root>/.sova/marketing/playbooks/
@@ -31,10 +31,19 @@ import { stateRoot } from "./state-root";
  * `project` or `error`, beside everything that could.
  */
 const SHIPPED_DIR = fileURLToPath(new URL("../playbooks/", import.meta.url));
+/**
+ * Sova's own playbooks, the ones only Sova starts (§chat.playbooks/system-playbooks): source "sova" too, but never
+ * listed in the dialog or the / rows whatever their description says, found only by Sova's own callers
+ * (`includeUnlisted`), and never replaced by a user's playbook of the same id.
+ */
+export const SYSTEM_PLAYBOOKS_DIR = fileURLToPath(new URL("../system-playbooks/", import.meta.url));
 /** Read per call, like every other agent-dir path: PI_CODING_AGENT_DIR is what the tests move. */
 export const userPlaybooksDir = () => join(stateRoot(), "playbooks");
 /** Where a project keeps its own playbooks, relative to its root: its own, then the marketing output. */
 export const PROJECT_PLAYBOOK_DIRS = [join(".sova", "playbooks"), join(".sova", "marketing", "playbooks")] as const;
+/** Where a project keeps its config for Sova's own chats (merge-queue, release, review, request, project-setup), relative
+    to its root: never listed (§chat.playbooks/playbook-config). */
+export const PROJECT_CONFIG_DIR = ".sova/playbook-config";
 
 /** A directory name we'll treat as a playbook id. Lowercase, digits and hyphens, not leading with
     a hyphen: no dot entries, no separators, nothing that could walk out of its folder. */
@@ -45,11 +54,13 @@ export const isPlaybookId = (name: string) => ID_RE.test(name);
 export interface PlaybooksDeps {
   /** The shipped catalog (default: the repo's playbooks/). */
   shippedDir?: string;
+  /** Sova's own playbooks (default: the repo's system-playbooks/). */
+  systemDir?: string;
   /** The user's folder (default: userPlaybooksDir()). */
   userDir?: string;
   /** The remote reading of a cwd (default: server/files.ts's, lexical). */
   remoteOf?: (path: string) => RemoteCwd | null;
-  /** Also list the playbooks whose description says `listed: false`: Sova's
+  /** Also list the playbooks whose description says `listed: false`, and Sova's own (system-playbooks/): Sova's
       own callers, which look up their chat's recipe (the Setup chat's project-setup) or start a run. */
   includeUnlisted?: boolean;
 }
@@ -288,11 +299,14 @@ export const isListed = (p: PlaybookInfo): boolean => p.spec?.listed !== false;
 /**
  * The catalog, rescanned, one group after another and each sorted by title (then id): the project's
  * first; then the user's; then the shipped ones, minus any the user replaced. A project playbook never
- * replaces anything: it is listed in its own group even when its id matches a shipped one.
+ * replaces anything: it is listed in its own group even when its id matches a shipped one. Sova's own
+ * (system-playbooks/) come only with `includeUnlisted`, after the shipped ones, and nothing replaces
+ * them: a user's playbook with one of their ids is simply the user's.
  */
 export async function listPlaybooks(cwd?: string, deps: PlaybooksDeps = {}): Promise<PlaybookCatalog> {
-  const [shipped, user, project] = await Promise.all([
+  const [shipped, system, user, project] = await Promise.all([
     scan(deps.shippedDir ?? SHIPPED_DIR, "sova"),
+    deps.includeUnlisted ? scan(deps.systemDir ?? SYSTEM_PLAYBOOKS_DIR, "sova") : Promise.resolve({ entries: [] as PlaybookInfo[] }),
     scan(deps.userDir ?? userPlaybooksDir(), "user"),
     projectPlaybooks(cwd, deps),
   ]);
@@ -305,6 +319,7 @@ export async function listPlaybooks(cwd?: string, deps: PlaybooksDeps = {}): Pro
     ...project.entries.filter(shown),
     ...user.entries.filter(shown).sort(byTitle),
     ...shipped.entries.filter((p) => !userIds.has(p.id) && shown(p)).sort(byTitle),
+    ...system.entries.sort(byTitle),
   ];
   return { playbooks, project: project.state, ...(user.error ? { error: user.error } : {}) };
 }

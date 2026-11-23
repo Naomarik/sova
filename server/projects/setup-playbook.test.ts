@@ -1,4 +1,4 @@
-// The Setup chat's playbook (playbooks/project-setup): what it shows the model must be what Sova accepts. Every drawing
+// The Setup chat's playbook (system-playbooks/project-setup): what it shows the model must be what Sova accepts. Every drawing
 // in its references parses as a vis block; the driver's drawing of Sova's own definition parses too (no row over the
 // renderer's step limit); every JSON sample is a valid definition fragment; every merge/release/deploy key the parser
 // accepts is named in references/definition.md; and its frontmatter says it proposes the whole pipeline.
@@ -11,10 +11,10 @@ import { DEFINITION_KEYS, parseDefinition } from "../../shared/project-contract"
 import { parseFlow } from "../../src/vis/kinds/flow/parse";
 import { parseSteps } from "../../src/vis/kinds/steps/parse";
 // @ts-expect-error: a plain .mjs script, no types
-import * as ps from "../../playbooks/project-setup/scripts/project-setup.mjs";
+import * as ps from "../../system-playbooks/project-setup/scripts/project-setup.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
-const PLAYBOOK = join(REPO, "playbooks", "project-setup");
+const PLAYBOOK = join(REPO, "system-playbooks", "project-setup");
 
 function mdFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((f) => {
@@ -63,6 +63,18 @@ test("a long check list is split into rows the renderer accepts", () => {
   assert.doesNotThrow(() => parseSteps(/```vis steps\n([\s\S]*?)\n```/.exec(ps.visSteps(rows) as string)![1]!));
 });
 
+test("folder rules: drawn as their own row; an optional check no rule names is noted", () => {
+  const checks = [{ id: "unit", run: ["u"] }, { id: "e2e", label: "Walkthroughs", run: ["e"], optional: true }, { id: "slow", run: ["s"], optional: true }];
+  const def = parseDefinition(JSON.stringify({ version: 1, merge: { checks, rules: [{ paths: ["src/ui/**"], check: "e2e", select: ["a.mjs"], why: "the UI changed" }] } }));
+  const rows = ps.pipelineRows(def) as { label: string; steps: { text: string }[]; outcome: string }[];
+  const ruled = rows.find((r) => r.label === "Folder rules");
+  assert.deepEqual([ruled?.steps.map((x) => x.text), ruled?.outcome], [["src/ui/** → e2e (a.mjs)"], "when their paths change"]);
+  assert.equal(rows.find((r) => r.label === "Optional checks")?.steps.length, 2);
+  const { notes } = ps.mergeProblems({}, def, REPO) as { notes: string[] };
+  assert.ok(notes.some((n) => /^optional check slow is named by no folder rule/.test(n)), JSON.stringify(notes));
+  assert.ok(!notes.some((n) => /check e2e/.test(n)));
+});
+
 test("every JSON sample in references is a valid definition fragment", () => {
   // The fragments name sections only; services and a merge check they refer to stand in around them.
   const base = { version: 1, services: { web: { cmd: ["x"], ports: { http: { base: 30000 } } }, db: { cmd: ["y"], ports: { pg: { base: 31000 } }, start: "on-demand" }, "test-repl": { cmd: ["z"], ports: { nrepl: { base: 32000 } }, start: "on-demand" } }, test: { run: ["t"], smoke: ["a"] } };
@@ -88,6 +100,6 @@ test("every JSON sample in references is a valid definition fragment", () => {
 
 test("every merge, release and deploy key the parser accepts is named in references/definition.md", () => {
   const doc = readFileSync(join(PLAYBOOK, "references", "definition.md"), "utf8");
-  const groups = ["merge", "mergeCheck", "mergeInstall", "release", "releaseCheck", "deploy", "target", "deployStep", "verify", "credential", "requires"] as const;
+  const groups = ["merge", "mergeCheck", "mergeInstall", "mergeRule", "release", "releaseCheck", "deploy", "target", "deployStep", "verify", "credential", "requires"] as const;
   for (const g of groups) for (const k of (DEFINITION_KEYS[g] as readonly unknown[]).flat() as string[]) assert.ok(doc.includes(`\`${k}\``), `definition.md never names \`${k}\` (${g})`);
 });

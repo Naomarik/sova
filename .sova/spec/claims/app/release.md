@@ -35,7 +35,9 @@ working tree. It holds a pointer to the playbook plus only the facts Sova acts o
 wording can never change what Publish pushes:
 
 - `playbook` (required): the folder of the project's release playbook, relative to the checkout,
-  never the checkout itself; it holds the manifest `release.json` (§app.release/manifest).
+  never the checkout itself; it holds the manifest `release.json` (§app.release/manifest). It is
+  usually `.sova/playbook-config/release` (`.sova/playbooks/release` for a project set up before the
+  move, §chat.playbooks/playbook-config).
 - `tag` (default `v${version}`): the numbered tag's pattern, holding `${version}` exactly once and no
   other variable, and making a valid tag name.
 - `scheme`: `semver` (the default: X.Y.Z with an optional `-pre`), `calver` (YYYY.MM, an optional .DD
@@ -57,8 +59,9 @@ No key names a remote: whether Publish pushes follows the queue's own rule, an `
 
 ## §app.release/manifest — The playbook's manifest, `release.json`
 
-The release playbook's folder holds `release.json`, `{v: 1, steps: [...]}`, parsed strictly by
-`parseReleaseManifest`: at most 30 steps, each `{id, label, phase, held?, artifact?}`, in plan order.
+The release playbook's folder holds `release.json`, `{v: 1, steps: [...], checks?}`, parsed strictly by
+`parseReleaseManifest`: at most 30 steps, each `{id, label, phase, held?, artifact?, skippable?,
+about?, minutes?}`, in plan order.
 - `id`: lowercase letters, digits and hyphens, starting with a letter, at most 31 characters, unique;
   `checks`, `publish`, `withdraw` and `abandon` are Sova's own and refused.
 - `label`: 1 to 60 characters, what the screens call the step.
@@ -68,6 +71,17 @@ The release playbook's folder holds `release.json`, `{v: 1, steps: [...]}`, pars
 - `held: true`: the step ends **held** until the operator's Continue (a judgement, such as trying it
   live).
 - `artifact: true`: its done report must carry a built file's facts (§app.release/steps).
+- `skippable: true`: the operator may turn the step off at Start (Release with Options,
+  §app.release/start); `version` and `commit` always run and are refused it ("… always runs: it can't
+  be turned off").
+- `about` (one line, 1 to 200 characters) and `minutes` (0 to 1440): what the step does and roughly
+  how long it takes, for the Release with Options panel only.
+
+`checks`, when present, is an object of hints by check id, `{"<id>": {about?, minutes?}}`, for a
+release check or a landing check alike, with the same limits: the panel's line and rough minutes for
+that check. It never changes which checks run. Every other key, here or on a step, is refused.
+`release-maker fmt` writes the file canonically: each step on one line with its keys in this order,
+then the `checks` hints one per line.
 
 The step `commit`, when declared, makes the release commit: it is a prepare step and the last one. The
 step `version` reports the version. A release's **plan** is the manifest captured at Start with Sova's
@@ -82,7 +96,9 @@ Each release Sova starts has a record, `rl_…`, under
 channels it moves, the target's commit at Start (its base), its release commit (for tag-only, the
 base), its queue entry, its chat, its steps, its notes, the files it built, who started it (the
 operator, or the release power), the operator's Release Note and the ask its chat was sent at Start
-(copies, `note` and `asked {by, why}`, each only when there was one; §app.release/start), when it
+(copies, `note` and `asked {by, why}`, each only when there was one; §app.release/start), the
+operator's Release with Options choices (`options`: the kind, or none, and the steps and release checks
+turned off, each with its label at Start; only when the start had one), when it
 last heard from its chat, and the settings and manifest captured at Start. A project has at most one
 **open** release.
 
@@ -97,7 +113,8 @@ Its state is one of:
 - **Ready to publish**: every gate passed (§app.release/publish); it waits for Publish.
 - **Publishing**: Publish runs.
 - **Published**: the numbered tag exists and the channels point at it; after steps may still run.
-- **Abandoned**: stopped before Publish (§app.release/abandon).
+- **Cancelled** (state `abandoned`): stopped before Publish by Cancel Release (§app.release/abandon), or
+  at once when its Start couldn't make its worktree or chat; its chip reads **Cancelled**.
 - **Withdrawn**: was published; its channels moved back (§app.release/withdraw).
 Preparing, Checking, Ready and Publishing are open.
 
@@ -110,13 +127,13 @@ reason, Needs-you line or commit message carries its `rl_…` id. Before a versi
 - "the open release" in saves, queue entries' reasons and Needs you ("The open release: {label}
   failed");
 - "while a release is open" in refusals, and "a release is open: nothing is pushed until it is
-  published or abandoned" in the push hold;
+  published or cancelled" in the push hold;
 - "a release is already open (preparing)" on a second Start, and "a release" on the Merge Queue tab;
 - "this release is {state}" on a closed record, and "this release" to its chat.
 
 Lines that name no release at all: "that release doesn't hold this queue", "this release already has
 a revert in line", "{tag} belongs to another release". The revert commit reads "Revert release {tag}
-(abandoned)". The id stays only where it is a handle: the release chat's first message and its
+(cancelled)". The id stays only where it is a handle: the release chat's first message and its
 withdraw restart, logs, record fields, and the branch and worktree names (`release/<id>`,
 `sova/release-revert-<id>`).
 
@@ -130,7 +147,10 @@ answering the one result shape with its own key, `release` (§app.project-servic
 - `release.status`: the view: whether releases are set up, the settings (or why they don't read), the
   open release and the last finished one, the history (§app.release/tab), the latest release that
   isn't withdrawn, how many commits landed since it, the target, whether Publish pushes, the deploy
-  targets, the gates and the quiet-chat warning. It also applies a queue result the release missed
+  targets, the gates and the quiet-chat warning; and, for Release with Options, the manifest at the
+  target's tip with its hints (null when it doesn't read), the merge section's required checks with
+  their labels and the manifest's minutes for each, and the version each kind gives after the latest
+  release (semantic versions only, else null). It also applies a queue result the release missed
   (a landing recovered after a restart) and a gate that changed with no event.
 - `release.logs {release?, step?, lines?}`: a step's detail, or the gating checks' run, or each step's
   line.
@@ -142,13 +162,16 @@ answering the one result shape with its own key, `release` (§app.project-servic
   the text trimmed, at most 4,000 characters (`invalid-request` beyond), and an empty text clears it.
   It works whether or not a release is open. The view's `note` is the saved one, `{text, at}`, or
   `null`.
-- `release.start {commit?}` (§app.release/start); `commit` only for a tag-only release, and only the
-  target's tip.
+- `release.start {commit?, kind?, skipSteps?, skipChecks?}` (§app.release/start); `commit` only for a
+  tag-only release, and only the target's tip; the other three are Release with Options' and the
+  operator's alone.
 - `release.step {release, step, state, summary, detail?, facts?}` and `release.notes {release, text}`
   (§app.release/steps).
 - `release.continue {release, step}` (a held step done) and `release.retry {release, step}` (a failed
   step again).
-- `release.publish {release, confirm}`, `release.abandon {release, why, confirm}` and
+- `release.publish {release, confirm}`, `release.abandon {release, why?, confirm?}` (Cancel Release;
+  with no reason the record reads "cancelled by the operator"; `confirm` needed only once its release
+  commit landed) and
   `release.withdraw {release | tag, why, confirm}`.
 
 A gate that isn't met answers the error `release-refused` (exit class 2, nothing changed). Every
@@ -164,11 +187,16 @@ command, `project.verb.release.*` (§app/commands).
   withdraw) steps report. The operator's route refuses them ("reports come from the release chat's
   own tool, never the operator's route"), and so does every other chat and every overseer.
 - **The operator's acts** (`release.start`, `release.note`, `release.continue`, `release.retry`,
-  `release.publish`, `release.abandon`, `release.withdraw`): the operator's, from the Releases tab or the CLI; Publish,
-  Abandon and Withdraw need `confirm`. A request on the operator's route that carries a chat's
+  `release.publish`, `release.abandon`, `release.withdraw`): the operator's, from the Releases tab or the CLI; Publish
+  and Withdraw need `confirm`, and Cancel Release (`release.abandon`) only once its release commit is on the
+  target (§app.release/abandon). A request on the operator's route that carries a chat's
   caller key (`x-sova-caller`, what a chat's scripts send) is refused: "a chat's script never acts
   as the operator on a release: the operator does it on the Releases tab". `release.start` and
   `release.publish` are also the release power's act (§app.release/power), never any other verb.
+  Release with Options' choices on `release.start` (`kind`, `skipSteps`, `skipChecks`) are the
+  operator's alone: any other caller's start that carries one is refused (`forbidden`, nothing
+  frozen) with "…: the operator's choices at Start (Release with Options); an agent's start runs the
+  full release", so the release power's start always runs the full release.
   The Release Note is the operator's alone (`forbidden`): the release chat ("the Release Note is the
   operator's: say what you need in your report"), every other chat, a chat's script on the operator's
   route, and the overseers and the Project Assistant ("the Release Note is the operator's alone; ask
@@ -181,7 +209,8 @@ command, `project.verb.release.*` (§app/commands).
   word (§app.release/start), and is consumed by it; a dismissed one never reaches a release.
 - **Never**: a coding session reads and nothing else ("a coding session never starts or asks for a
   release: tell the operator in your report"); the release chat reports but never starts, publishes,
-  abandons or asks for another release (it may ask the operator in its report); conformance and Sova
+  cancels or asks for another release (it may ask the operator in its report: "the release chat may ask
+  the operator to cancel the release (say why in your report), never cancel it itself"); conformance and Sova
   on its own never release.
 
 ## §app.release/start — Start Release
@@ -193,18 +222,40 @@ or by pushing a branch (§app.merge-queue/strategies) can't release yet, since a
 commit on the target and pushes it itself: Start is refused (`unsupported`, nothing frozen, no record)
 with "this project lands by request, and a release lands its commit on {target} and pushes it itself:
 set how it lands to local (Settings → Merge Queue) to release here" (or "by pushing a branch").
+
+**Release with Options.** The operator's start may carry choices (§app.release/callers): `kind`
+(`patch`, `minor` or `major`), `skipSteps` (manifest steps marked `skippable`, §app.release/manifest)
+and `skipChecks` (ids of the settings' release checks). They are read before anything freezes, and a
+bad one is refused (`invalid-request`, nothing frozen, no record): a kind that isn't one of the three,
+a kind on a project whose scheme isn't `semver`, a step that isn't in the manifest, a step not marked
+skippable (naming the ones that are), and a check that isn't one of the project's release checks
+("…; landing checks always run"): the merge section's required checks always run on a release. With
+no choice given, or only empty lists, the start is a plain Start Release, exactly as without them.
+
 Otherwise it:
 1. **Freezes the queue** for the release (§app.release/checks) at the target's head, the release's
-   base.
-2. Captures the settings and the manifest onto a new record, Preparing.
+   base, with the release checks it will run: the settings' release checks, less any the operator
+   turned off.
+2. Captures the settings and the manifest onto a new record, Preparing, with the operator's choices
+   (`options`, each thing turned off kept with its label) when there were any.
 3. Cuts a worktree for the release from the base, on the branch `release/<rl_id>`, beside the project
    (`<parent of the main checkout>/.worktrees/<repo>-release-<rl_id>`).
 4. Starts the **release chat** there, on the `release-thread` profile (it never owns a branch the
-   queue lands), titled "Release {tag} of {project}" ("Release (version not picked yet) of {project}"
+   queue lands; it names its modes, mode normal with no minor modes, so the everyday modes saved on
+   this computer never reach it, §chat.profiles/projects), titled "Release {tag} of {project}" ("Release (version not picked yet) of {project}"
    until the version is picked). Its first message names the plan step by step, says to follow Sova's
-   release method and the project's playbook (the project's winning where they differ, Sova's gates
-   always), never to push, tag or move a branch, and how to report. Whoever starts it (the operator
-   from the tab or the CLI, or the release power), two optional sections follow:
+   release method, named by its full folder (`<Sova repo>/system-playbooks/release`, so it resolves
+   from any project's release worktree), and the project's playbook (the project's winning where they differ, Sova's gates
+   always), never to push, tag or move a branch, and how to report. When the operator started it
+   with options, a section follows, "The operator started this release with options (Release with
+   Options on the Releases tab), their own choices:", their word as the note is: the **kind**
+   ("Kind: {kind}", which picks the version from the last release, while a version the Release Note
+   names still wins); the **steps turned off** ("Turned off: {id} ({label}), …": never run them,
+   report each `skipped` with the summary "Turned off at Start" when its turn comes, a held one too,
+   and do what the project's playbook says a turned-off step still leaves done); and the **release
+   checks turned off** (Sova doesn't run them, the landing checks still run, nothing for the chat to
+   do). Whoever starts it (the operator from the tab or the CLI, or the release power), two optional
+   sections follow:
    - **The ask**: an overseer's or the Project Assistant's pending `release.request`, in a section of
      its own, `Asked by {who}: "{why}"` (the Project Assistant, the project's overseer, or the
      Overseer), its reason quoted on one line (every run of spaces and line breaks one space, so it
@@ -217,20 +268,22 @@ Otherwise it:
      lines of its own included. It is the playbooks' place for the operator's instructions for this
      release; a version it names is the one the chat picks, over the playbook's version rule. With
      no saved note there is no label, and nothing in the message is the note.
-   With no saved note and no pending ask the first message is as it was, and a missing note never
-   blocks or delays a Start.
+   With no options, no saved note and no pending ask the first message is as it was, and a missing
+   note never blocks or delays a Start.
 
 Only once the release chat started does the Start take the note and the ask: it keeps copies on the
 record, clears the saved note and removes the ask it sent (so its Needs you item ends). A note saved
 again, or a newer ask made, while the chat was starting isn't the one sent, and stays for the next
 Start. If the worktree
-or the chat can't be made, the release is abandoned at once with why and the freeze lifts, and the
+or the chat can't be made, the release is cancelled at once with why and the freeze lifts, and the
 saved note and the pending ask both stay for the next Start. A started release answers the record and
 the view.
 
 ## §app.release/steps — How the release chat reports, and the facts win
 
-The release chat reports each step with `release.step` (state running, done, failed, skipped or held,
+The release chat reports each step with `release.step` (state running, done, failed, skipped or held
+(`skipped` also for a step the operator turned off at Start, summary "Turned off at Start"; Sova takes
+the chat's word for it, as for any skip),
 a one-line summary, an optional detail, and facts as `key=value`: `version`, `commit`, `branch`,
 `url`, `artifact` (a path), `sha256`, `size`) and the notes with `release.notes` (at most 20,000
 characters). Each report records when it came, which ends a quiet-chat warning.
@@ -254,28 +307,29 @@ fact wins**: the step reads Failed with Sova's reason, and the verb answers `rel
 
 **Continue** (`release.continue`) marks a held step done by the operator and wakes the chat to go on.
 **Retry Step** (`release.retry`) sets a failed step back to waiting and wakes the chat to run it again;
-a prepare step can't be redone once the checks began ("abandon the release to redo a prepare step"),
+a prepare step can't be redone once the checks began ("the gating checks began: Cancel Release to redo a prepare step"),
 `checks` reruns the release's queue entry, and `publish` only goes back to waiting, publishing nothing
 and waking no chat (§app.release/publish; the tab doesn't offer that one). The chat is woken
 with a line starting `[Sova · release]` whenever Sova needs it: checks passed or failed, a step
-continued or retried, published, abandoned, withdrawn.
+continued or retried, published, cancelled, withdrawn; when the checks fail it is told the operator
+may Retry Step or Cancel Release.
 
 ## §app.release/checks — The frozen queue and the gating checks
 
 While a release is open, the project's merge queue is **frozen** for it (§app.merge-queue/push):
-- only the release's own entries land (its release commit, or the revert of an abandoned one); every
-  other entry waits in line with the reason "waits for {tag} to be published or abandoned" and no
+- only the release's own entries land (its release commit, or the revert of a cancelled one); every
+  other entry waits in line with the reason "waits for {tag} to be published or cancelled" and no
   estimate;
 - a run of another branch already checking when the release starts is voided ("a release started: it
   waits for the release") and goes back to the front of the line;
 - nothing is pushed: a landing's push is held ("held: release {tag} is open: nothing is pushed until
   it
-  is published or abandoned");
+  is published or cancelled");
 - so the target and the main checkout stay exactly on the release (its base, then its commit):
-  - a Settings save waits and is made after Publish or Abandon (§app.merge-queue/settings-save). The
-    save's answer and its banner say "Saves once release {tag} is published or abandoned", and How
+  - a Settings save waits and is made after Publish or Cancel Release (§app.merge-queue/settings-save). The
+    save's answer and its banner say "Saves once release {tag} is published or cancelled", and How
     it
-    lands "{how} saves to the project file once release {tag} is published or abandoned.". A save
+    lands "{how} saves to the project file once release {tag} is published or cancelled.". A save
     already waiting on a branch reads the same once the release opens, and goes back to the old
     words
     when the freeze lifts; a waiting save that failed names no release. The name is read from the
@@ -287,7 +341,8 @@ While a release is open, the project's merge queue is **frozen** for it (§app.m
 The **release entry** is added by Sova, approved `by: release`, without review, first in line. It
 must
 be cut from the release's base. It runs the merge's required checks and then the release's gating
-checks in order (a check the merge set already runs fully runs once; a project whose merge checks
+checks in order: every one of the settings' release checks, less those the operator turned off at
+Start (Release with Options, §app.release/start), which it never runs (a check the merge set already runs fully runs once; a project whose merge checks
 are
 `none` still runs them), every one of them fresh (`SOVA_FRESH=1`): a release reuses no earlier pass
 (§app.server-runtime/test-reuse), so it catches what reuse at landings could hide. It lands its
@@ -296,14 +351,15 @@ straight back. Its outcome reaches the release: running, then **Done** ("passed;
 {target}
 (not pushed until Publish)") with the release commit recorded, or **Failed** with why, after which
 the
-operator may Retry Step (the entry runs again) or abandon. A **tag-only** release has no commit:
+operator may Retry Step (the entry runs again) or Cancel Release. A **tag-only** release has no commit:
 once
 its last prepare step is done, the same entry runs check-only on the frozen tip, and nothing moves.
 
-**A release never skips a check.** A test check the queue would skip for a branch as broken on the
-target (§app.merge-queue/blame) is never skipped on a release's run: the same failure waits on the
-user
-as Can't tell whose failure, its gates unrun, and the release can't pass with them unrun.
+**A release skips no check it runs.** The only checks a release leaves out are the release-only
+checks the operator turned off at Start; the merge's required checks always run. A test check the
+queue would skip for a branch as broken on the target (§app.merge-queue/blame) is never skipped on a
+release's run: the same failure waits on the user as Can't tell whose failure, its gates unrun, and
+the release can't pass with them unrun.
 
 **The gates of Publish**, all of them, never overridable: the checks step is done; every prepare and
 check step is done or skipped; notes are set; a version and its tag exist; the release commit is on
@@ -345,14 +401,27 @@ step never undoes the publish; it shows Failed with Retry Step.
 the tag, which stays on the release commit with its channels, and it isn't pushed until the next
 landing (§app.merge-queue/settings-save).
 
-## §app.release/abandon — Abandon Release
+## §app.release/abandon — Cancel Release
 
-`release.abandon {release, why, confirm}` (refused while Publish runs) stops a release that isn't
-published. Its queue entry, if still in line or checking, is cancelled. A release commit that already
-landed is **reverted as a queue landing**: a revert commit whose tree is the base's, on the branch
+**Cancel Release** on the Releases tab (§app.release/tab) is `release.abandon {release, why?,
+confirm?}` (refused while Publish runs): it stops a release that isn't published. No reason is asked;
+with none, the record says "cancelled by the operator"; the record's state is `abandoned`, shown
+everywhere as **Cancelled**. **The server decides the confirm**: without
+`confirm` it cancels at once unless the release commit is already on the target (its release entry
+landed and the target moved past the base), since cancelling then reverts it; then it answers
+`needs-confirm`, "Cancelling reverts the release commit {sha7}, already on {target}: confirm to
+revert it", changes nothing (no revert, the freeze stays, the chat isn't stopped), and carries the
+record, naming the landed commit, and the view. With `confirm: true` it cancels either way.
+
+Its queue entry, if still in line or checking, is cancelled ("release cancelled: {why}"). A release
+commit that already landed is **reverted as a queue landing**: a revert commit, "Revert release {tag}
+(cancelled)", whose tree is the base's, on the branch
 `sova/release-revert-<rl_id>`, lands first in line, and the freeze lifts once it lands; nothing is ever
-reset. With nothing landed, the freeze lifts at once. Its running and held steps read Skipped, the
-record says why, and its chat is told to stop. No tag is made and no channel moves.
+reset. With nothing landed, the freeze lifts at once, and the landings waiting in line go ahead. Its
+running and held steps read Skipped and the record says why. **The release chat stops**: a turn it is
+running is stopped at once, then it is woken: "The operator cancelled release {tag} (or this release): {why}. Your
+turn was stopped (Cancel Release). Do nothing more for it: run no tool, reply in one line that the
+release was cancelled." No tag is made and no channel moves.
 
 ## §app.release/withdraw — Withdraw
 
@@ -409,8 +478,11 @@ On, an overseer told to release, publish and deploy does the whole chain, each a
 The project page has a **Releases** tab after Merge Queue (§app.organizations/project-page), at
 `#/projects/<pid>/releases`, reading `release.status` every 5 seconds and following the session feed's
 `release` frames; the tab and the Deploy tab share that one read. The same frames,
-every project's, also drive the sidebar's landing bar, which never publishes or abandons: its Open
-Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
+every project's, also drive the sidebar's landing bar, which never publishes or cancels a release: its Open
+Releases opens this tab for both (§app.merge-queue/landing-bar). The queue's own screen shows the releases too, through its
+Merge queue / Releases scope switch, with the release setup, the releases, their branches, a
+proposed release setup and the release setup's history, opened by **Release Overview** in this
+tab's head (§app.merge-queue/explainer). Top to bottom:
 
 - **Head**: "Releases" (a **Not set up** chip while not set up) and **Start Release**, while releases
   are set up and read, no release is open and the project isn't archived, and **Change Setup** once
@@ -418,13 +490,44 @@ Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
   while releases are set up and read and the project isn't archived, a release open or not (the note
   is for the next Start), opens a small editor for the project's saved note (§app.release/record): a
   "Release note" field of at most 4,000 characters with its count, the hint "The next release chat
-  reads it as your instructions. Start Release sends it, then clears it.", **Save Note** (saved with
+  reads it as your instructions. Start Release sends it, then clears it; with this open, Start saves it
+  first.", **Save Note** (saved with
   `release.note`; nothing to save while it is empty or unchanged), **Clear Note** while a note is saved,
   and Cancel (or Escape). While a note is saved and the editor is closed, the tab shows it under the
   head, "Release note" with when it was saved, its text and "Start Release sends this note to the
   release chat, then clears it." (with a release open: "The next Start Release sends this note to its
   release chat, then clears it."). Start Release stays one click and opens nothing: it sends only the
-  project, the server reads the saved note itself, and an empty note changes nothing.
+  project, the server reads the saved note itself, and an empty note changes nothing. **Start saves
+  the note being edited**: while the editor is open on a draft that differs from the saved note,
+  Start Release reads "Start Release with This Note" ("Clear Note and Start Release" for an emptied
+  one), its hover says "Saves your note first, then starts.", and it saves the draft (`release.note`)
+  before `release.start`; a refused save starts nothing and shows why. A start that went through
+  closes the editor.
+- **Release with Options**: a ▾ beside Start Release, while the view carries the playbook's manifest,
+  opens a menu with **Release with Options…** ("Pick the kind, and turn off steps and checks for this
+  release."), which opens a panel under the head, focus on its first choice (the head's Start steps
+  aside while it is open). Top to bottom: **Kind**: **Auto** first and picked, its hint the two numbers the release
+  chat's own rule may give ("{next patch} or {next minor}"), then Patch, Minor and Major, each with its
+  exact next number, and "Auto lets the release chat pick, as Start Release does. A version your
+  release note names still wins." (no Kind for a project whose versions aren't semantic); the presets **Full** (everything on: "Everything runs, as Start
+  Release does.") and **Quick** (every release step and release-only check off), the caption reading
+  "Custom." when it matches neither; then four groups, **each folded at first**: its header is a
+  button (a chevron, `aria-expanded`) naming the group with how many are on and their rough minutes
+  ("3 of 5 on · about 12 min"; "all run · about 9 min" for the landing checks; "never turned off"
+  for Always done), and opening it lists its rows. **Always done**: landings waiting until it is
+  published or cancelled, the steps not marked skippable, and "Publish, after your confirm", shown on
+  and fixed; **Release steps**, each skippable step with a toggle; **Release-only checks**, each of
+  the settings' release checks with a toggle; **Landing checks** (opened: "Every landing runs them; so
+  does every release."), shown on and fixed. Kind, the presets, the total and Start stay in view
+  whatever is folded. Each step and check shows its `about` line and "about {n}
+  min" ("under 1 min") from the manifest's hints where it has them, and a total, "Checks and steps:
+  about {n} min · rough figures, from an earlier release", adds the landing checks and what is left
+  on. With a changed note draft open it says "Your release note is saved first, then sent with it.".
+  Its Start reads "Start {Kind} Release" ("Start Release" under Auto or with no Kind), with " (Custom)"
+  while anything is off; it saves a changed note first as Start Release does, then sends the
+  kind, unless Auto, and only the lists with something off (§app.release/start). **Auto sends no
+  kind**: the release chat's own version rule picks, as on a plain start, so Auto with nothing off
+  sends only the project, exactly a plain Start Release, and the record keeps no options. A refusal shows in the panel; Cancel closes it with nothing sent.
 - **Strip**: Latest release (its tag, or "None yet"); Since then ("{n} landings since {tag}", "No
   landings since {tag}"); and where it publishes, "On {target}, published to origin" or "on this
   machine only". Since then sits against the card's right edge, its words aligned right, in the
@@ -436,21 +539,25 @@ Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
   (§app.project-setup/start). While the Setup chat works it shows in its place (its card, titled "Setup · {project}",
   with its state, "Working" or "{n} questions for you") with **Open Setup Chat**; a
   proposed setup branch shows what it proposes, its release settings and each step with its phase,
-  read from the branch, with its newest trial and **Land** (or **Merge Branch**), **Read Report**
+  read from the branch, with its newest dry run and **Land** (or **Merge Branch**), **Read Report**
   (§app.project-setup/proposal). A refused start shows its reason.
 - **Settings that don't read**: an error banner, "This project's release settings don't read.", with the
   problem; no release starts until it reads.
 - **No release open**: "No release open. Start Release opens a chat that follows {project}'s release
-  playbook; {target} waits on it until you publish or abandon."
+  playbook; {target} waits on it until you publish or cancel it."
 - **Release in progress** (also a published or withdrawn release while its after or withdraw steps
   have work: "Published, finishing", "Withdrawn, finishing"): the state chip (**Publish failed** while
   the publish step is failed, and Ready to publish again once it isn't;
-  the record's state doesn't change), **Open Release Chat**, its
+  the record's state doesn't change; a stopped release's reads **Cancelled**), **Open Release Chat**, which opens the release chat itself (by
+  its file, or by its session id where the record has no file), its
   name (the tag, or "The new release"), who started it and when (you, or the release power), its base
   and commit, its last report; "Step {i} of {n} · {label} · {k} done" (the step's words "{label} failed" or "{label},
   held for you" when it did, so "Step {i} of {n} · Publish failed · {k} done"); the quiet warning "No word from
-  the release chat for {n} min" with Open Chat; what the release started with, when it had any: "Your
-  release note" and its text, and "Asked by the Project Assistant" (or "the project's overseer", "the
+  the release chat for {n} min" ("… stays frozen on it meanwhile. Open the chat to see where it is, or
+  cancel the release.") with Open Chat, to the same chat; "Other landings wait in the queue until
+  {name} is published or cancelled." while it is open; what the release started with, when it had
+  any: "Started with options" with the kind ("{Kind} release, picked at Start.") and what was turned
+  off ("Turned off: {label}, {label} and {label}."), "Your release note" and its text, and "Asked by the Project Assistant" (or "the project's overseer", "the
   Overseer", the words its chat was sent) with the reason
   and "Passed to the chat as background, not as your instructions."; then each step numbered with its chip (Waiting,
   Running, Done, Failed, Skipped, Held for you), its phase word (Sova, Before publish, After publish,
@@ -465,8 +572,14 @@ Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
   pushed."), and that "the number is never moved or deleted; Withdraw only moves {channel} back", with
   **Publish Now** and Cancel. The power's countdown, "Publishes in {m:ss}", shows with Cancel while its
   hold runs.
-- **Abandon Release** (destructive) asks for a reason and says the chat stops, nothing is published, a
-  landed release commit is reverted as a landing, and waiting landings go ahead.
+- **Cancel Release** (destructive; "Cancelling…" while it runs) asks for no reason. Its press sends
+  `release.abandon` without `confirm`, and the server decides (§app.release/abandon): until the release
+  commit has landed that one press cancels it. Once it has, the server's `needs-confirm` opens the one
+  confirm, naming the commit its answer carries: "Cancelling reverts the release commit {sha}, which
+  already landed on {target}, as a landing of its own. The release chat stops and nothing is
+  published; landings waiting in the queue go ahead.", with **Cancel and Revert** (sent again with
+  `confirm: true`) and **Keep Release**. A cancel that went through says "Cancelled {name}. Landings go
+  ahead.".
 - **Plan Deploy of {tag}**, per deploy target, on a published release and on the latest release's
   history row: it opens the Deploy tab and plans that target there (§app.release/deploy).
 - **History**, newest first, read from the project's numbered tags (withdrawn markers and channels
@@ -494,16 +607,33 @@ isn't a numbered release … deploy a release instead (the latest is {tag})", or
 
 ## §app.release/playbook — Sova's release method and a project's playbook
 
-`playbooks/release/` is Sova's general release method, shipped with Sova; a project's own release
+`system-playbooks/release/` is Sova's general release method, shipped with Sova as one of its own
+playbooks (§chat.playbooks/system-playbooks), never replaced by a playbook of the same name; a project's own release
 playbook (the folder `release.playbook` names) adds what is particular to it, and wins where they
-differ, while Sova's gates always apply. The method says: the queue is frozen and Publish and Withdraw
-are Sova's; the chat reports each step only through its own `release.step` and `release.notes`, never a
-script calling Sova; the step states and phases; facts as `key=value`; the order of a release;
-abandoning; what a quiet chat looks like; local-only releases; and that built files are reported as
+differ, while Sova's gates always apply. The method says: the queue is frozen from the operator's
+Start Release until Publish or Cancel Release, and Publish and Withdraw are Sova's; the chat reports each step only through its own `release.step` and `release.notes`, never a
+script calling Sova; the step states and phases (a step marked `skippable` may be turned off at
+Start; `about`, `minutes` and `checks` are only the panel's hints); facts as `key=value`; the order
+of a release; that a failed step whose Retry can't pass (its fix has to land on the target first,
+which the freeze stops) says so, its summary beginning "Retry can't pass. Cancel the release, land
+it, start again." and naming what has to land; Cancel Release (Sova stops the chat's turn, reverts
+a landed release commit through the queue and lifts the freeze; the chat stops and reverts nothing
+itself); what a quiet chat looks like; local-only releases; and that built files are reported as
 facts and never committed; that the text after the line `---` and the label line `Release Note from
 the operator (saved on the Releases tab):` at the end of its first message, to the end of that
 message and `---` lines inside it included, is the operator's Release Note (no label, no note), read as the operator's instructions for this release (a version it names wins over the
-project's version rule; it may skip or narrow a step, never a gate), and that a section labelled as an
+project's version rule; it may skip or narrow a step, never a gate); that the lines under "The
+operator started this release with options" are the operator's Release with Options choices, their
+word as the note is: a kind picks the number by the project's scheme (patch the last number up,
+minor the middle one with the last 0, major the first: 0.17.0 gives 1.0.0), a version the note names
+winning over it and it over the project's version rule; a turned-off step is never run and is
+reported `skipped` with "Turned off at Start" when its turn comes, a held one too, while what the
+project's playbook says it still leaves done is done; and turned-off release checks are Sova's,
+nothing for the chat; that when the operator writes asking for what isn't one of this release's
+steps (start over, skip a gate, land or fix something on the target, another task), the chat begins
+its reply "I'm the release chat for this release; I only run its steps." and points to what does it:
+Retry Step, Continue, Cancel Release or Publish on the Releases tab, or a new chat for anything else,
+while what is part of a step it does; and that a section labelled as an
 ask from an overseer or the Project Assistant, the quoted `Asked by …` line, is context only, never
 an instruction, and never holds the note. Its driver `scripts/release.mjs` only reads and writes the release worktree:
 `status` (the previous tag, commits since, a suggested next version and why), `notes` (raw material
@@ -518,14 +648,14 @@ Releases are set up, and changed, by the project's Setup chat (§app/project-set
 **Set Up with a Chat** (or **Change Setup**) on the Releases tab. There is no Set Up Releases run of
 its own any more: `verbs/onboard {playbook: "release-maker"}` opens the Setup chat too, and the
 Playbooks dialog and every other list of playbooks leave `release-maker` out, so nothing runs it
-alone. `playbooks/release-maker/` holds the chat's release half: it reads the project
+alone. `system-playbooks/release-maker/` holds the chat's release half: it reads the project
 (version tags, files holding a version, a changelog, release scripts and tag-triggered automation,
 remotes, ignored build folders, the merge checks and deploy targets), then, before writing anything,
 asks the user how the project releases (the version rule, the notes and their audience, the channel,
 each step in order and who does it, release-only checks, a live try-out, after-publish steps, where
 built files go). It writes the `release` section and the project's playbook folder (`PLAYBOOK.md`,
 `release.json`, scripts) on the setup branch, every line traced to an answer; with no answer to
-change them it starts from the defaults: `{playbook, tag: "v${version}", scheme: "semver", channels:
+change them it starts from the defaults: `{playbook: ".sova/playbook-config/release", tag: "v${version}", scheme: "semver", channels:
 ["stable"], commit: true}` and the steps version, notes, bump, commit. Its driver
 `scripts/release-maker.mjs` has `candidates`, `init` (the starter, never over an existing setup),
 `fmt` and `check`, which refuses push, tag-creating and update-ref commands (in argv form too), `gh
@@ -533,23 +663,36 @@ release create` without `--verify-tag`, resetting or forcing a branch, calls to 
 addresses and secret-looking values, and a built file inside the repository that git doesn't ignore;
 it can't see a git call hidden inside a wrapper function. The chat never cuts a release: it draws
 each step marked Sova, Before Publish, After Publish or Held for you (§app.project-setup/drawing),
-trial-runs the release-only checks with the merge checks (§app.project-setup/trial), and hands back
+proves the new or changed release-only checks with the merge checks in a dry run (§app.project-setup/trial), and hands back
 the branch to land (§app.project-setup/proposal).
 
 ## §app.release/sova — Sova's own release playbook
 
-Sova's `.sova/playbooks/release/` is its project release playbook in this form: `release.json` plans
+Sova's `.sova/playbook-config/release/` is its project release playbook in this form: `release.json` plans
 version, notes, bump, stamps, docs and commit before the checks; try-live (held: the operator's Apply on the live server, then a health check; Sova's merge thread never restarts Sova while a release is open, nor for its commit, §chat.merge-queue/sova-restart) before Publish;
 release-page (the notes out, `gh release create --verify-tag`) and outside-checks (held) after Publish;
-and release-page-withdrawn after a Withdraw. The **docs** step runs in every release unless the operator's Release Note
-says otherwise, and finishes on its own (never held): it lists, with the spec tools of the release
+and release-page-withdrawn after a Withdraw. Notes, stamps, docs, try-live and outside-checks are
+`skippable`, each with its `about` line and rough minutes, and `checks` gives the panel's lines and
+minutes for the landing checks (typecheck, unit, integration, build) and the release-only ones, so
+Release with Options lists them all (§app.release/tab). A step turned off at Start is never run and
+is reported skipped, "Turned off at Start" (try-live and outside-checks too, never held), and still
+leaves this done: with notes off, the entry is one short line, still at the top of `CHANGELOG.md`
+under its dated heading (the `release-notes` check needs it), and the same line goes out with
+`release.notes`; with stamps off the landing stamp stays as it is, and with docs off no Docs page
+changes, both named in the chat's last reply; with try-live off Publish no longer waits on a
+try-out, and with outside-checks off none are offered after Publish. **The version rule**: Sova is
+0.x; a patch when everything since the last release is a fix, a minor when anything adds a feature
+or changes what a user sees or must do, and a major (1.0.0 from 0.x) only when the operator picks
+it. The kind the operator picked at Start wins over this rule, and a version the Release Note names
+wins over both. The version step only reports the version: nothing in it, nor in any release check,
+looks at migrations (§app.server-runtime/migrations). The **docs** step runs in every release unless
+the operator turned it off at Start or their Release Note says otherwise, and finishes on its own (never held): it lists, with the spec tools of the release
 chat's own copy of Sova (§tools.spec/mode-reading; where there are none, the listing stops at
 once and names where it looked), every Docs page whose spec sources
 changed, left stale, or new, fixes each in its own commit, and writes a new page for each new feature
 that has none (one whose record won't promote is left without a page, and the step says why). Since a release entry carries no spec drafts, a new page's `§site.docs/<page>` record
 is drafted, promoted and committed by explicit path on the release branch, in its own commit before
-the release commit. A version the Release Note names wins over Sova's version rule, and an ask passed
-with the Start is never read as the note. Its driver `scripts/sova-release.mjs` carries the steps'
+the release commit. An ask passed with the Start is never read as the note. Its driver `scripts/sova-release.mjs` carries the steps'
 mechanics and the seven release-only checks (`references/checks.md`). Pausing and resuming the queue,
 the hand tag and push, and the hand fast-forward of the live tree are gone: the freeze, the release
 entry and Publish replace them. Its own `release` section (this playbook, tag `v${version}`, semantic
@@ -560,4 +703,7 @@ passes on them. Both sections sit outside the definition's hash, so adding them 
 conformance proof of Sova's copies standing. The `site` target's `video` step copies the hero videos from the folder in this
 host's `SOVA_SITE_VIDEO_DIR` value, an env credential of the target; a deploy never ships the site
 without its hero video: with that value unset the plan fails its credential check, and a folder that
-misses a video fails the step.
+misses a video fails the step. Since the move to `.sova/playbook-config/`, the `site` target can't be
+redeployed or rolled back to 0.16.0 or an older release: a deploy runs the newest settings' steps in a
+checkout of the deployed commit (§app.project-services/deploy), and those releases keep Sova's release
+scripts at `.sova/playbooks/release/scripts/`, so that deploy is refused; later releases are unaffected.

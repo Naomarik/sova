@@ -5,7 +5,7 @@ import { type CopyLimitView, type CopyView, isStarting, type ServiceRowView } fr
 import { ApiError, getProjectRuntime, getProjectServices, runProjectVerb, runProjectVerbsPlaybook, setCopyLimit } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { canGoCount, copyGroups, freeButton, freedLine, freeTitle, goWord, type GoReason, inUseCount, type LandedCopies, NO_LANDED } from "../lib/free-slots";
-import { memoryWord, openWord, playbookLabel, portsWord, reviewDefProblem, reviewProofWord, runStrip, runWord, SENSITIVE_TITLE, serviceFacts, setupStatus, shareWord } from "../lib/project-software";
+import { memoryWord, notSetUpWords, openWord, playbookLabel, portsWord, reviewDefProblem, reviewProofWord, runStrip, runWord, SENSITIVE_TITLE, serviceFacts, setupStatus, setupStepsWord, shareWord, testsWord } from "../lib/project-software";
 import { projectSessionHref } from "../lib/projects-route";
 import { createPoll, type Poll } from "../lib/poll";
 import {
@@ -23,6 +23,7 @@ import {
   doneLine,
   entryHref,
   entryTitle,
+  failedBlocks,
   gaveUp,
   httpHref,
   limitHint,
@@ -36,9 +37,11 @@ import {
   openEntry,
   portLabel,
   refusalLine,
+  restarting,
   rowVerbs,
   type RowVerb,
   SERVICE_CHIP,
+  START_AGAIN,
   SHARE_DAY_CHOICES,
   SHARE_SENSITIVE,
   endpointNotRunning,
@@ -223,7 +226,7 @@ function CopyLimit(props: { projectId: string; limit: CopyLimitView; archived: b
 
 /**
  * A project's Running Copies tab (§app.project-services/services-ui), once Branches: the copy limit and the
- * services' setup line (Run Playbook or Run Again, a live run, a proposed run's review), then one row per copy on
+ * services' setup line (Set Up with a Chat or Change Setup…, a live run, a proposed run's review), then one row per copy on
  * this host in two groups, In use and Can go (landed, or left stopped by the merge queue; Free Up Slots tears
  * those down at once, asked first), Previews, the shared services, and the registry's Recent feed, closed. The
  * main checkout's first, each with its ports, memory, state and who made it, Open (its app's entry, while
@@ -698,7 +701,8 @@ export function ProjectServicesTab(props: {
  */
 function CopyRow(props: { copy: CopyView; why?: string; archived: boolean; said: string | null; verbs(v: RowVerb, quiet: boolean): JSX.Element; share: JSX.Element; shareButton: JSX.Element; onLogs(): void }) {
   const c = () => props.copy;
-  const chip = () => copyChip(c().state, isStarting(c().state, c().services), gaveUp(c().services));
+  const chip = () => copyChip(c().state, isStarting(c().state, c().services), gaveUp(c().services), restarting(c().services));
+  const failed = () => failedBlocks(c().services);
   const entry = () => openEntry(c());
   const groups = () => verbGroups(props.archived ? archivedVerbs(rowVerbs(c())) : rowVerbs(c()), !!entry());
   const ported = () => c().services.filter((s) => Object.keys(s.ports).length);
@@ -728,6 +732,23 @@ function CopyRow(props: { copy: CopyView; why?: string; archived: boolean; said:
           </p>
         </Show>
         <Show when={c().state !== "stopped" && c().state !== "absent" && notReadyLine(c().services)}>{(line) => <p class="list-meta">{line()}</p>}</Show>
+        {/* What gave up retrying, how many times, its last try and log lines; Start (on the row) runs it again. */}
+        <Show when={failed().length}>
+          <div class="services-failed">
+            <For each={failed()}>
+              {(f) => (
+                <div class="services-failed-one">
+                  <p class="services-failed-head">{f.heading}</p>
+                  <p class="list-meta">{f.lastTry}</p>
+                  <Show when={f.lines.length}>
+                    <pre class="services-failed-lines" aria-label={`Last log lines of ${f.service}`}>{f.lines.join("\n")}</pre>
+                  </Show>
+                </div>
+              )}
+            </For>
+            <p class="list-meta">{START_AGAIN}</p>
+          </div>
+        </Show>
         <Show when={c().adopted}>{(unit) => <p class="list-meta">{adoptedLine(unit())}</p>}</Show>
         <Show when={props.said}>{(line) => <p class="field-error services-said">{line()}</p>}</Show>
       </div>
@@ -763,9 +784,10 @@ function CopyRow(props: { copy: CopyView; why?: string; archived: boolean; said:
 
 /**
  * The services' setup in one line (§app.project-runtime/software-card, which it replaced): the registry's standing
- * as a chip, when it was checked, and Run Playbook or Run Again while the statecharts would take it; under it why
- * it failed or is out of date, what still runs undeclared, a live run's progress, and a proposed run's review
- * with Merge Branch.
+ * as a chip, when it was checked, and Set Up with a Chat or Change Setup…, the one way into the project's standing
+ * Project verbs chat (the first press starts it, every press after opens it), or in its place the one sentence that
+ * says why it can't; above it, while never set up, what running copies are; under it why it failed or is out of
+ * date, what still runs undeclared, a live run's progress, and a proposed run's review with Merge Branch.
  */
 function SetupStatus(props: { projectId: string; archived: boolean; runtime: Poll<ProjectRuntimeView> }) {
   const poll = props.runtime;
@@ -777,9 +799,14 @@ function SetupStatus(props: { projectId: string; archived: boolean; runtime: Pol
     setError(null);
     try {
       const out = await runProjectVerbsPlaybook(props.projectId);
-      const done = out.worktree ? `The Project verbs playbook started on ${out.worktree.branch}.` : "The Project verbs playbook started.";
-      toast(done);
-      announce(done);
+      if (out.reopened) announce("Opened the Project verbs chat.");
+      else {
+        const done = out.worktree ? `The Project verbs playbook started on ${out.worktree.branch}.` : "The Project verbs playbook started.";
+        toast(done);
+        announce(done);
+      }
+      // The chat opens at once: you say what to refine by typing in it.
+      if (out.path) location.hash = projectSessionHref(props.projectId, out.path);
     } catch (err) {
       setError(errText(err));
     } finally {
@@ -793,8 +820,17 @@ function SetupStatus(props: { projectId: string; archived: boolean; runtime: Pol
         {(v) => {
           const st = () => setupStatus(v());
           const strip = () => runStrip(v(), Date.now());
+          const unset = () => notSetUpWords(v());
           return (
             <>
+              <Show when={unset()}>
+                {(w) => (
+                  <div class="services-setup-unset">
+                    <p class="list-title">{w().title}</p>
+                    <p class="orgs-line">{w().body}</p>
+                  </div>
+                )}
+              </Show>
               <div class="services-setup-line">
                 <Chip tone={st().tone}>{st().word}</Chip>
                 <span class="services-setup-when">
@@ -809,11 +845,14 @@ function SetupStatus(props: { projectId: string; archived: boolean; runtime: Pol
                 {/* While a run is proposed: Merge Branch (§app.project-runtime/merge). */}
                 <Show when={proposedRun(v())}>{(r) => <MergeRunButton projectId={props.projectId} run={r()} onDone={(view) => (view ? poll.set(view) : poll.refetch())} />}</Show>
                 <Show when={v().can.onboard && !props.archived}>
-                  <button type="button" class="button button-sm" aria-disabled={busy() ? "true" : undefined} onClick={() => void run()}>
-                    {busy() ? "Starting…" : playbookLabel(v())}
+                  <button type="button" class={`button button-sm${unset() && !proposedRun(v()) ? " button-primary" : ""}`} aria-disabled={busy() ? "true" : undefined} onClick={() => void run()}>
+                    <Icon name="chat" small />
+                    {busy() ? "Opening…" : playbookLabel(v())}
                   </button>
                 </Show>
               </div>
+              {/* Never hidden without its sentence: the start's own refusal, read before any press. */}
+              <Show when={!v().can.onboard && v().can.onboardWhy}>{(why) => <p class="orgs-line services-setup-why">{why()}</p>}</Show>
               <Show when={st().why}>{(why) => <p class={`orgs-line${v().standing === "failed" ? " project-software-failed" : ""}`}>{why()}</p>}</Show>
               <For each={v().orphans}>
                 {(o) => (
@@ -880,6 +919,10 @@ function SetupStatus(props: { projectId: string; archived: boolean; runtime: Pol
                       </p>
                     </Show>
                     <p class="list-meta">{reviewProofWord(r())}</p>
+                    <Show when={!reviewDefProblem(r())}>
+                      <p class="list-meta" classList={{ "text-mono": !!r().test }}>{testsWord(r())}</p>
+                      <p class="list-meta">{setupStepsWord(r())}</p>
+                    </Show>
                     {/* A deploy-setup run: its recipe as Sova renders it. */}
                     <Show when={r().deploy}>{(d) => <DeployRecipeSteps recipe={d()} />}</Show>
                     {/* A Release playbook maker run: the release settings and the playbook's steps it proposes. */}

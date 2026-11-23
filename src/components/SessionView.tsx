@@ -11,9 +11,9 @@ import { knownExplanations, knownOutline, knownWorkers } from "../lib/known-befo
 import { PaneScopeProvider, type PaneScope } from "../lib/pane-scope";
 import { cwdLabel } from "../lib/remote-session";
 import type { RewindControl } from "../lib/inputs";
-import { activeTab, home, toast } from "../lib/ui-state";
-import { regenerateOutcome, regeneratingTitle, setRegeneratingTitle } from "../lib/auto-title";
-import { regenerateSessionTitle } from "../lib/api";
+import { activeTab, home } from "../lib/ui-state";
+import { REGENERATING_LABEL, regeneratingTitle } from "../lib/auto-title";
+import { regenerateSessionTitleNow } from "../lib/session-actions";
 import { sessionWorking, tallyWorkers, workingSplit } from "../lib/workers";
 import { sessionIdOfPath } from "../lib/links";
 import { paneTitleCost } from "../lib/spend";
@@ -27,6 +27,8 @@ import type { CodeControl } from "../lib/code-state";
 import type { ChatProfileInfo } from "../../shared/protocol";
 import { InsightStrip } from "./InsightStrip";
 import { createProjectOverseerControl, ProjectOverseerHead } from "./ProjectOverseerHead";
+import { createVerbsChatControl, VerbsChatFresh, VerbsChatNote } from "./VerbsChatFresh";
+import { SetupOverviewLink } from "./pipeline/SetupOverviewLink";
 import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { trackSessionView } from "../lib/time-spent";
@@ -40,25 +42,14 @@ import { mergeChanged } from "../lib/merge-queue-client";
 
 /**
  * An open session's Regenerate title (§app.session-list/auto-titles), at the start of the
- * single-session head's path line, under the title it changes — never on a list row or a workspace pane. It asks the
- * session's host for a new title, which may replace any title (the press is the request). The
- * new title arriving is the answer; a title that stays gets a toast saying why.
+ * single-session head's path line, under the title it changes (list rows reach it through their menus). It runs the
+ * session menus' Regenerate Title (lib/auto-title `regenerateTitle`): the same busy state, keyed
+ * toast and Undo, so a press here and a press in a menu can't both run.
  */
-function RegenerateTitleButton(props: { path: string; onDone(): void }) {
-  const busy = () => regeneratingTitle(props.path);
-  const label = () => (busy() ? "Regenerating title…" : "Regenerate title");
-  const press = async () => {
-    const path = props.path;
-    if (regeneratingTitle(path)) return;
-    setRegeneratingTitle(path, true);
-    try {
-      const r = regenerateOutcome(await regenerateSessionTitle(path).catch((e: unknown) => (e instanceof Error ? e : new Error(String(e)))));
-      if ("error" in r) toast(r.error);
-    } finally {
-      setRegeneratingTitle(path, false);
-      props.onDone();
-    }
-  };
+function RegenerateTitleButton(props: { session: SessionSummary; onDone(): void }) {
+  const busy = () => regeneratingTitle(props.session.path);
+  const label = () => (busy() ? REGENERATING_LABEL : "Regenerate title");
+  const press = () => void regenerateSessionTitleNow(props.session, props.onDone);
   return (
     <button
       type="button"
@@ -67,7 +58,7 @@ function RegenerateTitleButton(props: { path: string; onDone(): void }) {
       title={label()}
       aria-busy={busy() ? "true" : undefined}
       disabled={busy()}
-      onClick={() => void press()}
+      onClick={press}
     >
       <Icon name="refresh" small />
     </button>
@@ -170,6 +161,12 @@ export function SessionView(props: {
   const po = !props.paneId && !props.head ? s().projectOverseer : undefined;
   const poEarlier = !!po && !!(s().project?.finished ?? s().org?.finished);
   const poControl = po ? createProjectOverseerControl({ projectId: po.projectId, path, summary: s, onRefresh: () => props.onRefresh() }) : null;
+  /** A project's verb playbook run may be its standing Project verbs chat, whose head has Start Fresh… (§app.project-runtime/onboard).
+      Decided at mount, read on open and as its turn starts and ends; this host's sessions only. Any other coding
+      session never asks. */
+  const verbsProject = !props.paneId && !props.head && !po && !hostOf(path) && s().project?.kind === "coding" && s().project?.onboard ? s().project!.projectId : undefined;
+  const verbsControl = verbsProject ? createVerbsChatControl({ projectId: verbsProject, path, busy: () => !!s().busy }) : null;
+  const verbsWhyId = `verbs-fresh-why-${sessionIdOfPath(path)}`;
 
   /** The model the chat switched to, this view's own: a workspace's panes each run their own. */
   const [chatModel, setChatModel] = createSignal<string | null>(null);
@@ -285,7 +282,7 @@ export function SessionView(props: {
           {/* First on the path line, so the title above keeps the head's whole width. */}
           {/* A chat Sova names itself keeps that name: nothing to regenerate. */}
           <Show when={!s().fixedName}>
-            <RegenerateTitleButton path={path} onDone={props.onRefresh} />
+            <RegenerateTitleButton session={s()} onDone={props.onRefresh} />
           </Show>
           {/* A peer's session names its host first: the folder and everything else are that host's. */}
           <Show when={hostOf(path)}>
@@ -314,6 +311,10 @@ export function SessionView(props: {
       <Show when={s().queueChat?.role === "thread" && !hostOf(path)}>
         <MergeRunLogsChip session={s().id} />
       </Show>
+      {/* The project's Project verbs chat alone: Start Fresh…, where the Overseer's Clear sits in its own head. */}
+      <Show when={verbsControl && verbsProject}>{(pid) => <VerbsChatFresh projectId={pid()} control={verbsControl!} describedBy={verbsWhyId} />}</Show>
+      {/* The project's Setup chat alone: Queue Overview, the queue screen beside its proposal (§app.merge-queue/explainer). */}
+      <Show when={verbsProject}>{(pid) => <SetupOverviewLink projectId={pid()} path={path} busy={() => !!s().busy} />}</Show>
       <CodeState control={codeControl()} />
       {/* The remote identity is always present; the connection chip reports liveness separately. */}
       <RemoteChip path={path} summary={s()} />
@@ -416,6 +417,7 @@ export function SessionView(props: {
           </div>
         </header>
       </Show>
+      <Show when={verbsControl}>{(c) => <VerbsChatNote control={c()} id={verbsWhyId} />}</Show>
       <InsightStrip
         path={path}
         sessionId={s().id}

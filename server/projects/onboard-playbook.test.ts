@@ -1,4 +1,4 @@
-// The Project verbs playbook (playbooks/project-verbs): its contract reference and its driver's
+// The Project verbs playbook (system-playbooks/project-verbs): its contract reference and its driver's
 // canonical order can't fall behind the parser, its examples parse, and its driver's reads (inspect,
 // plan, check, fmt, ram) answer as PLAYBOOK.md says, on throwaway repositories only.
 // The driver script run as a program (inspect, plan, check, the entry point) against a real repo: onboard-playbook.integration.test.ts.
@@ -11,9 +11,9 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DEFINITION_KEYS, ERROR_CODES, ISOLATION_METHODS, parseDefinition } from "../../shared/project-contract";
 // @ts-expect-error: a plain .mjs script, no types
-import * as pv from "../../playbooks/project-verbs/scripts/project-verbs.mjs";
+import * as pv from "../../system-playbooks/project-verbs/scripts/project-verbs.mjs";
 
-const PLAYBOOK = fileURLToPath(new URL("../../playbooks/project-verbs/", import.meta.url));
+const PLAYBOOK = fileURLToPath(new URL("../../system-playbooks/project-verbs/", import.meta.url));
 const SCRIPT = join(PLAYBOOK, "scripts", "project-verbs.mjs");
 const CONTRACT_DOC = readFileSync(join(PLAYBOOK, "references", "contract.md"), "utf8");
 const ORDER = pv.ORDER as Record<string, string[]>;

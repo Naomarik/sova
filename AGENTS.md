@@ -1,6 +1,6 @@
 # Sova
 
-Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **1.0.3**).
+Webapp interface for the pi coding agent (npm: `@earendil-works/pi-coding-agent`, pinned **1.5.2**).
 Single local user. Goals: list all sessions, view transcripts, chat in webapp-owned sessions,
 live-watch sessions open in the CLI/TUI, spawn new sessions.
 
@@ -44,6 +44,16 @@ also update Y" list live in its guide: read the guide of every area your task to
   user's LIVE TUI on its next `/reload` and every runtime Sova embeds. Treat it like
   `shared/protocol.ts`: coordinate before changing any contract Sova parses (extensions guide).
 - `statecharts/`: the org's statecharts (statecharts guide).
+- `playbooks/`: the playbooks Sova ships that you start from the Playbooks dialog (A/B cycle, Brandmaker,
+  Context audit). `system-playbooks/`: the ones only Sova starts (merge thread, release, release
+  maker, project setup, project deploy, project verbs): never listed, never replaced by a playbook of the
+  same id, their tests in Sova's own test folders. A project's config for those chats lives in its
+  `.sova/playbook-config/<id>/` (merge-queue, release, review, request, project-setup), never in
+  `.sova/playbooks/`, which holds only playbooks you start.
+- `migrations/`: temporary code that keeps an old place working, one folder per migration, listed in
+  `migrations/manifest.json` under the major release that clears it (`clearedIn`, e.g. `1.0.0`); no
+  removal date, and nothing stops a release over one; reached through one import per call site
+  (`migrations/README.md`).
 
 ## Commands
 
@@ -76,13 +86,23 @@ also update Y" list live in its guide: read the guide of every area your task to
   `pnpm test:int --changed` before asking to land. The merge queue runs the checks
   `.sova/project.json` declares (`merge`), `pnpm test` and `pnpm test:int -- --landing` among them
   (the everyday integration set plus the slow groups the branch triggers, `scripts/test-groups.mjs`),
+  and each changed user playbook's own `tests/` (`scripts/merge-checks/playbook-tests.mjs`),
   plus what the merge thread picks for the branch; a release runs every group. Verify on Bun (the
   runner's default, the user's runtime); Node only when the user asks.
 - Run Sova's tests only through the runner: `pnpm test <file>`, `pnpm test:int <file>` (an
   integration file), or the `project_verbs` `test` verb (`select: [<file>]`). Never a bare `bun test`,
   `node --test` or `tsx --test`, not even for one file: it skips the throwaway home, and one such run
-  wrote a test chat into the user's real sessions. A file's `// Run:` header naming another command is
-  stale. pi-config extension tests run as their guides say (testing guide).
+  wrote a test chat into the user's real sessions. The one exception: a playbook's own `tests/` folder
+  (below) runs as `node --test playbooks/<id>/tests/*.test.mjs`, never another path. A file's `// Run:`
+  header naming another command is stale. pi-config extension tests run as their guides say (testing guide).
+- A playbook a user starts in a chat (`playbooks/<id>/`, e.g. `ab-cycle`) keeps the tests of its own
+  scripts in its own `tests/` folder: plain `*.test.mjs` on `node:test`, importing only Node's
+  built-ins and `../scripts/`, nothing from Sova or `node_modules`. Each file makes itself safe on
+  import (`tests/scratch.mjs`: a throwaway root outside every repository, HOME and the agent dir in
+  it, git's search stopped there), since no runner does. Run them when you edit the playbook (the
+  merge queue runs them too when a branch changes it); Sova's test run never picks them up. System playbooks (merge queue, release, release maker, project
+  setup, project deploy, project verbs) are Sova: their tests, and every test of how Sova reads or
+  shows any playbook, stay in Sova's suite.
 - Write tests as the testing guide's "Writing tests" says: a rule over its edges where one exists,
   else one example per edge; each behaviour once, in the smallest harness; wait on events.
 - Never run the spec replay suite (`pi-config/extensions/spec/tests/replay`) while working: it is a
@@ -175,7 +195,7 @@ goes live on `systemctl --user restart sova-runtime.service` (macOS:
   the page (§app.access/your-click), and `server.restart` answers with where to click. The server can't
   stop raw `systemctl`, `launchctl` or `kill`, so this is a rule, not a wall.
 - **The one exception: Sova's own merge thread**, after landings, once the queue is idle (nothing queued
-  or checking), outside a release, and only as `.sova/playbooks/merge-queue/PLAYBOOK.md` "When the
+  or checking), outside a release, and only as `.sova/playbook-config/merge-queue/PLAYBOOK.md` "When the
   queue is idle" says: it holds the queue (`merge.hold`), builds the main checkout, restarts
   `sova-runtime.service` and checks `/api/health`'s head. No other chat, worker or script does;
   `POST /api/updates/restart` still refuses every chat.

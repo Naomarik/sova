@@ -34,15 +34,30 @@ const TAB_ALIASES: Record<string, Exclude<ProjectTab, "sessions">> = { branches:
  * `…/merge-queue`. A run opened from a tab keeps that tab's word before its id, so Back to Queue returns there. The
  * words are fixed and carry no `_`, so none is ever a run's id (`mr_…`). A new tab adds its word here.
  */
-export const QUEUE_TABS = ["ready", "needs-you", "with-its-chat", "waiting-on-host", "held", "landed", "queue-chats"] as const;
+export const QUEUE_TABS = ["ready", "needs-you", "with-its-chat", "waiting-on-host", "held", "landed", "dry-runs", "queue-chats"] as const;
 export type QueueTab = (typeof QUEUE_TABS)[number];
 const QUEUE_TAB_WORDS: readonly string[] = QUEUE_TABS.slice(1);
 const isQueueTab = (s: string): s is QueueTab => (QUEUE_TABS as readonly string[]).includes(s);
 
+/**
+ * The queue screen (§app.merge-queue/explainer): `#/projects/<pid>/pipeline[/<view>[/<item>]]` for the merge queue and
+ * `#/projects/<pid>/pipeline/releases[/<view>[/<item>]]` for releases, the same views over each. `item`: the run,
+ * branch or release the view has open. The first view of each scope is the bare address.
+ */
+export const PIPELINE_VIEWS = { queue: ["setup", "runs", "stories", "proposal", "history"], releases: ["setup", "releases", "branches", "proposal", "history"] } as const;
+export type PipelineScope = keyof typeof PIPELINE_VIEWS;
+export type PipelineView = (typeof PIPELINE_VIEWS)[PipelineScope][number];
+export interface PipelineAt {
+  scope: PipelineScope;
+  view: PipelineView;
+  item?: string;
+}
+const ITEM_RE = /^[A-Za-z0-9._~%-]+$/;
+
 export type ProjectsRoute =
   | { kind: "list" }
   /** No tab = Sessions. */
-  | { kind: "project"; projectId: string; tab?: Exclude<ProjectTab, "sessions">; host?: string; /** On the Merge Queue tab: one run's page. */ run?: string; /** On the Merge Queue tab: which of its tabs (absent: Ready to land). On a run's page: the tab it was opened from. */ queueTab?: QueueTab }
+  | { kind: "project"; projectId: string; tab?: Exclude<ProjectTab, "sessions">; host?: string; /** On the Merge Queue tab: one run's page. */ run?: string; /** On the Merge Queue tab: which of its tabs (absent: Ready to land). On a run's page: the tab it was opened from. */ queueTab?: QueueTab; /** The queue screen, on the Merge Queue tab (scope queue) or the Releases tab (scope releases). */ pipeline?: PipelineAt }
   | { kind: "overseer"; projectId: string; host?: string };
 
 export const PROJECTS_HREF = "#/projects";
@@ -61,8 +76,25 @@ export function projectsRouteFromHash(hash: string): ProjectsRoute | null {
   return host && r && r.kind !== "list" ? { ...r, host } : null;
 }
 
+function pipelineRoute(hash: string): ProjectsRoute | null | undefined {
+  const p = /^#\/projects\/([^/]+)\/pipeline((?:\/[^/]+){0,3})\/?$/.exec(hash);
+  if (!p) return undefined;
+  if (!ID_RE.test(p[1]!)) return null;
+  const parts = p[2]!.split("/").filter(Boolean);
+  const scope: PipelineScope = parts[0] === "releases" ? "releases" : "queue";
+  if (scope === "releases") parts.shift();
+  const views: readonly string[] = PIPELINE_VIEWS[scope];
+  const view = (parts[0] ?? views[0]) as PipelineView;
+  if (!views.includes(view) || parts.length > 2) return null;
+  const item = parts[1];
+  if (item !== undefined && !ITEM_RE.test(item)) return null;
+  return { kind: "project", projectId: p[1]!, tab: scope === "releases" ? "releases" : "merge-queue", pipeline: { scope, view, ...(item ? { item: decodeURIComponent(item) } : {}) } };
+}
+
 function hashRoute(hash: string): ProjectsRoute | null {
   if (hash === PROJECTS_HREF || hash === `${PROJECTS_HREF}/`) return { kind: "list" };
+  const pipe = pipelineRoute(hash);
+  if (pipe !== undefined) return pipe;
   const m = /^#\/projects\/([^/]+)(?:\/(backlog|requirements|running-copies|branches|merge-queue|releases|deploy|cost|settings|overseer))?(?:\/([^/]+))?(?:\/([^/]+))?\/?$/.exec(hash);
   if (!m || !ID_RE.test(m[1]!)) return null;
   const projectId = m[1]!;
@@ -106,6 +138,12 @@ export const mergeQueueTabHref = (projectId: string, tab: QueueTab = "ready"): s
     from, which its Back to Queue returns to (absent or Ready to land: the bare run address). */
 export const mergeRunHref = (projectId: string, run: string, from?: QueueTab): string => onHost(projectId, `/merge-queue${from && from !== "ready" ? `/${from}` : ""}/${run}`);
 export const projectOverseerHref = (projectId: string): string => onHost(projectId, "/overseer");
+/** The queue screen at one view of one scope, with an item open in it. */
+export const pipelineHref = (projectId: string, scope: PipelineScope = "queue", view?: PipelineView, item?: string): string => {
+  const first = PIPELINE_VIEWS[scope][0];
+  const v = view && (item || view !== first) ? `/${view}` : "";
+  return onHost(projectId, `/pipeline${scope === "releases" ? "/releases" : ""}${v}${item ? `/${encodeURIComponent(item)}` : ""}`);
+};
 /** A session a project's page links to, on the host that holds it: a peer's listed session by its
     path, else the project's own host (a session its page names before any list does). */
 export const projectSessionHref = (projectId: string, path: string): string => sessionHrefOn(hostOf(path) ?? projectHostOf(projectId), path);

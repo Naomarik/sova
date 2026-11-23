@@ -1,7 +1,8 @@
 // The Branches tab and Running branches (§app.project-services/services-ui) as words. Pure: no Solid, no DOM.
 
-import type { InstanceState, LinkView, ServiceState, ServiceView, VerbResult } from "../../shared/project-contract";
+import type { GiveUpView, InstanceState, LinkView, ServiceState, ServiceView, VerbResult } from "../../shared/project-contract";
 import type { CopyLimitView, CopyView, EntryView, ServiceRowView } from "../../shared/services-view";
+import { stampTime } from "./format";
 import { bytesWord, type ChipTone } from "./project-software";
 import { expiresWord } from "./session-shares";
 
@@ -54,10 +55,37 @@ export function createdByWord(tag: string): string {
   return tag;
 }
 
-/** The services of a copy that are not ready, as "web stopped · api failed"; null when all are. */
-export function notReadyLine(services: readonly ServiceRowView[]): string | null {
-  const off = services.filter((s) => s.state !== "ready");
-  return off.length ? off.map((s) => (s.gaveUp ? `${s.name} failed and stopped retrying; Start runs it again` : `${s.name} ${SERVICE_WORD[s.state]}`)).join(" · ") : null;
+/**
+ * The services of a copy that are not ready, as "web stopped · api failed"; null when all are. One retrying within
+ * its restart limit reads "api failed · restarting, try 3 of 5"; one that gave up is the failed block's, not this
+ * line's (without Sova's record of it, it is named here instead).
+ */
+export function notReadyLine(services: readonly Pick<ServiceView, "name" | "state" | "restarting" | "gaveUp" | "giveUp">[]): string | null {
+  const off = services.filter((s) => (s.state !== "ready" || (s.restarting && !s.gaveUp)) && !(s.gaveUp && s.giveUp));
+  const word = (s: (typeof off)[number]): string => {
+    if (s.gaveUp) return `${s.name} failed and stopped retrying; Start runs it again`;
+    if (s.restarting) return `${s.name} failed · restarting, try ${s.restarting.try} of ${s.restarting.of}`;
+    return `${s.name} ${SERVICE_WORD[s.state]}`;
+  };
+  return off.length ? off.map(word).join(" · ") : null;
+}
+
+// ---- the failed block (§app.project-services/services-ui) ------------------------------------------
+
+/** What failed and how many times, by the rule that gave up on it. */
+export function giveUpHeading(name: string, g: Pick<GiveUpView, "rule" | "tries">): string {
+  if (g.rule === "system-limit") return `${name} was stopped by the system limit after ${g.tries} tries`;
+  return `${name} failed ${g.tries} times ${g.rule === "in-an-hour" ? "in an hour" : "in a row"} and stopped retrying`;
+}
+
+/** "Last try: 1:43 PM · exit 1" (the day added when it isn't today; "exit unknown" with no exit code). */
+export const lastTryLine = (g: Pick<GiveUpView, "at" | "exit">, now = Date.now()): string => `Last try: ${stampTime(g.at, now)} · exit ${g.exit ?? "unknown"}`;
+
+export const START_AGAIN = "Start runs it again.";
+
+/** One block per service that gave up, in the copy's order: its heading, its last try, its last 5 log lines (oldest first). */
+export function failedBlocks(services: readonly Pick<ServiceView, "name" | "gaveUp" | "giveUp">[], now = Date.now()): { service: string; heading: string; lastTry: string; lines: string[] }[] {
+  return services.flatMap((s) => (s.gaveUp && s.giveUp ? [{ service: s.name, heading: giveUpHeading(s.name, s.giveUp), lastTry: lastTryLine(s.giveUp, now), lines: s.giveUp.lines.slice(-5) }] : []));
 }
 
 /** A port with HTTP readiness, on the host this page was opened from. */
@@ -157,11 +185,13 @@ export function endpointNotRunning(c: Pick<CopyView, "services">, endpoint: stri
  * The verbs a copy's row offers, by its state: Start while stopped, absent or degraded; Stop while running
  * or degraded; Teardown never on main (slot 0). An adopted main offers none: it runs as a unit of its own.
  */
-export function rowVerbs(c: Pick<CopyView, "slot" | "state" | "adopted">): RowVerb[] {
+export function rowVerbs(c: Pick<CopyView, "slot" | "state" | "adopted"> & { services?: readonly Pick<ServiceView, "state" | "gaveUp">[] }): RowVerb[] {
   if (c.adopted) return [];
   const out: RowVerb[] = [];
+  // A copy that gave up with nothing else of it running has nothing to stop: Start, Logs and Teardown.
+  const stillRuns = !c.services || !gaveUp(c.services) || c.services.some((s) => !s.gaveUp && (s.state === "ready" || s.state === "starting" || s.state === "degraded"));
   if (c.state === "stopped" || c.state === "absent" || c.state === "degraded") out.push("up");
-  if (c.state === "running" || c.state === "degraded") out.push("down");
+  if ((c.state === "running" || c.state === "degraded") && stillRuns) out.push("down");
   if (c.slot !== 0) out.push("teardown");
   return out;
 }
@@ -196,16 +226,21 @@ export const portLabel = (name: string, port: number): string => (name === "port
 export const shareOffered = (c: Pick<CopyView, "state" | "adopted">): boolean => c.state === "running" && !c.adopted;
 
 /**
- * The copy's chip: Failed while a service of it gave up restarting (it waits for Start), else Starting while it
- * is degraded only because a service is still starting.
+ * The copy's chip: Failed while a service of it gave up restarting (it waits for Start), else Restarting while a
+ * service failed and is retrying within its restart limit, else Starting while it is degraded only because a
+ * service is still starting.
  */
-export function copyChip(state: InstanceState, starting: boolean, gaveUp = false): { word: string; tone?: ChipTone } {
+export function copyChip(state: InstanceState, starting: boolean, gaveUp = false, restarting = false): { word: string; tone?: ChipTone } {
   if (gaveUp) return { word: "Failed", tone: "error" };
+  if (restarting) return { word: "Restarting", tone: "warn" };
   return starting ? { word: "Starting", tone: "info" } : COPY_CHIP[state];
 }
 
 /** A service of the copy gave up restarting after too many failed starts. */
 export const gaveUp = (services: readonly Pick<ServiceView, "gaveUp">[]): boolean => services.some((s) => s.gaveUp);
+
+/** A service of the copy failed and is retrying within its restart limit. */
+export const restarting = (services: readonly Pick<ServiceView, "restarting">[]): boolean => services.some((s) => !!s.restarting);
 
 /** The line under an adopted main's row. */
 export const adoptedLine = (unit: string): string => `Runs as ${unit}.`;
@@ -239,7 +274,7 @@ export function limitInputProblem(text: string): string | null {
 export function costLine(l: Pick<CopyLimitView, "value" | "estimate" | "host">): { text: string; warn: boolean } {
   const host = l.host ? ` This machine: ${gbWord(l.host.totalBytes)}, ${gbWord(l.host.availableBytes)} available now.` : "";
   const e = l.estimate;
-  if (!e) return { text: `Not measured yet: the services playbook measures it.${host}`, warn: false };
+  if (!e) return { text: `Not measured yet: the Project verbs chat on this tab's setup line measures it.${host}`, warn: false };
   const total = e.steadyBytes * l.value;
   const copies = l.value === 1 ? "1 copy needs" : `${l.value} copies need`;
   const head =

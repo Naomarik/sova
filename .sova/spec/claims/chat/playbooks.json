@@ -4,12 +4,13 @@
     "authority": "accepted",
     "evidence": "unreviewed",
     "requires": [
-      "§chat.playbooks/description-file"
+      "§chat.playbooks/description-file",
+      "§chat.playbooks/bundles"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-16T19:29Z",
-      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+      "by": "naomarik",
+      "at": "2026-11-22T08:39Z",
+      "source": "pi-session:01a1fa0a-5b4e-764e-a4dd-374f516e7837#903dfb29"
     },
     "code": [
       "playbooks/ab-cycle/PLAYBOOK.md",
@@ -29,6 +30,7 @@
       "playbooks/ab-cycle/references/cost.md",
       "playbooks/ab-cycle/references/ledger.md",
       "playbooks/ab-cycle/references/noise.md",
+      "playbooks/ab-cycle/references/record.md",
       "playbooks/ab-cycle/references/roles/bench.md",
       "playbooks/ab-cycle/references/roles/builder.md",
       "playbooks/ab-cycle/references/roles/consultant.md",
@@ -39,9 +41,14 @@
       "playbooks/ab-cycle/scripts/chart.mjs",
       "playbooks/ab-cycle/scripts/collage.mjs",
       "playbooks/ab-cycle/scripts/lib.mjs",
+      "playbooks/ab-cycle/scripts/record-lib.mjs",
+      "playbooks/ab-cycle/scripts/record.mjs",
       "playbooks/ab-cycle/scripts/runner.mjs",
       "playbooks/ab-cycle/scripts/score.mjs",
-      "playbooks/ab-cycle/scripts/shoot.mjs"
+      "playbooks/ab-cycle/scripts/shoot.mjs",
+      "playbooks/ab-cycle/tests/scratch.mjs",
+      "playbooks/ab-cycle/tests/scripts.test.mjs",
+      "playbooks/ab-cycle/tests/commands.test.mjs"
     ]
   },
   "§chat.playbooks/align-first": {
@@ -104,7 +111,12 @@
     "requires": [
       "§chat.playbooks/where-playbooks-come-from",
       "§chat.playbooks/what-gets-sent"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T20:21Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+    }
   },
   "§chat.playbooks/card-setters": {
     "kind": "behavior",
@@ -298,6 +310,41 @@
       ".sova/playbooks/pi-upgrade/references/worked-example-1.0.3-to-1.5.0.md"
     ]
   },
+  "§chat.playbooks/playbook-config": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/where-playbooks-come-from"
+    ],
+    "code": [
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/settings-edit.ts",
+      "src/components/settings/MergeQueueSettings.tsx",
+      "system-playbooks/release-maker/scripts/release-maker.mjs",
+      "system-playbooks/project-setup/PLAYBOOK.md",
+      ".sova/project.json",
+      "migrations/manifest.json",
+      "migrations/playbook-config-old-place/index.mjs",
+      "server/playbooks.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/settings.ts",
+      "server/project-settings.ts",
+      "pi-config/extensions/worktrees/setup-rule.ts",
+      "system-playbooks/project-setup/scripts/project-setup.mjs",
+      "migrations/playbook-config-old-place/index.d.mts",
+      "server/merge-queue/settings-edit.test.ts",
+      "server/merge-queue/thread.test.ts",
+      "server/playbooks.test.ts",
+      "server/migrations.test.ts",
+      ".sova/playbook-config/merge-queue/references/picks.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+    }
+  },
   "§chat.playbooks/rules": {
     "kind": "behavior",
     "authority": "accepted",
@@ -307,7 +354,12 @@
       "src/lib/playbooks.ts",
       "src/components/PlaybooksDialog.tsx",
       "src/components/ChatView.tsx"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+    }
   },
   "§chat.playbooks/run-card": {
     "kind": "behavior",
@@ -483,6 +535,38 @@
       "src/components/PlaybooksDialog.tsx"
     ]
   },
+  "§chat.playbooks/system-playbooks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/where-playbooks-come-from"
+    ],
+    "code": [
+      "server/playbooks.ts",
+      "server/playbooks.test.ts",
+      "server/projects/onboard.ts",
+      "server/project-services/tools.ts",
+      "server/project-services/tool-offered.test.ts",
+      "server/merge-queue/thread.ts",
+      "server/project-services/release.ts",
+      "migrations/manifest.json",
+      "migrations/system-playbooks-old-paths/index.mjs",
+      "src/lib/folder-viewer.ts",
+      "server/projects/setup-chat.ts",
+      "server/projects/setup-chat-open.test.ts",
+      "server/projects/setup-lifecycle.test.ts",
+      "server/projects/onboard.test.ts",
+      "server/merge-queue/thread.test.ts",
+      "migrations/system-playbooks-old-paths/index.d.mts",
+      "server/migrations.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T20:28Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+    }
+  },
   "§chat.playbooks/the-modal": {
     "kind": "behavior",
     "authority": "accepted",
@@ -525,25 +609,26 @@
       "§app/project-setup"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-16T19:29Z",
-      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+      "by": "naomarik",
+      "at": "2026-11-18T20:29Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     },
     "code": [
       "server/playbooks.ts",
       "server/playbooks.test.ts",
       "server/projects/onboard.ts",
       "server/release-playbooks.test.ts",
-      "playbooks/merge-queue/playbook.json",
-      "playbooks/release/playbook.json",
-      "playbooks/release-maker/playbook.json",
-      "playbooks/project-deploy/playbook.json",
-      "playbooks/project-setup/playbook.json",
-      ".sova/playbooks/merge-queue/playbook.json",
-      ".sova/playbooks/release/playbook.json",
-      ".sova/playbooks/review/playbook.json",
-      ".sova/playbooks/request/playbook.json",
-      "server/projects/setup-lifecycle.test.ts"
+      "system-playbooks/merge-queue/playbook.json",
+      "system-playbooks/release/playbook.json",
+      "system-playbooks/release-maker/playbook.json",
+      "system-playbooks/project-deploy/playbook.json",
+      "system-playbooks/project-setup/playbook.json",
+      ".sova/playbook-config/merge-queue/playbook.json",
+      ".sova/playbook-config/release/playbook.json",
+      ".sova/playbook-config/review/playbook.json",
+      ".sova/playbook-config/request/playbook.json",
+      "server/projects/setup-lifecycle.test.ts",
+      "server/projects/onboard.test.ts"
     ]
   },
   "§chat.playbooks/ways-in": {
@@ -610,9 +695,9 @@
       "§app/project-setup"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-16T19:29Z",
-      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+      "by": "naomarik",
+      "at": "2026-11-18T20:29Z",
+      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
     }
   },
   "§chat/playbooks": {

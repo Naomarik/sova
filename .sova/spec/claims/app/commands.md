@@ -81,7 +81,13 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.icon.upload`, `project.icon.letters`, `project.icon.remove`,
   `project.merge-queue.landing-summary`, `project.glance`, `session.job.list`,
   `session.job.stop`, `session.pairs.list`, `session.pairs.unpair`, `session.pairs.resume`,
-  `attention.dismiss`, `attention.undismiss`, `project.copies.running`.
+  `attention.dismiss`, `attention.undismiss`, `project.copies.running`, `usage.time`,
+  `project.merge-queue.dry-run.start`, `project.merge-queue.dry-run.stop`, `project.merge-queue.fix`,
+  `project.merge-queue.fix.new-chat`, `project.verb.merge.stop-try`.
+  `project.merge-queue.dry-run.start` is Run Dry Run and Run Dry Run Again, `project.merge-queue.dry-run.stop`
+  Stop Dry Run (§app.merge-queue/dry-runs), `project.merge-queue.fix` and `project.merge-queue.fix.new-chat`
+  Fix and Fix in New Chat (§app.merge-queue/fix), and `project.verb.merge.stop-try` the verb
+  `merge.stop-try`, the stop verb (§app.project-services/merge-verbs).
   `attention.dismiss` and `attention.undismiss` are Needs you's Dismiss and its Undo
   (§app.session-list/needs-you-dismiss), `meshNeed` `full`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new

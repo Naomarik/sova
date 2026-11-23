@@ -98,9 +98,8 @@ overseer's conversations already open under their own head (§app.project-overse
   Overseer was last told (the prompt's opening text, or the newest run note since the last compaction
   that gave it), the run note (§app.overseer/run-note) gives its whole current text, which replaces
   the prompt's, so a `sova_note`, a `sova_idea`, a `sova_todo`, a notes, idea or todo edit or a
-  Settings save or a memory switch reaches the Overseer from its next run (the next message, brief or wake-up), with no
-  `/clear`. A run an extension's message starts (an `/explain` result, a worker's report) has no run
-  note and gets them at the next run that has one. The prompt file and the tool list are read when
+  Settings save or a memory switch reaches the Overseer from its next run (the next message, brief or wake-up, or a
+  run an extension's message starts: an `/explain` result, a worker's report), with no `/clear`. The prompt file and the tool list are read when
   the runtime opens; a change to either (a Sova update) changes the prompt once.
 - **Tools.** The session runs with an allowlist: every `sova_*` tool, `read`, `grep`, `find`,
   `ls`, `write`, `edit` and `wake_nudge` (`write` and `edit` on the terms of
@@ -833,7 +832,8 @@ jumps to it (§app.overseer/links).
   carries a line "may be stale: <session id> active since <time>" for each such session, so the
   model checks it before acting and drops or replaces it; the server never changes the card itself.
   In the global Overseer the same hidden message also carries the run note (§app.overseer/run-note),
-  so it is there on every run a message starts, with open cards or none.
+  so it is there on every run a message starts, an extension's message included, with open cards or
+  none.
   After a compaction the same note is written once, after the summary. The note
   is persisted, so it survives restarts, folds and compaction, and it never changes who a run belongs
   to (§app.overseer/tools). Typed replies ("2", "archive a and c, keep b") are mapped by the model,
@@ -997,8 +997,9 @@ jumps to it (§app.overseer/links).
 
 ## §app.overseer/run-note — The run note: the time, and what cleared
 
-Every run of the global Overseer that a message starts (the user's, a brief, a fired wake-up)
-carries one hidden note, in the same hidden message as the open cards (§app.overseer/confirm):
+Every run of the global Overseer that a message starts (the user's, a brief, a fired wake-up, or
+an extension's message: a worker's report, the `/team` plan, an `/explain` result) carries one
+hidden note, in the same hidden message as the open cards (§app.overseer/confirm):
 never in the thread, never the system prompt, persisted with the conversation, and never changing
 who the run belongs to (§app.overseer/tools).
 
@@ -1012,7 +1013,8 @@ who the run belongs to (§app.overseer/tools).
   as in the prompt) and a line saying it replaces that part of the system prompt; one that became
   empty says so. A part is told once per change: the note's details record a fingerprint of each
   part as told, and a later note repeats a part only when it changed again, or when a compaction
-  came after the note that told it. The first run note of a conversation records the opening values
+  came after the note that told it. A change is told on whichever run comes first, an
+  extension-started one included, and is then not told again on the user's next message. The first run note of a conversation records the opening values
   the prompt is rendered from.
 - **Cleared since briefed.** Each blocker a brief (§app.overseer/proactivity) on the branch named in
   the last 24 hours that is not a Needs-you item now, and not one you dismissed
@@ -1420,6 +1422,11 @@ other short notes, which arrive between turns. Nothing else about either chat ch
 gains or loses a tool, and its system prompt stays as it was, so a pairing costs neither chat its
 prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes (§chat/topics).
 
+- §app.overseer/pairs-rules — How a pairing works
+- §app.overseer/pairs-lines — What a paired chat shows
+
+## §app.overseer/pairs-rules — How a pairing works
+
 - **The tool.** `sova_pair {op: "pair" | "unpair" | "resume" | "list", …}`. `pair {a, b, job_a,
   job_b}` pairs sessions `a` and `b`, `job_a` saying in the Overseer's words what `a` does (it is
   told to `b`), `job_b` what `b` does. `unpair {pairing}` ends one. `resume {pairing, direction?}`
@@ -1472,15 +1479,29 @@ prompt cache, in pi and Claude Code chats alike. The notes travel as queue notes
   `unpair`, or when either chat is archived. Both topics close and the notes still waiting on them
   are dropped. Neither chat is told: a later push to the closed topic is refused,
   `This pairing has ended.` (§chat.topics/push). Unarchiving a chat doesn't bring a pairing back.
-- **What the user sees.** Each paired chat shows a line **Paired with <partner's title>** (the
-  title a link to the partner) with an **Unpair** button, and **Paused: note limit reached** with
-  **Resume** while a direction toward or from it is paused; one line per pairing. The lines sit
-  above the transcript in their own space, never covering it, and each stays one row: a long title
-  is cut with an ellipsis so the buttons keep their place. A chat with no pairing shows nothing
-  there, not even an empty strip, and a chat never shows another chat's lines, even when reading its
-  own pairings fails. In the Overseer's
-  transcript the `pair` and `unpair` calls show as action cards naming both chats, and "Hide tool
-  calls" never folds them.
+
+## §app.overseer/pairs-lines — What a paired chat shows
+
+A paired chat shows its pairings above its transcript, and the Overseer's pairing calls show in its
+own transcript.
+
+- **The lines.** Each paired chat shows a line **Paired with <partner's title>** (the title a link
+  to the partner) with an **Unpair** button, and **Paused: note limit reached** with **Resume**
+  while a direction toward or from it is paused; one line per pairing.
+- **Three or more fold.** With 1 or 2 pairings those lines show as they are. With 3 or more they
+  fold into one line, **Paired with N chats** with a **Show All** button, in the info tone; while
+  any of them is paused that line takes the warning tone and says **N paused** under it, so a pause
+  never hides in the fold. Show All opens the lines, unchanged, in a list under it and becomes
+  **Hide**; past about 40% of the pane the list scrolls. Unpair and Resume are only on each
+  pairing's own line: there is no Unpair All. A chat always opens folded: Show All lasts while you
+  stay on that chat, moving to another chat folds it again, and nothing is stored. When the count
+  falls to 2 the lines show as they are again, and rising to 3 folds them.
+- **Where they sit.** The lines sit above the transcript in their own space, never covering it,
+  and each stays one row: a long title is cut with an ellipsis so the buttons keep their place. A
+  chat with no pairing shows nothing there, not even an empty strip, and a chat never shows another
+  chat's lines, even when reading its own pairings fails.
+- **In the Overseer's transcript.** The `pair` and `unpair` calls show as action cards naming both
+  chats, and "Hide tool calls" never folds them.
 
 ## §app.overseer/sent-marker — Prompts the Overseer sent
 

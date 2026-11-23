@@ -713,8 +713,8 @@ and neither does one whose launches were never recorded.
 
 ## §app.insights/cost-history — The Costs tab (`#/agents/costs`)
 
-**The Agents page's Costs tab (beside Board, §app.insights/team-cards, and Performance,
-§app.insights/performance-tab) shows this device's spend at API prices from the usage ledger
+**The Agents page's Costs tab (beside Board, §app.insights/team-cards, Performance,
+§app.insights/performance-tab, and Time Spent, §app.insights/time-tab) shows this device's spend at API prices from the usage ledger
 (§app.insights/usage-ledger).**
 
 - **Route.** `#/agents/costs` opens the Costs tab; it is never read as a team key. The filters live
@@ -821,6 +821,173 @@ decided from the folder it ran in (its working directory), once per distinct fol
   (a checkout's folder, a project's root), `folders` (how many distinct folders it holds) and
   `archived` when it applies, beside `project` (the project id) and `cwd` (a checkout's folder) for
   an older browser. A browser shows `name` when it is there, else as before.
+
+## §app.insights/time-tab — The Time Spent tab (`#/agents/time`)
+
+**The Agents page's fourth tab, Time Spent, after Performance, shows how long you were at this
+computer's sessions and how long its agents worked, summed across every session, by day and by
+project.** A session's own figures stay on its own Time Spent tab (§app.subagents-pane/time-spent),
+which is unchanged.
+
+- **Route and controls.** `#/agents/time` opens it; it is never read as a team key. Range chips `7d`
+  · `30d` · `All` (30d by default) and a **Project** menu: All projects (the default) or one By
+  Project row, by name, Other folders last. Both live in the address, so a reload or a shared link
+  keeps them, and they apply to everything on the tab; coming back from Board restores the tab's last
+  range and project. While it shows, the board's polls rest.
+- **The tab strip on a narrow screen** scrolls sideways, and the selected tab is brought fully into
+  it, moving the strip only, never the page, so Time Spent, the last, is never cut off on a phone.
+- **Headline.** Four figures, each with one short muted line under it:
+  - **You**: your time at any session (§app.insights/time-tab-your-time), and under it your average
+    per day that holds any of it ("No day of yours recorded" with none).
+  - **Agents**: the agents' working hours (§app.insights/time-tab-agent-time), and under it the
+    share the workers did ("No agent time" with none). Waiting On Workers is never in it.
+  - **Agent Hours Per Your Hour**: Agents ÷ You over only the days that hold any of your time, so
+    days from before your time was recorded, and days you weren't here, don't swell it; `—` with
+    none of your time. Its `title` gives both sums and the day count.
+  - **While You Were Away**: the agent hours that fell in moments you were at no session, and under
+    it their share of Agents.
+- **Daily chart.** "Hours per day": one bar per local day of the range (All starts at the first day
+  with any time), its height the day's agent hours, with your hours drawn inside it as a darker bar
+  on the same scale. Over 62 days the bars are weeks starting Monday ("Hours per week"), as on the
+  Costs tab. A bar's days, You and Agents are its accessible name, shown in the chart's head when it
+  is hovered or focused; otherwise the head gives the highest figure. Bars are ink shades, never colour alone;
+  the accent marks only the selected tab and pressed chips.
+- **Sections.** Under the chart, a switch picks one section at a time: **Your Time** (the default),
+  **Your Messages** (§app.insights/time-tab-messages), **Agent Time**, **By Project** and **Top
+  Sessions** (§app.insights/time-tab-tables).
+- **Durations.** Hours and whole minutes (`3h 05m`, `45m`, `0m`); a ratio with one decimal and `×`
+  (`5.6×`; from 100, whole).
+- **Plain numbers.** Nothing is flagged, ranked against a target, warned about or commented on.
+  Sorting a table is the only ordering.
+- **Says what it counts.** A foot line says the tab counts this computer only, and since which day
+  your time, agent time and tool time are each recorded. Another computer's sessions are counted on
+  that computer; no total across computers exists.
+- **Empty.** Before anything is recorded in the range: "No time recorded {in the last 7 days | in
+  the last 30 days | yet}." then "Figures appear here as you work."
+- **When the usage helper is down** the tab says the counter isn't running yet and that nothing was
+  lost, as the Costs tab does, and shows no other figure. Another failure reads "Couldn't load time
+  spent." with Retry.
+- **Polling.** It reads again every 60 seconds and on the page's Refresh, in place, keeping scroll,
+  focus and an opened row.
+- **Phone.** Under 560px of page width every table stacks, one block per row, with no sideways
+  scrolling.
+- **Where it comes from.** `GET /api/usage/time` (range, project, time zone; main listener only),
+  answered by the usage helper from this computer's Time Spent records, its reply timing
+  (§app.insights/reply-timing) and tool-run records (§app.insights/tool-run-timing), its usage
+  ledger (§app.insights/usage-ledger) and its message labels, relayed unparsed. The server adds
+  whether message labels are on. Scripts read it as `usage.time`, a look in the catalogue
+  (§app/settings-commands); being listed doesn't open it to agents.
+
+## §app.insights/time-tab-your-time — Your time across sessions
+
+**You on the Time Spent tab is the sum of this computer's Time Spent records
+(§app.subagents-pane/time-spent-record) over the range, every second counted once.**
+
+- **Same seconds as a session's tab.** A second counts toward You exactly as it counts toward a
+  session's You (§app.subagents-pane/time-spent-counting): one clock per computer, so two devices at
+  one moment add one second. A day is a local day in the browser's time zone.
+- **Your Time.** The same activity rows as a session's breakdown, summed across sessions: Reading,
+  Typing, Dictating, Scrolling, Reviewing Changes, Reviewing Screenshots, Viewing Tours, Other, each
+  with a bar and its time: Reading first, then the rest largest first. A row with no time doesn't
+  show. Reading opens on click
+  to Main Thread, Alignments and Workers, which add up to Reading. The rows add up to You.
+- **While You Were Away.** Agent hours (§app.insights/time-tab-agent-time) are cut against the
+  moments any of your time was counted, at any session: what falls outside them is While You Were
+  Away, whichever session the agent worked for.
+- **Deleted sessions keep their hours.** Deleting a session, Clean Up included, keeps its hours in
+  every total here: the day's You, its project's row in By Project and each activity row. Only those
+  hours are kept, in 15-minute buckets by folder and activity, in the usage helper's own file
+  (`<state root>/usage-time/you-v1.jsonl`, outside its snapshots); never the session's name, title
+  or any text. Its own Time Spent tab and its Top Sessions row go with it. Removing the helper's
+  snapshots and restarting it changes no day's You.
+- **How they are kept.** A bucket is kept once it can no longer change (about 6 hours on), and a
+  deleted session's remaining buckets the moment its record goes: a delete first asks the helper to
+  keep them, waiting at most 1.5 seconds (a Clean Up's deletes share one 1.5-second wait), and the
+  helper also keeps them when it sees the record gone. **Stated limit:** if the helper is down
+  through the delete, up to about the last 6 hours of that session's You are lost.
+- **Since when.** Your time exists only from the day Time Spent reached this computer; the foot line
+  says that day. Earlier days have no You and are left out of Agent Hours Per Your Hour.
+
+## §app.insights/time-tab-agent-time — Agent time: who, on what, which model
+
+**Agents on the Time Spent tab is the time this computer's hosted chats spent on their replies and,
+from the day tool runs were first recorded, running their tools; a chat waiting on its own workers is
+shown apart and never added.**
+
+- **What counts.** Each measured reply's whole window, from its request going out to its end
+  (§app.insights/reply-timing), and each recorded tool run (§app.insights/tool-run-timing). A
+  session's tool calls that overlap count once (three 1-minute calls at once are 1 minute), its
+  waits on workers merged apart. Chats working at once each add their own hours, so Agents can pass
+  the hours in a day; a window crossing midnight is split between its days. A deleted or
+  archived session's agent hours stay, as its records do. A session open in a terminal and a
+  one-shot side call are never timed, so never counted.
+- **Tools from their first day.** Days before tool runs were first recorded on this computer count
+  reply time only; the foot line says from which day tools are counted, and while the range starts
+  before it, so does Agent Time: "Running Tools is counted from {date}; earlier days count reply
+  time only." (none yet: "Running Tools isn't recorded yet: agent time is reply time only.").
+- **Waiting On Workers.** Time a chat spent in a tool waiting on its own workers or team (a wait on
+  a worker it started) is shown on its own line, **Waiting On Workers**, under Agent Time, and is
+  never added to Agents, Running Tools, While You Were Away, Agent Hours Per Your Hour, By Project or
+  Top Sessions. So a main thread waiting 2 hours on a worker that works those 2 hours adds 2 hours to
+  Agents, not 4.
+- **Agent Time** shows three groups, each row a bar and its hours, largest first:
+  - **Who Worked**: Workers (workers and team members at any depth), Main Threads (every other
+    session's own chat) and Overseer (chats the timing records mark as an overseer's). They add up
+    to Agents.
+  - **On What**: Thinking and Writing (the reply's thinking and reply time), Waiting For The Model
+    (the rest of the reply's window, its wait for the first token included) and Running Tools. They
+    add up to Agents.
+  - **By Model**: each model's reply time (waiting, thinking and writing), named as the Costs tab
+    names it; tool time belongs to no model, so these add up to Agents less Running Tools.
+  Then Waiting On Workers, set apart, with "Not in Agents." under it.
+
+## §app.insights/tool-run-timing — Tool runs, timed from now on
+
+**From the day this ships, every tool call a hosted chat runs (the chats §app.insights/reply-timing
+times) writes one timing record when it ends: its session, the tool's name, when it started, when it
+ended, and whether it was a wait on the chat's own workers (`agent_wait`).**
+
+- **Its own record.** It is written when the tool ends, never folded into the reply's record, which
+  is written before the reply's tools run. A tool that ends after the chat stops still writes its
+  record, so a 30-second tool run with no reply after it counts 30 seconds.
+- **Under the timing store's rules.** Beside the reply timing records
+  (`<agent dir>/usage/tools/v1/<UTC day>/<producer>.jsonl`), one writer per file, append only; writing never throws, and never fails or holds up a tool or a reply. Of the tool it keeps
+  its name only, never its input or output. Records are never pruned and outlive their session.
+- **Older chats.** A chat on code from before this writes none; readers treat that as no tool time,
+  never as an error.
+- **Any harness.** It is recorded the same way whichever agent harness runs the chat.
+
+## §app.insights/time-tab-tables — By Project and Top Sessions
+
+- **By Project.** Columns Project · You · Agents · Agent Hours Per Your Hour · Cost. Its rows are
+  exactly the Costs tab's By project rows (§app.insights/cost-by-project): the same grouping by the
+  folder each session ran in, the same names, archived marks and `title`s, so a project reads the
+  same on both tabs. Cost is that row's spend at API prices over the range, every kind of call, as
+  the Costs tab gives it with no filter. The ratio shows `—` for a row with none of your time. Most
+  of your time first, Other folders last.
+- **Top Sessions.** Up to 20 top-level sessions with the most of your time in the range, most first:
+  Session (its title, its project under it) · You · Agents · Cost, where You, Agents and Cost
+  include its workers' at any depth, so a worker has no row of its own. A click opens the session. A deleted
+  session has no row; its hours stay in the totals (§app.insights/time-tab-your-time).
+
+## §app.insights/time-tab-messages — Your Messages across sessions
+
+**The Time Spent tab's Your Messages section totals, across this computer's sessions, the
+labelled rows a session's Your Messages gives (§app.message-labels/time-spent-tab).**
+
+- **Rows.** Specifying, Directing, Reworking, Asking and Unsorted, each with how many messages and
+  the time credited to them (§app.message-labels/crediting: your seconds in its session since the
+  message or action before it), in that order. A row with no message doesn't show. They don't add up
+  to You: unlabelled messages and time after your last message are left out.
+- **Which day.** A message counts on the local day it was sent. Sova keeps each message's send time
+  with its label from the day this ships (§app.message-labels/labelling); a label stored before
+  then counts on the day it was labelled, and while any in the range does, the section says so in
+  one muted line: "Messages labelled before {date} count on the day they were labelled."
+- **The switch off, or no label.** With message labels off the section isn't offered, as on a
+  session's tab; labels stored before show again once it is back on. A range with no labelled
+  message says "No labelled messages in this range."
+- **Deleted sessions.** A deleted session's labels go with it (§app.message-labels/labelling), so its
+  messages leave this section; its hours stay in You.
 
 ## §app.insights/usage-model-rows — One row per real model
 
@@ -965,9 +1132,10 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   minute in another, and what it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
   (§design/copy-deck): the live fact first ("{n} sessions live." or "No session is live right
   now."), then the absence for the chip or search in force.
-- **Tabs (Agents).** Under the head the Agents page has three tabs, Board (everything this section
-  and §app.insights/team-cards describe), Costs (§app.insights/cost-history) and Performance
-  (§app.insights/performance-tab), at `#/agents`, `#/agents/costs` and `#/agents/performance`.
+- **Tabs (Agents).** Under the head the Agents page has four tabs, Board (everything this section
+  and §app.insights/team-cards describe), Costs (§app.insights/cost-history), Performance
+  (§app.insights/performance-tab) and Time Spent (§app.insights/time-tab), at `#/agents`,
+  `#/agents/costs`, `#/agents/performance` and `#/agents/time`.
 - **Head meta (Agents).** `{w} working · {l} live · {$} today · {u} unmerged`: sessions in the
   Working state, live sessions, this device's spend since local midnight at API prices, every
   call of every kind (§app.insights/usage-ledger, `GET /api/usage/today`; left out before its
@@ -975,7 +1143,7 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   unmerged branches among the worktrees read so far (left out before the first reading). The
   line's `title` says what each figure counts. It shows once at every width: on the Board tab
   only on the count line directly above the board (§app.insights/team-cards), never in the head;
-  on the Costs and Performance tabs, which have no count line, in the head.
+  on the Costs, Performance and Time Spent tabs, which have no count line, in the head.
 - **Rows (Usage).** The Usage page lists provider types as separate `.card.usage-rows` surfaces in
   `.usage-groups`, with visible page-background spacing between types (§app.insights/usage-cards).
   Each row spans its provider surface, so a short row is never stretched to a taller neighbour's height. Its layout steps at 640px and 960px of the `insights` container
@@ -1756,8 +1924,9 @@ Sova that aren't archived. An archived session is in it only while it is open in
   insight, the Timeline can't rewind ("Only a chat open in Sova can rewind."), and a row's jump
   says the message isn't in the transcript on screen.
 - **⋯ menu.** Session Details (Close Session Details while that row's pane is open), Open
-  Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
-  cut to the title limit; off, with the reason, when there's none or it already is the title),
+  Subagents (opens the session with its pane on the Agents tab), Rename…, Regenerate Title ("A short name from what
+  the session became.": the title call, as an open session's head does it, with its toasts and
+  Undo, §app.session-list/auto-titles; off, reading "Regenerating title…", while one runs),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
   "No group"), Archive or Unarchive, Copy Path. After them, for a session on this host, comes
   what extensions add to the menu (§app.extensions/session-menu).

@@ -28,6 +28,11 @@ const ENTRY_ID = /^mq_[0-9a-z]+$/;
 
 /** The scratch copy's folder for an entry of the project whose main checkout is `root`. */
 export const scratchCopyPath = (root: string, entry: string): string => join(dirname(root), ".worktrees", `${basename(root)}-conflict-${entry}`);
+/** A review's own folder for an entry (a reviewer with a shell, or one that may fix: review-kit.ts), marked the same way,
+ *  so the start's sweep tidies one Sova was stopped before removing. */
+export const reviewCopyPath = (root: string, entry: string): string => join(dirname(root), ".worktrees", `${basename(root)}-review-${entry}`);
+/** Where a reviewer's fix waits until it is on the branch: one ref per entry. */
+export const REVIEW_FIX_REFS = "refs/sova-mq/review-fix/";
 /** The hidden ref that keeps an entry's resolution reachable. */
 export const resolveRef = (entry: string): string => `${RESOLVE_REFS}${entry}`;
 
@@ -111,9 +116,9 @@ async function commonDirOf(git: Git, root: string): Promise<string | null> {
  * queue made before for the same entry. A folder there that the queue didn't make is never touched: refused. Throws
  * with a plain reason when the copy can't be made.
  */
-export async function makeScratchCopy(git: Git, o: { root: string; entry: string; base: string; state?: string; home?: string }): Promise<string> {
+export async function makeScratchCopy(git: Git, o: { root: string; entry: string; base: string; state?: string; home?: string; kind?: "conflict" | "review" }): Promise<string> {
   if (!ENTRY_ID.test(o.entry)) throw new Error(`not an entry id: ${o.entry}`);
-  const path = scratchCopyPath(o.root, o.entry);
+  const path = o.kind === "review" ? reviewCopyPath(o.root, o.entry) : scratchCopyPath(o.root, o.entry);
   assertCopyOutsideState(path, { root: o.root, ...(o.state ? { state: o.state } : {}), ...(o.home ? { home: o.home } : {}) });
   if (existsSync(path)) {
     const mark = scratchMarkOf(path);
@@ -140,6 +145,13 @@ export async function makeScratchCopy(git: Git, o: { root: string; entry: string
 
 /** Git's command for one worktree: it also drops the record of one whose folder is gone, and is a no-op with no record. */
 const forgetRecord = (git: Git, root: string, path: string) => git(["worktree", "remove", "--force", "--force", "--", path], root);
+
+/** Remove the entry's review folder, when it is one the queue marked for this entry; never throws. */
+export async function dropReviewCopy(git: Git, root: string, entry: string): Promise<void> {
+  const path = reviewCopyPath(root, entry);
+  if (!ENTRY_ID.test(entry) || scratchMarkOf(path)?.entry !== entry) return;
+  await removeWorktree(git, root, path).catch(() => undefined);
+}
 
 async function removeWorktree(git: Git, root: string, path: string): Promise<void> {
   await forgetRecord(git, root, path);

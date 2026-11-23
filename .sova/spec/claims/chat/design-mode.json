@@ -726,7 +726,9 @@
       "server/design/asset-routes.ts",
       "server/design/capture.ts",
       "server/design/browse.ts",
-      "server/design/coordinator.ts"
+      "server/design/coordinator.ts",
+      "server/session-share-designs.ts",
+      "src/components/ShareDesigns.tsx"
     ],
     "requires": [
       "§chat.design-mode/link-reach",
@@ -734,8 +736,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:39Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
     }
   },
   "§chat.design-mode/main-chat": {
@@ -985,11 +987,21 @@
       "src/lib/design-frame.ts",
       "src/lib/design-frame.test.ts",
       "server/design/look.ts",
-      "server/restart-paths.ts"
+      "server/restart-paths.ts",
+      "src/share/SessionShareApp.tsx",
+      "server/share/session-routes.ts",
+      "server/session-share-designs.ts",
+      "src/share/Lookbook.tsx",
+      "src/components/ShareDesigns.tsx"
     ],
     "requires": [
       "§chat.transcript-cards/sealed-box"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
+    }
   },
   "§chat.design-mode/rebuilds": {
     "kind": "behavior",
@@ -1268,11 +1280,17 @@
       "server/mesh/access.ts",
       "server/design/history.ts",
       "server/design/views.ts",
-      "server/design/batch.ts"
+      "server/design/batch.ts",
+      "server/session-share-designs.ts"
     ],
     "requires": [
       "§app.tours/storage"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-19T21:27Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#e711c517"
+    }
   },
   "§chat.design-mode/streaming": {
     "kind": "behavior",
@@ -1427,8 +1445,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:40Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-19T22:31Z",
+      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#77b106c1"
     }
   }
 }

@@ -1,0 +1,511 @@
+{
+  "version": 1,
+  "listed": true,
+  "run": {
+    "where": "new-chat",
+    "worktree": "new",
+    "mode": "delegate",
+    "needs": [
+      "project"
+    ]
+  },
+  "inputs": [
+    {
+      "id": "subject",
+      "label": "What you're testing",
+      "type": "choice",
+      "ask": "always",
+      "required": true,
+      "options": [
+        {
+          "id": "tool-description",
+          "label": "A tool's description",
+          "help": "The words the model reads about a tool"
+        },
+        {
+          "id": "tool-code",
+          "label": "A tool's code",
+          "help": "What the tool does or returns"
+        },
+        {
+          "id": "mode-text",
+          "label": "A mode's text",
+          "help": "The block a mode adds to every turn"
+        },
+        {
+          "id": "instructions",
+          "label": "Agent instructions",
+          "help": "A project's or a folder's standing rules"
+        },
+        {
+          "id": "other",
+          "label": "Something else",
+          "help": "Describe it in The failure to fix"
+        }
+      ],
+      "help": "What the change is made to"
+    },
+    {
+      "id": "knobs",
+      "label": "What a fix may change",
+      "help": "The parts a consultant may edit. Asked again before each cycle.",
+      "type": "multi",
+      "ask": "always",
+      "required": true,
+      "each": "cycle",
+      "options": [
+        {
+          "id": "wording",
+          "label": "Wording only",
+          "help": "The cheapest change, and the one to prefer"
+        },
+        {
+          "id": "tool-description",
+          "label": "Tool descriptions"
+        },
+        {
+          "id": "tool-code",
+          "label": "Tool code"
+        },
+        {
+          "id": "mode-text",
+          "label": "Mode text"
+        },
+        {
+          "id": "instructions",
+          "label": "Agent instructions"
+        }
+      ],
+      "default": [
+        "wording"
+      ]
+    },
+    {
+      "id": "source",
+      "label": "The failure to fix",
+      "help": "Worked out with the main chat before Start: what goes wrong, and a chat that shows it.",
+      "type": "text",
+      "ask": "chat",
+      "required": true
+    },
+    {
+      "id": "record",
+      "label": "The record",
+      "help": "Worked out with the main chat before Start: the name of this subject's record, such as vis. Every attempt is kept there, so the next campaign on the same subject starts from it.",
+      "type": "text",
+      "ask": "chat",
+      "required": true
+    },
+    {
+      "id": "testModels",
+      "label": "Test models",
+      "help": "Every case runs on each of these. Pick cheap ones: if they pass, costlier models will. The provider counts: ZAI's GLM isn't Ollama's.",
+      "type": "models",
+      "ask": "always",
+      "required": true,
+      "default": [
+        {
+          "model": "zai/glm-5.3",
+          "effort": "low"
+        },
+        {
+          "model": "ollama-cloud/deepseek-v4.1-flash",
+          "effort": "low"
+        },
+        {
+          "model": "claude-code/claude-haiku-5-5",
+          "effort": "low"
+        }
+      ]
+    },
+    {
+      "id": "fails",
+      "label": "Failing cases per round",
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 100,
+      "default": 10,
+      "ask": "always",
+      "required": true,
+      "help": "Cases that fail today; a fix should turn them."
+    },
+    {
+      "id": "passes",
+      "label": "Passing cases per round",
+      "help": "Cases that pass today, run too, so a fix that breaks one shows.",
+      "type": "number",
+      "integer": true,
+      "min": 0,
+      "max": 100,
+      "default": 10,
+      "ask": "always",
+      "required": true
+    },
+    {
+      "id": "sealed",
+      "label": "Sealed cases for the confirm run",
+      "help": "Held back until the end: no consultant sees them, so the final check is honest.",
+      "type": "number",
+      "integer": true,
+      "min": 0,
+      "max": 100,
+      "default": 10,
+      "ask": "optional",
+      "required": false
+    },
+    {
+      "id": "bars",
+      "label": "Counts as fixed when",
+      "help": "Worked out with the main chat before Start, from this starting point. The first stop shows it on a sample chart.",
+      "type": "text",
+      "default": "Every test model passes 90%, none worse than master",
+      "ask": "chat",
+      "required": true
+    },
+    {
+      "id": "measure",
+      "label": "How it's measured",
+      "help": "Worked out with the main chat before Start: a script check per case, a blind grader, or both.",
+      "type": "text",
+      "ask": "chat",
+      "required": true
+    },
+    {
+      "id": "rivals",
+      "label": "Rival consultants",
+      "help": "How many propose a fix each cycle, each in its own arm.",
+      "type": "number",
+      "integer": true,
+      "min": 1,
+      "max": 3,
+      "default": 1,
+      "ask": "optional",
+      "required": true
+    },
+    {
+      "id": "arms",
+      "label": "How an arm is made",
+      "type": "choice",
+      "ask": "optional",
+      "required": true,
+      "default": "copy",
+      "options": [
+        {
+          "id": "copy",
+          "label": "Its own worktree and test copy of Sova",
+          "help": "Real chats on the test models; the most faithful, the slowest"
+        },
+        {
+          "id": "variant",
+          "label": "A prompt variant file",
+          "help": "Model calls with each variant; fast, for text alone"
+        },
+        {
+          "id": "rescore",
+          "label": "Re-score saved replies",
+          "help": "Free; only when the change is to how replies are read"
+        }
+      ],
+      "help": "An arm is one version under test: master, or master with one fix."
+    },
+    {
+      "id": "warnAt",
+      "label": "Warn me when usage reaches (%)",
+      "type": "number",
+      "integer": true,
+      "min": 50,
+      "max": 100,
+      "default": 98,
+      "ask": "once",
+      "required": true,
+      "help": "Stops to ask when a provider's usage gets there."
+    }
+  ],
+  "teams": {
+    "cases": {
+      "label": "Case finding",
+      "goal": "Find what fails in real chats, by kind, and freeze the cases each round runs",
+      "members": {
+        "questions": {
+          "label": "Case finder",
+          "brief": "Mines real chats for failing and passing cases and writes a script check for each",
+          "kind": "investigation",
+          "models": [
+            {
+              "model": "claude-code/claude-opus-5-5",
+              "effort": "medium"
+            },
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "medium"
+            }
+          ],
+          "notes": "references/roles/questions.md"
+        }
+      }
+    },
+    "arms": {
+      "label": "Bench",
+      "goal": "Make the arms so every round runs the same way, each proven on one case",
+      "members": {
+        "bench": {
+          "label": "Bench keeper",
+          "brief": "Builds each arm (worktree, test copy or variant) and proves it runs one case",
+          "kind": "routine",
+          "notes": "references/roles/bench.md"
+        }
+      }
+    },
+    "fix": {
+      "label": "Fix",
+      "goal": "After each round, say whether it can still improve and what next; on your go-ahead, one change per arm, the fewest words, committed as an experiment",
+      "members": {
+        "consultant": {
+          "label": "Consultant",
+          "brief": "A strong model that reads each round's failing replies, sends a short outlook, then on your go-ahead proposes exactly one change",
+          "kind": "planning",
+          "models": [
+            {
+              "model": "claude-code/claude-opus-5-5",
+              "effort": "high"
+            },
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "high"
+            }
+          ],
+          "count": {
+            "input": "rivals"
+          },
+          "fresh": "cycle",
+          "notes": "references/roles/consultant.md"
+        },
+        "builder": {
+          "label": "Builder",
+          "brief": "Applies the proposal exactly as written and commits it as an experiment",
+          "kind": "routine",
+          "notes": "references/roles/builder.md"
+        }
+      }
+    },
+    "run": {
+      "label": "Run",
+      "goal": "Run every case on every test model in every arm, never swapping a test model",
+      "members": {
+        "runner": {
+          "label": "Runner",
+          "brief": "Runs the round's cases on one test model with the runner script, then takes the screenshots",
+          "kind": "routine",
+          "models": [
+            {
+              "model": "zai/glm-5.3",
+              "effort": "low"
+            },
+            {
+              "model": "claude-code/claude-haiku-5-5",
+              "effort": "low"
+            }
+          ],
+          "per": {
+            "input": "testModels"
+          },
+          "notes": "references/roles/runner.md"
+        }
+      }
+    },
+    "grade": {
+      "label": "Grading",
+      "goal": "Judge the replies no script can check, without knowing which arm made them",
+      "members": {
+        "grader": {
+          "label": "Grader",
+          "brief": "Grades blind, against each case's expectation alone",
+          "kind": "investigation",
+          "models": [
+            {
+              "model": "claude-code/claude-haiku-5-5",
+              "effort": "high"
+            },
+            {
+              "model": "ollama-cloud/deepseek-v4.1-flash",
+              "effort": "high"
+            }
+          ],
+          "only": true,
+          "sees": "blind",
+          "optional": true,
+          "notes": "references/roles/grader.md"
+        }
+      }
+    },
+    "review": {
+      "label": "Landing review",
+      "goal": "Decide, independently of the campaign, whether the winner is good enough to land",
+      "members": {
+        "reviewer": {
+          "label": "Landing reviewer",
+          "brief": "Has no part in the campaign, reads the last outlook, and gives Land, Another cycle, Park or Baseline kept with evidence",
+          "kind": "planning",
+          "models": [
+            {
+              "model": "claude-code/claude-fable-5-2",
+              "effort": "high"
+            },
+            {
+              "model": "claude-code/claude-haiku-5-5",
+              "effort": "high"
+            },
+            {
+              "model": "ollama-cloud/deepseek-v4.1-flash",
+              "effort": "high"
+            }
+          ],
+          "notes": "references/roles/reviewer.md"
+        }
+      }
+    }
+  },
+  "steps": [
+    {
+      "id": "diagnose",
+      "label": "Find what fails, in real chats",
+      "phase": "phases/diagnose.md",
+      "teams": [
+        "cases"
+      ]
+    },
+    {
+      "id": "measure",
+      "label": "Agree what is measured",
+      "stop": "always",
+      "report": "chart",
+      "phase": "phases/measure.md"
+    },
+    {
+      "id": "bench",
+      "label": "Build the bench and freeze the cases",
+      "phase": "phases/bench.md",
+      "teams": [
+        "cases",
+        "arms"
+      ]
+    },
+    {
+      "id": "baseline",
+      "label": "Baseline on master, once; its outlook follows",
+      "stop": "always",
+      "asks": [
+        "every consultant's outlook says further changes are futile"
+      ],
+      "report": "chart",
+      "phase": "phases/baseline.md",
+      "teams": [
+        "run",
+        "grade",
+        "fix"
+      ]
+    },
+    {
+      "id": "cycle",
+      "label": "Improve and re-test",
+      "repeat": {
+        "max": 5,
+        "askEvery": 1,
+        "until": "rule",
+        "rule": "phases/stop-rule.md",
+        "carry": "The winner becomes the next cycle's base and the losing change is reverted; master stays Round 0 in every chart."
+      },
+      "steps": [
+        {
+          "id": "fix",
+          "label": "Consultant picks one change, builder commits it",
+          "phase": "phases/fix.md",
+          "teams": [
+            "fix"
+          ]
+        },
+        {
+          "id": "run",
+          "label": "Run every test model on every arm",
+          "phase": "phases/run.md",
+          "teams": [
+            "run"
+          ]
+        },
+        {
+          "id": "score",
+          "label": "Score and chart the round; its outlook follows",
+          "asks": [
+            "every consultant's outlook says further changes are futile"
+          ],
+          "report": "chart",
+          "phase": "phases/score.md",
+          "teams": [
+            "grade",
+            "fix"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "confirm",
+      "label": "Confirm on the sealed cases",
+      "stop": "optional",
+      "startsOff": true,
+      "report": "chart",
+      "phase": "phases/confirm.md",
+      "teams": [
+        "run",
+        "grade"
+      ]
+    },
+    {
+      "id": "review",
+      "label": "Is it good enough to land?",
+      "report": "verdict",
+      "phase": "phases/review.md",
+      "teams": [
+        "review"
+      ]
+    },
+    {
+      "id": "decide",
+      "label": "Land, cycle again, park or keep the baseline",
+      "stop": "always",
+      "report": "table",
+      "phase": "phases/decide.md"
+    }
+  ],
+  "commands": [
+    "session.create",
+    "session.configure",
+    "session.send",
+    "project.verb.up",
+    "project.verb.apply"
+  ],
+  "align": {
+    "questions": [
+      {
+        "id": "failure",
+        "ask": "What fails today, and in which chats?",
+        "fills": "source"
+      },
+      {
+        "id": "fixed",
+        "ask": "What counts as fixed?",
+        "fills": "bars"
+      },
+      {
+        "id": "measure",
+        "ask": "What is measured, and how: a script check per case, a blind grader, or both?",
+        "fills": "measure"
+      },
+      {
+        "id": "record",
+        "ask": "Which record does this campaign continue? List the project's records (the files in .sova/ab/) and recommend one, or a new short name such as vis.",
+        "fills": "record"
+      }
+    ]
+  }
+}

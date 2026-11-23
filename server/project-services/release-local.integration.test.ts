@@ -47,7 +47,7 @@ test("S21: local-only Publish tags and moves the channel locally, pushes nothing
   // The artifact: the chat's build writes it into the gitignored dist/ of its checkout; a path inside the repo that
   // isn't ignored is refused.
   const co = threadCheckout(fx, r);
-  const built = JSON.parse(execFileSync("node", [".sova/playbooks/release/scripts/release.mjs", "build", "0.2.0"], { cwd: co, encoding: "utf8" })) as { artifact: string; sha256: string; size: number };
+  const built = JSON.parse(execFileSync("node", [".sova/playbook-config/release/scripts/release.mjs", "build", "0.2.0"], { cwd: co, encoding: "utf8" })) as { artifact: string; sha256: string; size: number };
   assert.ok(existsSync(built.artifact));
   // The fact wins (S11): a done report naming a file the repository tracks reads failed, with Sova's why.
   const [told] = await chatDoes(k, r, [step("artifact", "done", "app built", { facts: { artifact: `${co}/README.md`, size: 1 } })], undefined, { expectOk: false });

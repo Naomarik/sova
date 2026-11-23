@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -228,14 +228,18 @@ test("the moved-text check: every old paragraph on exactly one new page, else ex
   assert.equal(existsSync(dirname(inv)), false, "nothing is kept between runs");
 });
 
-test("a run stopped before its cleanup: the next inventory deletes the folder it left, keeping its own", () => {
+test("a run stopped before its cleanup: the next inventory deletes its folder once over a day old, never a recent one", () => {
   const r = project({ "AGENTS.md": "# Fine\n" });
   assert.equal(run("inventory", "--root", r, "--run", "t-left").code, 0);
+  assert.equal(run("inventory", "--root", r, "--run", "t-going").code, 0);
+  const old = new Date(Date.now() - ca.LEFTOVER_MS - 60_000);
+  for (const p of [join(stateDir, "t-left", "inventory.json"), join(stateDir, "t-left")]) utimesSync(p, old, old);
   mkdirSync(join(stateDir, "t-next"), { recursive: true });
   writeFileSync(join(stateDir, "t-next", "switches.json"), "{}\n");
   const next = run("inventory", "--root", r, "--run", "t-next");
   assert.equal(next.code, 0, next.out);
-  assert.equal(existsSync(join(stateDir, "t-left")), false, "the stopped run's folder is gone");
+  assert.equal(existsSync(join(stateDir, "t-left")), false, "the stopped run's folder, unchanged for over a day, is gone");
+  assert.ok(existsSync(join(stateDir, "t-going", "inventory.json")), "a recent folder may be a run still going: kept");
   assert.ok(existsSync(join(stateDir, "t-next", "switches.json")), "what this run saved before its inventory stays");
   assert.ok(existsSync(join(stateDir, "t-next", "inventory.json")));
 });

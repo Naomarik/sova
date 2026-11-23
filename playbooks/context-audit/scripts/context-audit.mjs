@@ -12,7 +12,8 @@
 //     --switches: the answers of Sova's project.context-files.get and project.skills.get, saved to one file
 //     ({"files": [...], "skills": [...], "asking": bool}): an item they show off is listed off and not counted.
 //     Writes the detail to <state root>/playbooks/context-audit/<run>/inventory.json and names it. First it
-//     deletes every other run's folder there: those a run stopped before its cleanup left behind.
+//     deletes every other run's folder there last changed over a day ago: what a run stopped before its cleanup
+//     left behind. A recent one may be a run still going, and stays.
 //   node scripts/context-audit.mjs links [--root …] [--scope …]… [--json]
 //     the reference graph: broken links, stale mentions (a named path or package script that doesn't exist),
 //     links out of the project, and pages nothing points to.
@@ -110,8 +111,25 @@ const runDirOf = (before) => {
   const dir = dirname(resolve(before));
   return inside(runsDir(), dir) && dir !== runsDir() ? dir : null;
 };
-/** Deletes every run folder but `keep`: the ones a run stopped before its cleanup left. Returns what went. */
-export function dropLeftoverRuns(keep) {
+/** How long a run folder goes unchanged before it counts as a stopped run's leftover. */
+export const LEFTOVER_MS = 24 * 60 * 60 * 1000;
+/** When a folder last changed: its own time or any of its entries', the latest. */
+const lastChanged = (d) => {
+  let t = statSync(d).mtimeMs;
+  for (const n of readdirSync(d)) {
+    try {
+      t = Math.max(t, statSync(join(d, n)).mtimeMs);
+    } catch {
+      // gone meanwhile
+    }
+  }
+  return t;
+};
+/**
+ * Deletes the run folders but `keep` that last changed over a day ago: the ones a run stopped before its cleanup
+ * left. A more recent one may belong to a run still going, so it stays. Returns what went.
+ */
+export function dropLeftoverRuns(keep, now = Date.now()) {
   let names;
   try {
     names = readdirSync(runsDir());
@@ -122,6 +140,11 @@ export function dropLeftoverRuns(keep) {
   for (const n of names) {
     const d = join(runsDir(), n);
     if (d === keep) continue;
+    try {
+      if (!statSync(d).isDirectory() || now - lastChanged(d) <= LEFTOVER_MS) continue;
+    } catch {
+      continue;
+    }
     rmSync(d, { recursive: true, force: true });
     gone.push(d);
   }

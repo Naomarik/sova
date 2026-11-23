@@ -110,6 +110,7 @@ export type CommandId =
   | "project.verb.merge.rule"
   | "project.verb.merge.respond"
   | "project.verb.merge.stop-try"
+  | "project.verb.merge.events"
   | "project.verb.release.status"
   | "project.verb.release.logs"
   | "project.verb.release.request"
@@ -193,6 +194,14 @@ export type CommandId =
   | "project.merge-queue.landing-summary"
   | "project.merge-queue.run-logs"
   | "project.merge-queue.run-logs.clean"
+  | "project.merge-queue.clean-run"
+  | "project.merge-queue.flaky"
+  | "project.merge-queue.flaky.fix"
+  | "project.merge-queue.history"
+  | "project.merge-queue.health"
+  | "project.merge-queue.events"
+  | "project.merge-queue.setup-map"
+  | "project.merge-queue.setup-history"
   | "overseer.attention"
   | "overseer.abilities"
   | "overseer.todo.list"
@@ -1440,7 +1449,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1458,7 +1467,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -1468,6 +1477,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.logs, as the operator (sova-project merge.logs). (only looks; needs the card's owner trusted) */
   "project.verb.merge.logs": {
@@ -1513,7 +1524,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1531,7 +1542,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -1541,6 +1552,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.add (sova-project merge.add): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.add": {
@@ -1586,7 +1599,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1604,7 +1617,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -1614,6 +1627,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.cancel (sova-project merge.cancel): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.cancel": {
@@ -1659,7 +1674,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1677,7 +1692,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -1687,6 +1702,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.pause (sova-project merge.pause): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.pause": {
@@ -1732,7 +1749,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1750,7 +1767,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -1760,6 +1777,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.resume (sova-project merge.resume): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.resume": {
@@ -1805,7 +1824,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1823,7 +1842,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -1833,6 +1852,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.note (sova-project merge.note): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.note": {
@@ -1878,7 +1899,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1896,7 +1917,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -1906,6 +1927,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.extend (sova-project merge.extend): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.extend": {
@@ -1951,7 +1974,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -1969,7 +1992,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -1979,6 +2002,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.resolve (sova-project merge.resolve): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.resolve": {
@@ -2024,7 +2049,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2042,7 +2067,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2052,6 +2077,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.answer (sova-project merge.answer): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.answer": {
@@ -2097,7 +2124,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2115,7 +2142,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2125,6 +2152,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.review (sova-project merge.review): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.review": {
@@ -2170,7 +2199,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2188,7 +2217,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2198,6 +2227,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.retry (sova-project merge.retry): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.retry": {
@@ -2243,7 +2274,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2261,7 +2292,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2271,6 +2302,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.setup (sova-project merge.setup): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.setup": {
@@ -2316,7 +2349,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2334,7 +2367,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2344,6 +2377,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.ask (sova-project merge.ask): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.ask": {
@@ -2389,7 +2424,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2407,7 +2442,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2417,6 +2452,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.reply (sova-project merge.reply): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.reply": {
@@ -2462,7 +2499,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2480,7 +2517,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2490,6 +2527,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.fresh (sova-project merge.fresh): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.fresh": {
@@ -2535,7 +2574,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2553,7 +2592,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2563,6 +2602,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.clear (sova-project merge.clear): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.clear": {
@@ -2608,7 +2649,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2626,7 +2667,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2636,6 +2677,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.hold (sova-project merge.hold): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.hold": {
@@ -2681,7 +2724,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2699,7 +2742,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2709,6 +2752,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.try, as the operator (sova-project merge.try). (changes something; needs the card's owner trusted) */
   "project.verb.merge.try": {
@@ -2754,7 +2799,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2772,7 +2817,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2782,6 +2827,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.restart (sova-project merge.restart): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.restart": {
@@ -2827,7 +2874,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2845,7 +2892,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2855,6 +2902,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.live, as the operator (sova-project merge.live). (only looks; needs the card's owner trusted) */
   "project.verb.merge.live": {
@@ -2900,7 +2949,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2918,7 +2967,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -2928,6 +2977,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.test (sova-project merge.test): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.test": {
@@ -2973,7 +3024,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -2991,7 +3042,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -3001,6 +3052,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.names (sova-project merge.names): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.names": {
@@ -3046,7 +3099,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -3064,7 +3117,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -3074,6 +3127,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.rule (sova-project merge.rule): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.rule": {
@@ -3119,7 +3174,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -3137,7 +3192,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -3147,6 +3202,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.respond (sova-project merge.respond): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.respond": {
@@ -3192,7 +3249,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -3210,7 +3267,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -3220,6 +3277,8 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb merge.stop-try (sova-project merge.stop-try): the user's own page, or the merge thread's or branch chat's own call where the verb is theirs; a script is refused. (changes something; needs the card's owner trusted) */
   "project.verb.merge.stop-try": {
@@ -3265,7 +3324,7 @@ export interface CommandParams {
     "theirs"?: string;
     /** The proposed resolution, in plain words */
     "proposal"?: string;
-    /** merge.answer: accept | land-anyway | try-again | land; merge.respond: fixed | needs-you | cant */
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
     "answer"?: string;
     /** Text */
     "text"?: string;
@@ -3283,7 +3342,7 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
-    /** merge.hold: set | clear */
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
     "action"?: string;
     /** A merge queue request id */
     "request"?: string;
@@ -3293,6 +3352,83 @@ export interface CommandParams {
     "ruling"?: string;
     /** Choices, comma-separated */
     "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
+  };
+  /** The project verb merge.events, as the operator (sova-project merge.events). (only looks; needs the card's owner trusted) */
+  "project.verb.merge.events": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** merge.answer: accept | land-anyway | try-again | land | allow | send-back | ask-thread; merge.respond: fixed | needs-you | cant */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear; merge.names: discover | add | show, or the user's none (No private names) | allow (the held push's matches) */
+    "action"?: string;
+    /** A merge queue request id */
+    "request"?: string;
+    /** merge.respond: the fix changed spec drafts */
+    "drafts"?: boolean;
+    /** merge.rule: chat-fixes | try-again | needs-user | checked | beyond */
+    "ruling"?: string;
+    /** Choices, comma-separated */
+    "choices"?: string[];
+    /** merge.answer allow / merge.names allow: the scan's matches to mark fine, by key (default every one shown) */
+    "matches"?: string[];
   };
   /** The project verb release.status, as the operator (sova-project release.status). (only looks; needs the card's owner trusted) */
   "project.verb.release.status": {
@@ -4216,6 +4352,74 @@ export interface CommandParams {
     /** Confirm the deletion (needed) */
     "confirm": boolean;
   };
+  /** Run from an empty merge copy: no installed packages, build output or setup kept from earlier runs, every check fresh. On the branch checking now, its run starts again clean; on a failed run whose Land still stands, it checks the same commit again, clean; otherwise the next run is clean. Your own page only. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.clean-run": {
+    /** The project's id */
+    "project": string;
+    /** The queue entry (mq_…) it is pressed on; absent: the next run */
+    "entry"?: string;
+  };
+  /** Every test that failed in a merge run and then passed on its rerun, across landings: how often, first and last seen, and the runs that saw it. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.flaky": {
+    /** The project's id */
+    "project": string;
+  };
+  /** Start a new coding chat on a new branch to fix one flaky test, told the test, how often it failed and the runs and logs that saw it. Your own page only. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.flaky.fix": {
+    /** The project's id */
+    "project": string;
+    /** The flaky test's key, as Show Flaky Tests gives it */
+    "key": string;
+  };
+  /** A page of the merge queue's history, newest first: each finished branch, how long it took to land, its runs and why it was sent back. `before` the previous page's `next`; `branch` searches by branch. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.history": {
+    /** The project's id */
+    "project": string;
+    /** Only branches whose name contains this */
+    "branch"?: string;
+    /** The previous page's next */
+    "before"?: string;
+    /** Rows per page (1–100, default 20) */
+    "limit"?: number;
+  };
+  /** The merge queue's health over the last days: time to land, pass rate, the slowest checks, the flakiest tests, the usual reasons branches are sent back, and clean runs. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.health": {
+    /** The project's id */
+    "project": string;
+    /** How many days back (1–366, default 30) */
+    "days"?: number;
+  };
+  /** What happened in the merge queue, newest first, each with its time, who did it and why: approvals, runs started and restarted, steps, sends back and answers, the merge thread's decisions with what it read, pauses, landings and pushes. Narrowed to an entry, a run, a branch, an actor or a kind; pages back with before. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.events": {
+    /** The project's id */
+    "project": string;
+    /** One entry's (mq_…) */
+    "entry"?: string;
+    /** One run's (mr_…) */
+    "run"?: string;
+    /** One branch's, every entry of it */
+    "branch"?: string;
+    /** One actor's: user, queue, thread, chat, reviewer or release */
+    "by"?: string;
+    /** One kind of change (run-restarted, ruled, paused…) */
+    "kind"?: string;
+    /** Older than this seq (the last one of the page before) */
+    "before"?: number;
+    /** How many (1–500, default 100) */
+    "limit"?: number;
+  };
+  /** The merge queue's setup as its overview draws it: the checks and which run when (the folder rules), the review, how it lands and pushes, the private names step; beside it the Setup chat's proposal, read live from that chat's working copy, and what changes. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.setup-map": {
+    /** The project's id */
+    "project": string;
+  };
+  /** Each version of the merge queue's setup on the main branch, newest first: the commit that brought it in, when, and what it changed. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.setup-history": {
+    /** The project's id */
+    "project": string;
+    /** How many versions (1–50, default 20) */
+    "limit"?: number;
+  };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
   /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
@@ -4923,6 +5127,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.merge.rule": "changes",
   "project.verb.merge.respond": "changes",
   "project.verb.merge.stop-try": "changes",
+  "project.verb.merge.events": "looks",
   "project.verb.release.status": "looks",
   "project.verb.release.logs": "looks",
   "project.verb.release.request": "changes",
@@ -5006,6 +5211,14 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.landing-summary": "looks",
   "project.merge-queue.run-logs": "looks",
   "project.merge-queue.run-logs.clean": "changes",
+  "project.merge-queue.clean-run": "changes",
+  "project.merge-queue.flaky": "looks",
+  "project.merge-queue.flaky.fix": "changes",
+  "project.merge-queue.history": "looks",
+  "project.merge-queue.health": "looks",
+  "project.merge-queue.events": "looks",
+  "project.merge-queue.setup-map": "looks",
+  "project.merge-queue.setup-history": "looks",
   "overseer.attention": "looks",
   "overseer.abilities": "looks",
   "overseer.todo.list": "looks",

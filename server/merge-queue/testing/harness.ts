@@ -55,7 +55,7 @@ export interface ThreadStandIn {
 }
 
 /** What the stand-in reviewer answers for a commit (read in the merge copy). */
-export type ReviewerStandIn = (o: { commit: string; copy: string; runId: string }) => Promise<{ verdict: "ok" | "notes" | "blocking"; text?: string } | "crash" | "hang">;
+export type ReviewerStandIn = (o: { commit: string; copy: string; runId: string; start: import("../review-step").ReviewerStart }) => Promise<{ verdict: "ok" | "notes" | "blocking"; text?: string } | "crash" | "hang">;
 
 export interface HarnessOptions {
   thread?: ThreadStandIn;
@@ -105,7 +105,7 @@ export class QueueHarness {
   /** The broken-on-target flags the queue raised (QueueDeps.flagBroken: the user's one notification each). */
   readonly flags: import("../../../shared/merge-queue").TargetBroken[] = [];
   readonly threadErrors: unknown[] = [];
-  readonly reviews: { commit: string; runId: string }[] = [];
+  readonly reviews: { commit: string; runId: string; start: import("../review-step").ReviewerStart }[] = [];
   queues!: MergeQueues;
   private q!: ProjectQueue;
   private readonly ingestSeen: string;
@@ -170,8 +170,8 @@ export class QueueHarness {
 
   private startReviewer: StartReviewer = async (o) => {
     const answerFn = this.o.reviewer!;
-    this.reviews.push({ commit: o.commit, runId: o.runId });
-    const a = await answerFn({ commit: o.commit, copy: o.copy, runId: o.runId });
+    this.reviews.push({ commit: o.commit, runId: o.runId, start: o });
+    const a = await answerFn({ commit: o.commit, copy: o.copy, runId: o.runId, start: o });
     if (a === "crash") throw new Error("the stand-in reviewer crashed");
     if (a !== "hang") {
       // Answer as a reviewer chat does: through merge.review (the queue's own verb method), after it started.
@@ -179,7 +179,7 @@ export class QueueHarness {
         this.q.review(o.runId, a).catch((e) => this.threadErrors.push(e));
       }, 20);
     }
-    return { sessionId: `reviewer-${o.runId}-${o.attempt}`, stop: async () => {} };
+    return { sessionId: `reviewer-${o.runId}-${o.attempt}`, model: "test/reviewer", stop: async () => {} };
   };
 
   // ---- the verbs ------------------------------------------------------------------------------------

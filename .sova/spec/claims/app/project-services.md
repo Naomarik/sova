@@ -107,9 +107,19 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   (§app.project-services/conform), and the Running Copies tab opens it (§app.project-services/services-ui).
 - **`merge`** (optional): how the project's branches land through its merge queue
   (§app/merge-queue), outside the definition's hash. `target` (a branch; default the main
-  checkout's branch), `push` (boolean; absent: push when the repository has an `origin` remote),
-  `checks`: 1 to 30 checks `{id, label, run: argv, timeout?, rerun?, requires?, optional?, needsSelect?}` in the
-  order they run (`optional: true`: not required; it runs only when the merge thread picks it;
+  checkout's branch), `push` (boolean; absent: push when the repository has an `origin` remote), `remote` (optional:
+  the remote the queue fetches from and pushes to; absent: `origin`, §app.merge-queue/project-shapes),
+  `squash` (optional boolean, absent: false: under Merge locally, land each branch as one commit,
+  §app.merge-queue/strategies),
+  `checks`: 1 to 30 checks `{id, label, run: argv, timeout?, rerun?, requires?, optional?, needsSelect?, perSelector?, cwd?, env?, report?, rerunTest?}` in the
+  order they run (`perSelector: true`: folder rules hitting it with different selections run it once
+  per selection, §app.merge-queue/rules; `cwd`: the folder it runs in, relative to the checkout and
+  inside it, absent the checkout's root; `env`: variables of its own, never a `SOVA_*` name; `report`:
+  the test report its runner writes, `{junit: path}` or `{tap: path | "stdout"}`, relative to `cwd`;
+  `rerunTest`: argv appended once per failing test to rerun it by name, `${test}` its name; such a
+  rerun counts a test passed only when its report lists it as run and passed (a JUnit or TAP case, or
+  `passedTests` in `SOVA_OUT`),
+  §app.merge-queue/project-shapes) (`optional: true`: not required; it runs only when the merge thread picks it;
   `needsSelect: true`: the merge thread's pick of it must name its selection, §app.merge-queue/checks) (ids unique; `run` a template argv that may also read `${merge.base}`, `${merge.tip}` and
   `${merge.target}`; `rerun: true` when its failures name test files and `run` plus those files
   reruns only them (a check that is the project's `test.run` with selection flags after it is rerun
@@ -123,7 +133,11 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   folder of the project's request kit (§app.merge-queue/request-kit); and `reuse` (optional boolean,
   absent: true): whether checks may reuse passes from identical code (§app.merge-queue/checks),
   `false` making every check run every file; and `deleteBranches` (optional boolean, absent: false): whether
-automatic cleanup deletes a landed branch as well as its folder (§chat.worktrees/retirement). With no `merge` section the queue
+automatic cleanup deletes a landed branch as well as its folder (§chat.worktrees/retirement). `rules` (optional, at most 100, and only beside a list of `checks`): the folder rules, each
+  `{paths: [globs], check, select?, why}` (`why` 1–200 characters; no `select` item starts with
+  `-`), §app.merge-queue/rules; a rule naming an undeclared check, or a `needsSelect` check with no
+  `select`, is refused with the definition. `reviewFixes` (optional boolean, absent: false; only
+  with a `review` kit, read from the target's definition): the reviewer may fix what it finds (§app.merge-queue/review-kit). With no `merge` section the queue
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
   `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths),
@@ -784,7 +798,11 @@ answering the one result shape with its own `merge` key (§app.project-services/
   history too, read-only: §app.merge-queue/history; the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
   landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
-  target) and `merge.logs` (a run, optionally one step and a line count).
+  target) and `merge.logs` (a run, optionally one step and a line count), and `merge.events` (a
+  project, optionally narrowed to an entry, a run or a branch, and how many: the queue's recorded
+  events, newest first, the history's included, §app.merge-queue/activity; a read any chat on the
+  project may call). The page reads the same events by entry, run, branch, who acted or kind, paged
+  back from an event (`GET /api/merge-queue/projects/<project>/events`).
 - **Setting it up**: `merge.setup` (a project's checks, one test command with its time and what
   starts first, or no automated tests; a test run tries them, called **Test run of the checks** on
   screen, and a save commits them), the

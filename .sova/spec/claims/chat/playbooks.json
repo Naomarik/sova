@@ -331,13 +331,13 @@
       "server/merge-queue/settings.ts",
       "server/project-settings.ts",
       "pi-config/extensions/worktrees/setup-rule.ts",
-      "system-playbooks/merge-queue/scripts/blast-radius.mjs",
       "system-playbooks/project-setup/scripts/project-setup.mjs",
       "migrations/playbook-config-old-place/index.d.mts",
       "server/merge-queue/settings-edit.test.ts",
       "server/merge-queue/thread.test.ts",
       "server/playbooks.test.ts",
-      "server/migrations.test.ts"
+      "server/migrations.test.ts",
+      ".sova/playbook-config/merge-queue/references/picks.md"
     ],
     "agreed": {
       "by": "naomarik",

@@ -115,6 +115,18 @@ export class Link {
     return () => set.delete(fn as (frame: never) => void);
   }
 
+  /** Frames a listener heard but leaves to whoever listens next: held again, ahead of any held since,
+      as if nobody had heard them (handed on at once to a listener already there). */
+  handBack(frames: readonly ChatWireFrame[]): void {
+    if (this.ended || !frames.length) return;
+    const now = frames.filter((f) => this.listeners.get(f.t)?.size);
+    this.held.unshift(...frames.filter((f) => !now.includes(f)));
+    if (now.length)
+      queueMicrotask(() => {
+        for (const f of now) if (!this.ended) this.deliver(f);
+      });
+  }
+
   /** Send one frame. False when the link is gone (nothing was sent). A peer that stopped reading
       past the backlog limit loses the link. */
   send(frame: ChatWireFrame): boolean {

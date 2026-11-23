@@ -7,9 +7,10 @@ import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy
 import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision, STANDING_LINE, standingWords, answeredInChat, type DecisionAction } from "../lib/merge-standing";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
-import { mergeQueueTabHref, mergeRunHref, projectSessionHref, projectTabHref, type QueueTab } from "../lib/projects-route";
+import { mergeQueueTabHref, mergeRunHref, pipelineHref, projectSessionHref, projectTabHref, type QueueTab } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeRunView } from "./MergeRunView";
+import { LandedHistory } from "./pipeline/LandedHistory";
 import { LocalBehind, RequestRow, type RequestEntry } from "./MergeQueueRequests";
 import { HOST_NAME, introWords, isRequestState } from "../lib/merge-queue-requests";
 import { QueueSettingsButton, QueueSummaryLine } from "./settings/MergeQueueSummary";
@@ -275,6 +276,10 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: Queue
           <QueueChip row={chip()} />
         </div>
         <div class="button-row">
+          {/* The whole queue explained on one screen (§app.merge-queue/explainer). */}
+          <a class="button button-sm" href={pipelineHref(props.projectId)}>
+            Queue Overview
+          </a>
           <SetupChatButton projectId={props.projectId} setUp from="merge-queue" poll={props.setup} />
           <QueueSettingsButton projectId={props.projectId} />
           <Show
@@ -636,11 +641,18 @@ function queueTabs(projectId: string, v: () => MergeQueueView, onHost: boolean, 
       },
       panel: () => (
         <>
-          <Show when={v().recent.length > 0}>
-            <ul class="list mq-list">
-              <For each={v().recent}>{(l) => <LandedRow projectId={projectId} view={v()} landed={l} chatOf={chatOf} />}</For>
-            </ul>
-          </Show>
+          {/* The health summary on top, a search by branch and Show Older through the whole history (§app.merge-queue/health). */}
+          <LandedHistory
+            projectId={projectId}
+            newestIds={v().recent.map((l) => l.entry.id)}
+            newest={
+              <Show when={v().recent.length > 0}>
+                <ul class="list mq-list">
+                  <For each={v().recent}>{(l) => <LandedRow projectId={projectId} view={v()} landed={l} chatOf={chatOf} />}</For>
+                </ul>
+              </Show>
+            }
+          />
           <Show when={v().retirement}>{(r) => <RetiredList root={v().root} view={r()} onChanged={onChanged} />}</Show>
         </>
       ),

@@ -78,7 +78,23 @@ export function openReview(e: Pick<MergeEntry, "reviews">): MergeReviewRecord | 
 /** A blocking verdict's record. Findings as merge.review parsed them; an older verdict with only text is read once. */
 export function reviewRecord(o: { entry: string; run: string; commit: string; base: string; verdict: ReviewVerdict; at: string }): MergeReviewRecord {
   const parsed = o.verdict.findings ? { summary: o.verdict.summary ?? "", findings: o.verdict.findings } : fromText(o.verdict.text ?? "");
-  return { id: `${o.entry}:${o.run}`, run: o.run, commit: o.commit, tip: o.verdict.commit, base: o.base, summary: parsed.summary, findings: structuredClone(parsed.findings), try: 0, of: 0, state: "with-thread", at: o.at, updatedAt: o.at };
+  return {
+    id: `${o.entry}:${o.run}`,
+    run: o.run,
+    commit: o.commit,
+    tip: o.verdict.commit,
+    base: o.base,
+    summary: parsed.summary,
+    findings: structuredClone(parsed.findings),
+    try: 0,
+    of: 0,
+    state: "with-thread",
+    // Which kit and model reviewed it (§app.merge-queue/review-kit), and the reviewer's own fix when it made one.
+    ...(o.verdict.kit ? { kit: structuredClone(o.verdict.kit) } : {}),
+    ...(o.verdict.fix ? { fix: { commit: o.verdict.fix.commit } } : {}),
+    at: o.at,
+    updatedAt: o.at,
+  };
 }
 
 /** A verdict that carries only its text (one recorded before findings were kept): its lines, as written. */
@@ -107,6 +123,17 @@ export function reviewPrint(findings: readonly ReviewFinding[]): string {
 /** The merge thread's note after a request went: its own short request, counting no try. */
 export function reviewNoteText(e: Pick<MergeEntry, "branch">, r: Pick<MergeReviewRecord, "commit">, note: string): string {
   return `The merge thread adds a note on the review of ${e.branch} at ${r.commit.slice(0, 7)}: ${note.trim()}`;
+}
+
+/** What the chat is told when the run's reviewer fixed its own blocking findings on the branch: a request it needn't
+ *  answer (it is answered Fixed already), with the findings as the reviewer wrote them. */
+export function reviewerFixText(e: Pick<MergeEntry, "branch" | "commit">, fix: string, report: string): string {
+  return [
+    `The merge queue's reviewer found issues in ${e.branch} at ${e.commit.slice(0, 7)} and fixed them itself: its commit ${fix.slice(0, 7)} is on ${e.branch} now (your folder moved to it). Nothing to do: the merge thread checks the fix, the checks run again, and it lands on the user's Land. Pull nothing and don't answer this request.`,
+    "",
+    "The review's findings, as the reviewer wrote them:",
+    report,
+  ].join("\n");
 }
 
 /** A notes-only review on the landed line: its findings whole, told quietly (§chat.merge-queue/chat-turns). */

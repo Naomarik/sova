@@ -18,7 +18,7 @@ export type _H = HarnessOptions | MergeEntry;
 // ---------------------------------------------------------------- merge thread
 
 describe("merge thread", () => {
-  test("S18: the thread picks tests by blast radius; each pick is on the run with its reason; it can add, never drop", async () => {
+  test("S18: the thread picks tests beyond the folder rules; each pick is on the run with its reason; it can add, never drop", async () => {
     const { fx, h } = await setup({}, {
       thread: {
         queued: async (h, e) => {

@@ -1,7 +1,7 @@
 import type { ChecksDeclared } from "../../shared/merge-queue";
 import type { EffectiveModel, FolderRef, MergeFixedValues, MergeQueueSettings } from "../../shared/merge-queue-settings";
 import { HOOK_TIMEOUT_MAX, type ProjectDef } from "../../shared/project-contract";
-import { mergeCopyPath } from "./copy";
+import { copyShapeOf, mergeCopyPath } from "./copy";
 import type { Git } from "./guard";
 import { projectPlaybookRel, THREAD_MAX_AGE_MS, THREAD_MAX_CONTEXT } from "./thread";
 import { existsSync, readFileSync } from "node:fs";
@@ -70,6 +70,8 @@ export interface SettingsInput {
   fixed: MergeFixedValues;
   /** How a branch lands (strategy.ts landHowSetting). */
   how?: MergeQueueSettings["how"];
+  /** What the target's tree needs beyond its files (copy.ts copyShapeOf). */
+  shape?: MergeQueueSettings["shape"];
 }
 
 export function buildSettings(a: SettingsInput): MergeQueueSettings {
@@ -94,6 +96,7 @@ export function buildSettings(a: SettingsInput): MergeQueueSettings {
     checks: { mode: a.checks, list },
     reuse: m?.reuse !== false,
     deleteBranches: m?.deleteBranches === true,
+    squash: m?.squash === true,
     setup: { steps: (a.def?.setup ?? []).map((s) => ({ id: s.id })) },
     ...(m?.install ? { install: { inputs: [...m.install.inputs], timeoutSec: m.install.timeout } } : {}),
     review: {
@@ -110,6 +113,7 @@ export function buildSettings(a: SettingsInput): MergeQueueSettings {
     },
     fixed: a.fixed,
     ...(a.how ? { how: a.how } : {}),
+    ...(a.shape && (a.shape.submodules || a.shape.lfs) ? { shape: { ...a.shape } } : {}),
   };
 }
 
@@ -170,6 +174,7 @@ export async function bareSettings(root: string, d: BareSettingsDeps): Promise<M
     models: { review: await effectiveModel(picks.review, d.modelCheck), thread: await effectiveModel(picks.thread, d.modelCheck) },
     projectFileDiffers: (shown.code === 0 ? shown.stdout : null) !== local,
     fixed: fixedValues(root),
-    how: await landHowSetting({ dir: store.dir, root, projectHow: def?.merge?.land, ...(d.hosts ? { hosts: d.hosts } : {}) }),
+    how: await landHowSetting({ dir: store.dir, root, projectHow: def?.merge?.land, ...(def?.merge?.remote ? { remote: def.merge.remote } : {}), ...(d.hosts ? { hosts: d.hosts } : {}) }),
+    shape: await copyShapeOf(root, s.head).catch(() => undefined),
   });
 }

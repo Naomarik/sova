@@ -244,12 +244,14 @@
       "server/merge-queue/discover-names.integration.test.ts",
       ".sova/playbook-config/merge-queue/PLAYBOOK.md",
       "server/merge-queue/names-verb.ts",
-      "server/merge-queue/names-verb.integration.test.ts"
+      "server/merge-queue/names-verb.integration.test.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/names-step.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-07T16:57Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#e142ea9f"
+      "at": "2026-11-22T15:50Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
     }
   },
   "§chat.merge-queue/requests": {
@@ -406,9 +408,9 @@
       "§chat.merge-queue/names-interview"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-18T20:28Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "by": "user",
+      "at": "2026-11-22T15:50Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
     },
     "code": [
       "server/merge-queue/thread.ts",
@@ -420,11 +422,8 @@
       "system-playbooks/merge-queue/references/notes.md",
       "system-playbooks/merge-queue/references/conflicts.md",
       "system-playbooks/merge-queue/references/failures.md",
-      "system-playbooks/merge-queue/scripts/blast-radius.mjs",
       "system-playbooks/merge-queue/scripts/conflict-hunks.mjs",
       ".sova/playbook-config/merge-queue/PLAYBOOK.md",
-      ".sova/playbook-config/merge-queue/references/blast-radius.json",
-      ".sova/playbook-config/merge-queue/references/blast-radius.md",
       ".sova/playbook-config/merge-queue/references/noting.md",
       "server/merge-queue/playbooks.test.ts",
       "system-playbooks/merge-queue/references/names.md",
@@ -439,8 +438,37 @@
       "system-playbooks/merge-queue/references/fixes.md",
       "server/merge-queue/names-verb.ts",
       "server/merge-queue/queue-review.test.ts",
-      "server/merge-queue/queue.ts"
+      "server/merge-queue/queue.ts",
+      ".sova/playbook-config/merge-queue/references/picks.md"
     ]
+  },
+  "§chat.merge-queue/thread-health": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§chat.merge-queue/thread-life",
+      "§app.merge-queue/activity",
+      "§app.merge-queue/chats",
+      "§app.notifications/merge-queue",
+      "§app.merge-queue/standing-approval",
+      "§app.merge-queue/conflicts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-22T15:50Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
+    },
+    "code": [
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/rulings.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/notices.ts",
+      "shared/merge-queue.ts",
+      "server/merge-queue/thread-health.test.ts"
+    ],
+    "evidence": "verified"
   },
   "§chat.merge-queue/thread-life": {
     "kind": "behavior",
@@ -464,12 +492,13 @@
       "server/merge-queue/wire.ts",
       "server/merge-queue/routes.ts",
       "system-playbooks/merge-queue/PLAYBOOK.md",
-      "shared/merge-queue.ts"
+      "shared/merge-queue.ts",
+      "server/merge-queue/thread-health.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-18T20:28Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "by": "user",
+      "at": "2026-11-22T15:50Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
     }
   },
   "§chat.merge-queue/thread-powers": {
@@ -562,8 +591,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-07T16:09Z",
-      "source": "pi-session:01a1b63e-6ef3-71fd-af21-1389de50cc23#92eb7761"
+      "at": "2026-11-22T16:49Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
     },
     "code": [
       "server/merge-queue/thread.ts",

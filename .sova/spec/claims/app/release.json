@@ -443,12 +443,13 @@
       "src/lib/release-options.ts",
       "src/lib/release-options.test.ts",
       "scripts/e2e-release/ui-flows.ts",
-      "server/form-inventory-baseline.test.json"
+      "server/form-inventory-baseline.test.json",
+      "src/components/pipeline/PipelineReleases.tsx"
     ],
     "agreed": {
-      "by": "operator",
-      "at": "2026-11-20T08:13Z",
-      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
+      "by": "user",
+      "at": "2026-11-22T15:50Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
     }
   },
   "§app.release/verbs": {

@@ -138,7 +138,9 @@ want (no releases, no deploy) is left out, and the chat says so.
 Before writing the proposal, the chat draws the plan in the chat (a `vis` drawing,
 §chat.markdown/visuals), in three parts:
 - **each approved branch**: what happens to it, from approval to landing, with the real commands of
-  each check, its time limit, what starts first, and how it lands;
+  each check, its time limit, what starts first, and how it lands; the folder rules as a row of their
+  own (each rule's paths, check and selection, §app.merge-queue/rules), noting each optional check no
+  rule names;
 - **each release step**, in order, marked **Sova**, **Before Publish**, **After Publish** or **Held
   for you**;
 - **each deploy target**: its steps, its verify and its rollback.
@@ -307,7 +309,11 @@ what it proposes, read by Sova from the branch's files at its head, never from t
 queue's settings and each check, the release settings and
 each step with its phase, each deploy target's steps, what changes against the current setup, and
 the newest dry run of that head (its result, who started it and why it was needed), with **Run Dry
-Run** (or **Run Dry Run Again**) while none of the head passed. Under **What it brings in** it lists every file the branch changes
+Run** (or **Run Dry Run Again**) while none of the head passed. The queue's own screen shows the proposal too (**Open Queue Overview** on
+the proposal's card): its Proposal view puts the proposed setup beside the one in force and follows
+the chat's changes live, as it writes them; its confirm is this proposal's Land (or Merge Branch),
+which waits, reading Drafting, while the chat's working copy differs from the proposal's committed
+head (§app.merge-queue/explainer). Under **What it brings in** it lists every file the branch changes
 against its target ("Changes {n} files against {target}"), the setup's own files first; any other
 file is marked **Outside the setup**, with "{n} outside the setup, which Land (or Merge Branch)
 brings in too.", so nothing lands unseen. **Review Changes** shows the branch in full

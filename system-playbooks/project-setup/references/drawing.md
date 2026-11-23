@@ -25,8 +25,8 @@ merge onto the newest target in the merge copy → each `setup` step → the ins
 spec drafts made official (only with a spec) → **each required check: its label, its command, its time
 limit, what it needs started first** → the review (when declared) → how it lands (the target moves to
 the tested commit / a pull request / a merge request / the branch pushed) → the push (leak scan first;
-held until private names are set up). Then a second row for the optional checks, "Picked by the merge
-thread", each with what calls for it. Its outcome cell: the measured total ("about 6 min").
+held until private names are set up). Then a row for the optional checks, "Optional checks", and one for
+the folder rules, "Folder rules", each rule as "paths → check (selection)". Its outcome cell: the measured total ("about 6 min").
 
 **A release** (lane `A release`), each step labelled with who acts and when:
 - **Before publish**: the prepare steps (version, notes, bumps, commit) and the check steps;
@@ -74,7 +74,8 @@ caption: Sova runs the landing and the release checks; Publish and every deploy 
 mark "Landing" "about 6 min end to end"
 == Each approved branch ==
 "Landing" ok | "Merge onto newest main in the merge copy" -> "Install when package-lock.json changes: npm ci --offline" -> "Typecheck: npm run typecheck (≤ 5 min)" -> "Unit tests: npx vitest run (≤ 15 min)" -> "Build: npm run build (≤ 10 min)" -> "main moves to the tested commit" -> "Push (leak scan first)" | "3 required checks"
-"Picked by the merge thread" info | "Browser tests: .sova/bin/e2e (≤ 30 min, needs web)" | "when src/ui/ changes"
+"Optional checks" info | "Browser tests: .sova/bin/e2e (≤ 30 min, needs web)" | "when a folder rule or the merge thread adds them"
+"Folder rules" info | "src/ui/** → e2e" | "when their paths change"
 == A release ==
 "Release v${version}" ok | "Pick the version · Before publish" -> "Write the notes · Before publish" -> "Bump package.json · Before publish" -> "Make the release commit · Before publish" -> "Sova: checks (landing set + e2e)" muted -> "Sova: Publish v${version}, moves stable (your click)" accent -> "Publish the GitHub release page · After publish" | "release commit, semver"
 == Deploy (yours) ==

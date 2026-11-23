@@ -95,8 +95,8 @@ of its paths changed), and the `merge` section:
 The limits stand for twice the warm times the chat measured. `install` is there because the
 `local-files` setup step copies the main checkout's `node_modules` only when the copy has none, so a
 branch that changes `package-lock.json` would otherwise be checked against the old packages. And
-`.sova/playbook-config/merge-queue/PLAYBOOK.md` with a blast-radius map whose one rule picks `skill` on its
-paths, plus what is worth noting on a landing here ("touches `deps.edn`: restart `test-repl` and the
+a folder rule (`merge.rules`) that runs `skill` when its paths change, plus
+`.sova/playbook-config/merge-queue/PLAYBOOK.md` with what is worth noting on a landing here ("touches `deps.edn`: restart `test-repl` and the
 app"). Services, `test`, `share` and `deploy` stay byte for byte, so no conformance is needed.
 
 Then `fmt`, `check --base master` (0), commit by explicit path, `merge.try` on the head, a fix if the

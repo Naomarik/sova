@@ -455,8 +455,6 @@
       "pi-config/extensions/spec/docs/CHANGELOG.md",
       "pi-config/extensions/mode/spec-mode.test.ts",
       "pi-config/extensions/mode/spec-guard.test.ts",
-      "playbooks/spec-review/PLAYBOOK.md",
-      "server/spec-review-playbook.test.ts",
       "server/chat-host.ts",
       "server/chat-runtime/supervisor.ts",
       "server/chat-runtime/supervisor.test.ts",
@@ -467,9 +465,9 @@
       "scripts/test-env.mjs"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T16:06Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
+      "by": "naomarik",
+      "at": "2026-11-18T14:38Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#09a1410d"
     }
   },
   "§tools.spec/near-impact": {
@@ -606,21 +604,6 @@
       "at": "2026-10-25T23:48Z",
       "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
-  },
-  "§tools.spec/review-playbook": {
-    "kind": "behavior",
-    "authority": "accepted",
-    "evidence": "verified",
-    "requires": [
-      "§chat.playbooks/bundles",
-      "§tools.spec/mode-reading",
-      "§tools.spec/frame"
-    ],
-    "code": [
-      "playbooks/spec-review/PLAYBOOK.md",
-      "server/spec-review-playbook.test.ts",
-      "server/spec-review-playbook.integration.test.ts"
-    ]
   },
   "§tools.spec/single-read": {
     "kind": "behavior",
@@ -861,9 +844,9 @@
       "§chat/mode-menu"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T16:06Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
+      "by": "naomarik",
+      "at": "2026-11-18T14:38Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#09a1410d"
     }
   }
 }

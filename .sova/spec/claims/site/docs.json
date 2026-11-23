@@ -717,8 +717,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-19T18:28Z",
-      "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
+      "at": "2026-11-18T14:38Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#09a1410d"
     }
   },
   "§site.docs/project-definition": {
@@ -840,7 +840,6 @@
       "§tools.spec/align-agree",
       "§tools.spec/census-note",
       "§tools.spec/no-turn-end-check",
-      "§tools.spec/review-playbook",
       "§tools.spec/spec-map",
       "§chat.mode-menu/workers",
       "§chat/subagent-profiles",

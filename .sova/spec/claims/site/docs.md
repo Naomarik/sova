@@ -227,7 +227,10 @@ counts as the approval of the mode's tools and commands, never its hooks.
 
 ## §site.docs/playbooks-and-schedules — Playbooks and schedules (`/docs/playbooks-and-schedules/`)
 
-Running a playbook from the composer's Playbooks dialog; a project playbook's schedule: who fires
+Running a playbook from the composer's Playbooks dialog, which lists the project's playbooks first,
+then your own, then Sova's in a section folded until you open it (open by itself when nothing is
+listed above it); the Context audit playbook Sova ships (§chat.playbooks/context-audit), in a line;
+a project playbook's schedule: who fires
 it, its triggers (times, intervals, `claude-limit-reset`) and their limits, and approving or revoking
 it (in the Playbooks dialog, or in the Overseer's Approvals & Schedules). A schedule never turns on a
 project mode.

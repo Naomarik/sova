@@ -107,6 +107,7 @@ you to release; its request shows in Needs you.
 
 The Releases tab lists every numbered version, newest first, with its notes, whether it was
 withdrawn, and which deploy targets run it. Its strip shows the latest release and how many
-landings came since.
+landings came since. **Release Overview** in the tab's head opens the queue's own screen on its
+releases: the release setup, every release and its branches, and the release setup's history.
 
 <!-- screen: releases-tab | A project's Releases tab with no release open: the latest release and the landings since, Release Note and Start Release, and the history of published releases. -->

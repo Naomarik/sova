@@ -20,10 +20,6 @@
     {
       "glob": "site/src/data/screens.ts",
       "reason": "imports the site's screenshot manifest, not the spec"
-    },
-    {
-      "glob": ".sova/marketing/**",
-      "reason": "marketing playbooks' screenshot and video manifests, not the spec"
     }
   ],
   "lines": {

@@ -1139,6 +1139,25 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .playbook-schedule-line .icon { vertical-align: -2px; margin-right: var(--space-1); }
 .playbook-card-error { color: var(--status-warn); }
 .playbook-card-error .icon { vertical-align: -2px; margin-right: var(--space-1); }
+/* The Playbooks dialog's groups (§chat.playbooks/the-modal): spaced as the modal body spaces its
+   children. Sova's heading is the one that folds: a full-width 44px row wearing the group label,
+   the sidebar folder head's twist turning when it opens. */
+.playbooks-groups { display: flex; flex-direction: column; gap: var(--space-4); }
+.playbooks-fold-head { margin: 0; }
+.playbooks-fold-toggle {
+  width: 100%;
+  min-height: var(--row-height);
+  padding-block: var(--space-2);
+  border: 0;
+  background: none;
+  text-align: left;
+  transition: color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+.playbooks-fold-toggle:hover { color: var(--color-ink-2); background: var(--color-sunken); }
+.playbooks-fold-toggle:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.playbooks-fold-toggle .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.playbooks-fold-toggle[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
+.playbooks-groups .list[hidden] { display: none; }
 .profile-changes-head .chip { margin-left: auto; }
 .profile-change-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .profile-change {

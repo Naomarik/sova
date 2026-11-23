@@ -45,7 +45,7 @@ also update Y" list live in its guide: read the guide of every area your task to
   `shared/protocol.ts`: coordinate before changing any contract Sova parses (extensions guide).
 - `statecharts/`: the org's statecharts (statecharts guide).
 - `playbooks/`: the playbooks Sova ships that you start from the Playbooks dialog (A/B cycle, Brandmaker,
-  Marketing, Spec review). `system-playbooks/`: the ones only Sova starts (merge thread, release, release
+  Context audit). `system-playbooks/`: the ones only Sova starts (merge thread, release, release
   maker, project setup, project deploy, project verbs): never listed, never replaced by a playbook of the
   same id, their tests in Sova's own test folders. A project's config for those chats lives in its
   `.sova/playbook-config/<id>/` (merge-queue, release, review, request, project-setup), never in

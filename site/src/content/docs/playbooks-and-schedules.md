@@ -9,11 +9,13 @@ A playbook is a recipe in plain Markdown that an agent follows: "audit this repo
 
 ## Running a playbook
 
-Open the composer's menu and pick **Playbooks**. The dialog lists three groups: the ones Sova ships, your own, and the ones that live in the current session's project. Pick one, add a line of your own if you like, and it goes into the chat as your message. The agent then does what the playbook says, in that chat.
+Open the composer's menu and pick **Playbooks**. The dialog lists the ones that live in the current session's project first, then your own, then the ones Sova ships, folded under a **Sova** row that opens with one press (it opens by itself when nothing is listed above it). Pick one, add a line of your own if you like, and it goes into the chat as your message. The agent then does what the playbook says, in that chat.
 
-Sova ships four you can start: A/B cycle, Brandmaker, Marketing and Spec review. The playbooks only Sova's own chats run (the merge thread's and the release chat's methods, project setup and the project verbs chat) are never listed, and one of yours with the same name replaces none of them. What a project adds to those chats, such as its merge queue or release settings, lives in its `.sova/playbook-config/` folder and isn't listed either.
+Sova ships three you can start: A/B cycle, Brandmaker and Context audit. The playbooks only Sova's own chats run (the merge thread's and the release chat's methods, project setup and the project verbs chat) are never listed, and one of yours with the same name replaces none of them. What a project adds to those chats, such as its merge queue or release settings, lives in its `.sova/playbook-config/` folder and isn't listed either.
 
 A playbook can bring its own helper files, the way a skill does. A playbook written as a pi or Claude Code skill works as one too. Sova never runs a playbook's scripts itself: the agent runs them, under the session's own sandbox and permissions.
+
+Sova ships **Context audit** (`/context-audit`) to every project: it reads everything the project can load into its agents (instruction files and the guides they point to, skills, prompt commands, playbooks and modes), stops at a report shown only in the chat, contradictions first, then fixes only what you pick, on its own branch, and never lands it.
 
 ## Schedules
 

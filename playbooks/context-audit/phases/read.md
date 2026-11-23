@@ -1,0 +1,6 @@
+# Read the files against each other
+
+1. Give each investigator its subject: the files of that subject from the inventory (`items` whose path falls in it), the instruction files every chat carries (they are in every subject), the card's **Anything you already suspect**, and `references/contradictions.md` and `references/layout.md`. A skill's investigator also gets its line in the digest (band, sections, generated or not).
+2. Each investigator returns a list in the shape `references/roles/investigator.md` gives: possible contradictions with both sides' file and line, and for its skills a layout note. They read at the same time.
+3. The challenger takes every possible contradiction, rereads both sides at their exact lines and confirms, downgrades or drops each (`references/roles/challenger.md`). Only confirmed ones go to the report. Run `links` and `repeats` for their detail when the digest's counts aren't enough, and let the challenger drop stale mentions that turn out to be fine (a file the code makes at run time, a path relative to a folder the page names).
+4. Hand the report writer: the inventory path, the confirmed contradictions, the checked references, orphans and repeats, and the layout notes. Keep every investigator's list until the run ends: the writer may need to ask.

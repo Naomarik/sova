@@ -4,12 +4,8 @@
 > Voice section and by [`.sova/spec/claims/design/copy-deck.md`](../../.sova/spec/claims/design/copy-deck.md). This page is about prose
 > written *about* Sova: README, notes, release notes, a website.
 
-**Superseded in part.** The pillars, the use/avoid words, and the shape rules now live in
-`.sova/marketing/brand.json` and are rendered into
-[`.sova/marketing/BRAND.md`](../../.sova/marketing/BRAND.md), which is what the marketing playbooks
-read. Where the two disagree, `brand.json` is the maintained copy. This page keeps what a rendered
-brand book has no room for: the reasoning, and the before/after examples that teach a rule by
-showing it broken first.
+This page is the maintained copy of the pillars, the use/avoid words, and the shape rules, with
+the reasoning and the before/after examples that teach a rule by showing it broken first.
 
 ## The four pillars, applied to prose
 

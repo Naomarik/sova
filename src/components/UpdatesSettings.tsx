@@ -1,9 +1,10 @@
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { UpdatesState, UpdateStep } from "../../shared/protocol";
-import { applyUpdate, checkUpdates } from "../lib/api";
+import { applyUpdate, checkUpdates, getUpdateNotes } from "../lib/api";
 import { relativeTime } from "../lib/format";
-import { announce } from "../lib/ui-state";
-import { goBackLabel, KIND_LABEL, refreshUpdates, resultLine, runningLine, setUpdatesState, sourceName, upgradeLabel, updatesState, withdrawnTitle } from "../lib/updates";
+import { openMarkdown } from "../lib/markdown-viewer";
+import { announce, toast } from "../lib/ui-state";
+import { goBackLabel, KIND_LABEL, recentJob, refreshUpdates, resultLine, runningLine, setUpdatesState, sourceName, upgradedLine, upgradeLabel, updatesState, withdrawnTitle } from "../lib/updates";
 import { setUpdatesDraft, setUpdatesSaved, updatesDraft, updatesSaveError, updatesSaving, type UpdatesDraft } from "../lib/updates-draft";
 import { BRANCH_RULE } from "../../shared/branch-name";
 import { Select, TextField, Toggle } from "./form";
@@ -25,12 +26,10 @@ const STEPS: { step: UpdateStep; label: string }[] = [
   { step: "verifying", label: "Checking" },
 ];
 
-/** How long a finished upgrade's outcome stays in the section. */
-const RECENT_JOB_MS = 24 * 60 * 60 * 1000;
-
 export function UpdatesSettingsSection() {
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [acting, setActing] = createSignal<"check" | "apply" | null>(null);
+  const [readingNotes, setReadingNotes] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [confirming, setConfirming] = createSignal(false);
 
@@ -98,6 +97,19 @@ export function UpdatesSettingsSection() {
     }
   };
 
+  /** Release Notes: read now, shown in the reading window; focus comes back to the button. */
+  const openNotes = async (opener: HTMLElement) => {
+    setReadingNotes(true);
+    try {
+      const n = await getUpdateNotes();
+      openMarkdown({ title: n.title, subtitle: n.subtitle, markdown: n.markdown, opener });
+    } catch (err) {
+      toast(`Couldn't read the release notes. ${sentence(err instanceof Error ? err.message : String(err))}`);
+    } finally {
+      setReadingNotes(false);
+    }
+  };
+
   const checkedLine = (st: UpdatesState) => {
     const c = st.lastCheck;
     if (st.checking || acting() === "check") return "Checking…";
@@ -141,6 +153,7 @@ export function UpdatesSettingsSection() {
 
             <div class="settings-updates-status" aria-live="polite">
               <p class="settings-updates-checked">{checkedLine(st())}</p>
+              <Show when={upgradedLine(st().job, Date.now())}>{(line) => <p class="settings-updates-checked">{line()}</p>}</Show>
               <Show when={!st().checking && acting() !== "check" && current()?.ok && current()!.result}>
                 {(r) => <p class="settings-updates-result">{resultLine(r(), st().settings.source)}</p>}
               </Show>
@@ -152,18 +165,7 @@ export function UpdatesSettingsSection() {
             <Show when={running() ? null : offer()}>
               {(t) => (
                 <div class="settings-updates-offer">
-                  <Show when={t().notes}>
-                    <details class="settings-updates-notes">
-                      <summary>Release Notes</summary>
-                      <pre>{t().notes}</pre>
-                      <Show when={t().notesUrl}>
-                        <a href={t().notesUrl!} target="_blank" rel="noreferrer">
-                          Open on GitHub
-                        </a>
-                      </Show>
-                    </details>
-                  </Show>
-                  <Show when={!t().notes && t().notesUrl}>
+                  <Show when={t().notesUrl && !(t().version && st().notesAvailable)}>
                     <a class="settings-updates-link" href={t().notesUrl!} target="_blank" rel="noreferrer">
                       {t().version ? "Release Notes" : "See the Changes"}
                     </a>
@@ -197,9 +199,9 @@ export function UpdatesSettingsSection() {
                 <Show
                   when={job().state === "running"}
                   fallback={
-                    <Show when={Date.now() - Date.parse(job().endedAt ?? job().startedAt) < RECENT_JOB_MS}>
+                    <Show when={job().state !== "succeeded" && recentJob(job(), Date.now())}>
                       <Banner
-                        tone={job().state === "succeeded" ? "success" : job().state === "rolled-back" ? "warn" : "error"}
+                        tone={job().state === "rolled-back" ? "warn" : "error"}
                         title={job().detail ?? job().state}
                         body={
                           <>
@@ -237,6 +239,11 @@ export function UpdatesSettingsSection() {
               <button type="button" class="button button-sm" disabled={acting() !== null || st().checking || st().checksOff || !st().running.head || running()} onClick={() => void checkNow()}>
                 {acting() === "check" || st().checking ? "Checking…" : "Check Now"}
               </button>
+              <Show when={st().notesAvailable}>
+                <button type="button" class="button button-sm" disabled={readingNotes()} onClick={(e) => void openNotes(e.currentTarget)}>
+                  Release Notes
+                </button>
+              </Show>
             </div>
             <Show when={actionError()}>
               <Banner tone="error" title={actionError()!} body="Nothing was changed." />

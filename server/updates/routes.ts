@@ -170,6 +170,12 @@ const refused = (c: Context, err: unknown) => {
 export function registerUpdatesRoutes(app: Hono): void {
   app.get("/api/updates", async (c) => c.json(await updates().state()));
 
+  // The Release Notes window: read like GET /api/updates; 404 when this copy has no changelog to show.
+  app.get("/api/updates/notes", async (c) => {
+    const notes = await updates().notes();
+    return notes ? c.json(notes) : c.json({ error: "This copy has no release notes to show." }, 404);
+  });
+
   app.post("/api/updates/check", async (c) => {
     const no = notOperator(c, "update");
     if (no) return no;

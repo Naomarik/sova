@@ -1545,18 +1545,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .settings-updates-status p { margin: 0; }
 .settings-updates-checked { font-size: var(--fs-caption); color: var(--color-ink-2); }
 .settings-updates-offer { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
-.settings-updates-notes { width: 100%; }
-.settings-updates-notes summary { cursor: pointer; min-height: var(--tap-min); display: flex; align-items: center; color: var(--color-accent); }
-.settings-updates-notes pre {
-  margin: 0 0 var(--space-2);
-  max-height: 16rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  font-family: var(--font-body);
-  font-size: var(--fs-caption);
-  color: var(--color-ink-2);
-}
 .settings-updates-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
+/* base.css has no .button-row rule: Check Now beside Release Notes, a confirm's two buttons. */
+.settings-updates .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .settings-server-status p { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
 .settings-updates-confirm p { margin: 0; max-width: var(--measure); }
 .settings-updates-progress p { margin: 0 0 var(--space-2); }

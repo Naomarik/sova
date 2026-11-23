@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { UpdateCheck, UpdateJob, UpdatesRunning, UpdatesSettings, UpdatesState } from "../../shared/protocol";
-import { branchMismatch, checkForUpdate, describeRunning, lsRemoteArgs, offersUpgrade, parseLsRemote, sourceRef } from "./check";
+import type { UpdateCheck, UpdateJob, UpdateNotes, UpdatesRunning, UpdatesSettings, UpdatesState } from "../../shared/protocol";
+import { branchMismatch, checkForUpdate, describeRunning, lsRemoteArgs, offersUpgrade, parseLsRemote, releaseNotesMarkdown, sourceRef } from "./check";
 import { firstLine, type Git } from "./git";
 import type { DiskAhead } from "./disk-ahead";
 import type { InstallInfo, ServiceUnit } from "./install-kind";
@@ -175,6 +175,7 @@ export class UpdatesManager {
     const job = this.job();
     const due = nextCheckDue(f, this.deps.checksOff, this.deps.now());
     const current = f.lastCheck && f.lastCheck.ok && sameSource(f.lastCheck.source, f.source) && f.lastCheck.head === running.head ? f.lastCheck : null;
+    const notesAvailable = !!info.checkout && !!running.head && (await this.deps.git(info.checkout)(["cat-file", "-e", `${running.head}:CHANGELOG.md`])).code === 0;
     return {
       settings: { source: f.source, autoCheck: f.autoCheck, autoUpgrade: f.autoUpgrade },
       running,
@@ -185,7 +186,36 @@ export class UpdatesManager {
       job,
       available: running.canUpgrade && offersUpgrade(current?.result, info.kind) && job?.state !== "running",
       autoRefusal: this.autoRefusal,
+      notesAvailable,
     };
+  }
+
+  /**
+   * The Release Notes window: the running copy's CHANGELOG.md at its commit and, when the last check
+   * of what runs now offers a newer numbered release, that release's CHANGELOG.md at its commit (the
+   * check fetched it). Null when this copy has no checkout or no changelog to read.
+   */
+  async notes(): Promise<UpdateNotes | null> {
+    const info = await this.deps.install();
+    if (!info.checkout) return null;
+    const git = this.deps.git(info.checkout);
+    const running = await describeRunning(git);
+    if (!running.head) return null;
+    const mine = await git(["show", `${running.head}:CHANGELOG.md`]);
+    if (mine.code !== 0) return null;
+    const f = this.read();
+    const c = f.lastCheck;
+    const result = c?.ok && sameSource(c.source, f.source) && c.head === running.head ? c.result : undefined;
+    // Only what the section offers: never a diverged copy that isn't offered it, never a withdrawn release's Go Back.
+    const target = offersUpgrade(result, info.kind) && result.state !== "withdrawn" ? result.target : null;
+    let offer: { version: string; changelog: string; url: string | null } | null = null;
+    if (target?.version) {
+      const theirs = await git(["show", `${target.sha}:CHANGELOG.md`]);
+      if (theirs.code === 0) offer = { version: target.version, changelog: theirs.stdout, url: target.notesUrl };
+    }
+    const markdown = releaseNotesMarkdown({ running: mine.stdout, baseVersion: running.baseVersion, pastBase: running.pastBase, offer });
+    if (!markdown) return null;
+    return { title: "Release Notes", subtitle: "From CHANGELOG.md, newest first.", markdown, url: offer?.url ?? null };
   }
 
   /** Check now (Check Now, or the daily check with `auto`): one at a time, a second caller shares it. */

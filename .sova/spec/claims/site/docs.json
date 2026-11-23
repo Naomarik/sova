@@ -946,6 +946,7 @@
       "§app.updates/running",
       "§app.updates/source",
       "§app.updates/check",
+      "§app.updates/release-notes",
       "§app.updates/indicator",
       "§app.updates/upgrade",
       "§app.updates/auto-upgrade",

@@ -78,10 +78,10 @@ no tag, no `HEAD` and no working file. In a shallow clone (the installer's) the 
 the history it needs to compare. It finds one of:
 
 - **Up to date** — the source is at the commit that runs.
-- **Update available** — the source is newer: "Update available: v0.3.3" with **Release Notes**
-  (that release's section of `CHANGELOG.md` at the release, shown in the section, and a link to it
-  on GitHub), or for a branch "12 new commits · latest: <subject>" with **See the Changes**, the
-  comparison on GitHub.
+- **Update available** — the source is newer: "Update available: v0.3.3", whose notes open from
+  **Release Notes** in the reading window (§app.updates/release-notes): every release between
+  the one that runs and the one offered, in full, never shown as a fold in the section; or for a
+  branch "12 new commits · latest: <subject>" with **See the Changes**, the comparison on GitHub.
 - **Ahead** — the commit that runs is newer than the source: "You're ahead of Stable; updates
   resume when Stable catches up." No button. Sova never moves to older code: a newer numbered
   release is the only way forward from a release, and otherwise the source must contain the
@@ -110,6 +110,33 @@ yet." until the next one.
 `SOVA_UPDATES_CHECK=off` stops every check (the daily one and Check Now); the section says checks
 are off on this server. Unset, a test process (`NODE_ENV=test`, or `node --test`) never checks, and
 `pnpm run dev:hermetic` sets it off unless you set it yourself.
+
+## §app.updates/release-notes — Release Notes, in the reading window
+
+**Release Notes** stands beside **Check Now** whenever this copy has notes to show: its checkout
+holds a `CHANGELOG.md` with at least one release in it. A server that runs from no git checkout, or
+whose changelog is missing, shows no button. Pressing it reads the notes afresh, from the changelog
+shipped in this copy and, when a check found a newer release, the changelog of that release, and
+opens them in the reading window (§app/markdown-viewer), titled "Release Notes", formatted, newest
+first. The changelog's opening words before its first release are left out. Closing the window
+returns focus to the button.
+
+The window holds, in order:
+
+- **What's new, when a newer release is on offer** (Stable, with a numbered release): under a
+  divider "New in v0.3.4 — not installed yet", the notes of every release after the one that runs,
+  up to and including the one offered, newest first and uncut however many there are, ending with a
+  link to the offered release's notes on GitHub. Nothing is new when the offer is a branch's
+  commits, or Go Back to an older release from a withdrawn one (§app.updates/check).
+- **Past its release:** on a copy that runs changes past its newest release, one line: "This copy
+  is 86 changes past v0.3.2. Those changes have no release notes yet." No list of those changes and
+  no comparison link.
+- **What runs:** a divider "You're on v0.3.2" marking the release this copy runs (or last
+  released from), followed by that release's notes and every earlier release's.
+
+The notes are read-only: reading them checks nothing, fetches nothing and changes nothing. Who may
+read them follows `GET /api/updates` (§app.updates/operator): readable like any gated route, and a
+mesh peer needs the `full` grant.
 
 ## §app.updates/indicator — A dot on Settings
 
@@ -154,9 +181,11 @@ Sessions, settings and chats are never touched by an upgrade.
   installer, so the launcher and the app entry stay as they are (§app.installer/mac-app).
 
 Only one upgrade runs at a time, and Check Now waits while it does. No upgrade starts while a
-restart is scheduled (§app.updates/restart). A finished upgrade's outcome
-stays in the section for a day, with the path of its log, and is kept in `updates.json`
-(`lastUpgrade`: from, to, when, outcome, log).
+restart is scheduled (§app.updates/restart). A successful upgrade then
+shows one quiet line in the section's ordinary grey status text, like "Checked 2h ago.":
+"Upgraded to v0.3.3 2h ago.", for a day, with no box, no colour and no log path. A failed upgrade,
+or one that was put back, keeps its box (red, or amber when put back) with the path of its log, for
+a day. Every outcome is kept in `updates.json` (`lastUpgrade`: from, to, when, outcome, log).
 
 ## §app.updates/auto-upgrade — Upgrade automatically
 

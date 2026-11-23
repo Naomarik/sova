@@ -105,7 +105,8 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   if (libraryPick) subagents = libraryPick.id;
   else if (!next) subagents = OFF_ID;
   else if (!subagents && prev?.subagents && chat.mirror.subagentPick !== undefined) subagents = (await resolveDefaultProfile(s.cwd)).row.library?.id ?? OFF_ID;
-  if (subagents && subagents === chat.mirror.subagentPick) subagents = undefined;
+  // A library-only pick still names its profile when the helpers already are its.
+  if (subagents && subagents === chat.mirror.subagentPick && !libraryPick) subagents = undefined;
   if (subagents) {
     const why = (next?.subagents ? subagentsUnusable(next.subagents) : null) ?? (await chat.subagentSwitchRefusal());
     // Off still applies in a chat whose helpers can't be pinned (no mode extension): it has none to move.
@@ -161,7 +162,7 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   if (modePatch.mode || modePatch.minorModes) await step("mode", () => chat.switchMode(modePatch).then(() => chat.pinMode()));
   if (model && model !== chat.mirror.model?.ref) await step("model", () => chat.setModel(model));
   if (thinking) await step("effort", () => chat.setThinking(thinking));
-  if (subagents) await step("subagent profile", () => chat.switchSubagentProfile(subagents));
+  if (subagents) await step("subagent profile", () => chat.switchSubagentProfile(subagents, { named: !!libraryPick }));
   await closeChat(path, "Applying the profile.");
   if (fresh.model || fresh.thinking) {
     setOpeningChoice(path, { fresh });

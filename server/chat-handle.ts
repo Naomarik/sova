@@ -207,8 +207,8 @@ export abstract class ChatHandle {
   subagentSwitchRefusal() {
     return this.call("subagentSwitchRefusal", {});
   }
-  switchSubagentProfile(id: unknown) {
-    return this.call("switchSubagentProfile", { id });
+  switchSubagentProfile(id: unknown, opts: { named?: boolean } = {}) {
+    return this.call("switchSubagentProfile", { id, ...opts });
   }
   switchProfile(target: ProfileSwitchTarget) {
     return this.call("switchProfile", { target });

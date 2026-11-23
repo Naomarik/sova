@@ -145,12 +145,38 @@ describe("a card's effort and subagents", () => {
         assert.deepEqual(await applyProfile(path, pick), { ok: true }, pick);
         assert.deepEqual(entries(path).filter((e) => e.customType === PROFILE_ENTRY).map((e) => (e.data as { profile: unknown }).profile), [null]);
         assert.equal(pickOf(path), "solo");
+        assert.equal((await acquireChat(path, true)).chatProfileState().current.id, "solo", "the chat is on Solo, not Off");
       }
       const bad = await applyProfile(makeSession(), "library:nope");
       assert.equal(bad.ok, false);
     } finally {
       writeFileSync(libFile, before);
     }
+  });
+
+  test("a library-only pick whose helpers the chat already has still puts the chat on that profile", async () => {
+    const path = makeSession();
+    const chat = await acquireChat(path, true);
+    // The helpers already are House's (as a new chat on a library-only default has them), and the chat reads Off.
+    await chat.switchSubagentProfile("house");
+    assert.equal(chat.chatProfileState().current.id, "off");
+    const picksBefore = picks(path).length;
+    assert.deepEqual(await applyProfile(path, "library:house"), { ok: true });
+    assert.equal(picks(path).length, picksBefore, "no second pick entry");
+    assert.equal((await acquireChat(path, true)).chatProfileState().current.id, "house");
+    // Off afterwards is Off, and an Overseer helper move after it doesn't rename the chat.
+    assert.deepEqual(await applyProfile(path, null), { ok: true });
+    const off = await acquireChat(path, true);
+    assert.equal(off.chatProfileState().current.id, "off");
+    await off.switchSubagentProfile("claude-subs");
+    assert.equal(off.chatProfileState().current.id, "off");
+  });
+
+  test("a library-only pick names the chat's profile by its library id, key and name", async () => {
+    const path = makeSession();
+    assert.deepEqual(await applyProfile(path, "library:claude-subs"), { ok: true });
+    const state = (await acquireChat(path, true)).chatProfileState().current;
+    assert.deepEqual([state.id, state.key, state.name], ["claude-subs", "library:claude-subs", "Claude subs"]);
   });
 
   test("Default after a card that set the model and effort, with no new-session defaults: what a fresh session opens on", async () => {

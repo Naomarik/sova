@@ -31,7 +31,9 @@ file differs from the main branch's, a line says so.
   (only when it merges locally), whether private names are set up (their count, never the
   names), and **Delete branches when cleaning up**, off by default: off, automatic cleanup removes a
   landed branch's folder and keeps the branch; on, it removes the branch too, and its last commit
-  stays restorable.
+  stays restorable. **One commit per branch**, off by default and only when it merges locally: on,
+  each branch lands as one commit on top of the main branch instead of a merge commit (still exactly
+  the commit that was tested).
 - **Checks**: how many always run and how many only when the merge thread picks them, then each
   check with its time limit, whether it reruns failed files, and when it runs. **Reuse passes from
   identical code**, on by default: a test file that already passed on exactly this code isn't run
@@ -44,7 +46,8 @@ file differs from the main branch's, a line says so.
 - **Merge thread**: its model, its instructions (Sova's method first, then the project's own), and
   when it starts a fresh chat.
 - **Request**, on a project that lands by pull or merge request: the instructions for writing it.
-- **Where it checks**: where the merge copy lives.
+- **Where it checks**: where the merge copy lives, and a warning when the project has submodules or
+  uses Git LFS (and when git-lfs isn't installed).
 
 <!-- screen: settings-merge-queue-checks | Settings → Merge Queue, further down: each check with its time limit, whether it reruns failed files and when it runs, each tagged Project file. -->
 
@@ -67,6 +70,7 @@ branch, and opens a file to read. It only reads; nothing in it runs.
 - **Reuse passes from identical code**, on or off.
 - **Delete branches when cleaning up**, on or off, in the project's file. It applies from the next
   cleanup, and the confirm says so.
+- **One commit per branch**, on or off, in the project's file, under Merge locally.
 
 Everything else only reads here: the check commands, setup, install and the instruction folders.
 Change those in a branch, and Land it, so the queue tests the change.

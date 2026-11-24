@@ -2,6 +2,7 @@ import { lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { agentRoot, stateRoot } from "./state-root";
+import { isHomeOwnState } from "./chat-homes/root";
 
 /** What the Overseer's read/grep/find/ls answer for a secret file. */
 export const SECRET_REFUSAL = "That file holds credentials; the Overseer can't read it.";
@@ -358,7 +359,8 @@ export class WriteGuard {
     const why = this.confine?.writeProblem(p);
     if (why) return why;
     const forms = [resolve(p), realpathLoose(p)];
-    if (forms.some((c) => this.protectedRoots.some((r) => within(c, r)))) return this.confine ? EXCLUDED_WRITE_REFUSAL : STATE_WRITE_REFUSAL;
+    // A chat home outside its shared/ is Sova's own state too (§app.chat-homes/sole-writer): one shape rule, not a root per home.
+    if (forms.some((c) => isHomeOwnState(c) || this.protectedRoots.some((r) => within(c, r)))) return this.confine ? EXCLUDED_WRITE_REFUSAL : STATE_WRITE_REFUSAL;
     if (this.read instanceof OverseerGuard && this.read.inWorkspace(p)) return WORKSPACE_WRITE_REFUSAL;
     if (this.read.isSecret(p)) return SECRET_WRITE_REFUSAL;
     let st;

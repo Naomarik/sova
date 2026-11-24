@@ -1,6 +1,7 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
+import { newChatPlace } from "./chat-homes/place";
 import { registerJobRoutes } from "./background-jobs-routes";
 import { chatHostHealth } from "./chat-host";
 import { holderAlive, readLock } from "./chat-runtime/writer-lock";
@@ -433,7 +434,9 @@ export function buildApp(deps: AppDeps) {
     // exists on disk (listable, watchable, openable by path).
     let made: { path: string; id: string };
     try {
-      made = createSessionFile({ cwd: resolve(cwd), ...(seed ? { seed } : {}) });
+      // A new chat's conversation goes into its own home while the Chat homes switch is on (§app.chat-homes/new-chats).
+      const place = newChatPlace(resolve(cwd));
+      made = createSessionFile({ cwd: resolve(cwd), ...(place ? { id: place.id, sessionsDir: place.sessionsDir } : {}), ...(seed ? { seed } : {}) });
     } catch (err) {
       const noFile = "SessionManager did not produce a session file";
       if (err instanceof Error && err.message === noFile) return c.json({ error: noFile }, 500);

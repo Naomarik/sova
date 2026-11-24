@@ -348,6 +348,8 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       // Its chats' shared folders (pi-config/extensions/sandbox/shared-folder.ts): in the scratch root, never the
       // sentinel home, whose `.local/state` they would otherwise create.
       SOVA_SHARED_BASE: join(scratch, "shared"),
+      // Its chat homes (server/chat-homes/root.ts): in the scratch root too.
+      SOVA_CHAT_HOMES: join(scratch, "chat-homes"),
       SOVA_CHAT_DRIVER: "detached",
       SOVA_CHAT_CODE: "live",
       GIT_CEILING_DIRECTORIES: opts.root ? `${tmpdir()}:${base}` : tmpdir(),

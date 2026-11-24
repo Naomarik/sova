@@ -1554,6 +1554,22 @@ describe("pi contract", () => {
     }
   });
 
+  test("P49 session-id-in-file-name: create, an id minted in memory, and forkFrom name the file <timestamp>_<id>.jsonl in the folder given, the id being the header's, and touch no other folder", () => {
+    const home = join(dir, "p49-home", "sessions");
+    const id = SessionManager.inMemory(dir).getSessionId();
+    const created = SessionManager.create(dir, home, { id });
+    const file = created.getSessionFile()!;
+    assert.equal(dirname(file), home, "create names its file in the folder given");
+    assert.match(file.slice(home.length + 1), new RegExp(`^[0-9TZ-]+_${id}\\.jsonl$`), "<timestamp>_<id>.jsonl, the id minted in memory first");
+    writeFileSync(file, `${JSON.stringify(created.getHeader())}\n${JSON.stringify({ type: "message", id: "a1", parentId: null, timestamp: new Date().toISOString(), message: { role: "user", content: "hi", timestamp: 1 } })}\n`);
+    const other = join(dir, "p49-other", "sessions");
+    const fork = SessionManager.forkFrom(file, dir, other);
+    const forked = fork.getSessionFile()!;
+    assert.equal(dirname(forked), other, "forkFrom writes in the folder given");
+    assert.equal(forked.slice(other.length + 1).split("_").pop(), `${fork.getSessionId()}.jsonl`, "the fork's id is its file name's last part");
+    assert.deepEqual(readdirSync(home), [file.slice(home.length + 1)], "the source's folder holds only the source");
+  });
+
   test("P30 mcp-snapshot-transport: a transport answering initialize and tools/list connects at session_start; pi declares its tools in the first request, reads no mcp.json and sends a call to send", async () => {
     const sent: { method?: string }[] = [];
     let built = 0;

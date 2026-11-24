@@ -19,6 +19,7 @@ import { crashResumeOn, crashSkip } from "./chat-runtime/crash";
 import type { InflightMarker } from "./chat-runtime/inflight";
 import { joinedText, toHEntry } from "./harness/pi/reader";
 import { createWorkerSession } from "./harness/pi/worker-session";
+import { placedByParent } from "./chat-homes/place";
 import { logAutoResume } from "./overseer-store";
 import { stateRoot } from "./state-root";
 
@@ -285,7 +286,8 @@ export class WorkerRegistry {
   }
 
   private async startNew(req: WorkerStart): Promise<WorkerRef> {
-    const file = createWorkerSession(req.session, req.spec.cwd);
+    // A helper of a chat with a home writes into that home, at any depth (§app.chat-homes/new-chats).
+    const file = createWorkerSession(placedByParent(req.session, req.spec.parent.path), req.spec.cwd);
     const rec: WorkerRecord = {
       v: 1,
       chatId: file.sessionId,

@@ -3,6 +3,7 @@
 // (server/chat-runtime/supervisor.ts) and talked to through a RemoteChatHandle. Installed into chat-handle.ts as
 // its router (setChatRouter), so ws.ts and every caller of acquireChatHandle/chatHandle/chatHandles
 // reach a chat the same way wherever it runs.
+import { CHAT_HOME_ENV, CHAT_HOMES_ROOT_ENV, homeOfSessionFile, homesRoot } from "./chat-homes/root";
 import { bringBackForChat, needsBringBack } from "./worktree-retire-notes";
 import { processEnded } from "./worktree-retire-gate";
 import { randomUUID } from "node:crypto";
@@ -253,6 +254,8 @@ export class ChatHostRouter {
           extra: {
             ...withoutLoginContext(w?.spec.env),
             SOVA_CHAT_STATE_ROOT: stateRoot(),
+            [CHAT_HOMES_ROOT_ENV]: homesRoot(),
+            ...(homeOfSessionFile(c.sessionPath) ? { [CHAT_HOME_ENV]: homeOfSessionFile(c.sessionPath)! } : {}),
             ...(wakesOn() ? { [WAKE_DIR_ENV]: wakeDir() } : {}),
             ...(w?.kind === "worker" ? { [WAKE_WORKER_ENV]: "1" } : {}),
             // A chat in a systemd unit keeps what its commands leave running (§app.background-jobs/where).

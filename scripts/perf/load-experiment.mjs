@@ -374,7 +374,7 @@ function startServer(variant, runId) {
   const node = RUNTIME === "bun" ? [process.env.SOVA_BUN || "bun", "server/index.ts"] : [process.execPath, `--inspect=127.0.0.1:${INSPECT}`, "--import", "tsx", "server/index.ts"];
   const weight = variant === "weight" || variant === "weight-ext" ? WEIGHT : undefined;
   const argv = systemd ? [...scopeArgv(`sova-perf-srv-${runId}`, weight), ...node] : node;
-  const hermetic = RUNTIME === "bun" ? { SOVA_UPDATES_CHECK: "off", SOVA_GIT_MAINTENANCE: "off", SOVA_CLAUDE_TABLE: "off", SOVA_SHARED_BASE: join(PERF_SCRATCH, "shared") } : {};
+  const hermetic = RUNTIME === "bun" ? { SOVA_UPDATES_CHECK: "off", SOVA_GIT_MAINTENANCE: "off", SOVA_CLAUDE_TABLE: "off", SOVA_SHARED_BASE: join(PERF_SCRATCH, "shared"), SOVA_CHAT_HOMES: join(PERF_SCRATCH, "chat-homes") } : {};
   const child = spawn(argv[0], argv.slice(1), {
     cwd: SERVER_ROOT,
     // SOVA_AGENT_CPU=off: a server from a tree with server/agent-cpu.ts would otherwise set CPUWeight

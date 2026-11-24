@@ -25,9 +25,9 @@ function send(base: string, path: string, input: TourRouteRequest = {}, ownerCoo
 /** Once per test process. Real app, auth gate, sockets and share edge; no model is ever prompted. */
 export async function createTourRouteFixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "tour-real-app-"))), agentDir = join(root, "agent"), state = join(agentDir, "sova"), cwd = join(root, "workspace");
-  const names = ["PI_CODING_AGENT_DIR", "SOVA_SHARE_DIST", "SOVA_SHARE_PUBLIC_URL", "SOVA_AUTH", "SOVA_TOKEN", "HOST", "SOVA_ALLOWED_HOSTS", "SOVA_ALLOWED_ORIGINS", "SOVA_PRICES_FETCH", "SOVA_CHAT_STATE_ROOT"];
+  const names = ["PI_CODING_AGENT_DIR", "SOVA_SHARE_DIST", "SOVA_SHARE_PUBLIC_URL", "SOVA_AUTH", "SOVA_TOKEN", "HOST", "SOVA_ALLOWED_HOSTS", "SOVA_ALLOWED_ORIGINS", "SOVA_PRICES_FETCH", "SOVA_CHAT_STATE_ROOT", "SOVA_CHAT_HOMES"];
   const previous = new Map(names.map(name => [name, process.env[name]]));
-  process.env.PI_CODING_AGENT_DIR = agentDir; process.env.SOVA_SHARE_DIST = join(root, "dist-share"); process.env.SOVA_PRICES_FETCH = "off"; process.env.SOVA_CHAT_STATE_ROOT = state;
+  process.env.PI_CODING_AGENT_DIR = agentDir; process.env.SOVA_SHARE_DIST = join(root, "dist-share"); process.env.SOVA_PRICES_FETCH = "off"; process.env.SOVA_CHAT_STATE_ROOT = state; process.env.SOVA_CHAT_HOMES = join(root, "chat-homes");
   for (const name of ["SOVA_AUTH", "SOVA_TOKEN", "HOST", "SOVA_ALLOWED_HOSTS", "SOVA_ALLOWED_ORIGINS", "SOVA_SHARE_PUBLIC_URL"]) delete process.env[name];
   mkdirSync(join(agentDir, "sessions", "live"), { recursive: true }); mkdirSync(cwd, { recursive: true }); mkdirSync(process.env.SOVA_SHARE_DIST, { recursive: true });
   writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><html><title>Recorded tour fixture</title></html>");

@@ -10,6 +10,7 @@ import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
+import { hasHome, homeIdOfPath, homesRoot, isHomeSessionFile } from "./chat-homes/root";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import type { HEntry } from "../shared/harness";
 import { isLinkMessage } from "../shared/link-message";
@@ -882,9 +883,36 @@ async function existingParent(raw: unknown): Promise<{ parent: string; parentId:
   return there ? { parent: path, parentId: idOf(path) } : null;
 }
 
+/**
+ * The second walk (§app.chat-homes/new-chats): each chat home of this state root, its flat `sessions/` folder, real
+ * `.jsonl` files only (never a dot-file: a worker fork's temporary source copy). Homes whose manifest names another
+ * state root are skipped (hasHome, read once per home).
+ */
+async function listHomeSessionFiles(files: string[]): Promise<void> {
+  const root = homesRoot();
+  let homes: Dirent[];
+  try {
+    homes = await readdir(root, { withFileTypes: true });
+  } catch {
+    return; // no homes yet
+  }
+  await Promise.all(
+    homes.map(async (d) => {
+      if (!d.isDirectory() || !hasHome(d.name)) return;
+      const dir = join(root, d.name, "sessions");
+      try {
+        for (const f of await readdir(dir, { withFileTypes: true })) if (f.isFile() && f.name.endsWith(".jsonl") && !f.name.startsWith(".")) files.push(join(dir, f.name));
+      } catch {
+        // unreadable: skip
+      }
+    }),
+  );
+}
+
 export async function listSessionFiles(): Promise<string[]> {
   const files: string[] = [];
   let top: Dirent[] = [];
+  const homed = listHomeSessionFiles(files);
   try {
     top = await readdir(SESSIONS_DIR, { withFileTypes: true });
   } catch {
@@ -916,6 +944,7 @@ export async function listSessionFiles(): Promise<string[]> {
       }
     }),
   );
+  await homed;
   return files;
 }
 
@@ -1447,11 +1476,12 @@ export async function sessionPathOfId(id: string): Promise<string | undefined> {
 }
 
 /** Whether a listing lists `path` (listSessionFiles' places): a real `.jsonl` file in the sessions
-    folder, one folder below it (not the live records'), or an extra session root. */
+    folder, one folder below it (not the live records'), an extra session root, or a chat home's `sessions/`. */
 function listedPlace(path: string): boolean {
   if (!path.endsWith(".jsonl")) return false;
   const dir = dirname(path);
-  const placed = dir === SESSIONS_DIR || (dirname(dir) === SESSIONS_DIR && dir !== LIVE_DIR) || extraSessionRoots().includes(dir);
+  const placed =
+    dir === SESSIONS_DIR || (dirname(dir) === SESSIONS_DIR && dir !== LIVE_DIR) || extraSessionRoots().includes(dir) || (isHomeSessionFile(path) && hasHome(homeIdOfPath(path)!));
   if (!placed) return false;
   try {
     return lstatSync(path).isFile();

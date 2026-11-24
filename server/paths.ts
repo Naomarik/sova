@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+import { isHomeSessionFile } from "./chat-homes/root";
 import { agentRoot } from "./state-root";
 
 function canonical(p: string): string {
@@ -31,8 +32,10 @@ export function setProjectSessionRoots(provider: () => readonly string[]): void 
 }
 export const extraSessionRoots = (): readonly string[] => [...extraRoots(), ...projectRoots()];
 
+/** A chat home's conversation (`<homes>/<id>/sessions/<file>.jsonl`, §app.chat-homes/new-chats) is a session file too: one
+    string-only shape rule, never a root per home. */
 const isInsideSessions = (p: string) =>
-  (p.startsWith(SESSIONS_DIR + sep) && !p.startsWith(LIVE_DIR + sep)) || extraSessionRoots().includes(dirname(p));
+  (p.startsWith(SESSIONS_DIR + sep) && !p.startsWith(LIVE_DIR + sep)) || isHomeSessionFile(p) || extraSessionRoots().includes(dirname(p));
 
 /**
  * The fs-FREE half of resolveSessionPath: a .jsonl inside SESSIONS_DIR (not live/), with the
@@ -59,7 +62,7 @@ export function sessionPathShape(raw: string | undefined | null): string | null 
 
 /**
  * Validate a client-supplied session path: must be a .jsonl file inside SESSIONS_DIR
- * (not in live/), or directly inside an extra session root. Existing files are canonicalized with realpath, so a symlink can neither
+ * (not in live/), directly inside an extra session root, or directly in a chat home's `sessions/`. Existing files are canonicalized with realpath, so a symlink can neither
  * point outside the sessions dir nor alias another session (the canonical path is THE key
  * for the chat map, live-registry lookup and ownership records). Returns null if rejected;
  * a missing file is returned as-is (callers check existence).

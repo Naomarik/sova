@@ -7,6 +7,7 @@ import type { HHeader } from "../../shared/harness";
 import { lineHeader } from "../harness/pi/reader";
 import { indexedSessionPaths, idOf } from "../sessions-index";
 import { extraSessionRoots, resolveSessionPath, SESSIONS_DIR } from "../paths";
+import { homeSessionsDir, listHomeIds } from "../chat-homes/root";
 import { stateRoot } from "../state-root";
 import { isTourSession } from "./store";
 import { isTourSessionDeleted } from "./deleted";
@@ -102,8 +103,9 @@ export function knownTourOwnerSessions(root = stateRoot()): { sessions: string[]
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") unknown = true; }
   return { sessions, unknown };
 }
-/** A recovery pass must use this same immutable visibility snapshot for both confirmations. */
-export function captureTourOwnerRoots(roots: readonly TourOwnerRoot[] = [{ path: SESSIONS_DIR, flat: false }, ...extraSessionRoots().map(path => ({ path, flat: true }))]): readonly TourOwnerRoot[] {
+/** A recovery pass must use this same immutable visibility snapshot for both confirmations. Each chat home's
+    `sessions/` is a flat root of its own (§app.chat-homes/new-chats); no homes adds none. */
+export function captureTourOwnerRoots(roots: readonly TourOwnerRoot[] = [{ path: SESSIONS_DIR, flat: false }, ...extraSessionRoots().map(path => ({ path, flat: true })), ...listHomeIds().map(id => ({ path: homeSessionsDir(id), flat: true }))]): readonly TourOwnerRoot[] {
   return Object.freeze(roots.map(root => Object.freeze({ path: root.path, flat: root.flat })));
 }
 /** Unlike sidebar listing, includes zero-input chats; uncertainty must never authorize cleanup. */

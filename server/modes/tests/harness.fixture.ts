@@ -46,6 +46,8 @@ process.env.CLAUDE_CONFIG_DIR = join(agentDir, "claude-code");
 // `<shared>`, never under the home.
 export const sharedBase = join(agentDir, "shared");
 process.env.SOVA_SHARED_BASE = sharedBase;
+// Chat homes (server/chat-homes/root.ts): in the throwaway agent dir too.
+process.env.SOVA_CHAT_HOMES = join(agentDir, "chat-homes");
 const sessionsRoot = join(agentDir, "sessions");
 mkdirSync(join(sessionsRoot, "live"), { recursive: true });
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()));

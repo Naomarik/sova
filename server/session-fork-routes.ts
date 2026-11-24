@@ -3,6 +3,7 @@
 // every refusal the UI cannot know (the strip shows the server's sentence); server/harness/pi/fork.ts
 // owns the read-only source parse and the fork's bytes. The source is never written, opened as a
 // runtime, prompted or notified — and no model is called: creating the fork is file work only.
+import { newChatPlacer } from "./chat-homes/place";
 import type { Hono } from "hono";
 import { existsSync } from "node:fs";
 import { assertNotLive, BusyError, chatHandle } from "./chat-handle";
@@ -101,7 +102,8 @@ export function registerSessionForkRoutes(app: Hono): void {
         );
     }
 
-    const fork = forkSessionFile(path, body.entryId.trim());
+    // The fork is a new chat: its own home while the Chat homes switch is on (§app.chat-homes/new-chats).
+    const fork = forkSessionFile(path, body.entryId.trim(), newChatPlacer());
     if (!fork.ok) return c.json({ error: fork.message }, fork.status);
     markOwned(fork.path); // the fresh fork file is this server's write, never a foreign one's
     addWebSession(fork.sessionId); // origin "web" in every list, this server's and restarts' alike

@@ -1110,7 +1110,7 @@ export interface PlaybookCatalog {
 }
 
 // GET /api/settings              -> WebSettings
-// PUT /api/settings              -> WebSettings (400 bad body; `experimental` and `alignment`, when
+// PUT /api/settings              -> WebSettings (400 bad body; `experimental`, `alignment` and `storage`, when
 //                                   present, must be objects, a known key a boolean; unknown keys
 //                                   are ignored)
 // GET /api/settings/claude-status -> ClaudeCliStatus
@@ -1125,6 +1125,17 @@ export interface WebSettings {
   experimental: ExperimentalSettings;
   /** Settings → Alignment's part of this file (eagerness, style and visuals are mode-align.json's, AlignSettingsInfo). */
   alignment: AlignmentWebSettings;
+  /** Settings → General's storage switches, each ON unless stored `false`. */
+  storage: StorageWebSettings;
+}
+
+/** Where new chats are kept, and whether old archived ones are compressed (§app.chat-homes/new-chats,
+    §app.session-list/archive-compression). */
+export interface StorageWebSettings {
+  /** New chats get a chat home. Off: new chats are stored as before homes; chats that have a home stay listed. */
+  chatHomes: boolean;
+  /** Archived chats older than 60 days are compressed automatically. */
+  autoCompress: boolean;
 }
 
 /** Settings → Experimental's switches, each a boolean, off unless stored `true`. None today (the tab says so).

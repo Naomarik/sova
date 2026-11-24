@@ -87,13 +87,13 @@ test("memory is never a coding session's: refused when named, dropped from the d
   assert.deepEqual(hostDefaultMode(), { mode: "normal", minorModes: ["spec"] }, "a default with memory starts coding sessions without it");
 });
 
-test("subagent_profile: any profile here or off; an unknown one refused with where to look", () => {
+test("subagent_profile: any profile here; \"off\" answered with the profiles there are; an unknown one refused with where to look", () => {
   writeDefault("normal", []);
   assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "big" }), { mode: { mode: "normal", minorModes: [], subagentProfile: "big" } });
-  assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "off" }), { mode: { mode: "normal", minorModes: [], subagentProfile: "off" } });
+  assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "off" }), { error: 'No profile is named "off"; the profiles here are House, Big team and Claude.' });
   assert.equal((checkedCodingModeChoice({ subagent_profile: "nope" }) as { error: string }).error, "Unknown subagent profile: nope. sova_list_subagent_profiles lists them.");
   assert.deepEqual(codingModeSwitch({ subagent_profile: "big" }), { mode: { subagentProfile: "big" } }, "a profile alone leaves the mode as it is");
-  const info = { profiles: [{ id: "off", name: "Off" }, { id: "big", name: "Big team" }], current: { id: "house", name: "House" } } as never;
+  const info = { profiles: [{ id: "big", name: "Big team" }], current: { id: "house", name: "House" } } as never;
   assert.equal(profileName(info), "House", "unnamed: the default's name");
   assert.equal(profileName(info, "big"), "Big team");
 });

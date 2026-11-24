@@ -862,10 +862,10 @@ describe("sandbox on sova_set_session and sova_create_session (§app.overseer/to
     return { run, calls, sandboxCalls, states };
   }
 
-  test("a Models-only profile is asked for as helpers alone, so the route starts it as it starts named helpers", async () => {
+  test("\"off\" names no profile: one sentence naming the profiles there are, and nothing is created", async () => {
     const h = harness();
-    assert.doesNotMatch(await h.run("sova_create_session", { cwd: "/w", profile: "off" }), /^ERROR/);
-    assert.deepEqual(h.calls.find((c) => c.path === "/api/sessions")?.body, { cwd: "/w", subagent_profile: "off" });
+    assert.match(await h.run("sova_create_session", { cwd: "/w", profile: "off" }), /^ERROR: No profile is named "off"; the profiles here are .*\. No session was created\.$/);
+    assert.equal(h.calls.some((c) => c.path === "/api/sessions"), false);
   });
 
   test("a default the route couldn't fully apply reaches the Overseer, here and on a peer", async () => {

@@ -5,7 +5,7 @@
 
 /** A row of the joined list, as much of it as the Overseers read. */
 export interface JoinedRow {
-  /** What a call's `profile` takes: "off", a pair's (or unlinked session profile's) session id, or a library id. */
+  /** What a call's `profile` takes: a pair's (or unlinked session profile's, or a built-in one's) session id, or a library id. */
   id: string;
   key?: string;
   /** "library": a library profile no session profile links to, so it has only a Models part. */
@@ -22,12 +22,12 @@ export interface JoinedRow {
   linkMissing?: string;
 }
 
-/** Whether a row is only a Models part (a library-only profile, or Off): starting it needs no Overseer mark. */
-export const modelsOnly = (r: Pick<JoinedRow, "kind">): boolean => r.kind === "library" || r.kind === "off";
+/** Whether a row is only a Models part (a library-only profile): starting it needs no Overseer mark. */
+export const modelsOnly = (r: Pick<JoinedRow, "kind">): boolean => r.kind === "library";
 
 /** One line of sova_list_profiles: id, name, footprint, its parts, whether the Overseer may start it, the default. */
 export function profileLine(r: JoinedRow): string {
-  const parts = r.kind === "off" ? "sets nothing" : modelsOnly(r) ? "Models part only" : r.libraryId ? "When a Chat Starts + Models" : "When a Chat Starts + this chat's model (helpers: the default's)";
+  const parts = modelsOnly(r) ? "Models part only" : r.libraryId ? "When a Chat Starts + Models" : "When a Chat Starts + this chat's model (helpers: the default's)";
   const start = modelsOnly(r) ? "needs no mark" : r.session?.overseerMayStart ? 'marked "The Overseer may start it"' : 'not marked "The Overseer may start it"';
   const bits = [
     `${r.id}: ${r.name}`,
@@ -44,6 +44,11 @@ export function profileLine(r: JoinedRow): string {
 
 /** The tools' sentence for an id the list lacks. */
 export const unknownProfile = (id: string) => `Unknown profile: ${id}. sova_list_profiles lists them.`;
+
+/** "A", "A and B", "A, B and C". */
+const names = (all: readonly string[]): string => (all.length <= 1 ? (all[0] ?? "none") : `${all.slice(0, -1).join(", ")} and ${all.at(-1)}`);
+/** The tools' one sentence for "off", which names no profile: the profiles there are. */
+export const noOffProfile = (rows: readonly Pick<JoinedRow, "name">[]) => `No profile is named "off"; the profiles here are ${names(rows.map((r) => r.name))}.`;
 
 /** What sova_set_session says a profile switch did, from `POST /api/sessions/profile-switch`'s answer. */
 export function profileSwitchWords(r: { applies?: string; state?: { current?: { name?: string; model?: string | null }; pending?: { name?: string } } } | null | undefined): string {

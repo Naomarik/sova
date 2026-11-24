@@ -7,14 +7,26 @@
 import assert from "node:assert/strict";
 import { renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 
 const { agentDir, fakePi, flush, inSova } = await import("./tests/engine-host.fixture");
 const { REPLY_SHAPE_INSTRUCTIONS } = await import("../../pi-config/extensions/mode/prompt.ts");
 type Entry = import("./tests/engine-host.fixture").Entry;
 const { MODE_STATE_EVENT } = await import("../../pi-config/extensions/mode/state.ts");
+const { legacyProfile } = await import("../../pi-config/extensions/subagents/subagent-profiles.ts");
+
+/**
+ * The library an older build seeded from the legacy files ("My setup", the default), as on a computer set up
+ * before built-in profiles: these tests are about how the engine reads routing, so each starts from one. A
+ * computer with no library at all gets the built-in profiles (pi-config's subagent-profiles tests).
+ */
+function olderStarter(): void {
+  writeFileSync(join(agentDir, "subagent-profiles.json"), JSON.stringify({ version: 1, profiles: [legacyProfile(agentDir)] }));
+  writeFileSync(join(agentDir, "subagent-profiles-default.json"), JSON.stringify({ version: 1, default: "my-setup" }));
+}
 
 const FILES = ["mode.json", "mode-delegate.json", "mode-spec.json", "model-policy.json", "subagent-profiles.json", "subagent-profiles-default.json", "mode-align.json"];
+beforeEach(() => olderStarter());
 afterEach(() => {
   for (const f of FILES) rmSync(join(agentDir, f), { force: true });
   delete (globalThis as Record<symbol, unknown>)[WEB_MINOR];
@@ -30,8 +42,12 @@ function writeSetting(name: string, value: unknown): void {
   // A distinct mtime for each write: the policy reader re-reads on an mtime move, and a test writes within a millisecond.
   const at = new Date(Date.UTC(2026, 0, 1) + ++writes * 1000);
   utimesSync(file, at, at);
-  // The legacy routing files reach a session through subagent-profiles.json, seeded from them when absent.
-  if (name !== "model-policy.json" && name !== "mode.json") for (const f of ["subagent-profiles.json", "subagent-profiles-default.json"]) rmSync(join(agentDir, f), { force: true });
+  // The legacy routing files reach a session through subagent-profiles.json, as an older build seeded it from them.
+  if (name !== "model-policy.json" && name !== "mode.json") {
+    olderStarter();
+    const at2 = new Date(Date.UTC(2026, 0, 1) + ++writes * 1000);
+    for (const f of ["subagent-profiles.json", "subagent-profiles-default.json"]) utimesSync(join(agentDir, f), at2, at2);
+  }
 }
 const writeDefault = (mode: string, minorModes: string[], strict = false) => writeSetting("mode.json", { version: 1, mode, strict, minorModes });
 
@@ -335,7 +351,7 @@ test("spec writer: a writer-only change after a note-only spec turn-on reaches t
   assert.doesNotMatch(p.sent.at(-1)!.content, /fixture\/writer-a/);
 });
 
-test("subagent profiles: the chat's pick is re-read at each turn; Off names the work kinds with no worker; /mode subagents writes the pick once", async () => {
+test("subagent profiles: the chat's pick is re-read at each turn; an older Off pick follows the default; /mode subagents writes the pick once and answers \"off\" with the profiles there are", async () => {
   const route = (model: string) => Object.fromEntries(["planning", "investigation", "routine", "complex"].map((k) => [k, { primary: { backend: "claude-code", model, effort: "low" }, fallback: null }]));
   const empty = { teams: null, members: null, specWriter: null };
   writeFileSync(join(agentDir, "subagent-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "a", name: "A", delegate: route("claude-opus-5-5"), ...empty }, { id: "b", name: "B", delegate: route("claude-sonnet-5-5"), ...empty }] }));
@@ -347,17 +363,41 @@ test("subagent profiles: the chat's pick is re-read at each turn; Off names the 
   entries.push({ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "b" } });
   assert.match((await p.turn()) ?? "", /Routine implementation .* → backend "claude-code", model "claude-sonnet-5-5"/, "a pick written into the branch applies from the next turn");
   entries.push({ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "off" } });
-  const off = (await p.turn()) ?? "";
-  assert.match(off, /# Mode: delegate/, "Off still asks the agent to delegate");
-  assert.match(off, /no subagent profile routes them/);
-  assert.doesNotMatch(off, /→ backend/, "Off carries no worker line");
+  assert.match((await p.turn()) ?? "", /Routine implementation .* → backend "claude-code", model "claude-opus-5-5"/, "an older Off pick follows the default");
   const before = entries.length;
   await p.mode("subagents B");
   assert.deepEqual(entries.at(-1), { type: "custom", customType: "subagent-profile", data: { v: 1, profile: "b" } }, "/mode subagents takes a name and writes the entry");
   await p.mode("subagents b");
   assert.equal(entries.length, before + 1, "the same pick again writes nothing");
   await p.mode("subagents nope");
-  assert.match(p.notes.at(-1)!.text, /No subagent profile "nope"/);
+  assert.equal(p.notes.at(-1)!.text, `No profile is named "nope"; the profiles here are A, B and Claude.`);
+  await p.mode("subagents off");
+  assert.equal(p.notes.at(-1)!.text, `No profile is named "off"; the profiles here are A, B and Claude.`);
+  assert.equal(entries.length, before + 1, "nothing written for either");
+  await p.mode("subagents claude");
+  assert.match((await p.turn()) ?? "", /Planning & specs .* → backend "claude-code", model "claude-fable-5-2", effort "high"/, "a built-in profile by its id");
+});
+
+test("Sova's own chats (the no-helper-profile flag): with no default chosen, no helper profile, never the built-in one (b3); a default chosen still applies", async () => {
+  for (const f of ["subagent-profiles.json", "subagent-profiles-default.json"]) rmSync(join(agentDir, f), { force: true });
+  const entries: Entry[] = [{ type: "custom", customType: "mode", data: { active: { version: 1, mode: "delegate", strict: false, minorModes: [] } } }];
+  const own = fakePi(entries, { flags: { "no-helper-profile": true } });
+  await own.start();
+  const none = (await own.turn()) ?? "";
+  assert.match(none, /no subagent profile routes them/);
+  assert.doesNotMatch(none, /→ backend/, "no worker line: delegate null");
+  // A user's chat on the same computer: the built-in profile the accounts give (none connected here: Claude).
+  const user = fakePi([...entries]);
+  await user.start();
+  assert.match((await user.turn()) ?? "", /Planning & specs .* → backend "claude-code", model "claude-fable-5-2", effort "high"/);
+  // Nothing was written for either.
+  const { existsSync } = await import("node:fs");
+  assert.equal(existsSync(join(agentDir, "subagent-profiles.json")), false);
+  assert.equal(existsSync(join(agentDir, "subagent-profiles-default.json")), false);
+  olderStarter();
+  const chosen = fakePi([...entries], { flags: { "no-helper-profile": true } });
+  await chosen.start();
+  assert.match((await chosen.turn()) ?? "", /→ backend "claude-code"/, "a default this computer has applies to them, as it always did");
 });
 
 // ── align's writing style, Eagerness and Visuals (§chat.alignment/style, /eagerness, /visuals) ─────

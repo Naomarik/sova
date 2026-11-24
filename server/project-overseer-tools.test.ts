@@ -46,13 +46,12 @@ const { codingModeChoice, codingModeSwitch, confirmBriefPrompt, CONFIRM_BRIEF_PA
 const { codingStartRefusal, codingTakesOf } = await import("./coding-default-profile");
 
 /** This computer's subagent profiles, as the fake host has them ("house" the default). */
-const PROFILES = { profiles: [{ id: "off", name: "Off", footprint: "no workers" }, { id: "house", name: "House", footprint: "4 routes" }, { id: "big", name: "Big team", footprint: "6 routes" }], default: "house", current: { id: "house", name: "House", source: "default" } } as never;
-const profileCheck = (id: string | undefined) => (id === undefined || ["off", "house", "big"].includes(id) ? null : `Unknown subagent profile: ${id}. sova_list_subagent_profiles lists them.`);
+const PROFILES = { profiles: [{ id: "house", name: "House", footprint: "4 routes" }, { id: "big", name: "Big team", footprint: "6 routes" }], default: "house", current: { id: "house", name: "House", source: "default" } } as never;
+const profileCheck = (id: string | undefined) => (id === undefined || ["house", "big"].includes(id) ? null : `Unknown subagent profile: ${id}. sova_list_subagent_profiles lists them.`);
 /** This computer's joined profiles, as the fake host has them: a pair (models + modes), a library-only profile, and a
     pair whose When a Chat Starts part grants a session power and removes the web. */
 const SESSION = { remove: [], grant: [], singleton: false, limits: {}, overseerMayStart: false, icon: "wrench", source: "user" };
 const JOINED = [
-  { id: "off", key: "sova:default", kind: "off", group: "builtin", name: "Off", footprint: "Keeps the chat's own model", providers: [], helperRoles: 0 },
   { id: "claude", key: "user:claude", kind: "pair", group: "yours", name: "Claude", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 4, libraryId: "house", isDefault: true, session: { ...SESSION, id: "claude", label: "Claude", key: "user:claude", mode: "delegate", minorModes: ["spec"], model: "claude-code-cli/claude-opus-5-5", thinking: "high", subagents: "house" } },
   { id: "big", key: "library:big", kind: "library", group: "yours", name: "Big team", footprint: "GPT", providers: ["openai"], helperRoles: 6, libraryId: "big" },
   { id: "powers", key: "user:powers", kind: "pair", group: "yours", name: "Powers", footprint: "Opus 5.5", providers: ["claude"], helperRoles: 4, libraryId: "house", session: { ...SESSION, id: "powers", label: "Powers", key: "user:powers", remove: ["web"], grant: ["sessions.message"], overseerMayStart: true, subagents: "house" } },
@@ -435,7 +434,6 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
       { mode: "delegate", minor_modes: ["align", "spec", "vis"] },
       { minor_modes: ["spec", "vis"] },
       { subagent_profile: "big" },
-      { subagent_profile: "off" },
     ];
     for (const ask of asks) {
       const f = fake({ attended: true });
@@ -551,9 +549,8 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     const f = fake({ attended: false, autonomy: "L0" });
     const r = await f.run("sova_list_profiles");
     assert.equal(
-      (r.content[0] as { text: string }).text.split("\n").slice(0, 4).join("\n"),
+      (r.content[0] as { text: string }).text.split("\n").slice(0, 3).join("\n"),
       [
-        "off: Off · Keeps the chat's own model · sets nothing · needs no mark",
         'claude: Claude · Opus 5.5 · When a Chat Starts + Models · subagent_profile house · not marked "The Overseer may start it" · default',
         "big: Big team · GPT · Models part only · needs no mark",
         'powers: Powers · Opus 5.5 · When a Chat Starts + Models · subagent_profile house · marked "The Overseer may start it"',

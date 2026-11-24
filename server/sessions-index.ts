@@ -11,7 +11,7 @@ import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { chatHome, forgetHome, hasHome, homeIdOfPath, homesRoot, isHomeSessionFile } from "./chat-homes/root";
-import { forgetHomeRecords, refreshHomeRecords } from "./chat-homes/records";
+import { forgetHomeRecords, helperRecords, refreshHomeRecords } from "./chat-homes/records";
 import { emitChatNews } from "./chat-home-events";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import type { HEntry } from "../shared/harness";
@@ -2570,6 +2570,8 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
 function helpersInUse(o: { path: string; homeId: string | null; helpers: readonly string[]; live: ReadonlySet<string> | ReadonlyMap<string, unknown>; now: number }): boolean {
   const files = [...o.helpers];
   const records: string[] = [];
+  // The worker registry's records in memory, while it runs here (they are the truth: a record on disk can lag a stop).
+  const held = helperRecords();
   if (o.homeId) {
     const home = chatHome(o.homeId);
     try {
@@ -2577,12 +2579,13 @@ function helpersInUse(o: { path: string; homeId: string | null; helpers: readonl
     } catch {
       // no conversations folder
     }
-    try {
-      for (const n of readdirSync(join(home, "workers"))) if (n.endsWith(".json")) records.push(join(home, "workers", n));
-    } catch {
-      // no worker records
-    }
-  } else {
+    if (!held)
+      try {
+        for (const n of readdirSync(join(home, "workers"))) if (n.endsWith(".json")) records.push(join(home, "workers", n));
+      } catch {
+        // no worker records
+      }
+  } else if (!held) {
     try {
       const dir = join(stateRoot(), "chats", "workers");
       for (const n of readdirSync(dir)) if (n.endsWith(".json")) records.push(join(dir, n));
@@ -2599,14 +2602,17 @@ function helpersInUse(o: { path: string; homeId: string | null; helpers: readonl
     }
   }
   const mine = new Set([o.path, ...o.helpers]);
+  const recs: { state?: string; path?: string; parent?: { path?: string } }[] = held ? held.filter((r) => !o.homeId || homeIdOfPath(r.path) === o.homeId) : [];
   for (const r of records) {
     try {
-      const rec = JSON.parse(readFileSync(r, "utf8")) as { state?: string; path?: string; parent?: { path?: string } };
-      if (rec.state === "ended") continue;
-      if (o.homeId || mine.has(rec.parent?.path ?? "") || mine.has(rec.path ?? "")) return true;
+      recs.push(JSON.parse(readFileSync(r, "utf8")) as { state?: string; path?: string; parent?: { path?: string } });
     } catch {
       // unreadable: not a record
     }
+  }
+  for (const rec of recs) {
+    if (rec.state === "ended") continue;
+    if (o.homeId || mine.has(rec.parent?.path ?? "") || mine.has(rec.path ?? "")) return true;
   }
   return false;
 }

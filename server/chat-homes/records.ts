@@ -244,6 +244,26 @@ export function registerHomeMember(memberId: string, parentId: string): string |
   return home;
 }
 
+/** A helper's record as the worker registry holds it (server/chat-workers.ts WorkerRecord), what "in use" reads. */
+export interface HelperRecord {
+  chatId: string;
+  path: string;
+  parent: { path: string };
+  state: string;
+}
+
+let helperSource: (() => Iterable<HelperRecord>) | null = null;
+
+/** The server's worker registry names itself here: its records in memory are the truth while it runs. */
+export function setHelperRecordSource(fn: (() => Iterable<HelperRecord>) | null): void {
+  helperSource = fn;
+}
+
+/** Every helper record the running registry holds, or null when no registry runs in this process (read the disk). */
+export function helperRecords(): HelperRecord[] | null {
+  return helperSource ? [...helperSource()] : null;
+}
+
 /** The env a chat process gets when its chat, or the root chat above it, has a home: that home's folder. */
 export { CHAT_HOME_ENV };
 

@@ -66,13 +66,13 @@ export function setChatHomesRoot(fn: () => string): void {
 	homesRootOf = fn;
 }
 
-/** The home of the chat whose key is `key` (its manifest is there), or undefined: a chat from before homes. */
+/** The home of the chat whose key is `key` (its `home.json` is there, server/chat-homes/root.ts HOME_FILE), or undefined: a chat from before homes. */
 export function chatHomeDirOf(key: string, env: Record<string, string | undefined> = process.env): string | undefined {
 	const fromEnv = env[CHAT_HOMES_ROOT_ENV] || env[CHAT_HOMES_ENV];
 	const root = homesRootOf?.() ?? (fromEnv && isAbsolute(fromEnv) ? fromEnv : undefined);
 	if (!root || !key) return undefined;
 	const dir = join(root, key);
-	return existsSync(join(dir, "manifest.json")) ? dir : undefined;
+	return existsSync(join(dir, "home.json")) ? dir : undefined;
 }
 
 /** The shared folder of the chat whose session key (or id) is `sessionKey`: `<home>/shared` for a chat with a home. */

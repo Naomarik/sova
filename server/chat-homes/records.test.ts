@@ -11,8 +11,8 @@ const scratch = mkdtempSync(join(tmpdir(), "sova-home-records-"));
 process.env.PI_CODING_AGENT_DIR = join(scratch, "agent");
 process.env.SOVA_CHAT_HOMES = join(scratch, "homes");
 
-const { ensureChatHome } = await import("./root");
-const { expireHomeRecordChecksForTest, homeOf, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
+const { ensureChatHome, forgetHome } = await import("./root");
+const { expireHomeRecordChecksForTest, forgetHomeRecords, homeOf, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
 const { markSeen, readSeen } = await import("../seen");
 const { readSessionTitles, setSessionTitle } = await import("../session-titles");
 const { isArchived, setArchived } = await import("../archived-sessions");
@@ -124,4 +124,16 @@ test("a helper's record kept in its chat's home is loaded at start, and its reco
   assert.equal(reg.record(helper)?.state, "ended", "a finished helper's record is kept and loaded");
   assert.equal(homeOf(helper), HOMED);
   assert.equal(existsSync(join(state, "chats", "workers", `${helper}.json`)), false);
+});
+
+test("a write after a home was removed never makes it again", () => {
+  const GONE = "019a0000-0000-7000-8000-00000000000f";
+  const home = ensureChatHome(GONE);
+  setSessionTitle(GONE, "Before");
+  forgetHome(GONE);
+  forgetHomeRecords(GONE);
+  rmSync(home, { recursive: true, force: true });
+  setSessionTitle(GONE, "Late");
+  markSeen(GONE, 99);
+  assert.equal(existsSync(home), false);
 });

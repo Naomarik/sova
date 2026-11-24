@@ -9,7 +9,7 @@ import type { Answer } from "./decide";
 import { joinedText, lineEntry } from "./harness/pi/reader";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
-import { splitOut, withHome } from "./chat-homes/records";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 
 /**
  * Session tags: the user's own manual tags per session (§app.decisions/session-tags). Automatic
@@ -126,14 +126,15 @@ function loadFile(file: string): Store {
   return store;
 }
 
-let cache: { file: string; at: number; store: Store } | null = null;
+let cache: { file: string; at: number; gen: number; store: Store } | null = null;
 const CACHE_MS = 1000;
 
 function readStore(file = tagsFile()): Store {
   const now = Date.now();
-  if (cache && cache.file === file && now - cache.at < CACHE_MS) return cache.store;
+  const gen = homesGeneration();
+  if (cache && cache.file === file && cache.gen === gen && now - cache.at < CACHE_MS) return cache.store;
   const store = load(file);
-  cache = { file, at: now, store };
+  cache = { file, at: now, gen: homesGeneration(), store };
   return store;
 }
 
@@ -150,7 +151,7 @@ function update(fn: (s: Store) => boolean, file = tagsFile(), only?: string): St
     }
     sessionsChanged();
   }
-  cache = { file, at: Date.now(), store: next };
+  cache = { file, at: Date.now(), gen: homesGeneration(), store: next };
   return next;
 }
 

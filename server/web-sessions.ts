@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
-import { splitOutSet, withHomeSet } from "./chat-homes/records";
+import { homesGeneration, splitOutSet, withHomeSet } from "./chat-homes/records";
 
 /** Persistent set of session ids spawned via POST /api/sessions (SessionSummary.origin = "web"). */
 /** Read at each use, never at import: the state root is the process's current one. */
@@ -22,6 +22,7 @@ function save(next: Set<string>, only: string): void {
   }
   sessionsChanged();
   ids = next;
+  idsGen = homesGeneration();
 }
 
 function loadFile(): Set<string> {
@@ -34,8 +35,15 @@ function loadFile(): Set<string> {
 }
 
 let ids = load();
+let idsGen = homesGeneration();
 
 export function isWebSession(id: string): boolean {
+  // A home's mark from outside (an arrived chat, another process) is read at once.
+  const gen = homesGeneration();
+  if (gen !== idsGen) {
+    ids = load();
+    idsGen = homesGeneration();
+  }
   return ids.has(id);
 }
 

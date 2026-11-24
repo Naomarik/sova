@@ -38,7 +38,7 @@ import { recordActed } from "./message-labels";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
-import { homeDirOf, homeRecordDirs } from "./chat-homes/records";
+import { homeDirOf, homeRecordDirs, homesArrivals } from "./chat-homes/records";
 import { draftProofVia, draftsLeft } from "./spec-drafts-state";
 import { queueTargetOfTree } from "./worktrees";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
@@ -197,7 +197,7 @@ const recordFile = (sessionId: string) => {
 };
 const countsFile = () => join(offersDir(), "counts.json");
 
-const records = new Map<string, { dir: string; rec: SessionRecord | null }>();
+const records = new Map<string, { dir: string; rec: SessionRecord | null; arrivals: number }>();
 
 function writeAtomic(file: string, data: unknown): void {
   mkdirSync(dirname(file), { recursive: true });
@@ -210,7 +210,8 @@ function readRecord(sessionId: string): SessionRecord | null {
   if (!SESSION_ID_RE.test(sessionId)) return null;
   const dir = offersDir();
   const hit = records.get(sessionId);
-  if (hit && hit.dir === dir) return hit.rec;
+  // A home that arrived (or was forgotten) since: its record is read again.
+  if (hit && hit.dir === dir && hit.arrivals === homesArrivals()) return hit.rec;
   let rec: SessionRecord | null = null;
   try {
     const raw = JSON.parse(readFileSync(recordFile(sessionId), "utf8")) as Record<string, unknown>;
@@ -250,7 +251,7 @@ function readRecord(sessionId: string): SessionRecord | null {
   } catch {
     // missing or unreadable: none
   }
-  records.set(sessionId, { dir, rec });
+  records.set(sessionId, { dir, rec, arrivals: homesArrivals() });
   return rec;
 }
 
@@ -278,7 +279,7 @@ function openEntryOf(rec: SessionRecord): { title: string; at: number; name: str
 
 function saveRecord(rec: SessionRecord): void {
   writeAtomic(recordFile(rec.sessionId), rec);
-  records.set(rec.sessionId, { dir: offersDir(), rec });
+  records.set(rec.sessionId, { dir: offersDir(), rec, arrivals: homesArrivals() });
   if (openIndex && openIndex.dir === offersDir()) {
     const open = openEntryOf(rec);
     if (open) openIndex.open.set(rec.sessionId, open);
@@ -935,14 +936,14 @@ export function offerNoteFor(sessionId: string): string | null {
   return `Offer ${card.id} (${card.name}): the user pressed "${card.choice.label}". ${card.outcome.state === "done" ? "It ran" : "It failed"}: ${card.outcome.text ?? ""}`.trim();
 }
 
-let openIndex: { dir: string; open: Map<string, { title: string; at: number; name: string; root: string }> } | null = null;
+let openIndex: { dir: string; arrivals: number; open: Map<string, { title: string; at: number; name: string; root: string }> } | null = null;
 
 /** The session's open offer: its Needs you item (§app.overseer/attention-digest, `offer-waiting`) and, while idle, its
     asks-you mark (§app.decisions/asks-user). Read from one index of every record. */
 export function openOfferOf(sessionId: string): { title: string; at: number } | undefined {
   const dir = offersDir();
-  if (!openIndex || openIndex.dir !== dir) {
-    openIndex = { dir, open: new Map() };
+  if (!openIndex || openIndex.dir !== dir || openIndex.arrivals !== homesArrivals()) {
+    openIndex = { dir, arrivals: homesArrivals(), open: new Map() };
     const names: string[] = [];
     for (const d of [dir, ...homeRecordDirs("offers")]) {
       try {

@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
-import { splitOutSet, withHomeSet } from "./chat-homes/records";
+import { homesGeneration, splitOutSet, withHomeSet } from "./chat-homes/records";
 
 /** The one refusal for anything asked of an archived session (§chat.transcript/instant-open,
     "An archived chat"): a mode, sandbox or profile switch, a worker's resume, a message. */
@@ -39,20 +39,23 @@ function stamp(file: string): string {
     listing's settle time for a store write (sessions-index STORE_SETTLE_MS, 2 s), so a list built on a
     stale set is never kept. */
 const CHECK_MS = 1000;
-let cache: { file: string; stamp: string; checked: number; ids: Set<string> } | null = null;
+let cache: { file: string; stamp: string; checked: number; gen: number; ids: Set<string> } | null = null;
 
 /** The set as the file has it: re-read when the file's stat changes, so a write by another process
     (another server, the user's own edit) shows within CHECK_MS. */
 function current(): Set<string> {
   const file = archivedFile();
   const now = Date.now();
-  if (cache && cache.file === file && now - cache.checked < CHECK_MS) return cache.ids;
+  // A home's change from outside (an arrived home, another process's mark) is read at once.
+  const gen = homesGeneration();
+  if (cache && cache.file === file && cache.gen === gen && now - cache.checked < CHECK_MS) return cache.ids;
   const s = stamp(file);
-  if (cache && cache.file === file && cache.stamp === s) {
+  if (cache && cache.file === file && cache.gen === gen && cache.stamp === s) {
     cache.checked = now;
     return cache.ids;
   }
-  cache = { file, stamp: s, checked: now, ids: load(file) };
+  const ids = load(file);
+  cache = { file, stamp: s, checked: now, gen: homesGeneration(), ids };
   return cache.ids;
 }
 
@@ -77,6 +80,6 @@ export function setArchived(id: string, on: boolean): void {
     writeFileSync(tmp, JSON.stringify([...legacy]));
     renameSync(tmp, file);
   }
-  cache = { file, stamp: stamp(file), checked: Date.now(), ids: next };
+  cache = { file, stamp: stamp(file), checked: Date.now(), gen: homesGeneration(), ids: next };
   sessionsChanged();
 }

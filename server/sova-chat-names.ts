@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { cleanSessionTitle } from "./session-titles";
 import { sessionsChanged } from "./list-generation";
-import { splitOut, withHome } from "./chat-homes/records";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 import type { SovaNamedKind } from "../shared/fixed-names";
 
 /**
@@ -43,10 +43,11 @@ function loadFile(): Record<string, SovaChatName> {
 
 let names = load();
 let loadedFrom = file();
+let namesGen = homesGeneration();
 
 /** The names as last read or written here, with no file read (per-tick use). Re-read when the state root moved. */
 export function memoSovaChatNames(): Readonly<Record<string, SovaChatName>> {
-  if (loadedFrom !== file()) readSovaChatNames();
+  if (loadedFrom !== file() || namesGen !== homesGeneration()) readSovaChatNames();
   return names;
 }
 
@@ -54,6 +55,7 @@ export function memoSovaChatNames(): Readonly<Record<string, SovaChatName>> {
 export function readSovaChatNames(): Readonly<Record<string, SovaChatName>> {
   loadedFrom = file();
   names = load();
+  namesGen = homesGeneration();
   return names;
 }
 

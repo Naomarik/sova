@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { ASK_KINDS, type AskKind, type DecisionProviderId, type SessionSignals, type SessionSummary, type SignalKind, TURN_OUTCOMES, type TurnCard, type TurnOutcome } from "../shared/protocol";
 import type { Answer } from "./decide";
 import { stateRoot } from "./state-root";
-import { splitOut, withHome } from "./chat-homes/records";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 import { sessionsChanged } from "./list-generation";
 
 /**
@@ -147,14 +147,15 @@ function loadFile(file: string): SignalsFile {
   }
 }
 
-let cache: { file: string; at: number; data: SignalsFile } | null = null;
+let cache: { file: string; at: number; gen: number; data: SignalsFile } | null = null;
 const CACHE_MS = 1000;
 
 export function readSignals(file = signalsFile()): SignalsFile {
   const now = Date.now();
-  if (cache && cache.file === file && now - cache.at < CACHE_MS) return cache.data;
+  const gen = homesGeneration();
+  if (cache && cache.file === file && cache.gen === gen && now - cache.at < CACHE_MS) return cache.data;
   const data = load(file);
-  cache = { file, at: now, data };
+  cache = { file, at: now, gen: homesGeneration(), data };
   return data;
 }
 
@@ -177,7 +178,7 @@ export function updateSignals(fn: (data: SignalsFile) => void, file = signalsFil
       renameSync(tmp, file);
     }
     sessionsChanged();
-    cache = { file, at: Date.now(), data };
+    cache = { file, at: Date.now(), gen: homesGeneration(), data };
   } catch (err) {
     console.warn("[signals] write failed:", err instanceof Error ? err.message : String(err));
   }

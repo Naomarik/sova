@@ -40,7 +40,7 @@ import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.t
 import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { stateRoot } from "./state-root";
-import { homeDirOf, homeRecordDirs } from "./chat-homes/records";
+import { homeDirOf, homeRecordDirs, homesArrivals } from "./chat-homes/records";
 import { findExtension, listedExtensions, readExtensionsWithOffers } from "./extensions";
 import { extDrawingDecl } from "./extension-views";
 
@@ -304,7 +304,7 @@ const recordFile = (sessionId: string) => {
 };
 /** Every folder that holds records: the server-wide one and each home's. */
 const recordDirs = (): string[] => [cardsDir(), ...homeRecordDirs("cards")];
-const records = new Map<string, { dir: string; rec: SessionRecord | null }>();
+const records = new Map<string, { dir: string; rec: SessionRecord | null; arrivals: number }>();
 
 function writeAtomic(file: string, data: unknown): void {
   mkdirSync(dirname(file), { recursive: true });
@@ -317,7 +317,8 @@ function readRecord(sessionId: string): SessionRecord | null {
   if (!SESSION_ID_RE.test(sessionId)) return null;
   const dir = cardsDir();
   const hit = records.get(sessionId);
-  if (hit && hit.dir === dir) return hit.rec;
+  // A home that arrived (or was forgotten) since: its record is read again.
+  if (hit && hit.dir === dir && hit.arrivals === homesArrivals()) return hit.rec;
   let rec: SessionRecord | null = null;
   try {
     const raw = JSON.parse(readFileSync(recordFile(sessionId), "utf8")) as Record<string, unknown>;
@@ -339,13 +340,13 @@ function readRecord(sessionId: string): SessionRecord | null {
   } catch {
     // missing or unreadable: none
   }
-  records.set(sessionId, { dir, rec });
+  records.set(sessionId, { dir, rec, arrivals: homesArrivals() });
   return rec;
 }
 
 function saveRecord(rec: SessionRecord): void {
   writeAtomic(recordFile(rec.sessionId), rec);
-  records.set(rec.sessionId, { dir: cardsDir(), rec });
+  records.set(rec.sessionId, { dir: cardsDir(), rec, arrivals: homesArrivals() });
   if (openIndex && openIndex.dir === cardsDir()) {
     const open = openOf(rec);
     if (open.length) openIndex.open.set(rec.sessionId, open);
@@ -934,13 +935,13 @@ const dataTitle = (c: CardInfo): string | undefined => {
   return typeof t === "string" && t.trim() ? t : undefined;
 };
 
-let openIndex: { dir: string; open: Map<string, OpenCard[]> } | null = null;
+let openIndex: { dir: string; arrivals: number; open: Map<string, OpenCard[]> } | null = null;
 
 /** A session's open cards (§app.overseer/attention-digest, `card-waiting`), from one index of every record. */
 export function openCardsOf(sessionId: string): OpenCard[] {
   const dir = cardsDir();
-  if (!openIndex || openIndex.dir !== dir) {
-    openIndex = { dir, open: new Map() };
+  if (!openIndex || openIndex.dir !== dir || openIndex.arrivals !== homesArrivals()) {
+    openIndex = { dir, arrivals: homesArrivals(), open: new Map() };
     const names: string[] = [];
     for (const d of recordDirs()) {
       try {

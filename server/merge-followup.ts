@@ -5,7 +5,7 @@ import { type Answer, DecisionError, type DecisionProvider, type JsonObject, typ
 import { maySend } from "./decide-settings";
 import { withoutFooter } from "./attention-signals";
 import { stateRoot } from "./state-root";
-import { splitOut, withHome } from "./chat-homes/records";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
@@ -81,9 +81,13 @@ function load(file: string): Store {
   return { cards: withHome(cards, "signals", FIELD) };
 }
 
-let cached: { file: string; store: Store } | null = null;
+let cached: { file: string; gen: number; store: Store } | null = null;
 function readStore(file = followUpsFile()): Store {
-  if (cached?.file !== file) cached = { file, store: load(file) };
+  // A home's follow-ups from outside (an arrived chat, another process) are read at once.
+  if (cached?.file !== file || cached.gen !== homesGeneration()) {
+    const store = load(file);
+    cached = { file, gen: homesGeneration(), store };
+  }
   return cached.store;
 }
 function writeStore(store: Store, file = followUpsFile()): void {
@@ -95,7 +99,7 @@ function writeStore(store: Store, file = followUpsFile()): void {
     renameSync(tmp, file);
   }
   // The next write's splitOut compares against what was loaded: keep a fresh merge.
-  cached = { file, store: { ...store, cards: withHome(legacy, "signals", FIELD) } };
+  cached = { file, gen: homesGeneration(), store: { ...store, cards: withHome(legacy, "signals", FIELD) } };
 }
 
 /** The pointer older records stored when the reply named no open work: never shown. */

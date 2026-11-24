@@ -63,6 +63,11 @@ interface State {
   members: Map<string, string>;
   /** When the homes were last checked for another writer's change. */
   checkedAt: number;
+  /** Bumped whenever what this process holds of the homes changed other than by its own write: a home arrived,
+      was read again or forgotten, or another process wrote one. A store's memo compares it (homesGeneration). */
+  gen: number;
+  /** Bumped only when a home arrived, was read again or forgotten (homesArrivals): for stores of whole files. */
+  arrivals: number;
 }
 
 /** How long a read trusts the homes' files without a stat: as long as the stores trust their own (seen.ts CACHE_MS). */
@@ -72,7 +77,7 @@ let st: State | null = null;
 
 function state(): State {
   const root = homesRoot();
-  if (!st || st.root !== root) st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map(), checkedAt: 0 };
+  if (!st || st.root !== root) st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map(), checkedAt: 0, gen: 0, arrivals: 0 };
   return st;
 }
 
@@ -131,7 +136,11 @@ function fresh(s: State): void {
     const ds = stampOf(chatDir(homeId));
     if (ds === h.dirStamp) continue;
     h.dirStamp = ds;
-    for (const doc of HOME_DOCS) if (stampOf(homeDocFile(homeId, doc)) !== h.stamp.get(doc)) readInto(h, homeId, doc);
+    for (const doc of HOME_DOCS)
+      if (stampOf(homeDocFile(homeId, doc)) !== h.stamp.get(doc)) {
+        readInto(h, homeId, doc);
+        s.gen++;
+      }
   }
 }
 
@@ -146,6 +155,8 @@ function loadHome(s: State, homeId: string, members = true): HomeEntry {
   }
   s.homes.set(homeId, entry);
   if (members) listMembers(s, homeId);
+  s.gen++;
+  s.arrivals++;
   return entry;
 }
 
@@ -190,7 +201,8 @@ export function refreshHomeRecords(): void {
   for (const id of listHomeIds()) if (!s.homes.has(id)) loadHome(s, id);
 }
 
-/** Read one home's records again from disk (a home unpacked or rewritten outside this module). */
+/** Read one home's records again from disk (a home unpacked or rewritten outside this module). Every store sees
+    them at its next read (homesGeneration). */
 export function reloadHome(homeId: string): void {
   const s = state();
   s.homes.delete(homeId);
@@ -199,13 +211,34 @@ export function reloadHome(homeId: string): void {
     if (s.loaded) loadHome(s, homeId);
     else listMembers(s, homeId);
   }
+  s.gen++;
+  s.arrivals++;
 }
+
+/** A home arrived from outside (Transport, right after the rename that publishes it): every store, its memo
+    included, lists the chat's records (title, archive mark, origin, seen, signals, offers, cards…) at its next read. */
+export const homeArrived = (homeId: string): void => reloadHome(homeId);
 
 /** Forget a home that was removed (Delete). */
 export function forgetHomeRecords(homeId: string): void {
   const s = state();
   s.homes.delete(homeId);
   for (const [m, h] of s.members) if (h === homeId) s.members.delete(m);
+  s.gen++;
+  s.arrivals++;
+}
+
+/** What a store's memo compares: it changes whenever the homes' records this process holds changed other than by
+    its own writes (a home arrived, was read again or forgotten, another process wrote one, checked once a second). */
+export function homesGeneration(): number {
+  const s = loaded();
+  fresh(s);
+  return s.gen;
+}
+
+/** What a store of whole per-chat files (offers, cards) compares: a home arrived, was read again or forgotten. */
+export function homesArrivals(): number {
+  return loaded().arrivals;
 }
 
 /** The session id a store key names. */

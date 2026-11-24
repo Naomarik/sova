@@ -12,10 +12,11 @@ process.env.PI_CODING_AGENT_DIR = join(scratch, "agent");
 process.env.SOVA_CHAT_HOMES = join(scratch, "homes");
 
 const { ensureChatHome, forgetHome } = await import("./root");
-const { expireHomeRecordChecksForTest, forgetHomeRecords, homeOf, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
+const { expireHomeRecordChecksForTest, forgetHomeRecords, homeArrived, homeOf, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
 const { markSeen, readSeen } = await import("../seen");
-const { readSessionTitles, setSessionTitle } = await import("../session-titles");
+const { memoSessionTitles, readSessionTitles, setSessionTitle } = await import("../session-titles");
 const { isArchived, setArchived } = await import("../archived-sessions");
+const { isWebSession } = await import("../web-sessions");
 const { getDraft, setDraft } = await import("../drafts");
 const { readSignals, updateSignals, workerKey } = await import("../signals-store");
 const { checkTmpImage, deleteAttachment, saveUploadedImage, sessionAttachmentsDir } = await import("../attachments");
@@ -136,4 +137,23 @@ test("a write after a home was removed never makes it again", () => {
   setSessionTitle(GONE, "Late");
   markSeen(GONE, 99);
   assert.equal(existsSync(home), false);
+});
+
+test("a home that arrives from outside is seen by every store at once, memos included", () => {
+  const MOVED = "019a0000-0000-7000-8000-0000000000b1";
+  // Each store read once first, so each holds a memo that knows nothing of it.
+  assert.equal(isArchived(MOVED), false);
+  assert.equal(isWebSession(MOVED), false);
+  assert.equal(memoSessionTitles()[MOVED], undefined);
+  assert.equal(readSeen()[MOVED], undefined);
+  // Transport's publishing rename: the home appears with its records already in it.
+  const home = ensureChatHome(MOVED);
+  mkdirSync(join(home, "chat"), { recursive: true });
+  writeFileSync(join(home, "chat", "meta.json"), JSON.stringify({ version: 1, id: MOVED, "archived-sessions.json": [MOVED], "web-sessions.json": [MOVED], "session-titles.json#titles": { [MOVED]: { title: "Moved here", by: "user", at: 1 } } }));
+  writeFileSync(join(home, "chat", "seen.json"), JSON.stringify({ version: 1, id: MOVED, "seen.json": { [MOVED]: 42 } }));
+  homeArrived(MOVED);
+  assert.equal(isArchived(MOVED), true);
+  assert.equal(isWebSession(MOVED), true);
+  assert.equal(memoSessionTitles()[MOVED], "Moved here");
+  assert.equal(readSeen()[MOVED], 42);
 });

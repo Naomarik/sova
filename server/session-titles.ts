@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { SESSION_TITLE_MAX, type SessionTitleBy } from "../shared/protocol";
 import { sessionsChanged } from "./list-generation";
-import { splitOut, withHome } from "./chat-homes/records";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 
 /**
  * The user's own titles for sessions (POST /api/sessions/title), keyed by session id like the
@@ -113,6 +113,7 @@ const plain = (records: Record<string, StoredTitle>): Record<string, string> => 
 
 let records = load();
 let titles = plain(records);
+let titlesGen = homesGeneration();
 
 /** Atomic (tmp + rename), then the in-memory maps are refreshed to what was written. */
 function save(next: Record<string, StoredTitle>, only?: string): void {
@@ -127,16 +128,22 @@ function save(next: Record<string, StoredTitle>, only?: string): void {
   }
   sessionsChanged();
   records = next;
+  titlesGen = homesGeneration();
   titles = plain(next);
 }
 
 const remember = (next: Record<string, StoredTitle>) => {
   records = next;
   titles = plain(next);
+  titlesGen = homesGeneration();
 };
 
 /** The titles as last read or written by this process, with no file read (for per-tick use). */
-export const memoSessionTitles = (): Readonly<Record<string, string>> => titles;
+export const memoSessionTitles = (): Readonly<Record<string, string>> => {
+  // A home's title from outside (an arrived chat, another process) is read at once, even by a memo reader.
+  if (titlesGen !== homesGeneration()) remember(load());
+  return titles;
+};
 
 /** Every stored title. Reads the file, so a listing sees another server instance's writes. */
 export function readSessionTitles(): Record<string, string> {
@@ -151,7 +158,10 @@ export function readSessionTitleRecords(): Readonly<Record<string, StoredTitle>>
 }
 
 /** The records as last read or written by this process, with no file read. */
-export const memoSessionTitleRecords = (): Readonly<Record<string, StoredTitle>> => records;
+export const memoSessionTitleRecords = (): Readonly<Record<string, StoredTitle>> => {
+  if (titlesGen !== homesGeneration()) remember(load());
+  return records;
+};
 
 /**
  * Set or clear ONE session's title; `null` clears it, whoever set it. `by` is who is setting it

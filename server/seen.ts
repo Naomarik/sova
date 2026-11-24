@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
-import { splitOut, withHome } from "./chat-homes/records";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 
 /**
  * When the user last had each session in front of them: `<stateRoot>/seen.json`, `{[id]: ms}`.
@@ -36,15 +36,17 @@ function loadFile(file: string): Record<string, number> {
   }
 }
 
-let cache: { file: string; at: number; map: Record<string, number> } | null = null;
+let cache: { file: string; at: number; gen: number; map: Record<string, number> } | null = null;
 const CACHE_MS = 1000;
 
 /** The whole store; cached ~1s, since every listing reads it. */
 export function readSeen(file = seenFile()): Record<string, number> {
   const now = Date.now();
-  if (cache && cache.file === file && now - cache.at < CACHE_MS) return cache.map;
+  // A home's change from outside (an arrived home, another process) is read at once, not after the second.
+  const gen = homesGeneration();
+  if (cache && cache.file === file && cache.gen === gen && now - cache.at < CACHE_MS) return cache.map;
   const map = load(file);
-  cache = { file, at: now, map };
+  cache = { file, at: now, gen: homesGeneration(), map };
   return map;
 }
 
@@ -62,7 +64,7 @@ export function markSeen(id: string, at = Date.now(), file = seenFile()): void {
       renameSync(tmp, file);
     }
     sessionsChanged();
-    cache = { file, at: Date.now(), map: next };
+    cache = { file, at: Date.now(), gen: homesGeneration(), map: next };
   } catch (err) {
     console.warn("[seen] write failed:", err instanceof Error ? err.message : String(err));
   }

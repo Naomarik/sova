@@ -183,3 +183,48 @@ test("a clean checkout of the same commit there (a project prepared there) takes
   assert.equal(readFileSync(join(blocked, "added.rs"), "utf8"), "mine\n");
   assert.equal(g(blocked, "for-each-ref", "refs/sova"), "", "nothing of the attempt stays in that repository");
 });
+
+test("a clean clone behind the chat's commit takes its commits, branch and changes; one with changes of its own, or of another repository, is refused with the reason", async () => {
+  const src = join(root, "src7");
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "main");
+  writeFileSync(join(src, "a"), "a\n");
+  g(src, "add", "a");
+  g(src, "commit", "-qm", "a");
+  const behind = join(root, "there7", "src7");
+  g(root, "clone", "-q", src, behind);
+  mkdirSync(join(behind, "target"));
+  writeFileSync(join(behind, "target", "build.o"), "agent's build\n");
+  const dirty = join(root, "there7d", "src7");
+  g(root, "clone", "-q", src, dirty);
+  writeFileSync(join(dirty, "a"), "theirs\n");
+  const other = join(root, "there7o", "src7");
+  mkdirSync(other, { recursive: true });
+  g(other, "init", "-q", "-b", "main");
+  writeFileSync(join(other, "z"), "z\n");
+  g(other, "add", "z");
+  g(other, "commit", "-qm", "z");
+  writeFileSync(join(src, ".gitignore"), "target/\n");
+  g(src, "add", ".gitignore");
+  g(src, "checkout", "-qb", "feat");
+  writeFileSync(join(src, "b"), "b\n");
+  g(src, "add", "b");
+  g(src, "commit", "-qm", "b");
+  writeFileSync(join(src, "a"), "a\nunfinished\n");
+  const s = await surveyWorktree("src7", src);
+  const p = await packWorktrees({ tid: "t7", trees: [s], haves: [], outDir: join(root, "pack7") });
+  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack7"), tid: "t7", metas: p.metas, targets: { src7: behind } });
+  await publishTrees(staged, "t7");
+  assert.equal(facts(behind), facts(src));
+  assert.equal(readFileSync(join(behind, "target", "build.o"), "utf8"), "agent's build\n", "the agent's build output stays");
+  assert.equal(g(behind, "rev-parse", "main").trim(), g(src, "rev-parse", "main").trim(), "its own branch stays where it was");
+  const why = async (target: string) =>
+    rebuildWorktrees({ repo: null, codeDir: join(root, "pack7"), tid: "t7", metas: p.metas, targets: { src7: target } }).then(
+      () => "",
+      (e: unknown) => (e instanceof SnapshotError && e.reason === "taken" ? e.message : String(e)),
+    );
+  assert.match(await why(dirty), /changes of its own \(1 file\); nothing was replaced/);
+  assert.equal(readFileSync(join(dirty, "a"), "utf8"), "theirs\n");
+  assert.match(await why(other), /doesn't build on|another repository/);
+  for (const t of [dirty, other]) assert.equal(g(t, "for-each-ref", "refs/sova"), "", "nothing of the attempt stays there");
+});

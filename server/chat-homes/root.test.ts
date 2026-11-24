@@ -2,7 +2,7 @@
 // homes folder, no server.
 import { scratchAgentDir, dropScratchAgentDir } from "../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import { defaultHomesRoot, ensureChatHome, hasHome, HOMES_ENV, homeOfSessionFile, homeSessionsDirs, homesRoot, isHomeOwnState, isHomeSessionFile, isHomeSessionsDir, listHomeIds, MARKER_FILE, resetHomesMemoForTests } from "./root";
@@ -123,5 +123,34 @@ describe("listing and watching", () => {
     } finally {
       stop();
     }
+  });
+});
+
+describe("making a home", () => {
+  test("no new home while the marker names a missing homes folder: the chat is made as before homes", async () => {
+    const { newChatPlace } = await import("./place");
+    delete process.env[HOMES_ENV];
+    const missing = join(scratchAgentDir, "unmounted", "homes");
+    writeFileSync(join(state, MARKER_FILE), JSON.stringify({ v: 1, homes: missing }));
+    resetHomesMemoForTests();
+    try {
+      assert.equal(newChatPlace(scratchAgentDir, undefined, true), null);
+      assert.equal(existsSync(missing), false, "the missing folder is never made anew");
+    } finally {
+      rmSync(join(state, MARKER_FILE), { force: true });
+    }
+  });
+
+  test("a home made for a file that then fails is undone", async () => {
+    const { createNewChatFile } = await import("./place");
+    const before = listHomeIds().length;
+    // A seed of no registered kind throws once the home is made (SOVA_STATE_ASSERT), before any file is written.
+    process.env.SOVA_STATE_ASSERT = "1";
+    try {
+      assert.throws(() => createNewChatFile({ cwd: scratchAgentDir, seed: [[{ type: "not-a-kind", parse: () => null } as never, 1]] }, true));
+    } finally {
+      delete process.env.SOVA_STATE_ASSERT;
+    }
+    assert.equal(listHomeIds().length, before);
   });
 });

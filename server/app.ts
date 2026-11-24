@@ -1,7 +1,7 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
-import { newChatPlace } from "./chat-homes/place";
+import { createNewChatFile } from "./chat-homes/place";
 import { registerJobRoutes } from "./background-jobs-routes";
 import { chatHostHealth } from "./chat-host";
 import { holderAlive, readLock } from "./chat-runtime/writer-lock";
@@ -86,7 +86,7 @@ import { fixedNameRefusal } from "../shared/fixed-names";
 import { rowsOf } from "./transcript";
 import { parsePiBranchYielding, readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
-import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
+import { appendToClosedFile, type NewSessionFile } from "./harness/pi/state";
 import { modelCheck, modelCheckStatus } from "./harness/pi/model-sync";
 import { claudeCatalogInfo } from "./claude-models-sync";
 import { reapplyModelLevels } from "./harness/pi/open";
@@ -443,8 +443,7 @@ export function buildApp(deps: AppDeps) {
     let made: { path: string; id: string };
     try {
       // A new chat's conversation goes into its own home while the Chat homes switch is on (§app.chat-homes/new-chats).
-      const place = newChatPlace(resolve(cwd));
-      made = createSessionFile({ cwd: resolve(cwd), ...(place ? { id: place.id, sessionsDir: place.sessionsDir } : {}), ...(seed ? { seed } : {}) });
+      made = createNewChatFile({ cwd: resolve(cwd), ...(seed ? { seed } : {}) });
     } catch (err) {
       const noFile = "SessionManager did not produce a session file";
       if (err instanceof Error && err.message === noFile) return c.json({ error: noFile }, 500);

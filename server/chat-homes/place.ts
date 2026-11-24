@@ -5,9 +5,9 @@
  */
 import { dirname } from "node:path";
 import type { WorkerSession } from "../../shared/chat-runtime";
-import { mintSessionId } from "../harness/pi/state";
+import { createSessionFile, mintSessionId, type NewSessionFile } from "../harness/pi/state";
 import { chatHomesOn } from "../web-settings";
-import { ensureChatHome, homeSessionsDir, isHomeSessionFile } from "./root";
+import { abandonNewHome, ensureChatHome, homeSessionsDir, homesRootAvailable, isHomeSessionFile } from "./root";
 
 export interface NewChatPlace {
   id: string;
@@ -19,15 +19,29 @@ export interface NewChatPlace {
  * as before homes) while it is off. `id`: a caller that minted the chat's id already.
  */
 export function newChatPlace(cwd: string, id?: string, on: boolean = chatHomesOn()): NewChatPlace | null {
-  if (!on) return null;
+  if (!on || !homesRootAvailable()) return null;
   const sid = id ?? mintSessionId(cwd);
   ensureChatHome(sid);
   return { id: sid, sessionsDir: homeSessionsDir(sid) };
 }
 
+/**
+ * A new chat's session file (createSessionFile), in its own home while the switch is on. A home made for a file that
+ * then fails is undone (abandonNewHome), so a refused or failed create leaves no empty home behind.
+ */
+export function createNewChatFile(opts: Omit<NewSessionFile, "sessionsDir">, on: boolean = chatHomesOn()): { path: string; id: string } {
+  const place = newChatPlace(opts.cwd, opts.id, on);
+  try {
+    return createSessionFile({ ...opts, ...(place ? { id: place.id, sessionsDir: place.sessionsDir } : {}) });
+  } catch (err) {
+    if (place) abandonNewHome(place.id);
+    throw err;
+  }
+}
+
 /** For a fork: the folder for the fork's freshly minted id (its own home), or undefined while the switch is off. */
 export function newChatPlacer(on: boolean = chatHomesOn()): ((id: string) => string) | undefined {
-  if (!on) return undefined;
+  if (!on || !homesRootAvailable()) return undefined;
   return (id) => {
     ensureChatHome(id);
     return homeSessionsDir(id);

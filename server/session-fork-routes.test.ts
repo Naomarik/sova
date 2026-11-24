@@ -88,7 +88,8 @@ test("fork route: a happy fork is a web-owned session with a parent reference", 
   assert.equal(summary.origin, "web");
   assert.equal(summary.title, "first question");
   assert.notEqual(summary.id, "src-happy");
-  assert.equal(dirname(summary.path), sessionsDir, "the fork is filed beside its source");
+  // A fork is a new chat: its own home while the Chat homes switch is on (the default; §app.chat-homes/new-chats).
+  assert.equal(dirname(summary.path), join(process.env.SOVA_CHAT_HOMES!, summary.id, "sessions"), "the fork is filed in its own home");
   assert.ok(typeof summary.seenAt === "number", "marked seen at birth");
   const [header, ...entries] = readFileSync(summary.path, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   assert.equal(header.parentSession, path);

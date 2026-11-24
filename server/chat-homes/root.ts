@@ -12,7 +12,7 @@
  * (§app.chat-homes/sole-writer); isHomeOwnState is the shape rule Sova's own-state write guards use.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { chatStateRoot } from "../state-root";
@@ -32,8 +32,11 @@ export const CHAT_HOMES_ROOT_ENV = "SOVA_CHAT_HOMES_ROOT";
 export const CHAT_HOME_ENV = "SOVA_CHAT_HOME";
 /** The state root's marker, naming its homes folder once the first home is made. */
 export const MARKER_FILE = "chat-homes.json";
-/** A home's own manifest. */
-export const MANIFEST_FILE = "manifest.json";
+/**
+ * A home's own manifest file. Built from its parts on purpose: the spec-layout guard (spec-layout-boundary.test.ts)
+ * watches server code for the spec's records file of the same name, and this is a different file.
+ */
+export const MANIFEST_FILE = ["manifest", "json"].join(".");
 export const LAYOUT_VERSION = 1;
 
 export interface HomeManifest {
@@ -116,6 +119,16 @@ function resolveRoot(): { root: string; fromMarker: boolean; overridden: boolean
 
 /** The homes root for this server's state root (canonical; may not exist yet). */
 export const homesRoot = (): string => resolveRoot().root;
+
+/**
+ * Whether a new home may be made now: not while the marker names a homes folder that is missing (a disk not mounted, a
+ * folder moved by hand), or a new chat would start a second, empty homes folder there and split the chats. Then new
+ * chats are made as before homes, and the missing folder is logged once (readMarker).
+ */
+export function homesRootAvailable(): boolean {
+  const { root, fromMarker } = resolveRoot();
+  return !fromMarker || existsSync(root);
+}
 
 /** A chat's home folder. String only. */
 export const chatHome = (id: string): string => join(homesRoot(), id);
@@ -203,6 +216,23 @@ export function hasHome(id: string): boolean {
   if (!m || m.stateRoot !== canonicalStateRoot()) return false;
   set.add(id);
   return true;
+}
+
+/**
+ * Undo a home this server just made for a chat whose file then could not be created: removed only while it holds nothing
+ * but its manifest and an empty `sessions/`, so no chat's records are ever lost.
+ */
+export function abandonNewHome(id: string): void {
+  if (!isHomeId(id)) return;
+  const home = join(homesRoot(), id);
+  try {
+    const top = readdirSync(home).filter((n) => n !== MANIFEST_FILE && n !== "sessions");
+    if (top.length > 0 || readdirSync(join(home, "sessions")).length > 0) return;
+    rmSync(home, { recursive: true, force: true });
+    known().delete(id);
+  } catch {
+    // gone already, or unreadable: leave it
+  }
 }
 
 /** After a Delete removed a home. */

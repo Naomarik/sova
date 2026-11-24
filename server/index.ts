@@ -53,7 +53,7 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { wireRequestChats } from "./owner-request-chat";
 import { cachedTitleOf, getSessionSummary, idOf, indexedSessionPaths, lastListedRows, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { hotFolders } from "./session-watch-scope";
-import { homeIdOfPath, homeSessionsDirs, isHomeSessionsDir } from "./chat-homes/root";
+import { homeSessionsDirs, isHomeSessionsDir } from "./chat-homes/root";
 import { viewedIds } from "./seen";
 import { startScheduleKeeper } from "./schedule-routes";
 import { cancelChatWakes, startWakeKeeper } from "./wake-keeper-live";
@@ -84,7 +84,6 @@ import { MessageLabeller } from "./message-labeller";
 import { messageLabelStore } from "./message-labels";
 import { configureSessionFeed, nudgeMarks, publishFeed, sessionFeed } from "./session-feed";
 import { startEvents } from "./events";
-import { onChatNews } from "./chat-home-events";
 import { onAttentionNotified } from "./attention-memo";
 import { configureLlmInflight } from "./llm-inflight";
 import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/extensions/llm-inflight/tracker.ts";
@@ -333,20 +332,6 @@ const events = startEvents({
   holdFeed: () => sessionFeed()?.add(() => {}) ?? null,
   isHosted: (path) => chatHandle(path) !== undefined,
   idOf,
-  onChatNews,
-  // A worker's or team member's conversation names its parent's top-level chat: its home's id, read from the path,
-  // else (an older chat) the worker registry's map, in memory.
-  chatOf: (id, path) => {
-    const home = homeIdOfPath(path);
-    if (home) return home;
-    let at = id;
-    for (let i = 0; i < 8; i++) {
-      const parent = wakeOwnerOf(at)?.parentSessionId;
-      if (!parent || parent === at) break;
-      at = parent;
-    }
-    return at;
-  },
 });
 // Change-driven (§app.decisions/push): it compares when a watched input or an in-process store
 // changes, an org statechart moves or something the digest lists changes, and pushes the digest

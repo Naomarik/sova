@@ -170,7 +170,8 @@ export function folderRefusal(path: string, home: string, protectedRoots: readon
  * repository, this project's), each program its files name, its installed dependencies, and its own
  * doctor when it has a definition. A missing folder stops the rest: there is nothing to read yet.
  */
-export async function preflight(project: ProjectRef, deps: Pick<AgentDeps, "which" | "git" | "doctor">): Promise<AgentCheck[]> {
+export async function preflight(asked: ProjectRef, deps: Pick<AgentDeps, "which" | "git" | "doctor">): Promise<AgentCheck[]> {
+  const project = cleanProject(asked);
   const path = resolve(project.path);
   const where = project.remotes[0] ?? "its repository";
   if (!existsSync(path)) return [{ id: "folder", ok: false, detail: `${path} doesn't exist: clone ${where} there` }];

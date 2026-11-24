@@ -151,3 +151,35 @@ export async function chatClosedToKeys(path: string): Promise<boolean> {
   const s = await getSessionSummary(path);
   return !!s && (!!s.overseer || !!s.baton || !!queueChatRole(s.profile));
 }
+
+/** A chat's unsent draft never reaches an extension (§app.extensions/reads-chats): its words are the user's, not yet said. */
+export const EXTENSION_DRAFT_REFUSAL = "An extension never gets a chat's unsent draft. Nothing was read.";
+
+/** The one route that answers a draft itself: refused to a key or an extension's page, whatever else it carries. */
+export const isDraftRead = (method: string, pathname: string): boolean => (method === "GET" || method === "HEAD") && judgedPath(pathname) === "/api/sessions/draft";
+
+const DRAFT_LINE = "Unsent draft: ";
+/** Whether a JSON text may hold a draft's words: a row's `draftPreview`, or the Needs you line that quotes one. */
+export const mayHoldDraft = (json: string): boolean => json.includes('"draftPreview"') || json.includes(DRAFT_LINE);
+
+/** A JSON text with every draft's words taken out: no `draftPreview`, and "Unsent draft: …" said as "Unsent draft.". */
+export function withoutDrafts(json: string): string {
+  if (!mayHoldDraft(json)) return json;
+  return JSON.stringify(JSON.parse(json, (k, v: unknown) => (k === "draftPreview" ? undefined : typeof v === "string" && v.startsWith(DRAFT_LINE) ? "Unsent draft." : v)));
+}
+
+/** An answer to an extension, with no draft in it: only a JSON one is read, and only rewritten when it may hold one. */
+export async function answerWithoutDrafts(res: Response): Promise<Response> {
+  if (!(res.headers.get("content-type") ?? "").includes("json") || !res.body) return res;
+  const text = await res.clone().text();
+  if (!mayHoldDraft(text)) return res;
+  let out: string;
+  try {
+    out = withoutDrafts(text);
+  } catch {
+    return res;
+  }
+  const headers = new Headers(res.headers);
+  headers.delete("content-length");
+  return new Response(out, { status: res.status, statusText: res.statusText, headers });
+}

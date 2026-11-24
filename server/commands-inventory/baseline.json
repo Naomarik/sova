@@ -62,6 +62,7 @@
     "GET /api/baton/:sid/outreach": {"need":"sessions","is":"opted-out"},
     "GET /api/baton/:sid/told": {"need":"sessions","is":"opted-out"},
     "GET /api/baton/settings": {"need":"sessions","is":"opted-out"},
+    "GET /api/chats/:id/usage": {"need":"sessions","is":"command","ids":["chat.usage"]},
     "GET /api/claude/accounts": {"need":"sessions","is":"opted-out"},
     "GET /api/claude/catalog": {"need":"sessions","is":"opted-out"},
     "GET /api/commands": {"need":"full","is":"catalogue"},

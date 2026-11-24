@@ -281,6 +281,8 @@ const READ_PREFIXES = [
   "playbooks",
   "provider-limits",
   "usage",
+  // One chat's usage and time, on request (§app.extensions/chat-usage): a look, with the sessions grant.
+  "chats",
   // Session offers (§chat/offers): reading a session's cards is a read; a click sends or runs, an admin act.
   "session-offers",
   // Transcript cards (§chat/transcript-cards): reading a session's cards is a read; raising, answering and trust are admin acts.

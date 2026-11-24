@@ -15,6 +15,7 @@ import {
   EXT_PAGE_LINE,
   EXT_PICK_HINT,
   EXT_PICK_TITLE,
+  EXT_READS_CHATS,
   EXT_TRUST,
   extensionListChanged,
   found,
@@ -178,6 +179,9 @@ function ReviewDialog(props: { at: Reviewing; onClose: () => void; onDone: (r: E
             <p class="field-hint">{EXT_NO_MANAGER}</p>
           </Show>
           <p class="mcp-line">{EXT_TRUST}</p>
+          <Show when={a().readsChats}>
+            <p class="mcp-line ext-reads-chats">{EXT_READS_CHATS}</p>
+          </Show>
           <Show when={error()}>
             <p class="field-error">{error()}</p>
           </Show>

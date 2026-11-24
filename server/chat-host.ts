@@ -1115,5 +1115,24 @@ export function workerChatsOf(sessionId: string): string[] {
   return router?.workers.chatsOf(sessionId) ?? [];
 }
 
+/** Every worker and team member under session `sessionId` at any depth, ended ones included, as their records say. */
+export function workerMembersOf(sessionId: string): { sid: string; path: string; workerId: string; kind: string; parent: string; env: Readonly<Record<string, string>> }[] {
+  const out: ReturnType<typeof workerMembersOf> = [];
+  const seen = new Set<string>([sessionId]);
+  const queue = [sessionId];
+  while (queue.length && out.length < 2000) {
+    const at = queue.shift()!;
+    for (const id of router?.workers.chatsOf(at) ?? []) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const rec = router?.workers.record(id);
+      if (!rec) continue;
+      out.push({ sid: id, path: rec.path, workerId: rec.parent.workerId, kind: rec.kind, parent: at, env: rec.spec.env ?? {} });
+      queue.push(id);
+    }
+  }
+  return out;
+}
+
 /** The handle `chatHandle` finds, if it is a chat process's (tests, health). */
 export const isRemote = (path: string): boolean => chatHandle(path)?.where === "process";

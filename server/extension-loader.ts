@@ -7,10 +7,11 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { dirname, join } from "node:path";
 import { approvalOf, approvedIds, codeReadingOf, entryHash, forgetApproval, forgetCodeReading, migrateTrust, recordApproval, setCodeReading, versionOf, type ExtensionApproval } from "./extension-gate";
 import { codeFoldersOf, codeHash, codeHashNow, codeSig, codeSigNow } from "./extension-fingerprint";
-import type { ExtensionInspect, ExtensionReview } from "../shared/extension-loader";
+import { readsChats, type ExtensionInspect, type ExtensionReview } from "../shared/extension-loader";
 import { asksOf, readDescription } from "./extension-description";
 import { extensionKeys, realClock, SYNC_MS, wakeExtensionKeys } from "./extension-keys";
 import { clearHealthOf, contractWords, extensionsFile, listedExtension, listedExtensions, tellPeersOfExtensions, validExtensionId, type ListedExtension } from "./extensions";
+import { chatsDirForExtensions, removeExtensionFolders } from "./extension-chats";
 import { extensionDataDir, freePort, ProgramNotFound, programStatus, programUnits, startProgram, stopProgram } from "./extension-program";
 import { releaseViewWaiters } from "./card-views";
 import { cardOwnersChanged, closeCardsOfExtension, setCardsTrusted } from "./transcript-cards";
@@ -152,7 +153,8 @@ async function startNow(raw: Record<string, unknown>, restart: boolean, you: boo
   }
   noteStart(id);
   try {
-    await startProgram({ id, run: raw.run as string[], folder: raw.folder as string, api: raw.api as string });
+    const chatsDir = readsChats(raw) ? chatsDirForExtensions() : null;
+    await startProgram({ id, run: raw.run as string[], folder: raw.folder as string, api: raw.api as string, ...(chatsDir ? { chatsDir } : {}) });
     notFound.delete(id);
   } catch (err) {
     if (!(err instanceof ProgramNotFound)) throw err;
@@ -351,7 +353,10 @@ async function forget(id: string, deleteData = false): Promise<void> {
   if (!real) return;
   setCardsTrusted(`ext:${id}`, false);
   closeCardsOfExtension(id);
-  if (deleteData) rmSync(extensionDataDir(id), { recursive: true, force: true });
+  if (deleteData) {
+    rmSync(extensionDataDir(id), { recursive: true, force: true });
+    removeExtensionFolders(id);
+  }
 }
 
 /** Remove. `key`: an id, or `~<place>` for a dropped entry with none. The folder is never touched. */

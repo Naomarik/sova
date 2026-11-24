@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 670 |
-| Routes a catalogue entry points at | 228 |
-| Catalogue entries | 302 |
+| Routes registered | 671 |
+| Routes a catalogue entry points at | 229 |
+| Catalogue entries | 303 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 8 |
 | Class: Share pages | 0 |
@@ -269,6 +269,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `usage.time` | Usage Time | looks | `GET /api/usage/time` | sessions |
 | `usage.today` | Usage Today | looks | `GET /api/usage/today` | sessions |
 | `usage.session` | Session Usage | looks | `GET /api/usage/session` | sessions |
+| `chat.usage` | Chat Usage | looks | `GET /api/chats/:id/usage` | sessions |
 | `usage.sessions` | Sessions Usage | looks | `POST /api/usage/sessions` | admin |
 | `usage.prices` | Model Prices | looks | `GET /api/usage/prices` | sessions |
 | `usage.prices.refresh` | Refresh Prices | changes | `POST /api/usage/prices/refresh` | admin |
@@ -914,6 +915,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/attention/dismiss` | full | `attention.dismiss` |
 | `GET /api/audit` | full | `audit.list` |
 | `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.shell.list`, `chat.shell.stop`, `chat.stop` |
+| `GET /api/chats/:id/usage` | sessions | `chat.usage` |
 | `GET /api/cwds` | sessions | `cwds.list` |
 | `GET /api/design` | full | `design.list` |
 | `DELETE /api/design/:label` | full | `design.delete` |

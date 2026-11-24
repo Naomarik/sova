@@ -937,6 +937,7 @@ const FIXTURES: Record<string, Fixture> = {
   "usage.time": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.time")!), {}), status: 200 },
   "usage.today": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.today")!), {}), status: 200 },
   "usage.session": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.session")!), { sid: "no-such-sid" }), status: 200 },
+  "chat.usage": { values: () => ({ chat: "no-such-chat" }), status: 404 },
   "usage.sessions": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.sessions")!), { sids: ["no-such-sid"] }), status: 200 },
   "usage.prices": { values: () => (anchors(COMMANDS.find((e) => e.id === "usage.prices")!), {}), status: 200 },
   "insights.usage": { values: () => ({}), status: 200 },

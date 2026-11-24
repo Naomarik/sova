@@ -1,5 +1,5 @@
 import path from "node:path";
-import { USAGE_RANGES, MAX_USAGE_SESSIONS, type UsageRange } from "../../shared/usage/wire";
+import { USAGE_RANGES, MAX_USAGE_SESSIONS, type ChatUsageAsk, type UsageRange } from "../../shared/usage/wire";
 import type { ProjectCost } from "../../shared/costs";
 import { Ledger } from "./ledger";
 import { createPriceBook, type PriceBook, type PriceBookOptions } from "./price-book";
@@ -10,6 +10,7 @@ import { Queries } from "./query";
 import { AttentionStore } from "./attention";
 import { LabelStore } from "./labels";
 import { TimeQueries } from "./time";
+import { chatUsage } from "./chat";
 import { ToolRunStore } from "./tool-store";
 
 /**
@@ -102,7 +103,8 @@ export function createService(opts: ServiceOptions): Service {
     log,
   });
   const labels = new LabelStore(opts.labelsDir ?? path.join(stateRoot, "message-labels"));
-  const time = new TimeQueries({ attention, perf, tools, labels, ledger, queries, device: opts.device ?? (() => null), now: opts.now ?? Date.now });
+  const timeDeps = { attention, perf, tools, labels, ledger, queries, device: opts.device ?? (() => null), now: opts.now ?? Date.now };
+  const time = new TimeQueries(timeDeps);
   const noFold = projectFold({ projects: [], overseer: [] });
 
   const projectDeps: ProjectDeps = { ledger, queries, prices, device: opts.device ?? (() => null), now: opts.now ?? Date.now };
@@ -129,6 +131,12 @@ export function createService(opts: ServiceOptions): Service {
         const sids = strings(req.sids);
         if (sids.length > MAX_USAGE_SESSIONS) throw new BadRequest(`at most ${MAX_USAGE_SESSIONS} sids`);
         return queries.sessions({ sids });
+      }
+      // One top-level chat's usage and time, on request (§app.extensions/chat-usage).
+      case "chat": {
+        if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");
+        const members = Array.isArray(req.members) ? (req.members as unknown[]).filter((m): m is ChatUsageAsk["members"][number] => !!m && typeof (m as { sid?: unknown }).sid === "string" && typeof (m as { role?: unknown }).role === "string") : [];
+        return chatUsage(timeDeps, { sid: req.sid, members: members.slice(0, 2000), waiting: typeof req.waiting === "number" && Number.isFinite(req.waiting) ? req.waiting : 0 });
       }
       case "session-timings": {
         if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");

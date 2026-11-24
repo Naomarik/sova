@@ -76,6 +76,7 @@ import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
 import { registerUsageRoutes } from "./usage-routes";
+import { registerChatUsageRoutes } from "./chat-usage-routes";
 import { sessionFeed } from "./session-feed";
 import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, listSessionsAfresh, onSessionArchived } from "./sessions-index";
@@ -204,7 +205,7 @@ import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
-import { actsAsExtension, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal } from "./extension-doors";
+import { actsAsExtension, answerWithoutDrafts, EXTENSION_DRAFT_REFUSAL, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal, isDraftRead } from "./extension-doors";
 import { extensionSenderOf } from "./extension-sender";
 import { registerUpdatesRoutes } from "./updates/routes";
 
@@ -284,7 +285,14 @@ export function buildApp(deps: AppDeps) {
       audited?.(403, closed.route);
       return c.json({ error: closed.error, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
     }
+    // A chat's unsent draft never reaches an extension (§app.extensions/reads-chats): not its route, nor a word of it in any answer.
+    const extension = actsAsExtension(c);
+    if (extension && isDraftRead(c.req.method, new URL(c.req.url).pathname)) {
+      audited?.(403, "/api/sessions/draft");
+      return c.json({ error: EXTENSION_DRAFT_REFUSAL, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
+    }
     await next();
+    if (extension) c.res = await answerWithoutDrafts(c.res);
     try {
       c.res.headers.set(SERVER_HEADER, "sova");
     } catch {
@@ -567,6 +575,7 @@ export function buildApp(deps: AppDeps) {
   });
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
+  registerChatUsageRoutes(app);
   registerProjectRoutes(app);
   // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
   registerProjectServiceRoutes(app);

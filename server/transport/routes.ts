@@ -329,7 +329,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       }
       return stopped;
     },
-    usageCut: (chatId) => cutChatUsage(chatId),
+    usageCut: (chatId, helpers) => cutChatUsage(chatId, helpers),
     moved,
   });
 

@@ -69,7 +69,7 @@ export interface SourceDeps {
   /** Stop these running copies (a Move's switch, the ones your click saw): the names of those stopped. */
   stopCopies(ids: string[]): Promise<string[]>;
   /** The chat's usage and time records, cut from this device's stores for the package (null: none to carry). */
-  usageCut(chatId: string): Promise<Buffer | null>;
+  usageCut(chatId: string, helpers: readonly string[]): Promise<Buffer | null>;
   /** After the destination confirmed: the Moved row, the safety copy, the old code folders. */
   moved(r: TransportRecord): Promise<void>;
 }
@@ -480,6 +480,8 @@ async function pack(r: TransportRecord): Promise<void> {
     updateTransport(r.tid, { state: "waiting-helpers" });
     const ctl = new AbortController();
     const helpers = d.helpers(c.id);
+    // Every helper there was before the switch, for the usage cut (an interrupted one may not be listed after).
+    updateTransport(r.tid, { ext: { helperIds: helpers.map((h) => h.chatId) } });
     let interrupted: string[] = [];
     let wrapped: string[] = [];
     const rest = bringHelpersToRest(c.id, r.choices?.busyChoice ?? "safe", (waiting) => void updateTransport(r.tid, { ext: { waiting } }), { signal: ctl.signal });
@@ -507,7 +509,7 @@ async function pack(r: TransportRecord): Promise<void> {
   const sizes = await conversationSizes(home);
   const cur = readTransport(r.tid)!;
   // A Move's cost goes with it, marked there as spent here; a Copy is a new chat, its past cost stays this chat's.
-  const usage = r.mode === "move" ? await d.usageCut(c.id).catch((err: unknown) => (log(`${logName(r)}: its usage records stay here: ${err instanceof Error ? err.message : String(err)}`), null)) : null;
+  const usage = r.mode === "move" ? await d.usageCut(c.id, ((readTransport(r.tid)?.ext ?? {}) as { helperIds?: string[] }).helperIds ?? []).catch((err: unknown) => (log(`${logName(r)}: its usage records stay here: ${err instanceof Error ? err.message : String(err)}`), null)) : null;
   const packed = await buildPackage({
     tid: r.tid,
     spool: spoolDir(),

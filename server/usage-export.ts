@@ -43,9 +43,11 @@ export function usageOrigin(agentDir = agentRoot()): string {
 }
 
 /** The chat's records as written, for its package: the helper's answer's bytes (one JSON object, ChatUsageCut). */
-export async function cutChatUsage(chatId: string): Promise<Buffer> {
+export async function cutChatUsage(chatId: string, also: readonly string[] = []): Promise<Buffer> {
   if (!CHAT_ID.test(chatId)) throw new Error("Not a chat id.");
-  const a = await askUsage("chat-cut", { sid: chatId, members: membersOf(chatId).map((m) => m.sid), origin: usageOrigin() });
+  // `also`: helpers the caller saw (a Move's, before its switch stopped them), whatever the registry says now.
+  const members = [...new Set([...membersOf(chatId).map((m) => m.sid), ...also.filter((s) => CHAT_ID.test(s))])];
+  const a = await askUsage("chat-cut", { sid: chatId, members, origin: usageOrigin() });
   if (a.status !== 200) throw new Error(`The usage helper couldn't cut this chat's usage (${a.status}): ${a.body.toString("utf8").slice(0, 200)}`);
   return a.body;
 }

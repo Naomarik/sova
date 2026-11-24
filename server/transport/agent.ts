@@ -147,8 +147,13 @@ export const sameRemote = (a: string, b: string): boolean => normRemote(a) === n
 export const cleanRemote = (u: string): string =>
   u.trim().replace(/^([a-z][a-z0-9+.-]*:\/\/)([^@/]*)@/i, (_m, scheme: string, who: string) => (/^ssh/i.test(scheme) && who && !who.includes(":") ? `${scheme}${who}@` : scheme));
 
-/** The project as the destination acts on it: its remotes without credentials. Pure. */
-const cleanProject = (p: ProjectRef): ProjectRef => ({ ...p, remotes: p.remotes.map(cleanRemote) });
+/** The project as the destination acts on it: its remotes without credentials, and `~/…` (the source's
+    spelling of "under that device's home") as a folder under `home`. Pure. */
+const cleanProject = (p: ProjectRef, home?: string): ProjectRef => ({
+  ...p,
+  remotes: p.remotes.map(cleanRemote),
+  ...(home && (p.path === "~" || p.path.startsWith("~/")) ? { path: join(home, p.path.slice(2)) } : {}),
+});
 
 const within = (child: string, parent: string): boolean => {
   const c = resolve(child);
@@ -336,7 +341,7 @@ export interface NeedsAnswer {
 
 /** The answer to the source's "what does this device still need for this project" (the peer route). */
 export async function needsAnswer(asked: ProjectRef, deps: AgentDeps): Promise<NeedsAnswer> {
-  const project = cleanProject(asked);
+  const project = cleanProject(asked, deps.home());
   const refused = folderRefusal(project.path, deps.home(), deps.protectedRoots());
   const [checks, offered] = await Promise.all([refused ? [{ id: "folder", ok: false, detail: refused }] : preflight(project, deps), deps.offeredModels()]);
   const m = agentModelChoices(offered);
@@ -355,7 +360,7 @@ const deviceNeeds = (device: string, n: number, title: string) =>
  * its ends with every check green. `signal` (a Cancel) stops the wait; the agent's chat stays.
  */
 export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps, opts: { signal?: AbortSignal } = {}): Promise<PrepareResult> {
-  const req = { ...asked, project: cleanProject(asked.project) };
+  const req = { ...asked, project: cleanProject(asked.project, deps.home()) };
   const refused = folderRefusal(req.project.path, deps.home(), deps.protectedRoots());
   if (refused) return { needsYou: refused };
   const root = deps.stateRoot();
@@ -463,7 +468,7 @@ export function sourceValuesIn(files: readonly string[], values: readonly string
  * prepared and none ran. None hold any: nothing is sent. Returns the files handed over.
  */
 export async function afterArrival(asked: PrepareRequest & { privateFiles: string[]; sourceValues: string[] }, deps: AgentDeps): Promise<string[]> {
-  const req = { ...asked, project: cleanProject(asked.project) };
+  const req = { ...asked, project: cleanProject(asked.project, deps.home()) };
   if (folderRefusal(req.project.path, deps.home(), deps.protectedRoots())) return [];
   const hits = sourceValuesIn(req.privateFiles, req.sourceValues);
   if (!hits.length) return [];

@@ -173,4 +173,6 @@ test("a folder outside the home or inside Sova's own folders is refused before a
   }
   assert.equal(d.started.length, 0);
   assert.match((await needsAnswer({ remotes: [REMOTE], path: "/etc/motors" }, d.deps)).needs[0]!, /isn't a folder inside your home/);
+  // The source's "~/…" is this device's home.
+  assert.deepEqual((await needsAnswer({ remotes: [REMOTE], path: "~/webapps/motors" }, d.deps)).needs, [`${join(root, "webapps", "motors")} doesn't exist: clone ${REMOTE} there`]);
 });

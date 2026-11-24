@@ -20,6 +20,7 @@ const app = await testApp();
 const { addWebSession } = await import("../web-sessions");
 const { canonicalPath } = await import("../paths");
 const { listSessionsAfresh } = await import("../sessions-index");
+const { ensureChatHome } = await import("../chat-homes/root");
 
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -75,5 +76,31 @@ describe("POST /api/sessions/cleanup with action compress", () => {
     assert.equal(del.deletedCount, 1, JSON.stringify(del));
     assert.ok(!existsSync(`${path}.gz`));
     assert.equal((await listSessionsAfresh()).some((x) => x.path === path), false);
+  });
+
+  test("a homed chat whose helper wrote just now, or has an unended worker record, is left as it is", async () => {
+    const id = "019a0000-0000-7000-8000-0000000000aa";
+    const home = ensureChatHome(id);
+    mkdirSync(join(home, "sessions"), { recursive: true });
+    const path = canonicalPath(join(home, "sessions", `2026-10-17T00-00-00-000Z_${id}.jsonl`));
+    writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: "/tmp" })}\n${JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: "2026-10-17T00:00:01.000Z", message: { role: "user", content: "homed" } })}\n`);
+    addWebSession(id);
+    await archive(path);
+    const helper = join(home, "sessions", "2026-10-17T00-00-01-000Z_019a0000-0000-7000-8000-0000000000ab.jsonl");
+    writeFileSync(helper, "{}\n"); // written just now
+    const [, r] = await post("/api/sessions/cleanup", { mode: "paths", paths: [path], action: "compress" });
+    assert.deepEqual(r.compressedIds, [], JSON.stringify(r));
+    assert.equal(r.skipped.busy, 1);
+    assert.ok(existsSync(home), "the home is intact");
+    const old = new Date(Date.now() - 40 * 86_400_000);
+    utimesSync(helper, old, old);
+    mkdirSync(join(home, "workers"), { recursive: true });
+    writeFileSync(join(home, "workers", "ag_01.json"), JSON.stringify({ state: "idle", path: helper }));
+    const [, r2] = await post("/api/sessions/cleanup", { mode: "paths", paths: [path], action: "compress" });
+    assert.deepEqual(r2.compressedIds, [], "an unended worker record keeps it too");
+    writeFileSync(join(home, "workers", "ag_01.json"), JSON.stringify({ state: "ended", path: helper }));
+    const [, r3] = await post("/api/sessions/cleanup", { mode: "paths", paths: [path], action: "compress" });
+    assert.deepEqual(r3.compressedIds, [id], JSON.stringify(r3));
+    assert.equal(existsSync(home), false);
   });
 });

@@ -2,7 +2,7 @@
 // compressed file, an older chat's files are gzipped where they are, nothing is lost, and Delete
 // removes the compressed files. Throwaway agent dir and homes root; ~/.pi is never read or written.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -45,11 +45,15 @@ describe("compressChat", () => {
     writeFileSync(path, '{"type":"session"}\n');
     mkdirSync(join(home, "shared"), { recursive: true });
     writeFileSync(join(home, "shared", "notes.md"), "kept");
+    symlinkSync("/etc", join(home, "shared", "link")); // an agent's link: kept as a link, never followed
     const e = await compressChat(row(id, path), [], "user");
     assert.equal(existsSync(home), false, "the home folder is gone");
     assert.ok(e.archive && existsSync(e.archive));
     const names = (await readTarGz(e.archive!)).map((x) => x.name);
+    const entries = await readTarGz(e.archive!);
     assert.ok(names.includes("shared/notes.md") && names.includes(`sessions/2026-01-01T00-00-00-000Z_${id}.jsonl`) && names.includes("manifest.json"));
+    assert.equal(entries.find((x) => x.name === "shared/link")?.link, "/etc");
+    assert.equal(names.some((n) => n.startsWith("shared/link/")), false, "the link's target is not in it");
     const kept = compressedRows().get(path)!;
     assert.equal(kept.compressed, true);
     assert.equal(kept.live, null);

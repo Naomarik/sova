@@ -2,7 +2,7 @@ import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
 import { removeOutputFiles } from "./shell-output";
 import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
-import { type Dirent, lstatSync, readdirSync, statSync } from "node:fs";
+import { type Dirent, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { type FileHandle, lstat, open, readdir, rm, stat, unlink } from "node:fs/promises";
 import { removeChatSharedFolder } from "../pi-config/extensions/sandbox/shared-folder.ts";
 import { runsOfChat } from "./playbook-runs/store";
@@ -25,7 +25,7 @@ import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
 import { dropSessionTitles, memoSessionTitleRecords, readSessionTitleRecords, type StoredTitle } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
-import { closeChat, cwdOverride, getModelRuntime, heldChatState, isSessionBusy, pendingDialogCount, shellInFlight } from "./chat-handle";
+import { chatHandle, closeChat, cwdOverride, getModelRuntime, heldChatState, isSessionBusy, pendingDialogCount, shellInFlight } from "./chat-handle";
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
 import { contextWindow } from "./models";
 import { parseTargetCwd } from "./targets";
@@ -2491,7 +2491,14 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
         await closeChat(path, "Session compressed by archive cleanup; its runtime was closed.");
         const row = (await listedSessionAt(path)) ?? null;
         if (!row) throw new Error("no row to keep");
-        const helpers = hasHome(homeIdOfPath(path) ?? "") ? [] : helperFilesOf(row.id);
+        const homeId = hasHome(homeIdOfPath(path) ?? "") ? homeIdOfPath(path) : null;
+        const helpers = homeId ? [] : helperFilesOf(row.id);
+        // Helpers outlive their lead: one held, live, mid-turn, written just now or with an unended
+        // worker record keeps the whole chat as it is until the next pass.
+        if (helpersInUse({ path, homeId, helpers, live, now })) {
+          skipped.busy++;
+          continue;
+        }
         await compressChat(row, helpers, req.by ?? "user");
         dropEntry(path);
         for (const h of helpers) dropEntry(h);
@@ -2551,6 +2558,54 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
     skipped,
     ...(req.mode === "paths" ? { refused: refusals } : {}),
   };
+}
+
+/** Whether any helper of a chat is still in use (§app.session-list/archive-compression "What never is"):
+    held by this server, live in a record, mid-turn, written within RECENT_WRITE_MS, or named by a worker
+    record that hasn't ended. A homed chat's helpers are every other conversation and record in its home;
+    an older chat's are `helpers` and the server-wide worker records whose parent is the chat. */
+function helpersInUse(o: { path: string; homeId: string | null; helpers: readonly string[]; live: ReadonlySet<string> | ReadonlyMap<string, unknown>; now: number }): boolean {
+  const files = [...o.helpers];
+  const records: string[] = [];
+  if (o.homeId) {
+    const home = chatHome(o.homeId);
+    try {
+      for (const n of readdirSync(join(home, "sessions"))) if (n.endsWith(".jsonl") && join(home, "sessions", n) !== o.path) files.push(join(home, "sessions", n));
+    } catch {
+      // no conversations folder
+    }
+    try {
+      for (const n of readdirSync(join(home, "workers"))) if (n.endsWith(".json")) records.push(join(home, "workers", n));
+    } catch {
+      // no worker records
+    }
+  } else {
+    try {
+      const dir = join(stateRoot(), "chats", "workers");
+      for (const n of readdirSync(dir)) if (n.endsWith(".json")) records.push(join(dir, n));
+    } catch {
+      // no worker records
+    }
+  }
+  for (const f of files) {
+    if (o.live.has(f) || isSessionBusy(f) || workingSubagents(f) > 0 || shellInFlight(f) || chatHandle(f) !== undefined) return true;
+    try {
+      if (o.now - statSync(f).mtimeMs < RECENT_WRITE_MS) return true;
+    } catch {
+      // gone: nothing to keep from it
+    }
+  }
+  const mine = new Set([o.path, ...o.helpers]);
+  for (const r of records) {
+    try {
+      const rec = JSON.parse(readFileSync(r, "utf8")) as { state?: string; path?: string; parent?: { path?: string } };
+      if (rec.state === "ended") continue;
+      if (o.homeId || mine.has(rec.parent?.path ?? "") || mine.has(rec.path ?? "")) return true;
+    } catch {
+      // unreadable: not a record
+    }
+  }
+  return false;
 }
 
 /** An older chat's helpers' conversation files, at any depth, by the last listing's worker rows: they

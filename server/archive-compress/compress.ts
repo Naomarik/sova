@@ -68,9 +68,10 @@ async function compressHome(id: string, row: SessionSummary, by: CompressedChat[
   }
   const entry: CompressedChat = { id, kind: "home", at: new Date().toISOString(), by, row: keptRow(row), archive, home };
   putCompressed(entry);
-  rmSync(home, { recursive: true, force: true });
+  // Forgotten first: a store write in flight finds no home and never makes part of it again.
   forgetHome(id);
   forgetHomeRecords(id);
+  rmSync(home, { recursive: true, force: true });
   return entry;
 }
 

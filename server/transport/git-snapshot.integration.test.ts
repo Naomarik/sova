@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
-import { havesOf, packWorktrees, publishTrees, rebuildWorktrees, surveyWorktree } from "./git-snapshot";
+import { havesOf, packWorktrees, publishTrees, rebuildWorktrees, SnapshotError, surveyWorktree } from "./git-snapshot";
 
 const root = scratchRoot("sova-transport-git-");
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -79,4 +79,21 @@ test("a merge in progress is refused with the reason", async () => {
     // the conflict is the point
   }
   assert.equal((await surveyWorktree("merge", r)).refusal, "It has a merge in progress: finish or remove that first.");
+});
+
+test("a folder that filled up after the rebuild is never removed at publish: it refuses", async () => {
+  const src = join(root, "src2");
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "master");
+  writeFileSync(join(src, "a"), "a\n");
+  g(src, "add", "a");
+  g(src, "commit", "-qm", "a");
+  const s = await surveyWorktree("src2", src);
+  const p = await packWorktrees({ tid: "t3", trees: [s], haves: [], outDir: join(root, "pack3") });
+  const target = join(root, "there3", "src2");
+  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack3"), tid: "t3", metas: p.metas, targets: { src2: target } });
+  mkdirSync(target, { recursive: true });
+  writeFileSync(join(target, "x"), "mine\n");
+  await assert.rejects(publishTrees(staged, "t3"), (e: unknown) => e instanceof SnapshotError && e.reason === "taken");
+  assert.equal(readFileSync(join(target, "x"), "utf8"), "mine\n");
 });

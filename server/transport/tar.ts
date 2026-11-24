@@ -3,7 +3,7 @@
 // mtime, symlinks as links. The same files give the same bytes. A name that ustar can't hold (over
 // 100 bytes, or not ASCII) gets a pax header of its own. Read by any tar (GNU tar, bsdtar).
 import { createReadStream, type Stats } from "node:fs";
-import { lstat, open, readlink, type FileHandle } from "node:fs/promises";
+import { lstat, open, readFile, readlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 
 export type TarEntry =
@@ -115,5 +115,73 @@ export async function entryOf(root: string, rel: string, name = rel, st?: Stats)
   if (s.isSymbolicLink()) return { name, type: "symlink", target: await readlink(abs), mode: 0o777, mtime };
   if (s.isDirectory()) return { name, type: "dir", mode: s.mode & 0o7777, mtime };
   if (s.isFile()) return { name, type: "file", mode: s.mode & 0o7777, mtime, size: s.size, from: abs };
+  return null;
+}
+
+// ---- reading a package's tar back (the destination's check before it extracts) -------------------
+
+export interface TarMemberHead {
+  name: string;
+  /** "0" file, "5" folder, "2" symlink; anything else is refused by checkMembers. */
+  flag: string;
+  mode: number;
+  size: number;
+  linkname: string;
+}
+
+const field = (b: Buffer, at: number, len: number): string => {
+  const s = b.subarray(at, at + len);
+  const z = s.indexOf(0);
+  return (z >= 0 ? s.subarray(0, z) : s).toString("utf8");
+};
+const num = (b: Buffer, at: number, len: number): number => parseInt(field(b, at, len).trim() || "0", 8);
+
+/** The members of a tar this writer made (ustar with pax path records), without extracting anything. */
+export async function listTar(file: string): Promise<TarMemberHead[]> {
+  const buf = await readFile(file);
+  const out: TarMemberHead[] = [];
+  let at = 0;
+  let pax: Record<string, string> = {};
+  while (at + BLOCK <= buf.length) {
+    const h = buf.subarray(at, at + BLOCK);
+    if (h.every((x) => x === 0)) break;
+    const size = num(h, 124, 12);
+    const flag = String.fromCharCode(h[156] || 0x30);
+    const body = at + BLOCK;
+    if (flag === "x") {
+      pax = {};
+      const text = buf.subarray(body, body + size).toString("utf8");
+      for (const rec of text.split("\n")) {
+        const m = /^\d+ ([^=]+)=(.*)$/.exec(rec);
+        if (m) pax[m[1]!] = m[2]!;
+      }
+    } else {
+      out.push({ name: pax.path ?? field(h, 0, 100), flag, mode: num(h, 100, 8), size, linkname: pax.linkpath ?? field(h, 157, 100) });
+      pax = {};
+    }
+    at = body + size + pad(size);
+  }
+  return out;
+}
+
+/**
+ * Why a member list may not be extracted into a folder, or null: an absolute name or a `..`, a type
+ * other than file, folder or link, setuid, setgid or sticky bits, or a member under a link (one the
+ * archive makes, or one `isLinkThere` says the folder already has).
+ */
+export function checkMembers(members: readonly Pick<TarMemberHead, "name" | "flag" | "mode">[], isLinkThere: (rel: string) => boolean = () => false): string | null {
+  const links = new Set<string>();
+  for (const m of members) {
+    const name = m.name.replace(/\/+$/, "");
+    if (!name || name.startsWith("/") || name.includes("\0") || name.split("/").some((s) => s === ".." || s === "")) return `the package names ${JSON.stringify(m.name)}`;
+    if (!["0", "5", "2"].includes(m.flag)) return `the package holds ${JSON.stringify(m.name)} of a kind Sova never sends`;
+    if (m.mode & 0o7000) return `the package gives ${JSON.stringify(m.name)} special permission bits`;
+    const parts = name.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const dir = parts.slice(0, i).join("/");
+      if (links.has(dir) || isLinkThere(dir)) return `the package writes ${JSON.stringify(m.name)} through a link`;
+    }
+    if (m.flag === "2") links.add(name);
+  }
   return null;
 }

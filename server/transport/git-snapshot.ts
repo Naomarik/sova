@@ -7,10 +7,10 @@
 // hash, and moved into place only at publish. Dependencies and build output are never carried.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
-import { copyFile, lstat, mkdir, readdir, readFile, readlink, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createReadStream, existsSync, lstatSync } from "node:fs";
+import { copyFile, lstat, mkdir, readdir, readFile, readlink, realpath, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { entryOf, type TarEntry, writeTar } from "./tar";
+import { checkMembers, entryOf, listTar, type TarEntry, writeTar } from "./tar";
 
 // ---- git ------------------------------------------------------------------------------------------
 
@@ -373,6 +373,15 @@ async function holds(target: string, meta: WorktreeMeta): Promise<boolean> {
 }
 
 async function extractTar(tarFile: string, into: string): Promise<void> {
+  // Checked before a byte is written: nothing in it may land outside the stage (a tracked link counts).
+  const why = checkMembers(await listTar(tarFile), (rel) => {
+    try {
+      return lstatSync(join(into, rel)).isSymbolicLink();
+    } catch {
+      return false;
+    }
+  });
+  if (why) throw new SnapshotError("refused", `The package was refused: ${why}. Nothing was written.`);
   await new Promise<void>((done, fail) => {
     execFile("tar", ["-x", "-p", "--no-same-owner", "-f", tarFile, "-C", into], { timeout: GIT_LONG_MS, maxBuffer: 4 * 1024 * 1024 }, (err, _o, stderr) =>
       err ? fail(new SnapshotError("git", `Unpacking the loose files: ${String(stderr).trim() || err.message}`)) : done(),
@@ -518,7 +527,11 @@ export async function publishTrees(trees: readonly StagedTree[], tid: string): P
   if (main) {
     if (main.stage !== main.target) {
       await mkdir(dirname(main.target), { recursive: true });
-      if (existsSync(main.target)) await rm(main.target, { recursive: true });
+      // An empty folder may stand where it goes; anything put there since the rebuild is never removed.
+      if (existsSync(main.target)) {
+        if ((await readdir(main.target)).length) throw new SnapshotError("taken", `${main.target} isn't empty any more there; nothing was removed. Empty it or pick another folder.`);
+        await rmdir(main.target);
+      }
       await rename(main.stage, main.target);
       // The linked stages still point at the main stage's old folder.
       const linked = trees.filter((t) => !t.main && t.stage !== t.target).map((t) => t.stage);
@@ -528,6 +541,7 @@ export async function publishTrees(trees: readonly StagedTree[], tid: string): P
   }
   for (const t of trees) {
     if (t.main || t.stage === t.target) continue;
+    if (existsSync(t.target)) throw new SnapshotError("taken", `${t.target} exists there now; nothing was removed. Move it away or pick another folder.`);
     const common = (await gitDirs(t.stage)).common;
     await mkdir(dirname(t.target), { recursive: true });
     await ok(dirname(common), ["--git-dir", common, "worktree", "move", t.stage, t.target], `Moving ${t.name} into place`);

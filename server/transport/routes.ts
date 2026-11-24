@@ -104,7 +104,8 @@ async function moved(r: TransportRecord): Promise<void> {
 }
 
 export function mountTransport(app: Hono, mesh: Mesh): void {
-  const local = (c: Context) => mesh.enabled() && localRequest(c);
+  // The page's routes answer this host's own page whether or not the mesh is on (no devices: none to pick).
+  const local = (c: Context) => localRequest(c);
 
   setSourceDeps({
     peers: () => mesh.peers().map((p) => ({ id: p.id, label: p.label })),

@@ -68,6 +68,10 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
       const v = await meshLinks.create({ members: [{ session: agentSessionId }, { host: sourcePeer, session: sourceChatId }] });
       return { linkId: v.link.id };
     },
+    endLink: async (linkId) => {
+      const { meshLinks } = await import("../mesh/links");
+      await meshLinks.end(linkId);
+    },
     tell: async (path, text) => {
       const chat = await acquireChatHandle(path);
       await chat.deliverToAgent(text);

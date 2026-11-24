@@ -44,7 +44,7 @@ export function agentBrief(f: BriefFacts): string {
     "Ask the user (with align, then end your turn) before anything that needs admin rights (sudo, system packages, system services), anything that costs money, a secret you can't find (never invent one; ask where it is), and deleting or overwriting anything already on this device (a folder at that path, a database, a config file). Never commit, push, merge or switch branches.",
     "",
     "## Reporting",
-    `You are linked to the chat on ${f.source}: tell it with link_send when you start, when you ask the user something, and when you are done (what you installed and changed, and anything it should know here). When everything above is fixed, end your turn: Sova runs the checks again and carries the transport on by itself. If something is still missing, the transport waits as Needs you until you or the user fix it.`,
+    `You are linked to the chat on ${f.source}. Send it at most three messages with link_send: one when you start, one when you have to ask the user something, and one when you are done (what you installed and changed, and anything it should know here). Never answer a message from it that only acknowledges, thanks or repeats: act on one only when it asks you something or tells you something about getting this device ready, and then answer once. When everything above is fixed, end your turn: Sova runs the checks again, ends the link, and carries the transport on by itself. If something is still missing, the transport waits as Needs you until you or the user fix it.`,
   ].join("\n");
 }
 
@@ -59,6 +59,6 @@ export function agentPrivateValues(source: string, hits: { file: string; found: 
     `The chat has arrived. These private files came from ${source} and still hold that computer's values:`,
     ...hits.map((h) => `- ${h.file}: ${h.found.join(", ")}`),
     "",
-    "Point each at this computer (paths, database strings, ports), without changing anything else in them, then tell the chat with link_send what you changed and end your turn.",
+    "Point each at this computer (paths, database strings, ports), without changing anything else in them, then say in your reply what you changed and end your turn.",
   ].join("\n");
 }

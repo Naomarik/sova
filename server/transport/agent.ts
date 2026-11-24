@@ -86,6 +86,8 @@ export interface AgentDeps {
   startChat(input: { cwd: string; title: string; prompt: string; model: string; thinking: string }): Promise<{ id: string; path: string }>;
   /** Link the agent's chat to the chat on the source. */
   link(agentSessionId: string, sourcePeer: string, sourceChatId: string): Promise<{ linkId: string } | { error: string }>;
+  /** End the agent's link to the chat on the source: its preparing is done, so no report can bounce between them. */
+  endLink?(linkId: string): Promise<void>;
   /** Hand the agent's chat a message (a follow-up when it is busy). */
   tell(path: string, text: string): Promise<void>;
   /** Whether the agent's chat runs a turn now. */
@@ -368,7 +370,10 @@ export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps,
   if (!missingOf(checks).length) {
     markPrepared(root, req.project, req.tid, deps.now());
     const a = agentOf(deps.stateRoot(), req.tid);
-    if (a && a.state !== "ready") saveAgent(deps, req.tid, { ...a, state: "ready", checks });
+    if (a && a.state !== "ready") {
+      if (a.linkId) await deps.endLink?.(a.linkId).catch(() => undefined);
+      saveAgent(deps, req.tid, { ...a, state: "ready", checks });
+    }
     return { ready: true };
   }
   let agent = agentOf(deps.stateRoot(), req.tid);
@@ -385,6 +390,7 @@ export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps,
   checks = await waitForTurnEnd(agent.path, req.project, deps, opts.signal);
   if (!missingOf(checks).length) {
     markPrepared(root, req.project, req.tid, deps.now());
+    if (agent.linkId) await deps.endLink?.(agent.linkId).catch(() => undefined);
     saveAgent(deps, req.tid, { ...agent, state: "ready", checks });
     return { ready: true };
   }

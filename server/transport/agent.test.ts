@@ -30,6 +30,7 @@ function device(root: string, over: Partial<AgentDeps> = {}) {
   const started: { cwd: string; prompt: string; model: string }[] = [];
   const told: string[] = [];
   const linked: string[][] = [];
+  const ended: string[] = [];
   let busyPolls = 0;
   let clock = 0;
   const deps: AgentDeps = {
@@ -50,6 +51,7 @@ function device(root: string, over: Partial<AgentDeps> = {}) {
       linked.push([a, peer, chat]);
       return { linkId: "lk_1" };
     },
+    endLink: async (id) => void ended.push(id),
     tell: async (_p, text) => {
       told.push(text);
       busyPolls = 2;
@@ -59,7 +61,7 @@ function device(root: string, over: Partial<AgentDeps> = {}) {
     now: () => (clock += 5_000),
     ...over,
   };
-  return { deps, started, told, linked };
+  return { deps, started, told, linked, ended };
 }
 
 const request = (root: string, tid = "tr_1", model?: string): PrepareRequest => ({
@@ -107,6 +109,8 @@ test("nothing missing: ready at once, no agent; something missing: one agent, br
   assert.equal(s.model, onboardModels()[0], "the strongest model this device offers");
   assert.equal(s.cwd, join(root, "webapps"), "it starts in the nearest folder that exists");
   assert.deepEqual(d.linked, [["agent-1", "sova-laptop", "chat-1"]]);
+  assert.deepEqual(d.ended, ["lk_1"], "its link ends once the device is ready: no report bounces between the two chats");
+  assert.match(s.prompt, /at most three messages/);
   assert.equal(agentOf(d.deps.stateRoot(), "tr_1")?.state, "ready");
   assert.ok(isTransportAgent(d.deps.stateRoot(), "agent-1"));
 

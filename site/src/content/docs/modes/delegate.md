@@ -31,18 +31,14 @@ different models.
 If a route's primary model can't run (for example, your model policy keeps it from subagents),
 Delegate uses that route's fallback. **Without a fallback, the agent asks you which model to use.**
 
-## Off: the agent picks
-
-A chat whose profile is **Off** still delegates, and the agent still sorts the work into
-the 4 kinds. But no route is set, so the agent chooses each worker's backend, model and effort
-itself.
-
 ## Set up the routes
 
-The gear on Delegate's row in the mode menu, **Configure Delegate**, opens Settings → **Subagents**,
-where this chat's routing is edited. It switches nothing, so you can set Delegate up before turning it on.
+The gear on Delegate's row in the mode menu, **Configure Delegate**, opens Settings → **Profiles** on
+the profile this chat's helpers run on, at its Models part. It switches nothing, so you can set
+Delegate up before turning it on. A built-in profile is read-only: **Make It Yours** gives you a copy
+to edit.
 
-In the profile's **Delegate routing** section, each work kind has one row of three choices:
+In the profile's **Delegate** group, each work kind has one row of three choices:
 Backend, Model and Effort.
 
 - **Models are choices, not free text.** Each backend lists what it offers: pi lists the models you
@@ -51,22 +47,22 @@ Backend, Model and Effort.
 - **Add Fallback** on a route's head line adds a second row, and **Remove Fallback** takes it away.
   A fallback can't be the same worker as its primary.
 - **Save Changes** saves every route at once. A saved change reaches every chat on that profile
-  from its next turn. Workers that are already running keep their models.
+  from its next turn. Helpers that are already running keep their models.
 
 A model that's stored but not listed now stays in its row, marked "— not offered" (the backend
 answered without it) or "— not verified" (the backend couldn't answer). A model your settings keep
 from subagents reads "— off for subagents": it is refused when a worker starts, and Delegate uses
 the fallback, or asks.
 
-When you have no earlier Delegate settings, the first profile, **My setup**, starts with these
-routes, all on Claude Code:
+Sova's [built-in profiles](/docs/subagent-profiles/#built-in) route the 4 kinds like this, each with
+no fallback:
 
-| Work kind | Model · effort | Fallback |
-|---|---|---|
-| Planning & specs | Fable 5.2 · medium | Opus 5.5 · high |
-| Investigation | Opus 5.5 · low | none |
-| Routine implementation | Opus 5.5 · low | none |
-| Complex implementation | Opus 5.5 · medium | none |
+| Work kind | Claude (Claude Code) | OpenAI | DeepSeek (Ollama Cloud) |
+|---|---|---|---|
+| Planning & specs | Fable 5.2 · high | GPT-6.2 Sol · xhigh | DeepSeek V4.1 Flash · max |
+| Investigation | Opus 5.5 · medium | GPT-6.2 Sol · low | DeepSeek V4.1 Flash · low |
+| Routine implementation | Opus 5.5 · medium | GPT-6.2 Sol · medium | DeepSeek V4.1 Flash · high |
+| Complex implementation | Opus 5.5 · high | GPT-6.2 Sol · high | DeepSeek V4.1 Flash · high |
 
 ## Teams
 
@@ -83,8 +79,8 @@ Every team gets two standing members from Sova, on the models the chat's profile
   coordinator.
 
 The members the chat names follow these same 4 work kinds: each runs on the model its kind routes to.
-A model named for a member wins over its kind. A member with neither a kind nor a model is refused,
-except under profile **Off**, where it runs on the chat's own model. The coordinator's and monitor's
+A model named for a member wins over its kind. A member with neither a kind nor a model is refused.
+The coordinator's and monitor's
 models are edited in the profile's **Teams** section.
 
 Members message each other by role through their own inboxes, and the coordinator speaks for

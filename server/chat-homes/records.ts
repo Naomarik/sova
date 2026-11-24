@@ -63,6 +63,8 @@ interface State {
   members: Map<string, string>;
   /** When the homes were last checked for another writer's change. */
   checkedAt: number;
+  /** The environment the root was resolved from (homesGeneration's fast path). */
+  envKey: string;
   /** Bumped whenever what this process holds of the homes changed other than by its own write: a home arrived,
       was read again or forgotten, or another process wrote one. A store's memo compares it (homesGeneration). */
   gen: number;
@@ -77,7 +79,7 @@ let st: State | null = null;
 
 function state(): State {
   const root = homesRoot();
-  if (!st || st.root !== root) st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map(), checkedAt: 0, gen: 0, arrivals: 0 };
+  if (!st || st.root !== root) st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map(), checkedAt: 0, envKey: envKey(), gen: 0, arrivals: 0 };
   return st;
 }
 
@@ -231,10 +233,20 @@ export function forgetHomeRecords(homeId: string): void {
 /** What a store's memo compares: it changes whenever the homes' records this process holds changed other than by
     its own writes (a home arrived, was read again or forgotten, another process wrote one, checked once a second). */
 export function homesGeneration(): number {
+  // Asked once per row by the list: inside the second since the last check, with the same environment the homes root
+  // was resolved from, the answer is the one held (resolving the root and the clock check are the cost otherwise).
+  const s0 = st;
+  if (s0?.loaded && s0.envKey === envKey() && Date.now() - s0.checkedAt < CHECK_MS) return s0.gen;
   const s = loaded();
   fresh(s);
   return s.gen;
 }
+
+/** What the homes root is resolved from (server/chat-homes/root.ts, the agent dir): a change means another root. */
+const envKey = (): string => {
+  const e = process.env;
+  return `${e.PI_CODING_AGENT_DIR ?? ""}\0${e.SOVA_CHAT_HOMES ?? ""}\0${e.SOVA_CHAT_HOMES_ROOT ?? ""}\0${e.HOME ?? ""}`;
+};
 
 /** What a store of whole per-chat files (offers, cards) compares: a home arrived, was read again or forgotten. */
 export function homesArrivals(): number {

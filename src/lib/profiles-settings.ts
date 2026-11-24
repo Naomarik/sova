@@ -197,13 +197,17 @@ export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], sav
 }
 
 /**
- * The row a chat's profile key names: that key when a row has it; else, for helpers in effect
+ * The row a chat's profile key names: that key when a row has it; else the row that now takes a
+ * built-in one's place (`replaces`); else, for helpers in effect
  * (`library:<id>`), the row whose helpers they are — a library-only row, then yours, then a project's
  * or a built-in one (a copy made with Make It Yours links the built-in's id). Null when none fits.
  */
-export function chatRowKey(key: string | null, wire: readonly Pick<JoinedRowWire, "key" | "kind" | "group" | "libraryId">[]): string | null {
+export function chatRowKey(key: string | null, wire: readonly Pick<JoinedRowWire, "key" | "kind" | "group" | "libraryId" | "replaces">[]): string | null {
   if (!key) return null;
   if (wire.some((w) => w.key === key)) return key;
+  // A built-in one a profile of yours now takes the place of (Make It Yours, saved since this was read).
+  const taker = wire.find((w) => w.replaces === key);
+  if (taker) return taker.key;
   if (!key.startsWith("library:")) return null;
   const lib = key.slice("library:".length);
   const linking = wire.filter((w) => w.libraryId === lib);

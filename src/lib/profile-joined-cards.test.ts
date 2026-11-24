@@ -83,6 +83,9 @@ test("the checked card is the profile in effect: the pick, else what the chat fo
   assert.equal(inEffectCard(g, null, { id: "openai", key: "sova:openai" })?.key, "sova:openai");
   assert.equal(inEffectCard(g, null, { id: "x", key: "library:gone", libraryId: "fast" })?.key, "library:fast", "else the helpers in effect, a library-only card first");
   assert.equal(inEffectCard(g, null, { id: "x", key: "library:gone", libraryId: "claude-lib" })?.key, "user:claude", "then the card that links them");
+  // A built-in key a profile of yours now replaces: that copy's card.
+  const copied = joinedPickerProfiles(listing([{ ...CLAUDE, replaces: "sova:claude" }]));
+  assert.equal(inEffectCard(copied, null, { id: "claude", key: "sova:claude" })?.key, "user:claude");
   // Nothing names a card: none checked, never a card for no profile.
   assert.equal(inEffectCard(g, null, { id: "off", key: "sova:default" }), null);
   assert.equal(inEffectCard(g, null, null), null);

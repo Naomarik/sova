@@ -102,6 +102,10 @@ test("the This chat chip: on the row of the chat's profile, in any group; none w
   assert.deepEqual(chips("library:fast"), ["library:fast"]);
   assert.deepEqual(chips("library:openai"), ["sova:openai"], "a built-in one");
   assert.deepEqual(chips("library:gone"), []);
+  // Read before a Make It Yours copy was saved: the built-in's key goes to the copy that replaces it.
+  const copy = joined({ key: "user:claude-copy", kind: "pair", group: "yours", name: "Claude", libraryId: "claude", replaces: "sova:claude" });
+  const g = listGroups(draftOf([copy], "user:claude-copy"), [copy], null, "sova:claude");
+  assert.deepEqual(g.yours.filter((r) => r.thisChat).map((r) => r.key), ["user:claude-copy"]);
 });
 
 test("Make It Yours: a copy under Yours with the built-in's name and both its parts; refused when one of yours has the name", () => {

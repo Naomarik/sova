@@ -189,6 +189,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     // By key; else the helpers in effect (a library-only row first); else by id.
     return (
       joined().find((r) => (c.key ? r.key === c.key : false)) ??
+      // A built-in one a profile of yours now takes the place of (Make It Yours).
+      (c.key ? joined().find((r) => r.replaces === c.key) : undefined) ??
       (lib ? (joined().find((r) => r.kind === "library" && r.libraryId === lib) ?? joined().find((r) => r.libraryId === lib)) : undefined) ??
       joined().find((r) => r.id === c.id)
     );

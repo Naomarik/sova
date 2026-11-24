@@ -330,7 +330,7 @@ export function inEffectCard(
     return all.find((p) => p.key === k || p.joined?.key === k) ?? null;
   }
   if (!chat || chat.id === "off" || chat.key === "sova:default") return null;
-  const byKey = chat.key ? all.find((p) => p.key === chat.key || p.joined?.key === chat.key) : undefined;
+  const byKey = chat.key ? all.find((p) => p.key === chat.key || p.joined?.key === chat.key || p.joined?.replaces === chat.key) : undefined;
   if (byKey) return byKey;
   // Helpers alone (no session half): the card whose helpers they are, a library-only one first.
   const lib = chat.libraryId;

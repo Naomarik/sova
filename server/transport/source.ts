@@ -62,10 +62,10 @@ export interface SourceDeps {
   stopJobs(chatIds: string[]): Promise<string[]>;
   /** The chat's background jobs and its helpers', by name (the dialog's Stays here). */
   jobs(chatId: string): string[];
-  /** The running copies (project-services instances) on these worktrees, by name (the dialog's Stays here). */
-  copies(treePaths: string[]): string[];
-  /** Stop the running copies on these worktrees (a Move's switch): the names of those stopped. */
-  stopCopies(treePaths: string[]): Promise<string[]>;
+  /** The running copies (project-services instances) on these worktrees: id and name (the dialog's Stays here). */
+  copies(treePaths: string[]): { id: string; name: string }[];
+  /** Stop these running copies (a Move's switch, the ones your click saw): the names of those stopped. */
+  stopCopies(ids: string[]): Promise<string[]>;
   /** The chat's usage and time records, cut from this device's stores for the package (null: none to carry). */
   usageCut(chatId: string): Promise<Buffer | null>;
   /** After the destination confirmed: the Moved row, the safety copy, the old code folders. */
@@ -235,7 +235,7 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
       left: [...new Set(t.trees.flatMap((x) => x.left))],
       leftBytes: (await Promise.all(t.trees.flatMap((x) => x.left.map((d) => dirBytes(join(x.path, d)))))).reduce((n, b) => n + b, 0),
       jobs: need().jobs(c.id),
-      copies: need().copies(t.trees.map((x) => x.path)),
+      copies: need().copies(t.trees.map((x) => x.path)).map((x) => x.name),
     },
     busyHelpers: extras.busyHelpers,
     needs,
@@ -309,7 +309,8 @@ export async function startTransport(b: StartBody): Promise<{ ok: true; tid: str
     folder: folderThere,
     state: "preparing",
     ticket,
-    choices: { untick: b.untick ?? [], include: b.include ?? [], ...(b.busyChoice ? { busyChoice: b.busyChoice } : {}), ...(b.agentModel ? { agentModel: b.agentModel } : {}) },
+    // The running copies your click saw: only these does the switch stop with your word (a later one asks you).
+    choices: { untick: b.untick ?? [], include: b.include ?? [], copies: b.mode === "move" ? d.copies(t.trees.map((x) => x.path)).map((x) => x.id) : [], ...(b.busyChoice ? { busyChoice: b.busyChoice } : {}), ...(b.agentModel ? { agentModel: b.agentModel } : {}) },
     ext: { offerTrees: trees, repoRel },
   });
   const sent = await sendOffer(tid);
@@ -465,6 +466,10 @@ async function pack(r: TransportRecord): Promise<void> {
   const c = await d.chat(r.path);
   if (!c) throw new Error("The chat's file is gone here.");
   if (r.mode === "move") {
+    // A running copy started after your click wasn't in what you agreed to stop: it is yours to stop first.
+    const seen = new Set(r.choices?.copies ?? []);
+    const later = d.copies((await chatTrees(c)).trees.map((x) => x.path)).filter((x) => !seen.has(x.id));
+    if (later.length) throw new Error(`${later.length === 1 ? `Running copy ${later[0]!.name} started` : `Running copies ${later.map((x) => x.name).join(", ")} started`} after you pressed Move; stop ${later.length === 1 ? "it" : "them"}, then Retry`);
     updateTransport(r.tid, { state: "waiting-helpers" });
     const ctl = new AbortController();
     const helpers = d.helpers(c.id);
@@ -480,7 +485,7 @@ async function pack(r: TransportRecord): Promise<void> {
     // Deepest first: a helper's helpers stop before it.
     for (const h of [...helpers].reverse()) await d.park(h.chatId);
     const jobs = await d.stopJobs([c.id, ...helpers.map((h) => h.chatId)]);
-    const copies = await d.stopCopies((await chatTrees(c)).trees.map((x) => x.path));
+    const copies = await d.stopCopies(r.choices?.copies ?? []);
     await d.closeChat(c.path, `This chat is moving to ${r.peerLabel}.`);
     await knob(r.tid, "stopped");
     stepDone(r.tid, "stopped", { stopped: { jobs, copies }, interrupted, wrapped });

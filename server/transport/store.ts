@@ -53,7 +53,7 @@ export interface TransportRecord {
   /** Bytes the destination holds of the package. */
   received?: number;
   /** Source: the dialog's choices. */
-  choices?: { untick: string[]; include: string[]; busyChoice?: "safe" | "interrupt"; agentModel?: string };
+  choices?: { untick: string[]; include: string[]; busyChoice?: "safe" | "interrupt"; agentModel?: string; copies?: string[] };
   /** Source: commits the destination has, from its first answer. */
   haves?: string[];
   /** Source: the switch was decided (the commit sent, or about to be): the chat doesn't run here again unless the destination says it has nothing. */

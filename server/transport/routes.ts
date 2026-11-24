@@ -219,8 +219,8 @@ async function compressOldSafetyCopies(): Promise<void> {
 /** Why a query or body has a key the route doesn't take, or null. */
 /** The running copies (instances wanting a service running) on these worktrees, named as Running Copies names
     them: the branch, else the folder. A project's main copy (slot 0) isn't the chat's to stop: it stays. */
-function runningCopiesOn(paths: string[]): { id: string; name: string }[] {
-  const at = new Set(paths.map((p) => {
+function runningCopiesOn(paths: string[] | null): { id: string; name: string }[] {
+  const at = new Set((paths ?? []).map((p) => {
     try {
       return realpathSync(p);
     } catch {
@@ -229,7 +229,7 @@ function runningCopiesOn(paths: string[]): { id: string; name: string }[] {
   }));
   try {
     return readRegistry()
-      .instances.filter((i) => i.slot !== 0 && at.has(i.checkout) && Object.values(i.desired ?? {}).includes("running"))
+      .instances.filter((i) => i.slot !== 0 && (paths === null || at.has(i.checkout)) && Object.values(i.desired ?? {}).includes("running"))
       .map((i) => ({ id: i.id, name: i.branch ?? basename(i.checkout) }));
   } catch {
     return [];
@@ -297,10 +297,10 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
         return [];
       }
     },
-    copies: (paths) => runningCopiesOn(paths).map((c) => c.name),
-    stopCopies: async (paths) => {
+    copies: (paths) => runningCopiesOn(paths),
+    stopCopies: async (ids) => {
       const stopped: string[] = [];
-      const copies = runningCopiesOn(paths);
+      const copies = runningCopiesOn(null).filter((c) => ids.includes(c.id));
       if (!copies.length) return stopped;
       const { projectEngine } = await import("../project-services/routes");
       const engine = projectEngine();

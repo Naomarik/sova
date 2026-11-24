@@ -17,7 +17,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { onboardModel, onboardModels } from "../projects/onboard";
+import { ONBOARD_THINKING, onboardModel, onboardModels } from "../projects/onboard";
 import { agentBrief, agentPrivateValues, agentStillMissing } from "./agent-prompt";
 
 /** One setup check's finding, as doctor gives them (§app.project-services/doctor). */
@@ -99,7 +99,8 @@ export interface AgentDeps {
   now(): number;
 }
 
-export const AGENT_THINKING = "high";
+/** Its thinking level: the setup chats' (medium). High made glm-5.3 think minutes before its first step. */
+export const AGENT_THINKING = ONBOARD_THINKING;
 /** How often a working agent's chat is looked at. */
 export const AGENT_POLL_MS = 3_000;
 /** A turn that hasn't shown as running this long after a message is taken as ended. */

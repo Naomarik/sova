@@ -60,7 +60,7 @@ async function chatNow(chat: ChatHandle): Promise<ChatNow & { memoryType?: strin
   };
 }
 
-/** The joined key the chat is on now (the switch's record, else its first pick, else Off). */
+/** The joined key the chat is on now (its full profile, else the helpers in effect); Off's only for a chat with no picker. */
 async function chatKey(chat: ChatHandle): Promise<string> {
   try {
     const cur = (await chat.chatProfileState()).current;
@@ -96,9 +96,11 @@ export async function makeChatDefault(path: string): Promise<DefaultProfileInfo>
   if (s.overseer || s.projectOverseer || s.baton || s.org || s.workerSession || s.queueChat) throw new DefaultRefusal("This chat has no profile to make the default.");
   const chat = chatHandle(path) ?? (await acquireChatHandle(path));
   const key = await chatKey(chat);
+  // No profile in effect (nothing chosen, no account connected): nothing to make the default.
+  if (key === OFF_KEY) throw new DefaultRefusal("This chat has no profile to make the default.");
   const now = await chatNow(chat);
   const rows = await joinedProfiles(s.cwd);
-  const row = pickJoined(rows, key === OFF_ID ? OFF_KEY : key);
+  const row = pickJoined(rows, key);
   if (!row) throw new DefaultRefusal("This chat's profile isn't here anymore.");
   const info = chooseDefaultProfile(row, rows, { strict: now.strict });
   if (now.memoryType) saveDefaultMemoryType(now.memoryType as Parameters<typeof saveDefaultMemoryType>[0]);
@@ -136,8 +138,8 @@ export function registerProfileEditorRoutes(app: Hono, sources: DelegateSources)
       }
       if (!key) return c.json({ error: "Expected {key} or {path}" }, 400);
       const rows = await joinedProfiles(cwd);
-      const row = pickJoined(rows, key === OFF_ID ? OFF_KEY : key);
-      if (!row) return c.json({ error: "That profile isn't here anymore." }, 404);
+      const row = pickJoined(rows, key);
+      if (!row) return c.json({ error: key === OFF_ID || key === OFF_KEY ? "There is no Off profile to make the default." : "That profile isn't here anymore." }, 404);
       chooseDefaultProfile(row, rows);
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, err instanceof DefaultRefusal ? 409 : 400);

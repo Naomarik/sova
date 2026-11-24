@@ -8,6 +8,7 @@ import {
   limitsLine,
   REMOVABLE,
   toolRemoved,
+  keyOf,
   type Grantable,
   type JoinedProfile,
   type ListedProfile,
@@ -168,7 +169,7 @@ export const cardCount = (g: ReturnType<typeof pickerProfiles>): number => (g.mi
 export const cardMatches = (p: Pick<Profile, "label">, query: string): boolean => !query.trim() || p.label.toLowerCase().includes(query.trim().toLowerCase());
 
 /**
- * A card's one caption line: what it sets of "{model} · {effort} · subagents: {footprint} · {mode} ·
+ * A card's one caption line: what it sets of "{model} · {effort} · helpers: {footprint} · {mode} ·
  * {minor modes}", or its description when it sets none. `subagents`: this device's subagent profiles
  * (the listing's), for the footprint; "off" reads "off", and an id this device lacks reads as the id.
  */
@@ -176,7 +177,7 @@ export function profileCaption(p: Pick<Profile, "model" | "thinking" | "subagent
   const parts: string[] = [];
   if (p.model) parts.push(modelLabel(p.model) ?? p.model);
   if (p.thinking) parts.push(p.thinking);
-  if (p.subagents) parts.push(`subagents: ${p.subagents === "off" ? "off" : (subagents.find((s) => s.id === p.subagents)?.footprint || p.subagents)}`);
+  if (p.subagents) parts.push(`helpers: ${p.subagents === "off" ? "off" : (subagents.find((s) => s.id === p.subagents)?.footprint || p.subagents)}`);
   parts.push(...modeParts(p));
   return parts.length ? parts.join(" · ") : p.description;
 }
@@ -185,7 +186,7 @@ export function profileCaption(p: Pick<Profile, "model" | "thinking" | "subagent
 export type CaptionPart =
   /** The effort ring and the model's short name, each only when the profile sets it. */
   | { kind: "model"; name: string | null; level: string | null; title: string }
-  /** The subagents icon and the subagent profile's distinct primary models, or "off". */
+  /** The helpers (subagents) icon and the helper profile's distinct primary models, or "off". */
   | { kind: "subagents"; text: string; title: string }
   /** A mode's icon, or a project mode's letter. */
   | { kind: "mode"; glyph: ModeGlyph; title: string }
@@ -226,7 +227,7 @@ export function profileCaptionParts(
     const s = subagents.find((x) => x.id === p.subagents);
     const footprint = p.subagents === "off" ? "off" : (s?.footprint || p.subagents);
     const text = p.subagents === "off" ? "off" : s?.models !== undefined ? String(s.models) : p.subagents;
-    parts.push({ kind: "subagents", text, title: `subagents: ${footprint}` });
+    parts.push({ kind: "subagents", text, title: `helpers: ${footprint}` });
   }
   parts.push(...modePartsOf(p.mode, p.minorModes));
   if (p.minorModes && !p.minorModes.length) parts.push({ kind: "words", text: "no minor modes", title: "no minor modes" });
@@ -243,7 +244,7 @@ export function mySettingsCaptionParts(s: MySettingsState | null | undefined): C
 
 /**
  * The picked profile's settings in full words (§chat.profiles/picker), the first line of its
- * details: "Model: Opus 5.5 · Effort: high · Subagents: Claude subs (Opus 5.5, glm-5.3) · Main mode:
+ * details: "Model: Opus 5.5 · Effort: high · Helpers: Claude subs (Opus 5.5, glm-5.3) · Main mode:
  * delegate · Add-on modes: align, spec", what it leaves unset left out; null when it sets none.
  */
 export function profileSettingsLine(
@@ -255,7 +256,7 @@ export function profileSettingsLine(
   if (p.thinking) parts.push(`Effort: ${p.thinking}`);
   if (p.subagents) {
     const s = subagents.find((x) => x.id === p.subagents);
-    parts.push(`Subagents: ${p.subagents === "off" ? "off" : s ? `${s.name} (${s.footprint.split(" · ").join(", ")})` : p.subagents}`);
+    parts.push(`Helpers: ${p.subagents === "off" ? "off" : s ? `${s.name} (${s.footprint.split(" · ").join(", ")})` : p.subagents}`);
   }
   if (p.mode) parts.push(`Main mode: ${p.mode}`);
   if (p.minorModes) parts.push(`Add-on modes: ${p.minorModes.length ? p.minorModes.join(", ") : "none"}`);
@@ -271,19 +272,20 @@ export const cardUnusable = (l: ProfilesListing | undefined, p: Pick<ListedProfi
     profile no session profile links to gets a capability-neutral stand-in that sets only its helpers. */
 export type JoinedCard = ListedProfile & { joined?: JoinedProfile };
 
-/** Off's card label (the built-in profile with no settings, §chat.subagent-profiles/off). */
-export const OFF_LABEL = "Off";
+/** The Custom… board's head once a switch moved: "{profile}, edited". */
+export const editedLabel = (name: string): string => `${name}, edited`;
 
 /**
- * The picker's groups from the joined list: Off first (in place of My settings), then Yours
- * (pairs, library-only profiles and unlinked session profiles), This project, then Built in; hidden
- * rows left out, Off never. Without a joined list (an older server) the old groups, as before.
+ * The picker's groups from the joined list: Yours (pairs, library-only profiles and unlinked
+ * session profiles), This project, then Built in; hidden rows left out. No card stands for no
+ * profile: an older server's Off row is never drawn. Without a joined list (an older server) the
+ * old groups, less their no-profile card.
  */
 export function joinedPickerProfiles(l: ProfilesListing | undefined): ReturnType<typeof pickerProfiles> {
   const old = pickerProfiles(l);
-  if (!l?.joined) return old;
+  if (!l?.joined) return { ...old, mine: null };
   const card = (r: JoinedProfile): JoinedCard | null => {
-    if (r.kind === "off") return old.mine ? { ...old.mine, label: OFF_LABEL, joined: r } : null;
+    if (r.kind === "off") return null;
     if (r.session) return { ...r.session, label: r.name, joined: r };
     return {
       id: r.id,
@@ -301,11 +303,47 @@ export function joinedPickerProfiles(l: ProfilesListing | undefined): ReturnType
       joined: r,
     };
   };
-  const shown = l.joined.filter((r) => r.kind === "off" || !r.hidden);
-  const of = (g: JoinedProfile["group"]) => shown.filter((r) => r.kind !== "off" && r.group === g).map(card).filter((c): c is JoinedCard => c !== null);
-  const off = shown.find((r) => r.kind === "off");
-  return { mine: off ? card(off) : old.mine, yours: of("yours"), project: of("project"), projectName: old.projectName, builtins: of("builtin") };
+  const shown = l.joined.filter((r) => r.kind !== "off" && !r.hidden);
+  const of = (g: JoinedProfile["group"]) => shown.filter((r) => r.group === g).map(card).filter((c): c is JoinedCard => c !== null);
+  return { mine: null, yours: of("yours"), project: of("project"), projectName: old.projectName, builtins: of("builtin") };
 }
+
+/** Every card of the picker's groups, in their order. */
+export const pickerCards = (g: ReturnType<typeof pickerProfiles>): JoinedCard[] => [...(g.mine ? [g.mine] : []), ...g.yours, ...g.project, ...g.builtins];
+
+/**
+ * The card of the profile in effect for a chat (its check, §chat.profiles/picker): the session's own
+ * pick when it has one (a board edit is no card), else the joined profile its `chat_profile` names
+ * (by key, else by the helpers in effect, `libraryId`) — a library profile picked with its helpers
+ * only, or the default the chat follows. Null when
+ * neither names a card here (an older server's Off, a hidden or deleted profile).
+ */
+export function inEffectCard(
+  g: ReturnType<typeof pickerProfiles>,
+  picked: { id: string; source?: ListedProfile["source"]; builtin?: boolean; project?: string; custom?: boolean } | null | undefined,
+  chat: { id: string; key?: string; libraryId?: string } | null | undefined,
+): JoinedCard | null {
+  const all = pickerCards(g);
+  if (picked) {
+    if (picked.custom) return null;
+    const k = keyOf(picked);
+    return all.find((p) => p.key === k || p.joined?.key === k) ?? null;
+  }
+  if (!chat || chat.id === "off" || chat.key === "sova:default") return null;
+  const byKey = chat.key ? all.find((p) => p.key === chat.key || p.joined?.key === chat.key || p.joined?.replaces === chat.key) : undefined;
+  if (byKey) return byKey;
+  // Helpers alone (no session half): the card whose helpers they are, a library-only one first.
+  const lib = chat.libraryId;
+  const byLib = lib ? (all.find((p) => p.joined?.kind === "library" && p.joined.libraryId === lib) ?? all.find((p) => p.joined?.libraryId === lib)) : undefined;
+  return byLib ?? all.find((p) => p.joined?.id === chat.id) ?? null;
+}
+
+/** Whether this computer has a default profile: none with no profile at all (no account connected and
+    none of yours chosen), which the listing sends as the old Off's key with no name. */
+export const hasDefaultProfile = (l: ProfilesListing | undefined): boolean => {
+  const d = l?.defaultProfile;
+  return !!d && d.id !== "off" && d.key !== "sova:default" && d.name.trim() !== "";
+};
 
 /** Whether a card is this computer's default (§chat.profiles/default): its Default chip. */
 export const isDefaultCard = (l: ProfilesListing | undefined, p: Pick<ListedProfile, "key">): boolean => {
@@ -315,5 +353,5 @@ export const isDefaultCard = (l: ProfilesListing | undefined, p: Pick<ListedProf
   return row ? row.key === d.key : p.key === d.key;
 };
 
-/** Whether a card stands for a library profile no session profile links to: picked as Off with its helpers. */
+/** Whether a card stands for a library profile no session profile links to: picked with its helpers only. */
 export const isLibraryCard = (p: Pick<ListedProfile, "key">): boolean => (p as JoinedCard).joined?.kind === "library";

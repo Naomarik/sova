@@ -729,8 +729,11 @@ export const listSessionGroups = () => request<SessionGroup[]>("/api/session-gro
 /** Profiles (§chat/profiles): what a folder can use, one pick, approving and hiding, and saving the
     session's model, effort and subagent pick as a new profile of yours (the one profile file written). */
 export type ProfilePickRef = { source: "sova" | "user" | "project" | "library"; id: string };
-export const fetchProfiles = (cwd?: string | null, host?: string | null) =>
-  request<ProfilesListing>(hostUrl(host, cwd ? `/api/profiles?cwd=${encodeURIComponent(cwd)}` : "/api/profiles"), { cache: "no-store" });
+/** `path`: the chat Settings is open for, so the listing names the profile in effect for it (`thisChat`). */
+export const fetchProfiles = (cwd?: string | null, host?: string | null, path?: string | null) => {
+  const q = [cwd ? `cwd=${encodeURIComponent(cwd)}` : "", path ? `path=${encodeURIComponent(path)}` : ""].filter(Boolean).join("&");
+  return request<ProfilesListing>(hostUrl(host, `/api/profiles${q ? `?${q}` : ""}`), { cache: "no-store" });
+};
 export const pickProfile = (path: string, profile: ProfilePickRef | { remove: string[]; grant: string[]; from?: ProfilePickRef } | null) =>
   request<{ ok: true }>("/api/sessions/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, profile }) });
 /** Save Current As Profile: this session's model, effort and subagent pick as a new profile of yours; answers with the listing. */

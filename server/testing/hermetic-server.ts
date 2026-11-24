@@ -21,6 +21,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
+import { builtinHelpers } from "../../pi-config/extensions/subagents/builtin-profiles.ts";
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
 
@@ -135,6 +136,12 @@ function writeAgentDir(agent: string, mockPort: number): void {
     JSON.stringify({ providers: { [provider]: { baseUrl: `http://127.0.0.1:${mockPort}/v1`, api: "openai-completions", apiKey: "mock", models: [{ id: model, contextWindow: 100000, maxTokens: 4000 }] } } }, null, 2),
   );
   writeFileSync(join(agent, "settings.json"), JSON.stringify({ defaultProvider: provider, defaultModel: model }, null, 2));
+  // A default chosen, so new chats open on the stand-in: the built-in Claude profile's helpers (the sentinel home is
+  // signed in to Claude) under an id of their own, with no model of their own. With none chosen, the default is that
+  // built-in profile whole, and a new chat would open on Claude Code (§chat.profiles/default). A test of the derived
+  // default writes its own files or runs in its own agent dir.
+  writeFileSync(join(agent, "subagent-profiles.json"), JSON.stringify({ version: 1, profiles: [{ ...builtinHelpers("claude"), id: "stand-in", name: "Stand-in" }] }, null, 2));
+  writeFileSync(join(agent, "subagent-profiles-default.json"), JSON.stringify({ version: 1, default: "stand-in" }, null, 2));
   // The Overseer on the stand-in too, its memory off: nothing the server starts on its own reaches a real model.
   writeFileSync(join(agent, "sova", "overseer.json"), JSON.stringify({ version: 1, model: STAND_IN_MODEL, explorer: { backend: "pi", model: STAND_IN_MODEL, effort: "medium" }, memory: { on: false, type: "uniichat", size: 128 } }, null, 2));
 }

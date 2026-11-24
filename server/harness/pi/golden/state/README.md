@@ -34,7 +34,7 @@ message, hook notes' (`custom_message`) content and tool results' content. Key o
 | `G7-overseer-cleared` | `/clear`; an unattended brief runs a scripted `sova_send` under the rule; the rule revoked | the carried rule seeded after the marker (naming G7-first's click: the three G7 files share one numbering); `overseer-grant-use` mid-run before the tool result; `overseer-revoke` |
 | `G7-overseer-target` | the session `sova_send` reached | `sova-overseer-sent` with the Overseer's id |
 | `G8-project-overseer` | `ensureProjectOverseer` | header + `sova-project-overseer` marker, hand-written |
-| `G8-web-session-profile` | `POST /api/sessions {cwd, subagent_profile: "off"}` | header, then `subagent-profile` appended by `SessionManager.open` on the header-only file |
+| `G8-web-session-profile` | `POST /api/sessions {cwd, subagent_profile: "claude"}` | header, then `subagent-profile` appended by `SessionManager.open` on the header-only file |
 | `G9-dialog-answer` | a fixture extension's tool opens a `select`; `answerDialog` | `sova-overseer-dialog-answer` while the tool waits, before its result |
 | `G10-open-dispose`, `-empty` | open, attach, detach, dispose with no prompt (a 1-turn file, a header-only one) | the file is byte-identical to before (asserted on the raw bytes too) |
 

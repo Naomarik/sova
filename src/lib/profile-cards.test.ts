@@ -42,11 +42,11 @@ const listing = (yours: ListedProfile[], extra: Partial<ProfilesListing> = {}): 
 test("a card's caption: what it sets, in order, else its description", () => {
   assert.equal(
     profileCaption({ model: "claude-code-cli/claude-opus-5-5", thinking: "high", subagents: "claude-subs", description: "ignored" }, SUBAGENTS),
-    "Opus 5.5 · high · subagents: Opus 5.5 · Sonnet 5.5",
+    "Opus 5.5 · high · helpers: Opus 5.5 · Sonnet 5.5",
   );
   assert.equal(profileCaption({ model: "deepseek/deepseek-v4", description: "" }, SUBAGENTS), "deepseek-v4");
-  assert.equal(profileCaption({ subagents: "off", description: "" }, SUBAGENTS), "subagents: off");
-  assert.equal(profileCaption({ subagents: "gone", description: "" }, SUBAGENTS), "subagents: gone", "an id this device lacks reads as the id");
+  assert.equal(profileCaption({ subagents: "off", description: "" }, SUBAGENTS), "helpers: off");
+  assert.equal(profileCaption({ subagents: "gone", description: "" }, SUBAGENTS), "helpers: gone", "an id this device lacks reads as the id");
   assert.equal(profileCaption({ thinking: "low", description: "" }), "low");
   assert.equal(profileCaption({ description: "Reads sessions; no shell." }, SUBAGENTS), "Reads sessions; no shell.");
 });
@@ -114,13 +114,13 @@ test("a card's caption parts: only what the profile sets, as glyphs, the words k
   );
   assert.equal(full.kind, "glyphs");
   if (full.kind !== "glyphs") return;
-  assert.equal(full.label, "glm-5.3 · high · subagents: Opus 5.5 · Sonnet 5.5 · delegate · align, vis");
+  assert.equal(full.label, "glm-5.3 · high · helpers: Opus 5.5 · Sonnet 5.5 · delegate · align, vis");
   assert.deepEqual(
     full.parts.map((p) => p.kind),
     ["model", "subagents", "mode", "mode", "mode"],
     "model and effort, subagents, then the mode icons",
   );
-  assert.deepEqual(full.parts[1], { kind: "subagents", text: "2", title: "subagents: Opus 5.5 · Sonnet 5.5" }, "the count of distinct models");
+  assert.deepEqual(full.parts[1], { kind: "subagents", text: "2", title: "helpers: Opus 5.5 · Sonnet 5.5" }, "the count of distinct models");
   assert.deepEqual(
     full.parts.slice(2).map((p) => (p.kind === "mode" ? p.glyph : null)),
     [
@@ -130,9 +130,9 @@ test("a card's caption parts: only what the profile sets, as glyphs, the words k
     ],
   );
   const off = profileCaptionParts({ subagents: "off", description: "" }, COUNTED);
-  assert.deepEqual(off.kind === "glyphs" && off.parts, [{ kind: "subagents", text: "off", title: "subagents: off" }]);
+  assert.deepEqual(off.kind === "glyphs" && off.parts, [{ kind: "subagents", text: "off", title: "helpers: off" }]);
   const older = profileCaptionParts({ subagents: "claude-subs", description: "" }, SUBAGENTS);
-  assert.deepEqual(older.kind === "glyphs" && older.parts[0], { kind: "subagents", text: "claude-subs", title: "subagents: Opus 5.5 · Sonnet 5.5" }, "an older server sends no count: the id, never a parsed footprint");
+  assert.deepEqual(older.kind === "glyphs" && older.parts[0], { kind: "subagents", text: "claude-subs", title: "helpers: Opus 5.5 · Sonnet 5.5" }, "an older server sends no count: the id, never a parsed footprint");
 });
 
 test("the mode glyphs: the major mode's (normal the sliders), each built-in minor's icon, a project mode's letter", () => {
@@ -171,7 +171,7 @@ test("My settings' caption parts: the modes first, then model and effort", () =>
 test("the picked profile's settings line spells out what the card's glyphs draw", () => {
   assert.equal(
     profileSettingsLine({ model: "claude-code-cli/claude-opus-5-5", thinking: "high", subagents: "claude-subs", mode: "delegate", minorModes: ["align", "spec"] }, COUNTED),
-    "Model: Opus 5.5 · Effort: high · Subagents: Claude subs (Opus 5.5, Sonnet 5.5) · Main mode: delegate · Add-on modes: align, spec",
+    "Model: Opus 5.5 · Effort: high · Helpers: Claude subs (Opus 5.5, Sonnet 5.5) · Main mode: delegate · Add-on modes: align, spec",
   );
   assert.equal(profileSettingsLine({ thinking: "low", minorModes: [] }), "Effort: low · Add-on modes: none", "what it leaves unset is left out");
   assert.equal(profileSettingsLine({}), null);

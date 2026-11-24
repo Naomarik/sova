@@ -30,7 +30,7 @@ export type ClaudeModels = () => Promise<{ id: string; efforts: string[] }[]>;
 const noop = () => {};
 
 /** A pi as far as the engine uses it, on the chat's entries `entries`, in `cwd`, with launch flags `flags`. */
-export function fakePi(entries: Entry[], opts: { cwd?: string; flags?: Record<string, string>; claudeModels?: ClaudeModels; models?: unknown[]; tools?: string[]; worker?: boolean } = {}) {
+export function fakePi(entries: Entry[], opts: { cwd?: string; flags?: Record<string, string | boolean>; claudeModels?: ClaudeModels; models?: unknown[]; tools?: string[]; worker?: boolean } = {}) {
   const handlers = new Map<string, Handler[]>();
   const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> | void; getArgumentCompletions?: (prefix: string) => { value: string }[] | null }>();
   const listeners = new Map<string, ((data: unknown) => void)[]>();

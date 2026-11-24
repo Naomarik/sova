@@ -102,7 +102,8 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     assert.equal(t.thinking, "high");
     assert.equal(t.subagents, "gpt-subs");
     assert.ok(t.helpers > 0);
-    assert.deepEqual(await switchTargetOf("off", cwd), { id: "off", key: "sova:default", name: "Off", subagents: "off", helpers: 0 });
+    // An older page's Off: this computer's default (House, library-only, no default chosen yet).
+    assert.deepEqual(await switchTargetOf("off", cwd), { id: "house", key: "library:house", name: "House", subagents: "house", helpers: 4 });
     const unknown = await switchTargetOf("nope", cwd);
     assert.ok("error" in unknown && unknown.status === 404);
   });
@@ -249,14 +250,14 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     assert.equal(chat.chatProfileState().current.edited, false);
   });
 
-  test("Off moves only the helpers: the chat keeps its own model", async () => {
+  test("an older page's Off is the default: a helpers-only default moves only the helpers, and the chat keeps its own model", async () => {
     const { path, chat } = await openChat();
     assert.ok((await switchChatProfile(path, "fast")).ok);
     const r = await switchChatProfile(path, "off");
     assert.ok(r.ok, JSON.stringify(r));
     assert.equal(chat.harness.model()?.ref, "openai/gpt-5.5");
-    assert.equal(chat.subagentPick, "off");
-    assert.equal(r.state.current.id, "off");
+    assert.equal(chat.subagentPick, "house");
+    assert.deepEqual([r.state.current.id, r.state.current.name], ["house", "House"]);
     assert.equal(r.state.current.edited, false);
   });
   test("the same profile again, unedited, changes nothing and says nothing", async () => {
@@ -300,12 +301,14 @@ describe("a profile switch, all at once (§chat.profiles/switch)", () => {
     }
   });
 
-  test("the Overseer's subagent_profile alias moves only the helpers: the chat stays on its profile", async () => {
+  test("the Overseer's subagent_profile alias moves only the helpers: a chat on helpers alone is named by them; one on a full profile stays on it", async () => {
     const { path, chat } = await openChat();
-    assert.equal(chat.chatProfileState().current.id, "off");
+    assert.deepEqual([chat.chatProfileState().current.id, chat.chatProfileState().current.key], ["house", "library:house"], "the default's helpers name it: never Off");
+    const before = written(path);
     await chat.switchSubagentProfile("gpt-subs");
     assert.equal(chat.subagentPick, "gpt-subs");
-    assert.equal(chat.chatProfileState().current.id, "off", "still Off, not the library profile");
+    assert.equal(chat.chatProfileState().current.id, "gpt-subs", "the label follows the helpers it runs");
+    assert.equal(written(path).profile, before.profile, "nothing records a name that would freeze the label");
     assert.ok((await switchChatProfile(path, "fast")).ok);
     await chat.switchSubagentProfile("house");
     assert.equal(chat.chatProfileState().current.id, "fast");

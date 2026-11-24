@@ -26,7 +26,7 @@ import { registerVisGuideTool } from "../../../pi-config/extensions/mode/vis-gui
 import { policyDenial, readPolicy } from "../../../pi-config/extensions/subagents/policy.ts";
 import { pickEntryFor, restorePick } from "../../../pi-config/extensions/subagents/subagent-profiles.ts";
 import type { MinorMode } from "../../../pi-config/extensions/mode/minor.ts";
-import { ModeEngine, REPLY_SHAPE_OFF_FLAG, REVIEW_FLAG, VISUALS_FLAG, type ModeSource } from "../../modes/engine";
+import { ModeEngine, NO_HELPER_PROFILE_FLAG, REPLY_SHAPE_OFF_FLAG, REVIEW_FLAG, VISUALS_FLAG, type ModeSource } from "../../modes/engine";
 import type { ModeCtx, ModePort } from "../../modes/port";
 import type { PiExtensionAPI } from "./extension-types";
 import { ownSpecCore } from "./own-code";
@@ -160,6 +160,7 @@ export function modesExtension(pi: PiExtensionAPI, options: ModesExtensionOption
   pi.registerFlag(REVIEW_FLAG, { description: "Adversarial review of alignments", type: "boolean", default: false });
   pi.registerFlag(VISUALS_FLAG, { description: "Align visuals for this session: on | off (default: mode-align.json)", type: "string" });
   pi.registerFlag(REPLY_SHAPE_OFF_FLAG, { description: "No reply shape in the mode section (Sova's merge thread, merge reviewers and release thread)", type: "boolean", default: false });
+  pi.registerFlag(NO_HELPER_PROFILE_FLAG, { description: "No built-in helper profile when no default is chosen (Sova's own chats)", type: "boolean", default: false });
   pi.registerFlag("minor", { description: `Start with minor modes on (comma-separated): ${MINOR_MODES.join(" | ")}, or none`, type: "string" });
   engine.listen();
 

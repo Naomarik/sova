@@ -4,6 +4,7 @@ import { DEFAULT_LIMITS, type JoinedProfile, type Profile } from "../../shared/p
 import type { SubagentProfile } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 import { firstIssue } from "../../shared/form-rules";
+import { PROFILE_NAME_OFF } from "../../shared/profile-limits";
 import {
   alsoUsedBy,
   canonical,
@@ -18,7 +19,11 @@ import {
   sharersOf,
   typedDraft,
   withDeleted,
+  deleteRefusal,
+  derivedDefaultOf,
   withDuplicate,
+  withMadeYours,
+  builtInLine,
   withNewProfile,
   type ProfilesDraft,
 } from "./profiles-settings";
@@ -51,7 +56,9 @@ const claude = joined({ key: "user:claude", kind: "pair", group: "yours", name: 
 const twin = joined({ key: "user:twin", kind: "pair", group: "yours", name: "Twin", session: { ...session("twin", "Twin", { subagents: "c" }), source: "user", key: "user:twin" }, libraryId: "c", library: lib("c", "Claude") });
 const libOnly = joined({ key: "library:fast", kind: "library", group: "yours", name: "Fast", libraryId: "fast", library: lib("fast", "Fast") });
 const project = joined({ key: "project:/r#rel", kind: "project", group: "project", name: "Release checker", approval: "needed", libraryId: "c", library: lib("c", "Claude") });
-const WIRE = [OFF, claude, twin, libOnly, project];
+const builtinClaude = joined({ key: "sova:claude", kind: "builtin", group: "builtin", name: "Claude", session: { ...session("claude", "Claude", { model: "claude-code-cli/claude-opus-5-5", thinking: "medium", mode: "delegate" }), source: "sova", key: "sova:claude" }, libraryId: "claude", library: lib("claude", "Claude"), providers: ["claude"] });
+const builtinOpenai = joined({ key: "sova:openai", kind: "builtin", group: "builtin", name: "OpenAI", session: { ...session("openai", "OpenAI", { model: "openai-codex/gpt-6.2-sol", thinking: "medium" }), source: "sova", key: "sova:openai" }, libraryId: "openai", library: lib("openai", "OpenAI", { teams: null, specWriter: null }), providers: ["openai-codex"] });
+const WIRE = [OFF, claude, twin, libOnly, project, builtinOpenai];
 
 test("the draft holds yours only, each library half once, and the default", () => {
   const d = draftOf(WIRE, "user:claude");
@@ -63,12 +70,12 @@ test("the draft holds yours only, each library half once, and the default", () =
   assert.ok(!("id" in d.library.c!) && !("name" in d.library.c!), "a half is the library profile less its id and name");
 });
 
-test("the list: Yours in the draft's order, This project, Built in with Off first; chips by key", () => {
+test("the list: Yours in the draft's order, This project, then Built in; chips by key; never a row for no profile", () => {
   const d = draftOf(WIRE, "user:claude");
   const g = listGroups(d, WIRE, d);
   assert.deepEqual(g.yours.map((r) => r.name), ["Claude", "Twin", "Fast"]);
   assert.deepEqual(g.project.map((r) => r.name), ["Release checker"]);
-  assert.deepEqual(g.builtin.map((r) => r.key), [OFF_KEY]);
+  assert.deepEqual(g.builtin.map((r) => r.key), ["sova:openai"], "an older server's Off row is left out");
   assert.equal(g.yours[0]!.isDefault, true);
   assert.equal(g.project[0]!.needsApproval, true, "a project profile needing approval says so");
   assert.equal(g.yours[0]!.footprint, "Opus 5.5 + glm-5.3", "an unchanged profile keeps the server's footprint");
@@ -76,8 +83,55 @@ test("the list: Yours in the draft's order, This project, Built in with Off firs
   renamed.rows[0]!.model = null;
   renamed.library.c!.delegate.routine.primary = w("claude-code", "claude-opus-5-5", "low");
   assert.equal(listGroups(renamed, WIRE, d).yours[0]!.footprint, "Opus 5.5", "an edited one is worked out from the draft");
-  const offDefault = { ...d, default: OFF_KEY };
-  assert.equal(listGroups(offDefault, WIRE, d).builtin[0]!.isDefault, true, "Off can be the default");
+  const builtinDefault = { ...d, default: "sova:openai" };
+  assert.equal(listGroups(builtinDefault, WIRE, d).builtin[0]!.isDefault, true, "a built-in profile can be the default");
+  assert.equal(listGroups(d, [claude], d).builtin.length, 0, "no built-in rows sent: none listed (the Built in heading goes with them)");
+});
+
+test("the This chat chip: on the row of the chat's profile, in any group; none with no chat", () => {
+  const d = draftOf(WIRE, "user:claude");
+  const chips = (thisChat: string | null) => {
+    const g = listGroups(d, WIRE, d, thisChat);
+    return [...g.yours, ...g.project, ...g.builtin].filter((r) => r.thisChat).map((r) => r.key);
+  };
+  assert.deepEqual(chips("library:fast"), ["library:fast"]);
+  assert.deepEqual(chips("sova:openai"), ["sova:openai"], "a built-in one");
+  assert.deepEqual(chips("user:claude"), ["user:claude"], "beside Default: both chips on one row");
+  assert.equal(listGroups(d, WIRE, d, "user:claude").yours[0]!.isDefault, true);
+  assert.deepEqual(chips(null), []);
+  assert.deepEqual(chips("user:gone"), []);
+  // Helpers in effect named by their library id: the row whose helpers they are.
+  assert.deepEqual(chips("library:c"), ["user:claude"], "a pair linking them (a Make It Yours copy)");
+  assert.deepEqual(chips("library:fast"), ["library:fast"]);
+  assert.deepEqual(chips("library:openai"), ["sova:openai"], "a built-in one");
+  assert.deepEqual(chips("library:gone"), []);
+  // Read before a Make It Yours copy was saved: the built-in's key goes to the copy that replaces it.
+  const copy = joined({ key: "user:claude-copy", kind: "pair", group: "yours", name: "Claude", libraryId: "claude", replaces: "sova:claude" });
+  const g = listGroups(draftOf([copy], "user:claude-copy"), [copy], null, "sova:claude");
+  assert.deepEqual(g.yours.filter((r) => r.thisChat).map((r) => r.key), ["user:claude-copy"]);
+});
+
+test("a built-in profile's line names the account it is for", () => {
+  assert.equal(builtInLine(["openai-codex"]), "Built in for your OpenAI account. Make It Yours to change it.");
+  assert.equal(builtInLine(["ollama-cloud"]), "Built in for your Ollama Cloud account. Make It Yours to change it.");
+  assert.equal(builtInLine(["claude", "openai-codex"]), "Built in. Make It Yours to change it.", "more than one account: none named");
+});
+
+test("Make It Yours: a copy under Yours with the built-in's name and both its parts; refused when one of yours has the name", () => {
+  const d = draftOf(WIRE, "user:claude");
+  const out = withMadeYours(d, builtinOpenai);
+  assert.ok(out.key);
+  const r = out.draft.rows.find((x) => x.key === out.key)!;
+  assert.equal(r.name, "OpenAI", "the built-in's own name, so once saved it takes its place");
+  assert.deepEqual([r.model, r.thinking], ["openai-codex/gpt-6.2-sol", "medium"]);
+  assert.equal(canonical(out.draft.library[r.lib!]), canonical({ ...lib("openai", "OpenAI", { teams: null, specWriter: null }), id: undefined, name: undefined }), "the helpers, less id and name");
+  assert.notEqual(r.lib, "openai", "its own library half, never the built-in's id");
+  const mine = withMadeYours(d, builtinClaude);
+  assert.equal(mine.key, null, "Claude is already one of yours");
+  assert.equal(mine.draft, d);
+  const starts = withMadeYours(draftOf([], "sova:claude"), builtinClaude);
+  assert.equal(starts.draft.rows[0]!.starts?.mode, "delegate", "When a Chat Starts comes too");
+  assert.equal(starts.draft.default, "sova:claude", "the default stays where it was: nothing moves it but Make Default");
 });
 
 test("the footprint: distinct models, the chat's own first, at most 3 then +N; none reads as the chat's own", () => {
@@ -185,6 +239,26 @@ test("Delete: refused for the default; a library half another profile links stay
   assert.equal(two.library.c, undefined, "nobody links it now");
 });
 
+test("Delete on a default only the accounts give (a Make It Yours copy nobody made the default) is allowed, as the server allows it; a chosen one is refused", () => {
+  const d = draftOf(WIRE, "user:claude");
+  const derived = derivedDefaultOf({ defaultProfile: { key: "user:claude", chosen: false, fromAccounts: true } });
+  assert.equal(derived, "user:claude");
+  assert.equal(deleteRefusal(d, "user:claude", derived), null, "the editor's Delete is enabled");
+  const gone = withDeleted(d, "user:claude", derived) as ProfilesDraft;
+  assert.equal(typeof gone, "object");
+  assert.equal(gone.rows.some((r) => r.key === "user:claude"), false);
+  assert.equal(gone.default, "user:claude", "no default written: the save deletes it last, and the built-in one comes back");
+  // Chosen (a file names it), or derived from the older default files: refused, as before.
+  for (const l of [{ defaultProfile: { key: "user:claude", chosen: true } }, { defaultProfile: { key: "user:claude", chosen: false } }, null]) {
+    assert.equal(deleteRefusal(d, "user:claude", derivedDefaultOf(l)), "Make another profile the default first.", JSON.stringify(l));
+    assert.equal(withDeleted(d, "user:claude", derivedDefaultOf(l)), "Make another profile the default first.");
+  }
+  // Made the default in this draft (Make Default pressed, not saved yet): chosen, so refused.
+  const picked = draftOf(WIRE, "user:twin");
+  picked.default = "user:claude";
+  assert.equal(deleteRefusal(picked, "user:claude", derivedDefaultOf({ defaultProfile: { key: "user:twin", chosen: false, fromAccounts: true } })), "Make another profile the default first.");
+});
+
 test("what Save waits for: a name's rules, then each library half's rows, in the editor's sentences", () => {
   const d = draftOf(WIRE, "user:claude");
   assert.equal(firstIssue(profilesDraftFields(d, d)), null);
@@ -194,7 +268,7 @@ test("what Save waits for: a name's rules, then each library half's rows, in the
     return firstIssue(profilesDraftFields(x, d))?.message ?? null;
   };
   assert.equal(bad((x) => (x.rows[1]!.name = "claude")), "Another profile has this name.");
-  assert.equal(bad((x) => (x.rows[1]!.name = "Off")), `Profile name can't be "Off", the built-in profile's.`);
+  assert.equal(bad((x) => (x.rows[1]!.name = "Off")), PROFILE_NAME_OFF);
   assert.equal(bad((x) => (x.rows[1]!.name = "x".repeat(49))), "Profile name can be at most 48 characters.");
   assert.equal(bad((x) => (x.library.fast!.delegate.planning.primary.effort = "")), "Fast's Delegate rows each need a model and an effort.");
   assert.match(bad((x) => (x.rows[0]!.starts!.grant = ["sessions.read"], ((x.rows[0]!.starts!.limits as unknown as Record<string, unknown>).hops = "1."))) ?? "", /Hops/);

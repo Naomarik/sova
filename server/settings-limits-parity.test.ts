@@ -17,6 +17,11 @@ import { scratchRoot } from "./test-scratch";
 const agentDir = scratchRoot("sova-settings-parity-");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
+// A library with one profile to edit (Sova seeds none: an older build's starter, as most computers have).
+{
+  const { legacyProfile, writeSubagentProfiles } = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
+  writeSubagentProfiles(agentDir, { version: 1, profiles: [legacyProfile(agentDir)] });
+}
 // No program but git in the unit tier: with no `claude` on PATH a claude-code pick's version check
 // answers without a spawn, and the drift list is primed empty (as src/lib/settings-forms-roundtrip.test.ts).
 process.env.PATH = (process.env.PATH ?? "").split(":").filter((d) => !existsSync(join(d, "claude"))).join(":");

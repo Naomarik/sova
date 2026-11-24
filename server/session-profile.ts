@@ -18,6 +18,8 @@ import { stateViewOf } from "./harness/pi/state-view-of";
 import { PROFILE } from "./harness/state-kinds";
 import { findProfile, profileRefusedWhy, type ProfilePick } from "./profile-sources";
 import { approvalRefusal } from "./profile-trust";
+import { helperProfileOf, loadSubagentProfiles } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { agentRoot } from "./state-root";
 
 /**
  * A session's profile (§chat.profiles/model, /applying, /singleton): the `sova-profile` entry's fold,
@@ -60,7 +62,7 @@ export const inlineChoice = (snapshot: SnapshotProfile): InlineChoice => ({ [INL
 
 /** A pick as the route receives it: an id or `{source, id}`, a custom board `{remove, grant, from?}`, or null
     (and, from the server only, an inline snapshot). */
-export type ProfileChoice = ProfilePick | { remove: string[]; grant: string[]; from?: ProfilePick } | InlineChoice | null;
+export type ProfileChoice = ProfilePick | { remove: string[]; grant: string[]; from?: ProfilePick | { source: "library"; id: string } } | InlineChoice | null;
 
 const isPick = (v: unknown): v is ProfilePick =>
   typeof v === "string" ||
@@ -74,8 +76,12 @@ export function snapshotOf(p: ListedProfile): SnapshotProfile {
 
 export type Resolved = { ok: true; profile: SnapshotProfile | null; listed?: ListedProfile } | { ok: false; error: string; approval?: true };
 
-/** The snapshot a pick writes for a session in `cwd`, or an error sentence. An unapproved project profile is refused. */
-export async function resolveChoice(choice: ProfileChoice, cwd?: string | null): Promise<Resolved> {
+/**
+ * The snapshot a pick writes for a session in `cwd`, or an error sentence. An unapproved project profile is refused.
+ * A custom board is named after the card it was made from ("Claude, edited"): its `from`, a session profile or a
+ * library one; with none, `inEffect`, the name of the profile the chat is on.
+ */
+export async function resolveChoice(choice: ProfileChoice, cwd?: string | null, inEffect?: string): Promise<Resolved> {
   if (choice === null || choice === DEFAULT_PROFILE_ID) return { ok: true, profile: null };
   if (typeof choice === "object" && INLINE in choice) return { ok: true, profile: choice[INLINE] };
   if (isPick(choice)) {
@@ -88,11 +94,18 @@ export async function resolveChoice(choice: ProfileChoice, cwd?: string | null):
   }
   if (typeof choice !== "object" || !Array.isArray((choice as { remove?: unknown }).remove) || !Array.isArray((choice as { grant?: unknown }).grant))
     return { ok: false, error: "profile must be an id, {source, id}, null, or {remove, grant}." };
-  const board = choice as { remove: string[]; grant: string[]; from?: ProfilePick };
+  const board = choice as { remove: string[]; grant: string[]; from?: ProfilePick | { source: "library"; id: string } };
   const caps = normalizeCaps(board.remove, board.grant);
   if (!caps.remove.length && !caps.grant.length) return { ok: true, profile: null };
   const from: Profile = (isPick(board.from) ? await findProfile(board.from, cwd) : null) ?? DEFAULT_PROFILE;
-  const label = `${from.id === DEFAULT_PROFILE_ID ? "Off" : from.label}, edited`;
+  const libraryFrom = board.from && typeof board.from === "object" && board.from.source === "library" && typeof board.from.id === "string"
+    ? (() => {
+        const lib = loadSubagentProfiles(agentRoot());
+        return helperProfileOf((board.from as { id: string }).id, lib.state === "ok" ? lib.value.profiles : [])?.name;
+      })()
+    : undefined;
+  const named = from.id !== DEFAULT_PROFILE_ID ? from.label : (libraryFrom ?? inEffect ?? "This chat's profile");
+  const label = `${named}, edited`;
   const custom: Profile & { custom: true } = {
     id: "custom",
     label,

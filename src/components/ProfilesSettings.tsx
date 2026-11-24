@@ -10,10 +10,11 @@ import { modelEfforts } from "../lib/delegate-form";
 import { liveDelegateOptions } from "../lib/claude-catalog";
 import { replacedNotice } from "../lib/subagent-replaced";
 import { teamsSeed } from "../lib/subagent-editor";
-import { clearProfilesRequest, clearSettingsSection, profilesRequest, settingsSection, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
+import { clearProfilesRequest, clearSettingsSection, profilesRequest, settingsSection, subagentSettingsChat, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
 import { lastSavedKeys, profilesDraft as store, profilesListing, setProfilesCwd, takeListing } from "../lib/profiles-draft";
 import {
   alsoUsedBy,
+  builtInLine,
   helpersOf,
   LIMIT_RULES,
   listGroups,
@@ -22,7 +23,10 @@ import {
   setAllTo,
   sharersOf,
   withDeleted,
+  deleteRefusal,
+  derivedDefaultOf,
   withDuplicate,
+  withMadeYours,
   withNewProfile,
   type DraftRow,
   type JoinedRowWire,
@@ -49,9 +53,14 @@ const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
  * part. Yours are the dialog's draft, saved with Save Changes; a project's are read-only, with
  * Approve Profile; Approve and Hide save at once.
  */
-export function ProfilesSettingsSection(props: { cwd: string | null }) {
+export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: string | null }) {
   setProfilesCwd(props.cwd);
-  const [listing, { refetch }] = createResource(() => props.cwd ?? "", (cwd) => fetchProfiles(cwd || null));
+  /** The chat Settings is open for: the one a gear opened it from, else the one on screen. */
+  const chatPath = () => subagentSettingsPath() ?? props.chatPath ?? null;
+  const [listing, { refetch }] = createResource(
+    () => ({ cwd: props.cwd ?? "", path: chatPath() ?? "" }),
+    (q) => fetchProfiles(q.cwd || null, null, q.path || null),
+  );
   const [library, { refetch: refetchLibrary }] = createResource(() => getSubagentProfiles(subagentSettingsPath()));
   const [options, { refetch: refetchOptions }] = liveDelegateOptions();
   const [rows] = createResource(getDelegateSettings);
@@ -71,7 +80,15 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
   const wire = (): JoinedRowWire[] => profilesListing()?.joined ?? safeListing()?.joined ?? [];
   const l = () => profilesListing() ?? safeListing();
   const draft = () => store.draft();
-  const groups = createMemo(() => (draft() ? listGroups(draft()!, wire(), store.saved()) : null));
+  /** The profile in effect for the chat Settings was opened from: the listing's answer for that chat,
+      else what its opener said; none with no chat (no chip). An older server's Off is no profile. */
+  const thisChat = (): string | null => {
+    if (!chatPath()) return null;
+    // The load's answer, else what the opener said (a save's answer is for no chat: it never clears the chip).
+    const k = safeListing()?.thisChat ?? (subagentSettingsPath() ? subagentSettingsChat() : undefined);
+    return k && k !== OFF_KEY ? k : null;
+  };
+  const groups = createMemo(() => (draft() ? listGroups(draft()!, wire(), store.saved(), thisChat()) : null));
 
   const [picked, setPicked] = createSignal<string | null>(null);
   const [part, setPart] = createSignal<ProfilesPart>("models");
@@ -87,10 +104,10 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
     }),
   );
   const allRows = (): ListRow[] => (groups() ? [...groups()!.yours, ...groups()!.project, ...groups()!.builtin] : []);
-  /** The open profile: the one picked, else the one asked for, else the chat's, else the default, else Off. */
+  /** The open profile: the one picked (or asked for), else this chat's, else the default, else the first. */
   const current = (): ListRow | undefined => {
     const all = allRows();
-    return all.find((r) => r.key === picked()) ?? all.find((r) => r.isDefault) ?? all.find((r) => r.key === OFF_KEY) ?? all[0];
+    return all.find((r) => r.key === picked()) ?? all.find((r) => r.thisChat) ?? all.find((r) => r.isDefault) ?? all[0];
   };
   // The mode menu's gears, Manage Profiles… and the limit row open a profile at a part.
   createEffect(() => {
@@ -99,10 +116,12 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
     if (!ask || all.length === 0) return;
     const chatLib = subagentSettingsPath() ? safeLibrary()?.current.id : undefined;
     if (!ask.profile && subagentSettingsPath() && library.loading) return;
+    // An asked Off (an older server's chat) names no profile: the chat's own is opened instead.
+    const asked = ask.profile && ask.profile !== OFF_KEY && ask.profile !== "off" ? ask.profile : undefined;
     const hit =
-      (ask.profile && all.find((r) => r.key === ask.profile || r.wire?.id === ask.profile)) ||
-      (chatLib && chatLib !== "off" && all.find((r) => r.wire?.libraryId === chatLib && r.group === "yours")) ||
-      (chatLib === "off" && all.find((r) => r.key === OFF_KEY)) ||
+      (asked && all.find((r) => r.key === asked || r.wire?.id === asked)) ||
+      all.find((r) => r.thisChat) ||
+      (chatLib && chatLib !== "off" && (all.find((r) => r.wire?.libraryId === chatLib && r.group === "yours") ?? all.find((r) => r.wire?.libraryId === chatLib))) ||
       undefined;
     untrack(() => {
       if (hit) setPicked(hit.key);
@@ -149,10 +168,10 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
     const d = draft();
     const c = current();
     if (!d) return;
-    // The models of the profile open in the editor; Off's are the default's.
+    // The models of the profile open in the editor (a built-in's or a project's from the listing).
     const fromKey = c && c.group === "yours" ? c.key : d.default;
     const src = d.rows.find((r) => r.key === fromKey);
-    const wired = !src ? wire().find((w) => w.key === (c?.key === OFF_KEY ? d.default : c?.key)) : undefined;
+    const wired = !src ? wire().find((w) => w.key === (c?.key ?? d.default)) : undefined;
     const from = src
       ? { model: src.model, thinking: src.thinking, helpers: src.lib ? (d.library[src.lib] ?? null) : null }
       : wired
@@ -174,13 +193,26 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
   const remove = (key: string) => {
     const d = draft();
     if (!d) return;
-    const out = withDeleted(d, key);
+    const out = withDeleted(d, key, derivedDefaultOf(l()));
     if (typeof out === "string") return setActionError(out);
     setActionError(null);
     store.setDraft(out);
     setPicked(null);
   };
   const makeDefault = (key: string) => edit((d) => void (d.default = key));
+  /** Make It Yours: an editable copy under Yours, opened in the editor where the built-in was. */
+  const makeYours = (key: string) => {
+    const d = draft();
+    const w = wire().find((x) => x.key === key);
+    if (!d || !w) return;
+    const out = withMadeYours(d, w);
+    if (!out.key) return setActionError(`One of yours is already named ${w.name}.`);
+    setActionError(null);
+    store.setDraft(out.draft);
+    setPicked(out.key);
+  };
+  /** Open {default}: the profile whose helpers a chat on a helper-less profile takes. */
+  const defaultRow = (): ListRow | undefined => allRows().find((r) => r.isDefault);
 
   /** Approve and Hide save at once (§app.settings-dialog/profile-editor); the draft stays as it is. */
   const act = async (key: string, fn: () => Promise<import("../../shared/profiles").ProfilesListing>, failed: string) => {
@@ -241,6 +273,9 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
           <span class="profiles-pick-title">{lp.r.name}</span>
           <Show when={lp.r.isDefault}>
             <Chip tone="accent">Default</Chip>
+          </Show>
+          <Show when={lp.r.thisChat}>
+            <Chip tone="info">This chat</Chip>
           </Show>
           <Show when={lp.r.needsApproval}>
             <Chip tone="warn">Needs approval</Chip>
@@ -340,6 +375,8 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
                 New Profile
               </button>
             </div>
+            {/* Why the default isn't the one chosen (it names no profile here, or its file can't be read). */}
+            <Show when={l()?.defaultProfile?.note}>{(n) => <p class="profile-muted">{n()}</p>}</Show>
             <h4 class="text-eyebrow profiles-group-head">Yours</h4>
             <Show when={l()?.error}>{(e) => <Banner tone="error" title="Your profiles couldn't be read." body={e()} />}</Show>
             <Show when={groups()!.yours.length || problemsOf("user").length} fallback={<Show when={!l()?.error}><p class="profile-muted">None yet.</p></Show>}>
@@ -349,14 +386,23 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
               </ul>
             </Show>
             <Group title={projectTitle()} rows={groups()!.project} problems={problemsOf("project")} empty={projectEmpty()} />
-            <Group title="Built in" rows={groups()!.builtin} problems={problemsOf("sova")} />
+            <Show when={groups()!.builtin.length || problemsOf("sova").length}>
+              <Group title="Built in" rows={groups()!.builtin} problems={problemsOf("sova")} />
+            </Show>
           </div>
 
           <div class="profiles-editor-pane">
             <Show when={current()?.key} keyed>
               {(key) => {
                 // Remounted only when another profile is picked: an edit keeps its open rows and focus.
-                const c = () => (current()?.key === key ? current()! : allRows().find((r) => r.key === key)!);
+                // A save that gives a new profile its saved key drops this key from the list a moment
+                // before the editor follows it there: the row last seen stands in until then.
+                let seen: ListRow | undefined;
+                const c = (): ListRow => {
+                  const now = current()?.key === key ? current() : allRows().find((r) => r.key === key);
+                  if (now) seen = now;
+                  return (now ?? seen ?? current())!;
+                };
                 return (
                 <ProfileEditor
                   r={c()}
@@ -405,7 +451,13 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
                     )
                   }
                   onMakeDefault={() => makeDefault(c().key)}
+                  onMakeYours={() => makeYours(c().key)}
+                  openDefault={(() => {
+                    const d = defaultRow();
+                    return d && d.key !== c().key ? { name: d.name, open: () => (setPicked(d.key), setPart("models"), setActionError(null)) } : undefined;
+                  })()}
                   onDuplicate={() => duplicate(c().key)}
+                  deleteRefused={deleteRefusal(draft()!, c().key, derivedDefaultOf(l()))}
                   onDelete={() => remove(c().key)}
                   onHide={(hidden) => void act(c().key, () => setProfileHidden(c().key, hidden, props.cwd), `Couldn't change ${c().name}.`)}
                   onApprove={() => {
@@ -438,6 +490,8 @@ function ProfileEditor(props: {
   focusSpec: boolean;
   onSpecFocused(): void;
   draft: ProfilesDraft;
+  /** Why Delete is refused (the default, unless only the accounts give it), or null. */
+  deleteRefused: string | null;
   draftRow: DraftRow | undefined;
   libProfile: SubagentProfile | null;
   busy: boolean;
@@ -456,14 +510,19 @@ function ProfileEditor(props: {
   onChooseHelpers(): void;
   onSetAll(pick: { backend: "pi" | "claude-code"; model: string }): void;
   onMakeDefault(): void;
+  onMakeYours(): void;
+  openDefault?: { name: string; open(): void };
   onDuplicate(): void;
   onDelete(): void;
   onHide(hidden: boolean): void;
   onApprove(): void;
 }) {
   const yours = () => props.r.group === "yours" && !!props.draftRow;
-  const isOff = () => props.r.key === OFF_KEY;
+  const builtIn = () => props.r.group === "builtin";
   const readOnly = () => !yours();
+
+  /** Why Make It Yours waits: one of yours already has the built-in's name (and so already takes its place). */
+  const yoursNamed = () => props.draft.rows.some((x) => x.name.toLowerCase() === props.r.name.toLowerCase());
   const w = () => props.r.wire;
   const session = () => (yours() ? props.draftRow!.starts : w()?.session ? (w()!.session as unknown as Starts) : null);
   const chat = () => (yours() ? { model: props.draftRow!.model, thinking: props.draftRow!.thinking } : { model: w()?.session?.model ?? null, thinking: w()?.session?.thinking ?? null });
@@ -490,129 +549,139 @@ function ProfileEditor(props: {
       <h4 class="visually-hidden" id="profile-editor-title">
         {props.r.name}
       </h4>
-      <Show
-        when={!isOff()}
-        fallback={
-          <>
-            <div class="profiles-editor-head">
-              <span class="profiles-editor-name">Off</span>
-              {defaultControl()}
-            </div>
-            <p class="profile-muted">Built in. A chat keeps its own model and modes, and the agent picks every worker.</p>
-          </>
-        }
-      >
-        <div class="profiles-editor-head">
-          <TextField
-            class="profiles-editor-name-field"
-            id="profile-name"
-            label="Profile name"
-            hideLabel
-            rule={yours() ? PROFILE_LABEL_RULE : undefined}
-            error={yours() ? nameIssue(props.draft, props.r.key) : null}
-            value={yours() ? props.draftRow!.name : props.r.name}
-            disabled={readOnly() || props.saving}
-            onInput={(v) => props.onName(v)}
-          />
-          {defaultControl()}
-        </div>
-        <Show when={props.r.group === "project"}>
-          <Banner
-            tone="warn"
-            title="This profile is a file in the project, so an agent or you change it there."
-            body={props.r.needsApproval && w()?.session ? `It asks to ${powersText(w()!.session!)}.` : undefined}
-            action={
-              <Show when={props.r.needsApproval && props.cwd}>
-                <button type="button" class="button button-sm button-primary" disabled={props.busy} onClick={props.onApprove}>
-                  Approve Profile
-                </button>
-              </Show>
-            }
-          />
+      <div class="profiles-editor-head">
+        <TextField
+          class="profiles-editor-name-field"
+          id="profile-name"
+          label="Profile name"
+          hideLabel
+          rule={yours() ? PROFILE_LABEL_RULE : undefined}
+          error={yours() ? nameIssue(props.draft, props.r.key) : null}
+          value={yours() ? props.draftRow!.name : props.r.name}
+          disabled={readOnly() || props.saving}
+          onInput={(v) => props.onName(v)}
+        />
+        {defaultControl()}
+        <Show when={props.r.thisChat}>
+          <Chip tone="info">This chat</Chip>
         </Show>
-        <Show when={props.actionError}>{(e) => <Banner tone="error" title={e()} />}</Show>
-        <div class="button-row profiles-editor-actions">
-          <Show when={yours()}>
-            <button type="button" class="button button-sm button-ghost" disabled={props.saving} onClick={props.onDuplicate}>
-              Duplicate
-            </button>
-          </Show>
-          <Show when={!props.r.unsaved}>
-            <button type="button" class="button button-sm button-ghost" disabled={props.busy} onClick={() => props.onHide(!props.r.hidden)}>
-              {props.r.hidden ? "Show In Picker" : "Hide From Picker"}
-            </button>
-          </Show>
-          <Show when={yours()}>
+        <Show when={builtIn()}>
+          <button
+            type="button"
+            class="button button-sm"
+            disabled={props.saving || yoursNamed()}
+            title={yoursNamed() ? `One of yours is already named ${props.r.name}.` : undefined}
+            onClick={props.onMakeYours}
+          >
+            Make It Yours
+          </button>
+        </Show>
+      </div>
+      <Show when={props.r.thisChat}>
+        <p class="profile-muted">This chat's helpers run on this profile.</p>
+      </Show>
+      <Show when={builtIn()}>
+        <p class="profile-muted">
+          {builtInLine(w()?.providers ?? [])}
+        </p>
+      </Show>
+      <Show when={props.r.group === "project"}>
+        <Banner
+          tone="warn"
+          title="This profile is a file in the project, so an agent or you change it there."
+          body={props.r.needsApproval && w()?.session ? `It asks to ${powersText(w()!.session!)}.` : undefined}
+          action={
+            <Show when={props.r.needsApproval && props.cwd}>
+              <button type="button" class="button button-sm button-primary" disabled={props.busy} onClick={props.onApprove}>
+                Approve Profile
+              </button>
+            </Show>
+          }
+        />
+      </Show>
+      <Show when={props.actionError}>{(e) => <Banner tone="error" title={e()} />}</Show>
+      <div class="button-row profiles-editor-actions">
+        <Show when={yours()}>
+          <button type="button" class="button button-sm button-ghost" disabled={props.saving} onClick={props.onDuplicate}>
+            Duplicate
+          </button>
+        </Show>
+        <Show when={!props.r.unsaved}>
+          <button type="button" class="button button-sm button-ghost" disabled={props.busy} onClick={() => props.onHide(!props.r.hidden)}>
+            {props.r.hidden ? "Show In Picker" : "Hide From Picker"}
+          </button>
+        </Show>
+        <Show when={yours()}>
+          <button
+            type="button"
+            class="button button-sm button-destructive"
+            disabled={props.saving || !!props.deleteRefused}
+            title={props.deleteRefused ?? undefined}
+            onClick={props.onDelete}
+          >
+            Delete
+          </button>
+        </Show>
+      </div>
+
+      <div class="tabs profiles-parts" role="tablist" aria-label="Parts">
+        <For each={[["models", "Models"], ["start", "When a Chat Starts"]] as const}>
+          {([k, label]) => (
             <button
               type="button"
-              class="button button-sm button-destructive"
-              disabled={props.saving || props.r.isDefault}
-              title={props.r.isDefault ? "Make another profile the default first." : undefined}
-              onClick={props.onDelete}
+              role="tab"
+              id={`${id}-tab-${k}`}
+              class={props.part === k ? "tab tab-active" : "tab"}
+              aria-selected={props.part === k ? "true" : "false"}
+              aria-controls={`${id}-part-${k}`}
+              tabIndex={props.part === k ? 0 : -1}
+              onClick={() => props.setPart(k)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                  e.preventDefault();
+                  const next = k === "models" ? "start" : "models";
+                  props.setPart(next);
+                  queueMicrotask(() => document.getElementById(`${id}-tab-${next}`)?.focus());
+                }
+              }}
             >
-              Delete
+              {label}
             </button>
-          </Show>
-        </div>
+          )}
+        </For>
+      </div>
 
-        <div class="tabs profiles-parts" role="tablist" aria-label="Parts">
-          <For each={[["models", "Models"], ["start", "When a Chat Starts"]] as const}>
-            {([k, label]) => (
-              <button
-                type="button"
-                role="tab"
-                id={`${id}-tab-${k}`}
-                class={props.part === k ? "tab tab-active" : "tab"}
-                aria-selected={props.part === k ? "true" : "false"}
-                aria-controls={`${id}-part-${k}`}
-                tabIndex={props.part === k ? 0 : -1}
-                onClick={() => props.setPart(k)}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-                    e.preventDefault();
-                    const next = k === "models" ? "start" : "models";
-                    props.setPart(next);
-                    queueMicrotask(() => document.getElementById(`${id}-tab-${next}`)?.focus());
-                  }
-                }}
-              >
-                {label}
-              </button>
-            )}
-          </For>
+      <Show when={props.part === "models"}>
+        <div role="tabpanel" id={`${id}-part-models`} aria-labelledby={`${id}-tab-models`} class="profiles-part">
+          <p class="profile-muted">A chat can switch to these any time.</p>
+          <Show when={shared()}>{(s) => <p class="field-hint profiles-shared">{s()}. An edit here changes it for each.</p>}</Show>
+          <ProfileModelsPart
+            idPrefix={`profile-${props.r.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`}
+            readOnly={readOnly()}
+            disabled={props.saving}
+            chat={chat()}
+            onChat={yours() ? props.onChat : undefined}
+            profile={helpers()}
+            change={(fn) => props.changeLib((p) => void fn(p))}
+            replace={(fn) => props.changeLib(fn)}
+            noHelpers={noHelpers()}
+            onChooseHelpers={yours() && props.template ? props.onChooseHelpers : undefined}
+            openDefault={props.openDefault}
+            onSetAll={yours() ? props.onSetAll : undefined}
+            rows={props.rows}
+            options={props.options}
+            models={modelList()}
+            teamsSeed={props.teamsSeed}
+            focusSpec={props.focusSpec}
+            onSpecFocused={props.onSpecFocused}
+          />
         </div>
-
-        <Show when={props.part === "models"}>
-          <div role="tabpanel" id={`${id}-part-models`} aria-labelledby={`${id}-tab-models`} class="profiles-part">
-            <p class="profile-muted">A chat can switch to these any time.</p>
-            <Show when={shared()}>{(s) => <p class="field-hint profiles-shared">{s()}. An edit here changes it for each.</p>}</Show>
-            <ProfileModelsPart
-              idPrefix={`profile-${props.r.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`}
-              readOnly={readOnly()}
-              disabled={props.saving}
-              chat={chat()}
-              onChat={yours() ? props.onChat : undefined}
-              profile={helpers()}
-              change={(fn) => props.changeLib((p) => void fn(p))}
-              replace={(fn) => props.changeLib(fn)}
-              noHelpers={noHelpers()}
-              onChooseHelpers={yours() && props.template ? props.onChooseHelpers : undefined}
-              onSetAll={yours() ? props.onSetAll : undefined}
-              rows={props.rows}
-              options={props.options}
-              models={modelList()}
-              teamsSeed={props.teamsSeed}
-              focusSpec={props.focusSpec}
-              onSpecFocused={props.onSpecFocused}
-            />
-          </div>
-        </Show>
-        <Show when={props.part === "start"}>
-          <div role="tabpanel" id={`${id}-part-start`} aria-labelledby={`${id}-tab-start`} class="profiles-part">
-            <p class="profile-muted">Mode and add-ons are where a chat begins; you can still change them in its mode menu. Tools and powers lock at the first message.</p>
-            <StartsPart idPrefix={id} starts={session() ?? plainStarts()} name={props.r.name} readOnly={readOnly()} disabled={props.saving} onChange={props.onStarts} />
-          </div>
-        </Show>
+      </Show>
+      <Show when={props.part === "start"}>
+        <div role="tabpanel" id={`${id}-part-start`} aria-labelledby={`${id}-tab-start`} class="profiles-part">
+          <p class="profile-muted">Mode and add-ons are where a chat begins; you can still change them in its mode menu. Tools and powers lock at the first message.</p>
+          <StartsPart idPrefix={id} starts={session() ?? plainStarts()} name={props.r.name} readOnly={readOnly()} disabled={props.saving} onChange={props.onStarts} />
+        </div>
       </Show>
     </div>
   );

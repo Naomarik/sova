@@ -17,6 +17,9 @@ import { recordTree, startHermeticServer, treeChanges, type HermeticServer } fro
 let s: HermeticServer;
 before(async () => {
   s = await startHermeticServer();
+  // A library with one profile to edit, as an older build seeded it (Sova seeds none now).
+  const { legacyProfile, writeSubagentProfiles } = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
+  writeSubagentProfiles(s.agentDir, { version: 1, profiles: [legacyProfile(s.agentDir)] });
 });
 after(async () => {
   const changed = await s?.stop();

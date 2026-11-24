@@ -68,7 +68,7 @@ import { InboxStore, MAIN_THREAD, SOVA, closedByOf, hasInboxCaps, isOpen, type I
 import { DeliveryLanes, WakeScheduler, itemLine, steerUntilTaken, type LaneResult } from "./delivery.ts";
 import { TEAM_NOTICE_TYPE, endReason, groupReturns, returnNoticeText } from "./inbox-lifecycle.ts";
 import { describeTeamDefaults, effectiveTeamDefaults, TEAM_DEFAULT_EFFORTS, type TeamDefaultsNow, type WorkerTuple } from "./team-defaults.ts";
-import { resolveSubagents, restorePick, type ResolvedSubagents } from "./subagent-profiles.ts";
+import { NO_HELPER_PROFILE_FLAG, resolveSubagents, restorePick, type ResolvedSubagents } from "./subagent-profiles.ts";
 import { DELEGATE_PROFILES, DELEGATE_PROFILE_INFO, type DelegateProfileId, type WorkerChoice } from "../mode/delegate.ts";
 import {
 	NUDGE_MAX_ACTIVE,
@@ -305,7 +305,7 @@ export function checkTeamKeys(members: unknown, defaults?: unknown): unknown[] {
 	return out;
 }
 /**
- * Under a profile that routes members (anything but Off), every member needs a kind, or a model:
+ * Under a profile that routes members (any helper profile), every member needs a kind, or a model:
  * its own, or the team's defaults.model for a member on that backend. Refused before anything
  * starts, naming each member that has neither.
  */
@@ -824,6 +824,8 @@ export function registerSubagents(
 	injectedRunner?: RunnerFactory,
 	options: SubagentsOptions = {},
 ): void {
+	// The host's launch flag for its own chats (also registered by its mode engine; pi keeps one value per name).
+	pi.registerFlag?.(NO_HELPER_PROFILE_FLAG, { description: "No built-in helper profile when no default is chosen (a host's own chats)", type: "boolean", default: false });
 	const agents: Worker[] = [];
 	// Failed batches stay owned until cleanup succeeds, but never appear as runs
 	// or emit completion notifications. Include them in caps and shutdown.
@@ -1074,7 +1076,9 @@ export function registerSubagents(
 		} catch {
 			branch = undefined;
 		}
-		return resolveSubagents(agentDir(), restorePick(branch as never));
+		// A host's own chats (Sova's merge thread, its reviewers, release chats, its Overseer) run with no helper
+		// profile while no default is chosen, as the host's mode engine reads them (the same launch flag).
+		return resolveSubagents(agentDir(), restorePick(branch as never), undefined, undefined, pi.getFlag?.(NO_HELPER_PROFILE_FLAG) === true ? null : undefined);
 	};
 	/** The chat's own model and effort, as a worker tuple (a Claude Code chat's is its claude-code-cli pi model). */
 	const chatTuple = (ctx: ExtensionContext | undefined = activeCtx): WorkerTuple | undefined => {
@@ -2308,7 +2312,7 @@ export function registerSubagents(
 	 * then its kind, on that kind's model and effort from the chat's profile (fallback when it can't
 	 * run; neither → refused, the chat asks the user); then the team's defaults.model for members on
 	 * its backend. A member effort alone overrides only the effort; a member backend contradicting its
-	 * kind's route is refused. Under Off nothing routes. Mutates `members` (the explicit choices stay
+	 * kind's route is refused. With no helper profile nothing routes. Mutates `members` (the explicit choices stay
 	 * in modelOverride, so a successor re-routes by kind); returns one line per member. Throws before
 	 * anything starts.
 	 */
@@ -2327,7 +2331,7 @@ export function registerSubagents(
 			const own = m.backend ?? callBackend;
 			if (!resolved.delegate) {
 				const on = m.model !== undefined ? `${own}/${m.model} (the model named for it)` : own === callBackend && call?.model !== undefined ? `${own}/${call.model} (the team's defaults.model)` : "this chat's own model";
-				lines.push(`${m.role}${label ? ` (${label})` : ""}: no profile routes it (this chat's subagent profile is Off); on ${on}.`);
+				lines.push(`${m.role}${label ? ` (${label})` : ""}: no profile routes it (this chat has no helper profile); on ${on}.`);
 				return;
 			}
 			if (m.model !== undefined) {
@@ -4307,7 +4311,7 @@ export function registerSubagents(
 				const label = target.kind ? DELEGATE_PROFILE_INFO[target.kind].label : undefined;
 				const r = target.kind && now.delegate ? routeKind(activeCtx, target.kind, now.delegate) : undefined;
 				const wanted = explicit?.backend;
-				if (!now.delegate) memberNotes.push(`${role}${label ? ` (${label})` : ""} keeps ${target.role}'s model ${kept}: no profile routes it (this chat's subagent profile is Off).`);
+				if (!now.delegate) memberNotes.push(`${role}${label ? ` (${label})` : ""} keeps ${target.role}'s model ${kept}: no profile routes it (this chat has no helper profile).`);
 				else if (!target.kind || !r) memberNotes.push(`${role} keeps ${target.role}'s model ${kept}: ${target.role} was named without a work kind, so no profile routes its successor.`);
 				else if ("denied" in r) memberNotes.push(`${role} (${label}) keeps ${target.role}'s model ${kept}: its kind can't run here (${r.denied}).`);
 				else if (wanted !== undefined && wanted !== r.tuple.backend) memberNotes.push(`${role} (${label}) keeps ${target.role}'s model ${kept}: its backend ${wanted} contradicts its kind's route ${tupleText(r.tuple)}.`);
@@ -4548,11 +4552,11 @@ export function registerSubagents(
 		label: "Create Team",
 		exposure: "model-only",
 		description:
-			"Create a named team of background workers with one unique role each and a shared objective, working in one filesystem. Members (pi or claude-code) get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (a question to the team's coordinator; the coordinator's own questions reach you as team-question messages, read after your current step, ending any agent_wait, or starting your turn when idle; answer with agent_steer). Every team gets a coordinator and a monitor from Sova, so name only the workers who do the work: the coordinator (first) routes the team and is the only member that reaches you, and the monitor (last) watches context and usage; each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). Only the coordinator sees teammates' tasks, so say in each member's prompt who it works with and on what. No member can spawn, add or stop workers. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Name a work kind for every member (kind: planning, investigation, routine or complex, as Delegate picks them): Sova runs it on that kind's model and effort from this chat's subagent profile, or the kind's fallback, and the result says which; a model named for a member wins, and defaults.model covers members on its backend. A member with neither a kind nor a model is refused unless the profile is Off. Planning and investigation members are told not to edit. " + TEAM_LIMITS,
+			"Create a named team of background workers with one unique role each and a shared objective, working in one filesystem. Members (pi or claude-code) get team tools: team_msg (message a teammate by role; queued in its inbox and listed when it wakes), team_inbox (open and close its own items), team_ask (a question to the team's coordinator; the coordinator's own questions reach you as team-question messages, read after your current step, ending any agent_wait, or starting your turn when idle; answer with agent_steer). Every team gets a coordinator and a monitor from Sova, so name only the workers who do the work: the coordinator (first) routes the team and is the only member that reaches you, and the monitor (last) watches context and usage; each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). Only the coordinator sees teammates' tasks, so say in each member's prompt who it works with and on what. No member can spawn, add or stop workers. Starts all members through the same path as agent_spawn (validated before any start, rolled back together on failure) and returns exact worker IDs without waiting. Name a work kind for every member (kind: planning, investigation, routine or complex, as Delegate picks them): Sova runs it on that kind's model and effort from this chat's subagent profile, or the kind's fallback, and the result says which; a model named for a member wins, and defaults.model covers members on its backend. A member with neither a kind nor a model is refused unless the chat has no helper profile. Planning and investigation members are told not to edit. " + TEAM_LIMITS,
 		promptSnippet: "Create a team of role-based background workers who message each other",
 		promptGuidelines: [
 			"Use team_create when the user asks for a team, or when parts change the same files or interfaces, stack on each other, feed each other findings, or have a checker sending findings straight to builders.",
-			"Give every team_create and team_add member a kind (planning, investigation, routine or complex) chosen by its work, as Delegate picks a worker's kind; name a member model only when the user gave you one. A member with neither is refused unless this chat's subagent profile is Off.",
+			"Give every team_create and team_add member a kind (planning, investigation, routine or complex) chosen by its work, as Delegate picks a worker's kind; name a member model only when the user gave you one. A member with neither is refused unless this chat has no helper profile.",
 			"Every team gets a coordinator and a monitor from Sova: name only the members who do the work. Each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers with agent_spawn. Only the coordinator reaches you (its completion, team-report messages that ask for nothing, team-question messages: answer one with agent_steer on that worker ID); /team defaults shows the models they run on.",
 			"team_create members share the filesystem and agree shared files and interfaces by message (team_msg). A member's team_ask goes to its coordinator, or to you while no coordinator is live. ownedPaths is optional: paths only that member edits, never shared files.",
 			"Never stop a team's coordinator or monitor while any of its members is still working (check team_list), even when the coordinator reports the objective complete; stopping them once no member is working is fine.",
@@ -4632,7 +4636,7 @@ export function registerSubagents(
 		name: "team_add",
 		label: "Add Team Members",
 		description:
-			"Add working members (one new unique role each) to a team created in this session, by exact team ID or unique name. Every team gets a coordinator and a monitor from Sova, which this team already has: name only the workers. Each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). New members see the current roster in their header, and the coordinator is told about each one with its assignment. Teams restored from history are read-only. Same validation and rollback as agent_spawn; the team's create-time defaults apply. Name a work kind for every member (kind: planning, investigation, routine or complex): it runs on that kind's model from this chat's subagent profile (or its fallback); a member with neither a kind nor a model is refused unless the profile is Off. " + TEAM_LIMITS,
+			"Add working members (one new unique role each) to a team created in this session, by exact team ID or unique name. Every team gets a coordinator and a monitor from Sova, which this team already has: name only the workers. Each team runs 2 more workers than you name, so small independent jobs are cheaper as separate workers (agent_spawn). New members see the current roster in their header, and the coordinator is told about each one with its assignment. Teams restored from history are read-only. Same validation and rollback as agent_spawn; the team's create-time defaults apply. Name a work kind for every member (kind: planning, investigation, routine or complex): it runs on that kind's model from this chat's subagent profile (or its fallback); a member with neither a kind nor a model is refused unless the chat has no helper profile. " + TEAM_LIMITS,
 		parameters: Type.Object(
 			{ team: Type.String({ minLength: 1, description: "Team ID (team_NN) or unique team name." }), members: TeamMembers },
 			{ additionalProperties: false },
@@ -4930,7 +4934,7 @@ export function registerSubagents(
 	/** What the chat reads about members' work kinds: name one for every member, and what each runs on now. */
 	const memberKindLines = (now: ResolvedSubagents): string[] => {
 		if (!now.delegate)
-			return [`- This chat's subagent profile is Off, so no profile routes members: a kind (${KIND_LIST}) is optional, and each member runs on the model you name for it, else this chat's own model.`];
+			return [`- This chat has no helper profile, so no profile routes members: a kind (${KIND_LIST}) is optional, and each member runs on the model you name for it, else this chat's own model.`];
 		const delegate = now.delegate;
 		const choice = (c: WorkerChoice) => `${c.backend}/${c.model}${c.effort ? `/${c.effort}` : ""}`;
 		return [

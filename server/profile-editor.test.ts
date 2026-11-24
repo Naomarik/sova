@@ -13,6 +13,11 @@ import { beforeEach, describe, test } from "node:test";
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-profile-editor-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
+// Claude connected (a throwaway Claude Code directory, signed in): the built-in Claude profile is listed.
+const claudeDir = join(agentDir, "claude-code");
+mkdirSync(claudeDir, { recursive: true });
+writeFileSync(join(claudeDir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+process.env.CLAUDE_CONFIG_DIR = claudeDir;
 const stateDir = join(agentDir, "sova");
 mkdirSync(stateDir, { recursive: true });
 const yoursFile = join(stateDir, "session-profiles.json");
@@ -137,7 +142,7 @@ describe("saving one of yours", () => {
     };
     assert.deepEqual(await name("x".repeat(49)), ["Profile name can be at most 48 characters.", "name"]);
     assert.deepEqual(await name("  "), ["Profile name can't be empty.", "name"]);
-    assert.deepEqual(await name("off"), [`Profile name can't be "Off", the built-in profile's.`, "name"]);
+    assert.deepEqual(await name("off"), [`Profile name can't be "Off".`, "name"]);
     assert.deepEqual(await name("beta"), ["Another profile has this name.", "name"]);
     assert.deepEqual([read(yoursFile), read(libFile)], before, "a refused name writes nothing");
   });
@@ -151,9 +156,31 @@ describe("saving one of yours", () => {
     assert.equal(read(yoursFile), "{ nope");
   });
 
-  test("a project's or a shipped profile, and Off, aren't changed here", async () => {
-    const r = await saveMine({ key: "sova:default", name: "Off" }, deps);
-    assert.equal(r.ok, false);
+  test("a project's or a built-in profile, or an older build's Off, aren't changed here", async () => {
+    assert.equal((await saveMine({ key: "sova:default", name: "Off" }, deps)).ok, false);
+    const builtin = await saveMine({ key: "sova:claude", name: "Claude" }, deps);
+    assert.deepEqual(builtin.ok ? null : [builtin.status, builtin.error], [409, "Claude isn't one of yours, so it is changed in its file, not here."]);
+  });
+});
+
+describe("the seeded starter (my-setup), shown as Claude", () => {
+  test("its first Settings save writes the name Claude, keeping the id my-setup and its models", async () => {
+    const starter = sp.legacyProfile(agentDir, "my-setup", "My setup");
+    sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [starter] });
+    sp.writeProfilesDefault(agentDir, { version: 1, default: "my-setup" });
+    writeFileSync(yoursFile, JSON.stringify({ version: 1, profiles: [] }));
+    const row = pickJoined(await joinedProfiles(), "library:my-setup")!;
+    assert.deepEqual([row.key, row.name, row.replaces], ["library:my-setup", "Claude", "sova:claude"], "shown as Claude, nothing written yet");
+    assert.equal(json<Lib>(libFile).profiles[0]!.name, "My setup");
+    // The editor sends the name it shows and the helpers as they are (Save Changes after any edit to this row).
+    const r = await saveMine({ key: row.key, name: row.name, helpers: helpers(starter as never) as never }, deps);
+    assert.ok(r.ok, !r.ok ? r.error : "");
+    const saved = json<Lib>(libFile).profiles;
+    assert.deepEqual(saved.map((p) => [p.id, p.name]), [["my-setup", "Claude"]], "the name Claude, the same id");
+    assert.deepEqual(helpers(saved[0] as never), helpers(starter as never), "its models as they were");
+    assert.equal(json<{ default: string }>(libDefaultFile).default, "my-setup", "the default still names it");
+    const after = pickJoined(await joinedProfiles(), "library:my-setup")!;
+    assert.deepEqual([after.name, after.replaces], ["Claude", "sova:claude"], "still the row taking Claude's place");
   });
 });
 
@@ -299,6 +326,56 @@ describe("duplicating and deleting", () => {
     assert.ok((await deleteMine("user:house", deps)).ok);
     assert.equal(json<Lib>(libFile).profiles.some((p) => p.id === "house"), false);
   });
+
+  // A home with no account in it: never the real ~/.claude.
+  const noAccounts = async (fn: () => Promise<void>) => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "sova-profile-editor-home-")));
+    const was = { HOME: process.env.HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR };
+    process.env.HOME = home;
+    delete process.env.CLAUDE_CONFIG_DIR;
+    try {
+      await fn();
+    } finally {
+      for (const [k, v] of Object.entries(was)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      rmSync(home, { recursive: true, force: true });
+    }
+  };
+  // Claude's Make It Yours copy: a profile of yours with the built-in's id, linking the helpers under that id.
+  const claudeCopy = { id: "claude", label: "Claude", model: "claude-code-cli/claude-opus-5-5", thinking: "medium", subagents: "claude" };
+
+  test("deleting a profile linking a built-in id leaves the library profile taking that built-in's place", () =>
+    noAccounts(async () => {
+      // The library holds only the seeded starter (an older peer's sync, a restore), the default helpers naming it.
+      sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [sp.legacyProfile(agentDir, "my-setup", "My setup")] });
+      sp.writeProfilesDefault(agentDir, { version: 1, default: "my-setup" });
+      writeFileSync(yoursFile, JSON.stringify({ version: 1, profiles: [claudeCopy] }, null, 2));
+      const libBefore = read(libFile);
+      const r = await deleteMine("user:claude", deps);
+      assert.ok(r.ok, !r.ok ? r.error : "");
+      assert.deepEqual(json<Yours>(yoursFile).profiles, []);
+      assert.equal(read(libFile), libBefore, "my-setup is another profile: its file isn't touched");
+    }));
+
+  test("a Make It Yours copy that is the default only because the accounts give it can be deleted; the built-in comes back", () =>
+    (async () => {
+      for (const f of [libDefaultFile, defaultProfileFile]) rmSync(f, { force: true });
+      sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [sp.legacyProfile(agentDir, "claude", "Claude")] });
+      writeFileSync(yoursFile, JSON.stringify({ version: 1, profiles: [claudeCopy] }, null, 2));
+      const before = await resolveDefaultProfile();
+      assert.deepEqual([before.row.key, before.fromAccounts, before.info.chosen], ["user:claude", true, false]);
+      const r = await deleteMine("user:claude", deps);
+      assert.ok(r.ok, !r.ok ? r.error : "");
+      assert.deepEqual(json<Yours>(yoursFile).profiles, []);
+      assert.deepEqual(json<Lib>(libFile).profiles, [], "its own helpers went with it");
+      const after = await resolveDefaultProfile();
+      assert.deepEqual([after.row.key, after.fromAccounts], ["sova:claude", true]);
+      assert.equal(existsSync(defaultProfileFile), false, "no default written");
+      // Chosen, it is refused as before.
+      writeFileSync(yoursFile, JSON.stringify({ version: 1, profiles: [claudeCopy] }, null, 2));
+      writeFileSync(defaultProfileFile, JSON.stringify({ version: 1, profile: "claude" }));
+      const refused = await deleteMine("user:claude", deps);
+      assert.deepEqual(refused.ok ? null : [refused.status, refused.error], [409, "Make another profile the default first."]);
+    })());
 });
 
 describe("the default", () => {
@@ -323,17 +400,13 @@ describe("the default", () => {
     assert.deepEqual([read(libDefaultFile), statSync(libDefaultFile).mtimeMs], before);
   });
 
-  test("Off writes off for the helpers and leaves mode.json and defaults.json byte for byte", async () => {
-    const mode = read(modeFile);
-    const defaults = read(defaultsFile);
-    const times = [statSync(modeFile).mtimeMs, statSync(defaultsFile).mtimeMs];
+  test("there is no Off to choose; a built-in profile chosen writes its id to both files and never \"off\"", async () => {
     const rows = await joinedProfiles();
-    chooseDefaultProfile(pickJoined(rows, "off")!, rows);
-    assert.deepEqual(json(defaultProfileFile), { version: 1, profile: "off" });
-    assert.equal(json<{ default: string }>(libDefaultFile).default, "off");
-    assert.equal(read(modeFile), mode);
-    assert.equal(read(defaultsFile), defaults);
-    assert.deepEqual([statSync(modeFile).mtimeMs, statSync(defaultsFile).mtimeMs], times);
+    assert.equal(pickJoined(rows, "off"), null);
+    const claude = pickJoined(rows, "sova:claude")!;
+    chooseDefaultProfile(claude, rows);
+    assert.deepEqual(json(defaultProfileFile), { version: 1, profile: "claude" });
+    assert.equal(json<{ default: string }>(libDefaultFile).default, "claude");
   });
 
   test("before one is chosen nothing is written, and no profile's save moves it", async () => {
@@ -345,7 +418,7 @@ describe("the default", () => {
 });
 
 describe("from a chat", () => {
-  test("Save Current As Profile copies the chat's helpers; Off saves none", async () => {
+  test("Save Current As Profile copies the chat's helpers, a built-in profile's too; none saves none", async () => {
     const r = await saveCurrentAsProfile("From chat", { model: "openai/gpt-5.5", thinking: "low", helpers: "house" }, deps);
     assert.ok(r.ok, !r.ok ? r.error : "");
     const s = json<Yours>(yoursFile).profiles.at(-1)!;
@@ -353,8 +426,11 @@ describe("from a chat", () => {
     assert.equal(json<Lib>(libFile).profiles.at(-1)!.name, "From chat");
     const lib = read(libFile);
     assert.ok((await saveCurrentAsProfile("Bare chat", { helpers: "off" }, deps)).ok);
-    assert.equal(json<Yours>(yoursFile).profiles.at(-1)!.subagents, "off");
-    assert.equal(read(libFile), lib, "Off copies no helpers");
+    assert.equal(json<Yours>(yoursFile).profiles.at(-1)!.subagents, undefined, "an older Off names no helpers, and \"off\" is never written");
+    assert.equal(read(libFile), lib, "no helpers copied");
+    assert.ok((await saveCurrentAsProfile("From built in", { helpers: "openai" }, deps)).ok);
+    const copy = json<Lib>(libFile).profiles.at(-1)!;
+    assert.deepEqual([copy.id, copy.name], ["from-built-in", "From built in"]);
   });
 
   test("Update {name} saves the chat's model, effort and modes into its profile, never its helpers", async () => {
@@ -364,6 +440,7 @@ describe("from a chat", () => {
     const s = json<Yours>(yoursFile).profiles[0]!;
     assert.deepEqual([s.model, s.thinking, s.mode, s.minorModes, s.subagents], ["zai/glm-5.3", "high", "delegate", ["align"], "house"]);
     assert.equal(read(libFile), lib);
-    assert.equal((await updateFromChat("sova:default", {}, deps)).ok, false, "Off saves nothing");
+    assert.equal((await updateFromChat("sova:default", {}, deps)).ok, false, "an older Off saves nothing");
+    assert.equal((await updateFromChat("sova:openai", {}, deps)).ok, false, "a built-in profile isn't updated here");
   });
 });

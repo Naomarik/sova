@@ -73,8 +73,8 @@ test("the warm-up loads Sova's entry, and still registers the provider", async (
   assert.equal(existsSync(profiles), false);
   assertEngine(await warmedOwner(), "warm-up");
   assert.ok((await claudeModels()) > 0, "the warm-up's job: the provider's models are in the shared runtime");
-  // What the warm-up's session_start wrote before this change it still writes: the starter subagent library (absent only).
-  assert.equal(existsSync(profiles), true, "the owner's session_start seeds the absent subagent library, as the old extension's did");
+  // No starter library is written: an absent one reads as empty, and the built-in profiles apply.
+  assert.equal(existsSync(profiles), false, "the owner's session_start writes no subagent library");
 });
 
 test("a chat opened after the warm-up has Sova's engine too, exactly one owner", async () => {

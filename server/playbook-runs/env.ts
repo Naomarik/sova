@@ -29,6 +29,13 @@ export function choiceOfChatRef(ref: string, effort = ""): WorkerChoice {
   return ref.slice(0, slash) === CLAUDE_CODE_PROVIDER ? { backend: "claude-code", model: ref.slice(slash + 1), effort } : { backend: "pi", model: ref, effort };
 }
 
+/**
+ * The helpers a playbook card's run is routed by: this computer's default helper profile, or none while no default
+ * is chosen. A run is Sova's own, so it never falls back to the built-in profile the accounts give (as before
+ * built-in profiles existed, when no default meant no helper profile).
+ */
+export const cardHelpers = (dir = agentRoot()) => resolveSubagents(dir, undefined, undefined, undefined, null);
+
 export interface LoadedPlaybook {
   info: PlaybookInfo;
   spec: PlaybookSpec | null;
@@ -85,7 +92,7 @@ export async function liveEnv(spec: PlaybookSpec, info: PlaybookInfo, chatPath?:
     if (provider) return `is off: its provider, ${PROVIDER_WORDS[provider[1]!] ?? provider[1]}, is turned off in Settings → Models`;
     return `can't run: ${why.replace(/\.$/, "")}`;
   };
-  const resolved = resolveSubagents(agentRoot(), undefined);
+  const resolved = cardHelpers();
   const routes = resolved.delegate?.profiles ?? null;
   const held = chatPath ? chatHandle(chatPath) : undefined;
   const chatModel = held?.mirror.model?.ref ? choiceOfChatRef(held.mirror.model.ref, held.mirror.thinking ?? "") : null;

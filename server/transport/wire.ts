@@ -64,6 +64,8 @@ export interface StatusBody {
   renamed?: { from: string; to: string }[];
   /** The chat there has had a turn since it arrived (Move Back is gone). */
   turned?: boolean;
+  /** The chat there was already stopped for a Move Back (it runs nowhere until this device restores it): asked again, it answers again. */
+  movedBack?: boolean;
   /** The chat's conversation there, once it opened. */
   path?: string;
 }

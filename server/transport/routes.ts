@@ -140,18 +140,21 @@ export async function backState(r: TransportRecord, mesh: Pick<Mesh, "peerFetch"
     const res = await mesh.peerFetch(r.peer, peerPath.status(r.tid), { signal: AbortSignal.timeout(8_000) });
     if (res.status === 403) return { ...base, can: null, reason: REFUSALS.noGrant(r.peerLabel) };
     if (!res.ok) return { ...base, can: null, reason: REFUSALS.offline(r.peerLabel) };
-    const s = (await res.json()) as { turned?: boolean };
-    return { ...base, can: s.turned === false ? "move" : "copy" };
+    const s = (await res.json()) as { turned?: boolean; movedBack?: boolean };
+    // Already stopped there for a Move Back that stopped partway here: it runs nowhere, so Move Back again finishes it.
+    return { ...base, can: s.movedBack === true || s.turned === false ? "move" : "copy" };
   } catch {
     return { ...base, can: null, reason: REFUSALS.offline(r.peerLabel) };
   }
 }
 
 /** Move Back on this device (the chat's first one): the other device stops it, then it runs here again from its safety copy. */
-async function moveBackToHere(r: TransportRecord, mesh: Pick<Mesh, "peerFetch">): Promise<{ ok: boolean; error?: string }> {
+export async function moveBackToHere(r: TransportRecord, mesh: Pick<Mesh, "peerFetch">): Promise<{ ok: boolean; error?: string }> {
   const st = await backState(r, mesh);
   if (st.can !== "move") return { ok: false, error: st.reason ?? `It has changed on ${r.peerLabel}, so this copies it back as a new chat.` };
-  const res = await mesh.peerFetch(r.peer, `/api/peer/transport/${r.tid}/move-back`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: r.path }), signal: AbortSignal.timeout(60_000) }).catch(() => null);
+  // Your click here, proven to the other device over this very request (as an offer's is).
+  const body = JSON.stringify({ path: r.path });
+  const res = await mesh.peerFetch(r.peer, peerPath.moveBack(r.tid), { method: "POST", headers: { "content-type": "application/json", [PROOF_HEADER]: mintClickProof(r.peer, body) }, body, signal: AbortSignal.timeout(60_000) }).catch(() => null);
   if (!res) return { ok: false, error: REFUSALS.offline(r.peerLabel) };
   if (!res.ok) return { ok: false, error: ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? `${r.peerLabel} answered ${res.status}` };
   // From here the chat runs nowhere until it is restored: a failure is retried (the other side answers "again").
@@ -541,7 +544,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
   app.post("/api/peer/transport/:tid/move-back", small, async (c) => {
     const caller = mesh.requestPeer(c);
     if (!caller) return notFound(c);
-    const r = await dest.moveBack(caller, c.req.param("tid"), ((await c.req.json().catch(() => null)) ?? {}) as never);
+    const r = await dest.moveBack(caller, c.req.param("tid"), await c.req.text(), c.req.header(PROOF_HEADER) ?? "");
     return c.json(r.body as object, r.status as 200);
   });
 

@@ -366,3 +366,96 @@ test("an archived chat with no message yet arrives and stays, archived: the re-a
   assert.ok(existsSync(file) && existsSync(join(home, "shared", "notes.md")), "the arrived chat and its home stay");
   assert.ok(isArchived(id));
 });
+
+/** The device a chat moved to ("desk" asks it, as the device it came from), with an arrived chat that opened there. */
+async function arrivedThere(tid: string, id: string) {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const dest = await import("./destination");
+  const { updateTransport } = await import("./store");
+  const { createHash } = await import("node:crypto");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { takeClick } = await import("../mesh/click-proof");
+  const home = ensureChatHome(id);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  mkdirSync(join(home, "workers"), { recursive: true });
+  const file = join(home, "sessions", `t_${id}.jsonl`);
+  writeFileSync(file, '{"type":"session"}\n');
+  writeFileSync(join(home, "workers", "W1.json"), '{"state":"open"}\n');
+  const r = createTransport({ tid, side: "destination", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "desk", peerLabel: "Desk", path: file, folder: "/x", state: "done", steps: { opened: "now" }, arrivedId: id });
+  updateTransport(tid, { ext: { openedPrint: await dest.fingerprint(r) } });
+  const stopped: string[] = [];
+  dest.setDestinationDeps({
+    peerFetch: async () => new Response("{}"),
+    // As the server's: the device it came from is asked whether it minted this proof for this device ("laptop") over this body.
+    clickProven: async (_peer, proof, body) => takeClick(proof, "laptop", createHash("sha256").update(body).digest("hex")),
+    adopt: () => {},
+    cameBack: () => {},
+    openWithNote: async () => {},
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+  });
+  // As the server's: its helpers are parked (their records written) and the chat closed.
+  dest.setMoveBackHere(async (rec) => {
+    stopped.push(rec.tid);
+    writeFileSync(join(home, "workers", "W1.json"), '{"state":"idle","parked":true}\n');
+  });
+  return { dest, home, stopped };
+}
+
+test("Move Back there takes only a click proven back: none, a made-up one or one over another request is refused and the chat runs on", async () => {
+  const { mintClickProof } = await import("../mesh/click-proof");
+  const { dest, stopped } = await arrivedThere("tr_mbproof1", "0199aaaa-0000-7000-8000-000000000020");
+  const raw = JSON.stringify({ path: "/back.jsonl" });
+  for (const proof of ["", "made-up", mintClickProof("laptop", JSON.stringify({ path: "/other.jsonl" })), mintClickProof("elsewhere", raw)]) {
+    const res = await dest.moveBack({ id: "desk" }, "tr_mbproof1", raw, proof);
+    assert.equal(res.status, 403, JSON.stringify(res.body));
+  }
+  assert.deepEqual(stopped, [], "nothing stopped there");
+  assert.equal((readTransport("tr_mbproof1")?.ext as { movedBack?: string }).movedBack, undefined);
+  const res = await dest.moveBack({ id: "desk" }, "tr_mbproof1", raw, mintClickProof("laptop", raw));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(stopped, ["tr_mbproof1"]);
+  const spent = mintClickProof("laptop", raw);
+  await dest.moveBack({ id: "desk" }, "tr_mbproof1", raw, spent);
+  assert.equal((await dest.moveBack({ id: "desk" }, "tr_mbproof1", raw, spent)).status, 403, "a proof is spent once");
+});
+
+test("a Move Back that stopped partway here is finished by Move Back again: stopping it there is no turn there", async () => {
+  resetMovedMemo();
+  const { PROOF_HEADER } = await import("./wire");
+  const { moveBackToHere } = await import("./routes");
+  const { movedOf } = await import("./moved");
+  const { updateTransport } = await import("./store");
+  const { dest, stopped } = await arrivedThere("tr_mbdst01", "0199aaaa-0000-7000-8000-000000000021");
+  // Here, the device it came from: the Moved row, its worktree removed (its package missing, so the restore stops partway).
+  const here = "0199aaaa-0000-7000-8000-000000000022";
+  const src = createTransport({ tid: "tr_mbsrc01", side: "source", mode: "move", chatId: here, sourceChatId: here, title: "t", peer: "laptop", peerLabel: "Laptop", path: "/here.jsonl", folder: "~/x", state: "done", ext: { removedTrees: [{ name: "w", path: "/nowhere/w", common: "/nowhere/.git" }] } });
+  markMoved(here, { tid: src.tid, peer: "laptop", to: "Laptop", at: new Date().toISOString(), arrivedId: here, arrivedPath: "/there.jsonl" });
+  // The other device, reached in-process: its status and its move-back route, under the identity "desk".
+  const mesh = {
+    peerFetch: async (_peer: string, path: string, init?: RequestInit) => {
+      if (path.endsWith("/move-back")) {
+        const r = await dest.moveBack({ id: "desk" }, "tr_mbdst01", String(init?.body), (init?.headers as Record<string, string>)[PROOF_HEADER] ?? "");
+        return new Response(JSON.stringify(r.body), { status: r.status });
+      }
+      return new Response(JSON.stringify(await dest.statusOf({ id: "desk" }, "tr_mbdst01")));
+    },
+  };
+  const first = await moveBackToHere(readTransport(src.tid)!, mesh);
+  assert.equal(first.ok, false);
+  assert.match(first.error ?? "", /Press Move Back again/);
+  assert.deepEqual(stopped, ["tr_mbdst01"], "stopped there, its helper parked");
+  const st = await dest.statusOf({ id: "desk" }, "tr_mbdst01");
+  assert.notEqual(st.turned, true, "the parking isn't a turn there");
+  assert.equal(st.movedBack, true);
+  assert.equal((await backState(readTransport(src.tid)!, mesh)).can, "move");
+  // What stopped it is gone: Move Back again finishes here, and the other device isn't stopped twice.
+  updateTransport(src.tid, { ext: { removedTrees: [] } });
+  const again = await moveBackToHere(readTransport(src.tid)!, mesh);
+  assert.equal(again.ok, true, again.error);
+  assert.equal(movedOf(here), undefined, "it runs here again");
+  assert.ok((readTransport(src.tid)?.ext as { movedBack?: string }).movedBack);
+  assert.deepEqual(stopped, ["tr_mbdst01"]);
+});

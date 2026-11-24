@@ -455,7 +455,9 @@ export async function statusOf(from: { id: string }, tid: string): Promise<Statu
     ...(r.received !== undefined ? { received: r.received } : {}),
     ...(r.arrivedId ? { arrivedId: r.arrivedId } : {}),
     ...(r.renamed?.length ? { renamed: r.renamed } : {}),
-    ...(r.steps.opened && r.path ? { path: r.path, turned: await turnedHere(r) } : {}),
+    // Once stopped here for a Move Back, its parked helpers and closed chat change the fingerprint: that is no turn, and
+    // the device it came from must be able to ask again (it answers again) until it runs there.
+    ...(r.steps.opened && r.path ? { path: r.path, ...(movedBackOf(r) ? { movedBack: true } : { turned: await turnedHere(r) }) } : {}),
   };
 }
 
@@ -505,6 +507,8 @@ async function turnedHere(r: TransportRecord): Promise<boolean> {
   return was === undefined || (await fingerprint(r)) !== was;
 }
 
+const movedBackOf = (r: TransportRecord): boolean => !!((r.ext ?? {}) as { movedBack?: string }).movedBack;
+
 /** What Move Back does here (the device the chat is on): stop it, become the Moved side. Injected by routes.ts. */
 export interface MoveBackHere {
   (r: TransportRecord, back: { path: string }): Promise<void>;
@@ -512,11 +516,20 @@ export interface MoveBackHere {
 let moveBackHere: MoveBackHere | null = null;
 export const setMoveBackHere = (fn: MoveBackHere): void => void (moveBackHere = fn);
 
-/** Move Back, asked by the device the chat came from (POST …/move-back): only while nothing happened here. */
-export async function moveBack(from: { id: string }, tid: string, body: { path?: unknown }): Promise<{ status: number; body: unknown }> {
+/** Move Back, asked by the device the chat came from (POST …/move-back), with the click that pressed it there proven back:
+    only while nothing happened here. */
+export async function moveBack(from: { id: string }, tid: string, raw: string, proof: string): Promise<{ status: number; body: unknown }> {
   const r = readTransport(tid);
   if (!r || r.side !== "destination" || r.peer !== from.id || r.mode !== "move" || !r.steps.opened) return ok({ error: "No such transport" }, 404);
-  if (((r.ext ?? {}) as { movedBack?: string }).movedBack) return ok({ ok: true, again: true });
+  // A person pressed Move Back on that device's own page: it minted a proof over this very request, asked back once.
+  if (!proof || !(await need().clickProven(from.id, proof, raw))) return ok({ error: "Only you move a chat back, from that device's page. Nothing changed here." }, 403);
+  if (movedBackOf(r)) return ok({ ok: true, again: true });
+  let body: { path?: unknown };
+  try {
+    body = (JSON.parse(raw) ?? {}) as { path?: unknown };
+  } catch {
+    return ok({ error: "Bad request" }, 400);
+  }
   if (await turnedHere(r)) return ok({ error: "It has changed here since it arrived, so only a Copy can bring it back.", turned: true }, 409);
   if (typeof body?.path !== "string") return ok({ error: "Bad request" }, 400);
   try {

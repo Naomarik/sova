@@ -536,6 +536,8 @@ export function pickableHelpers(profiles: readonly SubagentProfile[], connected:
  * a host's own machine-facing chats, and this extension's tests of the team machinery.
  */
 export const NO_HELPER_PROFILE_ENV = "SOVA_NO_HELPER_PROFILE";
+/** The launch flag a host gives its own chats for the same (Sova's mode engine and this extension both read it). */
+export const NO_HELPER_PROFILE_FLAG = "no-helper-profile";
 
 /** The built-in profile a chat falls back to on this computer now: the connected accounts' (Claude, then OpenAI, then DeepSeek). */
 export const builtinFallback = (agentDir: string): BuiltinProfileId => builtinDefaultFor(readConnectedAccounts(agentDir));

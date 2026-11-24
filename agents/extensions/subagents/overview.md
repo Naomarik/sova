@@ -41,8 +41,9 @@ built-in one's place (same id, then same name, then the seeded `my-setup` for Cl
 The module holds the shapes, the strict parses, the atomic writers and the pick entries (`restorePick`,
 `pickEntryFor`). Nothing is seeded: an absent library reads as an empty one, written by nobody. One resolver,
 `resolveSubagents`, goes pick → this device's default → the fallback: the built-in profile the connected accounts
-give (Claude, then OpenAI, then DeepSeek; Claude with none), or no helper profile for Sova's own chats (the engine's
-`no-helper-profile` flag, a playbook card's run, `SOVA_NO_HELPER_PROFILE=1`). A dangling or `"off"` pick falls to
+give (Claude, then OpenAI, then DeepSeek; Claude with none), or no helper profile for Sova's own chats (the
+`no-helper-profile` launch flag, which the engine and this extension both register and read; a playbook card's
+run; `SOVA_NO_HELPER_PROFILE=1`). A dangling or `"off"` pick falls to
 the default; a missing, `"off"`, malformed or dangling default reads as the fallback; only a malformed library
 falls to the legacy files.
 - Written by the mode menu, Settings → Profiles, `/mode subagents <id|name>` ("off" answers with the profiles

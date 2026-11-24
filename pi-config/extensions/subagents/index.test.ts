@@ -72,7 +72,7 @@ const withKinds = (name: string, params: any): any => {
 	if ((name !== "team_create" && name !== "team_add") || !Array.isArray(params?.members)) return params;
 	return { ...params, members: params.members.map((m: any) => (m && typeof m === "object" && m.kind === undefined && m.model === undefined && m.backend === undefined ? { ...m, kind: "routine" } : m)) };
 };
-function harness(bus = eventBus(), options: SubagentsOptions = {}) {
+function harness(bus = eventBus(), options: SubagentsOptions = {}, flags: Record<string, unknown> = {}) {
 	const ownAgentDir = options.agentDir === undefined ? freshAgentDir() : undefined;
 	options = { policyFile: NO_POLICY_FILE, agentDir: ownAgentDir, ...options };
 	const tools = new Map<string, any>();
@@ -104,6 +104,8 @@ function harness(bus = eventBus(), options: SubagentsOptions = {}) {
 			on: (e: string, f: any) => events.set(e, f),
 			registerCommand: (name: string, command: any) => commands.set(name, command),
 			registerShortcut() {},
+			registerFlag() {},
+			getFlag: (name: string) => flags[name],
 			appendEntry: (customType: unknown, data: unknown) => appended.push({ customType, data }),
 			getAgentDir: () => path.resolve(fileURLToPath(new URL("../../", import.meta.url))),
 			getActiveTools: () => ["read", "bash", "agent_spawn"],
@@ -3508,6 +3510,31 @@ test("every team gets both standing roles on the chat's own model where the sett
 		fs.writeFileSync(libPath, JSON.stringify(lib));
 		await assertBothOnChatsOwn(nul, "teams: null");
 	} finally { await nul.cleanup(); }
+});
+
+test("a host's own chats (the no-helper-profile flag): with no default chosen, teams get no helper profile, never the built-in one; a user's chat gets the built-in one (b3)", async () => {
+	const held = process.env[NO_HELPER_PROFILE_ENV];
+	delete process.env[NO_HELPER_PROFILE_ENV];
+	const run = async (flags: Record<string, unknown>) => {
+		const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-tests-own-"));
+		const h = harness(eventBus(), { agentDir }, flags);
+		try {
+			await h.commands.get("team").handler("defaults", h.ctx);
+			return { text: h.notices.at(-1)[0] as string, files: fs.readdirSync(agentDir) };
+		} finally {
+			await h.close();
+			fs.rmSync(agentDir, { recursive: true, force: true });
+		}
+	};
+	try {
+		const own = await run({ "no-helper-profile": true });
+		assert.match(own.text, /^Team defaults: [^\n]*no helper profile[^\n]*, so both roles use this chat's own model/);
+		const user = await run({});
+		assert.match(user.text, /\n {2}Coordinator: role "coordinator", primary claude-code · claude-opus-5-5 · medium, fallback none\n/, "the built-in Claude profile (no account connected here)");
+		assert.equal(own.files.some((f) => f.startsWith("subagent-profiles")), false, "nothing written");
+	} finally {
+		if (held !== undefined) process.env[NO_HELPER_PROFILE_ENV] = held;
+	}
 });
 
 test("a saved coordinator.enabled / monitor.enabled false turns nothing off: both roles start on the named models", async () => {

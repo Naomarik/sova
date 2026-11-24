@@ -51,7 +51,7 @@ import { projectToolDefinitions, withdrawnDefinition } from "../../pi-config/ext
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../../pi-config/extensions/sandbox/state.ts";
 import { backendsOf, routeAll, routeNotice, routeWriter, slotNotice, usable, type Discovery, type ProfileRoute, type SlotRoute } from "../../pi-config/extensions/mode/routing.ts";
 import { SPEC_WRITER_LABEL, specBackends, specKey } from "../../pi-config/extensions/mode/spec.ts";
-import { OFF_PROFILE_ID, pickableHelpers, profilesReader, resolveSubagents, type ResolvedSubagents } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
+import { NO_HELPER_PROFILE_FLAG, OFF_PROFILE_ID, pickableHelpers, profilesReader, resolveSubagents, type ResolvedSubagents } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
 import { readConnectedAccounts } from "../../pi-config/extensions/subagents/builtin-profiles.ts";
 import { CensusHook, driftNote, LANDED_FILE_ENV, SpecWriteGuard, writeLanded } from "../../pi-config/extensions/mode/spec-guard.ts";
 import {
@@ -109,8 +109,9 @@ export const VISUALS_FLAG = "align-visuals";
 /** Set by Sova for its own machine-facing chats (the merge thread, its reviewers, the release thread): no reply shape in their mode section. */
 export const REPLY_SHAPE_OFF_FLAG = "reply-shape-off";
 /** Sova's own chats (the merge thread, its reviewers, release chats, the Overseer): no helper profile unless this
-    computer's default file names one, never the built-in fallback the connected accounts give. */
-export const NO_HELPER_PROFILE_FLAG = "no-helper-profile";
+    computer's default file names one, never the built-in fallback the connected accounts give. The subagents
+    extension reads the same flag. */
+export { NO_HELPER_PROFILE_FLAG };
 
 /** A switch's marker, without the snapshot recordSwitch adds (index.ts SwitchMarker). */
 type SwitchMarker = { mode: Mode } | { minor: MinorMode; on: boolean } | { project: string; on: boolean } | { strict: boolean };

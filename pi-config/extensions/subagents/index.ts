@@ -68,7 +68,7 @@ import { InboxStore, MAIN_THREAD, SOVA, closedByOf, hasInboxCaps, isOpen, type I
 import { DeliveryLanes, WakeScheduler, itemLine, steerUntilTaken, type LaneResult } from "./delivery.ts";
 import { TEAM_NOTICE_TYPE, endReason, groupReturns, returnNoticeText } from "./inbox-lifecycle.ts";
 import { describeTeamDefaults, effectiveTeamDefaults, TEAM_DEFAULT_EFFORTS, type TeamDefaultsNow, type WorkerTuple } from "./team-defaults.ts";
-import { resolveSubagents, restorePick, type ResolvedSubagents } from "./subagent-profiles.ts";
+import { NO_HELPER_PROFILE_FLAG, resolveSubagents, restorePick, type ResolvedSubagents } from "./subagent-profiles.ts";
 import { DELEGATE_PROFILES, DELEGATE_PROFILE_INFO, type DelegateProfileId, type WorkerChoice } from "../mode/delegate.ts";
 import {
 	NUDGE_MAX_ACTIVE,
@@ -824,6 +824,8 @@ export function registerSubagents(
 	injectedRunner?: RunnerFactory,
 	options: SubagentsOptions = {},
 ): void {
+	// The host's launch flag for its own chats (also registered by its mode engine; pi keeps one value per name).
+	pi.registerFlag?.(NO_HELPER_PROFILE_FLAG, { description: "No built-in helper profile when no default is chosen (a host's own chats)", type: "boolean", default: false });
 	const agents: Worker[] = [];
 	// Failed batches stay owned until cleanup succeeds, but never appear as runs
 	// or emit completion notifications. Include them in caps and shutdown.
@@ -1074,7 +1076,9 @@ export function registerSubagents(
 		} catch {
 			branch = undefined;
 		}
-		return resolveSubagents(agentDir(), restorePick(branch as never));
+		// A host's own chats (Sova's merge thread, its reviewers, release chats, its Overseer) run with no helper
+		// profile while no default is chosen, as the host's mode engine reads them (the same launch flag).
+		return resolveSubagents(agentDir(), restorePick(branch as never), undefined, undefined, pi.getFlag?.(NO_HELPER_PROFILE_FLAG) === true ? null : undefined);
 	};
 	/** The chat's own model and effort, as a worker tuple (a Claude Code chat's is its claude-code-cli pi model). */
 	const chatTuple = (ctx: ExtensionContext | undefined = activeCtx): WorkerTuple | undefined => {

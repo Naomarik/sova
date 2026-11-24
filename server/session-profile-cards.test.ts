@@ -491,6 +491,10 @@ describe("a new chat with no profile named starts on this computer's default", (
       assert.equal(readFileSync(path, "utf8"), before);
       assert.equal(pickOf(path), undefined);
       assert.equal((await acquireChat(path, true)).subagentProfileInfo().current.id, "deepseek", "its helpers are the built-in DeepSeek profile's");
+      // It follows the default: once one is chosen, its helpers move with it, from the next read.
+      sp.writeProfilesDefault(agentDir, { version: 1, default: "claude-subs" });
+      assert.equal((await acquireChat(path, true)).subagentProfileInfo().current.id, "claude-subs", "a chat with no pick moves when the default moves");
+      rmSync(defFile);
       assert.equal((await acquireChat(path, true)).harness.model()?.ref, model);
       assert.equal(existsSync(defFile), false, "no default written");
       assert.equal(existsSync(join(stateDir, "default-profile.json")), false);

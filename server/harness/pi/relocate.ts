@@ -35,6 +35,18 @@ export function mapDeep<T>(v: T, map: PathMap, ids: Readonly<Record<string, stri
   const idKeys = Object.keys(ids);
   const str = (s: string): string => {
     let out = s;
+    // A value that is itself JSON (a team member's identity in its environment names its mailbox folder): mapped inside.
+    if ((s.startsWith("{") || s.startsWith("[")) && s.includes("/")) {
+      try {
+        const inner = JSON.parse(s) as unknown;
+        if (inner && typeof inner === "object") {
+          const next = JSON.stringify(walk(inner));
+          if (next !== JSON.stringify(inner)) return next;
+        }
+      } catch {
+        // not JSON: a plain string
+      }
+    }
     if (s.startsWith("/")) {
       out = mapPath(s, map);
       if (out === s) out = mapCode(s, code);

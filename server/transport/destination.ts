@@ -381,6 +381,7 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
       title: r.title,
       project: { remotes: o.project.remotes, path: repoPathOf(r) ?? r.folder },
       worktrees: o.trees.map((t) => ({ name: t.name, branch: t.branch })),
+      ...(o.model ? { model: o.model } : {}),
       privateFiles: done.privateFiles ?? [],
       sourceValues: done.sourceValues ?? [],
     });

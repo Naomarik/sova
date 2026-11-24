@@ -51,7 +51,7 @@ function home(name: string): string {
       cwd: OLD_TREE,
       agentDir: null,
       extensions: ["/home/a/.pi/agent/sova/chats/code/b7/pi-config/extensions/subagents/index.ts", "/opt/other/ext.ts"],
-      env: { SOVA_SHARED_DIR: `${OLD_HOME}/shared`, SOVA_TEAM_ROLE: "coder" },
+      env: { SOVA_SHARED_DIR: `${OLD_HOME}/shared`, SOVA_TEAM_ROLE: "coder", PI_SUBAGENTS_TEAM_MEMBER: JSON.stringify({ version: 1, teamId: "team_01", workerId: "ag_01", dir: `${OLD_HOME}/teams/L1/team_01/ag_01` }) },
       parent: { sessionId: "L1", path: `${OLD_HOME}/sessions/t_L1.jsonl`, workerId: "ag_01" },
     },
     state: "idle",
@@ -76,6 +76,8 @@ test("a Move: every recorded path points here, what was said stays, a rerun chan
   assert.equal(w.spec.cwd, NEW_TREE);
   assert.deepEqual(w.spec.extensions, [`${CODE}/pi-config/extensions/subagents/index.ts`, "/opt/other/ext.ts"]);
   assert.equal(w.spec.env.SOVA_SHARED_DIR, `${NEW_HOME}/shared`);
+  // A team member's identity is JSON in its environment: the mailbox folder it names points here too.
+  assert.equal(JSON.parse(w.spec.env.PI_SUBAGENTS_TEAM_MEMBER).dir, `${NEW_HOME}/teams/L1/team_01/ag_01`);
   assert.equal(JSON.parse(readFileSync(join(h, "wakes", "W1.team.json"), "utf8")).path, `${NEW_HOME}/sessions/t_W1.jsonl`);
   assert.equal(await findConversation(h, "W1"), join(h, "sessions", "t_W1.jsonl"));
   assert.deepEqual(await relocateHome(h, { map, code: CODE, broad }), { conversations: 0, workers: 0, records: 0 });

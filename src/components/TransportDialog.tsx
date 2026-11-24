@@ -255,7 +255,12 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
                         Stays here
                       </h3>
                       <ul class="text-caption transport-list">
-                        <li>Build output and dependencies: rebuilt there</li>
+                        <li>
+                          Build output and dependencies: rebuilt there
+                          <Show when={v().staysHere.left.length > 0}>
+                            {" "}({v().staysHere.left.join(", ")} · {sizeText(v().staysHere.leftBytes)})
+                          </Show>
+                        </li>
                         <li>Share links to this chat end</li>
                         <Show when={mode() === "move"}>
                           <For each={v().staysHere.jobs}>{(j) => <li>Background job {j}: stopped at the switch</li>}</For>

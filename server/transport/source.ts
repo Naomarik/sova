@@ -124,7 +124,7 @@ export interface Preview {
   travels: { conversationBytes: number; code: { branch: string | null; bytes: number }[]; helpers: number; scratch: { dir: string; size: number }[] };
   privateFiles: { tree: string; path: string; size: number }[];
   large: { tree: string; path: string; size: number }[];
-  staysHere: { left: string[]; jobs: string[] };
+  staysHere: { left: string[]; leftBytes: number; jobs: string[] };
   busyHelpers: { id: string; name: string; role?: string }[];
   needs: string[];
   agentModels: string[];
@@ -225,7 +225,11 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
     },
     privateFiles: t.trees.flatMap((x) => x.loose.filter((f) => f.kind === "private").map((f) => ({ tree: x.name, path: f.path, size: f.size }))),
     large: t.trees.flatMap((x) => x.loose.filter((f) => f.kind !== "private" && f.size > LARGE_FILE).map((f) => ({ tree: x.name, path: f.path, size: f.size }))),
-    staysHere: { left: [...new Set(t.trees.flatMap((x) => x.left))], jobs: need().jobs(c.id) },
+    staysHere: {
+      left: [...new Set(t.trees.flatMap((x) => x.left))],
+      leftBytes: (await Promise.all(t.trees.flatMap((x) => x.left.map((d) => dirBytes(join(x.path, d)))))).reduce((n, b) => n + b, 0),
+      jobs: need().jobs(c.id),
+    },
     busyHelpers: extras.busyHelpers,
     needs,
     agentModels,

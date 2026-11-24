@@ -219,6 +219,23 @@ export async function compressFolder(dir: string, out: string): Promise<{ entrie
     const got = (await listTar(tmp)).map((m) => m.name.replace(/\/$/, ""));
     const want = entries.map((e) => e.name);
     if (got.length !== want.length || got.some((n, i) => n !== want[i])) throw new Error(`the archive of ${dir} doesn't hold every entry`);
+    // Something wrote the folder while it was archived (a job still using it): what was kept isn't what is there.
+    for (const e of entries) {
+      if (e.type !== "file") continue;
+      const st = await lstat(e.from).catch(() => null);
+      if (!st || st.size !== e.size || Math.floor(st.mtimeMs / 1000) !== e.mtime) throw new Error(`${e.from} changed while it was archived`);
+    }
+    const now: string[] = [];
+    const again = async (rel: string): Promise<void> => {
+      for (const n of (await readdir(rel ? join(dir, rel) : dir)).sort()) {
+        const r = rel ? `${rel}/${n}` : n;
+        now.push(`${base}/${r}`);
+        const st = await lstat(join(dir, r));
+        if (st.isDirectory() && !st.isSymbolicLink()) await again(r);
+      }
+    };
+    await again("");
+    if (now.length !== want.length || now.some((n, i) => n !== want[i])) throw new Error(`${dir} gained or lost files while it was archived`);
     await pipeline(createReadStream(tmp), createZstdCompress(), createWriteStream(out, { mode: 0o600 }));
     return { entries: entries.length, size: (await stat(out)).size };
   } finally {

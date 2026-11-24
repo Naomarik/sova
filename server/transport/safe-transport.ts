@@ -121,7 +121,8 @@ export async function bringHelpersToRest(
   waiting.set(chatId, w);
   const wrappedAt = new Set<string>();
   const interrupted = new Set<string>();
-  let told = false;
+  const told = new Set<string>();
+  let started = false;
   let last = -1;
   const progress = (n: number) => {
     if (n !== last) onProgress((last = n));
@@ -144,11 +145,18 @@ export async function bringHelpersToRest(
           wrappedAt.delete(h.chatId);
           await deps.abort(h.chatId).catch(() => undefined);
         }
-      } else if (!told) {
+      } else {
         // Those working as the Move begins are the ones that resume there; one woken only to hear this stays idle.
-        told = true;
-        for (const h of busy) wrappedAt.add(h.chatId);
-        for (const t of wrapUpTargets(all)) await deps.tell(t.helper.chatId, t.text, `transport-wrap-up:${chatId}:${t.helper.chatId}`).catch(() => undefined);
+        if (!started) {
+          started = true;
+          for (const h of busy) wrappedAt.add(h.chatId);
+        }
+        // Each poll: a helper that started working since (a spawn landing late) is told too, once.
+        for (const t of wrapUpTargets(all)) {
+          if (told.has(t.helper.chatId)) continue;
+          told.add(t.helper.chatId);
+          await deps.tell(t.helper.chatId, t.text, `transport-wrap-up:${chatId}:${t.helper.chatId}`).catch(() => undefined);
+        }
       }
       await new Promise<void>((resolve) => {
         w.wake = resolve;

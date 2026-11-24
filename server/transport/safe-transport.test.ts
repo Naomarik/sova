@@ -98,3 +98,17 @@ test("a helper that keeps working after its abort is stopped again each time, an
   assert.deepEqual(r, { interrupted: ["c-ag_01"], wrapped: [], stillWorking: ["c-ag_01"] });
   assert.ok(aborts > 1);
 });
+
+test("a helper that starts working during the wait is told too, once; it isn't one that resumes there", async () => {
+  const late = h("ag_09", false);
+  const f = fake([h("ag_01", true), late], 3);
+  let polls = 0;
+  const helpers = f.deps.helpers;
+  f.deps.helpers = async (id) => {
+    if (++polls === 2) late.working = true; // its spawn lands after the Move began
+    return helpers(id);
+  };
+  const r = await bringHelpersToRest("chat-5", "safe", () => undefined, f.deps);
+  assert.deepEqual(f.told, ["c-ag_01", "c-ag_09"]);
+  assert.deepEqual(r, { interrupted: [], wrapped: ["c-ag_01"], stillWorking: [] });
+});

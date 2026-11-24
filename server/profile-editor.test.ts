@@ -300,6 +300,56 @@ describe("duplicating and deleting", () => {
     assert.ok((await deleteMine("user:house", deps)).ok);
     assert.equal(json<Lib>(libFile).profiles.some((p) => p.id === "house"), false);
   });
+
+  // A home with no account in it (the built-in fallback is Claude): never the real ~/.claude.
+  const noAccounts = async (fn: () => Promise<void>) => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "sova-profile-editor-home-")));
+    const was = { HOME: process.env.HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR };
+    process.env.HOME = home;
+    delete process.env.CLAUDE_CONFIG_DIR;
+    try {
+      await fn();
+    } finally {
+      for (const [k, v] of Object.entries(was)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+      rmSync(home, { recursive: true, force: true });
+    }
+  };
+  // Claude's Make It Yours copy: a profile of yours with the built-in's id, linking the helpers under that id.
+  const claudeCopy = { id: "claude", label: "Claude", model: "claude-code-cli/claude-opus-5-5", thinking: "medium", subagents: "claude" };
+
+  test("deleting a profile linking a built-in id leaves the library profile taking that built-in's place", () =>
+    noAccounts(async () => {
+      // The library holds only the seeded starter (an older peer's sync, a restore), the default helpers naming it.
+      sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [sp.legacyProfile(agentDir, "my-setup", "My setup")] });
+      sp.writeProfilesDefault(agentDir, { version: 1, default: "my-setup" });
+      writeFileSync(yoursFile, JSON.stringify({ version: 1, profiles: [claudeCopy] }, null, 2));
+      const libBefore = read(libFile);
+      const r = await deleteMine("user:claude", deps);
+      assert.ok(r.ok, !r.ok ? r.error : "");
+      assert.deepEqual(json<Yours>(yoursFile).profiles, []);
+      assert.equal(read(libFile), libBefore, "my-setup is another profile: its file isn't touched");
+    }));
+
+  test("a Make It Yours copy that is the default only because the accounts give it can be deleted; the built-in comes back", () =>
+    noAccounts(async () => {
+      for (const f of [libDefaultFile, defaultProfileFile]) rmSync(f, { force: true });
+      sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [sp.legacyProfile(agentDir, "claude", "Claude")] });
+      writeFileSync(yoursFile, JSON.stringify({ version: 1, profiles: [claudeCopy] }, null, 2));
+      const before = await resolveDefaultProfile();
+      assert.deepEqual([before.row.key, before.fromAccounts, before.info.chosen], ["user:claude", true, false]);
+      const r = await deleteMine("user:claude", deps);
+      assert.ok(r.ok, !r.ok ? r.error : "");
+      assert.deepEqual(json<Yours>(yoursFile).profiles, []);
+      assert.deepEqual(json<Lib>(libFile).profiles, [], "its own helpers went with it");
+      const after = await resolveDefaultProfile();
+      assert.deepEqual([after.row.key, after.fromAccounts], ["sova:claude", true]);
+      assert.equal(existsSync(defaultProfileFile), false, "no default written");
+      // Chosen, it is refused as before.
+      writeFileSync(yoursFile, JSON.stringify({ version: 1, profiles: [claudeCopy] }, null, 2));
+      writeFileSync(defaultProfileFile, JSON.stringify({ version: 1, profile: "claude" }));
+      const refused = await deleteMine("user:claude", deps);
+      assert.deepEqual(refused.ok ? null : [refused.status, refused.error], [409, "Make another profile the default first."]);
+    }));
 });
 
 describe("the default", () => {

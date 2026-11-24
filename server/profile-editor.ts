@@ -271,13 +271,19 @@ export async function deleteMine(key: unknown, deps: EditorDeps): Promise<Editor
   if (!row || row.key !== key) return fail(404, "That profile isn't here anymore.");
   if (row.group !== "yours") return fail(409, `${row.name} isn't one of yours, so it is deleted from its file, not here.`);
   const def = await resolveDefaultProfile(deps.cwd, rows, dir);
-  if (def.row.key === row.key) return fail(409, "Make another profile the default first.");
-  const sharedWith = rows.filter((r) => r !== row && r.libraryId && r.libraryId === row.libraryId);
+  // A default nobody chose (the built-in profile the accounts give, or the row that takes its place) is no file's:
+  // deleting that row brings the built-in one back as the default.
+  if (def.row.key === row.key && !def.fromAccounts) return fail(409, "Make another profile the default first.");
+  // Its library half is its own only under the id it links: a link to a built-in id reaches the profile of yours
+  // taking that built-in's place (the seeded starter, say), which is another profile, never deleted here.
+  const ownHalf = row.library && row.library.id === row.libraryId ? row.library : undefined;
+  const sharedWith = ownHalf ? rows.filter((r) => r !== row && (r.libraryId === ownHalf.id || r.library?.id === ownHalf.id)) : [];
   let library: SubagentProfilesFile | undefined;
-  if (row.library && !sharedWith.length) {
+  if (ownHalf && !sharedWith.length) {
     const lib = libraryNow(dir);
     if (!lib.ok) return fail(409, lib.error);
-    library = { ...lib.value, profiles: lib.value.profiles.filter((l) => l.id !== row.library!.id) };
+    // A built-in one's helpers are in no file: nothing to write.
+    if (lib.value.profiles.some((l) => l.id === ownHalf.id)) library = { ...lib.value, profiles: lib.value.profiles.filter((l) => l.id !== ownHalf.id) };
   }
   const id = row.session?.id;
   // The session half goes first, so a failure never leaves a profile pointing at deleted helpers.

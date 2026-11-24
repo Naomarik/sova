@@ -3,6 +3,7 @@
 // once, worker waits left out, as the Time tab counts them), and your time at the chat itself. Nothing is
 // written: every answer is read from the stores the helper already keeps.
 import type { ChatUsage, ChatUsageAsk, ChatUsageRow, UsageSpend } from "../../shared/usage/wire";
+import type { MovedUsage } from "./moved";
 import { mergeSpans, type TimeDeps } from "./time";
 
 const zero = (): UsageSpend => ({ usd: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 }, usdBy: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 }, calls: 0, unpricedTokens: 0 });
@@ -17,15 +18,16 @@ function add(into: UsageSpend, s: UsageSpend): void {
   }
 }
 
-export function chatUsage(d: TimeDeps, q: ChatUsageAsk): ChatUsage {
+export function chatUsage(d: TimeDeps & { moved?: MovedUsage }, q: ChatUsageAsk): ChatUsage {
   d.attention.refresh();
   d.perf.refresh();
   d.tools.refresh();
+  d.moved?.refresh();
   // The conversations: the chat, the members the server knows, then any the ledger names under them.
   const members = new Map<string, Omit<ChatUsageRow, "spend" | "models" | "agent">>();
   members.set(q.sid, { sid: q.sid, role: "chat" });
   for (const m of q.members) if (m.sid !== q.sid && !members.has(m.sid)) members.set(m.sid, { ...m });
-  for (const sid of d.queries.family(q.sid)) {
+  for (const sid of [...d.queries.family(q.sid), ...(d.moved?.family(q.sid) ?? [])]) {
     if (members.has(sid)) continue;
     const o = d.queries.ownerOf(sid);
     members.set(sid, { sid, role: "worker", ...(o?.worker ? { name: o.worker } : {}), ...(o?.parent ? { parent: o.parent } : {}) });
@@ -47,12 +49,28 @@ export function chatUsage(d: TimeDeps, q: ChatUsageAsk): ChatUsage {
   for (const l of d.attention.gone()) if (l.sid === q.sid) you += l.sec;
   const rows: ChatUsageRow[] = [];
   const total = { spend: zero(), agent: 0, you: Math.round(you), waiting: Math.max(0, Math.round(q.waiting)) };
+  const devices = d.moved?.devicesOf(q.sid) ?? [];
+  const away = { devices, spend: zero(), agent: 0, you: 0 };
   for (const m of members.values()) {
     const { spend, models } = d.queries.ownSpend(m.sid);
     const agent = agentOf(m.sid);
-    rows.push({ ...m, spend, models, agent, ...(m.sid === q.sid ? { you: total.you, waiting: total.waiting } : {}) });
+    // Spent on another device, come with the chat: in this chat's figures, marked, and never in this device's totals.
+    const there = d.moved?.forSession(m.sid) ?? null;
+    const yours = m.sid === q.sid ? d.moved?.you(m.sid) : null;
+    const youThere = yours ? yours.runs.reduce((n, [s, e]) => n + Math.max(0, e - s), 0) + yours.sec : 0;
+    const elsewhere = there || youThere ? { devices, spend: there?.spend ?? zero(), models: there?.models ?? [], agent: there?.agent ?? 0, ...(m.sid === q.sid ? { you: Math.round(youThere) } : {}) } : null;
+    rows.push({ ...m, spend, models, agent, ...(m.sid === q.sid ? { you: total.you, waiting: total.waiting } : {}), ...(elsewhere ? { elsewhere } : {}) });
     add(total.spend, spend);
     total.agent += agent;
+    if (elsewhere) {
+      add(away.spend, elsewhere.spend);
+      add(total.spend, elsewhere.spend);
+      away.agent += elsewhere.agent;
+      total.agent += elsewhere.agent;
+      away.you += Math.round(youThere);
+      total.you += Math.round(youThere);
+    }
   }
+  if (away.spend.calls || away.agent || away.you) return { chat: q.sid, device: { id: d.device(), self: true }, asOf: d.now(), rows, total: { ...total, elsewhere: away } };
   return { chat: q.sid, device: { id: d.device(), self: true }, asOf: d.now(), rows, total };
 }

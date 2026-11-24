@@ -11,6 +11,8 @@ import { AttentionStore } from "./attention";
 import { LabelStore } from "./labels";
 import { TimeQueries } from "./time";
 import { chatUsage } from "./chat";
+import { cutChatUsage, type CutDeps } from "./cut";
+import { MovedUsage, movedRoot } from "./moved";
 import { ToolRunStore } from "./tool-store";
 
 /**
@@ -102,8 +104,21 @@ export function createService(opts: ServiceOptions): Service {
     ...(opts.now ? { now: opts.now } : {}),
     log,
   });
-  const labels = new LabelStore(opts.labelsDir ?? path.join(stateRoot, "message-labels"));
+  const labelsDir = opts.labelsDir ?? path.join(stateRoot, "message-labels");
+  const labels = new LabelStore(labelsDir);
   const timeDeps = { attention, perf, tools, labels, ledger, queries, device: opts.device ?? (() => null), now: opts.now ?? Date.now };
+  // What came with a moved chat from another device: apart from every total here (server/usage-helper/moved.ts).
+  const movedDir = movedRoot(opts.usageRoot);
+  const moved = new MovedUsage({ root: movedDir, stateDir: path.join(stateRoot, "usage-ledger-moved"), prices, device: opts.device ?? (() => null), ...(opts.now ? { now: opts.now } : {}), log });
+  const cutDeps: CutDeps = {
+    ledger,
+    perf,
+    tools,
+    attention,
+    moved,
+    device: opts.device ?? (() => null),
+    roots: { usage: opts.usageRoot, perf: opts.perfRoot ?? path.join(path.dirname(opts.usageRoot), "perf", "v1"), tools: opts.toolRoot ?? path.join(path.dirname(opts.usageRoot), "tools", "v1"), moved: movedDir, labels: labelsDir },
+  };
   const time = new TimeQueries(timeDeps);
   const noFold = projectFold({ projects: [], overseer: [] });
 
@@ -136,7 +151,12 @@ export function createService(opts: ServiceOptions): Service {
       case "chat": {
         if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");
         const members = Array.isArray(req.members) ? (req.members as unknown[]).filter((m): m is ChatUsageAsk["members"][number] => !!m && typeof (m as { sid?: unknown }).sid === "string" && typeof (m as { role?: unknown }).role === "string") : [];
-        return chatUsage(timeDeps, { sid: req.sid, members: members.slice(0, 2000), waiting: typeof req.waiting === "number" && Number.isFinite(req.waiting) ? req.waiting : 0 });
+        return chatUsage({ ...timeDeps, moved }, { sid: req.sid, members: members.slice(0, 2000), waiting: typeof req.waiting === "number" && Number.isFinite(req.waiting) ? req.waiting : 0 });
+      }
+      // One chat's records as written, for Transport to carry (server/usage-helper/cut.ts).
+      case "chat-cut": {
+        if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");
+        return cutChatUsage(cutDeps, { sid: req.sid, members: strings(req.members).slice(0, 2000) });
       }
       case "session-timings": {
         if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");

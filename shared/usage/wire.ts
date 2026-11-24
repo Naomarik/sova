@@ -300,13 +300,17 @@ export interface ChatUsageRow {
   /** The chat itself only: your seconds at it, and the seconds it waited for you. */
   you?: number;
   waiting?: number;
+  /** What it spent on other devices, come with the chat by Transport: counted in this chat's figures only,
+      never in this device's own totals. Absent when nothing came. */
+  elsewhere?: { devices: string[]; spend: UsageSpend; models: UsageModelRow[]; agent: number; you?: number };
 }
 export interface ChatUsage {
   chat: string;
   device: UsageDevice;
   asOf: number;
   rows: ChatUsageRow[];
-  total: { spend: UsageSpend; agent: number; you: number; waiting: number };
+  /** Everything, this device's and what came from elsewhere; `elsewhere` is the part spent on other devices. */
+  total: { spend: UsageSpend; agent: number; you: number; waiting: number; elsewhere?: { devices: string[]; spend: UsageSpend; agent: number; you: number } };
 }
 /** What the server asks the usage helper (op `chat`): the conversations it knows and the chat's waiting. */
 export interface ChatUsageAsk {

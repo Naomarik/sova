@@ -10,7 +10,7 @@ export interface ProjectRef {
   remotes: string[];
   /** Its first commit. */
   firstCommit?: string;
-  /** The folder the chat's tree goes to there. */
+  /** The project's folder there: the repository when the chat's tree is a linked worktree, else the folder it goes to. */
   path: string;
 }
 

@@ -200,7 +200,7 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
     devices.push({ id: p.id, label: p.label, state: d.state });
     if (peerId && d.state === "ready") {
       try {
-        const res = await need().peerFetch(p.id, "/api/peer/transport/needs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...projectRef(c, t, folderFor(c, t)), ...(c.model ? { chatModel: c.model } : {}) }), signal: AbortSignal.timeout(10_000) });
+        const res = await need().peerFetch(p.id, "/api/peer/transport/needs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...projectRef(c, t, await projectFolderFor(c, t)), ...(c.model ? { chatModel: c.model } : {}) }), signal: AbortSignal.timeout(10_000) });
         if (res.ok) {
           const a = (await res.json()) as { needs?: string[]; models?: string[]; modelDefault?: string | null };
           needs = a.needs ?? [];
@@ -251,6 +251,19 @@ function folderFor(c: ChatFacts, t: Trees): string {
   const own = t.own?.path ?? c.cwd;
   const rel = relative(homedir(), own);
   return rel.startsWith("..") ? own : `~/${rel}`;
+}
+
+/** The folder that device prepares for the project, as its preparation picks it (destination.ts
+    repoPathOf): the repository beside the chat's folder when its tree is a linked worktree, else that folder. */
+async function projectFolderFor(c: ChatFacts, t: Trees): Promise<string> {
+  const folder = folderFor(c, t);
+  const own = t.own;
+  if (!own || own.main || t.trees.some((x) => x.main)) return folder;
+  const common = (await git(own.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim();
+  if (!common) return folder;
+  const repo = dirname(common);
+  const rel = relative(homedir(), repo);
+  return rel.startsWith("..") ? repo : `~/${rel}`;
 }
 
 function projectRef(c: ChatFacts, t: Trees, folder: string): { remotes: string[]; firstCommit?: string; path: string } {

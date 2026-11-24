@@ -589,19 +589,26 @@ async function finishStage(stage: string, wo: string, meta: WorktreeMeta): Promi
  * the destination's repository (null when the package carries the main checkout, which makes it).
  * `targets` maps each worktree's name to its folder there. Nothing is in place until `publishTrees`.
  */
+async function fetchBundle(repo: string, codeDir: string, tid: string): Promise<void> {
+  const v = await git(repo, ["bundle", "verify", "-q", join(codeDir, "commits.bundle")]);
+  if (v.code !== 0) throw new SnapshotError("needs-base", "The repository there lacks commits the package builds on.");
+  await ok(repo, ["fetch", "-q", join(codeDir, "commits.bundle"), `+${refOf(tid, "*")}:${refOf(tid, "*")}`], "Fetching the bundle");
+}
+
 export async function rebuildWorktrees(o: { repo: string | null; codeDir: string; tid: string; metas: readonly WorktreeMeta[]; targets: Record<string, string> }): Promise<StagedTree[]> {
   const out: StagedTree[] = [];
   const main = o.metas.find((m) => m.main);
   let repo = o.repo;
   if (main) {
     const target = o.targets[main.name]!;
-    if (await holds(target, main)) out.push(await heldTree(o.codeDir, main, target));
+    const held = await holds(target, main);
+    if (held) out.push(await heldTree(o.codeDir, main, target));
     else out.push(await rebuildOne(null, o.codeDir, o.tid, main, target));
     repo = out[0]!.stage;
+    // A main checkout already there has none of the package's commits yet: its linked worktrees build on them.
+    if (held) await fetchBundle(repo, o.codeDir, o.tid);
   } else if (repo) {
-    const v = await git(repo, ["bundle", "verify", "-q", join(o.codeDir, "commits.bundle")]);
-    if (v.code !== 0) throw new SnapshotError("needs-base", "The repository there lacks commits the package builds on.");
-    await ok(repo, ["fetch", "-q", join(o.codeDir, "commits.bundle"), `+${refOf(o.tid, "*")}:${refOf(o.tid, "*")}`], "Fetching the bundle");
+    await fetchBundle(repo, o.codeDir, o.tid);
   }
   for (const m of o.metas) {
     if (m.main) continue;

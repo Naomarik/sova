@@ -128,3 +128,29 @@ test("a folder there that already holds the code gets the arrived loose files, r
   assert.deepEqual(again.kept, [{ tree: "src4", path: ".env", beside: ".env.from-Lab-A" }]);
   assert.ok(!existsSync(join(target, ".env.from-Lab-A-2")));
 });
+
+test("a main checkout already there (held) gets the package's commits, so the chat's linked worktree builds on them", async () => {
+  const src = join(root, "src5");
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "master");
+  writeFileSync(join(src, "a"), "a\n");
+  g(src, "add", "a");
+  g(src, "commit", "-qm", "a");
+  const target = join(root, "there5", "src5");
+  g(root, "clone", "-q", src, target);
+  const wt = join(root, "wt5");
+  g(src, "worktree", "add", "-q", wt, "-b", "feat5");
+  writeFileSync(join(wt, "a"), "a\nnew commit\n");
+  g(wt, "commit", "-qam", "on feat5");
+  writeFileSync(join(wt, "a"), "a\nnew commit\nstaged\n");
+  g(wt, "add", "a");
+  writeFileSync(join(wt, "u.txt"), "u\n");
+  const trees = [await surveyWorktree("src5", src), await surveyWorktree("wt5", wt)];
+  const p = await packWorktrees({ tid: "t5", trees, haves: await havesOf(target), outDir: join(root, "pack5") });
+  const there = join(root, "there5", "wt5");
+  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack5"), tid: "t5", metas: p.metas, targets: { src5: target, wt5: there } });
+  await publishTrees(staged, "t5");
+  assert.equal(facts(there), facts(wt));
+  assert.equal(readFileSync(join(there, "u.txt"), "utf8"), "u\n");
+  assert.equal(g(target, "for-each-ref", "refs/sova"), "", "the transport's refs are dropped");
+});

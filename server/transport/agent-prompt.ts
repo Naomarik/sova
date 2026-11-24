@@ -43,7 +43,9 @@ export function agentBrief(f: BriefFacts): string {
     "## The project",
     `- Folder on this device: ${f.folder}`,
     `- Its repository: ${f.remotes.length ? f.remotes.join(", ") : "no remote recorded"}`,
-    `- Look for an existing copy only under this device's home (${f.home ?? "$HOME"}), never elsewhere on the disk. With no remote that works and no copy there, ask the user (align) where to get it and end your turn.`,
+    f.remotes.length
+      ? `- If you look for an existing copy, look only under this device's home (${f.home ?? "$HOME"}), never elsewhere on the disk. If neither the remote nor such a copy works, ask the user (align) where to get it and end your turn.`
+      : `- No remote is recorded: don't search the disk for a copy. Ask the user (align) where to get it and end your turn.`,
     ...(f.branches.length ? [`- Arriving with the chat: ${f.branches.join(", ")}`] : []),
     ...(f.checkout
       ? [

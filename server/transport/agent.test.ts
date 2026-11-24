@@ -108,7 +108,9 @@ test("nothing missing: ready at once, no agent; something missing: one agent, br
   assert.match(s.prompt, /doesn't exist: clone git@github\.com:acme\/motors\.git there/);
   assert.match(s.prompt, /What you ask first/);
   assert.match(s.prompt, /check out feat\/fix and leave the tracked files exactly as they are/);
-  assert.ok(s.prompt.includes(`Look for an existing copy only under this device's home (${root})`));
+  assert.ok(s.prompt.includes(`look only under this device's home (${root}), never elsewhere on the disk`));
+  const bare = agentBrief({ title: "t", device: "d", source: "s", folder: "/f", remotes: [], branches: [], checks: [], home: root });
+  assert.ok(bare.includes("No remote is recorded: don't search the disk for a copy. Ask the user (align)"));
   assert.equal(s.model, onboardModels()[0], "the strongest model this device offers");
   assert.equal(s.cwd, join(root, "webapps"), "it starts in the nearest folder that exists");
   assert.deepEqual(d.linked, [["agent-1", "sova-laptop", "chat-1"]]);

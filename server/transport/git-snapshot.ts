@@ -374,7 +374,13 @@ async function holds(target: string, meta: WorktreeMeta): Promise<boolean> {
 
 async function extractTar(tarFile: string, into: string): Promise<void> {
   // Checked before a byte is written: nothing in it may land outside the stage (a tracked link counts).
-  const why = checkMembers(await listTar(tarFile), (rel) => {
+  let members;
+  try {
+    members = await listTar(tarFile);
+  } catch (err) {
+    throw new SnapshotError("refused", `The package was refused: it holds ${err instanceof Error ? err.message : String(err)}. Nothing was written.`);
+  }
+  const why = checkMembers(members, (rel) => {
     try {
       return lstatSync(join(into, rel)).isSymbolicLink();
     } catch {

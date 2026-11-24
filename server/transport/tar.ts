@@ -148,12 +148,18 @@ export async function listTar(file: string): Promise<TarMemberHead[]> {
     const size = num(h, 124, 12);
     const flag = String.fromCharCode(h[156] || 0x30);
     const body = at + BLOCK;
+    // What this writer never makes is refused, so the check and the extractor can't read a name two ways:
+    // a ustar prefix (an extractor joins it to the name), another format's magic, a pax key but path and linkpath.
+    if (h.toString("latin1", 257, 263) !== "ustar\0") throw new Error("a header that isn't ustar");
+    if (h[345] !== 0) throw new Error("a header with a name prefix");
     if (flag === "x") {
       pax = {};
       const text = buf.subarray(body, body + size).toString("utf8");
       for (const rec of text.split("\n")) {
+        if (!rec) continue;
         const m = /^\d+ ([^=]+)=(.*)$/.exec(rec);
-        if (m) pax[m[1]!] = m[2]!;
+        if (!m || (m[1] !== "path" && m[1] !== "linkpath")) throw new Error(`a pax record ${JSON.stringify(rec.slice(0, 40))}`);
+        pax[m[1]!] = m[2]!;
       }
     } else {
       out.push({ name: pax.path ?? field(h, 0, 100), flag, mode: num(h, 100, 8), size, linkname: pax.linkpath ?? field(h, 157, 100) });

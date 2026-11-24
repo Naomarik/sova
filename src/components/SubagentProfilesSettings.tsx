@@ -520,6 +520,20 @@ export function ProfileModelsPart(props: {
 
   return (
     <div class="subagent-editor profile-models">
+      <Show when={p()}>
+        <nav class="profile-jump" aria-label="Jump to">
+          <span class="profile-jump-label" aria-hidden="true">
+            Jump to
+          </span>
+          <For each={JUMPS}>
+            {([k, label]) => (
+              <button type="button" class="button button-sm button-ghost" onClick={() => jumpTo(k)}>
+                {label}
+              </button>
+            )}
+          </For>
+        </nav>
+      </Show>
       <Show when={props.onSetAll && !props.readOnly}>
         <div class="profile-set-all">
           <Select
@@ -573,18 +587,6 @@ export function ProfileModelsPart(props: {
         >
           {(x) => (
             <>
-              <nav class="profile-jump" aria-label="Jump to">
-                <span class="profile-jump-label" aria-hidden="true">
-                  Jump to
-                </span>
-                <For each={JUMPS}>
-                  {([k, label]) => (
-                    <button type="button" class="button button-sm button-ghost" onClick={() => jumpTo(k)}>
-                      {label}
-                    </button>
-                  )}
-                </For>
-              </nav>
               <h4 class="profile-model-group-head" id={`${props.idPrefix}-group-delegate`} tabIndex={-1}>
                 Delegate
               </h4>

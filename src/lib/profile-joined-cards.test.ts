@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { JoinedProfile, ListedProfile, ProfilesListing } from "../../shared/profiles";
-import { editedLabel, inEffectCard, isDefaultCard, isLibraryCard, joinedPickerProfiles, pickerCards, pickerSections } from "./profiles";
+import { editedLabel, hasDefaultProfile, inEffectCard, isDefaultCard, isLibraryCard, joinedPickerProfiles, pickerCards, pickerSections } from "./profiles";
 
 const listed = (id: string, extra: Partial<ListedProfile> = {}): ListedProfile => ({
   id,
@@ -95,4 +95,10 @@ test("the checked card is the profile in effect: the pick, else what the chat fo
 
 test("the board's head names the profile it started from", () => {
   assert.equal(editedLabel("Claude"), "Claude, edited");
+});
+
+test("no default profile at all (no account, none of yours) reads as none, never as Off", () => {
+  assert.equal(hasDefaultProfile(listing([], { defaultProfile: { key: "sova:default", id: "off", name: "", chosen: false } })), false);
+  assert.equal(hasDefaultProfile(listing([CLAUDE], { defaultProfile: { key: "user:claude", id: "claude", name: "Claude", chosen: true } })), true);
+  assert.equal(hasDefaultProfile(listing([])), false);
 });

@@ -5,6 +5,7 @@ import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
 import { ApiError, fetchProfiles, getChatMode, getMode, pickProfile, postMode, putDefaultProfile, saveCurrentProfile, switchProfile, updateProfileFromChat } from "../lib/api";
 import type { ChatProfileState } from "../../shared/protocol";
 import { OFF_KEY, type JoinedProfile, type ProfilesListing } from "../../shared/profiles";
+import { hasDefaultProfile } from "../lib/profiles";
 import { defaultLabel, defaultTitle, editedName, menuPick, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, updateOffered, namesProfile } from "../lib/profile-switch";
 import {
   APPROVE_HOOKS_LABEL,
@@ -287,7 +288,7 @@ export function ModeMenu(props: { control: ModeControl }) {
   /** Is this chat's profile this computer's default? The server's answer (the listing read on open,
       or the save's reply), never a switch's: unknown either side is not "already the default". */
   const alreadyDefault = () => {
-    const d = listing()?.defaultProfile;
+    const d = hasDefaultProfile(listing() ?? undefined) ? listing()!.defaultProfile : undefined;
     const c = chatProfile()?.current;
     return !!d && !!c && (c.key ? d.key === c.key : d.id === c.id);
   };

@@ -338,6 +338,13 @@ export function inEffectCard(
   return byLib ?? all.find((p) => p.joined?.id === chat.id) ?? null;
 }
 
+/** Whether this computer has a default profile: none with no profile at all (no account connected and
+    none of yours chosen), which the listing sends as the old Off's key with no name. */
+export const hasDefaultProfile = (l: ProfilesListing | undefined): boolean => {
+  const d = l?.defaultProfile;
+  return !!d && d.id !== "off" && d.key !== "sova:default" && d.name.trim() !== "";
+};
+
 /** Whether a card is this computer's default (§chat.profiles/default): its Default chip. */
 export const isDefaultCard = (l: ProfilesListing | undefined, p: Pick<ListedProfile, "key">): boolean => {
   const d = l?.defaultProfile;

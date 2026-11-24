@@ -15,7 +15,7 @@ import {
 } from "../../shared/profiles";
 import type { ChatProfileInfo, ChatProfileState } from "../../shared/protocol";
 import { approveProfile, fetchProfiles, pickProfile, saveCurrentProfile, type ProfilePickRef } from "../lib/api";
-import { cardUnusable, changeRows, defaultTools, editedLabel, flippedRemove, guardrailNote, inEffectCard, isDefaultCard, isLibraryCard, joinedPickerProfiles, pickRef, pickerCards, profileSettingsLine, type JoinedCard, type MySettingsState } from "../lib/profiles";
+import { cardUnusable, changeRows, hasDefaultProfile, defaultTools, editedLabel, flippedRemove, guardrailNote, inEffectCard, isDefaultCard, isLibraryCard, joinedPickerProfiles, pickRef, pickerCards, profileSettingsLine, type JoinedCard, type MySettingsState } from "../lib/profiles";
 import { newChatLine } from "../lib/profile-switch";
 import { openProfiles } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
@@ -188,7 +188,7 @@ export function ProfilePicker(props: {
 
   return (
     <section class="profile-picker" aria-label="Profile">
-      <Show when={listing()?.defaultProfile}>
+      <Show when={hasDefaultProfile(listing())}>
         <p class="profile-muted">{newChatLine(listing()?.project.state === "ok" ? listing()?.project.name : null)}</p>
       </Show>
       <ProfileGrid

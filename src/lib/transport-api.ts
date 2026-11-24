@@ -11,6 +11,8 @@ export interface TransportPreview {
   staysHere: { left: string[]; leftBytes: number; jobs: string[]; copies?: string[] };
   busyHelpers: { id: string; name: string; role?: string }[];
   needs: string[];
+  /** That device lacks the project and can't clone it: it comes from this device, about this many bytes of history. */
+  projectFromHere?: { bytes: number };
   agentModels: string[];
   agentModelDefault: string | null;
 }

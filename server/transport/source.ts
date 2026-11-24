@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { agentRoot, stateRoot } from "../state-root";
 import { chatHome, hasHome } from "../chat-homes/root";
-import { git, type LooseFile, LARGE_FILE, looseBytes, surveyWorktree, type WorktreeSurvey } from "./git-snapshot";
+import { git, historyBytes, type LooseFile, LARGE_FILE, looseBytes, surveyWorktree, type WorktreeSurvey } from "./git-snapshot";
 import { bringHelpersToRest, knob, previewExtras } from "./hooks";
 import { movedOf } from "./moved";
 import { buildPackage } from "./package";
@@ -135,6 +135,8 @@ export interface Preview {
   staysHere: { left: string[]; leftBytes: number; jobs: string[]; copies: string[] };
   busyHelpers: { id: string; name: string; role?: string }[];
   needs: string[];
+  /** That device lacks the project and can't clone it: it comes from this device, about this many bytes of history. */
+  projectFromHere?: { bytes: number };
   agentModels: string[];
   agentModelDefault: string | null;
 }
@@ -189,6 +191,7 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
   const peers = need().peers();
   const devices: Preview["devices"] = [];
   let needs: string[] = [];
+  let fromHere = false;
   let agentModels: string[] = [];
   let agentModelDefault: string | null = null;
   for (const p of peers) {
@@ -202,8 +205,9 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
       try {
         const res = await need().peerFetch(p.id, "/api/peer/transport/needs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...projectRef(c, t, await projectFolderFor(c, t)), ...(c.model ? { chatModel: c.model } : {}) }), signal: AbortSignal.timeout(10_000) });
         if (res.ok) {
-          const a = (await res.json()) as { needs?: string[]; models?: string[]; modelDefault?: string | null };
+          const a = (await res.json()) as { needs?: string[]; models?: string[]; modelDefault?: string | null; fromSource?: boolean };
           needs = a.needs ?? [];
+          fromHere = a.fromSource === true;
           agentModels = a.models ?? [];
           agentModelDefault = a.modelDefault ?? null;
         }
@@ -241,6 +245,7 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
     },
     busyHelpers: extras.busyHelpers,
     needs,
+    ...(fromHere ? { projectFromHere: { bytes: await historyBytes(t.trees).catch(() => 0) } } : {}),
     agentModels,
     agentModelDefault,
   };
@@ -452,7 +457,8 @@ async function step(r: TransportRecord): Promise<"wait" | "again" | "stop"> {
     return "again";
   }
   if (s.steps.prepared && !r.steps.packed) {
-    updateTransport(r.tid, { haves: s.haves ?? [] });
+    // That device lacks the project and can't clone it: the package carries the repository too.
+    updateTransport(r.tid, { haves: s.haves ?? [], ext: { fromSource: s.fromSource === true } });
     await pack(readTransport(r.tid)!);
     return "again";
   }
@@ -536,6 +542,7 @@ async function pack(r: TransportRecord): Promise<void> {
     interrupted: cur.interrupted ?? [],
     wrapped: cur.wrapped ?? [],
     usage,
+    ...(((cur.ext ?? {}) as { fromSource?: boolean }).fromSource ? { repo: true } : {}),
   });
   await knob(r.tid, "packed");
   stepDone(r.tid, "packed", {

@@ -27,6 +27,8 @@ export interface PrepareRequest {
   model?: string;
   /** The source chat's own model ("provider/model"): the agent's last fallback for its default. */
   chatModel?: string;
+  /** The project comes in the package (§app.transport/package): nothing is cloned, and the setup checks run once it arrived. */
+  fromSource?: boolean;
 }
 
 export type Prepared = { ready: true } | { needsYou: string };
@@ -43,6 +45,8 @@ export interface NeedsAnswer {
   models: string[];
   modelDefault: string | null;
   preparedAt: number | null;
+  /** This device lacks the repository and can't clone it: the project comes from the source. */
+  fromSource?: boolean;
 }
 
 export interface PreviewExtras {

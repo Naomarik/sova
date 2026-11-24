@@ -12,6 +12,7 @@ import { homesRoot } from "../chat-homes/root";
 import { ClaudeLogins, credentialsMtime, loginEnabled, readAccountsState } from "../../pi-config/extensions/claude-code/accounts.ts";
 import { agentRoot, stateRoot } from "../state-root";
 import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, isTransportAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef } from "./agent";
+import { remoteReachable } from "./git-snapshot";
 import { bringHelpersToRest, busyOf, type HelperView, interruptWaiting, type SafeDeps } from "./safe-transport";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -112,6 +113,7 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
       const r = await realGit(args, cwd);
       return { code: r.code, stdout: r.stdout };
     },
+    reachable: (url) => remoteReachable(url),
     doctor: async (folder): Promise<AgentCheck[] | null> => {
       const { projectEngine } = await import("../project-services/routes");
       const r = await projectEngine().run("doctor", { project: folder }, { kind: "system", id: "transport-agent" });

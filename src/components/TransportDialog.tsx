@@ -267,7 +267,7 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
                         </Show>
                       </ul>
                     </section>
-                    <TransportDeviceNeeds needs={v().needs} models={v().agentModels} model={model()} onModel={setModel} />
+                    <TransportDeviceNeeds needs={v().needs} fromHere={v().projectFromHere ? sizeText(v().projectFromHere!.bytes) : null} models={v().agentModels} model={model()} onModel={setModel} />
                     <Show when={mode() === "move"}>
                       <TransportBusyHelpers helpers={v().busyHelpers} choice={busy()} onChoice={setBusy} />
                     </Show>

@@ -8,7 +8,7 @@ import { lstat, open, readdir, readlink, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createZstdCompress } from "node:zlib";
-import { type LooseFile, packWorktrees, type WorktreeMeta, type WorktreeSurvey } from "./git-snapshot";
+import { type LooseFile, packWorktrees, type RepoMeta, type WorktreeMeta, type WorktreeSurvey } from "./git-snapshot";
 import { listTar, type TarEntry, writeTar } from "./tar";
 
 export const PACKAGE_VERSION = 1;
@@ -30,6 +30,8 @@ export interface PackageManifest {
   wrapped: string[];
   /** sha256 of `usage.json`, the chat's usage and time records cut from the source's stores (a Move's). */
   usage?: string;
+  /** The repository travels too (the destination lacks it and can't clone it): its default branch and the branches it carries. */
+  repo?: RepoMeta;
 }
 
 /** Files of a home never sent: the unsent draft stays with the person who typed it, and an earlier
@@ -138,12 +140,19 @@ export async function buildPackage(o: {
   wrapped?: string[];
   /** The chat's usage cut (server/usage-export.ts), carried as `usage.json` beside the home, never in it. */
   usage?: Buffer | null;
+  /** The repository itself travels: its default branch and the worktrees' branches, with their history. */
+  repo?: boolean;
 }): Promise<Packed> {
   const work = join(o.spool, `${o.tid}.work`);
   await rm(work, { recursive: true, force: true });
   const codeDir = join(work, "code");
   let metas: WorktreeMeta[] = [];
-  if (o.trees.length) metas = (await packWorktrees({ tid: o.tid, trees: o.trees, haves: o.haves, outDir: codeDir, ...(o.skip ? { skip: o.skip } : {}) })).metas;
+  let repo: RepoMeta | undefined;
+  if (o.trees.length) {
+    const packed = await packWorktrees({ tid: o.tid, trees: o.trees, haves: o.repo ? [] : o.haves, outDir: codeDir, ...(o.skip ? { skip: o.skip } : {}), ...(o.repo ? { repo: true } : {}) });
+    metas = packed.metas;
+    repo = packed.repo;
+  }
   const home = await homeEntries(o.source.home);
   const manifest: PackageManifest = {
     v: PACKAGE_VERSION,
@@ -157,6 +166,7 @@ export async function buildPackage(o: {
     interrupted: o.interrupted ?? [],
     wrapped: o.wrapped ?? [],
     ...(o.usage ? { usage: createHash("sha256").update(o.usage).digest("hex") } : {}),
+    ...(repo ? { repo } : {}),
   };
   const entries: TarEntry[] = [
     { name: "package.json", type: "data", mode: 0o600, mtime: 0, data: Buffer.from(`${JSON.stringify(manifest)}\n`) },

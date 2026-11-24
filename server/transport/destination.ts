@@ -17,7 +17,7 @@ import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
 import { registerArrivedHome } from "../chat-homes/place";
 import { homeArrived } from "../chat-homes/records";
 import { compressedChats, dropCompressed, sidecarOf } from "../archive-compress/store";
-import { dropStages, git, havesOf, type KeptFile, publishTrees, rebuildWorktrees, SnapshotError, type StagedTree } from "./git-snapshot";
+import { dropStages, git, havesOf, type KeptFile, lacksRepo, projectComesFrom, publishTrees, rebuildWorktrees, SnapshotError, type StagedTree, withoutCredentials } from "./git-snapshot";
 import { afterArrival, knob, prepareDestination, type PrepareRequest } from "./hooks";
 import { verifyHome, type PackageManifest } from "./package";
 import { findConversation, relocateHome, sessionIdOfName } from "./relocate";
@@ -174,6 +174,20 @@ function repoPathOf(r: TransportRecord): string | null {
 
 const controllers = new Map<string, AbortController>();
 
+const fromSourceOf = (r: TransportRecord): boolean => !!((r.ext ?? {}) as { fromSource?: boolean }).fromSource;
+
+/**
+ * Whether the project comes from the source (§app.transport/package): this device lacks the repository at its folder
+ * and can't get it by clone: no remote is recorded, none answers from here, or a Retry finds it still missing after
+ * preparation stopped (the Transport agent's clone failed). Once decided it stays so while the folder lacks it.
+ */
+async function projectFromSource(r: TransportRecord, folder: string): Promise<boolean> {
+  const o = offerOf(r);
+  if (!o.trees.length || !lacksRepo(folder)) return false;
+  if (fromSourceOf(r) || r.attempt > 1) return true;
+  return (await projectComesFrom(folder, o.project.remotes)) === "from-source";
+}
+
 /** Get ready (the Transport agent, when one is wired), then tell the source the commits here. */
 async function prepare(tid: string): Promise<void> {
   const r = readTransport(tid);
@@ -183,6 +197,9 @@ async function prepare(tid: string): Promise<void> {
   try {
     const o = offerOf(r);
     const repo = repoPathOf(r);
+    const fromSource = await projectFromSource(r, repo ?? r.folder);
+    if (fromSource !== fromSourceOf(r)) updateTransport(tid, { ext: { fromSource } });
+    if (fromSource) log(`${tid}: the project comes from ${r.peerLabel}: it isn't here and can't be cloned here`);
     const req: PrepareRequest = {
       tid,
       sourcePeer: r.peer,
@@ -193,10 +210,12 @@ async function prepare(tid: string): Promise<void> {
       worktrees: ownFirst(o.trees).map((t) => ({ name: t.name, branch: t.branch, ...(typeof t.head === "string" && /^[0-9a-f]{40,64}$/.test(t.head) ? { head: t.head } : {}) })),
       ...(o.model ? { model: o.model } : {}),
       ...(o.chatModel ? { chatModel: o.chatModel } : {}),
+      ...(fromSource ? { fromSource: true } : {}),
     };
     const p = await prepareDestination(req, { signal: ctl.signal });
     if ("needsYou" in p) return void needsYou(tid, p.needsYou);
-    if (repo) {
+    // From the source: nothing is made here before arrival, which builds the repository from the package.
+    if (repo && !fromSource) {
       if (existsSync(repo)) {
         if (!existsSync(join(repo, ".git"))) return void needsYou(tid, `${repo} exists here and isn't a git repository`);
         const roots = (await git(repo, ["rev-list", "--max-parents=0", "HEAD"])).stdout.split("\n").filter(Boolean);
@@ -207,7 +226,7 @@ async function prepare(tid: string): Promise<void> {
       }
     }
     await knob(tid, "prepared");
-    stepDone(tid, "prepared", { haves: repo ? await havesOf(repo) : [], state: "preparing" });
+    stepDone(tid, "prepared", { haves: repo && !fromSource ? await havesOf(repo) : [], state: "preparing" });
   } catch (err) {
     needsYou(tid, err instanceof Error ? err.message : String(err));
   } finally {
@@ -280,8 +299,13 @@ async function arrive(tid: string): Promise<void> {
     const targets: Record<string, string> = {};
     for (const t of o.trees) targets[t.name] = t.rel ? resolve(dirname(cur.folder), t.rel) : cur.folder;
     const repo = repoPathOf(cur);
+    // The project from the source: the repository is made from the package (its recorded remote as origin, no credentials).
+    const fromSource = fromSourceOf(cur);
+    const origin = fromSource && o.project.remotes[0] ? withoutCredentials(o.project.remotes[0]) : null;
+    const makeRepo = fromSource && repo && lacksRepo(repo) ? { path: repo, origin, defaultBranch: manifest.repo?.defaultBranch ?? null } : undefined;
     let staged: StagedTree[] = [];
-    if (manifest.worktrees.length) staged = await rebuildWorktrees({ repo, codeDir: join(at, "code"), tid, metas: manifest.worktrees.map((w) => w.meta), targets, ours: ((cur.ext ?? {}) as { absentAtOffer?: string[] }).absentAtOffer ?? [] });
+    if (manifest.worktrees.length)
+      staged = await rebuildWorktrees({ repo, codeDir: join(at, "code"), tid, metas: manifest.worktrees.map((w) => w.meta), targets, ours: ((cur.ext ?? {}) as { absentAtOffer?: string[] }).absentAtOffer ?? [], ...(makeRepo ? { makeRepo } : {}), origin });
     await knob(tid, "staged");
     stepDone(tid, "staged", { ext: { staged, targets } });
     // The home, pointed at this device: a Copy's conversations get ids of their own.
@@ -430,6 +454,7 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
       worktrees: ownFirst(o.trees).map((t) => ({ name: t.name, branch: t.branch, ...(typeof t.head === "string" && /^[0-9a-f]{40,64}$/.test(t.head) ? { head: t.head } : {}) })),
       ...(o.model ? { model: o.model } : {}),
       ...(o.chatModel ? { chatModel: o.chatModel } : {}),
+      ...(fromSourceOf(r) ? { fromSource: true } : {}),
       privateFiles: done.privateFiles ?? [],
       sourceValues: done.sourceValues ?? [],
     });
@@ -450,7 +475,7 @@ export async function statusOf(from: { id: string }, tid: string): Promise<Statu
     tid,
     state: r.state,
     steps: r.steps as Record<string, string>,
-    ...(r.steps.prepared ? { haves: r.haves ?? [] } : {}),
+    ...(r.steps.prepared ? { haves: r.haves ?? [], ...(fromSourceOf(r) ? { fromSource: true } : {}) } : {}),
     ...(r.needsYou ? { needsYou: r.needsYou.reason } : {}),
     ...(r.received !== undefined ? { received: r.received } : {}),
     ...(r.arrivedId ? { arrivedId: r.arrivedId } : {}),

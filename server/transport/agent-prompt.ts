@@ -22,6 +22,8 @@ export interface BriefFacts {
   arrived?: boolean;
   /** The user's home on this device: the only place to look for an existing copy. */
   home?: string;
+  /** The project came with the chat from the source (this device couldn't clone it): it is in place, never cloned. */
+  arrivedProject?: boolean;
 }
 
 const line = (c: AgentCheck) => `- ${c.id}: ${c.detail}`;
@@ -43,18 +45,20 @@ export function agentBrief(f: BriefFacts): string {
     "## The project",
     `- Folder on this device: ${f.folder}`,
     `- Its repository: ${f.remotes.length ? f.remotes.join(", ") : "no remote recorded"}`,
-    f.remotes.length
+    f.arrivedProject
+      ? `- The project came with the chat from ${f.source}, its branches and history included, and is in place in its folder. Never clone it, fetch it or look for another copy.`
+      : f.remotes.length
       ? `- If you look for an existing copy, look only under this device's home (${f.home ?? "$HOME"}), never elsewhere on the disk. If neither the remote nor such a copy works, ask the user (align) where to get it and end your turn.`
       : `- No remote is recorded: don't search the disk for a copy. Ask the user (align) where to get it and end your turn.`,
     ...(f.branches.length ? [`- Arriving with the chat: ${f.branches.join(", ")}`] : []),
-    ...(f.checkout
+    ...(f.checkout && !f.arrivedProject
       ? [
           `- When you clone it, check out ${f.checkout.branch}${f.checkout.head ? ` at commit ${f.checkout.head}` : ""} and leave the tracked files exactly as they are: Sova puts the chat's own unfinished changes on top when it arrives. If that branch${f.checkout.head ? " or commit" : ""} isn't on the remote, leave the clone on its default branch and say so.`,
         ]
       : []),
     "",
     "## What you may do alone",
-    "Anything inside the project's folder and the user's own account on this device: clone the repository into its folder, install its dependencies and tool versions in the user's home (a version manager, a toolchain, the package manager its lockfile names), run its setup, build and tests, and edit its private files (the local config git ignores) so they hold this computer's values: database strings, paths and ports. With a `.sova/project.json`, use `project_verbs` (doctor, create, up, test) rather than starting anything by hand.",
+    `Anything inside the project's folder and the user's own account on this device: ${f.arrivedProject ? "" : "clone the repository into its folder, "}install its dependencies and tool versions in the user's home (a version manager, a toolchain, the package manager its lockfile names), run its setup, build and tests, and edit its private files (the local config git ignores) so they hold this computer's values: database strings, paths and ports. With a \`.sova/project.json\`, use \`project_verbs\` (doctor, create, up, test) rather than starting anything by hand.`,
     "",
     "## What you ask first",
     "Ask the user (with align, then end your turn) before anything that needs admin rights (sudo, system packages, system services), anything that costs money, a secret you can't find (never invent one; ask where it is), and deleting or overwriting anything already on this device (a folder at that path, a database, a config file). Never commit, push, merge or switch branches.",
@@ -72,6 +76,16 @@ export function agentBrief(f: BriefFacts): string {
 /** A follow-up after a turn ended with checks still failing (Retry). Pure. */
 export function agentStillMissing(checks: AgentCheck[]): string {
   return ["Sova ran the setup checks again. Still missing:", ...checks.filter((c) => !c.ok).map(line), "", "Fix these, or ask the user what you need, then end your turn."].join("\n");
+}
+
+/** After arrival of a project that came with the chat: what its setup checks found missing here, for the agent it already has. Pure. */
+export function agentArrivedMissing(source: string, checks: AgentCheck[]): string {
+  return [
+    `The project has arrived from ${source} with the chat, its branches and history included: never clone or fetch it. Sova ran its setup checks here. Missing:`,
+    ...checks.filter((c) => !c.ok).map(line),
+    "",
+    "Fix these, or ask the user what you need, then end your turn.",
+  ].join("\n");
 }
 
 /** After arrival: private files holding the other computer's values (§app.transport/agent "What it fixes"). Pure. */

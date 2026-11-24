@@ -7,7 +7,7 @@
 // hash, and moved into place only at publish. Dependencies and build output are never carried.
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, existsSync, lstatSync } from "node:fs";
+import { createReadStream, existsSync, lstatSync, readdirSync } from "node:fs";
 import { copyFile, cp, lstat, mkdir, readdir, readFile, readlink, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { checkMembers, entryOf, listTar, type TarEntry, writeTar } from "./tar";
@@ -53,6 +53,56 @@ export function git(cwd: string, args: readonly string[], o: { env?: Record<stri
     );
     if (o.input !== undefined) child.stdin?.end(o.input);
   });
+}
+
+// ---- whether the destination gets the project from its remote, or from the source ---------------------
+
+/** A remote URL without the credentials it may carry (`https://user:token@host/…` → `https://host/…`; an ssh URL
+    keeps its user, never a password). Pure. */
+export const withoutCredentials = (u: string): string =>
+  u.trim().replace(/^([a-z][a-z0-9+.-]*:\/\/)([^@/]*)@/i, (_m, scheme: string, who: string) => (/^ssh/i.test(scheme) && who && !who.includes(":") ? `${scheme}${who}@` : scheme));
+
+/** How long `remoteReachable` waits for a remote: inside the source's 10 s wait for the needs answer. */
+export const REACH_MS = 6_000;
+
+/**
+ * Whether this device can read `url` now, without asking anyone: `git ls-remote` with no prompt (no terminal,
+ * askpass or credential window; ssh in batch mode), stopped after `ms`. Only plain transports: a URL that runs a
+ * command (`ext::`, `fd::`) or reads as an option is never tried; a local folder is. The URL is never logged.
+ */
+export function remoteReachable(url: string, ms = REACH_MS): Promise<boolean> {
+  const u = url.trim();
+  if (!u || u.startsWith("-") || /^[a-z0-9+.-]+::/i.test(u)) return Promise.resolve(false);
+  const env: NodeJS.ProcessEnv = {
+    ...gitEnv({}),
+    GIT_ASKPASS: "true",
+    SSH_ASKPASS: "true",
+    SSH_ASKPASS_REQUIRE: "never",
+    GCM_INTERACTIVE: "never",
+    GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=5",
+  };
+  return new Promise((done) => {
+    execFile("git", ["-c", "protocol.ext.allow=never", "-c", "credential.interactive=never", "ls-remote", u, "HEAD"], { cwd: "/", env, timeout: ms, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (err) => done(!err));
+  });
+}
+
+/** Whether `folder` lacks a repository: it isn't there, or is an empty folder. */
+export function lacksRepo(folder: string): boolean {
+  try {
+    if (!lstatSync(folder).isDirectory()) return false;
+  } catch {
+    return true;
+  }
+  return readdirSync(folder).length === 0;
+}
+
+/** Where the project comes from for a folder there: it is `there`, its remote can `clone` it, or it comes `from-source`
+    (no remote recorded, or none reachable from there). */
+export async function projectComesFrom(folder: string, remotes: readonly string[], reachable: (url: string) => Promise<boolean> = remoteReachable): Promise<"there" | "clone" | "from-source"> {
+  if (!lacksRepo(folder)) return "there";
+  // Each recorded remote at once, so the answer comes within one wait.
+  const any = await Promise.all(remotes.slice(0, 4).map((r) => reachable(withoutCredentials(r)).catch(() => false)));
+  return any.some(Boolean) ? "clone" : "from-source";
 }
 
 export class SnapshotError extends Error {
@@ -253,6 +303,51 @@ export interface WorktreeMeta {
 /** The transport's refs in the bundle: one per worktree. */
 const refOf = (tid: string, name: string) => `refs/sova/transport/${tid}/${name}`;
 
+/** The repository itself, when it travels from this device (the destination lacks it and can't clone it):
+    its default branch and the branches the bundle carries as `refs/heads/*`. */
+export interface RepoMeta {
+  defaultBranch: string | null;
+  branches: string[];
+}
+
+const headAt = async (cwd: string, name: string) => (await git(cwd, ["rev-parse", "-q", "--verify", `refs/heads/${name}^{commit}`])).stdout.trim();
+
+/** The repository's default branch here: the one its remote's HEAD names, else the one its main checkout is on;
+    null when neither is a local branch. */
+async function defaultBranchOf(cwd: string, common: string): Promise<string | null> {
+  const remoteHead = (await git(cwd, ["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"])).stdout.trim().replace(/^origin\//, "");
+  if (remoteHead && (await headAt(cwd, remoteHead))) return remoteHead;
+  const mainHead = (await git(cwd, ["--git-dir", common, "symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim();
+  return mainHead && (await headAt(cwd, mainHead)) ? mainHead : null;
+}
+
+/** The local branches the repository travels with: its default branch and each worktree's branch (never a remote's refs). */
+async function repoBranches(trees: readonly WorktreeSurvey[]): Promise<{ meta: RepoMeta; heads: [string, string][] }> {
+  const at = trees[0]!.path;
+  const { common } = await gitDirs(at);
+  const defaultBranch = await defaultBranchOf(at, common);
+  const heads: [string, string][] = [];
+  for (const b of [defaultBranch, ...trees.map((t) => t.branch)]) {
+    if (!b || heads.some(([n]) => n === b)) continue;
+    const sha = await headAt(at, b);
+    if (sha) heads.push([b, sha]);
+  }
+  return { meta: { defaultBranch, branches: heads.map(([n]) => n) }, heads };
+}
+
+/** About how many bytes the repository's history adds to the package when it travels (the dialog's size). */
+export async function historyBytes(trees: readonly WorktreeSurvey[]): Promise<number> {
+  if (!trees.length) return 0;
+  const at = trees[0]!.path;
+  const { heads } = await repoBranches(trees);
+  const tips = [...new Set([...heads.map(([, s]) => s), ...trees.map((t) => t.head).filter(Boolean)])];
+  const r = await git(at, ["rev-list", "--objects", "--disk-usage", ...tips]);
+  if (r.code === 0 && /^\d+\s*$/.test(r.stdout)) return Number(r.stdout.trim());
+  const c = await git(at, ["count-objects", "-v"]);
+  const kib = (k: string) => Number(new RegExp(`^${k}: (\\d+)$`, "m").exec(c.stdout)?.[1] ?? 0);
+  return (kib("size") + kib("size-pack")) * 1024;
+}
+
 async function statusSha(path: string): Promise<string> {
   return sha256(await ok(path, ["status", "--porcelain=v1", "-z", "-uno"], "Reading the status"));
 }
@@ -269,7 +364,10 @@ export async function packWorktrees(o: {
   haves: readonly string[];
   outDir: string;
   skip?: (name: string, f: LooseFile) => boolean;
-}): Promise<{ metas: WorktreeMeta[]; bundle: string }> {
+  /** The destination lacks the repository and can't clone it: the bundle carries its default branch and the
+      worktrees' branches too, with their whole history. */
+  repo?: boolean;
+}): Promise<{ metas: WorktreeMeta[]; bundle: string; repo?: RepoMeta }> {
   if (!o.trees.length) throw new SnapshotError("refused", "No worktree to pack.");
   for (const t of o.trees) if (t.refusal) throw new SnapshotError("refused", t.refusal);
   await mkdir(o.outDir, { recursive: true, mode: 0o700 });
@@ -339,6 +437,13 @@ export async function packWorktrees(o: {
       await writeFile(join(wo, "worktree.json"), `${JSON.stringify(meta)}\n`, { mode: 0o600 });
       metas.push(meta);
     }
+    let repo: RepoMeta | undefined;
+    if (o.repo) {
+      const r = await repoBranches(o.trees);
+      for (const [name, sha] of r.heads) await ok(o.outDir, ["--git-dir", scratchGit, "update-ref", `refs/heads/${name}`, sha], "Recording the branches");
+      refs.push(...r.heads.map(([name]) => `refs/heads/${name}`));
+      repo = r.meta;
+    }
     const bundle = join(o.outDir, "commits.bundle");
     const nots: string[] = [];
     for (const h of o.haves) if (/^[0-9a-f]{40,64}$/.test(h) && (await git(o.outDir, ["--git-dir", scratchGit, "cat-file", "-e", `${h}^{commit}`])).code === 0) nots.push(`^${h}`);
@@ -346,7 +451,7 @@ export async function packWorktrees(o: {
     // Everything already there (a repack of a state the destination took): a whole bundle instead.
     if (made.code !== 0 && nots.length) made = await git(o.outDir, ["--git-dir", scratchGit, "bundle", "create", "-q", bundle, ...refs]);
     if (made.code !== 0) throw new SnapshotError("git", `Making the bundle: ${made.stderr.trim()}`);
-    return { metas, bundle };
+    return { metas, bundle, ...(repo ? { repo } : {}) };
   } finally {
     await rm(scratchGit, { recursive: true, force: true });
   }
@@ -624,8 +729,48 @@ async function branchThere(repo: string, branch: string | null, head: string, ti
   return { branch: `${branch}-${tid}`, renamedFrom: branch };
 }
 
+/** A repository started in `stage` from the package's bundle: the transport's refs and, when the bundle carries the
+    repository (§app.transport/package), its branches; `origin` the recorded remote, without credentials. Nothing is
+    fetched from anywhere else. */
+async function seedRepo(stage: string, codeDir: string, tid: string, origin: string | null): Promise<void> {
+  const bundle = join(codeDir, "commits.bundle");
+  await ok(stage, ["init", "-q"], "Making the repository");
+  const heads = (await git(stage, ["bundle", "list-heads", bundle])).stdout.split("\n").some((l) => / refs\/heads\/./.test(l));
+  await ok(stage, ["fetch", "-q", "--update-head-ok", bundle, `+${refOf(tid, "*")}:${refOf(tid, "*")}`, ...(heads ? ["+refs/heads/*:refs/heads/*"] : [])], "Fetching the bundle");
+  if (origin) await ok(stage, ["remote", "add", "origin", withoutCredentials(origin)], "Recording the remote");
+}
+
+/** What a repository made there from the package needs: its folder, its remote (none: no origin) and default branch. */
+export interface RepoFromPackage {
+  path: string;
+  origin: string | null;
+  defaultBranch: string | null;
+}
+
+/**
+ * The repository a chat's linked worktrees build on, made from the package when the destination lacked it
+ * (§app.transport/arrival): built whole beside its folder, on its default branch (detached at it when a worktree
+ * of the chat takes that branch), checked clean, published by one rename before the worktrees move in.
+ */
+async function makeRepo(o: RepoFromPackage, codeDir: string, tid: string, metas: readonly WorktreeMeta[]): Promise<StagedTree> {
+  const target = o.path;
+  if (!lacksRepo(target)) throw new SnapshotError("taken", `${target} already exists there; pick another folder.`);
+  const stage = stageOf(target, tid);
+  await rm(stage, { recursive: true, force: true });
+  await mkdir(stage, { recursive: true });
+  await seedRepo(stage, codeDir, tid, o.origin);
+  const taken = new Set(metas.map((m) => m.branch).filter(Boolean));
+  const def = o.defaultBranch && (await headAt(stage, o.defaultBranch)) ? o.defaultBranch : null;
+  if (def && !taken.has(def)) await ok(stage, ["symbolic-ref", "HEAD", `refs/heads/${def}`], "Checking out the default branch");
+  else await ok(stage, ["update-ref", "--no-deref", "HEAD", def ? await headAt(stage, def) : metas[0]!.head], "Checking out the default branch");
+  await ok(stage, ["read-tree", "--reset", "-u", "HEAD"], "Writing the checkout");
+  await git(stage, ["update-index", "-q", "--refresh"]);
+  if ((await git(stage, ["status", "--porcelain=v1", "-uall"])).stdout.trim()) throw new SnapshotError("mismatch", `${target} didn't build cleanly from the package.`);
+  return { name: basename(target), target, stage, branch: def && !taken.has(def) ? def : null, main: true };
+}
+
 /** Rebuild one worktree at its stage (idempotent: a stage left by a dead attempt is replaced). */
-async function rebuildOne(repo: string | null, codeDir: string, tid: string, meta: WorktreeMeta, target: string): Promise<StagedTree> {
+async function rebuildOne(repo: string | null, codeDir: string, tid: string, meta: WorktreeMeta, target: string, origin: string | null = null): Promise<StagedTree> {
   const stage = stageOf(target, tid);
   const wo = join(codeDir, meta.name);
   if (meta.main) {
@@ -633,8 +778,7 @@ async function rebuildOne(repo: string | null, codeDir: string, tid: string, met
     if (existsSync(target) && (await readdir(target)).length) throw new SnapshotError("taken", `${target} already exists there; pick another folder.`);
     await rm(stage, { recursive: true, force: true });
     await mkdir(stage, { recursive: true });
-    await ok(stage, ["init", "-q"], "Making the repository");
-    await ok(stage, ["fetch", "-q", join(codeDir, "commits.bundle"), `+${refOf(tid, "*")}:${refOf(tid, "*")}`], "Fetching the bundle");
+    await seedRepo(stage, codeDir, tid, origin);
     if (meta.branch) {
       await ok(stage, ["update-ref", `refs/heads/${meta.branch}`, meta.head], "Making the branch");
       await ok(stage, ["symbolic-ref", "HEAD", `refs/heads/${meta.branch}`], "Checking out the branch");
@@ -692,7 +836,18 @@ async function fetchBundle(repo: string, codeDir: string, tid: string): Promise<
   await ok(repo, ["fetch", "-q", join(codeDir, "commits.bundle"), `+${refOf(tid, "*")}:${refOf(tid, "*")}`], "Fetching the bundle");
 }
 
-export async function rebuildWorktrees(o: { repo: string | null; codeDir: string; tid: string; metas: readonly WorktreeMeta[]; targets: Record<string, string>; ours?: readonly string[] }): Promise<StagedTree[]> {
+export async function rebuildWorktrees(o: {
+  repo: string | null;
+  codeDir: string;
+  tid: string;
+  metas: readonly WorktreeMeta[];
+  targets: Record<string, string>;
+  ours?: readonly string[];
+  /** The repository the linked worktrees build on isn't there: it is made from the package (`repo` names its folder). */
+  makeRepo?: RepoFromPackage;
+  /** The recorded remote, for a repository the package builds whole (no credentials; null: none). */
+  origin?: string | null;
+}): Promise<StagedTree[]> {
   const ours = (target: string) => (o.ours ?? []).includes(target);
   const out: StagedTree[] = [];
   const main = o.metas.find((m) => m.main);
@@ -710,7 +865,7 @@ export async function rebuildWorktrees(o: { repo: string | null; codeDir: string
       if (held) out.push(await heldTree(o.codeDir, main, target));
       else if (base && "head" in base) out.push(await baseTree(target, o.codeDir, main, target, base, ours(target)));
       else if (there) throw new SnapshotError("taken", base && "why" in base ? base.why : `${target} already exists there and holds another repository; pick another folder.`);
-      else out.push(await rebuildOne(null, o.codeDir, o.tid, main, target));
+      else out.push(await rebuildOne(null, o.codeDir, o.tid, main, target, o.origin ?? null));
     } catch (err) {
       // The folder is someone's repository: what this attempt fetched into it goes with the failure.
       if (fetched) {
@@ -720,6 +875,10 @@ export async function rebuildWorktrees(o: { repo: string | null; codeDir: string
       throw err;
     }
     repo = out[0]!.stage;
+  } else if (o.makeRepo) {
+    const made = await makeRepo(o.makeRepo, o.codeDir, o.tid, o.metas);
+    out.push(made);
+    repo = made.stage;
   } else if (repo) {
     await fetchBundle(repo, o.codeDir, o.tid);
   }

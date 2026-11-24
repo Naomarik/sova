@@ -57,6 +57,9 @@ export interface StatusBody {
   steps: Record<string, string>;
   /** Commits the repository there has (the package leaves them out). */
   haves?: string[];
+  /** The project comes from this device: the repository isn't there and can't be cloned there, so the package
+      carries its branches and history (§app.transport/package). */
+  fromSource?: boolean;
   needsYou?: string;
   received?: number;
   /** The chat's id there once published. */

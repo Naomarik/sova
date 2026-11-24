@@ -8,7 +8,7 @@ import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { onboardModels } from "../projects/onboard";
 import { agentBrief } from "./agent-prompt";
-import { type AgentDeps, agentModel, agentModelChoices, strongestRunnable, cleanRemote, needsAnswer, agentOf, afterArrival, isTransportAgent, prepareDestination, preflight, type PrepareRequest, projectNeeds, sameRemote, sourceValuesIn } from "./agent";
+import { type AgentDeps, preparedAt as preparedAtOf, agentModel, agentModelChoices, strongestRunnable, cleanRemote, needsAnswer, agentOf, afterArrival, isTransportAgent, prepareDestination, preflight, type PrepareRequest, projectNeeds, sameRemote, sourceValuesIn } from "./agent";
 
 after(dropScratchAgentDir);
 
@@ -209,4 +209,34 @@ test("the default model is the strongest this device can run: Claude Code only w
   assert.equal(d.started[0]!.model, "zai/glm-5.3");
   const nd = device(root, { claudeUsable: () => false, offeredModels: async () => ["zai/glm-5.3", opus!] });
   assert.equal((await needsAnswer({ remotes: [REMOTE], path: join(root, "webapps", "x") }, nd.deps)).modelDefault, null);
+});
+
+test("the project from the source: no agent before arrival, an earlier one's link ends; after arrival one starts only for what the checks find missing, never told to clone", async () => {
+  const root = scratchRoot("transport-agent-");
+  const d = device(root, { which: async (ps) => new Set(ps.filter((p) => p !== "pnpm")) });
+  const req = { ...request(root), fromSource: true };
+  assert.deepEqual(await prepareDestination(req, d.deps), { ready: true });
+  assert.equal(d.started.length, 0, "nothing to clone, nothing to check before it arrives");
+  // It arrived: the project's folder is there now, without pnpm on this device.
+  mkdirSync(req.project.path, { recursive: true });
+  writeFileSync(join(req.project.path, "package.json"), "{}");
+  writeFileSync(join(req.project.path, "pnpm-lock.yaml"), "");
+  await afterArrival({ ...req, privateFiles: [], sourceValues: [] }, d.deps);
+  const brief = d.started[0]!.prompt;
+  assert.match(brief, /pnpm isn't installed for this user/);
+  assert.match(brief, /Never clone it, fetch it or look for another copy/);
+  assert.doesNotMatch(brief, /clone the repository|When you clone it|doesn't exist: clone/);
+  // A device where everything is there: recorded as prepared, no agent.
+  mkdirSync(join(req.project.path, "node_modules"));
+  const fine = device(root, { stateRoot: () => join(root, "state2") });
+  await afterArrival({ ...req, tid: "tr_2", privateFiles: [], sourceValues: [] }, fine.deps);
+  assert.equal(fine.started.length, 0);
+  assert.ok(preparedAtOf(fine.deps.stateRoot(), req.project));
+  // A Retry after the agent's clone failed: it stops reporting over its link, and none starts.
+  const tried = device(join(root, "t3"));
+  const r3 = request(join(root, "t3"), "tr_3");
+  assert.ok("needsYou" in (await prepareDestination(r3, tried.deps)));
+  assert.deepEqual(await prepareDestination({ ...r3, fromSource: true }, tried.deps), { ready: true });
+  assert.deepEqual(tried.ended, ["lk_1"]);
+  assert.equal(tried.started.length, 1);
 });

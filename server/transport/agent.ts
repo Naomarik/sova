@@ -18,7 +18,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { ONBOARD_THINKING, onboardModels } from "../projects/onboard";
-import { agentBrief, agentPrivateValues, agentStillMissing } from "./agent-prompt";
+import { agentArrivedMissing, agentBrief, agentPrivateValues, agentStillMissing } from "./agent-prompt";
+import { lacksRepo, projectComesFrom, withoutCredentials } from "./git-snapshot";
 
 /** One setup check's finding, as doctor gives them (§app.project-services/doctor). */
 export interface AgentCheck {
@@ -52,6 +53,9 @@ export interface PrepareRequest {
   model?: string;
   /** The source chat's own model: the last fallback when this device runs neither Claude Code nor gpt-6-astra. */
   chatModel?: string;
+  /** The project comes in the package (this device lacks it and can't clone it): no agent clones it, and the setup
+      checks run once it has arrived. */
+  fromSource?: boolean;
 }
 export type PrepareResult = { ready: true } | { needsYou: string };
 
@@ -82,6 +86,8 @@ export interface AgentDeps {
   /** Which of `programs` are reachable for the user's commands here (never blocking the server). */
   which(programs: string[]): Promise<Set<string>>;
   git(args: string[], cwd: string): Promise<{ code: number; stdout: string }>;
+  /** Whether this device can read a remote now, asking no one (git-snapshot's remoteReachable); absent: taken as reachable. */
+  reachable?(url: string): Promise<boolean>;
   /** The project's own doctor checks (§app.project-services/doctor) on a folder with a definition; null: none ran. */
   doctor(folder: string): Promise<AgentCheck[] | null>;
   /** The model refs this device's picker lists; null: unreadable. */
@@ -153,8 +159,7 @@ export const sameRemote = (a: string, b: string): boolean => normRemote(a) === n
 
 /** A remote URL without the credentials it may carry (`https://user:token@host/…` → `https://host/…`;
     an ssh URL keeps its user, never a password): what a brief, a check or an answer may say. Pure. */
-export const cleanRemote = (u: string): string =>
-  u.trim().replace(/^([a-z][a-z0-9+.-]*:\/\/)([^@/]*)@/i, (_m, scheme: string, who: string) => (/^ssh/i.test(scheme) && who && !who.includes(":") ? `${scheme}${who}@` : scheme));
+export const cleanRemote = withoutCredentials;
 
 /** The project as the destination acts on it: its remotes without credentials, and `~/…` (the source's
     spelling of "under that device's home") as a folder under `home`. Pure. */
@@ -364,15 +369,19 @@ export interface NeedsAnswer {
   modelDefault: string | null;
   /** When this device last proved the project ready there. */
   preparedAt: number | null;
+  /** This device lacks the repository and can't clone it (no remote recorded, or none reachable from here): the
+      project comes from the source, so its folder isn't listed as needed. */
+  fromSource?: boolean;
 }
 
 /** The answer to the source's "what does this device still need for this project" (the peer route). */
 export async function needsAnswer(asked: ProjectRef, deps: AgentDeps, opts: { chatModel?: string } = {}): Promise<NeedsAnswer> {
   const project = cleanProject(asked, deps.home());
   const refused = folderRefusal(project.path, deps.home(), deps.protectedRoots());
-  const [checks, offered] = await Promise.all([refused ? [{ id: "folder", ok: false, detail: refused }] : preflight(project, deps), deps.offeredModels()]);
+  const fromSource = !refused && lacksRepo(resolve(project.path)) && (await projectComesFrom(resolve(project.path), project.remotes, deps.reachable ?? (async () => true))) === "from-source";
+  const [checks, offered] = await Promise.all([refused ? [{ id: "folder", ok: false, detail: refused }] : fromSource ? [] : preflight(project, deps), deps.offeredModels()]);
   const m = agentModelChoices(offered, { claudeUsable: deps.claudeUsable(), ...(opts.chatModel ? { chatModel: opts.chatModel } : {}) });
-  return { needs: missingOf(checks).map((c) => c.detail), models: m.models, modelDefault: m.default, preparedAt: preparedAt(deps.stateRoot(), project) };
+  return { needs: missingOf(checks).map((c) => c.detail), models: m.models, modelDefault: m.default, preparedAt: preparedAt(deps.stateRoot(), project), ...(fromSource ? { fromSource: true } : {}) };
 }
 
 // ---- the prepare -------------------------------------------------------------------------------
@@ -391,6 +400,16 @@ export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps,
   const refused = folderRefusal(req.project.path, deps.home(), deps.protectedRoots());
   if (refused) return { needsYou: refused };
   const root = deps.stateRoot();
+  if (req.fromSource) {
+    // The project comes in the package: nothing here is cloned, and an agent that tried stops reporting over its link.
+    // What remains (tools, dependencies, setup, this computer's values) is checked once it has arrived (afterArrival).
+    const a = agentOf(root, req.tid);
+    if (a && a.state !== "ready") {
+      if (a.linkId) await deps.endLink?.(a.linkId).catch(() => undefined);
+      saveAgent(deps, req.tid, { ...a, state: "ready", checks: [] });
+    }
+    return { ready: true };
+  }
   let checks = await preflight(req.project, deps);
   if (!missingOf(checks).length) {
     markPrepared(root, req.project, req.tid, deps.now());
@@ -443,6 +462,7 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     checks,
     sovaFolders: deps.protectedRoots(),
     arrived,
+    ...(req.fromSource ? { arrivedProject: true } : {}),
     home: deps.home(),
   });
   const made = await deps.startChat({ cwd, title, prompt, model: choice.model, thinking: choice.thinking });
@@ -508,29 +528,37 @@ export function sourceValuesIn(files: readonly string[], values: readonly string
 /**
  * The chat has arrived here: the private files it carried that still hold the source computer's
  * paths go to the transport's agent to point at this one, started now when the device was already
- * prepared and none ran. None hold any: nothing is sent. Returns the files handed over.
+ * prepared and none ran. When the project came with the chat (`fromSource`), its setup checks run
+ * now too, and what they find missing (tools, dependencies, its doctor) goes to the agent with them;
+ * all green, the project is recorded as prepared. Nothing missing: nothing is sent. Returns the files
+ * handed over.
  */
 export async function afterArrival(asked: PrepareRequest & { privateFiles: string[]; sourceValues: string[] }, deps: AgentDeps): Promise<string[]> {
   const req = { ...asked, project: cleanProject(asked.project, deps.home()) };
   if (folderRefusal(req.project.path, deps.home(), deps.protectedRoots())) return [];
   const hits = sourceValuesIn(req.privateFiles, req.sourceValues);
-  if (!hits.length) return [];
+  const setup = req.fromSource ? missingOf(await preflight(req.project, deps)) : [];
+  if (req.fromSource && !setup.length) markPrepared(deps.stateRoot(), req.project, req.tid, deps.now());
+  if (!hits.length && !setup.length) return [];
   const source = req.sourceLabel ?? req.sourcePeer;
   const checksOf = (found: typeof hits): AgentCheck[] =>
     found.map((h) => ({ id: `private:${h.file}`, ok: false, detail: `${h.file} still holds ${source}'s ${h.found.join(", ")}: point it at this computer` }));
   let agent = agentOf(deps.stateRoot(), req.tid);
   if (agent) {
-    await deps.tell(agent.path, agentPrivateValues(source, hits));
-    agent = { ...agent, state: "working", checks: checksOf(hits) };
+    await deps.tell(agent.path, [...(setup.length ? [agentArrivedMissing(source, setup)] : []), ...(hits.length ? [agentPrivateValues(source, hits)] : [])].join("\n\n"));
+    agent = { ...agent, state: "working", checks: [...setup, ...checksOf(hits)] };
     saveAgent(deps, req.tid, agent);
   } else {
-    const started = await startAgent(req, checksOf(hits), deps, true);
+    const started = await startAgent(req, [...setup, ...checksOf(hits)], deps, true);
     if ("needsYou" in started) return [];
     agent = started;
   }
-  // Its turn ends: the files are read again, and what it left is the transport's to show (ready, or Needs you).
+  // Its turn ends: the checks and files are read again, and what it left is the transport's to show (ready, or Needs you).
   await turnEnded(agent.path, deps);
   const left = sourceValuesIn(req.privateFiles, req.sourceValues);
-  saveAgent(deps, req.tid, { ...agent, state: left.length ? "needs-you" : "ready", checks: left.length ? checksOf(left) : hits.map((h) => ({ id: `private:${h.file}`, ok: true, detail: `${h.file} points at this computer` })) });
+  const stillSetup = setup.length ? missingOf(await preflight(req.project, deps)) : [];
+  if (setup.length && !stillSetup.length) markPrepared(deps.stateRoot(), req.project, req.tid, deps.now());
+  const done = !left.length && !stillSetup.length;
+  saveAgent(deps, req.tid, { ...agent, state: done ? "ready" : "needs-you", checks: [...stillSetup, ...(left.length ? checksOf(left) : hits.map((h) => ({ id: `private:${h.file}`, ok: true, detail: `${h.file} points at this computer` })))] });
   return hits.map((h) => h.file);
 }

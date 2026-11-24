@@ -1,17 +1,22 @@
 // A worktree's code arrives exactly (§app.transport/package, §app.transport/arrival): the two states
 // the first design lost without a word (a hidden edit under skip-worktree, an intent-to-add file)
 // plus a staged and an unstaged edit, an untracked file, a scratch folder and a private file, packed
-// and rebuilt into a clone; dependencies stay behind. And a merge in progress is refused.
+// and rebuilt into a clone; dependencies stay behind. And a merge in progress is refused. And a destination
+// that lacks the repository and can't clone it gets the project from the source, branches and history.
+import { dropScratchAgentDir } from "../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
-import { havesOf, packWorktrees, publishTrees, rebuildWorktrees, SnapshotError, surveyWorktree } from "./git-snapshot";
+import { havesOf, packWorktrees, projectComesFrom, publishTrees, rebuildWorktrees, remoteReachable, SnapshotError, surveyWorktree } from "./git-snapshot";
 
 const root = scratchRoot("sova-transport-git-");
-after(() => rmSync(root, { recursive: true, force: true }));
+after(() => {
+  rmSync(root, { recursive: true, force: true });
+  dropScratchAgentDir();
+});
 const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
 const g = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, env, encoding: "utf8" });
 const facts = (cwd: string) => [g(cwd, "rev-parse", "HEAD"), g(cwd, "status", "--porcelain=v1", "-uall"), g(cwd, "ls-files", "-s", "-v"), g(cwd, "diff", "--cached"), g(cwd, "diff")].join("\n--\n");
@@ -275,4 +280,126 @@ test("a detached clone behind the chat's commit gets the chat's branch by the ed
   assert.equal(g(target, "rev-parse", "main").trim(), base, "its own main stays where it was");
   assert.equal(g(target, "branch", "--show-current").trim(), "main-2");
   assert.equal(g(target, "diff"), g(src, "diff"));
+});
+
+/** A project with history on master and a chat's linked worktree on feat, carrying every kind of unfinished change. */
+function projectWithChat(name: string): { src: string; wt: string } {
+  const src = join(root, name);
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "master");
+  writeFileSync(join(src, ".gitignore"), ".env\n");
+  writeFileSync(join(src, "a.txt"), "a\n");
+  g(src, "add", "-A");
+  g(src, "commit", "-qm", "one");
+  writeFileSync(join(src, "a.txt"), "a\nb\n");
+  g(src, "commit", "-qam", "two");
+  const wt = join(root, `${name}-wt`);
+  g(src, "worktree", "add", "-q", wt, "-b", "feat");
+  writeFileSync(join(wt, "f.txt"), "f\n");
+  g(wt, "add", "f.txt");
+  g(wt, "commit", "-qm", "on feat");
+  writeFileSync(join(wt, "staged.txt"), "s\n");
+  g(wt, "add", "staged.txt");
+  writeFileSync(join(wt, "a.txt"), "a\nb\nunstaged\n");
+  writeFileSync(join(wt, "u.txt"), "u\n");
+  writeFileSync(join(wt, ".env"), "K=1\n");
+  return { src, wt };
+}
+
+const blobs = (cwd: string) => g(cwd, "ls-files", "-s") + g(cwd, "hash-object", "a.txt", "f.txt", "staged.txt", "u.txt", ".env");
+
+test("a destination with no repository and no remote gets it from the package: the chat's worktree matches the source, the repository has its branches, no origin", async () => {
+  const { src, wt } = projectWithChat("nr");
+  const repo = join(root, "there-nr", "nr");
+  assert.equal(await projectComesFrom(repo, []), "from-source", "no remote recorded: it comes from the source");
+  const p = await packWorktrees({ tid: "t10", trees: [await surveyWorktree("nr-wt", wt)], haves: [], outDir: join(root, "pack10"), repo: true });
+  assert.deepEqual(p.repo, { defaultBranch: "master", branches: ["master", "feat"] });
+  const there = join(root, "there-nr", "nr-wt");
+  const staged = await rebuildWorktrees({ repo, codeDir: join(root, "pack10"), tid: "t10", metas: p.metas, targets: { "nr-wt": there }, makeRepo: { path: repo, origin: null, defaultBranch: p.repo!.defaultBranch } });
+  assert.ok(!existsSync(repo) && !existsSync(there), "nothing is in place before publish");
+  await publishTrees(staged, "t10");
+  assert.equal(facts(there), facts(wt));
+  assert.equal(blobs(there), blobs(wt));
+  assert.equal(g(repo, "rev-parse", "master"), g(src, "rev-parse", "master"));
+  assert.equal(g(repo, "branch", "--show-current").trim(), "master");
+  assert.equal(g(repo, "status", "--porcelain"), "");
+  assert.equal(g(repo, "remote"), "", "no remote recorded: no origin");
+  assert.equal(g(repo, "for-each-ref", "refs/sova", "refs/remotes"), "", "no transport refs, no remote's refs");
+  assert.equal(g(repo, "log", "--format=%s", "feat"), g(src, "log", "--format=%s", "feat"), "the whole history came");
+});
+
+test("a remote unreachable from there: the project comes from the package too, origin the recorded URL without its credentials; the chat in its main checkout", async () => {
+  const src = join(root, "ur");
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "master");
+  writeFileSync(join(src, "a.txt"), "a\n");
+  g(src, "add", "a.txt");
+  g(src, "commit", "-qm", "one");
+  const url = "https://user:SECRET@127.0.0.1:1/acme/motors.git";
+  g(src, "remote", "add", "origin", url);
+  g(src, "update-ref", "refs/remotes/origin/master", "HEAD");
+  g(src, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master");
+  g(src, "checkout", "-qb", "feat");
+  writeFileSync(join(src, "f.txt"), "f\n");
+  g(src, "add", "f.txt");
+  g(src, "commit", "-qm", "on feat");
+  writeFileSync(join(src, "a.txt"), "a\nunstaged\n");
+  const target = join(root, "there-ur", "ur");
+  assert.equal(await remoteReachable(url), false);
+  assert.equal(await projectComesFrom(target, [url]), "from-source");
+  const p = await packWorktrees({ tid: "t11", trees: [await surveyWorktree("ur", src)], haves: [], outDir: join(root, "pack11"), repo: true });
+  assert.equal(p.repo?.defaultBranch, "master", "its remote's HEAD names the default branch");
+  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack11"), tid: "t11", metas: p.metas, targets: { ur: target }, origin: url });
+  await publishTrees(staged, "t11");
+  assert.equal(facts(target), facts(src));
+  assert.equal(g(target, "remote", "get-url", "origin").trim(), "https://127.0.0.1:1/acme/motors.git");
+  assert.ok(!readFileSync(join(target, ".git", "config"), "utf8").includes("SECRET"), "no credentials there");
+  assert.equal(g(target, "rev-parse", "master"), g(src, "rev-parse", "master"), "the default branch came");
+  assert.equal(g(target, "for-each-ref", "refs/sova", "refs/remotes"), "", "never the remote's refs");
+});
+
+test("the needs answer: the project comes from this device for an unreachable remote, a clone for a reachable one; a Retry after a failed clone takes it from the source", async () => {
+  const { needsAnswer } = await import("./agent");
+  const bare = join(root, "reach.git");
+  g(root, "clone", "-q", "--bare", projectWithChat("rc").src, bare);
+  const folder = join(root, "there-rc", "rc");
+  const deps = {
+    stateRoot: () => join(root, "state-rc"),
+    home: () => root,
+    protectedRoots: () => [join(root, "state-rc")],
+    device: () => "air",
+    which: async (ps: string[]) => new Set(ps),
+    git: async () => ({ code: 1, stdout: "" }),
+    reachable: (u: string) => remoteReachable(u),
+    doctor: async () => null,
+    offeredModels: async () => [],
+    claudeUsable: () => false,
+    startChat: async () => Promise.reject(new Error("no agent here")),
+    link: async () => ({ error: "none" }),
+    tell: async () => undefined,
+    busy: () => false,
+    sleep: async () => undefined,
+    now: () => 0,
+  };
+  const gone = join(root, "gone.git");
+  const far = await needsAnswer({ remotes: [gone], path: folder }, deps);
+  assert.equal(far.fromSource, true);
+  assert.deepEqual(far.needs, [], "its folder isn't listed as needed: it comes with the chat");
+  const near = await needsAnswer({ remotes: [bare], path: folder }, deps);
+  assert.equal(near.fromSource, undefined);
+  assert.deepEqual(near.needs, [`${folder} doesn't exist: clone ${bare} there`]);
+
+  // The destination's preparation: a reachable remote is cloned (by the agent) on the first try; a Retry that finds the
+  // folder still without it (the clone failed) takes the project from the source, making nothing there.
+  const { retry } = await import("./destination");
+  const { createTransport, readTransport } = await import("./store");
+  const offer = { trees: [{ name: "rc-wt", branch: "feat", main: false, rel: "rc-wt" }], repoRel: "rc", project: { remotes: [bare], roots: [] } };
+  createTransport({ tid: "tr_retry01", side: "destination", mode: "copy", chatId: "c", sourceChatId: "c", title: "t", peer: "desk", peerLabel: "Desk", path: "", folder: join(root, "there-rc", "rc-wt"), state: "needs-you", ext: { offer } });
+  retry({ id: "desk" }, "tr_retry01");
+  for (let i = 0; i < 200 && !readTransport("tr_retry01")?.steps.prepared; i++) await new Promise((ok) => setTimeout(ok, 25));
+  const r = readTransport("tr_retry01")!;
+  assert.ok(r.steps.prepared, r.needsYou?.reason ?? "prepared");
+  assert.equal((r.ext as { fromSource?: boolean }).fromSource, true);
+  assert.deepEqual(r.haves, []);
+  assert.ok(!existsSync(folder), "nothing was made there: arrival builds it from the package");
 });

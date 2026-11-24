@@ -9,6 +9,7 @@ import type { Hono } from "hono";
 import { acquireChatHandle, isSessionBusy } from "../chat-handle";
 import { meshSelf } from "../mesh";
 import { homesRoot } from "../chat-homes/root";
+import { ClaudeLogins, credentialsMtime, loginEnabled, readAccountsState } from "../../pi-config/extensions/claude-code/accounts.ts";
 import { agentRoot, stateRoot } from "../state-root";
 import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, isTransportAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef } from "./agent";
 import { bringHelpersToRest, busyOf, type HelperView, interruptWaiting, type SafeDeps } from "./safe-transport";
@@ -83,6 +84,21 @@ export async function whichPrograms(programs: string[], env: NodeJS.ProcessEnv =
   return found;
 }
 
+/** Whether this device has a Claude login Claude Code can run on now: one in this device's order that is enabled,
+    not limited or needing sign-in, not leaving, and signed in (credentials there, or in the macOS keychain). */
+export function claudeLoginUsable(agentDir: string): boolean {
+  try {
+    const logins = new ClaudeLogins({ agentDir });
+    const accounts = logins.accounts();
+    const state = readAccountsState(agentDir);
+    return logins
+      .order(accounts)
+      .some((id) => loginEnabled(accounts, logins.device, id) && logins.readinessOf(id, state).state === "ready" && !logins.leaving(id) && credentialsMtime(logins.dirOf(id)) !== undefined);
+  } catch {
+    return false;
+  }
+}
+
 /** The Transport agent's live deps; `app` makes its chat through the same route a page's New Session does. */
 export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void): AgentDeps {
   return {
@@ -101,6 +117,7 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
       const r = await projectEngine().run("doctor", { project: folder }, { kind: "system", id: "transport-agent" });
       return (r as { checks?: AgentCheck[] }).checks ?? null;
     },
+    claudeUsable: () => claudeLoginUsable(agentRoot()),
     offeredModels: async () => {
       try {
         return (await (await import("../models")).listModels()).map((m) => m.ref);
@@ -178,7 +195,7 @@ export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: str
       console.log(`[transport-agent] after arrival of ${req.tid}: ${err instanceof Error ? err.message : String(err)}`);
       return [] as string[];
     }),
-    needsAnswer: (project: ProjectRef) => needsAnswer(project, agentDeps),
+    needsAnswer: (project: ProjectRef, opts: { chatModel?: string } = {}) => needsAnswer(project, agentDeps, opts),
     bringHelpersToRest: (chatId: string, mode: "safe" | "interrupt", onProgress: (working: number) => void, opts: { signal?: AbortSignal } = {}) => bringHelpersToRest(chatId, mode, onProgress, safeDeps, opts),
     interruptWaiting,
     /** The dialog's Busy helpers: those of the chat working now. */

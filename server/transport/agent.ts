@@ -17,7 +17,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { ONBOARD_THINKING, onboardModel, onboardModels } from "../projects/onboard";
+import { ONBOARD_THINKING, onboardModels } from "../projects/onboard";
 import { agentBrief, agentPrivateValues, agentStillMissing } from "./agent-prompt";
 
 /** One setup check's finding, as doctor gives them (§app.project-services/doctor). */
@@ -47,8 +47,10 @@ export interface PrepareRequest {
   title: string;
   project: ProjectRef;
   worktrees: { name: string; branch: string }[];
-  /** The model the dialog chose; absent: the strongest this device offers. */
+  /** The model the dialog chose; absent: the strongest this device can run. */
   model?: string;
+  /** The source chat's own model: the last fallback when this device runs neither Claude Code nor gpt-6-astra. */
+  chatModel?: string;
 }
 export type PrepareResult = { ready: true } | { needsYou: string };
 
@@ -83,6 +85,8 @@ export interface AgentDeps {
   doctor(folder: string): Promise<AgentCheck[] | null>;
   /** The model refs this device's picker lists; null: unreadable. */
   offeredModels(): Promise<string[] | null>;
+  /** Whether this device has a Claude login Claude Code can run on now. */
+  claudeUsable(): boolean;
   /** Start the agent's chat here, linked-member kind, with its title, model and first prompt. */
   startChat(input: { cwd: string; title: string; prompt: string; model: string; thinking: string }): Promise<{ id: string; path: string }>;
   /** Link the agent's chat to the chat on the source. */
@@ -318,19 +322,36 @@ export const isTransportAgent = (root: string, sessionId: string): boolean => !!
 
 // ---- the model ----------------------------------------------------------------------------------
 
-/** The agent's model: the dialog's pick, else the strongest this device offers, as for setup chats
-    (Claude Code's current Opus, then gpt-6-astra); null when it offers neither. The dialog lists only
-    this device's own choices (needsAnswer's models), so its pick is taken as given. */
-export const agentModel = (asked: string | undefined, offered: readonly string[] | null) => {
-  const c = onboardModel({ model: asked ?? null, thinking: AGENT_THINKING }, offered);
-  return c ? { model: c.model, thinking: AGENT_THINKING } : null;
+/** What the model rule knows of this device besides its picker's list. */
+export interface ModelFacts {
+  /** This device has a Claude login Claude Code can run on now (signed in, enabled, not limited or leaving). */
+  claudeUsable: boolean;
+  /** The source chat's own model, the last fallback. */
+  chatModel?: string;
+}
+
+/** The strongest model this device can actually run, in order (§app.transport/agent "Its model"): Claude Code's
+    current Opus only with a usable Claude login here, else gpt-6-astra, else the source chat's own model; each only
+    when this device's picker lists it. Null: none of them. Pure. */
+export function strongestRunnable(offered: readonly string[] | null, facts: ModelFacts): string | null {
+  const list = offered ?? [];
+  const [opus, astra] = onboardModels();
+  const order = [...(facts.claudeUsable ? [opus!] : []), astra!, ...(facts.chatModel ? [facts.chatModel] : [])];
+  return order.find((m) => list.includes(m)) ?? null;
+}
+
+/** The agent's model: the dialog's pick, else strongestRunnable. The dialog lists only this device's own choices
+    (needsAnswer's models), so its pick is taken as given. Null: no pick and nothing runnable. */
+export const agentModel = (asked: string | undefined, offered: readonly string[] | null, facts: ModelFacts) => {
+  const pick = asked?.trim() || strongestRunnable(offered, facts);
+  return pick ? { model: pick, thinking: AGENT_THINKING } : null;
 };
 
-/** What the dialog's Model select lists for this device: the strongest first, then the rest it offers. Pure. */
-export function agentModelChoices(offered: readonly string[] | null): { models: string[]; default: string | null } {
+/** What the dialog's Model select lists for this device (the default first, then the rest it offers) and its default. Pure. */
+export function agentModelChoices(offered: readonly string[] | null, facts: ModelFacts): { models: string[]; default: string | null } {
   const list = offered ?? [];
-  const strong = onboardModels().filter((m) => list.includes(m));
-  return { models: [...strong, ...list.filter((m) => !strong.includes(m))], default: strong[0] ?? null };
+  const def = strongestRunnable(list, facts);
+  return { models: def ? [def, ...list.filter((m) => m !== def)] : [...list], default: def };
 }
 
 // ---- what the dialog shows -----------------------------------------------------------------------
@@ -345,11 +366,11 @@ export interface NeedsAnswer {
 }
 
 /** The answer to the source's "what does this device still need for this project" (the peer route). */
-export async function needsAnswer(asked: ProjectRef, deps: AgentDeps): Promise<NeedsAnswer> {
+export async function needsAnswer(asked: ProjectRef, deps: AgentDeps, opts: { chatModel?: string } = {}): Promise<NeedsAnswer> {
   const project = cleanProject(asked, deps.home());
   const refused = folderRefusal(project.path, deps.home(), deps.protectedRoots());
   const [checks, offered] = await Promise.all([refused ? [{ id: "folder", ok: false, detail: refused }] : preflight(project, deps), deps.offeredModels()]);
-  const m = agentModelChoices(offered);
+  const m = agentModelChoices(offered, { claudeUsable: deps.claudeUsable(), ...(opts.chatModel ? { chatModel: opts.chatModel } : {}) });
   return { needs: missingOf(checks).map((c) => c.detail), models: m.models, modelDefault: m.default, preparedAt: preparedAt(deps.stateRoot(), project) };
 }
 
@@ -405,7 +426,7 @@ export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps,
 async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: AgentDeps, arrived = false): Promise<AgentState | { needsYou: string }> {
   const root = deps.stateRoot();
   const title = `Transport: ${req.title}`;
-  const choice = agentModel(req.model, await deps.offeredModels());
+  const choice = agentModel(req.model, await deps.offeredModels(), { claudeUsable: deps.claudeUsable(), ...(req.chatModel ? { chatModel: req.chatModel } : {}) });
   if (!choice) return { needsYou: `${deps.device()} offers no model for the Transport agent: pick one in the dialog` };
   // Its folder may not exist yet: it works from the nearest folder that does, made inside the user's account.
   const cwd = existsSync(req.project.path) ? resolve(req.project.path) : dirname(resolve(req.project.path));

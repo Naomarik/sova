@@ -8,7 +8,7 @@ import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { onboardModels } from "../projects/onboard";
 import { agentBrief } from "./agent-prompt";
-import { type AgentDeps, agentModel, cleanRemote, needsAnswer, agentOf, afterArrival, isTransportAgent, prepareDestination, preflight, type PrepareRequest, projectNeeds, sameRemote, sourceValuesIn } from "./agent";
+import { type AgentDeps, agentModel, agentModelChoices, strongestRunnable, cleanRemote, needsAnswer, agentOf, afterArrival, isTransportAgent, prepareDestination, preflight, type PrepareRequest, projectNeeds, sameRemote, sourceValuesIn } from "./agent";
 
 after(dropScratchAgentDir);
 
@@ -42,6 +42,7 @@ function device(root: string, over: Partial<AgentDeps> = {}) {
     git: async (args) => (args[0] === "remote" ? { code: 0, stdout: `origin\t${REMOTE} (fetch)\n` } : { code: 0, stdout: "" }),
     doctor: async () => null,
     offeredModels: async () => ["zai/glm-5.3", ...onboardModels()],
+    claudeUsable: () => true,
     startChat: async (i) => {
       started.push(i);
       busyPolls = 2;
@@ -130,7 +131,7 @@ test("still missing after its turn: Needs you; a Retry hands the same agent what
   await prepareDestination(request(root, "tr_1"), d.deps);
   assert.equal(d.started.length, 1, "the same agent");
   assert.match(d.told[0]!, /Still missing:/);
-  assert.equal(agentModel(undefined, ["zai/glm-5.3"]), null);
+  assert.equal(agentModel(undefined, ["zai/glm-5.3"], { claudeUsable: true }), null);
   const none = device(root, { offeredModels: async () => ["zai/glm-5.3"] });
   const nr = await prepareDestination(request(root, "tr_9"), none.deps);
   assert.ok("needsYou" in nr && /no model for the Transport agent/.test(nr.needsYou));
@@ -185,4 +186,23 @@ test("a folder outside the home or inside Sova's own folders is refused before a
   assert.match((await needsAnswer({ remotes: [REMOTE], path: "/etc/motors" }, d.deps)).needs[0]!, /isn't a folder inside your home/);
   // The source's "~/…" is this device's home.
   assert.deepEqual((await needsAnswer({ remotes: [REMOTE], path: "~/webapps/motors" }, d.deps)).needs, [`${join(root, "webapps", "motors")} doesn't exist: clone ${REMOTE} there`]);
+});
+
+test("the default model is the strongest this device can run: Claude Code only with a usable login, else gpt-6-astra, else the chat's own", async () => {
+  const [opus, astra] = onboardModels();
+  const all = ["zai/glm-5.3", opus!, astra!];
+  assert.equal(strongestRunnable(all, { claudeUsable: true }), opus);
+  // Claude Code is listed on every device (always on), signed in or not: without a login it is never the default.
+  assert.equal(strongestRunnable(all, { claudeUsable: false }), astra);
+  assert.equal(strongestRunnable(["zai/glm-5.3", opus!], { claudeUsable: false, chatModel: "zai/glm-5.3" }), "zai/glm-5.3");
+  assert.equal(strongestRunnable(["zai/glm-5.3", opus!], { claudeUsable: false }), null);
+  assert.deepEqual(agentModelChoices(["zai/glm-5.3", opus!], { claudeUsable: false, chatModel: "zai/glm-5.3" }), { models: ["zai/glm-5.3", opus!], default: "zai/glm-5.3" });
+  assert.equal(agentModel(opus, ["zai/glm-5.3", opus!], { claudeUsable: false })?.model, opus, "the dialog's pick still wins");
+  // The prepare: a device with only a zai key and no Claude login starts the agent on the chat's model.
+  const root = scratchRoot("transport-agent-");
+  const d = device(root, { claudeUsable: () => false, offeredModels: async () => ["zai/glm-5.3", opus!] });
+  await prepareDestination({ ...request(root), chatModel: "zai/glm-5.3" }, d.deps);
+  assert.equal(d.started[0]!.model, "zai/glm-5.3");
+  const nd = device(root, { claudeUsable: () => false, offeredModels: async () => ["zai/glm-5.3", opus!] });
+  assert.equal((await needsAnswer({ remotes: [REMOTE], path: join(root, "webapps", "x") }, nd.deps)).modelDefault, null);
 });

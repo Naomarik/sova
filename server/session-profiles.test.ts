@@ -107,7 +107,8 @@ describe("the model", () => {
       ["DeepSeek", "ollama-cloud/deepseek-v4.1-flash", "high", "deepseek", 0],
       ["OpenAI", "openai-codex/gpt-6.2-sol", "medium", "openai", 0],
     ]);
-    assert.equal(src.builtins[0]!.label, "Off");
+    // Default (an older page's "My settings" card, the one that names no profile) never says "Off" on the wire.
+    assert.equal(src.builtins[0]!.label, "No profile");
     assert.deepEqual(src.problems, [], "a profiles/ folder with no profile files lists none, and is no problem");
     // The merge queue's thread and reviewer, and the release chat: found only by an explicit Sova pick, never by a bare
     // id, never in a list.

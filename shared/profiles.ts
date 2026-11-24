@@ -371,11 +371,12 @@ export function stripSessionHeader(text: string): string {
 
 export const DEFAULT_PROFILE_ID = "default";
 
-/** Default, the picker's Off: no profile, nothing changed. The one profile in code; every
-    other is a file (§chat.profiles/projects). */
+/** Default: no profile, nothing changed (an older build's Off). Listed first among the built-in profiles for an
+    older page, whose picker shows it as its no-profile card, under a neutral label; this build's lists leave it out.
+    The one profile in code besides the built-in ones; every other is a file (§chat.profiles/projects). */
 export const DEFAULT_PROFILE: Profile = {
   id: DEFAULT_PROFILE_ID,
-  label: "Off",
+  label: "No profile",
   icon: "grid",
   description: "The settings you chose for this session.",
   remove: [],

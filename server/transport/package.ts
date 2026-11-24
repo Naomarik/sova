@@ -28,6 +28,8 @@ export interface PackageManifest {
   stopped: { jobs: string[]; copies: string[] };
   interrupted: string[];
   wrapped: string[];
+  /** sha256 of `usage.json`, the chat's usage and time records cut from the source's stores (a Move's). */
+  usage?: string;
 }
 
 /** Files of a home never sent: the unsent draft stays with the person who typed it, and an earlier
@@ -134,6 +136,8 @@ export async function buildPackage(o: {
   stopped?: PackageManifest["stopped"];
   interrupted?: string[];
   wrapped?: string[];
+  /** The chat's usage cut (server/usage-export.ts), carried as `usage.json` beside the home, never in it. */
+  usage?: Buffer | null;
 }): Promise<Packed> {
   const work = join(o.spool, `${o.tid}.work`);
   await rm(work, { recursive: true, force: true });
@@ -152,11 +156,13 @@ export async function buildPackage(o: {
     stopped: o.stopped ?? { jobs: [], copies: [] },
     interrupted: o.interrupted ?? [],
     wrapped: o.wrapped ?? [],
+    ...(o.usage ? { usage: createHash("sha256").update(o.usage).digest("hex") } : {}),
   };
   const entries: TarEntry[] = [
     { name: "package.json", type: "data", mode: 0o600, mtime: 0, data: Buffer.from(`${JSON.stringify(manifest)}\n`) },
     { name: "home", type: "dir", mode: 0o700, mtime: 0 },
     ...home.entries,
+    ...(o.usage ? [{ name: "usage.json", type: "data" as const, mode: 0o600, mtime: 0, data: o.usage }] : []),
     ...(existsSync(codeDir) ? [{ name: "code", type: "dir" as const, mode: 0o700, mtime: 0 }, ...(await dirEntries(codeDir, "code"))] : []),
   ];
   const tarFile = join(o.spool, `${o.tid}.tar`);
@@ -184,6 +190,11 @@ export async function verifyHome(staged: string, manifest: PackageManifest): Pro
       have = "missing";
     }
     if (have !== want) return `${rel} didn't arrive exactly`;
+  }
+  if (manifest.usage) {
+    const at = join(staged, "usage.json");
+    const st = await lstat(at).catch(() => null);
+    if (!st?.isFile() || (await sha256Prefix(at, st.size)) !== manifest.usage) return "its usage records didn't arrive exactly";
   }
   return null;
 }

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { zstdDecompressSync } from "node:zlib";
 import { scratchRoot } from "../test-scratch";
-import { buildPackage, compressFolder } from "./package";
+import { buildPackage, compressFolder, verifyHome } from "./package";
 import { listTar } from "./tar";
 
 const root = scratchRoot("sova-transport-package-");
@@ -56,4 +56,30 @@ test("a home's earlier safety copy and its draft never go into a package", async
   assert.ok(!names.some((n) => n.startsWith("home/transport") || n === "home/chat/draft.json"), names.join(", "));
   // The conversation is cut where its last complete line ends.
   assert.equal(p.homeBytes, '{"type":"session","id":"L"}\n'.length);
+});
+
+test("a Move's usage records travel beside the home, checked by hash on arrival", async () => {
+  const home = join(root, "home-u");
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  writeFileSync(join(home, "sessions", "t_U.jsonl"), '{"type":"session","id":"U"}\n');
+  const usage = Buffer.from('{"v":1,"chat":"U","calls":[],"replies":[],"tools":[]}');
+  const p = await buildPackage({
+    tid: "tr_test02",
+    spool: root,
+    mode: "move",
+    chat: { id: "U", title: "u", cwd: root, file: "t_U.jsonl" },
+    source: { nodeLabel: "a", stateRoot: root, agentDir: root, home, homeDir: root, codeRoot: root },
+    trees: [],
+    haves: [],
+    usage,
+  });
+  const names = await members(p.file);
+  assert.ok(names.includes("usage.json") && !names.some((n) => n.startsWith("home/usage")), names.join(", "));
+  const staged = join(root, "staged-u");
+  mkdirSync(join(staged, "home", "sessions"), { recursive: true });
+  writeFileSync(join(staged, "home", "sessions", "t_U.jsonl"), '{"type":"session","id":"U"}\n');
+  writeFileSync(join(staged, "usage.json"), usage);
+  assert.equal(await verifyHome(staged, p.manifest), null);
+  writeFileSync(join(staged, "usage.json"), "{}");
+  assert.equal(await verifyHome(staged, p.manifest), "its usage records didn't arrive exactly");
 });

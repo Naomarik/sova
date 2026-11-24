@@ -41,6 +41,8 @@ export interface DestinationDeps {
   tellHelper(chatId: string, text: string, key: string): Promise<void>;
   /** The note a moved helper hears. */
   helperNote(device: string, interrupted: boolean): string;
+  /** Bring a moved chat's usage cut in, apart from this device's own records: what it counted. */
+  importUsage(bytes: Buffer): Record<string, number>;
 }
 
 let deps: DestinationDeps | null = null;
@@ -220,7 +222,7 @@ async function arrive(tid: string): Promise<void> {
         path: peerPath.package(tid),
         snapshot: r.pkg,
         resolvedDest: at,
-        rootNames: ["package.json", "home", "code"],
+        rootNames: ["package.json", "home", "code", "usage.json"],
         onProgress: (p) => void updateTransport(tid, { received: p.received }),
         prescan: async (members) => {
           const all: { name: string; flag: string; mode: number }[] = [];
@@ -334,6 +336,15 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
         if (existsSync(home)) throw new Error("This device already has a chat with that id.");
         await rename(staged, home);
       }
+      // Its cost, before it is listed: kept apart from this device's own records (a retry counts it once).
+      const usage = join(incomingOf(tid), "usage.json");
+      if (existsSync(usage))
+        try {
+          const n = need().importUsage(await readFile(usage));
+          log(`${tid}: usage brought in: ${Object.entries(n).map(([k, v]) => `${v} ${k}`).join(", ")}`);
+        } catch (err) {
+          log(`${tid}: its usage records weren't brought in: ${err instanceof Error ? err.message : String(err)}`);
+        }
       // Listed (its home.json names this state root), the list bumped, chat.created said; then its helpers tracked.
       if (!registerArrivedHome(r.arrivedId)) throw new Error("The arrived home isn't this device's (its home.json).");
       need().adopt(r.arrivedId);

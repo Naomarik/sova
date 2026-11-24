@@ -30,6 +30,7 @@ import { readRegistry } from "../project-services/store";
 import { resolveSessionPath } from "../paths";
 import { archiveSession, cleanupSessions, getSessionSummary } from "../sessions-index";
 import { stateRoot } from "../state-root";
+import { cutChatUsage, importChatUsage } from "../usage-export";
 import { worktreesOf } from "../worktrees-state";
 import * as dest from "./destination";
 import { git, publishTrees, rebuildWorktrees } from "./git-snapshot";
@@ -311,6 +312,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       }
       return stopped;
     },
+    usageCut: (chatId) => cutChatUsage(chatId),
     moved,
   });
 
@@ -337,6 +339,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       interrupted
         ? `This chat moved from ${device} while you were working, and your turn was interrupted. Folders and ports may differ here. Continue where you stopped.`
         : `This chat moved from ${device}. Folders and ports may differ here. Continue where you left off.`,
+    importUsage: (bytes) => ({ ...importChatUsage(bytes) }),
   });
 
   // The Transport agent and Safe Transport, when this build has them (server/transport/agent-wire.ts).

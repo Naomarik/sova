@@ -66,6 +66,8 @@ export interface SourceDeps {
   copies(treePaths: string[]): string[];
   /** Stop the running copies on these worktrees (a Move's switch): the names of those stopped. */
   stopCopies(treePaths: string[]): Promise<string[]>;
+  /** The chat's usage and time records, cut from this device's stores for the package (null: none to carry). */
+  usageCut(chatId: string): Promise<Buffer | null>;
   /** After the destination confirmed: the Moved row, the safety copy, the old code folders. */
   moved(r: TransportRecord): Promise<void>;
 }
@@ -492,6 +494,8 @@ async function pack(r: TransportRecord): Promise<void> {
   const home = chatHome(c.id);
   const sizes = await conversationSizes(home);
   const cur = readTransport(r.tid)!;
+  // A Move's cost goes with it, marked there as spent here; a Copy is a new chat, its past cost stays this chat's.
+  const usage = r.mode === "move" ? await d.usageCut(c.id).catch((err: unknown) => (log(`${logName(r)}: its usage records stay here: ${err instanceof Error ? err.message : String(err)}`), null)) : null;
   const packed = await buildPackage({
     tid: r.tid,
     spool: spoolDir(),
@@ -504,6 +508,7 @@ async function pack(r: TransportRecord): Promise<void> {
     ...(cur.stopped ? { stopped: cur.stopped } : {}),
     interrupted: cur.interrupted ?? [],
     wrapped: cur.wrapped ?? [],
+    usage,
   });
   await knob(r.tid, "packed");
   stepDone(r.tid, "packed", {

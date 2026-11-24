@@ -10,11 +10,11 @@ import { modelEfforts } from "../lib/delegate-form";
 import { liveDelegateOptions } from "../lib/claude-catalog";
 import { replacedNotice } from "../lib/subagent-replaced";
 import { teamsSeed } from "../lib/subagent-editor";
-import { clearProfilesRequest, clearSettingsSection, openSettings, profilesRequest, settingsSection, subagentSettingsChat, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
+import { clearProfilesRequest, clearSettingsSection, profilesRequest, settingsSection, subagentSettingsChat, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
 import { lastSavedKeys, profilesDraft as store, profilesListing, setProfilesCwd, takeListing } from "../lib/profiles-draft";
 import {
   alsoUsedBy,
-  builtInNote,
+  builtInLine,
   helpersOf,
   LIMIT_RULES,
   listGroups,
@@ -515,8 +515,7 @@ function ProfileEditor(props: {
   const yours = () => props.r.group === "yours" && !!props.draftRow;
   const builtIn = () => props.r.group === "builtin";
   const readOnly = () => !yours();
-  /** A built-in profile's one line: the account it is for, or that the account isn't connected here. */
-  const builtInNoteNow = () => builtInNote(w() ?? { providers: [] });
+
   /** Why Make It Yours waits: one of yours already has the built-in's name (and so already takes its place). */
   const yoursNamed = () => props.draft.rows.some((x) => x.name.toLowerCase() === props.r.name.toLowerCase());
   const w = () => props.r.wire;
@@ -578,17 +577,7 @@ function ProfileEditor(props: {
       </Show>
       <Show when={builtIn()}>
         <p class="profile-muted">
-          {builtInNoteNow().line}
-          <Show when={builtInNoteNow().connect}>
-            {(tab) => (
-              <>
-                {" "}
-                <button type="button" class="button-link" onClick={() => openSettings("accounts", null, { account: tab() })}>
-                  Open Accounts
-                </button>
-              </>
-            )}
-          </Show>
+          {builtInLine(w()?.providers ?? [])}
         </p>
       </Show>
       <Show when={props.r.group === "project"}>

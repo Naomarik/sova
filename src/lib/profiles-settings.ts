@@ -5,7 +5,6 @@ import { check, type FieldCheck, type WholeRule } from "../../shared/form-rules"
 import { TEAM_NUMBERS, TEAM_RULES, type TeamNumberField } from "../../shared/subagent-limits";
 import { PROFILE_LABEL_RULE, PROFILE_NAME_OFF, PROFILE_NAME_TAKEN, PROFILE_READ_RULE } from "../../shared/profile-limits";
 import { profilesFields } from "./subagent-profiles-draft";
-import type { AccountTab } from "./settings-nav";
 import { footprintModel } from "./subagent-editor";
 
 /**
@@ -197,26 +196,13 @@ export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], sav
   return { yours, project, builtin };
 }
 
-/** The accounts the built-in profiles run on, by the provider their models spend, with their Accounts tab. */
-const BUILTIN_ACCOUNTS: Record<string, { name: string; tab: AccountTab }> = {
-  claude: { name: "Claude", tab: "claude" },
-  "openai-codex": { name: "OpenAI", tab: "openai" },
-  "ollama-cloud": { name: "Ollama Cloud", tab: "ollama-cloud" },
-};
+/** The accounts the built-in profiles run on, by the provider their models spend. */
+const BUILTIN_ACCOUNTS: Record<string, string> = { claude: "Claude", "openai-codex": "OpenAI", "ollama-cloud": "Ollama Cloud" };
 
-/**
- * A built-in profile's line in its editor: the account it is for; or, when the server says that
- * account isn't connected here (the Claude every computer falls back to with no account),
- * that it isn't, with the Accounts tab to connect it (`connect`).
- */
-export function builtInNote(w: Pick<JoinedRowWire, "providers"> & { notConnected?: true }): { line: string; connect: AccountTab | null } {
-  const known = [...new Map(w.providers.map((p) => BUILTIN_ACCOUNTS[p]).filter((a): a is { name: string; tab: AccountTab } => !!a).map((a) => [a.tab, a])).values()];
-  const account = known.length === 1 ? known[0]! : null;
-  if (w.notConnected)
-    return account
-      ? { line: `${account.name} isn't connected on this computer. Connect it in Settings → Accounts.`, connect: account.tab }
-      : { line: "Its account isn't connected on this computer. Connect it in Settings → Accounts.", connect: "claude" };
-  return { line: account ? `Built in for your ${account.name} account. Make It Yours to change it.` : "Built in. Make It Yours to change it.", connect: null };
+/** A built-in profile's line in its editor: the account it is for, when its models name one. */
+export function builtInLine(providers: readonly string[]): string {
+  const known = [...new Set(providers.map((p) => BUILTIN_ACCOUNTS[p]).filter((n): n is string => !!n))];
+  return known.length === 1 ? `Built in for your ${known[0]} account. Make It Yours to change it.` : "Built in. Make It Yours to change it.";
 }
 
 /**

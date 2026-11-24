@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { defaultLabel, defaultTitle, menuPick, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
+import { namesProfile, defaultLabel, defaultTitle, menuPick, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
 
 const row = (key: string, providers: string[], extra: Partial<SwitchRow> = {}): SwitchRow => ({ key, id: key, kind: "pair", group: "yours", name: key.toUpperCase(), providers, setsModel: providers.length > 0, ...extra });
 const OFF = row("off", [], { kind: "off", group: "builtin", name: "Off" });
@@ -92,4 +92,12 @@ test("a mode-menu pick before the first message is a card pick, both parts; afte
   await menuPick({ kind: "project", id: "rel", session: { source: "project", id: "rel" } }, true, io);
   await menuPick({ kind: "builtin", id: "openai", session: { source: "sova", id: "openai" } }, true, io);
   assert.deepEqual(calls, ['pick {"source":"library","id":"fast"}', 'pick {"source":"project","id":"rel"}', 'pick {"source":"sova","id":"openai"}'], "a library-only row, a project's and a built-in one, as their cards send them");
+});
+
+test("a chat names a profile unless it has none (no account, none of yours) or an older server's Off", () => {
+  assert.equal(namesProfile({ id: "claude", key: "sova:claude", name: "Claude" }), true);
+  assert.equal(namesProfile({ id: "fast", key: "library:fast", name: "Fast" }), true);
+  assert.equal(namesProfile({ id: "off", key: "sova:default", name: "Off" }), false);
+  assert.equal(namesProfile({ id: "x", name: "" }), false);
+  assert.equal(namesProfile(null), false);
 });

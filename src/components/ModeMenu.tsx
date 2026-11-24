@@ -5,7 +5,7 @@ import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
 import { ApiError, fetchProfiles, getChatMode, getMode, pickProfile, postMode, putDefaultProfile, saveCurrentProfile, switchProfile, updateProfileFromChat } from "../lib/api";
 import type { ChatProfileState } from "../../shared/protocol";
 import { OFF_KEY, type JoinedProfile, type ProfilesListing } from "../../shared/profiles";
-import { defaultLabel, defaultTitle, editedName, menuPick, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, updateOffered } from "../lib/profile-switch";
+import { defaultLabel, defaultTitle, editedName, menuPick, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, updateOffered, namesProfile } from "../lib/profile-switch";
 import {
   APPROVE_HOOKS_LABEL,
   approvalFootFor,
@@ -201,8 +201,8 @@ export function ModeMenu(props: { control: ModeControl }) {
   const listed = createMemo(() => pickerRows(joined()));
   const matches = createMemo(() => filterProfiles(listed(), search()));
   const isCurrent = (r: JoinedProfile) => r.key === currentRow()?.key || (!currentRow() && r.id === chatProfile()?.current.id);
-  /** Save Current is for a chat on a profile (an older server's Off names none). */
-  const canSaveCurrent = () => !!chatProfile() && chatProfile()!.current.id !== "off";
+  /** Save Current is for a chat on a profile (none with no profile at all, or an older server's Off). */
+  const canSaveCurrent = () => namesProfile(chatProfile()?.current);
   /** The joined key of the profile in effect, when it names one (never an older server's Off). */
   const inEffectKey = () => {
     const k = currentRow()?.key ?? chatProfile()?.current.key;
@@ -760,7 +760,7 @@ export function ModeMenu(props: { control: ModeControl }) {
         <span class="popover-item-label">{p.it.label ?? p.it.id}</span>
         <Show
           when={p.it.id === "memory"}
-          fallback={<span class="popover-item-desc">{p.it.id === "delegate" ? `Profile: ${shownProfile()}` : p.it.description}</span>}
+          fallback={<span class="popover-item-desc">{p.it.id === "delegate" && canSaveCurrent() ? `Profile: ${shownProfile()}` : p.it.description}</span>}
         >
           <span class="popover-item-desc">{memoryRowText(info()?.memory?.types, memChoice() ?? undefined, checked(p.it)).description}</span>
           <Show when={memoryRowText(info()?.memory?.types, memChoice() ?? undefined, checked(p.it)).detail}>
@@ -1031,7 +1031,7 @@ export function ModeMenu(props: { control: ModeControl }) {
               <div class="model-menu-list" role="menu" aria-label="Profiles">
                 <For
                   each={matches()}
-                  fallback={<p class="model-menu-empty">{listing() ? (search() ? noProfileMatch(search()) : "No profiles yet. Save Current as Profile makes one.") : "Couldn't load them."}</p>}
+                  fallback={<p class="model-menu-empty">{listing() ? (search() ? noProfileMatch(search()) : canSaveCurrent() ? "No profiles yet. Save Current as Profile makes one." : "No profiles yet. Make one in Manage Profiles…") : "Couldn't load them."}</p>}
                 >
                   {(p, i) => (
                     <div
@@ -1190,7 +1190,7 @@ export function ModeMenu(props: { control: ModeControl }) {
               >
                 <Icon name="subagents" small />
                 <span class="popover-item-text">
-                  <span class="popover-item-label">Profile · {shownProfile()}</span>
+                  <span class="popover-item-label">{canSaveCurrent() ? `Profile · ${shownProfile()}` : "Profile"}</span>
                 </span>
                 <Icon name="chevron-right" small class="popover-item-end" />
               </div>

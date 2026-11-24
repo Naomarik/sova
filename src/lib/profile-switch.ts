@@ -17,6 +17,11 @@ export interface SwitchRow {
   approval?: "needed" | "approved";
 }
 
+/** Whether a chat's `chat_profile` names a profile: none with no profile at all (no account connected
+    and none of yours as the default, or an older server's Off), so the menu then says no profile word. */
+export const namesProfile = (c: { id: string; key?: string; name: string } | null | undefined): boolean =>
+  !!c && c.id !== "off" && c.key !== "sova:default" && c.name.trim() !== "";
+
 /** "{name} (edited)" while the chat's model isn't the one its profile sets. */
 export const editedName = (name: string, edited: boolean): string => (edited ? `${name} (edited)` : name);
 

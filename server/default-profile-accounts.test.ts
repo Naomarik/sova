@@ -107,3 +107,12 @@ test("a coding session on a default nobody chose takes the built-in profile whol
     rmSync(join(agentDir, "sova", "defaults.json"), { force: true });
   }
 });
+
+test("a default file that can't be read says so without naming Off, which is no choice any more", async () => {
+  const { readDefaultProfileFile } = await import("./default-profile");
+  const f = join(root, "bad-default.json");
+  writeFileSync(f, JSON.stringify({ version: 2 }));
+  const read = readDefaultProfileFile(f);
+  assert.equal(read.state, "malformed");
+  assert.ok(read.state === "malformed" && !/\boff\b/i.test(read.error), read.state === "malformed" ? read.error : "");
+});

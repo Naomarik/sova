@@ -34,7 +34,7 @@ export function readDefaultProfileFile(file = defaultProfileFile()): DefaultFile
   try {
     const o = JSON.parse(raw) as { version?: unknown; profile?: unknown };
     if (o?.version === 1 && typeof o.profile === "string" && o.profile.trim()) return { state: "ok", profile: o.profile };
-    return { state: "malformed", error: 'expected {"version": 1, "profile": <id or "off">}' };
+    return { state: "malformed", error: 'expected {"version": 1, "profile": <profile id>}' };
   } catch (err) {
     return { state: "malformed", error: (err as Error).message };
   }

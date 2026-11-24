@@ -162,6 +162,8 @@ div.subagent-editor-flush { display: flex; flex-direction: column; gap: var(--sp
 .profiles-editor-pane { container: profiles-editor / inline-size; min-width: 0; }
 .profiles-list-pane { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .profiles-list-pane > .profiles-group-head { margin: var(--space-3) 0 var(--space-1); }
+/* A line here can hold a folder path with no break in it: it wraps inside the column, never past it. */
+.profiles-list-pane > .profile-muted { overflow-wrap: anywhere; }
 .profiles-picks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .profiles-pick {
   display: flex;
@@ -213,6 +215,12 @@ div.subagent-editor-flush { display: flex; flex-direction: column; gap: var(--sp
   color: var(--color-ink-muted);
 }
 .profile-model-lede { margin: 0; }
+/* Jump to: a caption, then one ghost button per group, wrapping on a narrow panel. The text of the
+   first button lines up with the caption's baseline; the heading it reaches takes focus, no ring. */
+.profile-jump { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-1); }
+.profile-jump-label { font-size: var(--fs-caption); color: var(--color-ink-muted); margin-inline-end: var(--space-1); }
+.profile-model-group-head:focus { outline: none; }
+.profile-model-group-head:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
 /* Label, model, effort: the model takes the room, the effort is sized to "medium". */
 .profile-model-row {
   display: grid;

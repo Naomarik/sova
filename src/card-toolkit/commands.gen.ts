@@ -645,6 +645,8 @@ export interface CommandParams {
     "paths"?: string[];
     /** Only list what would be deleted */
     "dry-run"?: boolean;
+    /** delete (the default) or compress: compress the archived ones instead */
+    "action"?: "delete" | "compress";
   };
   /** Name sessions with the title model, as Auto-title does; --redo replaces one session's title. (changes something; needs the card's owner trusted) */
   "session.title.auto": {

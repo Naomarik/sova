@@ -872,7 +872,7 @@ export function buildApp(deps: AppDeps) {
   // deleting. Live, mid-turn and just-written sessions are always skipped and counted in the response;
   // paths mode also refuses anything without the archive mark, with the reason per path.
   app.post("/api/sessions/cleanup", async (c) => {
-    let body: { mode?: unknown; minAgeDays?: unknown; paths?: unknown; dryRun?: unknown };
+    let body: { mode?: unknown; minAgeDays?: unknown; paths?: unknown; dryRun?: unknown; action?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -882,14 +882,17 @@ export function buildApp(deps: AppDeps) {
     // Every field that is present is checked before anything runs: a dryRun that isn't a boolean is
     // refused, never read as a real run.
     if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
+    // §app.session-list/archive-compress: "compress" compresses the archived ones instead; absent or "delete" deletes.
+    if (body.action !== undefined && body.action !== "delete" && body.action !== "compress") return c.json({ error: "action must be delete or compress" }, 400);
+    const action = body.action === "compress" ? ("compress" as const) : undefined;
     if (body.mode !== "age" && body.mode !== "husks" && body.mode !== "paths") return c.json({ error: 'mode must be "husks", "paths", or "age"' }, 400);
     if (body.minAgeDays !== undefined && body.minAgeDays !== 7 && body.minAgeDays !== 30) return c.json({ error: "minAgeDays must be 7 or 30" }, 400);
     const validPaths = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.length <= 100 && v.every((p) => typeof p === "string");
     if (body.paths !== undefined && !validPaths(body.paths)) return c.json({ error: "paths must be 1–100 session paths" }, 400);
     const dryRun = body.dryRun === true;
     if (body.mode === "age" && (body.minAgeDays === 7 || body.minAgeDays === 30))
-      return c.json(await cleanupSessions({ mode: "age", minAgeDays: body.minAgeDays, dryRun }));
-    if (body.mode === "husks") return c.json(await cleanupSessions({ mode: "husks", dryRun }));
+      return c.json(await cleanupSessions({ mode: "age", minAgeDays: body.minAgeDays, dryRun, action }));
+    if (body.mode === "husks") return c.json(await cleanupSessions({ mode: "husks", dryRun, action }));
     if (body.mode === "paths") {
       if (!validPaths(body.paths)) return c.json({ error: "paths must be 1–100 session paths" }, 400);
       // Each path validated exactly like the archive route's, so nothing outside the sessions dir
@@ -900,7 +903,7 @@ export function buildApp(deps: AppDeps) {
         if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
         paths.push(path);
       }
-      return c.json(await cleanupSessions({ mode: "paths", paths, dryRun }));
+      return c.json(await cleanupSessions({ mode: "paths", paths, dryRun, action }));
     }
     return c.json({ error: 'mode must be "husks", "paths", or "age" with minAgeDays 7 or 30' }, 400);
   });

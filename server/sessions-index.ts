@@ -3,16 +3,14 @@ import { removeOutputFiles } from "./shell-output";
 import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, lstatSync, readdirSync, statSync } from "node:fs";
-import { type FileHandle, lstat, open, readdir, rm, stat, unlink } from "node:fs/promises";
+import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
 import { removeChatSharedFolder } from "../pi-config/extensions/sandbox/shared-folder.ts";
 import { runsOfChat } from "./playbook-runs/store";
 import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
-import { chatHome, forgetHome, hasHome, homeIdOfPath, homesRoot, isHomeSessionFile } from "./chat-homes/root";
-import { forgetHomeRecords, refreshHomeRecords } from "./chat-homes/records";
-import { emitChatNews } from "./chat-home-events";
+import { hasHome, homeIdOfPath, homesRoot, isHomeSessionFile } from "./chat-homes/root";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import type { HEntry } from "../shared/harness";
 import { isLinkMessage } from "../shared/link-message";
@@ -59,6 +57,8 @@ import { queueChatRole } from "../shared/merge-queue";
 import { opTrack } from "./stall-recorder";
 import { type JobCounts, runningJobCount, runningJobCounts } from "./background-jobs";
 import { stateRoot } from "./state-root";
+import { compressedAt, compressedRows } from "./archive-compress/store";
+import { compressChat, deleteCompressed } from "./archive-compress/compress";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -2030,6 +2030,14 @@ async function buildSessionsNow(track?: { files?: string[]; dirty?: ReadonlySet<
     const prevRow = lastRows.get(out[i]!.path);
     if (prevRow && prevRow !== out[i] && sameValue(prevRow, out[i])) out[i] = prevRow;
   }
+  // Compressed chats (§app.session-list/archive-compression): the row each kept, never a read of
+  // anything compressed. Its entry is the authority: a file of it still on disk (a compress cut short
+  // before the original went) never shows as a second row.
+  const packed = compressedRows();
+  if (packed.size > 0) {
+    for (let i = out.length - 1; i >= 0; i--) if (packed.has(out[i]!.path) || compressedAt(out[i]!.path)) out.splice(i, 1);
+    for (const r of packed.values()) out.push(r);
+  }
   lastRows = new Map(out.map((r) => [r.path, r]));
   const mark: BuildMark = { stores, rowSeq, outside, files: read, live, parents: reads.parents, workers, fullAt: keepRows ? prev!.fullAt : startedAt };
   lastMark = mark;
@@ -2213,7 +2221,6 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         dropGroupAssignments([s.id]);
         removeSharedFolder(s.id);
         sessionArchived(s.id);
-        await deletedChat(s.id, s.workerSession);
         return { ok: true, summary: { ...s, archived: true, deleted: true } };
       }
     }
@@ -2230,55 +2237,6 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
  * on it ended (its workers stopped with any report still waiting to open it, its links, its memory).
  * A chat still starting now is closed by its own start once that finishes (server/chat-host.ts).
  */
-/**
- * A chat is gone by your own Delete (§app.chat-homes/lifetime): a chat with a home loses the whole home, its helpers'
- * conversations, records, mailboxes, wakes, memory, attachments and shared folder with it, after each helper's time is
- * kept for the usage helper (the chat's own was kept by the caller). An older chat's places were cleared by the caller.
- * Either way the event stream hears `chat.removed` for a top-level chat.
- */
-async function deletedChat(id: string, worker: boolean | undefined, keepUntil?: number): Promise<void> {
-  if (!hasHome(id)) {
-    if (!worker) emitChatNews({ name: "chat.removed", chat: id });
-    return;
-  }
-  const home = chatHome(id);
-  let names: string[] = [];
-  try {
-    names = await readdir(join(home, "sessions"));
-  } catch {
-    // no conversations folder left
-  }
-  for (const n of names) {
-    if (!n.endsWith(".jsonl")) continue;
-    const p = join(home, "sessions", n);
-    const sid = idOf(p);
-    if (sid !== id) {
-      await keepSessionTimeSpent(sid, keepUntil);
-      removeSessionTimeSpent(sid);
-      removeSessionLabels(sid);
-    }
-    dropEntry(p);
-  }
-  try {
-    await rm(home, { recursive: true, force: true });
-  } catch (err) {
-    console.error(`[sessions] Deleted chat ${id}: its home could not be removed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  forgetHome(id);
-  forgetHomeRecords(id);
-  emitChatNews({ name: "chat.removed", chat: id, home });
-}
-
-// A full build also picks up homes this server did not make (server/chat-homes/records.ts).
-onFullListBuild(refreshHomeRecords);
-
-/** A helper's conversation inside a chat's home is the chat's, kept as long as the chat is (§app.chat-homes/lifetime):
-    no Clean Up takes it alone. */
-const helperInHome = (path: string): boolean => {
-  const home = isHomeSessionFile(path) ? homeIdOfPath(path) : null;
-  return !!home && home !== idOf(path);
-};
-
 /** An archived (or deleted) chat's shared folder goes with it (shared-folder.ts). */
 function removeSharedFolder(id: string): void {
   if (!removeChatSharedFolder(id)) console.error(`[sessions] Archived chat ${id}: its shared folder could not be removed`);
@@ -2322,10 +2280,16 @@ export async function isZeroInput(path: string, size: number): Promise<boolean> 
   return head !== null && !head.input;
 }
 
-export type CleanupRequest =
+export type CleanupRequest = (
   | { mode: "age"; minAgeDays: number; dryRun: boolean }
   | { mode: "husks"; dryRun: boolean }
-  | { mode: "paths"; paths: string[]; dryRun: boolean };
+  | { mode: "paths"; paths: string[]; dryRun: boolean }
+) & {
+  /** "compress" (§app.session-list/archive-compress): the archived ones of the range or paths are
+      compressed instead of deleted; absent is a delete. `by`: who asked (the automatic pass, or you). */
+  action?: "delete" | "compress";
+  by?: "auto" | "user";
+};
 
 export interface CleanupResult {
   /** Files deleted; 0 on a dry run (deletedIds then holds the candidates). */
@@ -2335,6 +2299,9 @@ export interface CleanupResult {
   /** paths mode only: every path refused with why — nothing deleted for it, and not counted in
    *  skipped, which stays the live/busy/recent/failed vocabulary. */
   refused?: { path: string; reason: string }[];
+  /** action "compress": what was compressed (a dry run: the candidates, with compressedCount 0), in place of the deleted ones. */
+  compressedCount?: number;
+  compressedIds?: string[];
 }
 
 /**
@@ -2352,10 +2319,14 @@ export interface CleanupResult {
  * a pi session. Every mode leaves an attached org's workspace sessions alone (refused, in paths mode).
  */
 export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: boolean } = {}): Promise<CleanupResult> {
-  const targets = req.mode === "paths" ? req.paths : await listSessionFiles();
-  const live = readLive();
+  const compress = req.action === "compress";
   const now = Date.now();
   const cutoff = req.mode === "age" ? now - req.minAgeDays * 86_400_000 : 0;
+  // A compressed chat has no file to walk: an age delete takes it by its kept row's last activity
+  // (§app.session-list/archive-compression "Deleting it"). Compress leaves it out: it is compressed already.
+  const packedTargets = req.mode === "age" && !compress ? [...compressedRows().values()].filter((r) => Date.parse(r.lastActiveAt) < cutoff).map((r) => r.path) : [];
+  const targets = req.mode === "paths" ? req.paths : [...(await listSessionFiles()), ...packedTargets];
+  const live = readLive();
   const skipped = { live: 0, busy: 0, recent: 0, failed: 0 };
   const deletedIds: string[] = [];
   /** The usage helper keeps each deleted session's hours first (keepSessionTimeSpent), all under one deadline. */
@@ -2371,10 +2342,39 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       refusals.push({ path: target, reason: "Not a session file under the pi sessions dir." });
       continue;
     }
+    const packed = compressedAt(path);
+    if (packed && packed.row.path === path) {
+      // A compressed chat: compress leaves it out silently; Delete removes its compressed files.
+      if (compress || req.mode === "husks") continue;
+      if (req.dryRun) {
+        deletedIds.push(packed.id);
+        continue;
+      }
+      try {
+        deleteCompressed(packed.id);
+        await cleanDeletedTours(packed.id);
+        setArchived(packed.id, false);
+        removeWebSession(packed.id);
+        dropDrafts([packed.id]);
+        dropSessionTitles([packed.id]);
+        dropSessionTags([packed.id]);
+        removeSessionAttachments(packed.id);
+        keepUntil ??= Date.now() + KEEP_WAIT_MS;
+        await keepSessionTimeSpent(packed.id, keepUntil);
+        removeSessionTimeSpent(packed.id);
+        removeSessionLabels(packed.id);
+        sessionArchived(packed.id);
+        deletedIds.push(packed.id);
+        forgotten.push(packed.id);
+      } catch {
+        skipped.failed++;
+      }
+      continue;
+    }
     // An attached org's workspace sessions (batons, project-overseer conversations) belong to the
     // org: baton.json and overseer state name them, so no mode ever deletes one. Silent in the
     // bulk modes, like the Overseer's files, so the dry run's count is what the real run deletes.
-    const kept = keptBy(path) ?? (helperInHome(path) ? "A helper's conversation is kept with its chat: delete the chat itself." : null);
+    const kept = keptBy(path);
     if (kept) {
       if (req.mode === "paths") refusals.push({ path, reason: kept });
       continue;
@@ -2388,6 +2388,8 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
     }
     const matches = req.mode === "age" ? st.mtimeMs < cutoff : req.mode === "husks" ? await isZeroInput(path, st.size) : true;
     if (!matches) continue;
+    // Compress takes only what carries the archive mark, whatever the mode; the rest is left out silently.
+    if (compress && !isArchived(idOf(path))) continue;
     // A project's coding session is empty until the operator's first message (New Coding Session):
     // its build statechart names it, so it is never swept as a husk.
     if (req.mode === "husks" && (codingIds ??= projectCodingIds()).has(idOf(path))) continue;
@@ -2400,7 +2402,8 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       if (req.mode === "paths") refusals.push({ path, reason: "That is one of the merge queue's own chats: clear it from the Merge Queue tab's Queue chats." });
       continue;
     }
-    if (live.has(path)) {
+    // Compressing also waits for a chat open in a window anywhere (§app.session-list/archive-compression "What never is").
+    if (live.has(path) || (compress && isViewing(idOf(path)))) {
       skipped.live++;
       continue;
     }
@@ -2431,6 +2434,22 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       deletedIds.push(id);
       continue;
     }
+    if (compress) {
+      try {
+        await closeChat(path, "Session compressed by archive cleanup; its runtime was closed.");
+        const row = (await listedSessionAt(path)) ?? null;
+        if (!row) throw new Error("no row to keep");
+        const helpers = hasHome(homeIdOfPath(path) ?? "") ? [] : helperFilesOf(row.id);
+        await compressChat(row, helpers, req.by ?? "user");
+        dropEntry(path);
+        for (const h of helpers) dropEntry(h);
+        deletedIds.push(id);
+      } catch (err) {
+        console.warn(`[archive] couldn't compress ${path}: ${err instanceof Error ? err.message : String(err)}`);
+        skipped.failed++;
+      }
+      continue;
+    }
     try {
       await closeChat(path, "Session deleted by archive cleanup; its runtime was closed.");
       // A husk whose close saved a command it ran (§chat.shell-mode/lifecycle) is no husk any more: kept.
@@ -2441,7 +2460,6 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
           continue;
         }
       }
-      const worker = (await summarize(path).catch(() => null))?.workerSession;
       await unlink(path);
       await cleanDeletedTours(id);
       dropEntry(path);
@@ -2457,7 +2475,6 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       removeSessionTimeSpent(id);
       removeSessionLabels(id);
       sessionArchived(id);
-      await deletedChat(id, worker, keepUntil);
       deletedIds.push(id);
       forgotten.push(id);
     } catch {
@@ -2465,12 +2482,47 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
     }
   }
   dropGroupAssignments(forgotten);
+  if (compress)
+    return {
+      deletedCount: 0,
+      deletedIds: [],
+      compressedCount: req.dryRun ? 0 : deletedIds.length,
+      compressedIds: deletedIds,
+      skipped,
+      ...(req.mode === "paths" ? { refused: refusals } : {}),
+    };
   return {
     deletedCount: req.dryRun ? 0 : deletedIds.length,
     deletedIds,
     skipped,
     ...(req.mode === "paths" ? { refused: refusals } : {}),
   };
+}
+
+/** An older chat's helpers' conversation files, at any depth, by the last listing's worker rows: they
+    are compressed with it (a homed chat's are in its home). */
+function helperFilesOf(id: string): string[] {
+  const byParent = new Map<string, SessionSummary[]>();
+  for (const r of lastRows.values()) {
+    const parent = r.workerOf?.id;
+    if (!parent) continue;
+    const list = byParent.get(parent);
+    if (list) list.push(r);
+    else byParent.set(parent, [r]);
+  }
+  const out: string[] = [];
+  const seen = new Set<string>([id]);
+  const visit = (at: string, depth: number): void => {
+    if (depth > 8) return;
+    for (const r of byParent.get(at) ?? []) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      out.push(r.path);
+      visit(r.id, depth + 1);
+    }
+  };
+  visit(id, 0);
+  return out;
 }
 
 function isDir(p: string): boolean {

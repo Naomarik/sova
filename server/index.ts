@@ -53,6 +53,7 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { wireRequestChats } from "./owner-request-chat";
 import { cachedTitleOf, getSessionSummary, idOf, indexedSessionPaths, lastListedRows, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { hotFolders } from "./session-watch-scope";
+import { startArchiveCompression } from "./archive-compress/start";
 import { homeIdOfPath, homeSessionsDirs, isHomeSessionsDir } from "./chat-homes/root";
 import { viewedIds } from "./seen";
 import { startScheduleKeeper } from "./schedule-routes";
@@ -319,6 +320,8 @@ startResourceMonitor({
 startBudgetRecount();
 // The automatic session namer's sweep (off until Settings turns it on), nudged by summary lines.
 autoTitleSweep.start();
+// Archived chats older than 60 days are compressed in the background (Settings → automatic compression, on by default).
+startArchiveCompression();
 onSummaryLineChanged(() => autoTitleSweep.nudge());
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).

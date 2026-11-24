@@ -33,6 +33,7 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   jobsRunning: "compare",
   origin: "compare",
   archived: "compare",
+  compressed: "compare",
   align: "compare",
   groupId: "compare",
   parent: "compare",

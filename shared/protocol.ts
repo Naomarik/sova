@@ -144,6 +144,10 @@ export interface SessionSummary {
       ~/.pi/agent/sova/archived-sessions.json). Only moves it between regions; it opens as before,
       and a live one still shows on top. Absent from older servers: treat as false. */
   archived: boolean;
+  /** An archived chat Sova compressed (§app.session-list/archive-compression): the row is the one it kept
+      when compressing (its file is never read again), it shows "{time} · Compressed", it never opens
+      and has no Unarchive; Clean Up can still delete it. Absent: not compressed, or an older server. */
+  compressed?: true;
   /** The user's group for this session (`SessionGroup.id`, POST /api/session-groups/assign; ids
       persist in ~/.pi/agent/sova/session-groups.json). One group at most, and purely additive:
       a grouped session stays in its region (Live & web, or the Archive) as well. Absent when it
@@ -823,7 +827,11 @@ export interface SessionsDirInfo {
 //                                  or non-web session)
 // POST /api/sessions/cleanup { mode:"age", minAgeDays:7|30, dryRun? } | { mode:"husks", dryRun? }
 //     | { mode:"paths", paths: string[] (1–100, each validated like the archive route's path), dryRun? }
+//     + action?: "delete" | "compress" (absent: delete; anything else is a 400 "action must be delete or compress")
 //     -> { deletedCount, deletedIds: string[], skipped:{live,busy,recent,failed}, refused?:[{path,reason}] }
+//     (with action "compress": compressedCount and compressedIds in place of the deleted ones, deletedCount 0; only
+//     archived sessions are taken, others and compressed ones left out silently, an open one skipped as live;
+//     §app.session-list/archive-compress. A Delete of a compressed chat removes its compressed files.)
 //     (permanently deletes transcript files; dryRun reports candidates in deletedIds with deletedCount
 //     0; live, mid-turn and just-written sessions are skipped and counted. paths mode deletes named
 //     session files, only ones carrying the archive mark — an unarchived session is refused with a

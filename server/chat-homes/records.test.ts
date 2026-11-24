@@ -12,7 +12,7 @@ process.env.PI_CODING_AGENT_DIR = join(scratch, "agent");
 process.env.SOVA_CHAT_HOMES = join(scratch, "homes");
 
 const { ensureChatHome, forgetHome } = await import("./root");
-const { expireHomeRecordChecksForTest, forgetHomeRecords, homeArrived, homeOf, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
+const { expireHomeRecordChecksForTest, forgetHomeRecords, homeArrived, homeOf, homesGeneration, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
 const { markSeen, readSeen } = await import("../seen");
 const { memoSessionTitles, readSessionTitles, setSessionTitle } = await import("../session-titles");
 const { isArchived, setArchived } = await import("../archived-sessions");
@@ -151,7 +151,9 @@ test("a home that arrives from outside is seen by every store at once, memos inc
   mkdirSync(join(home, "chat"), { recursive: true });
   writeFileSync(join(home, "chat", "meta.json"), JSON.stringify({ version: 1, id: MOVED, "archived-sessions.json": [MOVED], "web-sessions.json": [MOVED], "session-titles.json#titles": { [MOVED]: { title: "Moved here", by: "user", at: 1 } } }));
   writeFileSync(join(home, "chat", "seen.json"), JSON.stringify({ version: 1, id: MOVED, "seen.json": { [MOVED]: 42 } }));
+  const before = homesGeneration();
   homeArrived(MOVED);
+  assert.notEqual(homesGeneration(), before, "seen at once, inside the second the generation was last checked in");
   assert.equal(isArchived(MOVED), true);
   assert.equal(isWebSession(MOVED), true);
   assert.equal(memoSessionTitles()[MOVED], "Moved here");

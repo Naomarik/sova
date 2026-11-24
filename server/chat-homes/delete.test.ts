@@ -49,6 +49,16 @@ test("archive keeps the home and its shared folder; a helper's file is refused a
   assert.match(alone.refused?.[0]?.reason ?? "", /kept with its chat/);
   assert.equal(existsSync(helper), true);
 
+  // A helper that still runs holds the home: the chat's Delete waits, as a live chat's does.
+  mkdirSync(join(home, "workers"), { recursive: true });
+  const record = join(home, "workers", `${HELPER}.json`);
+  writeFileSync(record, JSON.stringify({ v: 1, chatId: HELPER, path: helper, state: "open" }));
+  const held = await cleanupSessions({ mode: "paths", paths: [lead], dryRun: false });
+  assert.equal(held.deletedCount, 0);
+  assert.equal(held.skipped.busy, 1);
+  assert.equal(existsSync(lead), true);
+  writeFileSync(record, JSON.stringify({ v: 1, chatId: HELPER, path: helper, state: "ended" }));
+
   const gone = await cleanupSessions({ mode: "paths", paths: [lead], dryRun: false });
   assert.deepEqual(gone.deletedIds, [LEAD]);
   assert.equal(existsSync(chatHome(LEAD)), false, "the whole home goes: helpers, records and shared folder with it");

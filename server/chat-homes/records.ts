@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { chatHome, hasHome, homesRoot, listHomeIds } from "./root";
 import { CHAT_HOME_ENV, setChatHomesRoot } from "../../pi-config/extensions/sandbox/shared-folder.ts";
@@ -7,9 +7,11 @@ import { CHAT_HOME_ENV, setChatHomesRoot } from "../../pi-config/extensions/sand
 setChatHomesRoot(homesRoot);
 
 /**
- * A chat home's own records (§app.chat-homes/layout): `<home>/chat/{meta,seen,draft,signals}.json`,
- * written by the server alone. Each server-wide store keeps its file for chats without a home and,
- * for a key whose chat has one, keeps that key's entry in the home instead, under a field named after
+ * A chat home's own records (§app.chat-homes/layout): `<home>/chat/{meta,seen,signals}.json`,
+ * written by Sova alone. The unsent draft is never in a home: it stays in the server-wide drafts
+ * store, never carried and never readable by an extension.
+ *
+ * Each server-wide store keeps its file for chats without a home and, for a key whose chat has one, keeps that key's entry in the home instead, under a field named after
  * the server-wide file and the map inside it (`"session-titles.json#titles"`), holding EXACTLY the
  * entry the server-wide store would have written. So putting a home back into the server-wide stores
  * (the rollback) is: merge each field's entries into that file's map.
@@ -18,25 +20,33 @@ setChatHomesRoot(homesRoot);
  * holds the keys of its own chat and of every worker and team member under it (`homeOf`).
  *
  * The stores keep their shape: `withHome` lays the homes' entries over what the server-wide file
- * holds (an in-memory read: homes are read once, then kept by this module's own writes), and
- * `splitOut` takes the homed keys back out before the store writes its file, writing each home
- * whose entries changed (compared by content: a store may change an entry in place). The store
- * still writes its own file as before, unless it says which one key it changed (`only`) and that
- * key is homed. A store with no home at all pays one shallow copy per load.
+ * holds, and `splitOut` takes the homed keys back out before the store writes its file, writing
+ * each home whose entries changed (compared by content: a store may change an entry in place). The
+ * store still writes its own file as before, unless it says which one key it changed (`only`) and
+ * that key is homed. A store with no home at all pays one shallow copy per load.
+ *
+ * Several processes write these files (the server, the chat processes it runs, a second server on
+ * the same state root), so a home's file follows the stores' own rule: a write re-reads it and
+ * changes only the keys this process changed (against what it last read), leaving another writer's
+ * keys as they are; and a read re-reads a home's file whose stat moved, checked at most once a
+ * second per kind (CHECK_MS), as the stores re-read their own files.
  */
 
-export type HomeDoc = "meta" | "seen" | "draft" | "signals";
-export const HOME_DOCS: readonly HomeDoc[] = ["meta", "seen", "draft", "signals"];
+export type HomeDoc = "meta" | "seen" | "signals";
+export const HOME_DOCS: readonly HomeDoc[] = ["meta", "seen", "signals"];
 
-/** The file of one home record; draft.json is the account's alone (it can hold a typed secret). */
+/** The file of one home record. */
 export const homeDocFile = (homeId: string, doc: HomeDoc): string => join(chatHome(homeId), "chat", `${doc}.json`);
 
 type Json = Record<string, unknown>;
 
 interface HomeEntry {
   docs: Map<HomeDoc, Json>;
-  /** What was last read or written per `doc|field`, serialised: a write happens only on a change. */
-  written: Map<string, string>;
+  /** Per `doc|field`, each key's entry as last read or written here, serialised (an id alone, for a set): what a
+      write compares with, so it writes only what this process changed. */
+  base: Map<string, Map<string, string>>;
+  /** Each file's stat when last read or written here. */
+  stamp: Map<HomeDoc, string>;
 }
 
 interface State {
@@ -48,13 +58,18 @@ interface State {
   homes: Map<string, HomeEntry>;
   /** Worker or team member id → the home holding its records. */
   members: Map<string, string>;
+  /** When each kind's files were last checked for another writer's change. */
+  checked: Map<HomeDoc, number>;
 }
+
+/** How long a read trusts the homes' files without a stat: as long as the stores trust their own (seen.ts CACHE_MS). */
+const CHECK_MS = 1000;
 
 let st: State | null = null;
 
 function state(): State {
   const root = homesRoot();
-  if (!st || st.root !== root) st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map() };
+  if (!st || st.root !== root) st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map(), checked: new Map() };
   return st;
 }
 
@@ -70,15 +85,49 @@ function readDoc(homeId: string, doc: HomeDoc): Json {
   return { version: 1, id: homeId };
 }
 
-function loadHome(s: State, homeId: string): HomeEntry {
-  const docs = new Map<HomeDoc, Json>();
-  const written = new Map<string, string>();
-  for (const doc of HOME_DOCS) {
-    const d = readDoc(homeId, doc);
-    docs.set(doc, d);
-    for (const [field, v] of Object.entries(d)) if (field !== "version" && field !== "id") written.set(`${doc}|${field}`, JSON.stringify(v));
+/** A file's identity as a stat shows it ("" when missing): a write (tmp + rename) changes its inode. */
+function stampOf(file: string): string {
+  try {
+    const st = statSync(file);
+    return `${st.ino}:${st.size}:${st.mtimeMs}`;
+  } catch {
+    return "";
   }
-  const entry: HomeEntry = { docs, written };
+}
+
+/** Each key of a field's value, serialised: an object's entries, or a set's ids. */
+function keysOf(v: unknown): Map<string, string> {
+  const out = new Map<string, string>();
+  if (Array.isArray(v)) {
+    for (const id of v) if (typeof id === "string") out.set(id, "");
+  } else if (isObj(v)) for (const [k, e] of Object.entries(v)) out.set(k, JSON.stringify(e));
+  return out;
+}
+
+/** Keep `d` as what this process last saw of the file. */
+function remember(h: HomeEntry, doc: HomeDoc, d: Json, stamp: string): void {
+  h.docs.set(doc, d);
+  h.stamp.set(doc, stamp);
+  for (const tag of [...h.base.keys()]) if (tag.startsWith(`${doc}|`)) h.base.delete(tag);
+  for (const [field, v] of Object.entries(d)) if (field !== "version" && field !== "id") h.base.set(`${doc}|${field}`, keysOf(v));
+}
+
+function readInto(h: HomeEntry, homeId: string, doc: HomeDoc): void {
+  const stamp = stampOf(homeDocFile(homeId, doc));
+  remember(h, doc, readDoc(homeId, doc), stamp);
+}
+
+/** Re-read the files of `doc` another process changed since this one last read or wrote them. */
+function fresh(s: State, doc: HomeDoc): void {
+  const now = Date.now();
+  if (now - (s.checked.get(doc) ?? 0) < CHECK_MS) return;
+  s.checked.set(doc, now);
+  for (const [homeId, h] of s.homes) if (stampOf(homeDocFile(homeId, doc)) !== h.stamp.get(doc)) readInto(h, homeId, doc);
+}
+
+function loadHome(s: State, homeId: string): HomeEntry {
+  const entry: HomeEntry = { docs: new Map(), base: new Map(), stamp: new Map() };
+  for (const doc of HOME_DOCS) readInto(entry, homeId, doc);
   s.homes.set(homeId, entry);
   listMembers(s, homeId);
   return entry;
@@ -216,6 +265,7 @@ function homesWith(s: State, doc: HomeDoc, field: string): HomeEntry[] {
     may change it freely and hand it to splitOut. */
 export function withHome<V>(legacy: Record<string, V>, doc: HomeDoc, field: string): Record<string, V> {
   const s = loaded();
+  fresh(s, doc);
   const out: Record<string, V> = Object.assign(Object.create(Object.getPrototypeOf(legacy)), legacy);
   for (const h of homesWith(s, doc, field)) {
     const m = h.docs.get(doc)![field];
@@ -228,6 +278,7 @@ export function withHome<V>(legacy: Record<string, V>, doc: HomeDoc, field: stri
 /** A store's set (archived ids, web ids) with every home's ids of `doc`/`field` added. */
 export function withHomeSet(legacy: Set<string>, doc: HomeDoc, field: string): Set<string> {
   const s = loaded();
+  fresh(s, doc);
   const out = new Set(legacy);
   for (const h of homesWith(s, doc, field)) {
     const m = h.docs.get(doc)![field];
@@ -245,39 +296,57 @@ function ownerOfKey(s: State, key: string, inLegacy: boolean): string | null {
   return inLegacy ? null : adopt(s, id);
 }
 
-function writeHomeField(s: State, homeId: string, doc: HomeDoc, field: string, value: unknown): void {
+/**
+ * Write one home's entries of `doc`/`field` as this process now has them (`next`: an object's entries, or a set's ids).
+ * Only the keys that differ from what this process last read or wrote are changed, on a fresh read of the file: an
+ * entry another process wrote meanwhile stays.
+ */
+function writeHomeField(s: State, homeId: string, doc: HomeDoc, field: string, next: Record<string, unknown> | string[]): void {
   // A home removed by its chat's Delete is never made again by a late write.
   if (!hasHome(homeId)) return;
   const h = s.homes.get(homeId) ?? loadHome(s, homeId);
-  const ser = value === undefined ? undefined : JSON.stringify(value);
-  const tag = `${doc}|${field}`;
-  if (h.written.get(tag) === ser) return;
+  const base = h.base.get(`${doc}|${field}`) ?? new Map<string, string>();
+  const now = keysOf(next);
+  const set: string[] = [];
+  const del: string[] = [];
+  for (const [k, ser] of now) if (base.get(k) !== ser) set.push(k);
+  for (const k of base.keys()) if (!now.has(k)) del.push(k);
+  if (!set.length && !del.length) return;
   const file = homeDocFile(homeId, doc);
-  // Re-read, change only this field: another field of the same file may have been written since.
-  const next: Json = { ...readDoc(homeId, doc), version: 1, id: homeId };
-  if (value === undefined) delete next[field];
-  else next[field] = value;
+  const disk = readDoc(homeId, doc);
+  const cur = disk[field];
+  let value: unknown;
+  if (Array.isArray(next)) {
+    const ids = new Set(Array.isArray(cur) ? cur.filter((x): x is string => typeof x === "string") : []);
+    for (const k of set) ids.add(k);
+    for (const k of del) ids.delete(k);
+    value = ids.size ? [...ids] : undefined;
+  } else {
+    const m: Json = isObj(cur) ? { ...cur } : {};
+    for (const k of set) m[k] = next[k];
+    for (const k of del) delete m[k];
+    value = Object.keys(m).length ? m : undefined;
+  }
+  const out: Json = { ...disk, version: 1, id: homeId };
+  if (value === undefined) delete out[field];
+  else out[field] = value;
   try {
     mkdirSync(dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(next), { mode: doc === "draft" ? 0o600 : 0o644 });
+    writeFileSync(tmp, JSON.stringify(out), { mode: 0o644 });
     renameSync(tmp, file);
-    h.docs.set(doc, next);
-    if (ser === undefined) h.written.delete(tag);
-    else h.written.set(tag, ser);
+    remember(h, doc, out, stampOf(file));
   } catch (err) {
     console.warn(`[chat-homes] ${doc}.json write failed for ${homeId}:`, err instanceof Error ? err.message : String(err));
   }
 }
 
-/** Write each home whose entries of `doc`/`field` differ from what it holds; `byHome` is every home
-    that has entries now (a home missing from it has none left). */
-function writeHomes<T>(s: State, doc: HomeDoc, field: string, byHome: Map<string, T>, empty: (v: T) => boolean): void {
-  for (const [homeId, h] of s.homes) {
-    if (byHome.has(homeId)) continue;
-    if (h.docs.get(doc)?.[field] !== undefined) writeHomeField(s, homeId, doc, field, undefined);
-  }
-  for (const [homeId, v] of byHome) writeHomeField(s, homeId, doc, field, empty(v) ? undefined : v);
+/** Write each home whose entries of `doc`/`field` differ from what it holds; `byHome` is every home that has entries
+    now (a home missing from it has none left of what this process knew). */
+function writeHomes(s: State, doc: HomeDoc, field: string, byHome: Map<string, Record<string, unknown> | string[]>, empty: Record<string, unknown> | string[]): void {
+  const tag = `${doc}|${field}`;
+  for (const [homeId, h] of s.homes) if (!byHome.has(homeId) && h.base.get(tag)?.size) writeHomeField(s, homeId, doc, field, empty);
+  for (const [homeId, v] of byHome) writeHomeField(s, homeId, doc, field, v);
 }
 
 /**
@@ -311,7 +380,7 @@ export function splitOut<V>(
     }
     legacy[k] = v;
   }
-  writeHomes(s, doc, field, byHome, (m) => Object.keys(m).length === 0);
+  writeHomes(s, doc, field, byHome, {});
   return { legacy, legacyChanged: opts.only === undefined || !homeOfKnownKey(s, opts.only, !!orig && opts.only in orig) };
 }
 
@@ -333,11 +402,16 @@ export function splitOutSet(next: Set<string>, doc: HomeDoc, field: string, only
       m.push(id);
     } else legacy.add(id);
   }
-  writeHomes(s, doc, field, byHome, (m) => m.length === 0);
+  writeHomes(s, doc, field, byHome, []);
   return { legacy, legacyChanged: only === undefined || !homeOfKnownKey(s, only, !!orig && orig.has(only)) };
 }
 
 /** For tests: drop everything this module holds in memory. */
 export function resetHomeRecordsForTest(): void {
   st = null;
+}
+
+/** For tests: the next read checks every home's files at once, as a second later would. */
+export function expireHomeRecordChecksForTest(): void {
+  st?.checked.clear();
 }

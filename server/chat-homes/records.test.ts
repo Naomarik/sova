@@ -12,7 +12,7 @@ process.env.PI_CODING_AGENT_DIR = join(scratch, "agent");
 process.env.SOVA_CHAT_HOMES = join(scratch, "homes");
 
 const { ensureChatHome } = await import("./root");
-const { homeOf, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
+const { expireHomeRecordChecksForTest, homeOf, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
 const { markSeen, readSeen } = await import("../seen");
 const { readSessionTitles, setSessionTitle } = await import("../session-titles");
 const { isArchived, setArchived } = await import("../archived-sessions");
@@ -61,9 +61,29 @@ test("a homed chat's entries go to its home; an older chat's stay in the server-
   assert.equal(json(doc("meta"))["archived-sessions.json"], undefined);
 });
 
-test("the draft is the account's alone, in its own file", () => {
+test("another process's write to the same home is kept by this one's next write, and seen by its next read", () => {
+  const OTHER = "019a0000-0000-7000-8000-00000000000e";
+  registerHomeMember(OTHER, HOMED);
+  setSessionTitle(HOMED, "Mine");
+  // Another process (a chat process, a second server) writes a title for the member into the same file.
+  const meta = json(doc("meta"));
+  meta["session-titles.json#titles"][OTHER] = { title: "Theirs", by: "user", at: 1 };
+  writeFileSync(doc("meta"), JSON.stringify(meta));
+  setSessionTitle(HOMED, "Mine again");
+  const after = json(doc("meta"))["session-titles.json#titles"];
+  assert.equal(after[OTHER]?.title, "Theirs");
+  assert.equal(after[HOMED]?.title, "Mine again");
+  // And the other way round: their change shows here once the files are checked again.
+  meta["session-titles.json#titles"] = { ...after, [OTHER]: { title: "Theirs, renamed", by: "user", at: 2 } };
+  writeFileSync(doc("meta"), JSON.stringify(meta));
+  expireHomeRecordChecksForTest();
+  assert.equal(readSessionTitles()[OTHER], "Theirs, renamed");
+});
+
+test("a homed chat's unsent draft never goes into its home", () => {
   setDraft(HOMED, "secret thing");
-  assert.equal(statSync(doc("draft")).mode & 0o777, 0o600);
+  assert.equal(existsSync(doc("draft")), false);
+  assert.equal(json(join(state, "drafts.json")).drafts[HOMED].text, "secret thing");
   assert.equal(getDraft(HOMED)?.text, "secret thing");
 });
 

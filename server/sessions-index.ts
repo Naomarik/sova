@@ -2416,6 +2416,7 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
         removeSessionTimeSpent(packed.id);
         removeSessionLabels(packed.id);
         sessionArchived(packed.id);
+        await deletedChat(packed.id, packed.row.workerSession, keepUntil);
         deletedIds.push(packed.id);
         forgotten.push(packed.id);
       } catch {
@@ -2461,7 +2462,9 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
     }
     // Working subagents count as busy: deleting disposes the runtime, which would kill them. So does
     // a command from shell mode in flight: deleting would stop it and lose it (§chat.shell-mode/lifecycle).
-    if (isSessionBusy(path) || workingSubagents(path) > 0 || shellInFlight(path)) {
+    // A homed chat's helper still in use holds its home: its Delete waits, as a live chat's does (helpers outlive their lead).
+    const homeInUse = !compress && hasHome(idOf(path)) && helpersInUse({ path, homeId: idOf(path), helpers: [], live, now });
+    if (isSessionBusy(path) || workingSubagents(path) > 0 || shellInFlight(path) || homeInUse) {
       skipped.busy++;
       continue;
     }

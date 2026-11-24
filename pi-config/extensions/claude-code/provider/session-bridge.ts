@@ -34,7 +34,7 @@ import {
 } from "../transport.ts";
 import {
 	loginEntryFor, manualSwitchText, movedText, preferenceText, switchText,
-	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginContext, type ClaudeLoginEntry, type ClaudeLoginSwitch, type LoginUser,
+	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginContext, type ClaudeLoginEntry, type ClaudeLoginSwitch, type LoginGoneCause, type LoginUser,
 } from "../accounts.ts";
 import type { ImageContent, Message, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
@@ -269,7 +269,7 @@ export interface ClaudeLoginSource {
 	/** Record a child's use of a login (its lease) and how to release it when the login leaves. */
 	track?(id: string, user: LoginUser): { done(): void; active(): void };
 	/** Why the session's login can't run here now (undefined: it can), and whether the keeper has it free. */
-	absence?(id: string): { label: string; cause: string; free: boolean } | undefined;
+	absence?(id: string): { label: string; cause: string; code?: LoginGoneCause; until?: number; free: boolean } | undefined;
 	/** Borrow `id` by name from the keeper (the pool only); resolves once it is here or the wait ends. */
 	take?(id: string): Promise<void>;
 	/** Mark (or drop) a session's hand-pick of a login (accounts.ts `.sova-picks/`). */
@@ -280,7 +280,10 @@ export interface ClaudeLoginSource {
 /** A pi session's login bookkeeping (setSessionLogin). */
 interface SessionLoginHooks {
 	recorded?: string;
-	onChange?: (entry: ClaudeLoginEntry) => void;
+	/** The session is from before login ids: its entries keep labels and text (accounts.ts legacyLoginEntries). */
+	labels?: boolean;
+	/** `note`: the switch's notice as this device words it (a TUI shows it); never stored in a new chat's entry. */
+	onChange?: (entry: ClaudeLoginEntry, note?: string) => void;
 }
 
 /** Where the opt-in debug log goes: the active agent dir's claude-code-debug.log (never a hard-coded ~/.pi/agent). */
@@ -1613,7 +1616,7 @@ class CliSession {
 		const recorded = this.loginHooks()?.recorded;
 		if (!this.recordedRead) { this.recordedLogin = recorded; this.recordedRead = true; }
 		const current = this.login?.id ?? recorded;
-		let gone: { label: string; cause: string; free: boolean } | undefined;
+		let gone: { label: string; cause: string; code?: LoginGoneCause; until?: number; free: boolean } | undefined;
 		try { gone = current !== undefined ? logins.absence?.(current) : undefined; } catch { gone = undefined; }
 		if (gone?.free && logins.take) {
 			try { await logins.take(current!); } catch { /* selection below falls back */ }
@@ -1629,12 +1632,16 @@ class CliSession {
 			// (§app.claude-logins/project-login): the note names that login and why it was skipped.
 			const prefer = ctx?.prefer;
 			if (prefer && to.id !== prefer.login && to.id !== current) {
-				let skipped: { label: string; cause: string } | undefined;
+				let skipped: { label: string; cause: string; code?: LoginGoneCause; until?: number } | undefined;
 				try { skipped = logins.absence?.(prefer.login); } catch { skipped = undefined; }
 				const label = skipped?.label ?? prefer.login;
 				const from: ClaudeLoginChoice = { id: prefer.login, label, env: {} };
 				debugLog({ event: "login-switch", session: this.piSessionId, from: prefer.login, to: to.id, kind: "project" });
-				this.announce(to, { from, to, reason: "moved", text: preferenceText(to, prefer, label, skipped?.cause ?? "is not usable on this device") });
+				this.announce(to, {
+					from, to, reason: "moved", cause: skipped?.code ?? "unusable", ...(skipped?.until !== undefined ? { until: skipped.until } : {}),
+					prefer: { source: prefer.source, ...(prefer.name ? { name: prefer.name } : {}) },
+					text: preferenceText(to, prefer, label, skipped?.cause ?? "is not usable on this device"),
+				});
 				return;
 			}
 			this.announce(to);
@@ -1645,7 +1652,7 @@ class CliSession {
 		const from: ClaudeLoginChoice = this.lastLogin?.id === current ? this.lastLogin : { id: current, label: gone?.label ?? current, env: {} };
 		const cause = gone?.cause ?? "is not usable on this device";
 		debugLog({ event: "login-switch", session: this.piSessionId, from: current, to: to.id, kind: "moved" });
-		this.announce(to, { from, to, reason: "moved", text: movedText(from, to, cause) });
+		this.announce(to, { from, to, reason: "moved", cause: gone?.code ?? "unusable", ...(gone?.until !== undefined ? { until: gone.until } : {}), text: movedText(from, to, cause) });
 	}
 
 	/** The login context this process was handed (SessionBridgeOptions.loginContext), read per choice. */
@@ -1695,7 +1702,7 @@ class CliSession {
 		const hooks = this.loginHooks();
 		// A child built later for this session (after an idle reap) starts from what was recorded last.
 		if (hooks) hooks.recorded = to.id;
-		try { hooks?.onChange?.(loginEntryFor(to, change)); } catch { /* the record is plumbing */ }
+		try { hooks?.onChange?.(loginEntryFor(to, change, { labels: hooks.labels }), change?.text); } catch { /* the record is plumbing */ }
 	}
 
 	/**
@@ -2188,9 +2195,9 @@ export class SessionBridge implements ClaudeSessionBridge {
 	 * Record the login a pi session last ran on (its newest `claude-login` entry) and where a
 	 * change is reported. Called from the extension's session_start handler.
 	 */
-	setSessionLogin(sessionId: string, recorded: string | undefined, onChange: (entry: ClaudeLoginEntry) => void): void {
+	setSessionLogin(sessionId: string, recorded: string | undefined, onChange: (entry: ClaudeLoginEntry, note?: string) => void, labels?: boolean): void {
 		if (!sessionId) return;
-		this.logins.set(sessionId, { recorded, onChange });
+		this.logins.set(sessionId, { recorded, onChange, ...(labels ? { labels } : {}) });
 	}
 
 	/**
@@ -2214,7 +2221,8 @@ export class SessionBridge implements ClaudeSessionBridge {
 			logins?.markPick?.(to.id, sessionId);
 		} catch { /* the mark is plumbing */ }
 		hooks.recorded = to.id;
-		try { hooks.onChange?.(loginEntryFor(to, { from, to, text: manualSwitchText(from, to) })); } catch { /* the record is plumbing */ }
+		const change = { from, to, text: manualSwitchText(from, to) };
+		try { hooks.onChange?.(loginEntryFor(to, change, { labels: hooks.labels }), change.text); } catch { /* the record is plumbing */ }
 		return "switched";
 	}
 

@@ -49,6 +49,7 @@ import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, 
 import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
 import { OWNER_REQUEST_NOTE, ownerRequestCardOf } from "../shared/project-assistant";
 import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
+import { claudeLoginNote } from "./claude-login-names";
 // The folded tool card's own readers (src/lib/message.ts, src/lib/tool-diff-stats.ts, both DOM- and
 // import-free): a slim row's line and "+n −m" are what the card would compute from the whole entry.
 import { argsSummary, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
@@ -719,13 +720,15 @@ function batonRow(id: string, h: StateEntry): TranscriptItem[] {
 }
 
 /** The claude-code provider's `claude-login` entry (§app.claude-logins/failover): the login a
-    session runs on. Only a switch (it names the login it left) is a row, its notice as written;
+    session runs on. Only a switch (it names the login it left) is a row, its notice as written
+    (an older chat) or as this device words it from the login ids (claude-login-names.ts);
     the plain record renders nothing. The row carries `loginNote` (§app.claude-logins/switch-login),
     so the client knows it without reading the entry's shape. */
 function claudeLoginRow(id: string, h: StateEntry): TranscriptItem[] {
-  const d = h.data as { from?: unknown; text?: unknown } | undefined;
-  if (!d || typeof d.from !== "string" || typeof d.text !== "string" || !d.text.trim()) return [];
-  const it = item(id, "info", h, d.text.slice(0, 300));
+  // An older entry's text as written; a newer one names logins by id, worded here (§app.claude-logins/login-ids).
+  const text = claudeLoginNote(h.data);
+  if (!text) return [];
+  const it = item(id, "info", h, text.slice(0, 300));
   it.loginNote = true;
   return [it];
 }

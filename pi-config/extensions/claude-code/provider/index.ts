@@ -17,7 +17,7 @@ import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-codin
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { claudeContextWindow, claudeModel, claudeName, claudeRegistered, isClaudeIdShape, resolveClaude } from "../catalog.ts";
 import { claudeStateRoot, loadClaudeModels, watchClaudeModelsFile } from "../catalog-store.ts";
-import { CLAUDE_LOGIN_ENTRY, hostLogins, loginContextFromEnv, recordedLogin } from "../accounts.ts";
+import { CLAUDE_LOGIN_ENTRY, hostLogins, legacyLoginEntries, loginContextFromEnv, recordedLogin } from "../accounts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
 import { CLAUDE_LOGIN_COMMAND, pickChatLogin } from "./login-command.ts";
 import { getSessionBridge } from "./session-bridge.ts";
@@ -164,11 +164,14 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 		if (sessionId) {
 			let branch: readonly unknown[] = [];
 			try { branch = ctx?.sessionManager?.getBranch?.() ?? []; } catch { /* no branch yet */ }
-			bridge.setSessionLogin?.(sessionId, recordedLogin(branch), (entry) => {
+			// A chat from before login ids keeps labelled entries; any other names logins by id only, and
+			// its notice is worded here, from this device's logins (§app.claude-logins/login-ids).
+			bridge.setSessionLogin?.(sessionId, recordedLogin(branch), (entry, note) => {
 				try { pi.appendEntry(CLAUDE_LOGIN_ENTRY, entry); } catch { /* plumbing: the next spawn still selects */ }
 				// A failover warns; the user's own pick is its note row only.
-				if (entry.text && entry.reason !== "manual") { try { ctx?.ui?.notify?.(entry.text, "warning"); } catch { /* no UI */ } }
-			});
+				const text = note ?? entry.text;
+				if (text && entry.from !== undefined && entry.reason !== "manual") { try { ctx?.ui?.notify?.(text, "warning"); } catch { /* no UI */ } }
+			}, legacyLoginEntries(branch));
 		}
 		noteExtraModel(pi.getFlag(CLAUDE_MODEL_FLAG));
 		const state = registration();

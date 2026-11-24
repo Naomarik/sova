@@ -60,6 +60,17 @@ Claude Code worker's included, and model discovery) runs on one Claude login, ch
   and neither limited nor needing a new sign-in), by setting `CLAUDE_CONFIG_DIR`.
   A chat session keeps the login it recorded in its `claude-login` entry while
   that login is usable.
+- **The `claude-login` entry names logins by id.** A session's entries are
+  `{v: 1, login, from?, reason?, resetsAt?, window?, cause?, project?}`: no email,
+  label or notice text, so a conversation file carries no account's email.
+  `reason` is `limit`, `auth`, `manual` (a pick) or `moved`; a `moved` entry's
+  `cause` is `left`, `keeper`, `removed`, `off`, `limited` (until `resetsAt`),
+  `auth` or `unusable`. Each reader words the notice itself from its own logins
+  (`loginNoteText`, naming a login by `noticeName`: its label, else its email,
+  else its id; "a login not on this device" for one it doesn't know); a TUI
+  shows the notice the bridge words beside the entry. A session that already
+  holds a labelled entry (`legacyLoginEntries`, from before this) keeps writing
+  `{v: 1, login, label, from?, fromLabel?, reason?, resetsAt?, text?}` as before.
 - The transport classifies a turn's account failure: a usage **limit** (a
   rejected `rate_limit_event`, an assistant error `rate_limit`/`billing_error`,
   "usage limit reached") or an **auth** failure (`authentication_failed`,
@@ -70,8 +81,8 @@ Claude Code worker's included, and model discovery) runs on one Claude login, ch
 - On a failure the work moves to the next usable login (for a limit, skipping
   logins of the same account). A chat turn that has not streamed anything yet is
   restarted on the new login the way a model change restarts it (history
-  folded) and sent again; the session gets a `claude-login` entry whose `text`
-  is the notice (`Claude: switched A → B (5h limit, resets 15:00)`). A Claude Code
+  folded) and sent again; the session gets a `claude-login` entry for the switch,
+  and its notice (`Claude: switched A → B (5h limit, resets 15:00)`) is shown. A Claude Code
   worker is such a session, so its turn moves the same way. With no usable login
   left, the failure ends the turn or task as before.
 - `default` always comes last in a device's order: Claude Code's own login is
@@ -85,8 +96,8 @@ Claude Code worker's included, and model discovery) runs on one Claude login, ch
   and before `default` (`orderWithContext`). The session's current (recorded or
   picked) login still wins while usable. A first start that can't use `prefer`
   records a `claude-login` entry with `reason: "moved"`, `from` the preferred
-  login and the text `Claude: using B (project Acme's login A is limited until
-  15:00)`; with the pool on, a preferred login free at the keeper is borrowed by
+  login and `project` (whose it is), shown as `Claude: using B (project Acme's login
+  A is limited until 15:00)`; with the pool on, a preferred login free at the keeper is borrowed by
   name first (`take`). Without the variable (a terminal session) nothing
   changes, and model discovery and the topic summarizer never read it. Sova sets
   it per chat process from the chat's folder; a plain copy of this directory

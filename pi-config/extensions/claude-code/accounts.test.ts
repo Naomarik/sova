@@ -14,7 +14,7 @@ import {
 	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount, OWN_PROJECTS_DIR_NAME, OWN_DEFAULT_DIR_NAME, ownDefaultTarget, DEFAULT_LOGIN_ID,
 	loginDir, loginEntryFor, manualSwitchText, parseAccounts, poolAgentPath, readWants, wantsDir, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
-	claudeConfigDirEnv, credentialsMtime,
+	claudeConfigDirEnv, credentialsMtime, causeText, legacyLoginEntries, loginNoteText, UNKNOWN_LOGIN_NAME,
 	PICKS_DIR_NAME, clearLoginPick, markLeaving, movedText, readLoginPicks, writeLoginPick,
 	LOGIN_CONTEXT_ENV, loginContextFromEnv, orderWithContext, parseLoginContext, preferenceText, type ClaudeLoginContext,
 } from "./accounts.ts";
@@ -384,8 +384,34 @@ test("notices and the session entry", () => {
 	const text = switchText(from, to, { kind: "limit", window: "five_hour", resetsAt: new Date(2026, 8, 29, 15, 0).getTime() }, now);
 	assert.equal(text, "Claude: switched work@example.com → home (5h limit, resets 15:00)");
 	assert.equal(switchText(from, to, { kind: "auth" }, now), "Claude: switched work@example.com → home (sign-in failed)");
-	const entry = loginEntryFor(to, { from, to, failure: { kind: "auth" }, text: "t" });
-	assert.deepEqual(entry, { v: 1, login: B, label: "home", from: A, fromLabel: "work@example.com", reason: "auth", text: "t" });
+	const entry = loginEntryFor(to, { from, to, failure: { kind: "auth" }, text: "t" }, { labels: true });
+	assert.deepEqual(entry, { v: 1, login: B, label: "home", from: A, fromLabel: "work@example.com", reason: "auth", text: "t" }, "a chat from before login ids keeps today's entry");
+	// A new chat's entries name logins by id only (§app.claude-logins/login-ids): no label, email or text.
+	const reset = new Date(2026, 8, 29, 15, 0).getTime();
+	const limit = loginEntryFor(to, { from, to, failure: { kind: "limit", window: "five_hour", resetsAt: reset }, text: "t" });
+	assert.deepEqual(limit, { v: 1, login: B, from: A, reason: "limit", resetsAt: reset, window: "five_hour" });
+	assert.deepEqual(loginEntryFor(to), { v: 1, login: B });
+	assert.doesNotMatch(JSON.stringify(limit), /example\.com|home/);
+	const names: Record<string, string> = { [A]: "work@example.com", [B]: "home" };
+	const nameOf = (id: string) => names[id] ?? UNKNOWN_LOGIN_NAME;
+	assert.equal(loginNoteText(limit, nameOf, now), text, "worded where shown, the words as before");
+	assert.equal(loginNoteText(loginEntryFor(to, { from, to, failure: { kind: "auth" }, text: "t" }), nameOf, now), "Claude: switched work@example.com → home (sign-in failed)");
+	assert.equal(loginNoteText(loginEntryFor(to, { from, to, text: "t" }), nameOf, now), manualSwitchText(from, to));
+	const moved = loginEntryFor(to, { from, to, reason: "moved", cause: "limited", until: reset, text: "t" });
+	assert.deepEqual(moved, { v: 1, login: B, from: A, reason: "moved", resetsAt: reset, cause: "limited" });
+	assert.equal(loginNoteText(moved, nameOf, now), movedText(from, to, "is limited until 15:00"));
+	assert.equal(loginNoteText(loginEntryFor(to, { from, to, reason: "moved", cause: "left", text: "t" }), nameOf, now), movedText(from, to, causeText("left")));
+	const project = loginEntryFor(to, { from, to, reason: "moved", cause: "off", prefer: { source: "project", name: "Shop" }, text: "t" });
+	assert.deepEqual(project.project, { source: "project", name: "Shop" });
+	assert.equal(loginNoteText(project, nameOf, now), preferenceText(to, { source: "project", name: "Shop" }, from.label, causeText("off")));
+	assert.equal(loginNoteText({ ...moved, from: "l-0000dead" }, nameOf, now), "Claude: switched a login not on this device → home (a login not on this device is limited until 15:00)", "a login this device doesn't know");
+	assert.equal(loginNoteText({ v: 1, login: B }, nameOf, now), undefined, "no switch, no note");
+	assert.equal(loginNoteText({ v: 1, login: B, from: A, fromLabel: "x" }, nameOf, now), undefined, "an older entry shows only its own text");
+	assert.equal(loginNoteText({ v: 1, login: B, from: A, label: "y", text: "As written" }, nameOf, now), "As written");
+	const old = { type: "custom", customType: "claude-login", data: { v: 1, login: A, label: "work@example.com" } };
+	assert.equal(legacyLoginEntries([old]), true);
+	assert.equal(legacyLoginEntries([{ type: "custom", customType: "claude-login", data: { v: 1, login: A } }]), false);
+	assert.equal(legacyLoginEntries([]), false);
 	assert.equal(recordedLogin([
 		{ type: "custom", customType: "claude-login", data: { login: A } },
 		{ type: "message" },
@@ -431,9 +457,12 @@ test("absence: why a chat's login can't run here, and whether the keeper has it 
 	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "1", { device: "desk" }), login(B, "2", { device: "vps" }), login(C, "3", { device: null })], devices: { desk: { order: [A, "default"] } } });
 	ensureLoginDir(s.agentDir, A, s.claudeDir);
 	assert.equal(s.logins.absence(A), undefined, "usable here");
-	assert.deepEqual(s.logins.absence(B), { label: `${B}@example.com`, cause: "left this device", free: false });
-	assert.deepEqual(s.logins.absence(C), { label: `${C}@example.com`, cause: "returned to the keeper", free: true });
-	assert.deepEqual(s.logins.absence("l-0000dead"), { label: "l-0000dead", cause: "was removed", free: false });
+	assert.deepEqual(s.logins.absence(B), { label: `${B}@example.com`, cause: "left this device", code: "left", free: false });
+	assert.deepEqual(s.logins.absence(C), { label: `${C}@example.com`, cause: "returned to the keeper", code: "keeper", free: true });
+	assert.deepEqual(s.logins.absence("l-0000dead"), { label: "l-0000dead", cause: "was removed", code: "removed", free: false });
+	assert.equal(s.logins.noticeName(B), `${B}@example.com`);
+	assert.equal(s.logins.noticeName("default"), s.logins.identityOf("default")?.email ?? "default", "default is always known");
+	assert.equal(s.logins.noticeName("l-0000dead"), undefined, "a login this device doesn't know");
 	markLeaving(s.agentDir, A, "idle");
 	assert.equal(s.logins.absence(A)?.cause, "left this device", "returned for idleness, by Return or for a pin: it left");
 	fs.rmSync(path.join(loginDir(s.agentDir, A), ".sova-leaving"));
@@ -443,6 +472,8 @@ test("absence: why a chat's login can't run here, and whether the keeper has it 
 	updateAccounts(s.agentDir, (f) => { f.logins[0]!.enabled = true; });
 	s.logins.recordFailure({ id: A, label: "a", env: {}, accountUuid: "1" }, { kind: "limit", resetsAt: s.now + 3_600_000 });
 	assert.match(s.logins.absence(A)!.cause, /^is limited until /);
+	assert.equal(s.logins.absence(A)!.code, "limited");
+	assert.equal(s.logins.absence(A)!.until, s.now + 3_600_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -559,7 +590,8 @@ test("a pick: its note and entry, and pickable says why a login can't be picked"
 	const from = { id: A, label: "work@example.com", env: {} };
 	const to = { id: B, label: "home", env: {} };
 	assert.equal(manualSwitchText(from, to), "Claude: switched work@example.com → home (chosen by you)");
-	assert.deepEqual(loginEntryFor(to, { from, to, text: "t" }), { v: 1, login: B, label: "home", from: A, fromLabel: "work@example.com", reason: "manual", text: "t" });
+	assert.deepEqual(loginEntryFor(to, { from, to, text: "t" }, { labels: true }), { v: 1, login: B, label: "home", from: A, fromLabel: "work@example.com", reason: "manual", text: "t" });
+	assert.deepEqual(loginEntryFor(to, { from, to, text: "t" }), { v: 1, login: B, from: A, reason: "manual" });
 
 	const s = sandbox(t);
 	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "acct-1"), login(B, "acct-1", { enabled: false }), login(C, "acct-2", { device: "vps" })], devices: { local: { order: [A, B, "default"] } } });

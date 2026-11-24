@@ -115,8 +115,8 @@ function setup(t: { after: (fn: () => void) => void }, replyFor: (login: string,
 		timings: { requestTimeoutMs: 500, eofGraceMs: 20, termGraceMs: 20, pipeDrainMs: 5, abortGraceMs: 200 },
 		onDebug: () => {},
 	});
-	const entries: ClaudeLoginEntry[] = [];
-	bridge.setSessionLogin("pi-session-1", undefined, (entry) => entries.push(entry));
+	const entries: Seen[] = [];
+	bridge.setSessionLogin("pi-session-1", undefined, (entry, note) => entries.push(seen(entry, note)));
 	// An announced session: without it a tool-less request is a one-shot, torn down after its turn.
 	bridge.setSessionCwd("pi-session-1", root);
 	t.after(() => bridge.disposeAll());
@@ -129,6 +129,9 @@ async function collect(frames: AsyncIterable<ClaudeFrame>): Promise<ClaudeFrame[
 	return out;
 }
 const texts = (frames: ClaudeFrame[]) => JSON.stringify(frames);
+/** An entry the bridge asked to append, with the notice it handed beside it (never stored in a new chat's entry). */
+type Seen = ClaudeLoginEntry & { note?: string };
+const seen = (entry: ClaudeLoginEntry, note?: string): Seen => ({ ...entry, ...(note !== undefined ? { note } : {}) });
 
 test("a limit before anything streamed moves the turn to the next login and answers in the same turn", { timeout: 8000 }, async (t) => {
 	const resetsAt = Math.floor(Date.now() / 1000) + 3600;
@@ -147,12 +150,28 @@ test("a limit before anything streamed moves the turn to the next login and answ
 	assert.deepEqual(s.children[1]!.users[0]!.message.content, [{ type: "text", text: "hi" }]);
 	// Recorded: first A (the initial selection), then the switch with its notice.
 	assert.deepEqual(s.entries.map((e) => [e.login, e.from]), [[A, undefined], [B, A]]);
-	assert.match(s.entries[1]!.text!, /^Claude: switched a@example.com → b@example.com \(5h limit, resets /);
+	assert.match(s.entries[1]!.note!, /^Claude: switched a@example.com → b@example.com \(5h limit, resets /);
 	assert.equal(s.logins.readinessOf(A).state, "limited");
 	// The next turn continues on B's live child.
 	const next = await collect(s.bridge.runTurn(request([user("hi"), { role: "assistant", content: [{ type: "text", text: "hello from B" }], api: "anthropic-messages", provider: "claude-code-cli", model: "sonnet", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 } as Message, user("again")])));
 	assert.equal(s.children.length, 2);
 	assert.equal((next.at(-1) as any).outcome, "success");
+});
+
+test("a chat from before login ids keeps labelled entries; a new one names logins by id (§app.claude-logins/login-ids)", { timeout: 8000 }, async (t) => {
+	const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+	const s = setup(t, (login) => login === A ? LIMIT(resetsAt) : ANSWER("hello from B"));
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.deepEqual(s.entries[0], { v: 1, login: A });
+	assert.deepEqual([s.entries[1]!.label, s.entries[1]!.fromLabel, s.entries[1]!.text], [undefined, undefined, undefined]);
+	assert.equal(s.entries[1]!.window, "five_hour");
+
+	const r = setup(t, (login) => login === A ? LIMIT(resetsAt) : ANSWER("hello from B"));
+	r.bridge.setSessionLogin("pi-session-1", undefined, (entry, note) => r.entries.push(seen(entry, note)), true);
+	await collect(r.bridge.runTurn(request([user("hi")])));
+	assert.equal(r.entries[0]!.label, "a@example.com", "an older chat's entries keep today's shape");
+	assert.equal(r.entries[1]!.fromLabel, "a@example.com");
+	assert.match(r.entries[1]!.text!, /^Claude: switched a@example.com → b@example.com \(5h limit, resets /);
 });
 
 test("a session records the login it starts on, default included, and a recorded one is not recorded again", { timeout: 8000 }, async (t) => {
@@ -163,7 +182,7 @@ test("a session records the login it starts on, default included, and a recorded
 	assert.deepEqual(s.entries.map((e) => [e.login, e.from]), [["default", undefined]], "the first turn records its login, even default");
 
 	const r = setup(t, () => ANSWER("ok"));
-	r.bridge.setSessionLogin("pi-session-1", B, (entry) => r.entries.push(entry));
+	r.bridge.setSessionLogin("pi-session-1", B, (entry, note) => r.entries.push(seen(entry, note)));
 	await collect(r.bridge.runTurn(request([user("hi")])));
 	assert.equal(r.loginOf(r.children[0]!), B, "a recorded login that is still usable is kept");
 	assert.deepEqual(r.entries, [], "and is not recorded a second time");
@@ -225,14 +244,14 @@ test("the pool: an idle chat child whose login leaves is torn down, and the next
 	assert.equal(s.loginOf(s.children[1]!), B, "the next turn starts on B");
 	// Never silent: the move is recorded with the login it left and why.
 	const moved = s.entries.at(-1)!;
-	assert.deepEqual([moved.login, moved.from, moved.fromLabel, moved.reason], [B, A, "a@example.com", "moved"]);
-	assert.equal(moved.text, "Claude: switched a@example.com → b@example.com (a@example.com left this device)");
+	assert.deepEqual([moved.login, moved.from, moved.fromLabel, moved.reason, moved.cause], [B, A, undefined, "moved", "left"]);
+	assert.equal(moved.note, "Claude: switched a@example.com → b@example.com (a@example.com left this device)");
 });
 
 test("the pool: a chat whose recorded login went free at the keeper takes it back, with no note", { timeout: 8000 }, async (t) => {
 	const s = setup(t, () => ANSWER("ok"), {}, true);
 	signIn(s.agentDir);
-	s.bridge.setSessionLogin("pi-session-1", A, (entry) => s.entries.push(entry));
+	s.bridge.setSessionLogin("pi-session-1", A, (entry, note) => s.entries.push(seen(entry, note)));
 	updateAccounts(s.agentDir, (a) => { a.logins.find((l) => l.id === A)!.device = null; });
 	const taken: string[] = [];
 	s.logins.take = async (id: string) => { taken.push(id); updateAccounts(s.agentDir, (a) => { a.logins.find((l) => l.id === id)!.device = "local"; }); };
@@ -244,27 +263,27 @@ test("the pool: a chat whose recorded login went free at the keeper takes it bac
 
 test("the pool: a recorded login that is gone (held elsewhere, removed) moves the chat with a note naming why", { timeout: 8000 }, async (t) => {
 	const s = setup(t, () => ANSWER("ok"), {}, true);
-	s.bridge.setSessionLogin("pi-session-1", A, (entry) => s.entries.push(entry));
+	s.bridge.setSessionLogin("pi-session-1", A, (entry, note) => s.entries.push(seen(entry, note)));
 	updateAccounts(s.agentDir, (a) => { a.logins.find((l) => l.id === A)!.device = "vps"; });
 	let took = 0;
 	s.logins.take = async () => { took++; };
 	await collect(s.bridge.runTurn(request([user("hi")])));
 	assert.equal(took, 0, "a login another device holds is not asked for");
 	assert.equal(s.loginOf(s.children[0]!), B);
-	assert.deepEqual(s.entries.map((e) => [e.login, e.from, e.reason, e.text]), [[B, A, "moved", "Claude: switched a@example.com → b@example.com (a@example.com left this device)"]]);
+	assert.deepEqual(s.entries.map((e) => [e.login, e.from, e.reason, e.cause, e.note]), [[B, A, "moved", "left", "Claude: switched a@example.com → b@example.com (a@example.com left this device)"]]);
 
 	const r = setup(t, () => ANSWER("ok"), {}, true);
-	r.bridge.setSessionLogin("pi-session-1", A, (entry) => r.entries.push(entry));
+	r.bridge.setSessionLogin("pi-session-1", A, (entry, note) => r.entries.push(seen(entry, note)));
 	updateAccounts(r.agentDir, (a) => { a.logins = a.logins.filter((l) => l.id !== A); a.devices.local!.order = [B, "default"]; });
 	await collect(r.bridge.runTurn(request([user("hi")])));
-	assert.deepEqual(r.entries.map((e) => [e.login, e.from, e.fromLabel, e.reason, e.text]), [[B, A, A, "moved", `Claude: switched ${A} → b@example.com (${A} was removed)`]]);
+	assert.deepEqual(r.entries.map((e) => [e.login, e.from, e.fromLabel, e.reason, e.cause, e.note]), [[B, A, undefined, "moved", "removed", `Claude: switched ${A} → b@example.com (${A} was removed)`]]);
 });
 
 // ---- A pick in the composer (§app.claude-logins/switch-login) ------------------------------------
 
 const said = (text: string, n = 2): Message => ({ role: "assistant", content: [{ type: "text", text }], api: "x", provider: "x", model: "x", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: n } as any);
 /** The session branch as pi holds it: the entries the bridge asked to append. */
-const branchOf = (entries: ClaudeLoginEntry[]) => entries.map((data) => ({ type: "custom", customType: "claude-login", data }));
+const branchOf = (entries: Seen[]) => entries.map(({ note: _note, ...data }) => ({ type: "custom", customType: "claude-login", data }));
 /** A pick needs a signed-in login: an empty synthetic credentials file is enough to say so. */
 function signIn(agentDir: string): void {
 	for (const id of [A, B]) {
@@ -287,7 +306,8 @@ test("a pick moves an idle chat now: the manual entry and note, the next turn fo
 	assert.equal(await pickChatLogin(B, { id: "pi-session-1", branch: branchOf(s.entries) }, { bridge: s.bridge, logins: s.logins }), "switched");
 	const pick = s.entries.at(-1)!;
 	assert.deepEqual([pick.login, pick.from, pick.reason], [B, A, "manual"]);
-	assert.equal(pick.text, "Claude: switched a@example.com → b@example.com (chosen by you)");
+	assert.equal(pick.note, "Claude: switched a@example.com → b@example.com (chosen by you)");
+	assert.doesNotMatch(JSON.stringify(s.entries.map(({ note: _n, ...e }) => e)), /@/, "a new chat's entries hold no email (§app.claude-logins/login-ids)");
 	assert.deepEqual(readLoginPicks(s.agentDir, B).map((p) => p.session), ["pi-session-1"], "the pick is marked on B");
 	for (let i = 0; i < 200 && !s.children[0]!.exited; i++) await new Promise((r) => setTimeout(r, 5));
 	assert.equal(s.children[0]!.exited, true, "the idle child on A stops at once");
@@ -401,7 +421,7 @@ test("project login: limited and nothing recorded, the first start moves on and 
 	assert.equal(s.entries[0]!.login, A);
 	assert.equal(s.entries[0]!.from, B, "a note row: it names the login it skipped");
 	assert.equal(s.entries[0]!.reason, "moved");
-	assert.match(s.entries[0]!.text!, /^Claude: using a@example\.com \(project Acme's login b@example\.com is limited until /);
+	assert.match(s.entries[0]!.note!, /^Claude: using a@example\.com \(project Acme's login b@example\.com is limited until /);
 	// The next turn stays on A (it is the chat's own now): no second note.
 	await collect(s.bridge.runTurn(request([user("hi"), said("ok"), user("again")])));
 	assert.equal(s.entries.length, 1, "never repeated");
@@ -409,7 +429,7 @@ test("project login: limited and nothing recorded, the first start moves on and 
 
 test("project login: an open chat keeps its recorded login; a failure on the project's login names it", { timeout: 8000 }, async (t) => {
 	const r = setup(t, () => ANSWER("ok"), {}, false, () => ACME);
-	r.bridge.setSessionLogin("pi-session-1", A, (entry) => r.entries.push(entry));
+	r.bridge.setSessionLogin("pi-session-1", A, (entry, note) => r.entries.push(seen(entry, note)));
 	await collect(r.bridge.runTurn(request([user("hi")])));
 	assert.equal(r.loginOf(r.children[0]!), A, "a setting change moves no open chat");
 	assert.deepEqual(r.entries, []);
@@ -419,7 +439,7 @@ test("project login: an open chat keeps its recorded login; a failure on the pro
 	const frames = await collect(s.bridge.runTurn(request([user("hi")])));
 	assert.equal((frames.at(-1) as any).outcome, "success");
 	assert.deepEqual(s.entries.map((e) => [e.login, e.from]), [[B, undefined], [A, B]]);
-	assert.match(s.entries[1]!.text!, /^Claude: switched b@example\.com → a@example\.com \(5h limit, resets /);
+	assert.match(s.entries[1]!.note!, /^Claude: switched b@example\.com → a@example\.com \(5h limit, resets /);
 });
 
 test("project login: no context (a terminal session) keeps this device's order", { timeout: 8000 }, async (t) => {

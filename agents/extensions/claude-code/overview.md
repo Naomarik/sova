@@ -1,5 +1,5 @@
 ---
-watches: ["pi-config/extensions/claude-code/**", "server/claude-accounts.ts", "server/claude-login-state.ts", "server/auth-status.ts", "server/claude-pool/**", "server/claude-transcript.ts", "scripts/fake-claude.mjs", "scripts/claude-pool-e2e/**"]
+watches: ["pi-config/extensions/claude-code/**", "server/claude-accounts.ts", "server/claude-login-state.ts", "server/claude-login-names.ts", "server/auth-status.ts", "server/claude-pool/**", "server/claude-transcript.ts", "scripts/fake-claude.mjs", "scripts/claude-pool-e2e/**"]
 alsoUpdate: ["pi-config/extensions/claude-code/README.md"]
 ---
 # claude-code
@@ -32,7 +32,7 @@ logins and the pool's marks, and holds Sova's Claude model catalog.
   against the installed CLI's own table.
 - `accounts.ts` (builtins plus its siblings `keychain.ts`, `fixed-settings.ts` and `claude-executable.ts`): the logins, below.
   Imported by `server/claude-accounts.ts` (Settings → Accounts, and the login the server's own `claude`
-  spawns run on: model discovery, `--version`), `server/auth-status.ts`, `server/claude-login-state.ts`, the
+  spawns run on: model discovery, `--version`), `server/auth-status.ts`, `server/claude-login-state.ts`, `server/claude-login-names.ts` (login notes), the
   pool agent `server/claude-pool/`, and `usage-status/fetch.ts`.
 - `claude-executable.ts` (builtins only): the one Claude program every `claude` spawn runs, an absolute path
   resolved from the host's own `PATH` (never a chat's cwd), else `~/.local/bin/claude`, or a plain-words "Claude
@@ -93,9 +93,13 @@ never run while the mesh is on. `accounts.ts` owns the marks every spawn honours
   only?}`, written and waited on by `acquire`, `failoverAsync`, and `take` (a composer pick naming one login).
 - The agent heartbeat `<agent dir>/claude-pool/agent.json` `{v: 1, pid, at, device}`.
 
-**The session's `claude-login` custom entry** `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?,
-text?}`: `reason` is `limit`, `auth`, `manual` (the user's pick) or `moved` (its login stopped being usable here).
-The provider writes it. Sova reads it and renders one with `from` as a note row. The web's login switch calls the
+**The session's `claude-login` custom entry** `{v: 1, login, from?, reason?, resetsAt?, window?, cause?, project?}`
+(§app.claude-logins/login-ids): `reason` is `limit`, `auth`, `manual` (the user's pick) or `moved` (its login
+stopped being usable here, `cause` saying why). It names logins by id only; a session from before login ids
+(`legacyLoginEntries`: it holds an entry with `label`) keeps writing `{v: 1, login, label, from?, fromLabel?,
+reason?, resetsAt?, text?}`. The provider writes it. Sova reads it and renders one with `from` as a note row:
+an older entry's `text` as written, else worded on this device by `loginNoteText` (`server/claude-login-names.ts`,
+names from this device's registry, then the pool). The web's login switch calls the
 provider's `/claude-login <login id>` command handler directly, so its argument is a contract too.
 
 **The `measurement-invalid` mark** (`MEASUREMENT_INVALID_DIAGNOSTIC` in `provider/stream.ts`): a message's `diagnostics` entry `{type: "measurement-invalid", timestamp, details: {reason: "invalid-tool-retry"}}` when the CLI retried after rejected tool input; read by `server/harness/pi/session.ts` (the reply summary's `invalid`) and `server/reply-timing.ts`, which records no speed sample for that reply.

@@ -42,26 +42,25 @@ export function limitLine(model: string, resetsIn?: string | null): string {
 }
 
 /**
- * The limit row's offers (§chat.subagent-profiles/limit-row): up to two of your profiles, in list
- * order, never Off, whose Models part (the chat's own model included) uses no model of the exhausted
- * provider. The chat's current profile only while the chat reads "(edited)". A row that sets no
+ * The limit row's offers (§chat.subagent-profiles/limit-row): up to two profiles, yours in list
+ * order then the built-in ones, whose Models part (the chat's own model included) uses no model of
+ * the exhausted provider. The chat's current profile only while the chat reads "(edited)". A row that sets no
  * model for the chat is never offered: switching to it would leave the chat on the limited model.
  * Neither is a hidden, unusable or unapproved one.
  */
 export function limitOffers<T extends SwitchRow>(rows: readonly T[], exhausted: string, current: { key: string | null; edited: boolean }, max = 2): T[] {
-  return rows
-    .filter((r) => r.group === "yours" && r.kind !== "off" && !r.hidden && !r.unusable && r.approval !== "needed")
+  const usable = rows
+    .filter((r) => r.kind !== "off" && !r.hidden && !r.unusable && r.approval !== "needed")
     .filter((r) => r.setsModel === true && (r.providers?.length ?? 0) > 0 && !r.providers!.includes(exhausted))
-    .filter((r) => r.key !== current.key || current.edited)
-    .slice(0, max);
+    .filter((r) => r.key !== current.key || current.edited);
+  return [...usable.filter((r) => r.group === "yours"), ...usable.filter((r) => r.group === "builtin")].slice(0, max);
 }
 
-/** The picker's rows: Off first, then yours, then this project's; built-in and hidden rows left out
-    except Off, which can't be hidden. */
+/** The picker's rows: yours, then this project's, then the built-in ones; hidden rows left out, and
+    no row for no profile (an older server's Off). */
 export function pickerRows<T extends SwitchRow>(rows: readonly T[]): T[] {
-  const off = rows.filter((r) => r.kind === "off");
   const rest = rows.filter((r) => r.kind !== "off" && !r.hidden);
-  return [...off, ...rest.filter((r) => r.group === "yours"), ...rest.filter((r) => r.group === "project")];
+  return [...rest.filter((r) => r.group === "yours"), ...rest.filter((r) => r.group === "project"), ...rest.filter((r) => r.group === "builtin")];
 }
 
 /** Why a picker row can't be picked here, or null. */
@@ -97,7 +96,7 @@ export interface UpdateSides {
  * (its mode or model not arrived) is none either.
  */
 export function updateOffered(row: Pick<SwitchRow, "kind" | "group" | "unusable"> | null | undefined, s: UpdateSides): boolean {
-  if (!row || row.group !== "yours" || row.kind === "off" || row.unusable) return false;
+  if (!row || row.group !== "yours" || row.kind === "off" || row.unusable) return false; // a built-in one is read-only
   const p = s.profile ?? {};
   const c = s.chat;
   const differs = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a !== b;
@@ -105,11 +104,10 @@ export function updateOffered(row: Pick<SwitchRow, "kind" | "group" | "unusable"
   return differs(p.model, c.model) || differs(p.thinking, c.thinking) || differs(p.mode, c.mode) || minors(p.minorModes, c.minorModes);
 }
 
-/** What a card pick sends for a joined row (POST /api/sessions/profile): Off is null, a library
-    profile no session profile links is picked as Off with its helpers, any other its session half. */
-export type CardPickRef = { source: "sova" | "user" | "project" | "library"; id: string } | null;
+/** What a card pick sends for a joined row (POST /api/sessions/profile): a library profile no
+    session profile links is picked with its helpers only, any other by its session half. */
+export type CardPickRef = { source: "sova" | "user" | "project" | "library"; id: string };
 export function cardPickRef(r: { kind: string; id: string; libraryId?: string; session?: { source: "sova" | "user" | "project"; id: string } }): CardPickRef {
-  if (r.kind === "off") return null;
   if (r.kind === "library") return { source: "library", id: r.libraryId ?? r.id };
   return r.session ? { source: r.session.source, id: r.session.id } : { source: "user", id: r.id };
 }

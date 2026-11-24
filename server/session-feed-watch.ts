@@ -111,12 +111,11 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
   let limitErr: unknown = null;
   let limited = 0;
   /** When each folder was last dropped for being out of scope: re-watched, only what was written
-      since needs reading. One not watched since the start: what was written since then (the tracker's
-      first build read everything before). A watch lost to an error means a full read, since events
-      may have been lost before it. */
-  const startedAt = Date.now();
+      since needs reading. One this run never watched has every file noted, whatever its times (a home
+      published whole by a rename keeps its files' own). A watch lost to an error means a full read,
+      since events may have been lost before it. */
   const dropped = new Map<string, number>();
-  /** Notes the folder's session files written since `since`, so the tracker reads
+  /** Notes the folder's session files written since `since` (every one for 0), so the tracker reads
       only those, never every folder. Unreadable: the next listing reads everything. */
   const noteFolder = (dir: string, since: number): void => {
     if (!files) return;
@@ -129,11 +128,13 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
     }
     for (const n of names) {
       const p = join(dir, n);
-      try {
-        // A file removed while unwatched is the stat sweep's: it finds it gone within a minute.
-        if (statSync(p).mtimeMs < since - 2_000) continue;
-      } catch {
-        continue;
+      if (since > 0) {
+        try {
+          // A file removed while unwatched is the stat sweep's: it finds it gone within a minute.
+          if (statSync(p).mtimeMs < since - 2_000) continue;
+        } catch {
+          continue;
+        }
       }
       files(p);
     }
@@ -161,7 +162,7 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
       watchers.set(dir, w);
       if (synced && dir !== liveDir) {
         // A folder back in scope, or new: only its own files are read, never a full build.
-        if (scope) noteFolder(dir, dropped.get(dir) ?? startedAt);
+        if (scope) noteFolder(dir, dropped.get(dir) ?? 0);
         else files?.(null);
       }
       dropped.delete(dir);

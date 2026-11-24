@@ -1,7 +1,7 @@
 // What tells the session feed to compare (§app.decisions/push): file watches over temp folders and
 // a stubbed live-record signature. No server, no ~/.pi.
 import assert from "node:assert/strict";
-import { type FSWatcher, mkdirSync, mkdtempSync, rmSync, utimesSync, watch, writeFileSync } from "node:fs";
+import { type FSWatcher, mkdirSync, mkdtempSync, renameSync, rmSync, utimesSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -140,17 +140,19 @@ describe("watchFeedInputs", () => {
 });
 
 describe("watchFeedInputs with a scope (§app.session-list/live-watch-scope)", () => {
-  test("a cold folder is left unwatched; a hot one, and one opened, are watched, and re-watching reads only that folder's new files", async () => {
+  test("a cold folder is left unwatched; a hot one, and one opened, are watched, and re-watching reads only that folder's files", async () => {
     const f = fixture();
     const cold = join(f.sessionsDir, "--cold--");
     const hot = join(f.sessionsDir, "--hot--");
-    const home = join(f.sessionsDir, "..", "homes", "h1", "sessions");
-    const fresh = join(f.sessionsDir, "..", "homes", "h2", "sessions");
+    const homes = join(f.sessionsDir, "..", "homes");
+    const home = join(homes, "h1", "sessions");
+    const fresh = join(homes, "h2", "sessions");
     for (const d of [cold, hot, home]) mkdirSync(d, { recursive: true });
-    writeFileSync(join(home, "old.jsonl"), "{}\n");
     const old = new Date(Date.now() - 30 * 86_400_000);
+    writeFileSync(join(home, "old.jsonl"), "{}\n");
     utimesSync(join(home, "old.jsonl"), old, old);
     for (const d of [cold, hot, home, join(f.sessionsDir, "--w--")]) utimesSync(d, old, old);
+    const hotSet = new Set([hot, home]);
     const active = new Set<string>();
     const heard: (string | null)[] = [];
     const stop = watchFeedInputs(() => {}, {
@@ -159,31 +161,39 @@ describe("watchFeedInputs with a scope (§app.session-list/live-watch-scope)", (
       roots: () => [],
       liveSignature: () => "same",
       liveCheckMs: 50,
+      resyncMs: 300,
       files: (p) => heard.push(p),
-      scope: { hot: () => new Set([hot, ...active]), active: () => active, folders: () => [home], accepts: (d) => d === fresh },
+      scope: { hot: () => new Set([...hotSet, ...active]), active: () => active, folders: () => [home], accepts: (d) => d === fresh },
     });
     const named = (end: string) => heard.some((p) => p?.endsWith(end));
     try {
       writeFileSync(join(cold, "a.jsonl"), "{}\n");
+      utimesSync(cold, old, old);
       writeFileSync(join(hot, "b.jsonl"), "{}\n");
       assert.ok(await until(() => named("b.jsonl")), "a hot folder is watched");
       await sleep(200);
       assert.equal(named("a.jsonl"), false, "a cold folder is not");
+      hotSet.delete(home); // turns cold: dropped at the next re-sync
+      await sleep(500);
       writeFileSync(join(home, "c.jsonl"), "{}\n");
       utimesSync(home, old, old);
       await sleep(200);
-      assert.equal(named("c.jsonl"), false, "a cold home is not");
+      assert.equal(named("c.jsonl"), false, "a home gone cold is not watched");
       active.add(home); // opened: watched at once, not at the next re-sync
       assert.ok(await until(() => named("c.jsonl")), "the file written while unwatched is noted when it is watched again");
-      assert.equal(named("old.jsonl"), false, "a file older than the watch's start is not");
-      assert.equal(heard.includes(null), false, "no full read for a folder back in scope");
+      assert.equal(named("old.jsonl"), false, "a file older than its drop is not");
       writeFileSync(join(home, "d.jsonl"), "{}\n");
       assert.ok(await until(() => named("d.jsonl")), "an opened home is watched");
-      mkdirSync(fresh, { recursive: true });
-      active.add(fresh); // a home just made, not listed by folders() yet
-      await sleep(400);
-      writeFileSync(join(fresh, "e.jsonl"), "{}\n");
-      assert.ok(await until(() => named("e.jsonl")), "an active home folders() hasn't listed is watched");
+      // A home published whole by a rename (a Transport's arrival, a restore) keeps its old file times.
+      const staged = join(f.sessionsDir, "..", "staged");
+      mkdirSync(staged);
+      writeFileSync(join(staged, "e.jsonl"), "{}\n");
+      utimesSync(join(staged, "e.jsonl"), old, old);
+      mkdirSync(join(homes, "h2"));
+      renameSync(staged, fresh);
+      active.add(fresh); // not listed by folders() yet
+      assert.ok(await until(() => named("e.jsonl")), "every file of a folder never watched is noted, whatever its time");
+      assert.equal(heard.includes(null), false, "never a full read for a folder joining the scope");
     } finally {
       stop();
     }

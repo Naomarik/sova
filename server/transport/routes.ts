@@ -29,7 +29,7 @@ import { isArchived, setArchived } from "../archived-sessions";
 import { pageOnlyRefusal } from "../page-only";
 import { readRegistry } from "../project-services/store";
 import { resolveSessionPath } from "../paths";
-import { archiveSession, cleanupSessions, getSessionSummary } from "../sessions-index";
+import { archiveSession, cleanupSessions, getSessionSummary, markArchived } from "../sessions-index";
 import { stateRoot } from "../state-root";
 import { cutChatUsage, importChatUsage } from "../usage-export";
 import { worktreesOf } from "../worktrees-state";
@@ -81,9 +81,10 @@ async function moved(r: TransportRecord): Promise<void> {
   forgetWorkerChats(team);
   const arrivedPath = ((r.ext ?? {}) as { arrivedPath?: string }).arrivedPath;
   markMoved(r.chatId, { tid: r.tid, peer: r.peer, to: r.peerLabel, at: new Date().toISOString(), arrivedId: r.arrivedId ?? r.chatId, ...(arrivedPath ? { arrivedPath } : {}) });
-  // The Moved row is archived by its mark only (the chat was closed at the switch): Archive's own path would take a
-  // chat with no message yet for an empty husk and delete it, safety copy and all. Nothing here is ever deleted.
-  setArchived(r.chatId, true);
+  // The Moved row is archived as every archive is (markArchived: the mark, the quiet close, its links), never through
+  // Archive's own path, which would take a chat with no message yet for an empty husk and delete it, safety copy and
+  // all. A home's shared folder is kept by an archive.
+  await markArchived(r.chatId, r.path);
   // The safety copy keeps the package: the code exactly as it left, every commit and change.
   const home = chatHome(r.chatId);
   const spool = join(stateRoot(), "transport", "spool", `${r.tid}.tar.zst`);
@@ -278,8 +279,8 @@ export function startRefusal(path: string): string | null {
 
 /**
  * The arrival opens the chat to write its note, and an archived chat opens for nothing: one that arrived archived
- * (archived where it came from) is opened with its mark held off, then closed again (`rearchive`) and its mark put back:
- * the chat stays archived as it came, whatever the close does.
+ * (archived where it came from) is opened with its mark held off, then archived again (`rearchive`, which sets the
+ * mark before anything else): the chat stays archived as it came.
  */
 export async function openKeepingArchive(path: string, open: () => Promise<void>, rearchive: () => Promise<void>): Promise<void> {
   const id = basename(dirname(dirname(path)));
@@ -288,17 +289,15 @@ export async function openKeepingArchive(path: string, open: () => Promise<void>
   try {
     await open();
   } finally {
-    if (was) {
-      await rearchive().catch((err: unknown) => log(`${id}: its close after the arrival note failed (${err instanceof Error ? err.message : String(err)})`));
-      setArchived(id, true);
-    }
+    if (was) await rearchive().catch((err: unknown) => log(`${id}: archiving it again after the arrival note failed (${err instanceof Error ? err.message : String(err)})`));
   }
 }
 
-/** An archived arrival, its note written: closed again, and nothing else. Archive's own path would take a chat with
-    no message yet for an empty husk and delete it (its home too), and an arrival never deletes anything. */
+/** An archived arrival, its note written: archived again as every archive is (markArchived: its mark first, then the
+    quiet close), never through Archive's own path, which would take a chat with no message yet for an empty husk and
+    delete it with its home. An arrival never deletes anything. */
 export async function closeArrivedArchived(path: string): Promise<void> {
-  await closeChat(path, "This chat arrived archived.", { quiet: "archived" });
+  await markArchived(basename(dirname(dirname(path))), path);
 }
 
 /** Whether the arrived home says its chat is archived (the mark travels in `<home>/chat/meta.json`). */
@@ -442,8 +441,8 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     await closeChat(r.path, `This chat is moving back to ${r.peerLabel}.`, { quiet: "archived" });
     forgetWorkerChats(helpers);
     markMoved(id, { tid: r.tid, peer: r.peer, to: r.peerLabel, at: new Date().toISOString(), arrivedId: r.sourceChatId, arrivedPath: back.path });
-    // By the mark only, as at a Move's source (never Archive's empty-husk deletion).
-    setArchived(id, true);
+    // As at a Move's source: markArchived, never Archive's empty-husk deletion.
+    await markArchived(id, r.path);
     emitChatNews({ name: "chat.removed", chat: id, home: chatHome(id) });
     sessionsChanged();
   });

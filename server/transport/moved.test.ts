@@ -280,13 +280,9 @@ test("an arrival of a chat archived where it came from opens to write its note, 
   const file = join(ensureChatHome(id), "sessions", `t_${id}.jsonl`);
   setArchived(id, true);
   const seen: string[] = [];
-  await openKeepingArchive(file, async () => void seen.push(isArchived(id) ? "refused: archived" : "opened"), async () => void seen.push("archived again"));
+  const { closeArrivedArchived } = await import("./routes");
+  await openKeepingArchive(file, async () => void seen.push(isArchived(id) ? "refused: archived" : "opened"), async () => (seen.push("archived again"), closeArrivedArchived(file)));
   assert.deepEqual(seen, ["opened", "archived again"]);
-  assert.ok(isArchived(id));
-  // Archive failing: the mark goes back on anyway.
-  await openKeepingArchive(file, async () => {}, async () => {
-    throw new Error("mid-turn");
-  });
   assert.ok(isArchived(id));
   // Not archived: nothing changes.
   setArchived(id, false);
@@ -301,7 +297,7 @@ test("an archived chat's first Move completes there and is listed archived at on
   const { homeArrived } = await import("../chat-homes/records");
   const { ARCHIVED_REFUSAL, isArchived, setArchived } = await import("../archived-sessions");
   const dest = await import("./destination");
-  const { cameBack, openKeepingArchive, startRefusal } = await import("./routes");
+  const { cameBack, closeArrivedArchived, openKeepingArchive, startRefusal } = await import("./routes");
   const { mkdirSync, writeFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   const id = "0199aaaa-0000-7000-8000-000000000013";
@@ -331,7 +327,7 @@ test("an archived chat's first Move completes there and is listed archived at on
           if (startRefusal(p) || isArchived(id)) throw new Error(ARCHIVED_REFUSAL);
           notes.push(text);
         },
-        async () => {},
+        () => closeArrivedArchived(p),
       ),
     tellHelper: async () => {},
     helperNote: () => "",

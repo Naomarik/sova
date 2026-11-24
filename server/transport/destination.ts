@@ -15,7 +15,7 @@ import { stateRoot, agentRoot } from "../state-root";
 import { markOwned } from "../write-guard";
 import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
 import { registerArrivedHome } from "../chat-homes/place";
-import { reloadHome } from "../chat-homes/records";
+import { homeArrived } from "../chat-homes/records";
 import { compressedChats, dropCompressed, sidecarOf } from "../archive-compress/store";
 import { dropStages, git, havesOf, type KeptFile, publishTrees, rebuildWorktrees, SnapshotError, type StagedTree } from "./git-snapshot";
 import { afterArrival, knob, prepareDestination, type PrepareRequest } from "./hooks";
@@ -384,8 +384,8 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
           log(`${tid}: its usage records weren't brought in: ${err instanceof Error ? err.message : String(err)}`);
         }
       // Listed (its home.json names this state root), the list bumped, chat.created said; then its helpers tracked.
-      // Its records (meta, seen, names…) read now, not at the next restart.
-      reloadHome(r.arrivedId);
+      // Every store sees its records (archive mark, origin, seen, names, cards…) now, not at the next restart.
+      homeArrived(r.arrivedId);
       if (!registerArrivedHome(r.arrivedId)) throw new Error("The arrived home isn't this device's (its home.json).");
       need().adopt(r.arrivedId);
       await knob(tid, "published");

@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import type { WebSettings } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-web-settings-"));
 after(() => rmSync(agentDir, { recursive: true, force: true }));
@@ -206,8 +207,8 @@ test("a malformed library is never overwritten, and the seeding waits for a late
 test("the storage switches: on unless stored false; a write takes only booleans and keeps the other", () => {
   put(JSON.stringify({ version: 1 }));
   assert.deepEqual(readWebSettings().storage, STORAGE_ON);
-  assert.deepEqual(writeWebSettings({ storage: { chatHomes: false } }).storage, { chatHomes: false, autoCompress: true });
-  assert.deepEqual(writeWebSettings({ storage: { autoCompress: false } }).storage, { chatHomes: false, autoCompress: false });
+  assert.deepEqual((writeWebSettings({ storage: { chatHomes: false } }) as WebSettings).storage, { chatHomes: false, autoCompress: true });
+  assert.deepEqual((writeWebSettings({ storage: { autoCompress: false } }) as WebSettings).storage, { chatHomes: false, autoCompress: false });
   assert.deepEqual(writeWebSettings({ storage: { chatHomes: "no" } }), { error: "Expected storage.chatHomes to be a boolean" });
   assert.equal("error" in writeWebSettings({ storage: [] }), true);
   assert.deepEqual(readWebSettings().storage, { chatHomes: false, autoCompress: false });

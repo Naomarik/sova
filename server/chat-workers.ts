@@ -447,6 +447,42 @@ export class WorkerRegistry {
     return s === "running" || s === "starting";
   }
 
+  /** Helpers being parked (a Move's switch): their process's end is no crash and no idle stop. */
+  private readonly parking = new Set<string>();
+
+  /**
+   * A Move's switch (§app.transport/switch): the worker's process stopped and its record left idle, never
+   * ended, so it comes back waiting on the device its chat moves to. True when it was running a turn.
+   */
+  async park(chatId: string): Promise<boolean> {
+    const l = this.live.get(chatId);
+    if (!l || l.rec.state === "ended") return false;
+    const wasRunning = this.working(chatId);
+    this.cancelSettle(l);
+    this.parking.add(chatId);
+    try {
+      if (l.handle && !l.handle.closed) await this.procs.stop(l.rec).catch((err) => log(`${chatId}: park stop failed: ${err instanceof Error ? err.message : String(err)}`));
+      l.handle = null;
+      if (l.rec.state !== "idle") this.set(l, { state: "idle" });
+      this.broadcast(l, { t: "ended", cause: "idle" });
+      this.stateChanged(l);
+    } finally {
+      this.parking.delete(chatId);
+    }
+    return wasRunning;
+  }
+
+  /** After a Move: these helpers leave this server's memory; their records' files stay as they are (the safety copy). */
+  forget(chatIds: readonly string[]): void {
+    for (const id of chatIds) {
+      const l = this.live.get(id);
+      if (!l) continue;
+      this.cancelSettle(l);
+      this.live.delete(id);
+      this.keys.delete(l.rec.key);
+    }
+  }
+
   /** Stop every worker of parent session `parentSessionId` (it was archived or deleted). */
   async stopAllOf(parentSessionId: string, reason: string): Promise<void> {
     // Every report still waiting to open the parent, an ended worker's included.
@@ -693,6 +729,7 @@ export class WorkerRegistry {
   onExit(chatId: string, cause: string): void {
     const l = this.live.get(chatId);
     if (!l || l.rec.state === "ended") return;
+    if (this.parking.has(chatId)) return; // parked for a Move: park() records it idle
     if (cause === "reload") return; // the replacement takes the handle over
     l.handle = null;
     if (cause === "archived") return; // a stop the registry asked for: stop() records it
@@ -713,6 +750,7 @@ export class WorkerRegistry {
   died(d: ChatDeath, marker: InflightMarker | null): void {
     const l = this.live.get(d.chatId);
     if (!l || l.rec.state === "ended") return;
+    if (this.parking.has(d.chatId)) return; // parked for a Move: park() records it idle
     // A reopen is in flight (this death's resume, or a late second report of the same death): the
     // process now starting is not the one that died.
     if (l.opening) return log(`${d.chatId}: a death reported while it reopens; ignored`);

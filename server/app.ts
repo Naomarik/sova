@@ -155,6 +155,7 @@ import { mountResync } from "./mesh/resync";
 import { areasForbid, probePeer } from "./mesh/hello";
 import { LINK_LIVE, meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
+import { mountTransport } from "./transport/routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinksSource } from "./link-delivery";
 import { linkSandbox, linkSandboxOf } from "./link-sandbox";
 import { mountSync } from "./sync";
@@ -2192,6 +2193,8 @@ export function buildApp(deps: AppDeps) {
     homedir,
     protectedRoots: () => [stateRoot(), SESSIONS_DIR],
   });
+  // Transport a chat to another of your devices (server/transport/routes.ts): /api/transport*, /api/peer/transport/*.
+  mountTransport(app, meshApi);
   // The link extension asks this, by session id, whether a hosted session is in a live link now:
   // a session that joins one gets the link tools at its next request (§mesh.links/tools).
   (globalThis as Record<symbol, unknown>)[LINK_LIVE] = (id: string) => meshLinks.inLiveLink(id);

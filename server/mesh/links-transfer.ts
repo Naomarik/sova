@@ -599,6 +599,8 @@ export interface PullJob {
   onExtracting?(): void;
   /** Throws a TransferError (not-writable | protected | bad-dest) to refuse the archive. */
   prescan?(members: AsyncIterable<TarMember>): Promise<void>;
+  /** The sender's path to GET, when it isn't an offer's (a transport's package, §app.transport/package). */
+  path?: string;
 }
 
 export interface PullDeps {
@@ -706,7 +708,7 @@ export class Pulls {
     let restarted = false;
     let forbidden = 0;
     let backoff = 5_000;
-    const path = `/api/peer/links/${job.linkId}/offers/${job.offerId}/tar`;
+    const path = job.path ?? `/api/peer/links/${job.linkId}/offers/${job.offerId}/tar`;
     try {
       for (;;) {
         this.check(job.offerId);

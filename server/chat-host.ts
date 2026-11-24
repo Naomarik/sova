@@ -1166,3 +1166,18 @@ export function workerMembersOf(sessionId: string): { sid: string; path: string;
 
 /** The handle `chatHandle` finds, if it is a chat process's (tests, health). */
 export const isRemote = (path: string): boolean => chatHandle(path)?.where === "process";
+
+/** A Move's switch: worker chat `chatId`'s process stopped, its record idle (§app.transport/switch). True when it was working. */
+export async function parkWorkerChat(chatId: string): Promise<boolean> {
+  return (await router?.workers.park(chatId)) ?? false;
+}
+
+/** After a Move: these worker chats leave this server's memory; their records stay on disk as the safety copy. */
+export function forgetWorkerChats(chatIds: readonly string[]): void {
+  router?.workers.forget(chatIds);
+}
+
+/** A home that arrived from another device (Transport): its helpers' records are tracked now. */
+export function adoptArrivedHome(homeId: string): number {
+  return router?.workers.adoptHome(homeId) ?? 0;
+}

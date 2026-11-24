@@ -16,7 +16,7 @@ import { judgedPath } from "./paths";
 
 /** What a request needs: a capability, `hello` (presence, or a broken file), or `full` (every cap). */
 /** `never`: a socket the peer listener never serves, whatever the grant (/ws/events, §app.events/listeners). */
-export type Need = MeshCap | "hello" | "full" | "sync.docs" | "never";
+export type Need = MeshCap | "hello" | "full" | "sync.docs" | "never" | "ticket";
 
 export type AccessRead = { kind: "missing" } | { kind: "ok"; file: MeshAccessFile } | { kind: "error"; error: string };
 
@@ -168,6 +168,8 @@ export function allows(nodeId: string, need: Need): boolean {
   const caps = capsOf(nodeId);
   if (caps === "hello-only") return need === "hello";
   if (need === "hello") return caps.presence;
+  // Any peer not set to none: the route's own ticket check is the permission (§mesh.peers/transport-ticket).
+  if (need === "ticket") return caps.presence;
   if (need === "full") return MESH_CAPS.every((c) => caps[c]);
   if (need === "sync.docs") return caps["sync.settings"] || caps["sync.themes"];
   return caps[need];
@@ -208,6 +210,10 @@ const PEER_RULES: Array<[RegExp, Need]> = [
   [/^\/api\/peer\/hello$/, "hello"],
   // A one-time random id checked and burnt: it shows the peer nothing, and a grant must not stop your click.
   [/^\/api\/peer\/click-proof$/, "hello"],
+  // A transport's package (§mesh.peers/transport-ticket): no grant covers it. The route itself checks the one-time
+  // ticket your click minted for this chat and this caller; every other transport route is a sessions route.
+  [/^\/api\/peer\/transport\/[^/]+\/package$/, "ticket"],
+  [/^\/api\/peer\/transport(?:\/.*)?$/, "sessions"],
   [/^\/api\/peer\/details$/, "presence"],
   [/^\/api\/peer\/(?:label|browser-access)$/, "presence"],
   [/^\/api\/peer\/(?:rename|set-browser-access)$/, "admin"],
@@ -300,7 +306,9 @@ const READ_PREFIXES = [
 // `audit`: the record of who ran what (server/command-audit.ts): the operator's, never below `full`.
 const FULL_PREFIXES = [
   // A chat dismissed from Needs you (§app.session-list/needs-you-dismiss): the operator's own list.
-  "attention","auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs", "mcp"];
+  "attention","auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs", "mcp",
+  // Transport (§app.transport/start): only your click on this device's own page starts or steers one.
+  "transport"];
 // A project mode's command (§chat.mode-menu/project-mode-commands) runs one of the project's own programs: `full`,
 // whatever method, though it sits under `mode`, which stays `sessions`.
 const MODE_COMMAND_PATH = "/api/mode/command";

@@ -88,3 +88,37 @@ test("a chat in a Move's switch, or moved away, starts nowhere here; before the 
   assert.equal(startRefusal(path), "This chat moved to Laptop; it runs there now.");
   assert.equal(startRefusal("/elsewhere/sessions/x.jsonl"), null, "a chat outside the homes isn't Transport's");
 });
+
+test("the start guard is a memory lookup: 200 records on disk are read once, then every write keeps it", async () => {
+  const { chatHome } = await import("../chat-homes/root");
+  const { startRefusal } = await import("./routes");
+  const { resetActiveIndex, stepDone, updateTransport } = await import("./store");
+  const { stateRoot } = await import("../state-root");
+  const { readdirSync, renameSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  resetMovedMemo();
+  resetActiveIndex();
+  const ids = Array.from({ length: 200 }, (_, i) => `0199bbbb-0000-7000-8000-${String(i).padStart(12, "0")}`);
+  for (const [i, id] of ids.entries()) {
+    createTransport({ tid: `tr_load${String(i).padStart(4, "0")}`, side: "source", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "laptop", peerLabel: "Laptop", path: "/x.jsonl", folder: "~/x", state: i % 2 ? "done" : "packing" });
+    if (!(i % 2)) stepDone(`tr_load${String(i).padStart(4, "0")}`, "stopped");
+  }
+  resetActiveIndex();
+  const path = (id: string) => `${chatHome(id)}/sessions/2026-01-01T00-00-00-000Z_${id}.jsonl`;
+  assert.equal(startRefusal(path(ids[0]!)), "This chat is moving to Laptop. Nothing was sent.");
+  // Every record file hidden from the disk: the guard still answers, so it reads none of them.
+  const dir = join(stateRoot(), "transport");
+  const hidden = `${dir}.hidden`;
+  renameSync(dir, hidden);
+  try {
+    const t0 = performance.now();
+    for (let n = 0; n < 50; n++) for (const [i, id] of ids.entries()) assert.equal(startRefusal(path(id)) !== null, !(i % 2));
+    assert.ok(performance.now() - t0 < 2000, "10,000 lookups take well under the cost of one read each");
+  } finally {
+    renameSync(hidden, dir);
+  }
+  assert.equal(readdirSync(dir).filter((n) => n.startsWith("tr_load")).length, 200);
+  // A write here updates it at once.
+  updateTransport("tr_load0000", { state: "done" });
+  assert.equal(startRefusal(path(ids[0]!)), null);
+});

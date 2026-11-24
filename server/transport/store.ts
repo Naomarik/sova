@@ -114,7 +114,28 @@ function write(r: TransportRecord): void {
   const f = fileOf(r.tid);
   writeFileSync(`${f}.tmp`, `${JSON.stringify(r)}\n`, { mode: 0o600 });
   renameSync(`${f}.tmp`, f);
+  if (active?.dir === dirOf()) index(active.byTid, r);
 }
+
+// The transports still under way, per chat, in memory: read from disk once, then kept by every write here (this
+// server is their only writer). A chat's start asks it on each attach, prompt and wake, so it never reads a file.
+let active: { dir: string; byTid: Map<string, TransportRecord> } | null = null;
+const live = (r: TransportRecord) => r.state !== "done" && r.state !== "cancelled";
+function index(byTid: Map<string, TransportRecord>, r: TransportRecord): void {
+  if (live(r)) byTid.set(r.tid, r);
+  else byTid.delete(r.tid);
+}
+function activeIndex(): Map<string, TransportRecord> {
+  const dir = dirOf();
+  if (active?.dir !== dir) {
+    const byTid = new Map<string, TransportRecord>();
+    for (const r of listTransports()) index(byTid, r);
+    active = { dir, byTid };
+  }
+  return active.byTid;
+}
+/** Tests: forget the index. */
+export const resetActiveIndex = (): void => void (active = null);
 
 export function createTransport(r: Omit<TransportRecord, "v" | "createdAt" | "updatedAt" | "attempt" | "steps"> & { steps?: TransportRecord["steps"] }): TransportRecord {
   const now = new Date().toISOString();
@@ -157,7 +178,9 @@ function emit(r: TransportRecord): void {
 
 /** The transport of chat `chatId` that is still under way here, if any. */
 export function activeTransportOf(chatId: string): TransportRecord | null {
-  return listTransports().find((r) => (r.chatId === chatId || r.sourceChatId === chatId) && r.state !== "done" && r.state !== "cancelled") ?? null;
+  let first: TransportRecord | null = null;
+  for (const r of activeIndex().values()) if ((r.chatId === chatId || r.sourceChatId === chatId) && (!first || r.createdAt < first.createdAt)) first = r;
+  return first;
 }
 
 /** What a page may see of a record: never the ticket. */

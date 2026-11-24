@@ -11,7 +11,7 @@
 // a fresh load): a new form or a new field with no row fails "the table covers…" below.
 // Known defects (.cache/settings-qa/defects.md) are `todo` with their id, never weakened assertions.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { scratchRoot } from "../../server/test-scratch";
@@ -24,6 +24,25 @@ const agentDir = scratchRoot("sova-settings-forms-");
 process.env.PATH = (process.env.PATH ?? "").split(":").filter((d) => !existsSync(join(d, "claude"))).join(":");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
+// One helper profile of yours: Sova creates none of its own (its built-in ones are in no file), and
+// the Profiles rows below edit one of yours.
+const route = (model: string, effort: string) => ({ primary: { backend: "claude-code", model, effort }, fallback: null });
+writeFileSync(
+  join(agentDir, "subagent-profiles.json"),
+  JSON.stringify({
+    version: 1,
+    profiles: [
+      {
+        id: "mine",
+        name: "Mine",
+        delegate: { planning: route("claude-opus-5-5", "high"), investigation: route("claude-opus-5-5", "medium"), routine: route("claude-opus-5-5", "medium"), complex: route("claude-opus-5-5", "high") },
+        teams: null,
+        members: null,
+        specWriter: null,
+      },
+    ],
+  }),
+);
 
 const { testApp } = await import("../../server/mesh/app-test-fixtures");
 const app = await testApp();
@@ -76,7 +95,6 @@ const titles = await import("./session-title-settings-draft");
 const titleForm = await import("./session-title-settings-form");
 const { TITLE_RULES } = await import("../../shared/session-title-limits");
 const profiles = await import("./profiles-draft");
-const { OFF_KEY } = await import("../../shared/profiles");
 /** The first library half's id in the Profiles draft. */
 const lib0 = (d: Json): string => Object.keys(d.library)[0]!;
 const summarizer = await import("./summarizer-draft");
@@ -195,7 +213,7 @@ const ROWS: Row[] = [
     draft: () => profiles.profilesDraft.draft(),
     setDraft: profiles.profilesDraft.setDraft,
     fields: {
-      default: { valid: OFF_KEY },
+      default: { valid: "library:mine" },
       rows: {
         valid: (cur: Json) => [{ ...cur[0], name: "Mine" }, ...cur.slice(1)],
         invalid: [(cur: Json) => [{ ...cur[0], name: "" }], (cur: Json) => [{ ...cur[0], name: long(49) }], (cur: Json) => [{ ...cur[0], name: "Off" }]],

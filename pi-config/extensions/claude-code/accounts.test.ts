@@ -412,6 +412,11 @@ test("notices and the session entry", () => {
 	assert.equal(legacyLoginEntries([old]), true);
 	assert.equal(legacyLoginEntries([{ type: "custom", customType: "claude-login", data: { v: 1, login: A } }]), false);
 	assert.equal(legacyLoginEntries([]), false);
+	// A fork or copy of an older chat carries the source's labelled entries with their earlier times: it is new.
+	const at = (timestamp: string) => ({ ...old, timestamp });
+	assert.equal(legacyLoginEntries([at("2026-11-01T10:00:00.000Z")], "2026-11-24T12:00:00.000Z"), false, "a fork of an older chat writes ids only");
+	assert.equal(legacyLoginEntries([at("2026-11-24T12:00:01.000Z")], "2026-11-24T12:00:00.000Z"), true, "the older chat itself keeps its labels");
+	assert.equal(legacyLoginEntries([{ ...old }], "2026-11-24T12:00:00.000Z"), false, "an entry with no time doesn't make a chat old once its start is known");
 	assert.equal(recordedLogin([
 		{ type: "custom", customType: "claude-login", data: { login: A } },
 		{ type: "message" },

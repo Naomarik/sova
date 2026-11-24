@@ -1461,13 +1461,20 @@ export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch,
 	};
 }
 /**
- * Whether a session is from before login ids (§app.claude-logins/login-ids): a `claude-login` entry
- * on `entries` carries a label. Such a session keeps writing labelled entries; any other writes ids only.
+ * Whether a session is from before login ids (§app.claude-logins/login-ids): this session itself
+ * wrote a `claude-login` entry with a label, i.e. one stamped no earlier than its own header
+ * (`startedAt`, the header's timestamp). A fork or copy of an older chat carries the source's
+ * entries with their own, earlier times, so it is a new chat and writes ids only. Without a start
+ * time, any labelled entry counts. Such a session keeps writing labelled entries.
  */
-export function legacyLoginEntries(entries: readonly unknown[]): boolean {
+export function legacyLoginEntries(entries: readonly unknown[], startedAt?: string): boolean {
+	const start = startedAt ? Date.parse(startedAt) : Number.NaN;
 	for (const raw of entries) {
-		const e = raw as { type?: unknown; customType?: unknown; data?: any };
-		if (e?.type === "custom" && e.customType === CLAUDE_LOGIN_ENTRY && typeof e.data?.label === "string") return true;
+		const e = raw as { type?: unknown; customType?: unknown; data?: any; timestamp?: unknown };
+		if (e?.type !== "custom" || e.customType !== CLAUDE_LOGIN_ENTRY || typeof e.data?.label !== "string") continue;
+		if (Number.isNaN(start)) return true;
+		const at = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : Number.NaN;
+		if (!Number.isNaN(at) && at >= start) return true;
 	}
 	return false;
 }

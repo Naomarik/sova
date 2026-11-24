@@ -89,6 +89,18 @@ interface ProviderRegistration {
 	/** The watch on the learned list, started once per process. */
 	stopWatch?: () => void;
 }
+/**
+ * Whether this session is a chat from before login ids, whose entries keep labels (§app.claude-logins/login-ids):
+ * never a chat in a chat home (Sova sets SOVA_CHAT_HOME for those, all new); else only when it wrote a labelled
+ * entry itself, after its own header (a fork of an older chat carries the source's entries, so it is new).
+ */
+function isLegacyLoginSession(branch: readonly unknown[], ctx: { sessionManager?: { getHeader?(): { timestamp?: string } | null } } | undefined): boolean {
+	if (process.env.SOVA_CHAT_HOME) return false;
+	let startedAt: string | undefined;
+	try { startedAt = ctx?.sessionManager?.getHeader?.()?.timestamp; } catch { startedAt = undefined; }
+	return legacyLoginEntries(branch, startedAt);
+}
+
 function registration(): ProviderRegistration {
 	const host = globalThis as unknown as Record<symbol, ProviderRegistration | undefined>;
 	return (host[REGISTERED_MARKER] ??= { extras: new Set() });
@@ -171,7 +183,7 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 				// A failover warns; the user's own pick is its note row only.
 				const text = note ?? entry.text;
 				if (text && entry.from !== undefined && entry.reason !== "manual") { try { ctx?.ui?.notify?.(text, "warning"); } catch { /* no UI */ } }
-			}, legacyLoginEntries(branch));
+			}, isLegacyLoginSession(branch, ctx));
 		}
 		noteExtraModel(pi.getFlag(CLAUDE_MODEL_FLAG));
 		const state = registration();

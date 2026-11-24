@@ -149,9 +149,12 @@ test("after arrival: private files still holding the source's paths go to the ag
   assert.match(d.started[0]!.prompt, /still holds laptop's \/Users\/omar\/webapps\/motors/);
   assert.match(d.started[0]!.prompt, /you have no link to it/);
   assert.deepEqual(d.linked, [], "the chat is here now: no link");
-  await afterArrival(req, d.deps);
-  assert.equal(d.started.length, 1);
-  assert.match(d.told[0]!, /still hold that computer's values/);
+  assert.equal(agentOf(d.deps.stateRoot(), "tr_1")?.state, "needs-you", "its turn ended with the file unchanged");
+  // The agent fixes the file this time: once its turn ends, the transport's agent reads as ready.
+  const fixing = device(root, { stateRoot: d.deps.stateRoot, tell: async () => writeFileSync(env, "DATABASE_URL=postgres://localhost/motors\nDATA=/home/me/webapps/motors/data\n") });
+  await afterArrival(req, fixing.deps);
+  assert.equal(fixing.started.length, 0, "the same agent");
+  assert.equal(agentOf(d.deps.stateRoot(), "tr_1")?.state, "ready");
 });
 
 test("a remote's credentials never reach the brief, a check or the dialog's answer", async () => {

@@ -433,13 +433,18 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
 
 /** Wait until the agent's turn ends (it ran, or never showed as running within the grace), then check again. */
 async function waitForTurnEnd(path: string, project: ProjectRef, deps: AgentDeps, signal?: AbortSignal): Promise<AgentCheck[]> {
+  await turnEnded(path, deps, signal);
+  return preflight(project, deps);
+}
+
+/** Resolves once the agent's turn has ended: it ran, or never showed as running within the grace. */
+async function turnEnded(path: string, deps: Pick<AgentDeps, "busy" | "sleep" | "now">, signal?: AbortSignal): Promise<void> {
   const from = deps.now();
   let ran = false;
   for (;;) {
     signal?.throwIfAborted();
-    const busy = deps.busy(path);
-    if (busy) ran = true;
-    else if (ran || deps.now() - from > AGENT_START_GRACE_MS) return preflight(project, deps);
+    if (deps.busy(path)) ran = true;
+    else if (ran || deps.now() - from > AGENT_START_GRACE_MS) return;
     await deps.sleep(AGENT_POLL_MS);
   }
 }
@@ -486,14 +491,21 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
   const hits = sourceValuesIn(req.privateFiles, req.sourceValues);
   if (!hits.length) return [];
   const source = req.sourceLabel ?? req.sourcePeer;
-  const agent = agentOf(deps.stateRoot(), req.tid);
+  const checksOf = (found: typeof hits): AgentCheck[] =>
+    found.map((h) => ({ id: `private:${h.file}`, ok: false, detail: `${h.file} still holds ${source}'s ${h.found.join(", ")}: point it at this computer` }));
+  let agent = agentOf(deps.stateRoot(), req.tid);
   if (agent) {
     await deps.tell(agent.path, agentPrivateValues(source, hits));
-    saveAgent(deps, req.tid, { ...agent, state: "working" });
+    agent = { ...agent, state: "working", checks: checksOf(hits) };
+    saveAgent(deps, req.tid, agent);
   } else {
-    const checks = hits.map((h) => ({ id: `private:${h.file}`, ok: false, detail: `${h.file} still holds ${source}'s ${h.found.join(", ")}: point it at this computer` }));
-    const started = await startAgent(req, checks, deps, true);
+    const started = await startAgent(req, checksOf(hits), deps, true);
     if ("needsYou" in started) return [];
+    agent = started;
   }
+  // Its turn ends: the files are read again, and what it left is the transport's to show (ready, or Needs you).
+  await turnEnded(agent.path, deps);
+  const left = sourceValuesIn(req.privateFiles, req.sourceValues);
+  saveAgent(deps, req.tid, { ...agent, state: left.length ? "needs-you" : "ready", checks: left.length ? checksOf(left) : hits.map((h) => ({ id: `private:${h.file}`, ok: true, detail: `${h.file} points at this computer` })) });
   return hits.map((h) => h.file);
 }

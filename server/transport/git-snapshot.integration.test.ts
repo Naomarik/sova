@@ -228,3 +228,22 @@ test("a clean clone behind the chat's commit takes its commits, branch and chang
   assert.match(await why(other), /doesn't build on|another repository/);
   for (const t of [dirty, other]) assert.equal(g(t, "for-each-ref", "refs/sova"), "", "nothing of the attempt stays there");
 });
+
+test("a file there where the chat's new file needs a folder is in the way: refused by name, the file kept", async () => {
+  const src = join(root, "src8");
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "main");
+  writeFileSync(join(src, "a"), "a\n");
+  g(src, "add", "a");
+  g(src, "commit", "-qm", "a");
+  const target = join(root, "there8", "src8");
+  g(root, "clone", "-q", src, target);
+  writeFileSync(join(target, "cfg"), "my cfg\n");
+  mkdirSync(join(src, "cfg"));
+  writeFileSync(join(src, "cfg", "app.toml"), "x = 1\n");
+  g(src, "add", "cfg/app.toml");
+  const p = await packWorktrees({ tid: "t8", trees: [await surveyWorktree("src8", src)], haves: [], outDir: join(root, "pack8") });
+  await assert.rejects(rebuildWorktrees({ repo: null, codeDir: join(root, "pack8"), tid: "t8", metas: p.metas, targets: { src8: target } }), (e: unknown) => e instanceof SnapshotError && e.reason === "taken" && /already has cfg,/.test(e.message));
+  assert.equal(readFileSync(join(target, "cfg"), "utf8"), "my cfg\n");
+  assert.equal(g(target, "for-each-ref", "refs/sova"), "");
+});

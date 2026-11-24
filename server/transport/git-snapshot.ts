@@ -428,9 +428,20 @@ async function baseOf(target: string, meta: WorktreeMeta): Promise<{ head: strin
 /** Files the snapshot adds since `from` that a file there already stands on (writing the changes would replace it). */
 async function inTheWay(target: string, meta: WorktreeMeta, from: string): Promise<string[]> {
   const added = nul(await ok(target, ["diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", from, `${meta.snap}^{tree}`], "Reading the changes"));
-  const out: string[] = [];
-  for (const p of added) if (await lstat(join(target, p)).then(() => true, () => false)) out.push(p);
-  return out;
+  const out = new Set<string>();
+  const kind = (rel: string) => lstat(join(target, rel)).then((st) => (st.isDirectory() ? "dir" : "other"), () => "none");
+  for (const p of added) {
+    if ((await kind(p)) !== "none") out.add(p);
+    // A file or link where the path needs a folder: writing it would replace that too.
+    const parts = p.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const up = parts.slice(0, i).join("/");
+      const k = await kind(up);
+      if (k === "other") out.add(up);
+      if (k !== "dir") break;
+    }
+  }
+  return [...out];
 }
 
 /** A base folder: the snapshot rebuilt and checked in a scratch worktree of its repository (then dropped), its loose files unpacked aside. */

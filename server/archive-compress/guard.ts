@@ -10,6 +10,8 @@ import { COMPRESSED_REFUSAL, compressedAt, compressedRows } from "./store";
 
 /** The routes that may name a compressed chat: Clean Up deletes it. */
 const ALLOWED = new Set(["/api/sessions/cleanup"]);
+/** The largest JSON body read for a path. */
+const BODY_CAP = 64 * 1024;
 
 /** True when `raw` names a compressed chat or one of its helpers' files. */
 export function namesCompressed(raw: unknown): boolean {
@@ -23,7 +25,9 @@ export function compressedGuard(): MiddlewareHandler {
     if (compressedRows().size === 0 || ALLOWED.has(c.req.path)) return next();
     if (namesCompressed(c.req.query("path")) || namesCompressed(c.req.query("session"))) return c.json({ error: COMPRESSED_REFUSAL }, 409);
     const type = c.req.header("content-type") ?? "";
-    if (c.req.method !== "GET" && c.req.method !== "HEAD" && type.includes("application/json")) {
+    // A path field never needs much: a big body (an upload, a long draft) is never parsed twice.
+    const length = Number(c.req.header("content-length") ?? "0");
+    if (c.req.method !== "GET" && c.req.method !== "HEAD" && type.includes("application/json") && !(length > BODY_CAP)) {
       let body: unknown;
       try {
         body = JSON.parse(await c.req.raw.clone().text());

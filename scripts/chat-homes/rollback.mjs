@@ -21,7 +21,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { createGunzip } from "node:zlib";
 import { backup } from "./backup.mjs";
-import { agentDir, checkoutInfo, cwdSessionsDir, exists, homesRoot, liveProcesses, parseArgs, sha256File, sharedBase, stateRootOf, tar } from "./lib.mjs";
+import { agentDir, checkoutInfo, cwdSessionsDir, exists, homesRoot, liveProcesses, parseArgs, runningSova, sha256File, sharedBase, stateRootOf, tar } from "./lib.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -263,7 +263,7 @@ async function unhome({ agent, state, homes, shared, dry, report }) {
   const ids = readdirSync(homes, { withFileTypes: true })
     .filter((e) => e.isDirectory() && !e.name.startsWith("."))
     .map((e) => e.name)
-    .filter((id) => exists(join(homes, id, "manifest.json")));
+    .filter((id) => exists(join(homes, id, "home.json")));
   for (const id of ids) {
     const home = join(homes, id);
     // Conversations: each to its own cwd's folder, under its own name.
@@ -334,8 +334,8 @@ async function unhome({ agent, state, homes, shared, dry, report }) {
 // ---- --from-backup ------------------------------------------------------------------------------
 
 async function restore(from, { dry, log }) {
-  const manifest = readJson(join(from, "manifest.json"), null);
-  if (!manifest || manifest.v !== 1) throw new Error(`${from} holds no backup manifest.`);
+  const manifest = readJson(join(from, "backup.json"), null);
+  if (!manifest || manifest.v !== 1) throw new Error(`${from} holds no backup record (backup.json).`);
   for (const p of manifest.parts) {
     const file = join(from, p.name);
     if ((await sha256File(file)) !== p.sha256) throw new Error(`${file} doesn't match its manifest; nothing was restored.`);
@@ -365,8 +365,8 @@ async function restore(from, { dry, log }) {
 
 export async function rollback({ dryRun = false, noBackup = false, backupOut, fromBackup, env = process.env, log = console.log } = {}) {
   const agent = agentDir(env);
-  const running = liveProcesses(agent);
-  if (running.length) throw new Error(`pi or Sova is running on ${agent} (pid ${running.map((r) => r.pid).join(", ")}). Stop it first.`);
+  const running = [...liveProcesses(agent).map((r) => `pi (pid ${r.pid})`), ...(await runningSova(agent))];
+  if (running.length) throw new Error(`Still running on ${agent}: ${running.join(", ")}. Stop it first.`);
   if (fromBackup) {
     await restore(fromBackup, { dry: dryRun, log });
     return null;

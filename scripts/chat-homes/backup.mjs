@@ -5,14 +5,14 @@
 //   agent.tar.gz   the agent dir (conversations, Sova's state, settings, logins), live records left out
 //   homes.tar.gz   the chat homes, compressed ones included (when there are any)
 //   shared.tar.gz  the older chats' shared folders (when there are any)
-//   manifest.json  where each came from, its sha256 and size, the Sova commit, and counts
+//   backup.json    where each came from, its sha256 and size, the Sova commit, and counts
 // Every archive is listed back after writing. Refuses while a pi or Sova process runs on the agent dir
 // (a backup taken mid-write may hold half a line), unless --allow-running.
 import { chmodSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { agentDir, checkoutInfo, exists, homesRoot, liveProcesses, parseArgs, sha256File, sharedBase, stateRootOf, tar } from "./lib.mjs";
+import { agentDir, checkoutInfo, exists, homesRoot, liveProcesses, parseArgs, runningSova, sha256File, sharedBase, stateRootOf, tar } from "./lib.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -37,9 +37,8 @@ function countFiles(dir, test) {
 export async function backup({ out, allowRunning = false, env = process.env, log = console.log } = {}) {
   const agent = agentDir(env);
   if (!exists(agent)) throw new Error(`No agent dir at ${agent}.`);
-  const running = liveProcesses(agent);
-  if (running.length && !allowRunning)
-    throw new Error(`pi or Sova is running on ${agent} (pid ${running.map((r) => r.pid).join(", ")}). Stop it first, or pass --allow-running.`);
+  const running = [...liveProcesses(agent).map((r) => `pi (pid ${r.pid})`), ...(await runningSova(agent))];
+  if (running.length && !allowRunning) throw new Error(`Still running on ${agent}: ${running.join(", ")}. Stop it first, or pass --allow-running.`);
   const homes = homesRoot(agent, env);
   const shared = sharedBase(env);
   const base = out ?? join(env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "sova", "backups");
@@ -74,7 +73,7 @@ export async function backup({ out, allowRunning = false, env = process.env, log
     },
     parts,
   };
-  writeFileSync(join(dir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(join(dir, "backup.json"), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
   log(`Backed up ${manifest.counts.conversations} conversations, ${manifest.counts.homes} chat homes and ${manifest.counts.compressed} compressed chats to:`);
   log(dir);
   return { dir, manifest };

@@ -51,7 +51,7 @@ describe("compressChat", () => {
     assert.ok(e.archive && existsSync(e.archive));
     const names = (await readTarGz(e.archive!)).map((x) => x.name);
     const entries = await readTarGz(e.archive!);
-    assert.ok(names.includes("shared/notes.md") && names.includes(`sessions/2026-01-01T00-00-00-000Z_${id}.jsonl`) && names.includes("manifest.json"));
+    assert.ok(names.includes("shared/notes.md") && names.includes(`sessions/2026-01-01T00-00-00-000Z_${id}.jsonl`) && names.includes("home.json"));
     assert.equal(entries.find((x) => x.name === "shared/link")?.link, "/etc");
     assert.equal(names.some((n) => n.startsWith("shared/link/")), false, "the link's target is not in it");
     const kept = compressedRows().get(path)!;

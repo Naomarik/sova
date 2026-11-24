@@ -25,7 +25,7 @@ Writes `<out>/<timestamp>/` (default `$XDG_STATE_HOME/sova/backups`, else
 | `agent.tar.gz` | the whole agent dir: every conversation, Sova's state and settings, logins (live records left out) |
 | `homes.tar.gz` | every chat home, compressed ones included (when there are homes) |
 | `shared.tar.gz` | the older chats' shared folders (when there are any) |
-| `manifest.json` | where each came from, its sha256, size and entry count, the Sova commit and branch, counts of conversations, homes and compressed chats |
+| `backup.json` | where each came from, its sha256, size and entry count, the Sova commit and branch, counts of conversations, homes and compressed chats |
 
 It prints the folder. Each archive is listed back after it is written.
 
@@ -64,7 +64,7 @@ Then run master's code: `git -C <checkout> switch master` (or your install's upd
 node scripts/chat-homes/rollback.mjs --from-backup <backup folder>
 ```
 
-Checks every archive against the manifest, moves what is there now aside to
+Checks every archive against backup.json, moves what is there now aside to
 `<path>.before-restore-<timestamp>` (the agent dir, the homes, the shared folders), and unpacks the
 backup in their place. Chats made since the backup are in the moved-aside folders.
 

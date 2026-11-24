@@ -90,6 +90,54 @@ export function liveProcesses(agent) {
   return out;
 }
 
+/**
+ * What still runs on this agent dir, seen without pids (a sandbox's own pid namespace hides them): the
+ * Sova server its state root names (server-running.json), when that port's /api/health answers with
+ * the same start; and every chat process, by a connect to its socket under <state>/chats/s/.
+ */
+export async function runningSova(agent) {
+  const state = join(agent, "sova");
+  const out = [];
+  const mark = (() => {
+    try {
+      return JSON.parse(readFileSync(join(state, "server-running.json"), "utf8"));
+    } catch {
+      return null;
+    }
+  })();
+  if (mark && Number.isInteger(mark.port) && mark.port > 0) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${mark.port}/api/health`, { signal: AbortSignal.timeout(1500) });
+      const h = await res.json().catch(() => null);
+      if (h && h.startedAt === mark.startedAt) out.push(`the Sova server on port ${mark.port} (pid ${mark.pid})`);
+    } catch {
+      // nothing answers: that server is gone
+    }
+  }
+  const socks = join(state, "chats", "s");
+  let names = [];
+  try {
+    names = readdirSync(socks).filter((n) => n.endsWith(".sock"));
+  } catch {
+    // no chat sockets
+  }
+  const { connect } = await import("node:net");
+  for (const n of names) {
+    const alive = await new Promise((ok) => {
+      const c = connect(join(socks, n));
+      const done = (v) => {
+        c.destroy();
+        ok(v);
+      };
+      c.once("connect", () => done(true));
+      c.once("error", () => done(false));
+      setTimeout(() => done(false), 1000).unref?.();
+    });
+    if (alive) out.push(`a chat process (${n})`);
+  }
+  return out;
+}
+
 export function sha256File(file) {
   return new Promise((ok, fail) => {
     const h = createHash("sha256");

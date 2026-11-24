@@ -54,6 +54,8 @@ import { wireRequestChats } from "./owner-request-chat";
 import { cachedTitleOf, getSessionSummary, idOf, indexedSessionPaths, lastListedRows, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { hotFolders } from "./session-watch-scope";
 import { startArchiveCompression } from "./archive-compress/start";
+import { serverStart } from "./project-services/self-host";
+import { markServerRunning } from "./archive-compress/server-mark";
 import { homeIdOfPath, homeSessionsDirs, isHomeSessionsDir } from "./chat-homes/root";
 import { viewedIds } from "./seen";
 import { startScheduleKeeper } from "./schedule-routes";
@@ -229,6 +231,8 @@ function startRetirement(): Retirer | null {
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   setAuthPort(info.port);
+  // The backup and rollback commands refuse while this server runs (scripts/chat-homes).
+  markServerRunning(info.port, serverStart().startedAt);
   // The first start's approvals and a reading of what is approved, before anything is answered,
   // then each active extension's own key, kept in step with the list.
   startExtensionLoader();

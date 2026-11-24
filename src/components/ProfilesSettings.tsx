@@ -10,10 +10,11 @@ import { modelEfforts } from "../lib/delegate-form";
 import { liveDelegateOptions } from "../lib/claude-catalog";
 import { replacedNotice } from "../lib/subagent-replaced";
 import { teamsSeed } from "../lib/subagent-editor";
-import { clearProfilesRequest, clearSettingsSection, profilesRequest, settingsSection, subagentSettingsChat, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
+import { clearProfilesRequest, clearSettingsSection, openSettings, profilesRequest, settingsSection, subagentSettingsChat, subagentSettingsPath, type ProfilesPart } from "../lib/settings-nav";
 import { lastSavedKeys, profilesDraft as store, profilesListing, setProfilesCwd, takeListing } from "../lib/profiles-draft";
 import {
   alsoUsedBy,
+  builtInNote,
   helpersOf,
   LIMIT_RULES,
   listGroups,
@@ -514,11 +515,8 @@ function ProfileEditor(props: {
   const yours = () => props.r.group === "yours" && !!props.draftRow;
   const builtIn = () => props.r.group === "builtin";
   const readOnly = () => !yours();
-  /** A built-in profile's one line: the account it is for, when its models name one. */
-  const builtInLine = () => {
-    const account = accountOf(w()?.providers ?? []);
-    return account ? `Built in for your ${account} account. Make It Yours to change it.` : "Built in. Make It Yours to change it.";
-  };
+  /** A built-in profile's one line: the account it is for, or that the account isn't connected here. */
+  const builtInNoteNow = () => builtInNote(w() ?? { providers: [] });
   /** Why Make It Yours waits: one of yours already has the built-in's name (and so already takes its place). */
   const yoursNamed = () => props.draft.rows.some((x) => x.name.toLowerCase() === props.r.name.toLowerCase());
   const w = () => props.r.wire;
@@ -579,7 +577,19 @@ function ProfileEditor(props: {
         <p class="profile-muted">This chat's helpers run on this profile.</p>
       </Show>
       <Show when={builtIn()}>
-        <p class="profile-muted">{builtInLine()}</p>
+        <p class="profile-muted">
+          {builtInNoteNow().line}
+          <Show when={builtInNoteNow().connect}>
+            {(tab) => (
+              <>
+                {" "}
+                <button type="button" class="button-link" onClick={() => openSettings("accounts", null, { account: tab() })}>
+                  Open Accounts
+                </button>
+              </>
+            )}
+          </Show>
+        </p>
       </Show>
       <Show when={props.r.group === "project"}>
         <Banner
@@ -681,13 +691,6 @@ function ProfileEditor(props: {
       </Show>
     </div>
   );
-}
-
-/** The account a built-in profile is for, by the providers its models spend (one provider each). */
-function accountOf(providers: readonly string[]): string | null {
-  const names: Record<string, string> = { claude: "Claude", "openai-codex": "OpenAI", "ollama-cloud": "Ollama Cloud" };
-  const known = [...new Set(providers.map((p) => names[p]).filter((n): n is string => !!n))];
-  return known.length === 1 ? known[0]! : null;
 }
 
 /**

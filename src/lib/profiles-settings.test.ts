@@ -21,6 +21,7 @@ import {
   withDeleted,
   withDuplicate,
   withMadeYours,
+  builtInNote,
   withNewProfile,
   type ProfilesDraft,
 } from "./profiles-settings";
@@ -106,6 +107,13 @@ test("the This chat chip: on the row of the chat's profile, in any group; none w
   const copy = joined({ key: "user:claude-copy", kind: "pair", group: "yours", name: "Claude", libraryId: "claude", replaces: "sova:claude" });
   const g = listGroups(draftOf([copy], "user:claude-copy"), [copy], null, "sova:claude");
   assert.deepEqual(g.yours.filter((r) => r.thisChat).map((r) => r.key), ["user:claude-copy"]);
+});
+
+test("a built-in profile's line: the account it is for, or that it isn't connected, with Accounts", () => {
+  assert.deepEqual(builtInNote({ providers: ["openai-codex"] }), { line: "Built in for your OpenAI account. Make It Yours to change it.", connect: null });
+  assert.deepEqual(builtInNote({ providers: ["claude"], notConnected: true }), { line: "Claude isn't connected on this computer. Connect it in Settings → Accounts.", connect: "claude" });
+  assert.deepEqual(builtInNote({ providers: ["ollama-cloud"], notConnected: true }).connect, "ollama-cloud");
+  assert.equal(builtInNote({ providers: ["claude"] }).line.includes("isn't connected"), false, "connected: never says it isn't");
 });
 
 test("Make It Yours: a copy under Yours with the built-in's name and both its parts; refused when one of yours has the name", () => {

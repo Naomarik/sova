@@ -4,15 +4,18 @@
  * coordinator and monitor, the spec writer and (optional) the alignment reviewer. A chat picks one (its hidden
  * `subagent-profile` entry, newest on the branch wins); a chat with no pick follows this device's
  * default (`subagent-profiles-default.json`, its own tiny file so the mesh-synced library never
- * moves it); a missing pick target falls to the default, and an unusable library to the legacy
- * files (`mode-delegate.json`, `team-defaults.json`, `mode-spec.json`), which nothing here deletes.
+ * moves it); a missing pick target falls to the default, and a default that is missing, "off" or
+ * names no profile falls to the built-in profile the connected accounts give (builtin-profiles.ts).
+ * A malformed library falls to the legacy files (`mode-delegate.json`, `team-defaults.json`,
+ * `mode-spec.json`), which nothing here deletes.
  *
  * Node built-ins and builtins-only siblings only: the mode extension, the subagents extension and
  * Sova's server all import this file, so it must never import the pi runtime.
  *
- * Absent file = seeded on first read from the legacy files (one profile, "My setup", made the
- * default), so nothing changes until the user switches. Malformed = every error is returned, the
- * file is never overwritten by a reader, and resolution falls back to the legacy files.
+ * Absent file = an empty library: nothing is written, and the built-in profiles apply. Malformed =
+ * every error is returned, the file is never overwritten by a reader, and resolution falls back to
+ * the legacy files. The parsers keep accepting "off" wherever an older build wrote it (a pick, the
+ * default file); it reads as no choice.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -40,14 +43,30 @@ import {
 	type TeamDefaultsFile,
 	type TeamDefaultsState,
 } from "./team-defaults.ts";
+import {
+	BUILTIN_PROFILE_NAMES,
+	builtinDefaultFor,
+	builtinHelpers,
+	builtinsFor,
+	displayNameOf,
+	isBuiltinProfileId,
+	readConnectedAccounts,
+	shadowOf,
+	type BuiltinProfileId,
+	type ConnectedAccounts,
+} from "./builtin-profiles.ts";
 
 export const SUBAGENT_PROFILES_FILE_NAME = "subagent-profiles.json";
 /** This device's default (never synced): which library profile a chat with no pick follows. */
 export const SUBAGENT_PROFILE_DEFAULT_FILE_NAME = "subagent-profiles-default.json";
-/** The built-in profile that configures nothing: never stored, always first. */
+/**
+ * "off": what older builds wrote for the profile that configured nothing. Still parsed wherever it was
+ * valid (a pick, the default file, a session profile's `subagents`), and read as no choice; never written.
+ * The name stays refused in the library, as older readers refuse it.
+ */
 export const OFF_PROFILE_ID = "off";
 export const OFF_PROFILE_NAME = "Off";
-/** The profile seeding writes; a fixed id, so two devices seeding apart agree on it. */
+/** The profile older builds seeded for everyone; a fixed id, so two devices seeding apart agree on it. */
 export const SEEDED_PROFILE_ID = "my-setup";
 export const SEEDED_PROFILE_NAME = "My setup";
 /** The reviewer's label, in Settings and in errors. */
@@ -111,7 +130,7 @@ export type ProfilesParse = { ok: true; value: SubagentProfilesFile } | { ok: fa
 export type ProfilesState =
 	| { state: "absent"; file: string }
 	| { state: "malformed"; file: string; errors: string[] }
-	| { state: "ok"; file: string; value: SubagentProfilesFile; seeded?: boolean };
+	| { state: "ok"; file: string; value: SubagentProfilesFile; seeded?: boolean; absent?: true };
 export type DefaultParse = { ok: true; value: SubagentProfilesDefault } | { ok: false; errors: string[] };
 export type DefaultState =
 	| { state: "absent"; file: string }
@@ -278,7 +297,7 @@ export function parseProfilesDefault(input: unknown): DefaultParse {
 	return errors.length ? { ok: false, errors } : { ok: true, value: { version: 1, default: json.default as string } };
 }
 
-/** The default file as it stands now. Never writes; absent means Off. */
+/** The default file as it stands now. Never writes; absent means the built-in fallback (profilesDefaultOf). */
 export function readProfilesDefault(agentDir: string): DefaultState {
 	const file = subagentProfileDefaultPath(agentDir);
 	let raw: string;
@@ -324,61 +343,22 @@ export function legacyProfile(agentDir: string, id = SEEDED_PROFILE_ID, name = S
 	};
 }
 
-/** A library holding exactly one profile seeded from the legacy files. */
-export function seededFile(agentDir: string): SubagentProfilesFile {
-	return { version: 1, profiles: [legacyProfile(agentDir)] };
-}
-
-/** The default a fresh seeding writes: the seeded profile. */
-export function seededDefault(): SubagentProfilesDefault {
-	return { version: 1, default: SEEDED_PROFILE_ID };
-}
-
 /**
- * The library, seeding it first when it is absent (unless team-defaults.json is malformed: then it
- * stays absent, so the legacy files and their warning keep applying): one profile from the legacy
- * files, plus the default file naming it. Each seed is written without ever replacing a file
- * another process made meanwhile (a hard link of a temp file, which fails if the target exists); if
- * one can't be written at all (a read-only agent dir), the seed is still returned, so behaviour
- * matches the legacy files either way. A library found with no default file is NOT re-seeded:
- * the default reads as Off until the user saves one.
+ * The library for every reader: the file as it stands, an absent file read as an empty library (so
+ * the built-in profiles apply, never the legacy files). Never writes.
  */
 export function loadSubagentProfiles(agentDir: string): ProfilesState {
 	const state = readSubagentProfiles(agentDir);
 	if (state.state !== "absent") return state;
-	// A malformed team-defaults.json is reported at every team_create today; seeding it as "no teams"
-	// would hide that. Leave the file absent (resolution uses the legacy files) until it is fixed.
-	if (readTeamDefaults(agentDir).state === "malformed") return state;
-	const value = seededFile(agentDir);
-	seedNew(state.file, `${JSON.stringify(value, null, 2)}\n`, SEEDED_MTIME_MS);
-	seedNew(subagentProfileDefaultPath(agentDir), `${JSON.stringify(seededDefault(), null, 2)}\n`);
-	return { state: "ok", file: state.file, value, seeded: true };
+	return { state: "ok", file: state.file, value: { version: 1, profiles: [] }, absent: true };
 }
 
 /**
- * The seeded library's modification time: the Unix epoch, so it reads as older than any edit. The
- * mesh dates a file that first appears by its mtime, so a library edited on any other device wins
- * over a starter seeded here, while a device alone keeps its starter.
+ * The modification time older builds gave a seeded library: the Unix epoch, so it reads as older than
+ * any edit. The mesh dates a file that first appears by its mtime, so a library edited on any other
+ * device wins over a starter an older build seeded.
  */
 export const SEEDED_MTIME_MS = 0;
-
-/**
- * Write `text` at `file` only if `file` still doesn't exist (a hard link, which fails if it does),
- * with its modification time set to `mtimeMs` when given (on the temp file, before it is linked).
- */
-function seedNew(file: string, text: string, mtimeMs?: number): void {
-	const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.seed`;
-	try {
-		fs.mkdirSync(path.dirname(file), { recursive: true });
-		fs.writeFileSync(tmp, text, { encoding: "utf8", mode: 0o644 });
-		if (mtimeMs !== undefined) fs.utimesSync(tmp, new Date(), new Date(mtimeMs));
-		fs.linkSync(tmp, file);
-	} catch {
-		/* EEXIST (another process made it first) or an unwritable dir: the in-memory seed stands. */
-	} finally {
-		try { fs.rmSync(tmp, { force: true }); } catch { /* Best effort. */ }
-	}
-}
 
 /**
  * Validate, then write atomically (temp file + rename). Refuses a value that does not parse;
@@ -456,16 +436,16 @@ export function pickEntryFor(entries: readonly { type: string; customType?: stri
 export interface ResolvedSubagents {
 	/** pick: the chat's own; default: the file's default; legacy: the legacy files. */
 	source: "pick" | "default" | "legacy";
-	/** The profile's id ("off" for Off), or null for the legacy files. */
+	/** The profile's id ("off" for no helper profile), or null for the legacy files. */
 	id: string | null;
-	/** The profile's name, "Off", or "Legacy settings". */
+	/** The profile's name as screens show it, NO_HELPERS_NAME, or "Legacy settings". */
 	name: string;
-	/** Delegate's routing; null under Off (the agent picks every worker). */
+	/** Delegate's routing; null with no helper profile (the agent picks every worker). */
 	delegate: DelegateSettings | null;
 	spec: SpecSettings;
-	/** The alignment reviewer; null: none (None, a profile without one, Off, or the legacy files). */
+	/** The alignment reviewer; null: none (None, a profile without one, no helper profile, or the legacy files). */
 	reviewer: ReviewerRoute | null;
-	/** The profile's align override (Eagerness, writing style, Visuals); null: the host's mode-align.json (no override, Off, legacy). */
+	/** The profile's align override (Eagerness, writing style, Visuals); null: the host's mode-align.json (no override, no helper profile, legacy). */
 	alignment: AlignOverride | null;
 	/** Team defaults in the shape team_create reads; `absent` = the settings name none (both roles on the chat's own model). */
 	teams: TeamDefaultsState;
@@ -495,19 +475,22 @@ function fromProfile(file: string, profile: SubagentProfile, source: "pick" | "d
 	};
 }
 
-function off(file: string, source: "pick" | "default", note?: string): ResolvedSubagents {
+/** No helper profile: Delegate routes nothing (the agent picks every worker), no spec writer, no reviewer, no team models. Only Sova's own chats run so, and a default file that says so for them. */
+function noHelpers(file: string, source: "pick" | "default", note?: string): ResolvedSubagents {
 	return {
 		source,
 		id: OFF_PROFILE_ID,
-		name: OFF_PROFILE_NAME,
+		name: NO_HELPERS_NAME,
 		delegate: null,
 		spec: specDefaults(),
 		reviewer: null,
 		alignment: null,
-		teams: { state: "absent", file: `${file} (subagent profile "${OFF_PROFILE_NAME}")`, note: `the subagent profile "${OFF_PROFILE_NAME}" configures nothing` },
+		teams: { state: "absent", file: `${file} (no helper profile)`, note: "no helper profile configures them" },
 		...(note ? { note } : {}),
 	};
 }
+/** The name resolution gives a chat with no helper profile (Sova's own chats). */
+export const NO_HELPERS_NAME = "No helper profile";
 
 /** The legacy files as resolution's last step. */
 export function legacyResolved(agentDir: string, note?: string): ResolvedSubagents {
@@ -525,58 +508,97 @@ export function legacyResolved(agentDir: string, note?: string): ResolvedSubagen
 }
 
 /**
- * The one resolution: the chat's pick, then this device's default, then the legacy files. `state` is
- * the library as already loaded (loadSubagentProfiles, which seeds an absent one) and `def` the
- * default file as already read; `agentDir` is where the legacy files are. One step at a time,
- * never a leap: a dangling pick falls to the default, a missing, malformed or dangling default
- * reads as Off (with the reason in `note`), and only an unusable library falls to the legacy files.
+ * The helper profile an id names for a reader: the library's own (named as screens show it), else a
+ * built-in one, or the profile of the user's that takes its place. Undefined: none here.
+ */
+export function helperProfileOf(id: string, profiles: readonly SubagentProfile[]): SubagentProfile | undefined {
+	const own = profiles.find((p) => p.id === id) ?? (isBuiltinProfileId(id) ? shadowOf(id, profiles) : undefined);
+	if (own) {
+		const name = displayNameOf(own, profiles);
+		return name === own.name ? own : { ...own, name };
+	}
+	return isBuiltinProfileId(id) ? builtinHelpers(id) : undefined;
+}
+
+/**
+ * The helper profiles a chat can pick on this computer, in the order lists show them: the library's
+ * (named as screens show them), then each built-in one whose account is connected (Claude alone when
+ * none is) and whose place no profile of the user's takes.
+ */
+export function pickableHelpers(profiles: readonly SubagentProfile[], connected: ConnectedAccounts): { id: string; name: string }[] {
+	const own = profiles.map((p) => ({ id: p.id, name: displayNameOf(p, profiles) }));
+	const builtins = builtinsFor(connected).filter((id) => !shadowOf(id, profiles)).map((id) => ({ id, name: BUILTIN_PROFILE_NAMES[id] }));
+	return [...own, ...builtins];
+}
+
+/**
+ * A process whose chats run with no helper profile unless a default names one (`SOVA_NO_HELPER_PROFILE=1`):
+ * a host's own machine-facing chats, and this extension's tests of the team machinery.
+ */
+export const NO_HELPER_PROFILE_ENV = "SOVA_NO_HELPER_PROFILE";
+
+/** The built-in profile a chat falls back to on this computer now: the connected accounts' (Claude, then OpenAI, then DeepSeek). */
+export const builtinFallback = (agentDir: string): BuiltinProfileId => builtinDefaultFor(readConnectedAccounts(agentDir));
+
+/** What resolution falls back to in this process: builtinFallback, or null under NO_HELPER_PROFILE_ENV. */
+export const fallbackNow = (agentDir: string, env: NodeJS.ProcessEnv = process.env): BuiltinProfileId | null =>
+	env[NO_HELPER_PROFILE_ENV] === "1" ? null : builtinFallback(agentDir);
+
+/**
+ * The one resolution: the chat's pick, then this device's default, then `fallback`. `state` is the
+ * library as already loaded (loadSubagentProfiles: an absent file is an empty library) and `def` the
+ * default file as already read; `agentDir` is where the legacy files are. A pick or a default of
+ * "off" (an older build's) reads as none; a dangling pick falls to the default; a missing, "off",
+ * malformed or dangling default reads as `fallback` (with the reason in `note`): the built-in
+ * profile the connected accounts give, or, for Sova's own chats (null), no helper profile. Only a
+ * malformed library falls to the legacy files.
  */
 export function resolveSubagents(
 	agentDir: string,
 	pick: string | undefined,
 	state: ProfilesState = loadSubagentProfiles(agentDir),
 	def: DefaultState = readProfilesDefault(agentDir),
+	fallback: BuiltinProfileId | null = fallbackNow(agentDir),
 ): ResolvedSubagents {
-	if (state.state !== "ok") {
-		const why = state.state === "malformed" ? `${state.file} is malformed (${state.errors.join("; ")})` : `${state.file} is missing`;
-		return legacyResolved(agentDir, `${why}; using the legacy settings files`);
-	}
+	if (state.state === "malformed") return legacyResolved(agentDir, `${state.file} is malformed (${state.errors.join("; ")}); using the legacy settings files`);
 	const { file } = state;
+	const profiles = state.state === "ok" ? state.value.profiles : [];
 	let note: string | undefined;
-	if (pick === OFF_PROFILE_ID) return off(file, "pick");
-	if (pick !== undefined) {
-		const picked = state.value.profiles.find((p) => p.id === pick);
+	if (pick !== undefined && pick !== OFF_PROFILE_ID) {
+		const picked = helperProfileOf(pick, profiles);
 		if (picked) return fromProfile(file, picked, "pick");
 		note = `this chat's subagent profile "${pick}" no longer exists; using the default`;
 	}
-	const d = profilesDefaultOf(state, def);
+	const d = profilesDefaultOf(state, def, fallback);
 	if (d.note) note = note ? `${note} (${d.note})` : d.note;
-	if (d.id === OFF_PROFILE_ID) return off(file, "default", note);
-	const fallback = state.value.profiles.find((p) => p.id === d.id);
-	return fallback ? fromProfile(file, fallback, "default", note) : legacyResolved(agentDir, note);
+	const chosen = d.id === null ? undefined : helperProfileOf(d.id, profiles);
+	return chosen ? fromProfile(file, chosen, "default", note) : noHelpers(file, "default", note);
 }
 
 /**
- * The default as resolution uses it: the file's choice when it names a library profile (or Off);
- * absent, malformed or dangling reads as Off with the reason. A seeded-but-unwritable pair still
- * means its seed, so a read-only agent dir behaves as if the seed had landed.
+ * The default as resolution uses it: the file's choice when it names a library or built-in profile;
+ * absent, "off", malformed or dangling reads as `fallback` (null: no helper profile), with the reason.
  */
-export function profilesDefaultOf(state: ProfilesState, def: DefaultState): { id: string; note?: string } {
+export function profilesDefaultOf(
+	state: ProfilesState,
+	def: DefaultState,
+	fallback: BuiltinProfileId | null,
+): { id: string | null; note?: string } {
+	const profiles = state.state === "ok" ? state.value.profiles : [];
+	const instead = fallback === null ? "no helper profile" : `the ${fallback} built-in profile`;
 	if (def.state === "ok") {
 		const id = def.value.default;
-		if (id === OFF_PROFILE_ID) return { id };
-		if (state.state === "ok" && state.value.profiles.some((p) => p.id === id)) return { id };
-		return { id: OFF_PROFILE_ID, note: `the default "${id}" names no profile in the library; using Off` };
+		if (id === OFF_PROFILE_ID) return { id: fallback };
+		if (state.state !== "malformed" && helperProfileOf(id, profiles)) return { id };
+		return { id: fallback, note: `the default "${id}" names no profile in the library; using ${instead}` };
 	}
-	if (def.state === "malformed")
-		return { id: OFF_PROFILE_ID, note: `the default file ${def.file} is malformed (${def.errors.join("; ")}); using Off` };
-	if (state.state === "ok" && state.seeded) return { id: SEEDED_PROFILE_ID };
-	return { id: OFF_PROFILE_ID };
+	if (def.state === "malformed") return { id: fallback, note: `the default file ${def.file} is malformed (${def.errors.join("; ")}); using ${instead}` };
+	return { id: fallback };
 }
 
 /**
  * A reader for a turn boundary: the files re-parsed only when their stats change (one stat each per
- * call), the library seeded on the first call that finds it absent.
+ * call); an absent library reads as an empty one.
  */
 export function profilesReader(agentDir: string): () => { profiles: ProfilesState; default: DefaultState } {
 	const libFile = subagentProfilesPath(agentDir);
@@ -592,13 +614,9 @@ export function profilesReader(agentDir: string): () => { profiles: ProfilesStat
 	let cache: { libStamp: string | null; defStamp: string | null; value: { profiles: ProfilesState; default: DefaultState } } | undefined;
 	return () => {
 		const libStamp = stat(libFile);
-		if (libStamp === null) {
-			cache = undefined;
-			return { profiles: loadSubagentProfiles(agentDir), default: readProfilesDefault(agentDir) };
-		}
 		const defStamp = stat(defFile);
 		if (!cache || cache.libStamp !== libStamp || cache.defStamp !== defStamp)
-			cache = { libStamp, defStamp, value: { profiles: readSubagentProfiles(agentDir), default: readProfilesDefault(agentDir) } };
+			cache = { libStamp, defStamp, value: { profiles: loadSubagentProfiles(agentDir), default: readProfilesDefault(agentDir) } };
 		return cache.value;
 	};
 }
@@ -661,7 +679,6 @@ export function footprint(profile: SubagentProfile, max = 3): string {
 	}
 	return names.length > max ? `${names.slice(0, max).join(" · ")} · +${names.length - max}` : names.join(" · ");
 }
-export const OFF_FOOTPRINT = "the agent picks";
 
 /**
  * The provider a worker spends: Claude Code (and pi's claude-code-cli provider) is `claude`, a pi

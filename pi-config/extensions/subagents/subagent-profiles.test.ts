@@ -24,9 +24,10 @@ import {
 	readSubagentProfiles,
 	resolveSubagents,
 	restorePick,
-	SEEDED_MTIME_MS,
-	SEEDED_PROFILE_ID,
 	shortModel,
+	helperProfileOf,
+	NO_HELPER_PROFILE_ENV,
+	pickableHelpers,
 	subagentProfileDefaultPath,
 	subagentProfilesPath,
 	seedReviewer,
@@ -36,6 +37,7 @@ import {
 	type SubagentProfile,
 	type SubagentProfilesFile,
 } from "./subagent-profiles.ts";
+import { builtinHelpers, builtinsFor, builtinDefaultFor, readAccountsAt, accountPaths, BUILTIN_PROFILE_IDS, type ConnectedAccounts } from "./builtin-profiles.ts";
 
 const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagent-profiles-"));
 const claude = (model: string, effort = "low") => ({ backend: "claude-code" as const, model, effort });
@@ -49,7 +51,7 @@ const file = (profiles: SubagentProfile[]): SubagentProfilesFile => ({ version: 
 test("subagent-profiles.ts imports only node built-ins and builtins-only siblings, so Sova's server can import it", () => {
 	const source = fs.readFileSync(fileURLToPath(new URL("./subagent-profiles.ts", import.meta.url)), "utf8");
 	const specifiers = [...source.matchAll(/^import\s[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]);
-	assert.deepEqual([...new Set(specifiers.filter((s) => !s!.startsWith("node:")))].sort(), ["../claude-code/catalog.ts", "../mode/align-settings.ts", "../mode/delegate.ts", "../mode/spec.ts", "./team-defaults.ts"]);
+	assert.deepEqual([...new Set(specifiers.filter((s) => !s!.startsWith("node:")))].sort(), ["../claude-code/catalog.ts", "../mode/align-settings.ts", "../mode/delegate.ts", "../mode/spec.ts", "./builtin-profiles.ts", "./team-defaults.ts"]);
 });
 
 test("parse: a valid file round-trips; every error is collected, not the first", () => {
@@ -148,64 +150,55 @@ test("the default file: strict parse, atomic write, never a partial file", () =>
 	assert.match(fs.readFileSync(subagentProfileDefaultPath(dir), "utf8"), /nope/, "a malformed file is never overwritten by a reader");
 });
 
-test("the default as resolution uses it: file's choice; absent, malformed or dangling reads as Off with the reason", () => {
+test("the default as resolution uses it: the file's choice (a library or built-in profile); absent, \"off\", malformed or dangling reads as the fallback", () => {
 	const dir = tempDir();
 	writeSubagentProfiles(dir, file([profile("a", "A")]));
 	const lib = loadSubagentProfiles(dir);
-	assert.equal(profilesDefaultOf(lib, readProfilesDefault(dir)).id, OFF_PROFILE_ID, "a library with no default file: no default");
-	writeProfilesDefault(dir, { version: 1, default: "a" });
-	assert.deepEqual(profilesDefaultOf(lib, readProfilesDefault(dir)), { id: "a" });
-	writeProfilesDefault(dir, { version: 1, default: "gone" });
-	const dangling = profilesDefaultOf(lib, readProfilesDefault(dir));
-	assert.equal(dangling.id, OFF_PROFILE_ID);
-	assert.match(dangling.note ?? "", /names no profile/);
+	// [what the default file holds (undefined: no file), the fallback, the default it reads as, its note]
+	const cases: [string | undefined, "claude" | "openai" | null, string | null, RegExp | undefined][] = [
+		[undefined, "openai", "openai", undefined],
+		[undefined, null, null, undefined],
+		["a", "openai", "a", undefined],
+		["claude", "openai", "claude", undefined], // Make Default on a built-in profile
+		[OFF_PROFILE_ID, "claude", "claude", undefined], // an older build's Off: no choice (q6)
+		[OFF_PROFILE_ID, null, null, undefined],
+		["gone", "claude", "claude", /names no profile/],
+		["{ nope", "openai", "openai", /malformed/],
+	];
+	for (const [held, fallback, id, note] of cases) {
+		fs.rmSync(subagentProfileDefaultPath(dir), { force: true });
+		if (held === "{ nope") fs.writeFileSync(subagentProfileDefaultPath(dir), held);
+		else if (held !== undefined) writeProfilesDefault(dir, { version: 1, default: held });
+		const d = profilesDefaultOf(lib, readProfilesDefault(dir), fallback);
+		const label = `${held} with fallback ${fallback}`;
+		assert.equal(d.id, id, label);
+		if (note) assert.match(d.note ?? "", note, label);
+		else assert.equal(d.note, undefined, label);
+	}
 });
 
-test("seed: an absent library and default file are written once from the legacy files, never replacing newer files", () => {
+test("no seeding (b1): a missing library reads as an empty one, writes nothing, and the built-in default resolves before the legacy files", () => {
 	const dir = tempDir();
-	fs.writeFileSync(path.join(dir, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: pi("zai/glm-5.3"), fallback: null } } }));
-	fs.writeFileSync(path.join(dir, "mode-spec.json"), JSON.stringify({ version: 1, writer: { primary: claude("claude-sonnet-5-5", "medium"), fallback: null } }));
+	// Legacy files that an older build would have seeded from: no longer read while the library is fine.
+	fs.writeFileSync(path.join(dir, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: pi("legacy/model"), fallback: null } } }));
 	writeTeamDefaults(dir, defaultTeamDefaults());
+	const before = fs.readdirSync(dir).sort();
+	// This process may run the team tests, which run with no helper profile: not here (synchronous, so nothing interleaves).
+	const held = process.env[NO_HELPER_PROFILE_ENV];
+	delete process.env[NO_HELPER_PROFILE_ENV];
+	const r = resolveSubagents(dir, undefined);
+	if (held !== undefined) process.env[NO_HELPER_PROFILE_ENV] = held;
 	const state = loadSubagentProfiles(dir);
 	assert.equal(state.state, "ok");
-	const seeded = (state as { value: SubagentProfilesFile }).value;
-	assert.equal(seeded.profiles.length, 1);
-	assert.deepEqual(seeded.profiles[0]!.delegate.routine.primary, pi("zai/glm-5.3"));
-	assert.deepEqual(seeded.profiles[0]!.delegate.planning, delegateDefaults().profiles.planning, "a slot the legacy file leaves out takes its default, as Delegate read it");
-	assert.equal(seeded.profiles[0]!.specWriter?.primary.model, "claude-sonnet-5-5");
-	assert.equal(seeded.profiles[0]!.teams?.coordinator.role, "coordinator");
-	assert.equal(seeded.profiles[0]!.members, null);
-	assert.equal(readSubagentProfiles(dir).state, "ok", "the library seed is on disk");
-	assert.equal(fs.statSync(subagentProfilesPath(dir)).mtimeMs, SEEDED_MTIME_MS, "the seed is dated as old, so any library edited elsewhere wins over it on the mesh");
-	const def = readProfilesDefault(dir);
-	assert.equal(def.state === "ok" && def.value.default, SEEDED_PROFILE_ID, "the seeded default names the seeded profile");
-	// A second read never re-seeds over what is there now.
-	writeSubagentProfiles(dir, file([profile("x", "X")]));
-	assert.equal((loadSubagentProfiles(dir) as { value: SubagentProfilesFile }).value.profiles[0]!.id, "x");
-	assert.equal(readProfilesDefault(dir).state === "ok" && (readProfilesDefault(dir) as { value: { default: string } }).value.default, SEEDED_PROFILE_ID, "the device default is left alone (it now dangles, which resolution reads as Off)");
-	// The legacy files are left alone.
-	assert.ok(fs.existsSync(path.join(dir, "mode-delegate.json")) && fs.existsSync(path.join(dir, "team-defaults.json")) && fs.existsSync(path.join(dir, "mode-spec.json")));
-});
-
-test("seed: no legacy files seeds the built-in routing, no teams, no writer — what Delegate, teams and spec did without them", () => {
-	const dir = tempDir();
-	const seeded = (loadSubagentProfiles(dir) as { value: SubagentProfilesFile }).value.profiles[0]!;
-	assert.deepEqual(seeded.delegate, delegateDefaults().profiles);
-	assert.equal(seeded.teams, null);
-	assert.equal(seeded.specWriter, null);
-});
-
-test("seed: a malformed team-defaults.json is not seeded over: the legacy files, and their warning, keep applying", () => {
-	const dir = tempDir();
+	assert.deepEqual(state.state === "ok" && state.value.profiles, []);
+	assert.notEqual(r.source, "legacy");
+	assert.equal(r.id, "claude", "no account connected: the built-in Claude profile");
+	assert.deepEqual(r.delegate?.profiles, builtinHelpers("claude").delegate);
+	assert.deepEqual(fs.readdirSync(dir).sort(), before, "nothing written: no library, no default file");
+	// A malformed team-defaults.json beside it changes nothing either.
 	fs.writeFileSync(path.join(dir, "team-defaults.json"), "{ nope");
-	assert.equal(loadSubagentProfiles(dir).state, "absent");
+	assert.equal(resolveSubagents(dir, undefined, undefined, undefined, "openai").id, "openai");
 	assert.equal(fs.existsSync(subagentProfilesPath(dir)), false);
-	assert.equal(fs.existsSync(subagentProfileDefaultPath(dir)), false, "the default file is not seeded either");
-	const r = resolveSubagents(dir, undefined);
-	assert.equal(r.source, "legacy");
-	assert.equal(r.teams.state, "malformed");
-	writeTeamDefaults(dir, defaultTeamDefaults());
-	assert.equal(loadSubagentProfiles(dir).state, "ok", "seeded once it is fixed");
 });
 
 test("writer refuses an invalid value and never leaves a partial file", () => {
@@ -225,7 +218,7 @@ test("pick: the newest valid entry on the branch wins; unknown shapes are skippe
 	assert.deepEqual(pickEntryFor([entry({ v: 1, profile: "a" })], "b"), { customType: PICK_ENTRY_TYPE, data: { v: 1, profile: "b" } });
 });
 
-test("resolution order: the chat's pick, then this device's default, then the legacy files", () => {
+test("resolution order: the chat's pick, then this device's default, then the built-in fallback; only a malformed library reads the legacy files", () => {
 	const dir = tempDir();
 	fs.writeFileSync(path.join(dir, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: pi("legacy/model"), fallback: null } } }));
 	const a = profile("a", "A");
@@ -241,10 +234,10 @@ test("resolution order: the chat's pick, then this device's default, then the le
 	const dangling = resolveSubagents(dir, "gone");
 	assert.equal(dangling.id, "a", "a pick naming a deleted profile follows the default");
 	assert.match(dangling.note ?? "", /no longer exists/);
-	// A dangling default reads as Off, saying so — never a leap to the legacy files while the library is fine.
+	// A dangling default reads as the built-in fallback, saying so — never a leap to the legacy files while the library is fine.
 	writeProfilesDefault(dir, { version: 1, default: "gone" });
-	const orphan = resolveSubagents(dir, undefined);
-	assert.equal(orphan.id, OFF_PROFILE_ID);
+	const orphan = resolveSubagents(dir, undefined, undefined, undefined, "openai");
+	assert.equal(orphan.id, "openai");
 	assert.equal(orphan.source, "default");
 	assert.match(orphan.note ?? "", /names no profile/);
 	fs.writeFileSync(subagentProfilesPath(dir), "{ not json");
@@ -254,20 +247,91 @@ test("resolution order: the chat's pick, then this device's default, then the le
 	assert.match(legacy.note ?? "", /malformed/);
 });
 
-test("Off configures nothing: no routing, no team members, no spec writer", () => {
+test("an older build's Off (a pick, a default) follows this computer's default (q6); only Sova's own chats (fallback null) get no helper profile (b3)", () => {
 	const dir = tempDir();
 	writeTeamDefaults(dir, defaultTeamDefaults());
 	writeSubagentProfiles(dir, file([profile("a", "A", { specWriter: { primary: claude("claude-opus-5-5"), fallback: null } })]));
+	writeProfilesDefault(dir, { version: 1, default: "a" });
+	assert.equal(resolveSubagents(dir, OFF_PROFILE_ID).id, "a", "an Off pick reads as no pick");
+	assert.equal(resolveSubagents(dir, OFF_PROFILE_ID).source, "default");
 	writeProfilesDefault(dir, { version: 1, default: OFF_PROFILE_ID });
-	for (const r of [resolveSubagents(dir, undefined), resolveSubagents(dir, OFF_PROFILE_ID)]) {
-		assert.equal(r.id, OFF_PROFILE_ID);
+	assert.equal(resolveSubagents(dir, undefined, undefined, undefined, "openai").id, "openai", "an Off default reads as not chosen");
+	// Sova's own chats: no default chosen gives no helper profile, as before built-in profiles existed.
+	fs.rmSync(subagentProfileDefaultPath(dir));
+	for (const pick of [undefined, OFF_PROFILE_ID]) {
+		const r = resolveSubagents(dir, pick, undefined, undefined, null);
 		assert.equal(r.delegate, null);
-		assert.equal(r.teams.state, "absent", "a team-defaults.json beside it is not read under Off");
-		assert.match(r.teams.state === "absent" ? (r.teams.note ?? "") : "", /configures nothing/);
+		assert.equal(r.reviewer, null);
 		assert.equal(r.spec.writer, null);
+		assert.equal(r.teams.state, "absent", "a team-defaults.json beside it is not read");
 	}
-	assert.equal(resolveSubagents(dir, OFF_PROFILE_ID).source, "pick");
-	assert.equal(resolveSubagents(dir, undefined).source, "default");
+	// …but a default the computer chose still applies to them, as it always did.
+	writeProfilesDefault(dir, { version: 1, default: "a" });
+	assert.equal(resolveSubagents(dir, undefined, undefined, undefined, null).id, "a");
+	// And nothing here was rewritten.
+	assert.equal(readProfilesDefault(dir).state === "ok" && (readProfilesDefault(dir) as { value: { default: string } }).value.default, "a");
+});
+
+test("built-in profiles: each resolves by its id; a profile of yours takes its place by id, then name, then (Claude) the seeded starter shown as Claude", () => {
+	const dir = tempDir();
+	for (const id of BUILTIN_PROFILE_IDS) assert.deepEqual(resolveSubagents(dir, id).delegate?.profiles, builtinHelpers(id).delegate, id);
+	const routine = (model: string) => ({ ...delegateDefaults().profiles, routine: { primary: pi(model), fallback: null } });
+	// [the library, the built-in, the profile that takes its place (undefined: the built-in itself), its name]
+	const cases: [SubagentProfile[], "claude" | "openai", string | undefined, string][] = [
+		[[], "claude", undefined, "Claude"],
+		[[profile("my-setup", "My setup")], "claude", "my-setup", "Claude"],
+		[[profile("my-setup", "My setup"), profile("work", "claude")], "claude", "work", "claude"],
+		[[profile("my-setup", "My setup"), profile("claude", "Mine")], "claude", "claude", "Mine"],
+		[[profile("my-setup", "My setup")], "openai", undefined, "OpenAI"],
+		[[profile("x", "OpenAI")], "openai", "x", "OpenAI"],
+	];
+	for (const [profiles, id, by, name] of cases) {
+		const lib = profiles.map((p, i) => ({ ...p, delegate: routine(`own/${i}`) }));
+		const label = `${profiles.map((p) => `${p.id}:${p.name}`).join(",") || "none"} → ${id}`;
+		const got = helperProfileOf(id, lib)!;
+		assert.equal(got.id, by ?? id, label);
+		assert.equal(got.name, name, label);
+		writeSubagentProfiles(dir, file(lib));
+		assert.equal(resolveSubagents(dir, undefined, undefined, undefined, id).name, name, `${label}: the default`);
+		const listed = pickableHelpers(lib, { claude: true, openai: true, ollamaCloud: false });
+		assert.equal(listed.filter((p) => p.name.toLowerCase() === name.toLowerCase()).length, 1, `${label}: listed once`);
+	}
+	// The seeded starter's file is not rewritten: the name is how it is shown.
+	writeSubagentProfiles(dir, file([profile("my-setup", "My setup")]));
+	const raw = fs.readFileSync(subagentProfilesPath(dir), "utf8");
+	resolveSubagents(dir, undefined, undefined, undefined, "claude");
+	assert.equal(fs.readFileSync(subagentProfilesPath(dir), "utf8"), raw);
+	assert.match(raw, /"My setup"/);
+});
+
+test("the built-in default by connected accounts (b2): Claude, then OpenAI, then DeepSeek; none: Claude; each listed only when connected", () => {
+	for (const claudeOn of [false, true])
+		for (const openai of [false, true])
+			for (const ollamaCloud of [false, true]) {
+				const c: ConnectedAccounts = { claude: claudeOn, openai, ollamaCloud };
+				const want = claudeOn ? "claude" : openai ? "openai" : ollamaCloud ? "deepseek" : "claude";
+				assert.equal(builtinDefaultFor(c), want, JSON.stringify(c));
+				const listed = builtinsFor(c);
+				assert.deepEqual(listed, claudeOn || openai || ollamaCloud ? BUILTIN_PROFILE_IDS.filter((id) => (id === "claude" ? claudeOn : id === "openai" ? openai : ollamaCloud)) : ["claude"], JSON.stringify(c));
+			}
+	// The accounts as read from their files: a Claude sign-in (credentials, or an account in .claude.json as on macOS),
+	// pi's own OpenAI sign-in, an Ollama Cloud key; nothing else counts (a Z.ai or DeepSeek key, local Ollama).
+	const home = tempDir();
+	const agent = path.join(home, "agent");
+	fs.mkdirSync(agent);
+	const paths = accountPaths(agent, {}, home);
+	const read = () => readAccountsAt(paths);
+	assert.deepEqual(read(), { claude: false, openai: false, ollamaCloud: false });
+	fs.writeFileSync(paths.piAuth, JSON.stringify({ zai: { type: "api_key", key: "k" }, deepseek: { type: "api_key", key: "k" }, ollama: { type: "api_key", key: "k" } }));
+	assert.deepEqual(read(), { claude: false, openai: false, ollamaCloud: false });
+	fs.writeFileSync(paths.piAuth, JSON.stringify({ "openai-codex": { type: "oauth", access: "t" }, "ollama-cloud": { type: "api_key", key: "k" } }));
+	assert.deepEqual(read(), { claude: false, openai: true, ollamaCloud: true });
+	fs.writeFileSync(paths.claudeJson, JSON.stringify({ oauthAccount: { emailAddress: "a@b.c" } }));
+	assert.equal(read().claude, true, "macOS keeps the token in the keychain: the account in .claude.json says it is signed in");
+	fs.rmSync(paths.claudeJson);
+	fs.mkdirSync(path.dirname(paths.claudeCreds), { recursive: true });
+	fs.writeFileSync(paths.claudeCreds, JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+	assert.equal(read().claude, true);
 });
 
 test("a profile's teams resolve in team-defaults' own shape; null is absent", () => {
@@ -335,12 +399,13 @@ test("reviewer (adversarial review): optional — an older profile without it pa
 	assert.match(bad.errors.join("\n"), /^profiles\[0\]\.reviewer: Reviewer primary: /m);
 	const same = parseSubagentProfiles(file([profile("r", "R", { reviewer: { primary: pi("a/b"), fallback: pi("a/b") } })]));
 	assert.ok(!same.ok && /Reviewer fallback: the same worker/.test(same.errors.join("\n")));
-	// Resolution carries it; Off and an older profile have none.
+	// Resolution carries it; no helper profile and an older profile have none.
 	writeSubagentProfiles(dir, file([profile("old", "Old"), profile("r", "R", { reviewer })]));
 	writeProfilesDefault(dir, { version: 1, default: "r" });
 	assert.deepEqual(resolveSubagents(dir, undefined).reviewer, reviewer);
 	assert.equal(resolveSubagents(dir, "old").reviewer, null);
-	assert.equal(resolveSubagents(dir, OFF_PROFILE_ID).reviewer, null);
+	writeProfilesDefault(dir, { version: 1, default: OFF_PROFILE_ID });
+	assert.equal(resolveSubagents(dir, undefined, undefined, undefined, null).reviewer, null);
 	// Its slots are validated on save and counted in the providers.
 	assert.deepEqual(profileSlots(profile("r", "R", { reviewer })).slice(-2).map((s) => s.label), ["Reviewer primary", "Reviewer fallback"]);
 	assert.ok(profileProviders(profile("r", "R", { reviewer })).includes("openai-codex"));
@@ -392,13 +457,13 @@ test("alignment (Eagerness, writing style, Visuals): optional, field by field ov
 		const bad = parseSubagentProfiles(file([profile("p", "P", { alignment: alignment as never })]));
 		assert.ok(!bad.ok && error.test(bad.errors.join("\n")), JSON.stringify(bad));
 	}
-	// Resolution order: the chat's pick, then this device's default; Off and the legacy files have none.
+	// Resolution order: the chat's pick, then this device's default; no helper profile and the legacy files have none.
 	writeSubagentProfiles(dir, file([profile("old", "Old"), profile("pm", "PM", { alignment: { style: "pm", visuals: false } })]));
 	writeProfilesDefault(dir, { version: 1, default: "pm" });
 	assert.deepEqual(resolveSubagents(dir, undefined).alignment, { style: "pm", visuals: false }, "the default's");
 	assert.equal(resolveSubagents(dir, "old").alignment, null, "a pick with no override: the host's file");
 	assert.deepEqual(resolveSubagents(dir, "gone").alignment, { style: "pm", visuals: false }, "a dangling pick follows the default");
-	assert.equal(resolveSubagents(dir, OFF_PROFILE_ID).alignment, null);
+	assert.deepEqual(resolveSubagents(dir, OFF_PROFILE_ID).alignment, { style: "pm", visuals: false }, "an older Off pick follows the default");
 	fs.writeFileSync(subagentProfilesPath(dir), "{ not json");
 	assert.equal(resolveSubagents(dir, "pm").alignment, null, "an unusable library: the legacy files, no override");
 	// A profile with no override reads byte-identical to one from before the field existed.

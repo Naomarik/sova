@@ -21,7 +21,7 @@ the `spec` tool out of a monitor).
 Teams and their snapshots are a contract Sova parses: coordinate before changing them.
 
 **Subagent profiles.** One module, `subagent-profiles.ts` (builtins only, plus `mode/delegate.ts`, `mode/spec.ts`,
-`mode/align-settings.ts` and `subagents/team-defaults.ts`), owns three things:
+`mode/align-settings.ts`, `subagents/team-defaults.ts` and `subagents/builtin-profiles.ts`), owns three things:
 - `subagent-profiles.json`, the library of named setups. A profile bundles Delegate's four routes (which team members follow
   too, by the work kind each is named with), the standing coordinator and monitor, the spec writer, and optionally the
   reviewer and the align writing style / Visuals override. Each profile keeps a `members` key, the retired
@@ -29,15 +29,24 @@ Teams and their snapshots are a contract Sova parses: coordinate before changing
   the value, so the parser reads it as they do (a worker tuple or null; absent reads null) and the writer writes it back.
   A new or copied profile writes null. Never write a library without it.
 - `subagent-profiles-default.json`, this device's default. Never synced. The library syncs profile by profile: the newest edit per profile wins, deletions are recorded in Sova's sync state (never in the file), and a seeded starter's mtime is the epoch, so it yields to a library edited elsewhere.
-- Each chat's hidden `subagent-profile` custom entry `{v: 1, profile}`: an id or `"off"`, newest on the branch wins.
-  It is an id reference, not a snapshot: editing a profile reaches every chat on it from its next turn or team action.
+- Each chat's hidden `subagent-profile` custom entry `{v: 1, profile}`: an id (an older build's `"off"` still parses,
+  and reads as no pick), newest on the branch wins. It is an id reference, not a snapshot: editing a profile reaches
+  every chat on it from its next turn or team action.
 
-The module holds the shapes, the strict parses, the atomic writers, the pick entries (`restorePick`,
-`pickEntryFor`) and the seeding: an absent file is seeded from the legacy files, so nothing changes until the user
-switches, and a malformed legacy `team-defaults.json` postpones seeding. One resolver, `resolveSubagents`, goes
-pick → this device's default → legacy files. A dangling pick falls to the default; a missing, malformed or dangling
-default reads as Off; an unusable library falls to the legacy files.
-- Written by the mode menu, Settings → Profiles, `/mode subagents <id|off>`, the Overseer and the limit row.
+`builtin-profiles.ts` (builtins and type imports only; the server imports it too) holds the built-in Claude, OpenAI
+and DeepSeek helper profiles (never stored), which accounts are connected here (a Claude sign-in, pi's own OpenAI
+sign-in, an Ollama Cloud key; read from their files, stat-cached), and which profile of the user's takes a
+built-in one's place (same id, then same name, then the seeded `my-setup` for Claude, shown as "Claude").
+
+The module holds the shapes, the strict parses, the atomic writers and the pick entries (`restorePick`,
+`pickEntryFor`). Nothing is seeded: an absent library reads as an empty one, written by nobody. One resolver,
+`resolveSubagents`, goes pick → this device's default → the fallback: the built-in profile the connected accounts
+give (Claude, then OpenAI, then DeepSeek; Claude with none), or no helper profile for Sova's own chats (the engine's
+`no-helper-profile` flag, a playbook card's run, `SOVA_NO_HELPER_PROFILE=1`). A dangling or `"off"` pick falls to
+the default; a missing, `"off"`, malformed or dangling default reads as the fallback; only a malformed library
+falls to the legacy files.
+- Written by the mode menu, Settings → Profiles, `/mode subagents <id|name>` ("off" answers with the profiles
+  there are), the Overseer and the limit row.
 - Read by Sova's mode engine (Delegate routing and the spec writer at each
   turn boundary, either major mode), by
   this extension (`team_create`, `team_add`, `team_succeed`, roster answers, `/team defaults`), and by the server:

@@ -209,9 +209,16 @@ async function arrive(tid: string): Promise<void> {
   if (arriving.has(tid)) return;
   arriving.add(tid);
   try {
-    const r = readTransport(tid);
+    let r = readTransport(tid);
     if (!r?.pkg) return;
+    const pkg = r.pkg;
     const at = incomingOf(tid);
+    // A run that died after the relocation began left the staged home rewritten (a file maybe half written):
+    // it no longer matches the package's hashes, so the package is pulled and unpacked again.
+    if (r.steps.pulled && !r.steps.verified && (r.ext as { relocating?: string } | undefined)?.relocating === pkg.sha256) {
+      log(`${tid}: the last attempt stopped while relocating; pulling the package again`);
+      r = updateTransport(tid, { steps: { ...r.steps, pulled: undefined, staged: undefined }, ext: { relocating: "" } })!;
+    }
     if (!r.steps.pulled) {
       await rm(at, { recursive: true, force: true });
       mkdirSync(at, { recursive: true, mode: 0o700 });
@@ -220,7 +227,7 @@ async function arrive(tid: string): Promise<void> {
         linkId: tid,
         from: r.peer,
         path: peerPath.package(tid),
-        snapshot: r.pkg,
+        snapshot: pkg,
         resolvedDest: at,
         rootNames: ["package.json", "home", "code", "usage.json"],
         onProgress: (p) => void updateTransport(tid, { received: p.received }),
@@ -232,7 +239,7 @@ async function arrive(tid: string): Promise<void> {
         },
       });
       await knob(tid, "pulled");
-      stepDone(tid, "pulled", { state: "checking", received: r.pkg.size });
+      stepDone(tid, "pulled", { state: "checking", received: pkg.size });
     }
     const manifest = JSON.parse(await readFile(join(at, "package.json"), "utf8")) as PackageManifest;
     if (manifest.tid !== tid) throw new Error("The package is another transport's.");
@@ -265,6 +272,7 @@ async function arrive(tid: string): Promise<void> {
       if (srcMain) map.push([srcMain, repo]);
     }
     const broad: [string, string][] = [[manifest.source.agentDir, agentRoot()], [manifest.source.stateRoot, canonical(stateRoot())], [manifest.source.homeDir, homedir()]];
+    updateTransport(tid, { ext: { relocating: pkg.sha256 } });
     const moved = await relocateHome(join(at, "home"), { map, ids, code: OWN_CODE, broad });
     await fixManifest(join(at, "home"), arrivedId, cur.mode);
     log(`${tid}: relocated ${moved.conversations} conversations, ${moved.workers} helper records, ${moved.records} records`);

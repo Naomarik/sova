@@ -16,7 +16,8 @@ const BODY_CAP = 64 * 1024;
 /** True when `raw` names a compressed chat or one of its helpers' files: by its path or its session id, or
     a list of them (a `paths` body). */
 export function namesCompressed(raw: unknown): boolean {
-  if (Array.isArray(raw)) return raw.slice(0, 200).some(namesCompressed);
+  // Every entry: the 64 KB body cap already bounds the list.
+  if (Array.isArray(raw)) return raw.some(namesCompressed);
   if (typeof raw !== "string" || !raw) return false;
   if (isCompressedId(raw)) return true;
   if (!raw.endsWith(".jsonl")) return false;

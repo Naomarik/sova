@@ -275,6 +275,26 @@ export function startRefusal(path: string): string | null {
   return null;
 }
 
+/**
+ * The arrival opens the chat to write its note, and an archived chat opens for nothing: one that arrived archived
+ * (archived where it came from) is opened with its mark held off, then archived again as Archive does (its runtime
+ * closed). Should that fail, the mark goes back on regardless: the chat stays archived as it came.
+ */
+export async function openKeepingArchive(path: string, open: () => Promise<void>, rearchive: () => Promise<void>): Promise<void> {
+  const id = basename(dirname(dirname(path)));
+  const was = isArchived(id);
+  if (was) setArchived(id, false);
+  try {
+    await open();
+  } finally {
+    if (was)
+      await rearchive().catch((err: unknown) => {
+        log(`${id}: archived again by its mark only (${err instanceof Error ? err.message : String(err)})`);
+        setArchived(id, true);
+      });
+  }
+}
+
 /** Whether the arrived home says its chat is archived (the mark travels in `<home>/chat/meta.json`). */
 function homeArchived(id: string): boolean {
   try {
@@ -373,10 +393,18 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       const n = adoptArrivedHome(homeId);
       log(`home ${homeId} arrived: ${n} helper records tracked`);
     },
-    openWithNote: async (path, text) => {
-      const h = await acquireChatHandle(path);
-      if (!(await h.appendNote("sova-transport-arrival", text))) log(`the arrival note for ${path} could not be written`);
-    },
+    openWithNote: (path, text) =>
+      openKeepingArchive(
+        path,
+        async () => {
+          const h = await acquireChatHandle(path);
+          if (!(await h.appendNote("sova-transport-arrival", text))) log(`the arrival note for ${path} could not be written`);
+        },
+        async () => {
+          const a = await archiveSession(path, true);
+          if (!a.ok) throw new Error(a.error);
+        },
+      ),
     tellHelper: steerWorkerChat,
     helperNote: (device, interrupted) =>
       interrupted

@@ -270,3 +270,79 @@ test("a first arrival carrying its archive mark shows archived here at once (the
   cameBack(id);
   assert.ok(isArchived(id));
 });
+
+test("an arrival of a chat archived where it came from opens to write its note, then is archived again", async () => {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const { isArchived, setArchived } = await import("../archived-sessions");
+  const { openKeepingArchive } = await import("./routes");
+  const { join } = await import("node:path");
+  const id = "0199aaaa-0000-7000-8000-000000000012";
+  const file = join(ensureChatHome(id), "sessions", `t_${id}.jsonl`);
+  setArchived(id, true);
+  const seen: string[] = [];
+  await openKeepingArchive(file, async () => void seen.push(isArchived(id) ? "refused: archived" : "opened"), async () => {
+    seen.push("archived again");
+    setArchived(id, true);
+  });
+  assert.deepEqual(seen, ["opened", "archived again"]);
+  assert.ok(isArchived(id));
+  // Archive failing: the mark goes back on anyway.
+  await openKeepingArchive(file, async () => {}, async () => {
+    throw new Error("mid-turn");
+  });
+  assert.ok(isArchived(id));
+  // Not archived: nothing changes.
+  setArchived(id, false);
+  await openKeepingArchive(file, async () => void seen.push("plain"), async () => void seen.push("never"));
+  assert.ok(!isArchived(id));
+  assert.equal(seen.at(-1), "plain");
+});
+
+test("an archived chat's first Move completes there and is listed archived at once", async () => {
+  resetMovedMemo();
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const { homeArrived } = await import("../chat-homes/records");
+  const { ARCHIVED_REFUSAL, isArchived, setArchived } = await import("../archived-sessions");
+  const dest = await import("./destination");
+  const { cameBack, openKeepingArchive, startRefusal } = await import("./routes");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const id = "0199aaaa-0000-7000-8000-000000000013";
+  const home = ensureChatHome(id);
+  const file = join(home, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", id })}\n`);
+  // Published here with the archive mark it came with.
+  mkdirSync(join(home, "chat"), { recursive: true });
+  writeFileSync(join(home, "chat", "meta.json"), JSON.stringify({ version: 1, id, "archived-sessions.json": [id] }));
+  homeArrived(id);
+  createTransport({
+    tid: "tr_arch001", side: "destination", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "a", peerLabel: "lab A", path: "", folder: "/x", state: "switching", arrivedId: id,
+    steps: { offered: "t", prepared: "t", pulled: "t", staged: "t", verified: "t", decided: "t", published: "t" },
+    ext: { offer: { trees: [], repoRel: null, project: { remotes: [], roots: [] } } },
+  });
+  const notes: string[] = [];
+  dest.setDestinationDeps({
+    peerFetch: async () => new Response("{}"),
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack,
+    // As the server's: an archived chat opens for nothing.
+    openWithNote: (p, text) =>
+      openKeepingArchive(
+        p,
+        async () => {
+          if (startRefusal(p) || isArchived(id)) throw new Error(ARCHIVED_REFUSAL);
+          notes.push(text);
+        },
+        async () => setArchived(id, true),
+      ),
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+  });
+  const res = await dest.commit({ id: "a" }, "tr_arch001", {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(notes.length, 1);
+  assert.equal(readTransport("tr_arch001")?.state, "done");
+  assert.ok(isArchived(id), "listed archived there at once");
+});

@@ -20,6 +20,8 @@ export interface BriefFacts {
   sovaFolders?: string[];
   /** After arrival: the chat is on this device now, so there is no link to report over. */
   arrived?: boolean;
+  /** The user's home on this device: the only place to look for an existing copy. */
+  home?: string;
 }
 
 const line = (c: AgentCheck) => `- ${c.id}: ${c.detail}`;
@@ -40,7 +42,8 @@ export function agentBrief(f: BriefFacts): string {
     "",
     "## The project",
     `- Folder on this device: ${f.folder}`,
-    `- Its repository: ${f.remotes.length ? f.remotes.join(", ") : "no remote recorded: ask the user where to get it"}`,
+    `- Its repository: ${f.remotes.length ? f.remotes.join(", ") : "no remote recorded"}`,
+    `- Look for an existing copy only under this device's home (${f.home ?? "$HOME"}), never elsewhere on the disk. With no remote that works and no copy there, ask the user (align) where to get it and end your turn.`,
     ...(f.branches.length ? [`- Arriving with the chat: ${f.branches.join(", ")}`] : []),
     ...(f.checkout
       ? [

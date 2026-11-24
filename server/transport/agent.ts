@@ -443,6 +443,7 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     checks,
     sovaFolders: deps.protectedRoots(),
     arrived,
+    home: deps.home(),
   });
   const made = await deps.startChat({ cwd, title, prompt, model: choice.model, thinking: choice.thinking });
   markAgent(root, made.id, req.tid, deps.now());

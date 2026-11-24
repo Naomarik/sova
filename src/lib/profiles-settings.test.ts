@@ -4,6 +4,7 @@ import { DEFAULT_LIMITS, type JoinedProfile, type Profile } from "../../shared/p
 import type { SubagentProfile } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 import { firstIssue } from "../../shared/form-rules";
+import { PROFILE_NAME_OFF } from "../../shared/profile-limits";
 import {
   alsoUsedBy,
   canonical,
@@ -19,6 +20,7 @@ import {
   typedDraft,
   withDeleted,
   withDuplicate,
+  withMadeYours,
   withNewProfile,
   type ProfilesDraft,
 } from "./profiles-settings";
@@ -51,7 +53,9 @@ const claude = joined({ key: "user:claude", kind: "pair", group: "yours", name: 
 const twin = joined({ key: "user:twin", kind: "pair", group: "yours", name: "Twin", session: { ...session("twin", "Twin", { subagents: "c" }), source: "user", key: "user:twin" }, libraryId: "c", library: lib("c", "Claude") });
 const libOnly = joined({ key: "library:fast", kind: "library", group: "yours", name: "Fast", libraryId: "fast", library: lib("fast", "Fast") });
 const project = joined({ key: "project:/r#rel", kind: "project", group: "project", name: "Release checker", approval: "needed", libraryId: "c", library: lib("c", "Claude") });
-const WIRE = [OFF, claude, twin, libOnly, project];
+const builtinClaude = joined({ key: "sova:claude", kind: "builtin", group: "builtin", name: "Claude", session: { ...session("claude", "Claude", { model: "claude-code-cli/claude-opus-5-5", thinking: "medium", mode: "delegate" }), source: "sova", key: "sova:claude" }, libraryId: "claude", library: lib("claude", "Claude"), providers: ["claude"] });
+const builtinOpenai = joined({ key: "sova:openai", kind: "builtin", group: "builtin", name: "OpenAI", session: { ...session("openai", "OpenAI", { model: "openai-codex/gpt-6.2-sol", thinking: "medium" }), source: "sova", key: "sova:openai" }, libraryId: "openai", library: lib("openai", "OpenAI", { teams: null, specWriter: null }), providers: ["openai-codex"] });
+const WIRE = [OFF, claude, twin, libOnly, project, builtinOpenai];
 
 test("the draft holds yours only, each library half once, and the default", () => {
   const d = draftOf(WIRE, "user:claude");
@@ -63,12 +67,12 @@ test("the draft holds yours only, each library half once, and the default", () =
   assert.ok(!("id" in d.library.c!) && !("name" in d.library.c!), "a half is the library profile less its id and name");
 });
 
-test("the list: Yours in the draft's order, This project, Built in with Off first; chips by key", () => {
+test("the list: Yours in the draft's order, This project, then Built in; chips by key; never a row for no profile", () => {
   const d = draftOf(WIRE, "user:claude");
   const g = listGroups(d, WIRE, d);
   assert.deepEqual(g.yours.map((r) => r.name), ["Claude", "Twin", "Fast"]);
   assert.deepEqual(g.project.map((r) => r.name), ["Release checker"]);
-  assert.deepEqual(g.builtin.map((r) => r.key), [OFF_KEY]);
+  assert.deepEqual(g.builtin.map((r) => r.key), ["sova:openai"], "an older server's Off row is left out");
   assert.equal(g.yours[0]!.isDefault, true);
   assert.equal(g.project[0]!.needsApproval, true, "a project profile needing approval says so");
   assert.equal(g.yours[0]!.footprint, "Opus 5.5 + glm-5.3", "an unchanged profile keeps the server's footprint");
@@ -76,8 +80,40 @@ test("the list: Yours in the draft's order, This project, Built in with Off firs
   renamed.rows[0]!.model = null;
   renamed.library.c!.delegate.routine.primary = w("claude-code", "claude-opus-5-5", "low");
   assert.equal(listGroups(renamed, WIRE, d).yours[0]!.footprint, "Opus 5.5", "an edited one is worked out from the draft");
-  const offDefault = { ...d, default: OFF_KEY };
-  assert.equal(listGroups(offDefault, WIRE, d).builtin[0]!.isDefault, true, "Off can be the default");
+  const builtinDefault = { ...d, default: "sova:openai" };
+  assert.equal(listGroups(builtinDefault, WIRE, d).builtin[0]!.isDefault, true, "a built-in profile can be the default");
+  assert.equal(listGroups(d, [claude], d).builtin.length, 0, "no built-in rows sent: none listed (the Built in heading goes with them)");
+});
+
+test("the This chat chip: on the row of the chat's profile, in any group; none with no chat", () => {
+  const d = draftOf(WIRE, "user:claude");
+  const chips = (thisChat: string | null) => {
+    const g = listGroups(d, WIRE, d, thisChat);
+    return [...g.yours, ...g.project, ...g.builtin].filter((r) => r.thisChat).map((r) => r.key);
+  };
+  assert.deepEqual(chips("library:fast"), ["library:fast"]);
+  assert.deepEqual(chips("sova:openai"), ["sova:openai"], "a built-in one");
+  assert.deepEqual(chips("user:claude"), ["user:claude"], "beside Default: both chips on one row");
+  assert.equal(listGroups(d, WIRE, d, "user:claude").yours[0]!.isDefault, true);
+  assert.deepEqual(chips(null), []);
+  assert.deepEqual(chips("user:gone"), []);
+});
+
+test("Make It Yours: a copy under Yours with the built-in's name and both its parts; refused when one of yours has the name", () => {
+  const d = draftOf(WIRE, "user:claude");
+  const out = withMadeYours(d, builtinOpenai);
+  assert.ok(out.key);
+  const r = out.draft.rows.find((x) => x.key === out.key)!;
+  assert.equal(r.name, "OpenAI", "the built-in's own name, so once saved it takes its place");
+  assert.deepEqual([r.model, r.thinking], ["openai-codex/gpt-6.2-sol", "medium"]);
+  assert.equal(canonical(out.draft.library[r.lib!]), canonical({ ...lib("openai", "OpenAI", { teams: null, specWriter: null }), id: undefined, name: undefined }), "the helpers, less id and name");
+  assert.notEqual(r.lib, "openai", "its own library half, never the built-in's id");
+  const mine = withMadeYours(d, builtinClaude);
+  assert.equal(mine.key, null, "Claude is already one of yours");
+  assert.equal(mine.draft, d);
+  const starts = withMadeYours(draftOf([], "sova:claude"), builtinClaude);
+  assert.equal(starts.draft.rows[0]!.starts?.mode, "delegate", "When a Chat Starts comes too");
+  assert.equal(starts.draft.default, "sova:claude", "the default stays where it was: nothing moves it but Make Default");
 });
 
 test("the footprint: distinct models, the chat's own first, at most 3 then +N; none reads as the chat's own", () => {
@@ -194,7 +230,7 @@ test("what Save waits for: a name's rules, then each library half's rows, in the
     return firstIssue(profilesDraftFields(x, d))?.message ?? null;
   };
   assert.equal(bad((x) => (x.rows[1]!.name = "claude")), "Another profile has this name.");
-  assert.equal(bad((x) => (x.rows[1]!.name = "Off")), `Profile name can't be "Off", the built-in profile's.`);
+  assert.equal(bad((x) => (x.rows[1]!.name = "Off")), PROFILE_NAME_OFF);
   assert.equal(bad((x) => (x.rows[1]!.name = "x".repeat(49))), "Profile name can be at most 48 characters.");
   assert.equal(bad((x) => (x.library.fast!.delegate.planning.primary.effort = "")), "Fast's Delegate rows each need a model and an effort.");
   assert.match(bad((x) => (x.rows[0]!.starts!.grant = ["sessions.read"], ((x.rows[0]!.starts!.limits as unknown as Record<string, unknown>).hops = "1."))) ?? "", /Hops/);

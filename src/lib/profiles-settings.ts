@@ -145,14 +145,18 @@ export interface ListRow {
   hidden: boolean;
   /** Not saved yet (a new profile): Hide waits for Save. */
   unsaved: boolean;
+  /** The profile in effect for the chat Settings was opened from: its "This chat" chip. */
+  thisChat: boolean;
   wire?: JoinedRowWire;
 }
 
 /**
  * The list beside the editor: Yours (the draft's, in its order, a new one last), This project, then
- * Built in with Off first. A saved row unchanged in the draft keeps the server's footprint.
+ * Built in (the profiles Sova ships for the accounts connected here). A saved row unchanged in the
+ * draft keeps the server's footprint. `thisChat`: the key of the profile in effect for the chat
+ * Settings was opened from (none: no chip anywhere).
  */
-export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], saved: ProfilesDraft | null): Record<ListGroup, ListRow[]> {
+export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], saved: ProfilesDraft | null, thisChat: string | null = null): Record<ListGroup, ListRow[]> {
   const byKey = new Map(wire.map((w) => [w.key, w]));
   const savedRow = (key: string) => saved?.rows.find((r) => r.key === key);
   const yours = d.rows.map((r): ListRow => {
@@ -168,6 +172,7 @@ export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], sav
       needsApproval: false,
       hidden: !!w?.hidden,
       unsaved: isNewKey(r.key),
+      thisChat: !!thisChat && thisChat === r.key,
       wire: w,
     };
   });
@@ -180,15 +185,34 @@ export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], sav
     needsApproval: w.approval === "needed",
     hidden: !!w.hidden,
     unsaved: false,
+    thisChat: !!thisChat && thisChat === w.key,
     wire: w,
   });
   const project = wire.filter((w) => w.group === "project").map((w) => fromWire(w, "project"));
-  const off = wire.find((w) => w.kind === "off");
-  const builtin = [
-    off ? fromWire(off, "builtin") : { key: OFF_KEY, name: "Off", footprint: KEEPS_OWN_MODEL, group: "builtin" as const, isDefault: d.default === OFF_KEY, needsApproval: false, hidden: false, unsaved: false },
-    ...wire.filter((w) => w.group === "builtin" && w.kind !== "off").map((w) => fromWire(w, "builtin")),
-  ];
+  // An older server's Off row is never listed: no chat runs on no profile now.
+  const builtin = wire.filter((w) => w.group === "builtin" && w.kind !== "off" && w.key !== OFF_KEY).map((w) => fromWire(w, "builtin"));
   return { yours, project, builtin };
+}
+
+/**
+ * Make It Yours (§app.settings-dialog/profiles): an editable copy of a built-in profile under Yours,
+ * both parts, under the built-in's own name, so once saved it takes the built-in's place (a profile
+ * of yours named like a built-in replaces it). Saved with Save Changes, like New Profile. Answers
+ * the new draft and the new row's key; `d` unchanged when one of yours already has that name.
+ */
+export function withMadeYours(d: ProfilesDraft, w: Pick<JoinedRowWire, "name" | "session" | "library">): { draft: ProfilesDraft; key: string | null } {
+  if (d.rows.some((r) => r.name.toLowerCase() === w.name.toLowerCase())) return { draft: d, key: null };
+  return withNewProfile(
+    d,
+    {
+      model: w.session?.model ?? null,
+      thinking: w.session?.thinking ?? null,
+      helpers: w.library ? helpersOf(w.library) : null,
+      starts: w.session ? startsOf(w.session) : null,
+      name: w.name,
+    },
+    null,
+  );
 }
 
 /** The pi provider whose models are Claude Code's (`claude-code-cli/<id>`). */

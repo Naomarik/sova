@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { ACCOUNT_TABS, accountTabRequest, clearProfilesRequest, clearSettingsSection, closeSettings, openProfiles, openSettings, profilesRequest, settingsAccountFromHash, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsProjectFromHash, settingsTabFromHash, subagentSettingsPath } from "./settings-nav";
+import { ACCOUNT_TABS, accountTabRequest, clearProfilesRequest, clearSettingsSection, closeSettings, openProfiles, openSettings, profilesRequest, settingsAccountFromHash, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsProjectFromHash, settingsTabFromHash, subagentSettingsChat, subagentSettingsPath } from "./settings-nav";
 
 test("Configure Spec opens Profiles at the Spec writer's row, and a plain open asks for none", () => {
   openProfiles({ section: "spec" });
@@ -28,6 +28,16 @@ test("openProfiles opens Profiles on one profile, at the part asked, for one cha
   assert.equal(subagentSettingsPath(), undefined, "an open for no chat is nobody's chat");
   closeSettings();
   assert.equal(profilesRequest(), null);
+});
+
+test("the This chat key rides with the chat's path only, and closing forgets it", () => {
+  openProfiles({ profile: "sova:claude", path: "/s/one.jsonl", chat: "sova:claude" });
+  assert.equal(subagentSettingsChat(), "sova:claude");
+  openProfiles({ chat: "sova:claude" });
+  assert.equal(subagentSettingsChat(), undefined, "no chat open: no chip");
+  openProfiles({ path: "/s/one.jsonl", chat: "user:fast" });
+  closeSettings();
+  assert.equal(subagentSettingsChat(), undefined);
 });
 
 test("Settings opens at the tab asked for, and closes", () => {

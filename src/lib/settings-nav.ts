@@ -21,6 +21,10 @@ const [openTab, setOpenTab] = createSignal<SettingsTab | null>(null);
 const [subagentPath, setSubagentPath] = createSignal<string | undefined>();
 export const subagentSettingsPath = subagentPath;
 export const setSubagentSettingsPath = setSubagentPath;
+/** The joined key of the profile in effect for that chat, as its own `chat_profile` says (the "This
+    chat" chip), when the opener knows it. Cleared with the path. */
+const [chatKey, setChatKey] = createSignal<string | undefined>();
+export const subagentSettingsChat = chatKey;
 
 /** A section inside a tab to bring into view once it renders ("spec": Profiles → Models → Spec writer;
     "overseer-limits": Overseer → Limits; "server": General → Server · this machine); null = the tab's top. */
@@ -54,10 +58,12 @@ export const clearProfilesRequest = (): void => {
  * Open Settings → Profiles on one profile, at its Models part unless `part` says otherwise
  * (§chat.subagent-profiles/settings): the mode menu's gears and Manage Profiles…, the limit row.
  * `profile` is a joined key or id; without it, the chat at `path`'s profile; without either, the
- * default. `section` "spec" brings the Spec writer's row into view.
+ * default. `chat` is the joined key of the profile in effect for the chat at `path`, when known.
+ * `section` "spec" brings the Spec writer's row into view.
  */
-export function openProfiles(opts: { profile?: string; path?: string; part?: ProfilesPart; section?: "spec" } = {}): void {
+export function openProfiles(opts: { profile?: string; path?: string; chat?: string; part?: ProfilesPart; section?: "spec" } = {}): void {
   setSubagentPath(opts.path);
+  setChatKey(opts.path ? opts.chat : undefined);
   setProfileAsk({ ...(opts.profile ? { profile: opts.profile } : {}), part: opts.part ?? "models" });
   openSettings("profiles", opts.section ?? null);
 }
@@ -95,6 +101,7 @@ export function settingsAccountFromHash(hash: string): AccountTab | null {
 
 export function closeSettings(): void {
   setSubagentPath(undefined);
+  setChatKey(undefined);
   setProfileAsk(null);
   setProject(null);
   setAccountTab(null);

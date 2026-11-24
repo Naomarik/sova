@@ -5,11 +5,11 @@
 // ticket itself (§mesh.peers/transport-ticket), comparing in constant time and never logging it.
 import { execFile } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { rename, rm as rmAsync } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { createZstdDecompress } from "node:zlib";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { ENTRY_FINAL } from "../../shared/merge-queue";
@@ -26,6 +26,7 @@ import type { MeshApi } from "../mesh/index";
 import { serveTar } from "../mesh/links-transfer";
 import { localRequest } from "../mesh/proxy";
 import { pageOnlyRefusal } from "../page-only";
+import { readRegistry } from "../project-services/store";
 import { resolveSessionPath } from "../paths";
 import { archiveSession, cleanupSessions, getSessionSummary } from "../sessions-index";
 import { stateRoot } from "../state-root";
@@ -215,6 +216,25 @@ async function compressOldSafetyCopies(): Promise<void> {
 }
 
 /** Why a query or body has a key the route doesn't take, or null. */
+/** The running copies (instances wanting a service running) on these worktrees, named as Running Copies names
+    them: the branch, else the folder. A project's main copy (slot 0) isn't the chat's to stop: it stays. */
+function runningCopiesOn(paths: string[]): { id: string; name: string }[] {
+  const at = new Set(paths.map((p) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return resolve(p);
+    }
+  }));
+  try {
+    return readRegistry()
+      .instances.filter((i) => i.slot !== 0 && at.has(i.checkout) && Object.values(i.desired ?? {}).includes("running"))
+      .map((i) => ({ id: i.id, name: i.branch ?? basename(i.checkout) }));
+  } catch {
+    return [];
+  }
+}
+
 function unknownKeys(keys: Iterable<string>, allowed: readonly string[]): string | null {
   for (const k of keys) if (!allowed.includes(k)) return `This route doesn't take ${JSON.stringify(k.slice(0, 40))}.`;
   return null;
@@ -275,6 +295,21 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       } catch {
         return [];
       }
+    },
+    copies: (paths) => runningCopiesOn(paths).map((c) => c.name),
+    stopCopies: async (paths) => {
+      const stopped: string[] = [];
+      const copies = runningCopiesOn(paths);
+      if (!copies.length) return stopped;
+      const { projectEngine } = await import("../project-services/routes");
+      const engine = projectEngine();
+      for (const c of copies) {
+        // Your click on Move is the operator's word for it (a copy with a share link asks for one).
+        const r = await engine.run("down", { instance: c.id, confirm: true }, { kind: "operator", confirm: true }).catch((err: unknown) => ({ ok: false, error: { code: "failed", message: err instanceof Error ? err.message : String(err) } }));
+        if (r.ok) stopped.push(c.name);
+        else log(`running copy ${c.name} (${c.id}) didn't stop at the switch: ${r.error?.message ?? "failed"}`);
+      }
+      return stopped;
     },
     moved,
   });

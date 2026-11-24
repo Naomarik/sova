@@ -8,7 +8,7 @@ export interface TransportPreview {
   travels: { conversationBytes: number; code: { branch: string | null; bytes: number }[]; helpers: number; scratch: { dir: string; size: number }[] };
   privateFiles: { tree: string; path: string; size: number }[];
   large: { tree: string; path: string; size: number }[];
-  staysHere: { left: string[]; leftBytes: number; jobs: string[] };
+  staysHere: { left: string[]; leftBytes: number; jobs: string[]; copies?: string[] };
   busyHelpers: { id: string; name: string; role?: string }[];
   needs: string[];
   agentModels: string[];

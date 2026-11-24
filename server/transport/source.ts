@@ -62,6 +62,10 @@ export interface SourceDeps {
   stopJobs(chatIds: string[]): Promise<string[]>;
   /** The chat's background jobs and its helpers', by name (the dialog's Stays here). */
   jobs(chatId: string): string[];
+  /** The running copies (project-services instances) on these worktrees, by name (the dialog's Stays here). */
+  copies(treePaths: string[]): string[];
+  /** Stop the running copies on these worktrees (a Move's switch): the names of those stopped. */
+  stopCopies(treePaths: string[]): Promise<string[]>;
   /** After the destination confirmed: the Moved row, the safety copy, the old code folders. */
   moved(r: TransportRecord): Promise<void>;
 }
@@ -124,7 +128,7 @@ export interface Preview {
   travels: { conversationBytes: number; code: { branch: string | null; bytes: number }[]; helpers: number; scratch: { dir: string; size: number }[] };
   privateFiles: { tree: string; path: string; size: number }[];
   large: { tree: string; path: string; size: number }[];
-  staysHere: { left: string[]; leftBytes: number; jobs: string[] };
+  staysHere: { left: string[]; leftBytes: number; jobs: string[]; copies: string[] };
   busyHelpers: { id: string; name: string; role?: string }[];
   needs: string[];
   agentModels: string[];
@@ -229,6 +233,7 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
       left: [...new Set(t.trees.flatMap((x) => x.left))],
       leftBytes: (await Promise.all(t.trees.flatMap((x) => x.left.map((d) => dirBytes(join(x.path, d)))))).reduce((n, b) => n + b, 0),
       jobs: need().jobs(c.id),
+      copies: need().copies(t.trees.map((x) => x.path)),
     },
     busyHelpers: extras.busyHelpers,
     needs,
@@ -473,9 +478,10 @@ async function pack(r: TransportRecord): Promise<void> {
     // Deepest first: a helper's helpers stop before it.
     for (const h of [...helpers].reverse()) await d.park(h.chatId);
     const jobs = await d.stopJobs([c.id, ...helpers.map((h) => h.chatId)]);
+    const copies = await d.stopCopies((await chatTrees(c)).trees.map((x) => x.path));
     await d.closeChat(c.path, `This chat is moving to ${r.peerLabel}.`);
     await knob(r.tid, "stopped");
-    stepDone(r.tid, "stopped", { stopped: { jobs, copies: [] }, interrupted, wrapped });
+    stepDone(r.tid, "stopped", { stopped: { jobs, copies }, interrupted, wrapped });
   }
   updateTransport(r.tid, { state: "packing" });
   const t = await chatTrees(c);

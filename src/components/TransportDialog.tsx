@@ -263,6 +263,7 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
                         <li>Share links to this chat end</li>
                         <Show when={mode() === "move"}>
                           <For each={v().staysHere.jobs}>{(j) => <li>Background job {j}: stopped at the switch</li>}</For>
+                          <For each={v().staysHere.copies ?? []}>{(c) => <li>Running copy {c}: stopped at the switch</li>}</For>
                         </Show>
                       </ul>
                     </section>

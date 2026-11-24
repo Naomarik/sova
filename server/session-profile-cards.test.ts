@@ -464,13 +464,13 @@ describe("a new chat with no profile named starts on this computer's default", (
     });
   });
 
-  test("an older Off as the default reads as none chosen: the saved default helpers are the new chat's pick, so its card is checked", async () => {
+  test("an older Off as the default reads as none chosen: the saved default helpers, nothing written, and the new chat's card is theirs", async () => {
     writeFileSync(join(stateDir, "default-profile.json"), JSON.stringify({ version: 1, profile: "off" }));
     try {
       const path = makeSession();
-      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "models" });
-      assert.deepEqual(profileEntries(path), [], "no profile entry");
-      assert.equal(pickOf(path), "house");
+      const before = readFileSync(path, "utf8");
+      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "none" });
+      assert.equal(readFileSync(path, "utf8"), before);
       const state = await (await acquireChat(path, true)).chatProfileState();
       assert.deepEqual([state.current.key, state.current.name], ["library:house", "House"]);
     } finally {
@@ -478,7 +478,7 @@ describe("a new chat with no profile named starts on this computer's default", (
     }
   });
 
-  test("with no default anywhere, the built-in profile the accounts give: its helpers alone, the chat's model untouched, nothing written but the chat's pick", async () => {
+  test("with no default anywhere, the built-in profile the accounts give: its helpers alone, the chat's model untouched, nothing written", async () => {
     const defFile = sp.subagentProfileDefaultPath(agentDir);
     const held = readFileSync(defFile, "utf8");
     rmSync(defFile);
@@ -486,8 +486,11 @@ describe("a new chat with no profile named starts on this computer's default", (
       const path = makeSession();
       const chat = await acquireChat(path, true);
       const model = chat.harness.model()?.ref;
-      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "models" });
-      assert.equal(pickOf(path), "deepseek");
+      const before = readFileSync(path, "utf8");
+      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "none" });
+      assert.equal(readFileSync(path, "utf8"), before);
+      assert.equal(pickOf(path), undefined);
+      assert.equal((await acquireChat(path, true)).subagentProfileInfo().current.id, "deepseek", "its helpers are the built-in DeepSeek profile's");
       assert.equal((await acquireChat(path, true)).harness.model()?.ref, model);
       assert.equal(existsSync(defFile), false, "no default written");
       assert.equal(existsSync(join(stateDir, "default-profile.json")), false);

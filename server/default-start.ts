@@ -7,9 +7,10 @@ import { applyProfile } from "./session-profile-routes";
 
 /**
  * A new chat with no profile named starts on this computer's default (§chat.profiles/default).
- * A default with no session half records its helpers as the chat's pick. A default with a session
- * half is picked as on the empty screen, so its chip, its When a Chat Starts part and its helpers
- * are the chat's.
+ * A default with no session half, or one nobody chose (the built-in profile the accounts give), needs
+ * nothing: the chat follows the default's helpers and is named by them. A chosen default with a session
+ * half is picked as on the empty screen, so its chip, its When a Chat Starts part and its helpers are
+ * the chat's.
  *
  * An Overseer's start (and any start a person didn't make) never gets powers or tool changes the
  * profile isn't marked for: a default that isn't capability-neutral and lacks "Overseer may start"
@@ -22,22 +23,10 @@ import { applyProfile } from "./session-profile-routes";
 export async function startOnDefault(path: string, cwd: string, byOverseer: boolean, helpers?: string): Promise<{ ok: true; applied: "none" | "whole" | "models" } | { ok: false; error: string }> {
   const d = await resolveDefaultProfile(cwd).catch(() => null);
   const half = d?.row.session;
-  if (!d) return { ok: true, applied: "none" };
-  if (!half) {
-    // Helpers alone: the chat records them as its pick, so it opens on that profile's card (§chat.profiles/default).
-    const id = d.row.library?.id ?? d.row.libraryId;
-    if (!id || helpers !== undefined) return { ok: true, applied: "none" };
-    const why = await acquireChatHandle(path).then((chat) => chat.switchSubagentProfile(id)).then(() => null, (e) => String(e));
-    return why ? { ok: false, error: `the default profile's helpers weren't applied: ${why}` } : { ok: true, applied: "models" };
-  }
-  // A default nobody chose (the built-in one the accounts here give) gives a new chat its helpers alone, as a
-  // starter that holds only helpers did: the chat keeps the model new chats open on until a default is chosen.
-  if (d.fromAccounts) {
-    const id = d.row.library?.id ?? d.row.libraryId;
-    if (!id || helpers !== undefined) return { ok: true, applied: "none" };
-    const why = await acquireChatHandle(path).then((chat) => chat.switchSubagentProfile(id)).then(() => null, (e) => String(e));
-    return why ? { ok: false, error: `the default profile's helpers weren't applied: ${why}` } : { ok: true, applied: "models" };
-  }
+  // Helpers alone, or a default nobody chose (the built-in one the accounts here give, which a new chat takes the
+  // helpers of, as a starter that held only helpers did): nothing to write. The chat follows the default's helpers,
+  // and its card is the checked one, named by them (§chat.profiles/default).
+  if (!d || !half || d.fromAccounts) return { ok: true, applied: "none" };
   const whole = !byOverseer || isCapabilityNeutral(half) || (half.overseerMayStart && half.approval !== "needed");
   if (whole && half.approval !== "needed") {
     const r = await applyProfile(path, { source: half.source, id: half.id }, byOverseer ? "overseer" : undefined);

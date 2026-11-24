@@ -42,7 +42,7 @@ export interface DestinationDeps {
   /** The note a moved helper hears. */
   helperNote(device: string, interrupted: boolean): string;
   /** Bring a moved chat's usage cut in, apart from this device's own records: what it counted. */
-  importUsage(bytes: Buffer): Record<string, number>;
+  importUsage(bytes: Buffer, from: string): Record<string, number>;
 }
 
 let deps: DestinationDeps | null = null;
@@ -348,7 +348,7 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
       const usage = join(incomingOf(tid), "usage.json");
       if (existsSync(usage))
         try {
-          const n = need().importUsage(await readFile(usage));
+          const n = need().importUsage(await readFile(usage), r.peerLabel);
           log(`${tid}: usage brought in: ${Object.entries(n).map(([k, v]) => `${v} ${k}`).join(", ")}`);
         } catch (err) {
           log(`${tid}: its usage records weren't brought in: ${err instanceof Error ? err.message : String(err)}`);

@@ -339,7 +339,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       interrupted
         ? `This chat moved from ${device} while you were working, and your turn was interrupted. Folders and ports may differ here. Continue where you stopped.`
         : `This chat moved from ${device}. Folders and ports may differ here. Continue where you left off.`,
-    importUsage: (bytes) => ({ ...importChatUsage(bytes) }),
+    importUsage: (bytes, from) => ({ ...importChatUsage(bytes, { from }) }),
   });
 
   // The Transport agent and Safe Transport, when this build has them (server/transport/agent-wire.ts).

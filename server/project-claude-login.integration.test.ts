@@ -228,7 +228,12 @@ test("the project's login limited: a new chat moves on, and its note names that 
     assert.equal(c.first.login, C, "the next login with room that no other project keeps");
     assert.equal(c.first.from, A);
     assert.equal(c.first.reason, "moved");
-    assert.match(c.first.text ?? "", new RegExp(`^Claude: using ${C}@example\\.com \\(project Acme's login ${A}@example\\.com is limited until `));
+    // A new chat's entry names logins by id (§app.claude-logins/login-ids): no email or text; the server words the note.
+    assert.equal(c.first.text, undefined);
+    assert.doesNotMatch(JSON.stringify(c.first), /@/);
+    const rows = (await api("GET", `/api/transcript?path=${encodeURIComponent(c.path)}`)).body.items as { loginNote?: boolean; text?: string }[];
+    const note = rows.find((it) => it.loginNote)?.text ?? "";
+    assert.match(note, new RegExp(`^Claude: using ${C}@example\\.com \\(project Acme's login ${A}@example\\.com is limited until `));
   } finally {
     writeFileSync(join(s.agentDir, "claude-accounts-state.json"), JSON.stringify({ version: 1, logins: {} }));
   }

@@ -50,9 +50,14 @@ const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
  * part. Yours are the dialog's draft, saved with Save Changes; a project's are read-only, with
  * Approve Profile; Approve and Hide save at once.
  */
-export function ProfilesSettingsSection(props: { cwd: string | null }) {
+export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: string | null }) {
   setProfilesCwd(props.cwd);
-  const [listing, { refetch }] = createResource(() => props.cwd ?? "", (cwd) => fetchProfiles(cwd || null));
+  /** The chat Settings is open for: the one a gear opened it from, else the one on screen. */
+  const chatPath = () => subagentSettingsPath() ?? props.chatPath ?? null;
+  const [listing, { refetch }] = createResource(
+    () => ({ cwd: props.cwd ?? "", path: chatPath() ?? "" }),
+    (q) => fetchProfiles(q.cwd || null, null, q.path || null),
+  );
   const [library, { refetch: refetchLibrary }] = createResource(() => getSubagentProfiles(subagentSettingsPath()));
   const [options, { refetch: refetchOptions }] = liveDelegateOptions();
   const [rows] = createResource(getDelegateSettings);
@@ -75,8 +80,9 @@ export function ProfilesSettingsSection(props: { cwd: string | null }) {
   /** The profile in effect for the chat Settings was opened from: the listing's answer for that chat,
       else what its opener said; none with no chat (no chip). An older server's Off is no profile. */
   const thisChat = (): string | null => {
-    if (!subagentSettingsPath()) return null;
-    const k = (l() as { thisChat?: string } | undefined)?.thisChat ?? subagentSettingsChat();
+    if (!chatPath()) return null;
+    // The load's answer, else what the opener said (a save's answer is for no chat: it never clears the chip).
+    const k = safeListing()?.thisChat ?? (subagentSettingsPath() ? subagentSettingsChat() : undefined);
     return k && k !== OFF_KEY ? k : null;
   };
   const groups = createMemo(() => (draft() ? listGroups(draft()!, wire(), store.saved(), thisChat()) : null));

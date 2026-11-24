@@ -27,7 +27,7 @@ describe("where homes live", () => {
     ensureChatHome(ID);
     assert.equal(existsSync(join(state, MARKER_FILE)), false, "a harness never points real state at scratch");
     assert.equal(JSON.parse(readFileSync(join(homes, ID, "index.json"), "utf8")).files.find((f: { pattern: string }) => f.pattern === "sessions/*.jsonl").kind, "log");
-    const m = JSON.parse(readFileSync(join(homes, ID, "manifest.json"), "utf8"));
+    const m = JSON.parse(readFileSync(join(homes, ID, "home.json"), "utf8"));
     assert.equal(m.stateRoot, state);
     assert.equal(m.id, ID);
 
@@ -47,7 +47,7 @@ describe("where homes live", () => {
     ensureChatHome(ID);
     const other = "019a0000-0000-7000-8000-000000000002";
     mkdirSync(join(homes, other, "sessions"), { recursive: true });
-    writeFileSync(join(homes, other, "manifest.json"), JSON.stringify({ v: 1, id: other, stateRoot: "/elsewhere/sova", layout: 1 }));
+    writeFileSync(join(homes, other, "home.json"), JSON.stringify({ v: 1, id: other, stateRoot: "/elsewhere/sova", layout: 1 }));
     writeFileSync(join(homes, other, "sessions", `2026-01-01T00-00-00-000Z_${other}.jsonl`), "{}\n");
     assert.equal(hasHome(ID), true);
     assert.equal(hasHome(other), false);

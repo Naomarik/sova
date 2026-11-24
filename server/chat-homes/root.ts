@@ -32,11 +32,8 @@ export const CHAT_HOMES_ROOT_ENV = "SOVA_CHAT_HOMES_ROOT";
 export const CHAT_HOME_ENV = "SOVA_CHAT_HOME";
 /** The state root's marker, naming its homes folder once the first home is made. */
 export const MARKER_FILE = "chat-homes.json";
-/**
- * A home's own manifest file. Built from its parts on purpose: the spec-layout guard (spec-layout-boundary.test.ts)
- * watches server code for the spec's records file of the same name, and this is a different file.
- */
-export const MANIFEST_FILE = ["manifest", "json"].join(".");
+/** A home's own record (its id, state root, layout, origin device): `home.json`, a name no other store uses. */
+export const HOME_FILE = "home.json";
 export const LAYOUT_VERSION = 1;
 /** A home's index of its files' kinds. */
 export const INDEX_FILE = "index.json";
@@ -47,7 +44,7 @@ export const INDEX_FILE = "index.json";
  * never carried or handed to an extension (the unsent draft). First match wins.
  */
 export const HOME_FILE_KINDS: readonly { pattern: string; kind: "log" | "doc"; private?: true }[] = [
-  { pattern: MANIFEST_FILE, kind: "doc" },
+  { pattern: HOME_FILE, kind: "doc" },
   { pattern: "index.json", kind: "doc" },
   { pattern: "sessions/*.jsonl", kind: "log" },
   { pattern: "chat/draft.json", kind: "doc", private: true },
@@ -221,10 +218,10 @@ const known = (): Set<string> => {
   return set;
 };
 
-/** The manifest of a home, or null when missing or unreadable. */
+/** A home's home.json, or null when missing or unreadable. */
 export function readHomeManifest(id: string): HomeManifest | null {
   try {
-    const raw = JSON.parse(readFileSync(join(chatHome(id), MANIFEST_FILE), "utf8")) as HomeManifest;
+    const raw = JSON.parse(readFileSync(join(chatHome(id), HOME_FILE), "utf8")) as HomeManifest;
     return raw && raw.v === 1 && raw.id === id && typeof raw.stateRoot === "string" ? raw : null;
   } catch {
     return null;
@@ -253,7 +250,7 @@ export function abandonNewHome(id: string): void {
   if (!isHomeId(id)) return;
   const home = join(homesRoot(), id);
   try {
-    const top = readdirSync(home).filter((n) => n !== MANIFEST_FILE && n !== INDEX_FILE && n !== "sessions");
+    const top = readdirSync(home).filter((n) => n !== HOME_FILE && n !== INDEX_FILE && n !== "sessions");
     if (top.length > 0 || readdirSync(join(home, "sessions")).length > 0) return;
     rmSync(home, { recursive: true, force: true });
     known().delete(id);
@@ -296,10 +293,10 @@ export function ensureChatHome(id: string): string {
   const home = join(root, id);
   if (!known().has(id) || !existsSync(join(home, "sessions"))) {
     mkdirSync(join(home, "sessions"), { recursive: true, mode: 0o700 });
-    if (!existsSync(join(home, MANIFEST_FILE))) {
+    if (!existsSync(join(home, HOME_FILE))) {
       const device = thisDevice();
       const manifest: HomeManifest = { v: 1, id, stateRoot: canonicalStateRoot(), layout: LAYOUT_VERSION, device: { id: device.id, name: device.name }, createdAt: new Date().toISOString() };
-      writeJsonAtomic(join(home, MANIFEST_FILE), manifest);
+      writeJsonAtomic(join(home, HOME_FILE), manifest);
     }
     if (!existsSync(join(home, INDEX_FILE))) writeJsonAtomic(join(home, INDEX_FILE), { v: 1, layout: LAYOUT_VERSION, files: HOME_FILE_KINDS });
     known().add(id);

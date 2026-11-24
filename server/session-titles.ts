@@ -76,14 +76,16 @@ const written = (t: StoredTitle): Written => (t.legacy ? t.title : { title: t.ti
 function load(): Record<string, StoredTitle> {
   const out: Record<string, StoredTitle> = loadFile();
   const merged = withHome<StoredTitle | Written>(out, "meta", FIELD);
-  // A home's entry is the written form: parse it like the file's.
+  // A home's entry is the written form: parse it like the file's (once per entry object read).
   for (const [id, v] of Object.entries(merged)) if (!(id in out)) {
-    const t = parseStored(v);
+    const t = typeof v === "object" && v ? (parsedHome.get(v) ?? parsedHome.set(v, parseStored(v)).get(v)!) : parseStored(v);
     if (t) merged[id] = t;
     else delete merged[id];
   }
   return merged as Record<string, StoredTitle>;
 }
+
+const parsedHome = new WeakMap<object, StoredTitle | null>();
 
 function loadFile(): Record<string, StoredTitle> {
   // No prototype: an id is a plain key, and "__proto__" must stay one.

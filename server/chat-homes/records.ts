@@ -413,12 +413,11 @@ export function splitOut<V>(
     }
     legacy[k] = v;
   }
-  writeHomes(s, doc, field, byHome, {});
-  return { legacy, legacyChanged: opts.only === undefined || !homeOfKnownKey(s, opts.only, !!orig && opts.only in orig) };
-}
-
-function homeOfKnownKey(s: State, key: string, inLegacy: boolean): boolean {
-  return ownerOfKey(s, key, inLegacy) !== null;
+  // One key changed: only its home can differ (none, for an older chat's key), so only it is compared and written.
+  const one = opts.only === undefined ? null : ownerOfKey(s, opts.only, !!orig && opts.only in orig);
+  if (one) writeHomeField(s, one, doc, field, byHome.get(one) ?? {});
+  else if (opts.only === undefined) writeHomes(s, doc, field, byHome, {});
+  return { legacy, legacyChanged: one === null };
 }
 
 /** splitOut for a set store; `only` as for splitOut. */
@@ -435,8 +434,10 @@ export function splitOutSet(next: Set<string>, doc: HomeDoc, field: string, only
       m.push(id);
     } else legacy.add(id);
   }
-  writeHomes(s, doc, field, byHome, []);
-  return { legacy, legacyChanged: only === undefined || !homeOfKnownKey(s, only, !!orig && orig.has(only)) };
+  const one = only === undefined ? null : ownerOfKey(s, only, !!orig && orig.has(only));
+  if (one) writeHomeField(s, one, doc, field, byHome.get(one) ?? []);
+  else if (only === undefined) writeHomes(s, doc, field, byHome, []);
+  return { legacy, legacyChanged: one === null };
 }
 
 /** For tests: drop everything this module holds in memory. */

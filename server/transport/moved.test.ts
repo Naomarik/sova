@@ -183,15 +183,28 @@ test("coming home where its old copy was compressed: that copy is moved aside, k
   const made = ensureChatHome(id);
   const file = join(made, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`);
   writeFileSync(file, `${JSON.stringify({ type: "session", id })}\n`);
+  // Its old Moved row here was in the Archive, and this server still holds that mark (lab: the first attempt
+  // stopped "That session is archived"); the arriving home carries none (the arrival drops it).
+  const { isArchived, setArchived } = await import("../archived-sessions");
+  setArchived(id, true);
   const staged = join(dest.incomingRoot(), tid, "home");
   mkdirSync(join(dest.incomingRoot(), tid), { recursive: true });
   renameSync(made, staged);
+  const meta = join(staged, "chat", "meta.json");
+  if (existsSync(meta)) {
+    const v = JSON.parse(readFileSync(meta, "utf8")) as Record<string, unknown>;
+    delete v.archived;
+    for (const k of Object.keys(v)) if (k.includes("archived")) delete v[k];
+    writeFileSync(meta, JSON.stringify(v));
+  }
+  assert.ok(isArchived(id), "the stale mark that stopped the first attempt");
   // Here: the Moved mark, and its old home compressed whole after 7 days.
   markMoved(id, { tid: "tr_rtold02", peer: "b", to: "lab B", at: new Date().toISOString(), arrivedId: id });
   const archive = join(homesRoot(), `${id}.tar.gz`);
   writeFileSync(archive, "old home");
   putCompressed({ id, kind: "home", at: new Date().toISOString(), by: "auto", row: { id, path: file } as never, archive, home: made });
   assert.ok(compressedAt(file));
+
   createTransport({
     tid, side: "destination", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "b", peerLabel: "lab B", path: "", folder: "/x", state: "switching", arrivedId: id,
     steps: { offered: "t", prepared: "t", pulled: "t", staged: "t", verified: "t", decided: "t" },
@@ -204,7 +217,7 @@ test("coming home where its old copy was compressed: that copy is moved aside, k
     adopt: () => {},
     cameBack,
     openWithNote: async (p) => {
-      const why = startRefusal(p) ?? (compressedAt(p) ? "compressed" : null);
+      const why = startRefusal(p) ?? (compressedAt(p) ? "compressed" : null) ?? (isArchived(id) ? "archived" : null);
       if (why) throw new Error(why);
       opened.push(p);
     },

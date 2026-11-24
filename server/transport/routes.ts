@@ -25,6 +25,7 @@ import { mintClickProof } from "../mesh/click-proof";
 import type { MeshApi } from "../mesh/index";
 import { serveTar } from "../mesh/links-transfer";
 import { localRequest } from "../mesh/proxy";
+import { isArchived, setArchived } from "../archived-sessions";
 import { pageOnlyRefusal } from "../page-only";
 import { readRegistry } from "../project-services/store";
 import { resolveSessionPath } from "../paths";
@@ -274,9 +275,11 @@ export function startRefusal(path: string): string | null {
   return null;
 }
 
-/** A chat that arrived on a device it once moved away from: it runs here again, so its old Moved mark goes. */
+/** A chat that arrived on a device it once moved away from: it runs here again, so its old Moved row's marks go
+    (moved away, and archived: a Moved row is in the Archive, a compressed one too, and the arrived chat isn't). */
 export function cameBack(id: string): void {
   if (movedOf(id)) (unmarkMoved(id), log(`${id}: came back here; its old Moved mark is cleared`));
+  if (isArchived(id)) setArchived(id, false);
 }
 
 export function mountTransport(app: Hono, mesh: Mesh): void {

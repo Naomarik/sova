@@ -522,8 +522,8 @@ export function helperProfileOf(id: string, profiles: readonly SubagentProfile[]
 
 /**
  * The helper profiles a chat can pick on this computer, in the order lists show them: the library's
- * (named as screens show them), then each built-in one whose account is connected (Claude alone when
- * none is) and whose place no profile of the user's takes.
+ * (named as screens show them), then each built-in one whose account is connected (none when no account
+ * is) and whose place no profile of the user's takes.
  */
 export function pickableHelpers(profiles: readonly SubagentProfile[], connected: ConnectedAccounts): { id: string; name: string }[] {
 	const own = profiles.map((p) => ({ id: p.id, name: displayNameOf(p, profiles) }));

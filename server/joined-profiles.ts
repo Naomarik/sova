@@ -16,7 +16,7 @@ import { profileSources, readHidden, type ProfileSources } from "./profile-sourc
  * profile (or a built-in one's helpers) is one row with both parts; a library profile no listed session
  * profile links is a row of its own (Models part only); a session profile with no link is a row with
  * no helpers. The built-in Claude, OpenAI and DeepSeek profiles are listed when their account is
- * connected (Claude alone when none is), unless a row of yours takes their place (`replaces`): same id,
+ * connected (none at all when no account is), unless a row of yours takes their place (`replaces`): same id,
  * same name, or the seeded starter for Claude, which is then named Claude. There is no Off row. Nothing
  * is written here.
  */
@@ -30,7 +30,7 @@ export interface JoinInputs {
   unusable?: Record<string, string>;
   /** Model display names by ref (models.ts modelNames), for the footprints. */
   names?: ReadonlyMap<string, string>;
-  /** The accounts connected here, which say which built-in profiles are listed; absent: none (Claude alone). */
+  /** The accounts connected here, which say which built-in profiles are listed; absent: none connected, so none listed. */
   connected?: ConnectedAccounts;
 }
 

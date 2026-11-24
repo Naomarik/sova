@@ -1,6 +1,6 @@
 // The live deps of the Transport agent (server/transport/agent.ts) and of Safe Transport
 // (server/transport/safe-transport.ts): this server's routes, chats, workers, models, project
-// doctor and mesh links. Imported lazily, so the two rule modules stay testable on their own.
+// doctor and mesh links, and the set transport-core registers with its hooks (transportHelpers).
 import { existsSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { delimiter, join } from "node:path";
@@ -9,8 +9,8 @@ import { acquireChatHandle, isSessionBusy } from "../chat-handle";
 import { meshSelf } from "../mesh";
 import { homesRoot } from "../chat-homes/root";
 import { agentRoot, stateRoot } from "../state-root";
-import type { AgentCheck, AgentDeps, AgentState } from "./agent";
-import type { HelperView, SafeDeps } from "./safe-transport";
+import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, isTransportAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef } from "./agent";
+import { bringHelpersToRest, busyOf, type HelperView, interruptWaiting, type SafeDeps } from "./safe-transport";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -100,5 +100,26 @@ export function liveSafeDeps(): SafeDeps {
     tell: async (helperChatId, text, key) => (await import("../chat-host")).steerWorkerChat(helperChatId, text, key),
     abort: async (helperChatId) => (await import("../chat-host")).abortWorkerChat(helperChatId),
     sleep,
+  };
+}
+
+/** What transport-core registers with its hooks (setPrepareDestination, setBringHelpersToRest,
+    setAfterArrival, setNeedsAnswer, setPreviewExtras), bound to this server's live deps. `onAgent`:
+    its updateTransport(tid, {ext: {agent}}), so the transport's view shows its agent. */
+export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void) {
+  const agentDeps = liveAgentDeps(app, onAgent);
+  const safeDeps = liveSafeDeps();
+  return {
+    prepareDestination: (req: PrepareRequest, opts: { signal?: AbortSignal } = {}) => prepareDestination(req, agentDeps, opts),
+    afterArrival: (req: Parameters<typeof afterArrival>[0]) => afterArrival(req, agentDeps).catch((err: unknown) => {
+      console.log(`[transport-agent] after arrival of ${req.tid}: ${err instanceof Error ? err.message : String(err)}`);
+      return [] as string[];
+    }),
+    needsAnswer: (project: ProjectRef) => needsAnswer(project, agentDeps),
+    bringHelpersToRest: (chatId: string, mode: "safe" | "interrupt", onProgress: (working: number) => void, opts: { signal?: AbortSignal } = {}) => bringHelpersToRest(chatId, mode, onProgress, safeDeps, opts),
+    interruptWaiting,
+    /** The dialog's Busy helpers: those of the chat working now. */
+    busyHelpers: async (chatId: string) => busyOf(await safeDeps.helpers(chatId)).map((h) => ({ id: h.chatId, name: h.name })),
+    isTransportAgent: (sessionId: string) => isTransportAgent(stateRoot(), sessionId),
   };
 }

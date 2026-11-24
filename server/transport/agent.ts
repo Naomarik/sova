@@ -15,8 +15,8 @@
 // needsAnswer only reads (git and, for a folder with a definition, its doctor). All three refuse a
 // folder outside the user's home or inside Sova's own folders, and never repeat a remote's credentials.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { onboardModel, onboardModels } from "../projects/onboard";
 import { agentBrief, agentPrivateValues, agentStillMissing } from "./agent-prompt";
 
@@ -156,12 +156,30 @@ const within = (child: string, parent: string): boolean => {
   return c === r || c.startsWith(r.endsWith("/") ? r : `${r}/`);
 };
 
+/** `p` with its nearest existing ancestor's symlinks resolved, the rest as named: where a folder made there would really be. */
+function canonical(p: string): string {
+  let at = resolve(p);
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(at), ...rest.reverse());
+    } catch {
+      const up = dirname(at);
+      if (up === at) return resolve(p);
+      rest.push(basename(at));
+      at = up;
+    }
+  }
+}
+
 /** Why this device refuses a project folder the source named, or null: it is absolute, inside the
-    user's home, and in none of Sova's own folders. Pure. */
+    user's home, and in none of Sova's own folders, each read through its symlinks. */
 export function folderRefusal(path: string, home: string, protectedRoots: readonly string[]): string | null {
   if (!path || !path.startsWith("/")) return `The folder on this device must be an absolute path, not "${path}"`;
-  if (!within(path, home) || resolve(path) === resolve(home)) return `${path} isn't a folder inside your home on this device`;
-  if (protectedRoots.some((r) => r && (within(path, r) || within(r, path)))) return `${path} is one of Sova's own folders on this device`;
+  const real = canonical(path);
+  const h = canonical(home);
+  if (!within(real, h) || real === h) return `${path} isn't a folder inside your home on this device`;
+  if (protectedRoots.some((r) => r && (within(real, canonical(r)) || within(canonical(r), real)))) return `${path} is one of Sova's own folders on this device`;
   return null;
 }
 

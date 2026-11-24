@@ -2,7 +2,7 @@
 // show missing, once per device, its model, and the private files still holding the source's paths.
 import { dropScratchAgentDir } from "../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
@@ -165,7 +165,9 @@ test("a remote's credentials never reach the brief, a check or the dialog's answ
 test("a folder outside the home or inside Sova's own folders is refused before anything is made or started", async () => {
   const root = scratchRoot("transport-agent-");
   const d = device(root);
-  for (const path of ["/etc/motors", join(root, "state", "x", "y"), "relative/motors", root]) {
+  mkdirSync(join(root, "state"), { recursive: true });
+  symlinkSync(join(root, "state"), join(root, "projects"));
+  for (const path of ["/etc/motors", join(root, "state", "x", "y"), "relative/motors", root, join(root, "projects", "motors")]) {
     const r = await prepareDestination({ ...request(root), project: { remotes: [REMOTE], path } }, d.deps);
     assert.ok("needsYou" in r, path);
   }

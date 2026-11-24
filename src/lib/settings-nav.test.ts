@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { ACCOUNT_TABS, accountTabRequest, clearProfilesRequest, clearSettingsSection, closeSettings, openProfiles, openSettings, profilesRequest, settingsAccountFromHash, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsProjectFromHash, settingsTabFromHash, subagentSettingsChat, subagentSettingsPath } from "./settings-nav";
+import { ACCOUNT_TABS, accountTabRequest, clearProfilesRequest, clearSettingsSection, closeSettings, openProfiles, openSettings, profilesRequest, settingsAccountFromHash, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsProjectFromHash, settingsTabFromHash, settingsTabRequest, subagentSettingsChat, subagentSettingsPath } from "./settings-nav";
 
 test("Configure Spec opens Profiles at the Spec writer's row, and a plain open asks for none", () => {
   openProfiles({ section: "spec" });
@@ -126,4 +126,15 @@ test("openSettings asks Accounts for a provider tab, and closing forgets it", ()
   openSettings("accounts", null, { account: "zai" });
   closeSettings();
   assert.equal(accountTabRequest(), null);
+});
+
+test("each openSettings asks an open dialog for its tab afresh, even the tab it opened at", () => {
+  openSettings("accounts", null, { account: "claude" });
+  const first = settingsTabRequest();
+  assert.deepEqual(first, { tab: "accounts" });
+  assert.equal(accountTabRequest(), "claude");
+  openSettings("accounts", null, { account: "claude" });
+  assert.notEqual(settingsTabRequest(), first, "a second ask for the same tab is a new request, so the dialog moves back to it");
+  closeSettings();
+  assert.equal(settingsTabRequest(), null);
 });

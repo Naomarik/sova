@@ -38,7 +38,7 @@ import { LIMIT_RULE } from "../../shared/provider-limits";
 import { Choice, NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { checkedThemeId, droppedNotice, droppedTheme, pickTheme, reconcileTheme, setThemeMode, shownBase, themeMode, type ThemeMode, typography } from "../lib/theme";
-import { openSettings, settingsProject, type SettingsTab } from "../lib/settings-nav";
+import { openSettings, settingsProject, settingsTabRequest, type SettingsTab } from "../lib/settings-nav";
 import { AlignmentSettings } from "./AlignmentSettings";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
 import { limitsDraft, limitsSaveError, limitsSaveResult, limitsSaving, setLimitsDraft, setLimitsSaved } from "../lib/provider-limits-draft";
@@ -124,6 +124,8 @@ export function SettingsDialog(props: {
   // another) is also the one `onMount` focuses: the two have to agree, or the dialog opens with
   // focus on a tab that isn't the selected one.
   const [tab, setTab] = createSignal<TabId>(props.initialTab ?? "general");
+  // An openSettings while the dialog is open (Profiles' Open Accounts) moves it to that tab.
+  createEffect(on(settingsTabRequest, (ask) => ask && setTab(ask.tab as TabId), { defer: true }));
 
   /** Close was asked for over unsaved edits on a Save-gated form: the foot asks what to do with them. */
   const [closeHeld, setCloseHeld] = createSignal(false);

@@ -40,6 +40,11 @@ export const clearSettingsSection = (): void => {
 /** The tab Settings is open at, or null when it's closed. */
 export const settingsOpenAt = openTab;
 
+/** Each openSettings call's tab, a fresh object every call: an open dialog moves to it even when the
+    tab asked for is the one it was opened at (the user has since clicked another). */
+const [tabAsk, setTabAsk] = createSignal<{ tab: SettingsTab } | null>(null);
+export const settingsTabRequest = tabAsk;
+
 /** The project a project-scoped tab (Merge Queue) opens on: the one whose page opened it. Cleared
     on close: a dialog opened from the gear or a command starts on its own picker's choice. */
 const [project, setProject] = createSignal<string | null>(null);
@@ -75,6 +80,7 @@ export function openSettings(tab: SettingsTab = "general", at: SettingsSection |
   setProject(opts.project ?? null);
   setAccountTab(opts.account ?? null);
   setOpenTab(tab);
+  setTabAsk({ tab });
 }
 
 /** `#/settings/<tab>` (a Needs you row of no session, a phone notification's tap): the tab it names, else null. */
@@ -100,6 +106,7 @@ export function settingsAccountFromHash(hash: string): AccountTab | null {
 }
 
 export function closeSettings(): void {
+  setTabAsk(null);
   setSubagentPath(undefined);
   setChatKey(undefined);
   setProfileAsk(null);

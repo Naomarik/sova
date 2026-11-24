@@ -369,6 +369,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   passwd, auth (not author…) or credential, the value is replaced and the name stays. A value
   that is only a number, a boolean, null/none or empty is never replaced. Paths, short git
   hashes, `key: value` prose and fields such as author, authority or keywords are left alone.
+  A caller redacting code (a design's page on a session share, §app.session-share/never) asks for
+  its code mode: known values and every shape above still go, and a name's value goes only where
+  the swap keeps the code valid and the value looks like a secret; by default nothing changes.
   - **Every Overseer tool** goes through one wrapper, so a tool added later is covered by default:
     its result (text and details, partial updates, an error's message; an image's bytes are left
     alone) is redacted, and so are its arguments before it runs, so what a tool stores or sends

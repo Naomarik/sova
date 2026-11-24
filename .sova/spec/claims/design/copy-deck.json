@@ -550,7 +550,8 @@
     "requires": [
       "§app.session-share/lookbook",
       "§app.session-share/lookbook-view",
-      "§app.session-share/sheet"
+      "§app.session-share/sheet",
+      "§chat.design-mode/prototype-frame"
     ],
     "code": [
       "src/share/SessionShareApp.tsx",
@@ -560,7 +561,8 @@
       "src/share/DesignPage.tsx",
       "src/share/lookbook-model.ts",
       "src/components/ShareDesigns.tsx",
-      "src/lib/session-shares.ts"
+      "src/lib/session-shares.ts",
+      "src/lib/design-frame.ts"
     ],
     "about": [
       "§app.session-share/lookbook-view"

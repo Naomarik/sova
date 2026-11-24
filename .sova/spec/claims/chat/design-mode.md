@@ -560,6 +560,15 @@ the network. As the user decided: "Google Fonts only".
   (§chat.design-mode/landing-checks).
 - **WebRTC is gone** from the page's document before its code runs, because no content policy blocks
   it.
+- **A script that doesn't parse is left out, and says so.** An inline script (a classic one,
+  not a module or data block, which aren't counted) or inline handler of a finished page that
+  doesn't parse never runs; the rest of the page's code still does. Its error
+  goes to the browser's console ("This design's script couldn't run:" or "This design's onclick
+  handler couldn't run:", then the SyntaxError), and the page shows a small warn note in its
+  bottom-left corner: "A script in this design couldn't run, so parts of it may not respond.",
+  with 2 or more "{n} scripts in this design couldn't run, so parts of it may not respond." The
+  note never takes a click and the page's styles don't reach it. A page whose code all parses
+  shows no note. It is the same in the app's design views and on a shared page.
 - **Browsers.** A finished page runs only in a browser that supports the frame's `csp` attribute. In
   any other it isn't run, and the place it would be says so.
 - **On a shared page** (§app.session-share/lookbook-view) the same wall holds, without the share

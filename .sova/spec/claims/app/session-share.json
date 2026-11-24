@@ -103,7 +103,10 @@
       "server/session-shares-routes.ts",
       "shared/session-share.ts",
       "src/lib/session-shares.ts",
-      "server/share-edge.test.ts"
+      "server/share-edge.test.ts",
+      "server/session-share-view.ts",
+      "server/session-share-designs.test.ts",
+      "server/session-share-lookbook-browser.integration.test.ts"
     ],
     "agreed": {
       "by": "user",
@@ -139,7 +142,9 @@
     "kind": "behavior",
     "authority": "accepted",
     "evidence": "verified",
-    "requires": [],
+    "requires": [
+      "§app.overseer/tools"
+    ],
     "code": [
       "server/session-share-view.ts",
       "server/session-share-privacy.test.ts",
@@ -150,12 +155,16 @@
       "server/session-shares.test.ts",
       "server/baton.test.ts",
       "server/tours/shares.test.ts",
-      "server/session-share-designs.ts"
+      "server/session-share-designs.ts",
+      "server/overseer-redact.ts",
+      "server/overseer-redact.test.ts",
+      "server/session-share-designs.test.ts",
+      "server/session-share-lookbook-browser.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-19T21:26Z",
-      "source": "pi-session:127216cc-7c97-42ca-a8f0-036b35ff9116#e711c517"
+      "by": "Omar (user)",
+      "at": "2026-11-24T14:47Z",
+      "source": "pi-session:01a1f95b-4cdc-7102-ad1f-3c8305b9027a#b5e80f9e"
     }
   },
   "§app.session-share/overview": {

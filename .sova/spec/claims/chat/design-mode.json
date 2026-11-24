@@ -992,7 +992,8 @@
       "server/share/session-routes.ts",
       "server/session-share-designs.ts",
       "src/share/Lookbook.tsx",
-      "src/components/ShareDesigns.tsx"
+      "src/components/ShareDesigns.tsx",
+      "server/session-share-lookbook-browser.integration.test.ts"
     ],
     "requires": [
       "§chat.transcript-cards/sealed-box"

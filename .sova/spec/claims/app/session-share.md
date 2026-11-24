@@ -142,10 +142,17 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   each design was told, design chats, a design's session, session file or model id, its usage,
   cost, status, error or fix, skills, a page being written, a stopped design's still, view
   pictures, removed designs, another chat's designs or another run's, and no internal, pending or
-  history field. A design's page text and its style and layout names pass the server redactor and
-  both link filters below, as a message's text does.
+  history field. A design's style and layout names pass the server redactor and both link filters
+  below, as a message's text does. Its page text passes both link filters and the redactor's code
+  mode, so the page's scripts still parse: known secret values and every shaped secret pattern
+  (§app.overseer/tools: `sk-`, GitHub, GitLab, AWS, Slack, JWT, PEM, `Bearer`) are removed as in a
+  message, and a name guess (`apiKey=`, `"password":`, `?client_secret=`) removes
+  its value only where the swap keeps the code valid, a value in quotes or a URL query's value of
+  URL characters, and only a value that looks like a secret (one word of 12 characters or more,
+  not a number, path or plain URL). Bare code (`token = getToken()`), comparisons (`e.key==='Escape'`)
+  and short keys and labels (`key='draft'`) go out as written.
 - Every string passes the server redactor (known secret values, then secret patterns) before it
-  leaves the host. In the conversation's text, the session's cwd becomes relative and the home
+  leaves the host, a design's page text in the code mode above. In the conversation's text, the session's cwd becomes relative and the home
   directory `~`. Wake nudges and link partners' messages are not the user's words and are left
   out. An image path (/tmp, an attachments folder, a generated paste name) leaves the text
   wherever it stands, prose, inline code, a fence or a vis drawing's source alike: removed when
@@ -176,7 +183,10 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   every excluded Lookbook field above, a version finished after a snapshot's cut, a removed design,
   a page being written, a run anchored outside a slice and another chat's design, and checks that
   none reaches any `/api/s` answer, the page shell, a design address or the design's own tab, or a
-  socket frame, and that a dead link serves no design.
+  socket frame, and that a dead link serves no design. A design's page whose script the name
+  guesses would rewrite (`e.key==='Escape'`, `key='draft'`, `{"token": "abc"}`) goes out byte for
+  byte while the same code in a message is still redacted, an unshaped value in quotes behind
+  `apiKey` is still taken from the page, and in Chrome that page's script runs on the link.
 
 ## §app.session-share/rejected — Rejected shapes
 
@@ -564,8 +574,9 @@ of the conversation, every design read only and walled off, and nothing of how i
   (granted, judged again after its reads, as every view is: §app.session-share/link), and only for
   a version the view shows; anything else is 404 "No such design.", and a dead, expired, stopped or
   unknown link answers as the view does (410 or 404), serving nothing.
-- **What a document is.** The version's page as kept: its text through the share's scrub and both
-  link filters (§app.session-share/never), which leave a page that drew still drawing, then its
+- **What a document is.** The version's page as kept: its text through the share's scrub in its
+  code mode and both link filters (§app.session-share/never), which leave a page that drew still
+  drawing and its scripts still parsing and running, then its
   pictures put in (never read as text), then the app's wall (`src/lib/design-frame.ts`): `page`
   and `tile` in its two-frame shell, the stills as the frame for a page being written. On a share
   the shell puts the page in as a `blob:` document it makes, never `srcdoc` or a `data:` address

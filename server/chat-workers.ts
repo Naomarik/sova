@@ -20,7 +20,7 @@ import type { InflightMarker } from "./chat-runtime/inflight";
 import { joinedText, toHEntry } from "./harness/pi/reader";
 import { createWorkerSession } from "./harness/pi/worker-session";
 import { placedByParent } from "./chat-homes/place";
-import { registerHomeMember } from "./chat-homes/records";
+import { registerHomeMember, reloadHome } from "./chat-homes/records";
 import { chatHome, hasHome, homeIdOfPath, homeOfSessionFile, listHomeIds } from "./chat-homes/root";
 import { logAutoResume } from "./overseer-store";
 import { stateRoot } from "./state-root";
@@ -221,6 +221,19 @@ export class WorkerRegistry {
     const out: WorkerRecord[] = [];
     for (const dir of [this.dir(), ...(this.homes ? listHomeIds().map(homeWorkersDir) : [])]) out.push(...this.readDir(dir));
     return out;
+  }
+  /** A home that arrived from outside (Transport): its helpers' records are tracked now, as a start would have. Records
+      already tracked are left as they are. Returns how many were new. */
+  adoptHome(homeId: string): number {
+    if (!this.homes) return 0;
+    reloadHome(homeId);
+    let n = 0;
+    for (const rec of this.readDir(homeWorkersDir(homeId))) {
+      if (this.live.has(rec.chatId)) continue;
+      this.track(rec);
+      n++;
+    }
+    return n;
   }
   /** One folder's records; a home's helpers are known to belong to it from here on. */
   private readDir(dir: string): WorkerRecord[] {

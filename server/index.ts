@@ -53,6 +53,7 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { wireRequestChats } from "./owner-request-chat";
 import { cachedTitleOf, getSessionSummary, idOf, indexedSessionPaths, lastListedRows, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { hotFolders } from "./session-watch-scope";
+import { homeSessionsDirs, isHomeSessionsDir } from "./chat-homes/root";
 import { viewedIds } from "./seen";
 import { startScheduleKeeper } from "./schedule-routes";
 import { cancelChatWakes, startWakeKeeper } from "./wake-keeper-live";
@@ -350,6 +351,10 @@ const activeSessionFolders = (): Set<string> => {
 };
 const liveWatchScope = {
   active: activeSessionFolders,
+  // Each chat home's sessions/ (§app.chat-homes/new-chats), under the same scope rule; a home made since the last
+  // resync is taken as soon as one of its chats is active.
+  folders: homeSessionsDirs,
+  accepts: isHomeSessionsDir,
   hot: () => {
     // Nothing listed yet (the first sync, at the feed's start): every folder, as before.
     if (lastListedRows().size === 0) return null;

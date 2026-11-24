@@ -275,13 +275,29 @@ export function startRefusal(path: string): string | null {
   return null;
 }
 
-/** A chat that arrived on a device it once moved away from: it runs here again, so its old Moved row's marks go
-    (moved away, and archived: a Moved row is in the Archive, a compressed one too, and the arrived chat isn't). */
+/** Whether the arrived home says its chat is archived (the mark travels in `<home>/chat/meta.json`). */
+function homeArchived(id: string): boolean {
+  try {
+    const v = JSON.parse(readFileSync(join(chatHome(id), "chat", "meta.json"), "utf8")) as Record<string, unknown>;
+    const m = v["archived-sessions.json"];
+    return Array.isArray(m) && m.includes(id);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The chat's home has just arrived here: this server's marks follow what it came with. A chat coming home to a device
+ * it once moved away from drops its old Moved row's mark here, and the archive mark is the arrived home's own (an old
+ * Moved row's archive goes; one the chat came with is kept and shown at once, not only after a restart).
+ */
 export function cameBack(id: string): void {
-  if (!movedOf(id)) return; // a first arrival keeps the marks it came with
-  unmarkMoved(id);
-  if (isArchived(id)) setArchived(id, false);
-  log(`${id}: came back here; its old Moved row's marks are cleared`);
+  if (movedOf(id)) {
+    unmarkMoved(id);
+    log(`${id}: came back here; its old Moved mark is cleared`);
+  }
+  const want = homeArchived(id);
+  if (isArchived(id) !== want) setArchived(id, want);
 }
 
 export function mountTransport(app: Hono, mesh: Mesh): void {

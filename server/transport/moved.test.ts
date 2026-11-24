@@ -246,3 +246,27 @@ test("a first arrival of a chat archived where it came from keeps its archive ma
   cameBack(id);
   assert.ok(isArchived(id), "never moved away from here: the user's own choice stays");
 });
+
+test("a first arrival carrying its archive mark shows archived here at once (the server's set learns it, no restart)", async () => {
+  resetMovedMemo();
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const { isArchived, setArchived } = await import("../archived-sessions");
+  const { cameBack } = await import("./routes");
+  const { mkdirSync, readFileSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const id = "0199aaaa-0000-7000-8000-000000000011";
+  const home = ensureChatHome(id);
+  setArchived(id, false);
+  // The home lands with its meta saying archived, written behind the server's back (as an arrival's rename is).
+  const meta = join(home, "chat", "meta.json");
+  let v: Record<string, unknown> = {};
+  try {
+    v = JSON.parse(readFileSync(meta, "utf8")) as Record<string, unknown>;
+  } catch {
+    // none yet
+  }
+  mkdirSync(join(home, "chat"), { recursive: true });
+  writeFileSync(meta, JSON.stringify({ ...v, "archived-sessions.json": [id] }));
+  cameBack(id);
+  assert.ok(isArchived(id));
+});

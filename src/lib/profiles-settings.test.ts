@@ -97,6 +97,11 @@ test("the This chat chip: on the row of the chat's profile, in any group; none w
   assert.equal(listGroups(d, WIRE, d, "user:claude").yours[0]!.isDefault, true);
   assert.deepEqual(chips(null), []);
   assert.deepEqual(chips("user:gone"), []);
+  // Helpers in effect named by their library id: the row whose helpers they are.
+  assert.deepEqual(chips("library:c"), ["user:claude"], "a pair linking them (a Make It Yours copy)");
+  assert.deepEqual(chips("library:fast"), ["library:fast"]);
+  assert.deepEqual(chips("library:openai"), ["sova:openai"], "a built-in one");
+  assert.deepEqual(chips("library:gone"), []);
 });
 
 test("Make It Yours: a copy under Yours with the built-in's name and both its parts; refused when one of yours has the name", () => {

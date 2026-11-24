@@ -154,9 +154,11 @@ export interface ListRow {
  * The list beside the editor: Yours (the draft's, in its order, a new one last), This project, then
  * Built in (the profiles Sova ships for the accounts connected here). A saved row unchanged in the
  * draft keeps the server's footprint. `thisChat`: the key of the profile in effect for the chat
+ * (a `library:<id>` key no row has names helpers in effect: the row whose helpers they are, see chatRowKey)
  * Settings was opened from (none: no chip anywhere).
  */
-export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], saved: ProfilesDraft | null, thisChat: string | null = null): Record<ListGroup, ListRow[]> {
+export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], saved: ProfilesDraft | null, chatKey: string | null = null): Record<ListGroup, ListRow[]> {
+  const thisChat = chatRowKey(chatKey, wire);
   const byKey = new Map(wire.map((w) => [w.key, w]));
   const savedRow = (key: string) => saved?.rows.find((r) => r.key === key);
   const yours = d.rows.map((r): ListRow => {
@@ -192,6 +194,20 @@ export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], sav
   // An older server's Off row is never listed: no chat runs on no profile now.
   const builtin = wire.filter((w) => w.group === "builtin" && w.kind !== "off" && w.key !== OFF_KEY).map((w) => fromWire(w, "builtin"));
   return { yours, project, builtin };
+}
+
+/**
+ * The row a chat's profile key names: that key when a row has it; else, for helpers in effect
+ * (`library:<id>`), the row whose helpers they are — a library-only row, then yours, then a project's
+ * or a built-in one (a copy made with Make It Yours links the built-in's id). Null when none fits.
+ */
+export function chatRowKey(key: string | null, wire: readonly Pick<JoinedRowWire, "key" | "kind" | "group" | "libraryId">[]): string | null {
+  if (!key) return null;
+  if (wire.some((w) => w.key === key)) return key;
+  if (!key.startsWith("library:")) return null;
+  const lib = key.slice("library:".length);
+  const linking = wire.filter((w) => w.libraryId === lib);
+  return (linking.find((w) => w.kind === "library") ?? linking.find((w) => w.group === "yours") ?? linking[0])?.key ?? null;
 }
 
 /**

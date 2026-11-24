@@ -13,10 +13,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 671 |
-| Routes a catalogue entry points at | 229 |
-| Catalogue entries | 303 |
-| Class: Peer protocol | 39 |
+| Routes registered | 690 |
+| Routes a catalogue entry points at | 238 |
+| Catalogue entries | 312 |
+| Class: Peer protocol | 49 |
 | Class: Auth | 8 |
 | Class: Share pages | 0 |
 | Class: Extension proxy | 5 |
@@ -344,6 +344,15 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `design.restore` | Restore a Design | changes | `POST /api/design/:label/restore` | full |
 | `design.history` | Read Lookbook History | looks | `GET /api/design/history` | full |
 | `design.delete` | Delete a Design | changes | `DELETE /api/design/:label` | full |
+| `transport.preview` | Preview Transport | looks | `GET /api/transport/preview` | full |
+| `transport.list` | List Transports | looks | `GET /api/transport` | full |
+| `transport.get` | Show Transport | looks | `GET /api/transport/:tid` | full |
+| `transport.back` | Show Move Back | looks | `GET /api/transport/:tid/back` | full |
+| `transport.start` | Start Transport | changes | `POST /api/transport` | full |
+| `transport.retry` | Retry Transport | changes | `POST /api/transport/:tid/retry` | full |
+| `transport.cancel` | Cancel Transport | changes | `POST /api/transport/:tid/cancel` | full |
+| `transport.interrupt` | Interrupt and Move | changes | `POST /api/transport/:tid/interrupt` | full |
+| `transport.move-back` | Move Back | changes | `POST /api/transport/:tid/move-back` | full |
 
 ## Pending routes
 
@@ -377,7 +386,7 @@ class, leaves it, and a new route never joins it.
 
 ## Not-a-command classes
 
-### Peer protocol (39)
+### Peer protocol (49)
 
 Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer listener's door, never the operator's actions.
 
@@ -420,6 +429,16 @@ Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer li
 | `POST /api/peer/sync/extensions` | sync.extensions |
 | `GET /api/peer/sync/manifest` | sync.docs |
 | `POST /api/peer/sync/push` | sync.docs |
+| `GET /api/peer/transport/:tid` | sessions |
+| `POST /api/peer/transport/:tid/cancel` | sessions |
+| `POST /api/peer/transport/:tid/commit` | sessions |
+| `POST /api/peer/transport/:tid/move-back` | sessions |
+| `GET /api/peer/transport/:tid/package` | ticket |
+| `POST /api/peer/transport/:tid/ready` | sessions |
+| `POST /api/peer/transport/:tid/retry` | sessions |
+| `GET /api/peer/transport/hello` | sessions |
+| `POST /api/peer/transport/needs` | sessions |
+| `POST /api/peer/transport/offer` | sessions |
 | `ALL /peer/:id/api/*` | full |
 | `ALL /peer/:id/ws/*` | full |
 
@@ -1126,6 +1145,15 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/targets` | sessions | `targets.list` |
 | `GET /api/time-spent` | sessions | `session.time-spent` |
 | `GET /api/transcript` | sessions | `session.read` |
+| `GET /api/transport` | full | `transport.list` |
+| `POST /api/transport` | full | `transport.start` |
+| `GET /api/transport/:tid` | full | `transport.get` |
+| `GET /api/transport/:tid/back` | full | `transport.back` |
+| `POST /api/transport/:tid/cancel` | full | `transport.cancel` |
+| `POST /api/transport/:tid/interrupt` | full | `transport.interrupt` |
+| `POST /api/transport/:tid/move-back` | full | `transport.move-back` |
+| `POST /api/transport/:tid/retry` | full | `transport.retry` |
+| `GET /api/transport/preview` | full | `transport.preview` |
 | `POST /api/updates/restart` | full | `server.restart` |
 | `GET /api/usage/costs` | sessions | `usage.costs` |
 | `GET /api/usage/performance` | sessions | `usage.performance` |

@@ -303,7 +303,16 @@
     "project.merge-queue.setup-history",
     "project.verb.merge.events",
     "project.merge-queue.events",
-    "chat.usage"
+    "chat.usage",
+    "transport.preview",
+    "transport.list",
+    "transport.get",
+    "transport.back",
+    "transport.start",
+    "transport.retry",
+    "transport.cancel",
+    "transport.interrupt",
+    "transport.move-back"
   ],
   "retired": [
     "settings.agents.get",

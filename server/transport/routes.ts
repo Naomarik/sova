@@ -210,6 +210,29 @@ async function compressOldSafetyCopies(): Promise<void> {
   log(`compressed ${done.size} safety copies older than 7 days`);
 }
 
+/** Why a query or body has a key the route doesn't take, or null. */
+function unknownKeys(keys: Iterable<string>, allowed: readonly string[]): string | null {
+  for (const k of keys) if (!allowed.includes(k)) return `This route doesn't take ${JSON.stringify(k.slice(0, 40))}.`;
+  return null;
+}
+
+/** POST /api/transport's body, each field refused for itself. */
+function startBodyRefusal(b: unknown): string | null {
+  if (!b || typeof b !== "object" || Array.isArray(b)) return "Expected a JSON body { path, peer, mode, folder }.";
+  const o = b as Record<string, unknown>;
+  const extra = unknownKeys(Object.keys(o), ["path", "peer", "mode", "folder", "untick", "include", "busyChoice", "agentModel"]);
+  if (extra) return extra;
+  if (typeof o.path !== "string" || !o.path) return "path must be the chat's conversation file.";
+  if (typeof o.peer !== "string" || !o.peer || o.peer.length > 200) return "peer must name one of your devices.";
+  if (o.mode !== "move" && o.mode !== "copy") return "mode must be move or copy.";
+  if (typeof o.folder !== "string" || !o.folder.trim() || o.folder.length > 4096) return "folder must name the folder on that device.";
+  for (const k of ["untick", "include"] as const)
+    if (o[k] !== undefined && (!Array.isArray(o[k]) || !(o[k] as unknown[]).every((x) => typeof x === "string"))) return `${k} must be a list of files, as tree/path.`;
+  if (o.busyChoice !== undefined && o.busyChoice !== "safe" && o.busyChoice !== "interrupt") return "busyChoice must be safe or interrupt.";
+  if (o.agentModel !== undefined && typeof o.agentModel !== "string") return "agentModel must be a model's name.";
+  return null;
+}
+
 export function mountTransport(app: Hono, mesh: Mesh): void {
   // The page's routes answer this host's own page whether or not the mesh is on (no devices: none to pick).
   const local = (c: Context) => localRequest(c);
@@ -320,10 +343,14 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
 
   app.get("/api/transport/preview", async (c) => {
     if (!local(c)) return notFound(c);
+    const extra = unknownKeys(Object.keys(c.req.queries()), ["path", "peer"]);
+    if (extra) return c.json({ error: extra }, 400);
     const path = resolveSessionPath(c.req.query("path") ?? null);
     if (!path) return c.json({ error: "Invalid or missing path" }, 400);
+    const peer = c.req.query("peer");
+    if (peer !== undefined && !mesh.peers().some((p) => p.id === peer)) return c.json({ error: "peer must name one of your devices." }, 400);
     try {
-      return c.json(await previewTransport(path, c.req.query("peer") || undefined));
+      return c.json(await previewTransport(path, peer));
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 404);
     }
@@ -333,15 +360,20 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     if (!local(c)) return notFound(c);
     const refused = pageOnlyRefusal(c, YOUR_CLICK);
     if (refused) return c.json({ error: refused, yourClick: true }, 403);
-    const b = (await c.req.json().catch(() => null)) as Parameters<typeof startTransport>[0] | null;
-    const path = resolveSessionPath(typeof b?.path === "string" ? b.path : null);
-    if (!b || !path) return c.json({ error: "Invalid or missing path" }, 400);
+    const raw = (await c.req.json().catch(() => null)) as unknown;
+    const bad = startBodyRefusal(raw);
+    if (bad) return c.json({ error: bad }, 400);
+    const b = raw as Parameters<typeof startTransport>[0];
+    const path = resolveSessionPath(b.path);
+    if (!path) return c.json({ error: "path must be the chat's conversation file." }, 400);
     const r = await startTransport({ ...b, path });
     return r.ok ? c.json({ tid: r.tid, transport: publicView(readTransport(r.tid)!) }, 201) : c.json({ error: r.error }, r.status as 400);
   });
 
   app.get("/api/transport", (c) => {
     if (!local(c)) return notFound(c);
+    const extra = unknownKeys(Object.keys(c.req.queries()), ["session"]);
+    if (extra) return c.json({ error: extra }, 400);
     const id = c.req.query("session");
     const list = listTransports().filter((r) => !id || r.chatId === id || r.sourceChatId === id || r.arrivedId === id);
     return c.json({ transports: list.map(publicView) });

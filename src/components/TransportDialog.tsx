@@ -6,6 +6,7 @@ import { createEffect, createResource, createSignal, For, onCleanup, Show } from
 import { sessionHrefOn } from "../lib/mesh";
 import { type BackState, moveBack, type TransportView, sizeText, startTransport, transportAct, transportBack, transportOf, transportPreview, transportsOf } from "../lib/transport-api";
 import { announce, toast } from "../lib/ui-state";
+import { Select, TextField, Toggle } from "./form";
 import { type BusyChoice, TransportBusyHelpers, TransportDeviceNeeds, TransportWaiting } from "./TransportHelpers";
 import { Banner, Icon, trapFocus } from "./ui";
 
@@ -199,21 +200,14 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
             <div class="stack" role="tabpanel" id="tr-panel" aria-labelledby={`tr-tab-${mode()}`}>
               <p class="text-caption text-muted">{MODES.find((m) => m.id === mode())!.line}</p>
               <Show when={refusal()}>{(r) => <Banner tone="info" title={r()} body="Start Transport stays off until that changes." />}</Show>
-              <label class="field">
-                <span class="field-label">Device</span>
-                <div class="select-wrap">
-                  <select class="select" value={peer()} onChange={(e) => setPeer(e.currentTarget.value)}>
-                    <For each={view()?.devices ?? []}>{(d) => <option value={d.id}>{`${d.label}${stateWord(d.state)}`}</option>}</For>
-                  </select>
-                </div>
-                <Show when={(view()?.devices.length ?? 1) === 0}>
-                  <span class="field-hint">Pair another device on the Mesh page first.</span>
-                </Show>
-              </label>
-              <label class="field">
-                <span class="field-label">Folder on that device</span>
-                <input class="input input-mono" value={folder()} onInput={(e) => setFolder(e.currentTarget.value)} spellcheck={false} autocomplete="off" />
-              </label>
+              <Select
+                label="Device"
+                value={peer()}
+                onChange={(v) => setPeer(v)}
+                options={(view()?.devices ?? []).map((d) => ({ value: d.id, label: `${d.label}${stateWord(d.state)}` }))}
+                hint={(view()?.devices.length ?? 1) === 0 ? "Pair another device on the Mesh page first." : undefined}
+              />
+              <TextField label="Folder on that device" value={folder()} onInput={setFolder} inputClass="input-mono" spellcheck={false} autocomplete="off" />
               <Show when={view()}>
                 {(v) => (
                   <>
@@ -241,12 +235,7 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
                         </h3>
                         <For each={v().privateFiles}>
                           {(f) => (
-                            <label class="toggle">
-                              <input type="checkbox" class="toggle-box" checked={!untick().has(key(f))} onChange={() => toggle(untick, setUntick, key(f))} />
-                              <span class="text-mono">
-                                {f.path} · {sizeText(f.size)}
-                              </span>
-                            </label>
+                            <Toggle label={<span class="text-mono">{`${f.path} · ${sizeText(f.size)}`}</span>} checked={!untick().has(key(f))} onChange={() => toggle(untick, setUntick, key(f))} />
                           )}
                         </For>
                       </section>
@@ -255,12 +244,7 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
                       <section class="card stack transport-card" aria-label="Large files">
                         <For each={v().large}>
                           {(f) => (
-                            <label class="toggle">
-                              <input type="checkbox" class="toggle-box" checked={include().has(key(f))} onChange={() => toggle(include, setInclude, key(f))} />
-                              <span class="text-mono">
-                                {f.path} · {sizeText(f.size)}: over 50 MB. Tick it to send it.
-                              </span>
-                            </label>
+                            <Toggle label={<span class="text-mono">{`${f.path} · ${sizeText(f.size)}: over 50 MB. Tick it to send it.`}</span>} checked={include().has(key(f))} onChange={() => toggle(include, setInclude, key(f))} />
                           )}
                         </For>
                       </section>

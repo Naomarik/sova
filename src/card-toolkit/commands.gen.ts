@@ -231,6 +231,7 @@ export type CommandId =
   | "usage.time"
   | "usage.today"
   | "usage.session"
+  | "chat.usage"
   | "usage.sessions"
   | "usage.prices"
   | "usage.prices.refresh"
@@ -304,7 +305,16 @@ export type CommandId =
   | "design.remove"
   | "design.restore"
   | "design.history"
-  | "design.delete";
+  | "design.delete"
+  | "transport.preview"
+  | "transport.list"
+  | "transport.get"
+  | "transport.back"
+  | "transport.start"
+  | "transport.retry"
+  | "transport.cancel"
+  | "transport.interrupt"
+  | "transport.move-back";
 
 /** Each command's params, as its catalogue entry declares them. */
 export interface CommandParams {
@@ -4581,6 +4591,11 @@ export interface CommandParams {
     /** The session id */
     "sid": string;
   };
+  /** One chat's spending and time, split by its conversations: the chat, then each helper. (only looks; needs the card's owner trusted) */
+  "chat.usage": {
+    /** The chat's id (its session id) */
+    "chat": string;
+  };
   /** Several sessions' spending, by session id. (only looks; needs the card's owner trusted) */
   "usage.sessions": {
     /** Session ids, comma-separated */
@@ -5018,6 +5033,59 @@ export interface CommandParams {
     /** The design's label (A, B, … AA) */
     "label": string;
   };
+  /** What a transport of a chat would carry and leave, and why it can't start now; with `peer`, that device's answer. (only looks; needs the card's owner trusted) */
+  "transport.preview": {
+    /** The chat, by its path */
+    "session"?: string;
+    /** One of your devices, by its peer id */
+    "peer"?: string;
+  };
+  /** This device's transports, a chat's only with `session` (its id). (only looks; needs the card's owner trusted) */
+  "transport.list": {
+    /** The chat's id */
+    "chat"?: string;
+  };
+  /** One transport: its state, its steps, and what it needs from you. (only looks; needs the card's owner trusted) */
+  "transport.get": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Whether a Moved row can come back: Move Back, Copy Back, or why neither. (only looks; needs the card's owner trusted) */
+  "transport.back": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Only your click on this device's page starts one; anything else is refused and nothing is sent. (changes something; needs the card's owner trusted) */
+  "transport.start": {
+    /** The chat, by its path */
+    "session"?: string;
+    /** The device, by its peer id */
+    "peer": string;
+    /** Move or Copy */
+    "mode": "move" | "copy";
+    /** The folder on that device */
+    "folder": string;
+  };
+  /** Only your click: continue a transport that needs you from what already arrived. (changes something; needs the card's owner trusted) */
+  "transport.retry": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Only your click: stop a transport and remove what arrived on the other device; the chat carries on here. (changes something; needs the card's owner trusted) */
+  "transport.cancel": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Only your click: stop the helpers a Move waits for, so it goes on. (changes something; needs the card's owner trusted) */
+  "transport.interrupt": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Only your click: bring a Moved chat back here while nothing happened to it there. (changes something; needs the card's owner trusted) */
+  "transport.move-back": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
 }
 
 /** Whether each command only looks or changes something; a view runs either only once its owner is trusted. */
@@ -5250,6 +5318,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "usage.time": "looks",
   "usage.today": "looks",
   "usage.session": "looks",
+  "chat.usage": "looks",
   "usage.sessions": "looks",
   "usage.prices": "looks",
   "usage.prices.refresh": "changes",
@@ -5324,4 +5393,13 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "design.restore": "changes",
   "design.history": "looks",
   "design.delete": "changes",
+  "transport.preview": "looks",
+  "transport.list": "looks",
+  "transport.get": "looks",
+  "transport.back": "looks",
+  "transport.start": "changes",
+  "transport.retry": "changes",
+  "transport.cancel": "changes",
+  "transport.interrupt": "changes",
+  "transport.move-back": "changes",
 };

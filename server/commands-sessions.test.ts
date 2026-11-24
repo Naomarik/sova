@@ -13,6 +13,7 @@ import { SESSION_ENTRIES } from "../shared/commands/sessions";
 import { PROJECT_ENTRIES, VERB_ENTRIES } from "../shared/commands/projects";
 import { OVERSEER_ENTRIES } from "../shared/commands/overseer";
 import { OTHER_ENTRIES } from "../shared/commands/other";
+import { TRANSPORT_ENTRIES } from "../shared/commands/transport";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-commands-sessions-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -63,11 +64,12 @@ const newGroup = async (name: string) => ((await send("POST", "/api/session-grou
 
 describe("the catalogue by area", () => {
   test("COMMANDS is the area files in order, and each area holds only its own ids", () => {
-    assert.deepEqual(COMMANDS, [...SESSION_ENTRIES, ...VERB_ENTRIES, ...PROJECT_ENTRIES, ...OVERSEER_ENTRIES, ...OTHER_ENTRIES]);
+    assert.deepEqual(COMMANDS, [...SESSION_ENTRIES, ...VERB_ENTRIES, ...PROJECT_ENTRIES, ...OVERSEER_ENTRIES, ...OTHER_ENTRIES, ...TRANSPORT_ENTRIES]);
     for (const c of SESSION_ENTRIES) assert.match(c.id, /^(session|worker)\./, c.id);
     for (const c of [...VERB_ENTRIES, ...PROJECT_ENTRIES]) assert.match(c.id, /^project\./, c.id);
     for (const c of OVERSEER_ENTRIES) assert.match(c.id, /^overseer\./, c.id);
     for (const c of OTHER_ENTRIES) assert.doesNotMatch(c.id, /^(session|worker|project|overseer)\./, c.id);
+    for (const c of TRANSPORT_ENTRIES) assert.match(c.id, /^transport\./, c.id);
   });
 });
 

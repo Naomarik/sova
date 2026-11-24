@@ -140,10 +140,11 @@ export function cutChatUsage(d: CutDeps, q: { sid: string; members: string[]; or
   const seenCalls = new Set<string>();
   const seenReplies = new Set<string>();
   const seenTools = new Set<string>();
-  // Twice when the first read found helpers by their parent: a helper's own helper may come before it.
-  const known = owners.size;
-  linesOf(d.roots.usage, callDays, "owner", owners, seenCalls, calls, q.origin);
-  if (owners.size > known) linesOf(d.roots.usage, callDays, "owner", owners, seenCalls, calls, q.origin);
+  // Again while a read finds helpers by their parent (a helper's own helper may come before it), at most 8 reads.
+  for (let pass = 0, known = -1; pass < 8 && owners.size !== known; pass++) {
+    known = owners.size;
+    linesOf(d.roots.usage, callDays, "owner", owners, seenCalls, calls, q.origin);
+  }
   linesOf(path.join(d.roots.moved, "v1"), movedCallDays, "owner", owners, seenCalls, calls, null);
   linesOf(d.roots.perf, around([...replyDays, ...callDays]), "sid", owners, seenReplies, replies, q.origin);
   linesOf(path.join(d.roots.moved, "perf", "v1"), around(d.moved.replyDays(owners)), "sid", owners, seenReplies, replies, null);

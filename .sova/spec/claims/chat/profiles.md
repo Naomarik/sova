@@ -39,8 +39,9 @@ list or by the Overseer). The UI says "profile"; "abilities" is the baton's word
   is ignored (§chat.profiles/playbook).
   `model` is the main thread's model ref (`provider/id`); `thinking` its effort, one of pi's levels
   (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`); `subagents` links the profile's
-  helpers, by the id of a profile in the helper library (§chat.subagent-profiles/file), or `"off"`:
-  that link is what joins the two parts (§chat.profiles/joined). Each is optional: absent, the
+  helpers, by the id of a profile in the helper library (§chat.subagent-profiles/file) or of a
+  built-in one (§chat.subagent-profiles/builtins): that link is what joins the two parts
+  (§chat.profiles/joined). An older build's `"off"` still parses there and reads as no link. Each is optional: absent, the
   session keeps the model and effort it would open on (the default profile's, else the new-session
   default model and effort), and takes its helpers from this computer's default (its default
   subagent profile, §chat.profiles/default). `minorModes` is the whole set of minor modes the session starts with (`align`,
@@ -52,8 +53,10 @@ list or by the Overseer). The UI says "profile"; "abilities" is the baton's word
 - **Capability-neutral.** A profile that removes and grants nothing, isn't One at a time, and has
   no first message (so it sets only model, effort, subagents, mode or minor modes) is
   capability-neutral.
-- **Where profiles come from** is §chat.profiles/projects: **Default** in code (no profile, nothing
-  changed: the built-in **Off**, once the picker's My settings, §chat.subagent-profiles/off), the **Built in** files Sova ships (none a person can pick today), **Yours**,
+- **Where profiles come from** is §chat.profiles/projects: **Default** in code (no profile picked,
+  nothing changed; no card stands for it, §chat.subagent-profiles/off), **Built in** (the Claude,
+  OpenAI and DeepSeek profiles in code, §chat.subagent-profiles/builtins, and any file Sova ships,
+  of which there are none), **Yours**,
   and **This project**'s files. Sova also ships two **system** profiles that only Sova itself
   starts: **Merge thread** (§chat.merge-queue/thread) and **Merge reviewer**
   (§app.merge-queue/review). Sova writes only Yours, and only when
@@ -61,10 +64,11 @@ list or by the Overseer). The UI says "profile"; "abilities" is the baton's word
   §chat.profiles/picker's Save Current As Profile).
 - **The session keeps its own copy.** A session's profile is its invisible `custom` entry
   `customType: "sova-profile"`, data `{v: 1, profile: {…the whole profile…, source, project?,
-  projectName?}}` or `{v: 1, profile: null}` (Default, the UI's Off), newest on the branch wins. `source` is
-  `sova`, `user` or `project`, and a project profile keeps its project's root and name. An entry
-  with a profile may carry `mine: {mode, minorModes, model?, thinking?, subagents?}`, what the
-  session had before its first profile pick (§chat.profiles/applying). An older
+  projectName?}}` or `{v: 1, profile: null}` (Default: no profile picked), newest on the branch wins. `source` is
+  `sova`, `user` or `project`, and a project profile keeps its project's root and name. An entry an
+  older build wrote may carry `mine: {mode, minorModes, model?, thinking?, subagents?}`, what the
+  session had before its first profile pick; it is still read, and never written or replayed
+  (§chat.profiles/applying). An older
   entry's `builtin: true` reads as `sova`. It is never LLM context, the TUI ignores it, and it draws
   no transcript row of its own. Changing, hiding or deleting a profile's file never changes a session
   that already has one. No entry means Default, exactly as before profiles existed.
@@ -88,20 +92,24 @@ first starts.
   are one profile each, as they are.
 - **A library profile no session profile links to** is still a row, under Yours, with only its
   Models part: its This chat row reads "Keeps the chat's own model", and a chat started on it starts
-  as Off does (§chat.subagent-profiles/off) except that its helpers are this profile's.
+  with no session profile, keeping the model it would open on, with this profile's helpers.
 - **A session profile with no link** is still a row, with its When a Chat Starts part and its This
   chat row; its helper rows are empty, and a chat on it takes its helpers from this computer's
   default (§chat.profiles/default).
+- **The built-in profiles** (§chat.subagent-profiles/builtins) are rows under Built in, both parts,
+  keyed `sova:<id>`, listed only where their account is connected; a profile of yours that takes one's
+  place (§chat.subagent-profiles/shadowing) is listed instead, under Yours. There is no Off row.
 - **Its id.** A pair's id is its session profile's id; a library profile no session profile links
-  to goes by its library id. Both are what the Overseer takes (§chat.subagent-profiles/overseer).
+  to goes by its library id, a built-in one by its own. Each is what the Overseer takes
+  (§chat.subagent-profiles/overseer).
 - **A library profile linked by more than one profile** is shared: each of them shows it as its
   Models part, the editor says "Also used by {name}" there (§app.settings-dialog/profile-editor), and
   an edit through any of them changes it for each. Deleting one of those profiles keeps the library
   half the others still link; deleting the last one deletes it.
 - **The footprint**, the line under a profile's name in Settings, on the new chat's cards and in the
   mode menu's picker, is the distinct models of its Models part, the chat's own model first, joined
-  with " + " ("Opus 5.5 + GPT-6.1 Sol"), at most 3 and then "+N", a Claude model by its catalog name
-  (§app.claude-code-provider/model-names). Off reads "Keeps the chat's own model".
+  with " + " ("Opus 5.5 + GPT-6.2 Sol"), at most 3 and then "+N", a Claude model by its catalog name
+  (§app.claude-code-provider/model-names).
 - **Each half is written by its own writer.** Saving a profile writes its session profile through
   Yours' writer (§chat.profiles/projects) and its helpers through the library's
   (§chat.subagent-profiles/file), each only when that half changed. A save re-reads the saved list
@@ -130,31 +138,38 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   §chat.transcript/transcript-items) in as many columns as fit at 220px or wider. Where the picker is narrower than 480px (a phone), the cards are one column of single-line
   cards: icon, label, caption and chips on one 44px line (chips that don't fit take a second), the
   caption giving way first (its mode icons folding, then its model name cut, as **A card** says),
-  the label keeping up to about two thirds of the card before it is cut. A card that can't be used keeps its whole reason, on its own line below. **Off** comes
-  first, a card under no label; then **Yours** (every profile of §chat.profiles/joined that is yours:
+  the label keeping up to about two thirds of the card before it is cut. A card that can't be used keeps its whole reason, on its own line below. **Yours**
+  comes first (every profile of §chat.profiles/joined that is yours:
   pairs, library profiles no session profile links to, and session profiles with no link), then
-  **This project ({name})**, each under its own
-  label (a profile file Sova itself ships for people to pick, of which there are none today, would
-  follow under **Built in**); the system profiles are never listed, and hidden profiles are left out, and Off can't be hidden. A last card, **Custom…**, opens the capability
+  **This project ({name})**, then **Built in** (the built-in profiles listed here,
+  §chat.subagent-profiles/builtins), each under its own label; there is no Off card, the system
+  profiles are never listed, and hidden profiles are left out. A last card, **Custom…**, opens the capability
   board. With more than 9 cards, a **Find a profile** field above the grid filters them by name.
   While a profile file here can't be read, a muted line under the grid says "{n} profile files have
   mistakes. See Manage Profiles." ("1 profile file has mistakes.") **Manage Profiles** opens
   Settings → Profiles (§app.settings-dialog/profiles). A new chat opens with this computer's default
-  picked, its card carrying a **Default** chip (§chat.profiles/default).
+  picked, its card carrying a **Default** chip (§chat.profiles/default). With no default at all
+  (§chat.subagent-profiles/no-helper-profile) no card is checked, and with nothing to list only
+  Custom… shows.
+- **The checked card** is the profile in effect: the session's own pick, else the one its profile
+  record names (§chat.profiles/switch), by key, else by the helpers it runs, so a library profile
+  picked by its helpers alone, or the default the chat follows, is checked. Picking the checked card
+  sends nothing and reopens nothing. While a pick applies, a line reads "Applying {name}…" until it is
+  done, also when it only moved the helpers and the picker stays.
 - **A card** shows the profile's icon, its label and one caption line. When the profile sets any
   settings, the caption is icons, and only for what that profile sets, in this order: the model
   and effort as the composer foot draws them (§chat.composer/behavior: the effort ring, then the
   model's short name; a profile that sets only the effort shows just the ring, only the model just
-  the name; "off" is the empty ring), the subagents icon with the count of the subagent profile's
-  distinct primary models, or "off", then the mode icons (§chat.mode-menu/trigger: its major
+  the name; "off" is the empty ring), the helpers icon with the count of the helper profile's
+  distinct primary models ("off" for an older profile whose `subagents` is `off`), then the mode icons (§chat.mode-menu/trigger: its major
   mode's, then one per minor mode it starts with, a project mode as its letter square); a profile
   that starts with no minor modes (`[]`) ends with the words "no minor modes". The count comes with
   the listing: each of its `subagents` entries carries `models`, the distinct primary models the
-  server counts from that library profile's workers (0 for Off); from an older server that omits
-  it, the card shows the subagent profile's id instead. The whole caption in words ("{model} ·
-  {effort} · subagents: {footprint} · {mode} · {minor modes}", the minor modes as "align, spec,
+  server counts from that library or built-in profile's workers; from an older server that omits
+  it, the card shows the helper profile's id instead. The whole caption in words ("{model} ·
+  {effort} · helpers: {footprint} · {mode} · {minor modes}", the minor modes as "align, spec,
   vis", or "no minor modes" for `[]`) is the caption's accessible text and the card's `title`;
-  each icon item's own hover text is its part in words ("{model} · effort {level}", "subagents:
+  each icon item's own hover text is its part in words ("{model} · effort {level}", "helpers:
   {footprint}", "mode: {mode}", "minor mode: {id}"). **The model name is the last thing to
   shrink.** When the caption runs out of room and draws at least two mode icons, its mode icons
   fold first: the first mode icon stays, followed by a quiet count of the rest ("+3", minor and
@@ -166,7 +181,7 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   caption; it unfolds when the room comes back (a wider window, a shorter name). A fold hides nothing
   from the words: the caption's accessible text and the card's `title` keep the full wording, and
   the picked profile's details line (below) still names every mode. Where the caption is at least 340px wide,
-  words come back beside the icons: the level, "subagents" and each mode's id. Captions that aren't settings stay words: the
+  words come back beside the icons: the level, "helpers" and each mode's id. Captions that aren't settings stay words: the
   description of a profile that sets none of them, a disabled reason (below), and "Opens the
   running session: {title}" (§chat.profiles/singleton). Chips say **Live**, with Sova's usual live
   dot (a One at a time profile live in another session, in place of One at a time), **Needs
@@ -176,17 +191,14 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   read), with the reason as its caption, in the warn tone, and as its title, and a click on it does
   nothing. It looks off by shape as well as tone: no fill and a dashed edge, a muted label and
   dimmed icon, a not-allowed pointer, and no change on hover. It is off because its model is turned off in Settings → Models (that page's sentence),
-  has no credentials on this host ("No credentials here for {model}."), or its subagent profile
-  isn't in this device's library ("Its subagent profile "{id}" isn't in this device's library.").
-- **Off** (§chat.subagent-profiles/off) is the session with no profile (`profile: null`; Default,
-  whose id stays `default`), in place of the old **My settings** card. Its caption reads "Keeps the
-  chat's own model"; its accessible name and desktop hover text add what it keeps, "{mode} · {minor modes}
-  · {model} · {effort}" ("Delegate · Align · Opus 5.5 · high"): the session now, or once a profile
-  is picked what Off would put back (§chat.profiles/applying), else "Your own settings". Picked, it
-  shows one muted line: "No profile: the settings you chose, {n} tools, no session powers."
+  has no credentials on this host ("No credentials here for {model}."), or its helper profile is
+  neither in this device's library nor a built-in one ("Its subagent profile "{id}" isn't in this
+  device's library.").
+- **No profile picked** (`profile: null`, Default, whose id stays `default`) has no card of its
+  own; under the cards it shows one muted line: "Standard tools: {n}. No session powers."
 - **Save Current As Profile**, beside Manage Profiles, asks for a name and saves this session's
-  model and effort, with a copy of the helpers its subagent pick gives it now (from its own pick when
-  it has one; with none, otherwise, from this computer's default; Off when they are Off), as a new
+  model and effort, with a copy of the helpers it runs now (from its own pick when it has one, else
+  from this computer's default; a built-in profile's too; none when it has no helper profile), as a new
   capability-neutral profile in Yours with both halves, linked (§chat.profiles/joined), with the
   wrench icon. It changes nothing about this session; the new
   card shows at once. A name you already use in Yours is refused ("You already have a profile named
@@ -195,13 +207,13 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   field marked invalid and the form open, until the name changes or the form closes.
 - **The picked profile's details**, under the cards, start with one line that spells its settings
   out in full words, so nothing the card's icons say is only an icon: "Model: {model} · Effort:
-  {level} · Subagents: {name} ({its footprint's models, joined with commas}) · Main mode: {mode}
-  · Add-on modes: {ids, joined with commas}" ("Subagents: off"; "Add-on modes: none" for `[]`),
+  {level} · Helpers: {name} ({its footprint's models, joined with commas}) · Main mode: {mode}
+  · Add-on modes: {ids, joined with commas}" ("Helpers: off" for an older `off`; "Add-on modes: none" for `[]`),
   what it leaves unset left out, and no line when it sets none of them.
-- **Any other profile** shows its one-line description, then **What changes** (vs Off): a row per
+- **A picked profile** shows its one-line description, then **What changes**: a row per
   grant, `+` and tinted, with its limits under Message other sessions ("Up to {hops} hops · {n} sends
   per message you send · {n} a day on its own · {n} to one session per 10 min"), then a row per
-  removal, `−`, naming its tools. A folded line follows: "Same as Off: {n} tools. Show All",
+  removal, `−`, naming its tools. A folded line follows: "Standard tools: {n}. Show All",
   which lists them. A One at a time profile adds that badge.
 - **Guardrail note.** While anything is removed and the shell is kept, an info note says "The shell
   is on, so removals are guardrails, not a boundary. Bash can still change files and call Sova's
@@ -209,11 +221,13 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
 - Under it, muted: "Fixed once you send your first message."
 - **Custom…** opens the capability board: one toggle per removable capability ("on" = kept) and per
   grant, starting from the profile picked before. A toggle it can't change right now is disabled
-  with its reason in its title (§chat.profiles/enforcement's workers rule). Its head names where it
-  started ("Off" with no profile) and reads "{label}, edited" ("Off, edited") once it
-  differs from there, with **Reset**. Every flip applies at once, like a
-  pick. The board changes this session only and never makes a profile: profiles are files
-  (§chat.profiles/projects).
+  with its reason in its title (§chat.profiles/enforcement's workers rule). Its head names the profile
+  it started from (the card picked, else the profile in effect) and reads "{profile}, edited"
+  ("Claude, edited") once it differs from there, with **Reset**, which picks that card again. Every
+  flip applies at once, like a pick. The board changes this session only and never makes a profile:
+  profiles are files (§chat.profiles/projects).
+- **The way back** after picking a card is picking the default's card. A model or mode set by hand
+  before a card was picked is not put back.
 - **A session the Overseer started from a profile** shows the same screen with it preselected and
   one muted line: "Started by the Overseer with {label}." It stays changeable until a message is sent.
 
@@ -224,17 +238,19 @@ Profiles' editor (§app.settings-dialog/profile-editor) are the form kit's (§de
 is one name for both its halves (§chat.profiles/joined), so it takes both halves' rules: a name past
 48 characters is kept whole, its count "{n} / 48" red with "Profile name can be at most 48
 characters." under it, and Save waits; a blank one is "Profile name can't be empty."; "Off" is
-"Profile name can't be "Off", the built-in profile's."; one you already use, ignoring case, is
-"Another profile has this name.". The server's save, and its read of a profile file, refuse in the
+"Profile name can't be "Off"." (older readers refuse it); one you already use, ignoring case, is
+"Another profile has this name.". A built-in profile's name ("Claude") is allowed: the profile then
+takes the built-in one's place (§chat.subagent-profiles/shadowing). The server's save, and its read of a profile file, refuse in the
 same words, from one rule (`shared/profile-limits.ts`). A session profile with no helpers that an
 older Sova saved with a longer name (up to 60 characters) still reads, and keeps it until it is
 renamed.
 
 ## §chat.profiles/applying — A pick writes the entry and reopens the runtime
 
-- `POST /api/sessions/profile {path, profile}` (`profile`: `{source, id}` or a bare id, resolved
-  against the session's own project (§chat.profiles/projects), or a custom `{remove, grant}`; `null`
-  is Off) writes the new `sova-profile` entry at once, after the
+- `POST /api/sessions/profile {path, profile}` (`profile`: `{source, id}`, a bare id or a joined key
+  (`sova:claude`, `user:<id>`, `project:<root>#<id>`; a built-in one's finds the profile of yours in
+  its place), resolved against the session's own project (§chat.profiles/projects), or a custom
+  `{remove, grant, from?}`) writes the new `sova-profile` entry at once, after the
   open-time model and thinking entries, then disposes the held runtime, the move the Overseer's model
   change makes: open tabs get `reloaded` and reconnect, keeping the draft. The reopened runtime reads
   the entry. A profile's `mode` and `minorModes` are applied and pinned together (one mode
@@ -245,27 +261,28 @@ renamed.
   same step; its `firstMessage` fills an empty composer. None of these moves this computer's default
   (§chat.profiles/default) or any file it keeps written, the new-session model and effort
   (`defaults.json`) included. A library profile no session profile links to (§chat.profiles/joined)
-  is picked as Off with its helpers: the entry is `{v: 1, profile: null}` and its id is written as
-  the subagent pick.
+  is picked by its helpers alone. On a session with no profile picked only the helpers move, as a
+  helpers-only switch moves them (§chat.profiles/switch): no entry, no reopen, and the chat is named
+  by that profile; picking it again changes nothing. After a profile, the entry is
+  `{v: 1, profile: null}` and its id is written as the subagent pick.
+- **No profile, from a person.** A pick of no profile from the page (`null`, `default`, or an older
+  page's Off, `off` or `sova:default`; a custom board that changes nothing) is a pick of this
+  computer's default: its card as it stands, or, for a default nobody chose
+  (§chat.profiles/derived-default), its helpers alone. With no default at all it sets nothing. A
+  start Sova makes naming none (a run's new chat) keeps no profile of its own, as always.
+- **A pick that changes nothing does nothing.** Picking the profile the session is on, as it
+  stands (the same profile, helpers, mode, model and effort), writes nothing and reopens nothing.
 - **Checked before anything is written.** A pick whose model is turned off in Settings → Models,
   has no credentials on this host or isn't a model here, whose effort isn't one of the levels, or
-  whose subagent profile isn't in this device's library is refused (400) with a sentence that says
-  which, and nothing is written.
-- **Off brings back what you set**, as My settings did. The first pick of a profile on a session with none
-  remembers what the session has then, in that entry's `mine` (§chat.profiles/model): its mode and
-  minor modes, model, effort, and its own subagent pick (none when it follows the device's
-  default). A pick of another profile, or a Custom… flip, carries the same `mine` forward. A pick of
-  Off (`null`) replays it, each part only where it differs from now: the mode and minor
-  modes (pinned together), the model and the effort; and it pins the subagent pick to `off`, since
-  Off has the agent pick every worker (§chat.subagent-profiles/off). A remembered
-  model that can't be used now (turned off, no credentials, gone) falls to the new-session one, as
-  below. Back on Off the entry is `{v: 1, profile: null}` with no `mine`, so the next first
-  pick remembers afresh. Like every pick, only before the first message.
-- **Switching back.** Without a `mine` to replay (an entry an older build wrote), and for a pick of
-  another profile that doesn't set a field, these hold. A pick made while the session's current
-  profile sets `subagents`, of a profile that sets none (Default included: there, Off pins `off`, above), pins this computer's
-  default subagent profile (the helpers of its default profile, §chat.profiles/default; `off` when
-  the default is Off or links none) as the session's pick, since a pick is newest-wins and can't
+  whose helper profile is neither in this device's library nor a built-in one is refused (400)
+  with a sentence that says which, and nothing is written.
+- **Nothing is put back.** A pick no longer restores what the session had before its first pick:
+  an older entry's `mine` is read and never replayed, and no pick writes one. The way back is the
+  default's card (§chat.profiles/picker).
+- **Switching back.** For a pick of a profile that doesn't set a field, these hold. A pick made
+  while the session's current profile sets `subagents`, of a profile that sets none, pins this
+  computer's default subagent profile (the helpers of its default profile, §chat.profiles/default;
+  nothing when the default has none) as the session's pick, since a pick is newest-wins and can't
   be cleared; a session with no pick entry gets none. Likewise a pick of a profile without `model`
   or `thinking`, made while the current profile sets it, puts back the model or effort a new
   session would open on: the new-session default's (`defaults.json`) when it names a usable one,
@@ -281,8 +298,8 @@ renamed.
 - The chat socket sends a `profile` message after `hello`, whenever there is something to show (a
   profile, or a session still before its first message): the branch's profile (or null), who
   picked it, whether it is `locked`, the runtime's active tool names, the tools its removals took
-  away and the tools its grants added, and, with a profile, the entry's `mine` (what Off
-  would put back). The client never keeps its own tool list. A Default session
+  away and the tools its grants added, and, with a profile, an older entry's `mine`, which nothing
+  uses now. The client never keeps its own tool list. A Default session
   with a message on its branch gets none, so its socket frames are as before.
 
 ## §chat.profiles/enforcement — What a profile changes in the runtime
@@ -397,7 +414,7 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   message was sent.", and, while the profile it came from still exists, **Run Again** (below) and
   **Manage Profiles** (Settings → Profiles), "Changes to When a Chat Starts reach new
   sessions only." (where it read "Changes reach new sessions only." before), and for a live One at a time session **Stop {Label}**, which archives it. A
-  project profile's chip title and the popover's name read "{label} · {project}". Off (Default) shows no chip, and neither does a session before its first
+  project profile's chip title and the popover's name read "{label} · {project}". Default (no profile picked) shows no chip, and neither does a session before its first
   message (the picker is there instead). The chip and the info row name the profile the chat
   started on, whose tools and powers it keeps; a later switch of its Models part
   (§chat.profiles/switch) is named in the mode menu (§chat.subagent-profiles/menu), not here.
@@ -446,14 +463,18 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   project. Any other local folder is its own project, with no walk up to a parent. The project's
   name is its root folder's name. A relative or remote cwd has no project; that is decided before any
   filesystem call, as for playbooks (§chat.playbooks/the-project-listing).
-- **Four sources.** **Default** is in code and changes nothing (the picker's Off, once My settings). **Built
-  in**: one JSON file per profile in `profiles/` at the Sova repo root; Sova ships none today, and a
-  missing folder lists none. **System** profiles sit apart, in `profiles/system/`:
+- **Four sources.** **Default** is in code and changes nothing (no profile picked; no card stands for
+  it). It still goes over the wire first among the listing's built-ins, labelled "No profile" (an
+  older build's "Off"), for an older page, which draws it as its no-profile card; this build's lists
+  leave it out, and every reader goes by its id `default` or its key `sova:default`, never the label. **Built in**: the Claude, OpenAI and DeepSeek profiles, in code (§chat.subagent-profiles/builtins),
+  listed where their account is connected, and one JSON file per profile in `profiles/` at the Sova
+  repo root; Sova ships no such file, a missing folder lists none, and a file with a built-in one's
+  id is the one in code. A profile of yours with a built-in one's id takes its place. **System** profiles sit apart, in `profiles/system/`:
   `merge-thread`, `merge-reviewer` and `release-thread`. They are never listed: not in a profile picker, not in
   Settings → Profiles, and not among the profiles a chat, the Overseer or a team may start a
   session on. A bare id never finds them; only Sova's own explicit pick (`{source: "sova", id}`)
-  does, when it starts the merge queue's thread or reviewer, or a release's chat. The listed built-ins stay exactly
-  Default. The merge thread has no web, workers or timers and grants no session powers. The
+  does, when it starts the merge queue's thread or reviewer, or a release's chat. None of them is
+  ever among the listed built-ins. The merge thread has no web, workers or timers and grants no session powers. The
   reviewer also has no edit tools, no shell and no worktrees, so it reads and searches only (read,
   grep, find and ls, as every profile without the shell, §chat.profiles/enforcement). A third,
   `release-thread`, is a release's chat (§app.release/start), with no web, workers or timers and no
@@ -550,7 +571,8 @@ closes.
   chat's helper pick, §chat.subagent-profiles/resolution); and the alignment settings they carry.
   Tools, session powers and modes stay as the chat has them. A profile that sets no model for the
   chat leaves the chat's model as it is; a profile with no helpers gives the chat this computer's
-  default helpers (§chat.profiles/default).
+  default helpers (§chat.profiles/default), and leaves its helpers as they are when the default has
+  none. A switch to an older page's Off is a switch to this computer's default.
 - **Checked first, all or nothing.** Before anything is written, the new model is checked as a
   composer pick is: it is a model here, Settings → Models allows it, and this computer has
   credentials for it; its effort is a level, and its helpers are in this computer's library. If any
@@ -577,9 +599,12 @@ closes.
   next team action and every worker started from then on use the new profile; workers already
   running keep the model they started with.
 - **The chat remembers which profile it is on.** A hidden session entry records the profile, written
-  with every switch, never LLM context, drawing no row. A chat with none goes by the profile it started
-  on, else its helper pick (a library profile), else Off; a helpers-only switch (the Overseer's
-  `subagent_profile`, `/mode subagents`) first records the profile the chat is on, so its name stays.
+  with every switch, never LLM context, drawing no row. The chat is on the whole profile it started on
+  or switched to; a chat with none, or whose newest record names helpers alone or an older Off, is
+  on the helpers in effect, named by them: its helper pick, else this computer's default's. So a
+  helpers-only switch (the Overseer's `subagent_profile`, `/mode subagents`) renames a chat on helpers
+  alone, and a chat on a whole profile keeps its name. A chat with no helper profile at all is named
+  by nothing (§chat.subagent-profiles/no-helper-profile).
 - **Across backends.** A switch between a Claude Code model and another backend's (an OpenAI Codex
   model, a pi model) continues the same conversation on the new model, either way.
 - **The same profile again.** Picking the chat's own profile while it reads "(edited)"
@@ -609,30 +634,76 @@ Chat Starts part and its Models part. It replaces the three separate defaults: t
 modes, the new-session model and effort, and the default subagent profile.
 
 - **Choosing it.** **Make Default** in Settings → Profiles (§app.settings-dialog/profile-editor), or
-  **Make {name} the Default** in a chat's mode menu (§chat.subagent-profiles/menu). Off can be the
-  default. The default carries a **Default** chip wherever profiles are listed.
+  **Make {name} the Default** in a chat's mode menu (§chat.subagent-profiles/menu). A built-in
+  profile can be the default. Make Default from a chat with no profile is refused (409, "This chat
+  has no profile to make the default."), and so is one naming Off ("There is no Off profile to make
+  the default."). The default carries a **Default** chip wherever profiles are listed.
 - **New chats start on it.** A new chat's empty screen opens with it picked and its card checked
   (§chat.profiles/picker), under a muted line "New chat in {project}. The default is already
-  picked." ("New chat. The default is already picked." outside a project); picking another card
-  never changes the default. So does every chat Sova starts with no profile named: New Session, a
+  picked." ("New chat. The default is already picked." outside a project; neither with no default at
+  all, §chat.subagent-profiles/no-helper-profile); picking another card never changes the default.
+  A default with a session half (a chosen one, or a built-in one nobody chose,
+  §chat.profiles/derived-default) is picked whole when the chat is made, its model included; one with
+  helpers alone writes nothing, and the chat follows its helpers. So does every chat Sova starts with no profile named: New Session, a
   project's coding sessions (§app.project-overseer/coding-mode), a start on a target (by the same
   rule as one in a folder) and an Overseer's start that names none, or names only `subagent_profile`, whose helpers then win over the default's.
 - **It keeps the older defaults written.** Choosing a default also writes what the older files hold,
   for what the profile sets: its starting mode and add-on modes into `mode.json`'s default, its
   model and effort into `defaults.json`, and its helpers' id into `subagent-profiles-default.json`
-  (Off writes `off` there and leaves the other two as they are). So pi-config's extensions and an
-  older Sova keep reading the default they always did.
+  (a built-in one's id too, which an older reader takes for a default naming no profile; `off` is
+  never written). So pi-config's extensions and an older Sova keep reading the default they always
+  did.
 - **Nothing else moves it.** A pick, a switch or a model change in a chat, a new chat's composer
   pick included (§chat.model-menu/saved-default), a profile's save and every Overseer call change
   only that chat or that profile.
-- **Where it is kept.** `<state root>/default-profile.json`, `{"version": 1, "profile": <id or
-  "off">}`, a profile's id as §chat.profiles/joined forms it. It is this computer's own and never
-  syncs, as `subagent-profiles-default.json` never did. A missing file is "not chosen yet" (below);
-  one naming no profile here reads as Off, saying so where the default is shown.
+- **Where it is kept.** `<state root>/default-profile.json`, `{"version": 1, "profile": <id>}`, a
+  profile's id as §chat.profiles/joined forms it. It is this computer's own and never syncs, as
+  `subagent-profiles-default.json` never did. A missing file, or an older build's `"off"`, is "not
+  chosen yet" (below); one naming no profile here, or that can't be read, reads as not chosen too,
+  saying so where the default is shown: "The default, "{id}", isn't a profile here, so new chats
+  start on {name}." ("… can't be read ({error}), so new chats start on {name}.", {error} being
+  the JSON parse error, or, for a file of the wrong shape, `expected {"version": 1, "profile":
+  <profile id>}`, which never names Off; {name} is "no profile" with none).
 - **Until you choose one**, the default is the profile the saved default subagent profile names (the
-  pair that links it, where one does; Off when it names none), and what that profile doesn't set
-  comes from the saved default modes and new-session model, as now. Nothing is rewritten for it.
-- **Deleting the default** is refused: make another the default first.
+  pair that links it, yours first, where one does, else that helper profile's own row), else the
+  built-in profile the connected accounts give (§chat.profiles/derived-default), else none; what
+  that profile doesn't set comes from the saved default modes and new-session model, as now.
+  Nothing is rewritten for it.
+- **Deleting the default** is refused: "Make another profile the default first." Only a chosen
+  default is refused so: a profile of yours that is the default only because the accounts give it
+  (§chat.profiles/derived-default) can be deleted, in Settings → Profiles as by the server, and the
+  built-in one is the default again, with no default written. The listing marks such a default
+  `fromAccounts: true`. A profile made the default in Settings' unsaved draft (Make Default pressed,
+  not saved yet) counts as chosen.
+
+## §chat.profiles/derived-default — The default nobody chose
+
+While no default is chosen (§chat.profiles/default) and the saved default helpers name none, this
+computer's default is worked out from the accounts connected here, each time it is read: the
+built-in **Claude** with a Claude sign-in, else **OpenAI** with an OpenAI sign-in, else **DeepSeek**
+with an Ollama Cloud key (§chat.subagent-profiles/builtins), or the profile of yours in that one's
+place (§chat.subagent-profiles/shadowing). With none of them connected there is no default
+(§chat.subagent-profiles/no-helper-profile).
+
+- **Nothing is written for it.** No file records it, so it moves when the accounts do: with only
+  OpenAI connected the default is OpenAI, and once Claude is connected it is Claude. It carries the
+  Default chip like a chosen one. After the first Make Default it never moves by itself.
+- **A new chat takes it whole.** A new chat on it is picked onto the built-in profile at its start,
+  both parts, the chat's own model and effort included (Claude: Opus 5.5 at medium), as a chosen
+  default with a session half is; that writes the chat's own profile entry, never a default file.
+  Chats already made never change model: one that follows the default's helpers takes the new
+  helpers from its next turn or team action, and keeps its own model.
+- **Helpers alone stay helpers alone.** Where the default is a library profile with helpers only,
+  the seeded starter shown as Claude included, a new chat keeps the model new chats open on, follows
+  its helpers and writes nothing.
+- **Coding sessions follow it.** A project's coding session started on it (§app.project-overseer/coding-mode)
+  takes it the same way: the project's coding model and thinking first, then the built-in one's,
+  then the older `defaults.json`'s. With no default, it has no helpers, the older model, and no
+  profile is named for it.
+- **Deleting it.** A Make It Yours copy that is this default only because it takes the built-in
+  one's place can be deleted, and the built-in one is the default again (§chat.profiles/default).
+- **Never for Sova's own chats.** The merge thread, release chats, the Overseer's own chat and a
+  playbook card's routing never fall back to it (§chat.subagent-profiles/no-helper-profile).
 
 ## §chat.profiles/older-devices — Older devices, and going back
 
@@ -641,7 +712,12 @@ modes, the new-session model and effort, and the default subagent profile.
   a session profile and a subagent profile with one name, linked as before, and what it saves there
   shows here as the joined profile (§chat.profiles/joined).
 - **Its defaults.** It reads the older default files, which choosing a default here keeps written
-  (§chat.profiles/default).
+  (§chat.profiles/default). A built-in default chosen here is an id that device's library lacks, so
+  it reads it as naming no profile, its own Off.
+- **The built-in profiles aren't there.** They are in no file, so an older device never lists them;
+  a Make It Yours copy is an ordinary profile of yours there. An older device may still seed "My
+  setup" and sync it here, where it is shown as Claude (§chat.subagent-profiles/shadowing), and what
+  it writes for Off reads here as this computer's default (§chat.subagent-profiles/off).
 - **Nothing is deleted or converted.** No profile file is removed, moved or rewritten in a new
   shape, so going back to an older build brings back the Subagents tab and both lists as they are.
 - **A saved Members value is kept.** An older device and this Sova both read a profile's retired

@@ -1526,7 +1526,7 @@ export function App() {
       </Show>
       <Show when={settingsOpenAt()}>
         <Portal>
-          <SettingsDialog initialTab={settingsOpenAt() ?? undefined} cwd={summary()?.cwd ?? null} onClose={closeSettings} />
+          <SettingsDialog initialTab={settingsOpenAt() ?? undefined} cwd={summary()?.cwd ?? null} chatPath={summary() && !hostOf(summary()!.path) ? summary()!.path : null} onClose={closeSettings} />
         </Portal>
       </Show>
       {/* Opened from the sidebar's host menu or #/mesh; only while the mesh is on. */}

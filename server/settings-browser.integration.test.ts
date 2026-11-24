@@ -23,8 +23,15 @@ const h = formsBrowser("sova-settings-browser-");
 const skip = h.skip;
 let page: Page;
 let s: typeof h.s;
-// After the harness's own before (registered first): its server and page.
-before(() => ({ page, s } = h));
+// After the harness's own before (registered first): its server and page, and one helper profile
+// of yours for the Profiles tests (Sova creates none of its own).
+const route = (model: string, effort: string) => ({ primary: { backend: "claude-code", model, effort }, fallback: null });
+before(() => {
+  ({ page, s } = h);
+  if (!s) return;
+  const delegate = { planning: route("claude-opus-5-5", "high"), investigation: route("claude-opus-5-5", "medium"), routine: route("claude-opus-5-5", "medium"), complex: route("claude-opus-5-5", "high") };
+  writeFileSync(join(s.agentDir, "subagent-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "mine", name: "Mine", delegate, teams: null, members: null, specWriter: null }] }));
+});
 
 const NAMES: Record<string, string> = { general: "General", models: "Models", alignment: "Alignment", profiles: "Profiles", overseer: "Overseer", notifications: "Notifications", decisions: "Decisions", summaries: "Summaries", memory: "Memory", organizations: "Organizations", mesh: "Mesh", "public-links": "Public links" };
 /** The Settings dialog (the close-hold asks in a dialog of its own). */
@@ -184,10 +191,10 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
   test("Profiles: a pasted 60-character name stays whole and red with its count, Save waits, and shortening it clears that (D10)", async () => {
     // The Subagents tab's rows are Profiles' Models part now (§chat.subagent-profiles/settings).
     const row = (name: string) => box(".profiles-pick").filter({ hasText: name });
-    await open("profiles", () => row("My setup"));
-    await row("My setup").first().click();
+    await open("profiles", () => row("Mine"));
+    await row("Mine").first().click();
     const name = box("#profile-name");
-    await until("My setup is in the editor", async () => (await name.inputValue()) === "My setup");
+    await until("Mine is in the editor", async () => (await name.inputValue()) === "Mine");
     const sixty = "P".repeat(60);
     await name.fill("");
     await name.focus();
@@ -208,11 +215,11 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
   });
 
   test("Profiles → Models → Teams: a cleared or 'abc' Wrap-up context % stays as typed and red; Save waits (D14)", async () => {
-    // The test above renamed My setup; either name is the same library half.
-    const mine = () => box(".profiles-pick").filter({ hasText: /^(My setup|P{48})/ });
+    // The test above renamed Mine; either name is the same library half.
+    const mine = () => box(".profiles-pick").filter({ hasText: /^(Mine|P{48})/ });
     await open("profiles", mine);
     await mine().first().click();
-    await until("My setup is in the editor", async () => /^(My setup|P{48})$/.test(await box("#profile-name").inputValue()));
+    await until("Mine is in the editor", async () => /^(Mine|P{48})$/.test(await box("#profile-name").inputValue()));
     await dialog().getByRole("button", { name: "Monitor", exact: true }).click();
     const choose = dialog().getByRole("button", { name: "Choose Models" });
     if (await choose.count()) await choose.first().click();

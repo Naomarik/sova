@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { defaultLabel, defaultTitle, menuPick, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
+import { namesProfile, defaultLabel, defaultTitle, menuPick, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
 
 const row = (key: string, providers: string[], extra: Partial<SwitchRow> = {}): SwitchRow => ({ key, id: key, kind: "pair", group: "yours", name: key.toUpperCase(), providers, setsModel: providers.length > 0, ...extra });
 const OFF = row("off", [], { kind: "off", group: "builtin", name: "Off" });
@@ -21,10 +21,12 @@ test("switched, refused, edited and limit wording", () => {
   assert.equal(limitLine("Opus 5.5", "42m"), "Opus 5.5 is at its usage limit. It resets in 42m.");
 });
 
-test("limit offers: up to two of yours, avoiding the exhausted provider, never Off", () => {
-  const rows = [OFF, row("claude", ["claude"]), row("openai", ["openai-codex"]), row("mixed", ["claude", "zai"]), row("ollama", ["ollama-cloud"]), row("zai", ["zai"])];
+test("limit offers: up to two, yours before the built-in ones, avoiding the exhausted provider, never Off", () => {
+  const builtin = (key: string, providers: string[]) => row(key, providers, { kind: "builtin", group: "builtin" });
+  const rows = [OFF, builtin("sova:openai", ["openai-codex"]), row("claude", ["claude"]), row("openai", ["openai-codex"]), row("mixed", ["claude", "zai"]), row("ollama", ["ollama-cloud"]), row("zai", ["zai"])];
   assert.deepEqual(limitOffers(rows, "claude", { key: "claude", edited: false }).map((r) => r.key), ["openai", "ollama"]);
-  assert.deepEqual(limitOffers(rows, "claude", { key: "claude", edited: false }, 5).map((r) => r.key), ["openai", "ollama", "zai"], "mixed uses the exhausted provider (its chat model counts)");
+  assert.deepEqual(limitOffers(rows, "claude", { key: "claude", edited: false }, 5).map((r) => r.key), ["openai", "ollama", "zai", "sova:openai"], "mixed uses the exhausted provider (its chat model counts)");
+  assert.deepEqual(limitOffers([OFF, builtin("sova:claude", ["claude"]), builtin("sova:openai", ["openai-codex"])], "claude", { key: "sova:claude", edited: false }).map((r) => r.key), ["sova:openai"], "a built-in one is offered: Switch This Chat to OpenAI");
 });
 
 test("limit offers: the current profile only while edited, and not unusable, hidden, project or empty rows", () => {
@@ -35,9 +37,9 @@ test("limit offers: the current profile only while edited, and not unusable, hid
   assert.deepEqual(limitOffers([helpersOnly], "claude", { key: null, edited: false }), [], "a row that sets no chat model leaves the chat on the limited model");
 });
 
-test("picker rows: Off first, then yours, then the project's; hidden and built-in left out", () => {
-  const rows = [row("p1", ["zai"], { group: "project" }), row("y1", ["claude"]), row("b1", ["claude"], { kind: "builtin", group: "builtin" }), OFF, row("h", ["claude"], { hidden: true })];
-  assert.deepEqual(pickerRows(rows).map((r) => r.key), ["off", "y1", "p1"]);
+test("picker rows: yours, then the project's, then built in; hidden ones and an older server's Off left out", () => {
+  const rows = [row("p1", ["zai"], { group: "project" }), row("b1", ["claude"], { kind: "builtin", group: "builtin" }), row("y1", ["claude"]), OFF, row("h", ["claude"], { hidden: true }), row("bh", ["claude"], { kind: "builtin", group: "builtin", hidden: true })];
+  assert.deepEqual(pickerRows(rows).map((r) => r.key), ["y1", "p1", "b1"]);
   assert.equal(rowDisabledReason(row("p", [], { approval: "needed" })), "Approve it in Settings first");
   assert.equal(rowDisabledReason(row("p", [], { unusable: "No credentials here for x." })), "No credentials here for x.");
   assert.equal(rowDisabledReason(row("p", [])), null);
@@ -86,8 +88,16 @@ test("a mode-menu pick before the first message is a card pick, both parts; afte
   assert.deepEqual(await menuPick(pair, false, io), { kind: "switch", result: { applies: "now" } });
   assert.deepEqual(calls, ["switch claude"]);
   calls.length = 0;
-  await menuPick({ kind: "off", id: "off" }, true, io);
   await menuPick({ kind: "library", id: "fast", libraryId: "fast" }, true, io);
   await menuPick({ kind: "project", id: "rel", session: { source: "project", id: "rel" } }, true, io);
-  assert.deepEqual(calls, ["pick null", 'pick {"source":"library","id":"fast"}', 'pick {"source":"project","id":"rel"}'], "Off, a library-only row and a project's, as their cards send them");
+  await menuPick({ kind: "builtin", id: "openai", session: { source: "sova", id: "openai" } }, true, io);
+  assert.deepEqual(calls, ['pick {"source":"library","id":"fast"}', 'pick {"source":"project","id":"rel"}', 'pick {"source":"sova","id":"openai"}'], "a library-only row, a project's and a built-in one, as their cards send them");
+});
+
+test("a chat names a profile unless it has none (no account, none of yours) or an older server's Off", () => {
+  assert.equal(namesProfile({ id: "claude", key: "sova:claude", name: "Claude" }), true);
+  assert.equal(namesProfile({ id: "fast", key: "library:fast", name: "Fast" }), true);
+  assert.equal(namesProfile({ id: "off", key: "sova:default", name: "Off" }), false);
+  assert.equal(namesProfile({ id: "x", name: "" }), false);
+  assert.equal(namesProfile(null), false);
 });

@@ -434,7 +434,8 @@ user row.
   (its WhatsApp sender's state; its `start`, of a stopped or failed sender, in the operator's turns
   only, §app.outreach/overseer-sender), `sova_history` (its
   project's history, §app.org-history/readers), `sova_list_profiles` (this computer's
-  profiles: Off and each profile's id, name and footprint, the default marked, for `profile` and
+  profiles: each profile's id, name and footprint, the built-in ones listed here included and no
+  Off, the default marked, for `profile` and
   `subagent_profile`, §app.project-overseer/coding-mode; `sova_list_subagent_profiles` is its other name), `spec_lookup {op, words?, ref?, more?}` (its own project's spec on the main line, full view, §app.spec-lookup/tool).
 - **Whether a message arrived.** `sova_send_status {person?, limit?, hours?}` (read) lists the
   project's WhatsApp sends from the send log (§app.outreach/log), newest first: each send's id,
@@ -777,8 +778,11 @@ user row.
   where set, stay the session's own model; the default's come before the overseer's own model). It
   takes what the three older defaults gave a coding session and no more: never the profile's tool
   removals, session powers, One at a time or first message, so a computer's default never widens what
-  a session an Overseer starts can do. With Off as the default it starts in the default mode
-  `mode.json` holds, as every new session starts under Off, with its helpers on Off. That covers the operator's Start Coding Session and New Coding Session, New Session's Project tab
+  a session an Overseer starts can do. A default nobody chose, the built-in profile the connected
+  accounts give, is taken whole the same way: its model after the project's coding model, before the
+  older `defaults.json` (§chat.profiles/derived-default). With no default at all (none chosen, no
+  account connected) it starts in the default mode `mode.json` holds, on the model new sessions open
+  on, with no helper profile (§chat.subagent-profiles/no-helper-profile). That covers the operator's Start Coding Session and New Coding Session, New Session's Project tab
   (§app/new-session-dialog), a Build from a conversation's draft (§app.requirements/draft-approval), an
   Overseer's start that names none, and a build a gap's statechart
   starts by itself with `codingStart` On (§app.project-overseer/drive), which also gets the project's coding model,
@@ -802,18 +806,21 @@ user row.
 - **What the page says.** The project page's Settings tab keeps a read-only "Coding sessions'
   mode" line beside the coding sessions' model and thinking, naming what a session started now
   gets and how to change it: "Coding sessions start on {profile}, in {mode}: this computer's default
-  profile. Make Default in Settings → Profiles changes it." (with Off as the default: "Coding
-  sessions start on Off, in {mode}: this computer's default mode. Make Default in Settings → Profiles
-  changes it."), `{mode}` in mono: the mode and its minor modes joined by " · ",
+  profile. Make Default in Settings → Profiles changes it." (with no default profile to name:
+  "Coding sessions start on this computer's default profile, in {mode}. Make Default in Settings →
+  Profiles changes it."; never "Off"), `{mode}` in mono: the mode and its minor modes joined by " · ",
   `vis` said as "visuals". `GET …/overseer` answers it as `codingModeNow` `{mode, minorModes,
-  subagents: {id, name} | null}`, with the default profile's `{id, name}` as `profile`, and the
-  overseer's prompt names it.
+  subagents: {id, name} | null}`, with the default profile's `{id, name}` as `profile` (absent with
+  none; an older server sent `{id: "off", name: "Off"}`, read as none), and the overseer's prompt
+  and the Overseer's project view name it the same way: the profile, else the helpers in effect,
+  else "this computer's default profile".
 - **Any mode but Create, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
   and the Overseer's `sova_project_overseer` `code` (§app.overseer/org-project-overseers), take
   `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
   never `memory` (§chat.memory/where); `[]` turns them all off), `profile` (a profile of this
   computer's, as `sova_list_profiles` lists them, §chat.subagent-profiles/overseer) and, as before,
-  `subagent_profile` (a library id or `off`: only the helpers; `sova_list_subagent_profiles` is the
+  `subagent_profile` (a library or built-in profile's id: only the helpers; `off` is refused with
+  the profiles there are, §chat.subagent-profiles/off; `sova_list_subagent_profiles` is the
   list's other name; a call gives `profile`, `subagent_profile` or neither). There is no
   ceiling but Create, which only a chat picks for itself
   (§chat.create-mode/per-chat-only): any other mode, any minor modes and any

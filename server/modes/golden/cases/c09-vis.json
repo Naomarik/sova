@@ -108,12 +108,12 @@
       "sections": {
        "preamble": "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
        "tools": "@801824119c80bf34",
-       "rules": "@9a273ca9a1a3573a",
+       "rules": "@3ee213eb68463154",
        "docs": "@7ac29a1ce1499f33",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@af4886772a851556"
       },
-      "toolsAdded": "@95283b654d71c327"
+      "toolsAdded": "@b1a0fa37d0afdc7e"
      },
      {
       "role": "user",
@@ -162,12 +162,12 @@
      "sections": {
       "preamble": "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
       "tools": "@801824119c80bf34",
-      "rules": "@9a273ca9a1a3573a",
+      "rules": "@3ee213eb68463154",
       "docs": "@7ac29a1ce1499f33",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@af4886772a851556"
      },
-     "toolsAdded": "@33eee45c46cb74bd"
+     "toolsAdded": "@a3f4bacbb9e2c04e"
     }
    }
   ],

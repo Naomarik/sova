@@ -8,7 +8,7 @@ export const CHAT_PROFILE_ENTRY = "sova-chat-profile";
 /** The hidden entry's data: the joined profile's id and key, its name, and the model and effort it sets for the chat. */
 export interface ChatProfileEntryData {
   v: 1;
-  /** The joined id ("off", a session profile's id, a library-only profile's library id). */
+  /** The joined id (a session profile's id, a library-only profile's library id; "off" from an older build, read as none). */
   id: string;
   /** The joined key (§chat.profiles/joined), when the server knew it. */
   key?: string;
@@ -26,7 +26,7 @@ export interface ProfileSwitchTarget {
   /** The chat's own model the profile sets; absent: the chat keeps its model. */
   model?: string;
   thinking?: string;
-  /** The helper pick the chat gets: a library id, or "off". Absent: the profile sets no helpers, so the chat
+  /** The helper pick the chat gets: a library or built-in profile's id. Absent: the profile sets no helpers, so the chat
       takes this computer's default's (it keeps following the default when it has no pick of its own). */
   subagents?: string;
   /** How many helper roles the profile sets (the waiting line's {n}). */
@@ -35,9 +35,11 @@ export interface ProfileSwitchTarget {
 
 /** What a chat's profile is now, and the switch waiting for its reply to end (the `chat_profile` message). */
 export interface ChatProfileState {
-  /** The profile the chat is on ("off"/"Off" when none). `edited`: its model was changed by hand and differs
-      from the profile's (§chat.profiles/edited). `model`: what the chat runs now. */
-  current: { id: string; key?: string; name: string; edited: boolean; model?: string; profileModel?: string };
+  /** The profile the chat is on: the full profile it started on or switched to, else the helpers in effect (its
+      pick, else this computer's default); never Off. `edited`: its model was changed by hand and differs from the
+      profile's (§chat.profiles/edited). `model`: what the chat runs now. `libraryId`: the helper half in effect,
+      when the chat is on helpers alone (a card whose `libraryId` it is reads as checked when no key matches). */
+  current: { id: string; key?: string; name: string; edited: boolean; model?: string; profileModel?: string; libraryId?: string };
   /** A switch held until the running reply ends (Cancel Switch drops it). */
   pending?: { id: string; key?: string; name: string; helpers: number; setsModel: boolean };
   /** The newest switch that applied, until the chat's next turn starts: "This chat and its helpers are on {name}." */

@@ -32,6 +32,10 @@ mode("broken", "---\ndefault: on\n---\nNo.\n");
 writeFileSync(join(dir, "settings.json"), JSON.stringify({}));
 writeFileSync(join(dir, "mode.json"), JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: [] }));
 process.env.PI_CODING_AGENT_DIR = dir;
+// Claude connected (a throwaway Claude Code directory, signed in): a chat here is on the built-in Claude profile.
+mkdirSync(join(dir, "claude-code"), { recursive: true });
+writeFileSync(join(dir, "claude-code", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+process.env.CLAUDE_CONFIG_DIR = join(dir, "claude-code");
 delete process.env.SOVA_CHAT_STATE_ROOT;
 await import("./testing/in-process-chats");
 const { buildApp } = await import("./app");

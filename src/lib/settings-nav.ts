@@ -21,6 +21,10 @@ const [openTab, setOpenTab] = createSignal<SettingsTab | null>(null);
 const [subagentPath, setSubagentPath] = createSignal<string | undefined>();
 export const subagentSettingsPath = subagentPath;
 export const setSubagentSettingsPath = setSubagentPath;
+/** The joined key of the profile in effect for that chat, as its own `chat_profile` says (the "This
+    chat" chip), when the opener knows it. Cleared with the path. */
+const [chatKey, setChatKey] = createSignal<string | undefined>();
+export const subagentSettingsChat = chatKey;
 
 /** A section inside a tab to bring into view once it renders ("spec": Profiles → Models → Spec writer;
     "overseer-limits": Overseer → Limits; "server": General → Server · this machine); null = the tab's top. */
@@ -35,6 +39,11 @@ export const clearSettingsSection = (): void => {
 
 /** The tab Settings is open at, or null when it's closed. */
 export const settingsOpenAt = openTab;
+
+/** Each openSettings call's tab, a fresh object every call: an open dialog moves to it even when the
+    tab asked for is the one it was opened at (the user has since clicked another). */
+const [tabAsk, setTabAsk] = createSignal<{ tab: SettingsTab } | null>(null);
+export const settingsTabRequest = tabAsk;
 
 /** The project a project-scoped tab (Merge Queue) opens on: the one whose page opened it. Cleared
     on close: a dialog opened from the gear or a command starts on its own picker's choice. */
@@ -54,10 +63,12 @@ export const clearProfilesRequest = (): void => {
  * Open Settings → Profiles on one profile, at its Models part unless `part` says otherwise
  * (§chat.subagent-profiles/settings): the mode menu's gears and Manage Profiles…, the limit row.
  * `profile` is a joined key or id; without it, the chat at `path`'s profile; without either, the
- * default. `section` "spec" brings the Spec writer's row into view.
+ * default. `chat` is the joined key of the profile in effect for the chat at `path`, when known.
+ * `section` "spec" brings the Spec writer's row into view.
  */
-export function openProfiles(opts: { profile?: string; path?: string; part?: ProfilesPart; section?: "spec" } = {}): void {
+export function openProfiles(opts: { profile?: string; path?: string; chat?: string; part?: ProfilesPart; section?: "spec" } = {}): void {
   setSubagentPath(opts.path);
+  setChatKey(opts.path ? opts.chat : undefined);
   setProfileAsk({ ...(opts.profile ? { profile: opts.profile } : {}), part: opts.part ?? "models" });
   openSettings("profiles", opts.section ?? null);
 }
@@ -69,6 +80,7 @@ export function openSettings(tab: SettingsTab = "general", at: SettingsSection |
   setProject(opts.project ?? null);
   setAccountTab(opts.account ?? null);
   setOpenTab(tab);
+  setTabAsk({ tab });
 }
 
 /** `#/settings/<tab>` (a Needs you row of no session, a phone notification's tap): the tab it names, else null. */
@@ -94,7 +106,9 @@ export function settingsAccountFromHash(hash: string): AccountTab | null {
 }
 
 export function closeSettings(): void {
+  setTabAsk(null);
   setSubagentPath(undefined);
+  setChatKey(undefined);
   setProfileAsk(null);
   setProject(null);
   setAccountTab(null);

@@ -37,6 +37,11 @@ for (const k of Object.keys(process.env)) if (/^(SPEC_AGREE_|SOVA_SPEC_|PI_SPEC_
 export const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-mg-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
+// Claude connected (a throwaway Claude Code directory, signed in), as when the recordings were made: a user's chat with
+// no default chosen is on the built-in Claude profile, whose helpers Delegate's block routes.
+mkdirSync(join(agentDir, "claude-code"), { recursive: true });
+writeFileSync(join(agentDir, "claude-code", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+process.env.CLAUDE_CONFIG_DIR = join(agentDir, "claude-code");
 // The chats' shared folders (pi-config/extensions/sandbox/shared-folder.ts): in the throwaway agent dir, recorded as
 // `<shared>`, never under the home.
 export const sharedBase = join(agentDir, "shared");

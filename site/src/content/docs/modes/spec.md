@@ -106,10 +106,10 @@ claim is true. That is still a reading of the code.
 
 ## The spec writer
 
-A chat's [profile](/docs/subagent-profiles/) can name a **spec writer**: a worker that
+A chat's [profile](/docs/subagent-profiles/) can name a **spec writer**: a helper that
 writes the spec drafts while spec is on, so the main model doesn't have to. Set it in the profile's
-**Spec writer** section ("Use a spec writer while spec is on"). The gear on spec's row in the mode
-menu opens that section for this chat's profile. With none, or with profile Off, the session writes
+**Spec writer** row ("Use a spec writer while spec is on"). The gear on spec's row in the mode
+menu opens that row for the profile this chat's helpers run on. With none, the session writes
 the spec itself. Without a fallback, if the writer can't run, the session writes it too.
 
 ## What workers get

@@ -26,6 +26,18 @@ const DELEGATE = [
 ] as const;
 type Route = { primary: WorkerChoice; fallback: WorkerChoice | null };
 
+/** The Models part's groups the Jump to row reaches, in order. */
+const JUMPS = [
+  ["delegate", "Delegate"],
+  ["teams", "Teams"],
+  ["review", "Review"],
+  ["alignment", "Alignment"],
+] as const;
+/** A team role with no model of its own: it runs on the chat's (team-defaults.ts effectiveTeamDefaults). */
+export const USES_CHATS_OWN = "Uses the chat's own model";
+/** Under Teams: a member has no row, its kind of work routes it (§teams.defaults/member-kinds). */
+export const MEMBERS_LINE = "Members run on the Delegate model for their kind of work.";
+
 /** This chat's "Its default" effort: the model's own (no effort saved). */
 const DEFAULT_EFFORT = "default";
 /** A Set All To pick's value: the backend and the model, one select value. */
@@ -57,6 +69,8 @@ export function ProfileModelsPart(props: {
   noHelpers: string;
   /** Choose Helpers, for a profile with none: a library half of its own, from the template. */
   onChooseHelpers?(): void;
+  /** Open {default}, beside Choose Helpers: the profile whose helpers a chat on this one takes. */
+  openDefault?: { name: string; open(): void };
   /** Set All To; absent where it isn't offered (a project's profile). */
   onSetAll?(pick: { backend: WorkerChoice["backend"]; model: string }): void;
   rows: DelegateSettingsInfo | undefined;
@@ -107,6 +121,15 @@ export function ProfileModelsPart(props: {
     had = now;
     untrack(() => fresh.forEach((k) => setOpen(k, true)));
   });
+  /** Jump to: the group's heading at the top of Settings' panel, and focus on it. */
+  const jumpTo = (group: (typeof JUMPS)[number][0]) => {
+    const el = document.getElementById(`${props.idPrefix}-group-${group}`);
+    const panel = el?.closest<HTMLElement>(".settings-panel");
+    if (!el) return;
+    if (panel) panel.scrollTop += el.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+    else el.scrollIntoView({ block: "start" });
+    el.focus({ preventScroll: true });
+  };
   // Configure Spec: the Spec writer's row open, and in view once it renders.
   createEffect(() => {
     if (!props.focusSpec || !p()) return;
@@ -398,7 +421,7 @@ export function ProfileModelsPart(props: {
     return row(
       role,
       name,
-      () => compact(name, role, () => (t() ? choice().primary : null), (c) => update({ ...choice(), primary: c }), "Uses the default model"),
+      () => compact(name, role, () => (t() ? choice().primary : null), (c) => update({ ...choice(), primary: c }), USES_CHATS_OWN),
       () => (
         <fieldset class="subagent-editor-route">
           <legend class="subagent-editor-route-name">{name}</legend>
@@ -406,7 +429,7 @@ export function ProfileModelsPart(props: {
             when={t()}
             fallback={
               <>
-                <p class="field-hint">Uses the default model</p>
+                <p class="field-hint">{USES_CHATS_OWN}</p>
                 <Show when={!props.readOnly}>
                   <div class="button-row">
                     <button type="button" class="button button-sm" disabled={off() || props.teamsSeed === null} onClick={() => replace((y) => withChosenModels(y, props.teamsSeed))}>
@@ -497,6 +520,20 @@ export function ProfileModelsPart(props: {
 
   return (
     <div class="subagent-editor profile-models">
+      <Show when={p()}>
+        <nav class="profile-jump" aria-label="Jump to">
+          <span class="profile-jump-label" aria-hidden="true">
+            Jump to
+          </span>
+          <For each={JUMPS}>
+            {([k, label]) => (
+              <button type="button" class="button button-sm button-ghost" onClick={() => jumpTo(k)}>
+                {label}
+              </button>
+            )}
+          </For>
+        </nav>
+      </Show>
       <Show when={props.onSetAll && !props.readOnly}>
         <div class="profile-set-all">
           <Select
@@ -529,11 +566,20 @@ export function ProfileModelsPart(props: {
           fallback={
             <div class="profile-model-group">
               <p class="field-hint">{props.noHelpers}</p>
-              <Show when={props.onChooseHelpers && !props.readOnly}>
+              <Show when={(props.onChooseHelpers && !props.readOnly) || props.openDefault}>
                 <div class="button-row">
-                  <button type="button" class="button button-sm" disabled={off()} onClick={() => props.onChooseHelpers!()}>
-                    Choose Helpers
-                  </button>
+                  <Show when={props.onChooseHelpers && !props.readOnly}>
+                    <button type="button" class="button button-sm" disabled={off()} onClick={() => props.onChooseHelpers!()}>
+                      Choose Helpers
+                    </button>
+                  </Show>
+                  <Show when={props.openDefault}>
+                    {(d) => (
+                      <button type="button" class="button button-sm button-ghost" onClick={() => d().open()}>
+                        Open {d().name}
+                      </button>
+                    )}
+                  </Show>
                 </div>
               </Show>
             </div>
@@ -541,15 +587,22 @@ export function ProfileModelsPart(props: {
         >
           {(x) => (
             <>
-              <h4 class="profile-model-group-head">Delegate</h4>
+              <h4 class="profile-model-group-head" id={`${props.idPrefix}-group-delegate`} tabIndex={-1}>
+                Delegate
+              </h4>
               <p class="field-hint profile-model-lede">Without a fallback, the agent asks you which model to use when a route's primary can't run.</p>
               {delegateRows(x)}
 
-              <h4 class="profile-model-group-head">Teams</h4>
+              <h4 class="profile-model-group-head" id={`${props.idPrefix}-group-teams`} tabIndex={-1}>
+                Teams
+              </h4>
               {teamRow(x, "coordinator")}
               {teamRow(x, "monitor")}
+              <p class="field-hint profile-model-lede">{MEMBERS_LINE}</p>
 
-              <h4 class="profile-model-group-head">Review</h4>
+              <h4 class="profile-model-group-head" id={`${props.idPrefix}-group-review`} tabIndex={-1}>
+                Review
+              </h4>
               {row(
                 "spec",
                 "Spec writer",
@@ -612,7 +665,9 @@ export function ProfileModelsPart(props: {
 
               {/* The align mode's Eagerness, writing style and Visuals for chats on this profile:
                   "Use host default" stores nothing, so a profile without an override reads as before. */}
-              <h4 class="profile-model-group-head">Alignment</h4>
+              <h4 class="profile-model-group-head" id={`${props.idPrefix}-group-alignment`} tabIndex={-1}>
+                Alignment
+              </h4>
               {(() => {
                 const setAlign = (patch: Parameters<typeof withAlignment>[1]) =>
                   change((y) => {

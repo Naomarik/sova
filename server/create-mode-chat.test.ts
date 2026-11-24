@@ -3,7 +3,7 @@
 // REAL hosted runtime whose only mode owner is Sova's engine (no settings entry). No model request is made: every switch runs
 // the extension's own /mode handler, so what reads back was taken by the extension, past its Sova-only check.
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -16,6 +16,10 @@ process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 writeFileSync(join(dir, "settings.json"), JSON.stringify({}));
 writeFileSync(join(dir, "mode.json"), JSON.stringify({ version: 1, mode: "delegate", strict: false, minorModes: ["vis"] }));
 process.env.PI_CODING_AGENT_DIR = dir;
+// Claude connected (a throwaway Claude Code directory, signed in): a chat here is on the built-in Claude profile.
+mkdirSync(join(dir, "claude-code"), { recursive: true });
+writeFileSync(join(dir, "claude-code", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+process.env.CLAUDE_CONFIG_DIR = join(dir, "claude-code");
 delete process.env.SOVA_CHAT_STATE_ROOT;
 await import("./testing/in-process-chats");
 const { buildApp } = await import("./app");

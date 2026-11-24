@@ -237,14 +237,21 @@ export interface CodingModeNow {
   mode: ProjectCodingMode["mode"];
   minorModes: string[];
   subagents: { id: string; name: string } | null;
-  /** This computer's default profile, the one a coding session started now is on (Off: `{id: "off", name: "Off"}`);
-      absent from an older server. */
+  /** This computer's default profile, the one a coding session started now is on (an older server sent
+      `{id: "off", name: "Off"}` for none); absent from an older server, or when the profiles can't be read. */
   profile?: { id: string; name: string };
 }
 
 /** A mode as people read it: `normal · spec · visuals` (`vis` said as "visuals"). */
 export const codingModeWords = (m: { mode: string; minorModes: string[] }): string =>
   [m.mode, ...m.minorModes.map((x) => (x === "vis" ? "visuals" : x))].join(" · ");
+
+/** The Overseer's line for it: the default profile by name, else the helpers in effect, else the words "this computer's
+    default profile" (an older server's `{id: "off"}` names none of them). */
+export function codingNowLine(now: CodingModeNow): string {
+  const named = now.profile && now.profile.id !== "off" ? now.profile.name : now.subagents && now.subagents.id !== "off" ? now.subagents.name : null;
+  return `A coding session started now is on ${named ?? "this computer's default profile"}, in ${codingModeWords(now)}${named ? " (this computer's default profile)" : ""}`;
+}
 
 export interface ProjectOverseerSettings {
   version: 1;

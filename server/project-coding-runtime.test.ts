@@ -284,12 +284,12 @@ describe("a project's coding sessions", async () => {
     // added: §app.project-overseer/confirm-brief).
     const before3 = readBuilds(project.id).length;
     store.patchPoSettings(store.projectOverseerPaths(project.id), { caps: { createPerTurn: 10 } });
-    await asked.execute("t6", { gap: "none", prompt: "Draw it", mode: "normal", minor_modes: ["align", "spec", "vis"], subagent_profile: "off", already_agreed: true }, undefined, undefined, undefined as never).catch(() => {});
+    await asked.execute("t6", { gap: "none", prompt: "Draw it", mode: "normal", minor_modes: ["align", "spec", "vis"], subagent_profile: "openai", already_agreed: true }, undefined, undefined, undefined as never).catch(() => {});
     const named = readBuilds(project.id).slice(before3)[0];
     assert.ok(named?.path, "started");
     assert.deepEqual(modeEntries(named.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["align", "spec", "vis"] });
     const picked = (await acquireChat(named.path)).subagentProfileInfo().current;
-    assert.equal(picked.id, "off", "the profile it named, picked for that session");
+    assert.equal(picked.id, "openai", "the profile it named, picked for that session");
   });
 
   test("an untitled coding session's history headline is never written from its prompt", async () => {

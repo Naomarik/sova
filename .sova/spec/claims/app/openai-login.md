@@ -92,6 +92,22 @@ as the sync's sign-out, §mesh.sync/logins), then "Chats on ChatGPT models stop 
 again. The Codex app's sign-in and other providers' stay.", with **Sign Out of OpenAI**. Nothing
 else changes.
 
+## §app.openai-login/gpt-sol — GPT-6.2 Sol
+
+Sova's model list (`pi-config/models.json`) adds **GPT-6.2 Sol**, `openai-codex/gpt-6.2-sol`, on the
+ChatGPT subscription sign-in: pi's `gpt-6.1-sol` definition (its API, address, output limit, prices
+and reasoning levels, `xhigh` and `max` included, no `off`) with a 1,050,000-token context window
+and image input. It is offered wherever that sign-in's models are, and nowhere without it. The
+entry only adds a model: nothing else in the list changes.
+
+- **Sova's own GPT picks are GPT-6.2 Sol.** Where Sova chooses a GPT model itself: the built-in
+  OpenAI profile (§chat.subagent-profiles/builtins), the default reviewer route
+  (§chat.alignment-review/route), the describers' preferred list (§chat.design-mode/describers) and
+  the design model picker's ranking, where it comes first among the Sols, after GPT-6 Astra
+  (§chat.design-mode/model-picker).
+- **Saved choices stay.** A profile, setting or chat that names `gpt-6.1-sol` keeps it; nothing is
+  moved. pi's own default for the provider, which Sova doesn't override, is still `gpt-6.1-sol`.
+
 ## §app.openai-login/chats — Chats on the new sign-in
 
 A chat that runs OpenAI's ChatGPT models uses the new sign-in from its next message, with no

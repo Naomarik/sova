@@ -113,7 +113,7 @@
   "§chat.alignment-review/route": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "pi-config/extensions/subagents/subagent-profiles.ts",
       "pi-config/extensions/subagents/subagent-profiles.test.ts",
@@ -125,7 +125,12 @@
     "requires": [
       "§chat.subagent-profiles/file",
       "§chat.subagent-profiles/resolution"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+    }
   },
   "§chat.alignment-review/rules": {
     "kind": "behavior",

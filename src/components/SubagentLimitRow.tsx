@@ -71,6 +71,11 @@ export function SubagentLimitRow(props: { path: string; message: string; provide
     const rows = l.joined.map((r) => ({ ...r, setsModel: !!r.session?.model }));
     return limitOffers(rows, p, { key: c ? (rows.find((r) => (c.key ? r.key === c.key : r.id === c.id))?.key ?? null) : null, edited: !!c?.edited });
   });
+  /** The joined key of the profile in effect, for Settings' This chat chip (never an older server's Off). */
+  const chatKey = () => {
+    const c = chat()?.current;
+    return c?.key && c.id !== "off" && c.key !== "sova:default" ? c.key : undefined;
+  };
   /** The model the failed turn ran, by its catalog name; the provider when the server didn't say. */
   const modelName = () => (props.model ? (modelLabel(props.model) ?? props.model) : providerLabel(provider()!));
 
@@ -102,7 +107,7 @@ export function SubagentLimitRow(props: { path: string; message: string; provide
             <Show
               when={offers().length > 0}
               fallback={
-                <button type="button" class="button button-sm" onClick={() => openProfiles({ ...(host() ? {} : { path: props.path }), part: "models" })}>
+                <button type="button" class="button button-sm" onClick={() => openProfiles({ ...(host() ? {} : { path: props.path, ...(chatKey() ? { chat: chatKey()! } : {}) }), part: "models" })}>
                   Manage Profiles
                 </button>
               }

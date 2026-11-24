@@ -496,7 +496,7 @@ rules, loaded beside its team tools; a successor keeps them) and `kind`.
 
 **Work kinds.** `kind` is one of Delegate's four work kinds (`planning`, `investigation`,
 `routine`, `complex`; a kind's label, such as `Routine implementation`, is read as it). Under any
-subagent profile but Off, a member runs, most specific first: on a `model` named for it; else on
+helper profile, a member runs, most specific first: on a `model` named for it; else on
 its kind's model and effort from the chat's profile (`mode-delegate.json` when the library is
 malformed), or the kind's fallback when that can't run (the model settings, the registry, or an
 out-of-usage mark of the last hour); else on `defaults.model` when it is on that backend. A
@@ -504,11 +504,11 @@ member `effort` alone changes only the effort; a member `backend` that contradic
 route is refused; `defaults` takes no `kind`. A member with neither a kind nor a model (nor
 `defaults.model` for its backend) is refused before anything starts, and so is a kind whose
 model and fallback both can't run (the chat asks the user which model to use). The result has
-one line per member naming its kind, model, and whether it is the fallback. Under Off nothing
-routes: `kind` is optional and a member runs on the model named, else the chat's own. The kind is
+one line per member naming its kind, model, and whether it is the fallback. With no helper
+profile (a host's own chats, or `SOVA_NO_HELPER_PROFILE=1`, with no default chosen) nothing routes: `kind` is optional and a member runs on the model named, else the chat's own. The kind is
 saved on the member's record (`kind` in `subagents-team-v1`), so a successor is routed by the
 same kind under the chat's profile at that moment; when that can't run, or the record has no
-kind (named under Off, or saved before kinds), the successor keeps its predecessor's model and
+kind (named with no helper profile, or saved before kinds), the successor keeps its predecessor's model and
 the handover says so. Planning & specs and Investigation members, and every successor of one,
 are told in their prompt not to edit project files. `count`, `fork`, `agentType`,
 `orchestrator` and other unknown settings are refused, naming the setting; a missing role,
@@ -720,8 +720,8 @@ is still processed by the parent if it is alive.
 Sova's Settings and read by `team-defaults.ts` (Node built-ins only, so Sova's server imports
 the same reader, parser and atomic writer). It is re-read at every `team_create` / `team_add`,
 at each roster answer to a coordinator or monitor, at `team_succeed`, and by `/team defaults`
-(which prints what is in effect). Every team gets both roles whatever the settings say: Off, a
-profile with `teams: null`, no file, or a malformed file (every error is listed; unknown keys are
+(which prints what is in effect). Every team gets both roles whatever the settings say: no helper
+profile, a profile with `teams: null`, no file, or a malformed file (every error is listed; unknown keys are
 errors, missing keys take the built-in defaults) run both on the chat's own model and effort, with
 no fallback and the built-in role names, thresholds, check interval, usage pause and retire
 timeout; a malformed file adds a warning line to the result. `coordinator.enabled` and

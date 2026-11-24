@@ -102,7 +102,7 @@
       "§chat.subagent-profiles/file"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/sync/docs.ts",
       "server/sync/profile-merge.ts",
@@ -113,8 +113,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T01:19Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b97414c4"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§mesh/sync": {

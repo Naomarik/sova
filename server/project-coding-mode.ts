@@ -155,15 +155,19 @@ export function profileName(info: Pick<SubagentProfilesInfo, "profiles" | "curre
     `subagent_profile`'s helpers when it named those instead. */
 export function startProfileWords(mode: Pick<ProjectCodingMode, "profile" | "subagentProfile">, named: string | undefined, defaultName: string, helpers?: string | null): string {
   if (mode.profile !== undefined) return `, profile ${named ?? mode.profile}`;
-  return `, profile ${defaultName}${mode.subagentProfile !== undefined ? ` with subagent profile ${helpers ?? mode.subagentProfile}` : ""}`;
+  const sub = mode.subagentProfile !== undefined ? `subagent profile ${helpers ?? mode.subagentProfile}` : "";
+  // No default profile (none chosen, no account connected) or one that can't be read: nothing to name.
+  if (!defaultName) return sub ? `, ${sub}` : "";
+  return `, profile ${defaultName}${sub ? ` with ${sub}` : ""}`;
 }
 
-/** This computer's default profile's name, as a coding session started now is on it ("Off" when it can't be read). */
+/** This computer's default profile's name, as a coding session started now is on it ("" with none, or when it can't
+    be read: never the word "Off"). */
 export function defaultProfileName(): string {
   try {
     return codingDefaultProfile().name;
   } catch {
-    return "Off";
+    return "";
   }
 }
 

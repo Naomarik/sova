@@ -28,8 +28,11 @@ test("the read-only mode line: this computer's default profile, mode words in mo
   const h = codingModeHint({ mode: "delegate", minorModes: ["spec", "vis"], subagents: { id: "house", name: "House" }, profile: { id: "claude", name: "Claude" } });
   assert.equal(h.mode, "delegate · spec · visuals");
   assert.equal(h.before + h.mode + h.after, "Coding sessions start on Claude, in delegate · spec · visuals: this computer's default profile. Make Default in Settings → Profiles changes it.");
-  const off = codingModeHint({ mode: "normal", minorModes: [], subagents: null, profile: { id: "off", name: "Off" } });
-  assert.equal(off.before + off.mode + off.after, "Coding sessions start on Off, in normal: this computer's default mode. Make Default in Settings → Profiles changes it.");
+  // An older server's Off is never named: the line names the default profile instead.
+  for (const now of [{ profile: { id: "off", name: "Off" } }, {}]) {
+    const off = codingModeHint({ mode: "normal", minorModes: [], subagents: null, ...now });
+    assert.equal(off.before + off.mode + off.after, "Coding sessions start on this computer's default profile, in normal. Make Default in Settings → Profiles changes it.");
+  }
   // An older server names no profile: its default helpers stand in.
   const older = codingModeHint({ mode: "normal", minorModes: [], subagents: { id: "house", name: "House" } });
   assert.equal(older.before, "Coding sessions start on House, in ");

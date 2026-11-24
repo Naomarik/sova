@@ -960,7 +960,7 @@
   "§app.overseer/org-project-overseers": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/project-overseer-routes.ts",
       "server/project-overseer.ts",
@@ -986,8 +986,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-27T23:54Z",
-      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§app.overseer/org-projection": {
@@ -1014,7 +1014,7 @@
   "§app.overseer/org-reads": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/overseer-tools.ts",
       "server/overseer-org-view.ts",
@@ -1022,7 +1022,9 @@
       "server/overseer-org-tools.test.ts",
       "server/search-tools-fake.ts",
       "server/org-history-tools.ts",
-      "server/overseer-runtime.test.ts"
+      "server/overseer-runtime.test.ts",
+      "shared/project-overseer.ts",
+      "shared/project-overseer-coding-line.test.ts"
     ],
     "requires": [
       "§app.organizations/org-cards",
@@ -1031,7 +1033,12 @@
       "§app.project-overseer/limits",
       "§app.project-costs/card",
       "§app.project-costs/org-rollup"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+    }
   },
   "§app.overseer/org-tools": {
     "kind": "behavior",
@@ -1581,8 +1588,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T16:22Z",
-      "source": "pi-session:01a1b2f4-86c6-73d4-9fe9-b847b27035f9#950bc2c9"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§app.overseer/transcript-window": {

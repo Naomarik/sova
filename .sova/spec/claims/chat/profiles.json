@@ -18,8 +18,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:59Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/applying": {
@@ -36,7 +36,10 @@
       "server/default-profile.ts",
       "server/joined-profiles.ts",
       "src/components/ProfilePicker.tsx",
-      "shared/profiles.ts"
+      "shared/profiles.ts",
+      "server/session-profile.ts",
+      "server/profile-switch.ts",
+      "server/harness/pi/golden/state/G8-web-session-profile.jsonl"
     ],
     "requires": [
       "§chat.profiles/model",
@@ -44,8 +47,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/default": {
@@ -75,12 +78,17 @@
       "src/components/ModeMenu.tsx",
       "src/lib/profiles.ts",
       "src/lib/api.ts",
-      "server/project-coding-runtime.test.ts"
+      "server/project-coding-runtime.test.ts",
+      "server/default-profile-accounts.test.ts",
+      "shared/profiles.ts",
+      "src/lib/profiles-settings.ts",
+      "src/lib/profiles-settings.test.ts",
+      "src/components/ProfilesSettings.tsx"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T01:20Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b97414c4"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/delivery": {
@@ -106,6 +114,34 @@
       "by": "the user (al_2 go)",
       "at": "2026-11-09T10:27Z",
       "source": "pi-session:01a1bdb7-6cb9-7045-be9f-f2f059380b8e#b9a60247"
+    }
+  },
+  "§chat.profiles/derived-default": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.profiles/default",
+      "§chat.subagent-profiles/builtins"
+    ],
+    "code": [
+      "server/default-profile.ts",
+      "server/default-start.ts",
+      "server/coding-default-profile.ts",
+      "server/session-profile-routes.ts",
+      "pi-config/extensions/subagents/builtin-profiles.ts",
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "server/default-profile-accounts.test.ts",
+      "server/default-start-builtin.test.ts",
+      "server/session-profile-cards.test.ts",
+      "shared/profiles.ts",
+      "src/lib/profiles-settings.ts",
+      "src/lib/profiles-settings.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/edited": {
@@ -180,8 +216,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T01:52Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#6db59de1"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/limits": {
@@ -223,7 +259,7 @@
   "§chat.profiles/model": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/profiles.ts",
       "server/profiles-store.ts",
@@ -240,8 +276,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/older-devices": {
@@ -251,7 +287,7 @@
       "§chat.profiles/default"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/profiles.ts",
       "server/profiles-store.ts",
@@ -262,8 +298,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T01:18Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b97414c4"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/picker": {
@@ -301,8 +337,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/playbook": {
@@ -323,7 +359,7 @@
   "§chat.profiles/profile-name": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/profile-limits.ts",
       "shared/profiles.ts",
@@ -341,14 +377,14 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/projects": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/project-root.ts",
       "server/profile-sources.ts",
@@ -373,9 +409,9 @@
       "§chat.profiles/model"
     ],
     "agreed": {
-      "by": "operator",
-      "at": "2026-11-20T08:13Z",
-      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/session-tools": {
@@ -428,7 +464,7 @@
       "§chat/model-menu"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/chat-manager.ts",
       "server/subagent-profiles.ts",
@@ -456,8 +492,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.profiles/trust": {

@@ -51,7 +51,8 @@ import { projectToolDefinitions, withdrawnDefinition } from "../../pi-config/ext
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../../pi-config/extensions/sandbox/state.ts";
 import { backendsOf, routeAll, routeNotice, routeWriter, slotNotice, usable, type Discovery, type ProfileRoute, type SlotRoute } from "../../pi-config/extensions/mode/routing.ts";
 import { SPEC_WRITER_LABEL, specBackends, specKey } from "../../pi-config/extensions/mode/spec.ts";
-import { OFF_PROFILE_ID, profilesReader, resolveSubagents, type ResolvedSubagents } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
+import { NO_HELPER_PROFILE_FLAG, OFF_PROFILE_ID, pickableHelpers, profilesReader, resolveSubagents, type ResolvedSubagents } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
+import { readConnectedAccounts } from "../../pi-config/extensions/subagents/builtin-profiles.ts";
 import { CensusHook, driftNote, LANDED_FILE_ENV, SpecWriteGuard, writeLanded } from "../../pi-config/extensions/mode/spec-guard.ts";
 import {
   activeOf,
@@ -107,11 +108,17 @@ export const REVIEW_FLAG = "adversarial-review";
 export const VISUALS_FLAG = "align-visuals";
 /** Set by Sova for its own machine-facing chats (the merge thread, its reviewers, the release thread): no reply shape in their mode section. */
 export const REPLY_SHAPE_OFF_FLAG = "reply-shape-off";
+/** Sova's own chats (the merge thread, its reviewers, release chats, the Overseer): no helper profile unless this
+    computer's default file names one, never the built-in fallback the connected accounts give. The subagents
+    extension reads the same flag. */
+export { NO_HELPER_PROFILE_FLAG };
 
 /** A switch's marker, without the snapshot recordSwitch adds (index.ts SwitchMarker). */
 type SwitchMarker = { mode: Mode } | { minor: MinorMode; on: boolean } | { project: string; on: boolean } | { strict: boolean };
 type ModeMarker = SwitchMarker & { active?: ModeActive; head?: MinorMode[]; projectHead?: ProjectModeRef[] };
 
+/** "A", "A and B", "A, B and C". */
+const choiceList = (names: readonly string[]): string => (names.length <= 1 ? (names[0] ?? "none") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
 const refsKey = (refs: readonly ProjectModeRef[]): string => refs.map((ref) => `${ref.id}@${ref.sha}`).join(",");
 
 /** The listing with one mode's fresh read in place of what it had for that id (index.ts withListed). */
@@ -287,7 +294,7 @@ export class ModeEngine {
 
   private subagents(): ResolvedSubagents {
     const s = this.readProfiles();
-    return resolveSubagents(this.opts.agentDir, this.pick, s.profiles, s.default);
+    return resolveSubagents(this.opts.agentDir, this.pick, s.profiles, s.default, this.port.flag(NO_HELPER_PROFILE_FLAG) === true ? null : undefined);
   }
   private readDelegate() {
     return this.subagents().delegate;
@@ -694,7 +701,7 @@ export class ModeEngine {
     ctx.notify(`Strict mode ${strict ? "on" : "off"}${appliedNow ? ` (edit/write ${strict ? "removed from" : "restored to"} the orchestrator)` : ""}`, "info");
   }
 
-  /** `/mode subagents <id|off>` (index.ts setSubagentProfile). */
+  /** `/mode subagents <id|name>` (index.ts setSubagentProfile): a library profile or a built-in one this computer lists. */
   setSubagentProfile(arg: string, ctx: ModeCtx): void {
     this.enter(ctx);
     const { profiles: state } = this.readProfiles();
@@ -703,9 +710,10 @@ export class ModeEngine {
       return;
     }
     const wanted = arg.toLowerCase();
-    const id = wanted === OFF_PROFILE_ID ? OFF_PROFILE_ID : state.value.profiles.find((p) => p.id === arg || p.name.toLowerCase() === wanted)?.id;
+    const choices = pickableHelpers(state.value.profiles, readConnectedAccounts(this.opts.agentDir));
+    const id = wanted === OFF_PROFILE_ID ? undefined : choices.find((p) => p.id === arg || p.name.toLowerCase() === wanted)?.id;
     if (!id) {
-      ctx.notify(`No subagent profile "${arg}". Profiles: off, ${state.value.profiles.map((p) => p.id).join(", ")}`, "warning");
+      ctx.notify(`No profile is named "${arg}"; the profiles here are ${choiceList(choices.map((p) => p.name))}.`, "warning");
       return;
     }
     this.refreshPick(ctx);

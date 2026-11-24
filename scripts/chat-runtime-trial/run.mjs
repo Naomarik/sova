@@ -1973,11 +1973,18 @@ async function t19() {
 // T19n: a monitor's wake_nudge set before the parent's reload fires after it (once). The team gets
 // a coordinator and a monitor from team-defaults.json; the monitor's standing instruction is the
 // nudge; a member keeps working so the nudge is not held.
+/** A helper library of one profile, every kind on the mock, with these team models, made this agent dir's default. */
+function trialLibrary(teams) {
+  const route = { primary: { backend: "pi", model: "trial/m1", effort: "low" }, fallback: null };
+  const profile = { id: "trial", name: "Trial", delegate: { planning: route, investigation: route, routine: route, complex: route }, teams, members: null, specWriter: null };
+  writeFileSync(join(agent, "subagent-profiles.json"), JSON.stringify({ version: 1, profiles: [profile] }, null, 2));
+  writeFileSync(join(agent, "subagent-profiles-default.json"), JSON.stringify({ version: 1, default: "trial" }));
+}
+
 async function t19n() {
-  // A coordinator and a monitor, both pi on the mock. The subagent profile library is seeded from
-  // the legacy files the first time a chat reads it: when it exists (an earlier check made it), its
-  // default profile gets the teams setting; when not (t19n alone), the legacy team-defaults.json
-  // does, and the seed copies it. Both are put back after.
+  // A coordinator and a monitor, both pi on the mock. When the subagent profile library exists (an
+  // earlier check made it), its default profile gets the teams setting; when not (t19n alone), a
+  // library of one profile with it is written and made the default (Sova seeds none). Both are put back after.
   const teams = {
     coordinator: { role: "coordinator", primary: { backend: "pi", model: "trial/m1" }, fallback: null, instructions: "" },
     monitor: { role: "monitor", primary: { backend: "pi", model: "trial/m1" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: false, pausePct: 90, resumeMarginMinutes: 5 }, instructions: '[call wake_nudge {"action":"schedule","delay":"30s","reason":"NUDGE-T19"}]' },
@@ -1991,15 +1998,12 @@ async function t19n() {
     const lib = JSON.parse(before);
     defaultProfile(lib).teams = teams;
     writeFileSync(file, JSON.stringify(lib, null, 2));
-  } else writeFileSync(legacy, JSON.stringify({ version: 1, ...teams }, null, 2));
+  } else trialLibrary(teams);
   const restore = () => {
     if (before !== null) return writeFileSync(file, before);
     rmSync(legacy, { force: true });
-    const lib = readJson(file);
-    if (lib?.profiles?.length) {
-      defaultProfile(lib).teams = null;
-      writeFileSync(file, JSON.stringify(lib, null, 2));
-    }
+    rmSync(file, { force: true });
+    rmSync(join(agent, "subagent-profiles-default.json"), { force: true });
   };
   try {
     const team = { name: "t19n", objective: "trial team", members: [{ role: "worker", model: "trial/m1", prompt: '[call bash {"command":"sleep 75; echo WORKER-T19N"}]' }] };
@@ -3647,7 +3651,7 @@ async function tw6() {
     const lib = JSON.parse(before);
     defaultProfile(lib).teams = teams;
     writeFileSync(file, JSON.stringify(lib, null, 2));
-  } else writeFileSync(legacy, JSON.stringify({ version: 1, ...teams }, null, 2));
+  } else trialLibrary(teams);
   try {
     const team = { name: "tw6", objective: "trial team", members: [{ role: "worker", model: "trial/m1", prompt: "say ok #tw6dev" }] };
     const o = await newChat();
@@ -3671,7 +3675,11 @@ async function tw6() {
     R.check(wakeRecords().length === 0, "tw6: delivered, it left the list");
   } finally {
     if (before !== null) writeFileSync(file, before);
-    else rmSync(legacy, { force: true });
+    else {
+      rmSync(legacy, { force: true });
+      rmSync(file, { force: true });
+      rmSync(join(agent, "subagent-profiles-default.json"), { force: true });
+    }
   }
   await nextServer();
 }

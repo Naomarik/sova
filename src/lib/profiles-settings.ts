@@ -145,14 +145,20 @@ export interface ListRow {
   hidden: boolean;
   /** Not saved yet (a new profile): Hide waits for Save. */
   unsaved: boolean;
+  /** The profile in effect for the chat Settings was opened from: its "This chat" chip. */
+  thisChat: boolean;
   wire?: JoinedRowWire;
 }
 
 /**
  * The list beside the editor: Yours (the draft's, in its order, a new one last), This project, then
- * Built in with Off first. A saved row unchanged in the draft keeps the server's footprint.
+ * Built in (the profiles Sova ships for the accounts connected here). A saved row unchanged in the
+ * draft keeps the server's footprint. `thisChat`: the key of the profile in effect for the chat
+ * (a `library:<id>` key no row has names helpers in effect: the row whose helpers they are, see chatRowKey)
+ * Settings was opened from (none: no chip anywhere).
  */
-export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], saved: ProfilesDraft | null): Record<ListGroup, ListRow[]> {
+export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], saved: ProfilesDraft | null, chatKey: string | null = null): Record<ListGroup, ListRow[]> {
+  const thisChat = chatRowKey(chatKey, wire);
   const byKey = new Map(wire.map((w) => [w.key, w]));
   const savedRow = (key: string) => saved?.rows.find((r) => r.key === key);
   const yours = d.rows.map((r): ListRow => {
@@ -168,6 +174,7 @@ export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], sav
       needsApproval: false,
       hidden: !!w?.hidden,
       unsaved: isNewKey(r.key),
+      thisChat: !!thisChat && thisChat === r.key,
       wire: w,
     };
   });
@@ -180,15 +187,61 @@ export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], sav
     needsApproval: w.approval === "needed",
     hidden: !!w.hidden,
     unsaved: false,
+    thisChat: !!thisChat && thisChat === w.key,
     wire: w,
   });
   const project = wire.filter((w) => w.group === "project").map((w) => fromWire(w, "project"));
-  const off = wire.find((w) => w.kind === "off");
-  const builtin = [
-    off ? fromWire(off, "builtin") : { key: OFF_KEY, name: "Off", footprint: KEEPS_OWN_MODEL, group: "builtin" as const, isDefault: d.default === OFF_KEY, needsApproval: false, hidden: false, unsaved: false },
-    ...wire.filter((w) => w.group === "builtin" && w.kind !== "off").map((w) => fromWire(w, "builtin")),
-  ];
+  // An older server's Off row is never listed: no chat runs on no profile now.
+  const builtin = wire.filter((w) => w.group === "builtin" && w.kind !== "off" && w.key !== OFF_KEY).map((w) => fromWire(w, "builtin"));
   return { yours, project, builtin };
+}
+
+/** The accounts the built-in profiles run on, by the provider their models spend. */
+const BUILTIN_ACCOUNTS: Record<string, string> = { claude: "Claude", "openai-codex": "OpenAI", "ollama-cloud": "Ollama Cloud" };
+
+/** A built-in profile's line in its editor: the account it is for, when its models name one. */
+export function builtInLine(providers: readonly string[]): string {
+  const known = [...new Set(providers.map((p) => BUILTIN_ACCOUNTS[p]).filter((n): n is string => !!n))];
+  return known.length === 1 ? `Built in for your ${known[0]} account. Make It Yours to change it.` : "Built in. Make It Yours to change it.";
+}
+
+/**
+ * The row a chat's profile key names: that key when a row has it; else the row that now takes a
+ * built-in one's place (`replaces`); else, for helpers in effect
+ * (`library:<id>`), the row whose helpers they are — a library-only row, then yours, then a project's
+ * or a built-in one (a copy made with Make It Yours links the built-in's id). Null when none fits.
+ */
+export function chatRowKey(key: string | null, wire: readonly Pick<JoinedRowWire, "key" | "kind" | "group" | "libraryId" | "replaces">[]): string | null {
+  if (!key) return null;
+  if (wire.some((w) => w.key === key)) return key;
+  // A built-in one a profile of yours now takes the place of (Make It Yours, saved since this was read).
+  const taker = wire.find((w) => w.replaces === key);
+  if (taker) return taker.key;
+  if (!key.startsWith("library:")) return null;
+  const lib = key.slice("library:".length);
+  const linking = wire.filter((w) => w.libraryId === lib);
+  return (linking.find((w) => w.kind === "library") ?? linking.find((w) => w.group === "yours") ?? linking[0])?.key ?? null;
+}
+
+/**
+ * Make It Yours (§app.settings-dialog/profiles): an editable copy of a built-in profile under Yours,
+ * both parts, under the built-in's own name, so once saved it takes the built-in's place (a profile
+ * of yours named like a built-in replaces it). Saved with Save Changes, like New Profile. Answers
+ * the new draft and the new row's key; `d` unchanged when one of yours already has that name.
+ */
+export function withMadeYours(d: ProfilesDraft, w: Pick<JoinedRowWire, "name" | "session" | "library">): { draft: ProfilesDraft; key: string | null } {
+  if (d.rows.some((r) => r.name.toLowerCase() === w.name.toLowerCase())) return { draft: d, key: null };
+  return withNewProfile(
+    d,
+    {
+      model: w.session?.model ?? null,
+      thinking: w.session?.thinking ?? null,
+      helpers: w.library ? helpersOf(w.library) : null,
+      starts: w.session ? startsOf(w.session) : null,
+      name: w.name,
+    },
+    null,
+  );
 }
 
 /** The pi provider whose models are Claude Code's (`claude-code-cli/<id>`). */
@@ -278,9 +331,23 @@ export function withDuplicate(d: ProfilesDraft, key: string, fallbackHelpers: He
   return withNewProfile(d, { model: row.model, thinking: row.thinking, helpers: row.lib ? (d.library[row.lib] ?? null) : null, starts: row.starts, name: `${row.name} copy` }, row.lib ? fallbackHelpers : null);
 }
 
-/** Delete: refused for the default; a library half another profile still links stays. */
-export function withDeleted(d: ProfilesDraft, key: string): ProfilesDraft | string {
-  if (d.default === key) return "Make another profile the default first.";
+/**
+ * Why Delete is refused for `key`, or null: the default is refused, unless it is the default only because the accounts
+ * connected here give it (`derivedDefault`: the listing's default key when `fromAccounts`; nobody pressed Make Default,
+ * in the file or in this draft). Deleting that one brings the built-in profile back, as the server allows.
+ */
+export function deleteRefusal(d: ProfilesDraft, key: string, derivedDefault: string | null = null): string | null {
+  return d.default === key && key !== derivedDefault ? "Make another profile the default first." : null;
+}
+
+/** The listing's default key when it is only derived from the connected accounts, else null. */
+export const derivedDefaultOf = (l: { defaultProfile?: { key: string; chosen: boolean; fromAccounts?: true } } | null | undefined): string | null =>
+  l?.defaultProfile && !l.defaultProfile.chosen && l.defaultProfile.fromAccounts ? l.defaultProfile.key : null;
+
+/** Delete: refused for the default (deleteRefusal); a library half another profile still links stays. */
+export function withDeleted(d: ProfilesDraft, key: string, derivedDefault: string | null = null): ProfilesDraft | string {
+  const refused = deleteRefusal(d, key, derivedDefault);
+  if (refused) return refused;
   const next = clone(d);
   const row = next.rows.find((r) => r.key === key);
   next.rows = next.rows.filter((r) => r.key !== key);

@@ -98,10 +98,17 @@ describe("the model", () => {
     assert.equal(lockedReason("web", ["web", "workers"]), null);
   });
 
-  test("Sova ships no listed profile file: only Default (My settings) is built in; its system profiles are never listed", async () => {
+  test("Sova ships no listed profile file: Default and the built-in Claude, DeepSeek and OpenAI profiles are in code; its system profiles are never listed", async () => {
     const src = await profileSources(null);
-    assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default"]);
-    assert.equal(src.builtins[0]!.label, "Off");
+    assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default", "sova:claude", "sova:deepseek", "sova:openai"]);
+    // Each built-in one: the chat's own model and effort and its helpers, changing no tool or power.
+    assert.deepEqual(src.builtins.slice(1).map((p) => [p.label, p.model, p.thinking, p.subagents, p.remove.length + p.grant.length]), [
+      ["Claude", "claude-code-cli/claude-opus-5-5", "medium", "claude", 0],
+      ["DeepSeek", "ollama-cloud/deepseek-v4.1-flash", "high", "deepseek", 0],
+      ["OpenAI", "openai-codex/gpt-6.2-sol", "medium", "openai", 0],
+    ]);
+    // Default (an older page's "My settings" card, the one that names no profile) never says "Off" on the wire.
+    assert.equal(src.builtins[0]!.label, "No profile");
     assert.deepEqual(src.problems, [], "a profiles/ folder with no profile files lists none, and is no problem");
     // The merge queue's thread and reviewer, and the release chat: found only by an explicit Sova pick, never by a bare
     // id, never in a list.
@@ -127,7 +134,7 @@ describe("the model", () => {
     for (const p of [reviewer, mini]) assert.deepEqual(normalizeCaps(p.remove, p.grant), { remove: p.remove, grant: p.grant }, p.id);
     assert.ok(mini.overseerMayStart);
     const src = await profileSources(null, shippedDeps);
-    assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default", "sova:reviewer"]);
+    assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default", "sova:claude", "sova:deepseek", "sova:openai", "sova:reviewer"]);
     assert.deepEqual(src.problems, []);
     // Profile content only (ids, names, text): the file paths are left out, so the checkout's folder
     // name (a worktree "…-merged") can neither trip nor satisfy it.
@@ -282,7 +289,10 @@ describe("the snapshot a session keeps", () => {
     assert.ok(r.ok && r.profile);
     assert.equal(r.ok && r.profile?.label, "Read-only reviewer, edited");
     const fromMine = await resolveChoice({ remove: ["web"], grant: [] });
-    assert.equal(fromMine.ok && fromMine.profile?.label, "Off, edited", "one made from Off");
+    assert.equal(fromMine.ok && fromMine.profile?.label, "This chat's profile, edited", "one made from no card, with no chat to name");
+    assert.equal((await resolveChoice({ remove: ["web"], grant: [] }, null, "Claude")).ok && (await resolveChoice({ remove: ["web"], grant: [] }, null, "Claude") as { profile: { label: string } }).profile.label, "Claude, edited", "named after the chat's profile");
+    const builtin = await resolveChoice({ remove: ["web"], grant: [], from: { source: "sova", id: "openai" } });
+    assert.equal(builtin.ok && builtin.profile?.label, "OpenAI, edited", "one made from a built-in card");
     assert.deepEqual(r.ok && r.profile?.remove, ["workers", "web"]);
     const none = await resolveChoice({ remove: [], grant: [] });
     assert.ok(none.ok && none.profile === null);

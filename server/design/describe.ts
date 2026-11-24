@@ -32,7 +32,7 @@ export const ASSET_REPORT_TOOL = "asset_report";
 export const DESCRIBER_WORKER_KIND = "design-describer";
 
 /** Cheap models that can read pictures, in the order to try them. Any other allowed model that can comes after. */
-const PREFERRED = ["zai/glm-5.3-flash", "deepseek/deepseek-v4.1-flash", "ollama-cloud/deepseek-v4.1-flash", "ollama-cloud/glm-5.3-flash", "claude-code-cli/claude-haiku-5-5", "anthropic/claude-haiku-5-5", "openai-codex/gpt-6.1-sol", "ollama-cloud/kimi-k3"];
+const PREFERRED = ["zai/glm-5.3-flash", "deepseek/deepseek-v4.1-flash", "ollama-cloud/deepseek-v4.1-flash", "ollama-cloud/glm-5.3-flash", "claude-code-cli/claude-haiku-5-5", "anthropic/claude-haiku-5-5", "openai-codex/gpt-6.2-sol", "ollama-cloud/kimi-k3"];
 
 const WORKER_MARK = fileURLToPath(new URL("../../pi-config/extensions/subagents/worker-mark.ts", import.meta.url));
 

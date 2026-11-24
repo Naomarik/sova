@@ -122,12 +122,12 @@
       "sections": {
        "preamble": "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
        "tools": "@fd0a4437da3b242b",
-       "rules": "@fa7fa718e35207bb",
+       "rules": "@2432150a760672fd",
        "docs": "@7ac29a1ce1499f33",
        "cwd": "<cwd>\n<ws:plain>\n</cwd>",
        "mode": "@05f5d52cf27b56d2"
       },
-      "toolsAdded": "@0584f7c50b32b72f"
+      "toolsAdded": "@8dbda54a4e9ae9e5"
      },
      {
       "role": "user",
@@ -181,12 +181,12 @@
      "sections": {
       "preamble": "You are a coding assistant running inside pi, a coding agent harness. Help users inspect files, run commands, and modify code.",
       "tools": "@fd0a4437da3b242b",
-      "rules": "@fa7fa718e35207bb",
+      "rules": "@2432150a760672fd",
       "docs": "@7ac29a1ce1499f33",
       "cwd": "<cwd>\n<ws:plain>\n</cwd>",
       "mode": "@05f5d52cf27b56d2"
      },
-     "toolsAdded": "@5ebd3b7f016d6d7a"
+     "toolsAdded": "@f7e6fcf4e4057908"
     }
    }
   ],
@@ -468,7 +468,7 @@
       "content": "",
       "sections": {
        "tools": "@ba82f93b54aea952",
-       "rules": "@2406478ee99055cc"
+       "rules": "@af3cbff7ae108860"
       }
      },
      {
@@ -518,7 +518,7 @@
      "content": "",
      "sections": {
       "tools": "@ba82f93b54aea952",
-      "rules": "@2406478ee99055cc"
+      "rules": "@af3cbff7ae108860"
      }
     }
    }

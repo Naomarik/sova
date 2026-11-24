@@ -38,7 +38,7 @@ import { LIMIT_RULE } from "../../shared/provider-limits";
 import { Choice, NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { checkedThemeId, droppedNotice, droppedTheme, pickTheme, reconcileTheme, setThemeMode, shownBase, themeMode, type ThemeMode, typography } from "../lib/theme";
-import { openSettings, settingsProject, type SettingsTab } from "../lib/settings-nav";
+import { openSettings, settingsProject, settingsTabRequest, type SettingsTab } from "../lib/settings-nav";
 import { AlignmentSettings } from "./AlignmentSettings";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
 import { limitsDraft, limitsSaveError, limitsSaveResult, limitsSaving, setLimitsDraft, setLimitsSaved } from "../lib/provider-limits-draft";
@@ -112,11 +112,20 @@ type TabId = (typeof TABS)[number]["id"];
  * policy file every session reads — this browser, the TUI, and every subagent — so a switch here
  * is a rule, not a filter. Themes picks what this browser wears; that one is localStorage only.
  */
-export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTab; /** The open session's folder: Profiles lists its project's. */ cwd?: string | null }) {
+export function SettingsDialog(props: {
+  onClose(): void;
+  initialTab?: SettingsTab;
+  /** The open session's folder: Profiles lists its project's. */
+  cwd?: string | null;
+  /** The open session on this computer: Profiles marks its profile This chat. */
+  chatPath?: string | null;
+}) {
   // The tab it opens at (General unless a caller — the mode menu's "Configure Delegate" — asks for
   // another) is also the one `onMount` focuses: the two have to agree, or the dialog opens with
   // focus on a tab that isn't the selected one.
   const [tab, setTab] = createSignal<TabId>(props.initialTab ?? "general");
+  // An openSettings while the dialog is open (Profiles' Open Accounts) moves it to that tab.
+  createEffect(on(settingsTabRequest, (ask) => ask && setTab(ask.tab as TabId), { defer: true }));
 
   /** Close was asked for over unsaved edits on a Save-gated form: the foot asks what to do with them. */
   const [closeHeld, setCloseHeld] = createSignal(false);
@@ -264,7 +273,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
               Models part runs when the tab opens, not with the dialog. */}
           <Show when={tab() === "profiles"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-profiles" aria-labelledby="settings-tab-profiles">
-              <ProfilesSettingsSection cwd={props.cwd ?? null} />
+              <ProfilesSettingsSection cwd={props.cwd ?? null} chatPath={props.chatPath ?? null} />
             </div>
           </Show>
           <Show when={tab() === "overseer"}>

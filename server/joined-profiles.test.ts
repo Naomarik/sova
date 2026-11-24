@@ -1,11 +1,14 @@
-// Run: pnpm test -- server/joined-profiles.test.ts. Pure: the joined list, its footprints, and the
-// default as read from its file or, before one is chosen, from the older default files.
+// Run: pnpm test -- server/joined-profiles.test.ts. Pure: the joined list, its footprints, the built-in
+// profiles and what takes their place, and the default as read from its file or, before one is chosen,
+// from the older default files, else the built-in profile the connected accounts give.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { buildJoined, joinedFootprint, pickJoined } from "./joined-profiles";
 import { defaultAmong, olderDefaultsOf } from "./default-profile";
 import { DEFAULT_LIMITS, DEFAULT_PROFILE, KEEPS_OWN_MODEL, OFF_KEY, type ListedProfile } from "../shared/profiles";
 import type { SubagentProfile } from "../shared/subagent-profiles";
+import { BUILTIN_PROFILE_IDS, type ConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
+import { builtinSessionProfile } from "./profile-sources";
 
 const worker = (model: string, backend: "pi" | "claude-code" = "pi") => ({ backend, model, effort: "high" });
 const lib = (id: string, name: string, model = "openai-codex/gpt-6.1-sol"): SubagentProfile => ({
@@ -26,27 +29,33 @@ const session = (id: string, label: string, extra: Partial<ListedProfile> = {}, 
   source, key: source === "project" ? `project:/p#${id}` : `${source}:${id}`, ...extra,
 });
 const off = { ...DEFAULT_PROFILE, source: "sova" as const, key: OFF_KEY };
+const builtins = BUILTIN_PROFILE_IDS.map((id) => ({ ...builtinSessionProfile(id), source: "sova" as const, key: `sova:${id}` }));
+const ALL: ConnectedAccounts = { claude: true, openai: true, ollamaCloud: true };
 
-function rows(yours: ListedProfile[], library: SubagentProfile[], project: ListedProfile[] = []) {
+function rows(yours: ListedProfile[], library: SubagentProfile[], project: ListedProfile[] = [], connected: ConnectedAccounts = ALL) {
   return buildJoined({
-    sources: { builtins: [off], yours, project: { state: "ok", profiles: project } },
+    // As profile-sources lists them: Default (never a row), then the built-in ones yours don't replace by id.
+    sources: { builtins: [off, ...builtins.filter((b) => !yours.some((y) => y.id === b.id))], yours, project: { state: "ok", profiles: project } },
     library: { state: "ok", file: "/x/subagent-profiles.json", value: { version: 1, profiles: library } },
+    connected,
   });
 }
 
 describe("the joined list", () => {
-  test("a pair is one row; an unlinked library profile and an unlinked session profile are rows of their own; Off is first", () => {
+  test("a pair is one row; an unlinked library profile and an unlinked session profile are rows of their own; there is no Off row", () => {
     const r = rows(
-      [session("claude", "Claude", { model: "claude-code-cli/claude-opus-5-5", subagents: "claude-lib" }), session("plain", "Plain")],
+      [session("work", "Work", { model: "claude-code-cli/claude-opus-5-5", subagents: "claude-lib" }), session("plain", "Plain")],
       [lib("claude-lib", "Claude helpers"), lib("solo", "Solo")],
+      [],
+      { claude: false, openai: false, ollamaCloud: false },
     );
     assert.deepEqual(r.map((x) => [x.key, x.kind, x.name]), [
-      [OFF_KEY, "off", "Off"],
-      ["user:claude", "pair", "Claude"],
       ["user:plain", "session", "Plain"],
       ["library:solo", "library", "Solo"],
+      ["user:work", "pair", "Work"],
     ]);
-    const pair = r[1]!;
+    assert.equal(r.some((x) => x.group === "builtin"), false, "no account connected: no built-in profile");
+    const pair = r[2]!;
     assert.equal(pair.libraryId, "claude-lib");
     assert.equal(pair.library?.name, "Claude helpers");
     assert.equal(pair.helperRoles, 4);
@@ -55,9 +64,48 @@ describe("the joined list", () => {
     // The chat's own model first, Claude by its catalog name, then the helpers' distinct primaries.
     assert.equal(pair.footprint, "Opus 5.5 + gpt-6.1-sol + glm-5.3");
     assert.deepEqual(pair.providers.sort(), ["claude", "openai-codex", "zai"]);
-    assert.equal(r[2]!.footprint, KEEPS_OWN_MODEL, "no models: the chat keeps its own");
-    assert.equal(r[2]!.helperRoles, 0);
-    assert.equal(r[3]!.footprint, "gpt-6.1-sol + glm-5.3", "a library-only row shows its helpers' models");
+    assert.equal(r[0]!.footprint, KEEPS_OWN_MODEL, "no models: the chat keeps its own");
+    assert.equal(r[0]!.helperRoles, 0);
+    assert.equal(r[1]!.footprint, "gpt-6.1-sol + glm-5.3", "a library-only row shows its helpers' models");
+  });
+
+  test("built-in profiles: listed when their account is connected (none when none is), unless a row of yours takes their place", () => {
+    // [connected, yours, library, the built-in rows listed, the rows of yours that take a place]
+    const none: ConnectedAccounts = { claude: false, openai: false, ollamaCloud: false };
+    const cases: [ConnectedAccounts, ListedProfile[], SubagentProfile[], string[], [string, string][]][] = [
+      [none, [], [], [], []],
+      [{ ...none, openai: true }, [], [], ["sova:openai"], []],
+      [{ ...none, ollamaCloud: true }, [], [], ["sova:deepseek"], []],
+      [ALL, [], [], ["sova:claude", "sova:openai", "sova:deepseek"], []],
+      // The seeded starter takes Claude's place, named Claude; a profile named OpenAI takes OpenAI's.
+      [ALL, [], [lib("my-setup", "My setup"), lib("x", "openai")], ["sova:deepseek"], [["library:my-setup", "sova:claude"], ["library:x", "sova:openai"]]],
+      // Make It Yours: the same id, both halves.
+      [ALL, [session("claude", "Claude", { subagents: "claude" })], [lib("claude", "Claude")], ["sova:openai", "sova:deepseek"], [["user:claude", "sova:claude"]]],
+      // This computer: session profiles claude and openai, the starter linked by claude and named "claude".
+      [ALL, [session("claude", "Claude", { subagents: "my-setup" }), session("openai", "OpenAI", { subagents: "openai-gpt" })], [lib("my-setup", "claude"), lib("openai-gpt", "OpenAI GPT")], ["sova:deepseek"], [["user:claude", "sova:claude"], ["user:openai", "sova:openai"]]],
+      // A shadow of an account not connected is listed all the same: it is yours.
+      [none, [], [lib("my-setup", "My setup")], [], [["library:my-setup", "sova:claude"]]],
+    ];
+    for (const [connected, yours, library, listed, replaced] of cases) {
+      const label = `${JSON.stringify(connected)} ${yours.map((y) => y.id)} ${library.map((l) => l.id)}`;
+      const r = rows(yours, library, [], connected);
+      assert.deepEqual(r.filter((x) => x.group === "builtin").map((x) => x.key), listed, label);
+      assert.deepEqual(r.filter((x) => x.replaces).map((x) => [x.key, x.replaces]), replaced, label);
+      assert.equal(r.some((x) => x.kind === "off" || x.key === OFF_KEY), false, label);
+      const names = r.map((x) => x.name.toLowerCase());
+      assert.equal(new Set(names).size, names.length, `${label}: each name once`);
+    }
+    // The seeded starter reads as Claude in both its row and its helper half, and its file isn't touched to do so.
+    const starter = lib("my-setup", "My setup");
+    const r = rows([], [starter]);
+    const row = r.find((x) => x.key === "library:my-setup")!;
+    assert.deepEqual([row.name, row.library?.name], ["Claude", "Claude"]);
+    assert.equal(starter.name, "My setup");
+    // A built-in row has both halves: the chat's own model and its helpers.
+    const claude = rows([], []).find((x) => x.key === "sova:claude")!;
+    assert.equal(claude.session?.model, "claude-code-cli/claude-opus-5-5");
+    assert.equal(claude.library?.delegate.planning.primary.model, "claude-fable-5-2");
+    assert.equal(rows([], []).find((x) => x.key === "sova:openai")!.session?.model, "openai-codex/gpt-6.2-sol");
   });
 
   test("a link to a library profile this device lacks keeps the row, with no helpers and the reason", () => {
@@ -86,8 +134,13 @@ describe("the joined list", () => {
     assert.equal(pickJoined(r, "same")?.name, "Mine");
     assert.equal(pickJoined(r, "solo")?.kind, "library");
     assert.equal(pickJoined(r, "only-p")?.kind, "project");
-    assert.equal(pickJoined(r, "off")?.kind, "off");
+    assert.equal(pickJoined(r, "off"), null, "an older build's Off names no row");
     assert.equal(pickJoined(r, "project:/p#same")?.name, "Theirs");
+    // A built-in profile a row of yours takes the place of finds that row; helpers alone find the row carrying them.
+    const mine = rows([session("claude", "Claude", { subagents: "my-setup" })], [lib("my-setup", "claude")]);
+    assert.equal(pickJoined(mine, "sova:claude")?.key, "user:claude");
+    assert.equal(pickJoined(mine, "library:my-setup")?.key, "user:claude");
+    assert.equal(pickJoined(mine, "sova:openai")?.key, "sova:openai");
   });
 
   test("a model the registry names shows by that name; a Claude model by its catalog name; anything else by its id", () => {
@@ -109,28 +162,34 @@ describe("the default", () => {
     [lib("lib1", "Lib one"), lib("solo", "Solo")],
   );
 
-  test("a chosen default names its row by id; one naming no profile here reads as Off, saying so", () => {
-    assert.equal(defaultAmong(list, { state: "ok", profile: "zeta" }, "off").row.key, "user:zeta");
-    assert.equal(defaultAmong(list, { state: "ok", profile: "off" }, "lib1").row.kind, "off");
+  test("a chosen default names its row by id; Off or one naming no profile here reads as not chosen, saying why", () => {
+    assert.deepEqual([defaultAmong(list, { state: "ok", profile: "zeta" }, null).row.key, defaultAmong(list, { state: "ok", profile: "zeta" }, null).info.chosen], ["user:zeta", true]);
+    const off = defaultAmong(list, { state: "ok", profile: "off" }, "lib1");
+    assert.deepEqual([off.row.key, off.info.chosen, off.info.note], ["user:alpha", false, undefined], "an older build's Off: as if none was chosen");
     const gone = defaultAmong(list, { state: "ok", profile: "nope" }, "lib1");
-    assert.equal(gone.row.kind, "off");
-    assert.match(gone.info.note ?? "", /"nope", isn't a profile here/);
-    assert.equal(gone.info.chosen, true);
+    assert.equal(gone.row.key, "user:alpha");
+    assert.match(gone.info.note ?? "", /"nope", isn't a profile here, so new chats start on Alpha/);
+    assert.equal(gone.info.chosen, false);
   });
 
-  test("not chosen yet: the pair linking the saved default helpers, the first by name; else that library row; else Off", () => {
+  test("not chosen yet: the pair linking the saved default helpers, the first by name; else that library row; else the built-in fallback", () => {
     const d = defaultAmong(list, { state: "absent" }, "lib1");
     assert.deepEqual([d.row.key, d.info.chosen], ["user:alpha", false]);
     assert.equal(defaultAmong(list, { state: "absent" }, "solo").row.key, "library:solo");
-    assert.equal(defaultAmong(list, { state: "absent" }, "off").row.kind, "off");
+    for (const fallback of ["claude", "openai", "deepseek"])
+      assert.equal(defaultAmong(list, { state: "absent" }, fallback, fallback).row.key, `sova:${fallback}`, fallback);
+    // The fallback's place taken by a row of yours: that row.
+    const mine = rows([], [lib("my-setup", "My setup")]);
+    assert.equal(defaultAmong(mine, { state: "absent" }, "claude", "claude").row.key, "library:my-setup");
+    assert.equal(defaultAmong(mine, { state: "absent" }, "claude", "claude").row.name, "Claude");
   });
 
-  test("choosing writes to the older files only what the profile sets", () => {
+  test("choosing writes to the older files only what the profile sets, and never \"off\"", () => {
     assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "alpha")!), { mode: { mode: "delegate" }, model: "openai/gpt-5.5", thinking: "high", subagents: "lib1" });
     assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "bare")!), {}, "a profile with no helpers leaves the default helpers as they stand");
-    assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "offs")!), { subagents: "off" }, "a profile naming Off writes off");
+    assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "offs")!), {}, "an older profile naming Off: no helpers of its own");
     assert.deepEqual(olderDefaultsOf(list.find((r) => r.id === "gone")!), {}, "a link whose half isn't here writes nothing there");
-    assert.deepEqual(olderDefaultsOf(list[0]!), { subagents: "off" }, "Off");
     assert.deepEqual(olderDefaultsOf(list.find((r) => r.key === "library:solo")!), { subagents: "solo" });
+    assert.deepEqual(olderDefaultsOf(list.find((r) => r.key === "sova:openai")!), { model: "openai-codex/gpt-6.2-sol", thinking: "medium", subagents: "openai" });
   });
 });

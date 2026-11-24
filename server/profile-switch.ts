@@ -14,24 +14,21 @@ import { resolveDefaultProfile } from "./default-profile";
 
 export type SwitchAnswer = ({ ok: true } & ProfileSwitchResult) | { ok: false; status: 400 | 404 | 409; error: string; name?: string };
 
-const OFF_TARGET: ProfileSwitchTarget = { id: "off", key: "sova:default", name: "Off", subagents: "off", helpers: 0 };
-
 /**
  * The switch a joined profile makes, for a chat in `cwd`: its This chat model and effort (absent: the chat
  * keeps its own) and its helpers (none of its own: this computer's default profile's), or why it can't be used.
  */
 export async function switchTargetOf(idOrKey: string, cwd: string): Promise<ProfileSwitchTarget | { status: 400 | 404; error: string; name?: string }> {
-  if (idOrKey === "off" || idOrKey === "sova:default") return OFF_TARGET;
-  const row = await findJoined(idOrKey, cwd);
+  // An older page's Off is this computer's default now.
+  const row = idOrKey === "off" || idOrKey === "sova:default" ? (await resolveDefaultProfile(cwd)).row : await findJoined(idOrKey, cwd);
   if (!row) return { status: 404, error: `Unknown profile: ${idOrKey}` };
-  if (row.kind === "off") return OFF_TARGET;
   const name = row.name;
   if (row.approval === "needed") return { status: 400, error: "Approve it in Settings first.", name };
   if (row.linkMissing) return { status: 400, error: row.linkMissing, name };
-  // A profile with no helpers gives the chat this computer's default profile's helpers, pinned ("off" when the
-  // default is Off or links none), as a pick on the empty screen does (§chat.profiles/applying).
+  // A profile with no helpers gives the chat this computer's default profile's helpers, pinned, as a pick on the
+  // empty screen does (§chat.profiles/applying); a default with none leaves the chat's helpers as they are.
   const helpersOf = row.libraryId ? row : (await resolveDefaultProfile(cwd)).row;
-  const subagents = row.libraryId ?? helpersOf.library?.id ?? "off";
+  const subagents = row.libraryId ?? helpersOf.library?.id;
   const { session: starts } = row;
   const model = starts?.model ?? undefined;
   const thinking = starts?.thinking;
@@ -41,8 +38,8 @@ export async function switchTargetOf(idOrKey: string, cwd: string): Promise<Prof
     name,
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
-    subagents,
-    helpers: subagents === "off" ? 0 : helpersOf.helperRoles,
+    ...(subagents ? { subagents } : {}),
+    helpers: subagents ? helpersOf.helperRoles : 0,
   };
 }
 
@@ -79,8 +76,8 @@ export async function switchChatProfile(path: string, idOrKey: unknown): Promise
 }
 
 /**
- * Which joined profile the chat at `path` is on, by key (its switch's hidden entry, else the profile it
- * started with, else its helper pick's library profile, else Off), or null when it can't be opened.
+ * Which joined profile the chat at `path` is on, by key (the full profile it started on or switched to, else
+ * the helpers in effect), or null when it can't be opened.
  */
 export async function chatProfileKey(path: string): Promise<string | null> {
   let chat;

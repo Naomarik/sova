@@ -46,6 +46,8 @@ export type { PiExtensionFactory, PiLoaderOptions, PiModelRuntime, PiToolDefinit
  * - `review`: adversarial review (`adversarial-review`, server/modes/engine.ts REVIEW_FLAG).
  * - `replyShapeOff`: no reply shape in the mode section (`reply-shape-off`, server/modes/engine.ts
  *   REPLY_SHAPE_OFF_FLAG): Sova's own machine-facing chats, the merge thread, its reviewers and the release thread.
+ * - `noHelperProfile`: no built-in helper profile while no default is chosen (`no-helper-profile`, server/modes/engine.ts
+ *   NO_HELPER_PROFILE_FLAG): Sova's own chats (the merge thread, its reviewers, release chats, the Overseer).
  * - `alignVisuals`: the align mode's Visuals as the chat's launch record has them (`align-visuals`, `on` or
  *   `off`, server/modes/engine.ts VISUALS_FLAG); absent, the engine reads mode-align.json.
  * - `link`: this server's bound origin and its per-install token for the `link` extension (`sova-link`,
@@ -61,6 +63,7 @@ export interface OpenFlags {
   review?: boolean;
   alignVisuals?: boolean;
   replyShapeOff?: boolean;
+  noHelperProfile?: boolean;
   link?: { origin: string; token: string; tools: "member" | "legacy" };
   /** The cwd is the home folder standing in for a stored folder that is gone: the sandbox must not
       make it a writable root (§app.shell/missing-folder-home). */
@@ -81,6 +84,7 @@ export function extensionFlagValues(f: OpenFlags): Map<string, boolean | string>
   if (f.review) flags.set("adversarial-review", true);
   if (f.alignVisuals !== undefined) flags.set("align-visuals", f.alignVisuals ? "on" : "off");
   if (f.replyShapeOff) flags.set("reply-shape-off", true);
+  if (f.noHelperProfile) flags.set("no-helper-profile", true);
   if (f.link) {
     flags.set("sova-link", f.link.origin);
     flags.set("sova-link-token", f.link.token);

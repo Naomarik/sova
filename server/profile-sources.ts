@@ -15,6 +15,7 @@ import {
   type ProfileSource,
   type ProfilesListing,
 } from "../shared/profiles";
+import { BUILTIN_CHAT_MODELS, BUILTIN_PROFILE_IDS, BUILTIN_PROFILE_NAMES, type BuiltinProfileId } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import { approvalOf, readTrust } from "./profile-trust";
 import { profilesFile, readProfiles } from "./profiles-store";
 import { projectOf, type ProjectDeps } from "./project-root";
@@ -35,6 +36,34 @@ const SHIPPED_DIR = fileURLToPath(new URL("../profiles/", import.meta.url));
 const SYSTEM_DIR = fileURLToPath(new URL("../profiles/system/", import.meta.url));
 /** Where a project keeps its profiles, relative to its root. */
 export const PROJECT_PROFILES = join(".sova", "profiles");
+
+const BUILTIN_DESCRIPTIONS: Record<BuiltinProfileId, string> = {
+  claude: "Opus 5.5 for the chat, Fable 5.2 for planning and Opus 5.5 for the other helpers.",
+  openai: "GPT-6.2 Sol for the chat and every helper.",
+  deepseek: "DeepSeek V4.1 Flash on Ollama Cloud for the chat and every helper.",
+};
+
+/**
+ * The built-in profiles' session halves (§chat.subagent-profiles/off): the chat's own model and effort and
+ * their helpers (pi-config's builtin-profiles.ts), nothing else. In code, like Default; listed as shipped.
+ */
+export function builtinSessionProfile(id: BuiltinProfileId): Profile {
+  return {
+    id,
+    label: BUILTIN_PROFILE_NAMES[id],
+    icon: "network",
+    description: BUILTIN_DESCRIPTIONS[id],
+    remove: [],
+    grant: [],
+    singleton: false,
+    limits: { ...DEFAULT_PROFILE.limits },
+    model: BUILTIN_CHAT_MODELS[id].model,
+    thinking: BUILTIN_CHAT_MODELS[id].thinking as Profile["thinking"],
+    subagents: id,
+    // It changes no tool or power, so the Overseer may start it as any helpers-only profile.
+    overseerMayStart: true,
+  };
+}
 
 /** Injectable seams; every one has the real default. Tests swap them, callers never pass them. */
 export interface ProfileSourcesDeps extends ProjectDeps {
@@ -108,7 +137,9 @@ export async function profileSources(cwd?: string | null, deps: ProfileSourcesDe
   const yoursFile = deps.yoursFile ?? profilesFile();
   const read = readProfiles(yoursFile);
   const yours = read.ok ? read.file.profiles.map((p) => listed(p, "user", { file: yoursFile })).sort(byLabel) : [];
-  const shipped = await readDir(deps.shippedDir ?? SHIPPED_DIR, "sova");
+  const read2 = await readDir(deps.shippedDir ?? SHIPPED_DIR, "sova");
+  const inCode = BUILTIN_PROFILE_IDS.map((id) => listed(builtinSessionProfile(id), "sova"));
+  const shipped = { profiles: [...inCode, ...read2.profiles.filter((p) => !inCode.some((b) => b.id === p.id))], problems: read2.problems };
   // Yours replace a shipped profile of the same id, as a playbook of yours does.
   const builtins = [listed(DEFAULT_PROFILE, "sova"), ...shipped.profiles.filter((p) => !yours.some((y) => y.id === p.id)).sort(byLabel)];
   const where = await projectOf(cwd, deps);

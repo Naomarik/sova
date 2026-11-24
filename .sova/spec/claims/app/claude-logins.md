@@ -433,7 +433,12 @@ plan, whether it shares an account already here, and **Done**); failed (the reas
 added.", **Close** and **Try Again**). Closing Settings cancels a flow still waiting for its code.
 No Claude login's token or credential is ever shown or sent to the browser.
 Under the logins, one plain line says whether the Claude Code CLI was found
-(§app.claude-logins/cli-status). On macOS a login counts as signed in when its keychain item
+(§app.claude-logins/cli-status). Whether Claude is connected for the built-in Claude profile
+(§chat.subagent-profiles/builtins) is this tab's reading too: Claude Code's own login or any added
+one whose credentials file holds an access token, a file with an empty token being signed out, so a
+computer whose logins all read Not signed in here has no Claude profile. On macOS, with no
+credentials file, the profiles' reader, which never opens the keychain, takes an account in that
+login's `.claude.json` for its keychain item. On macOS a login counts as signed in when its keychain item
 exists (§app.claude-logins/macos-keychain), so **Add a login** finishes there too; and when this
 device's own login can be read neither from its file nor from the keychain, a muted line under
 **This device's own login** says "On macOS, add your Claude login under Settings → Accounts → Claude."

@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 96575,
+      "bytes": 96567,
       "tools": [
         {
           "name": "sova_attention",
@@ -315,7 +315,7 @@
         {
           "name": "sova_list_profiles",
           "label": "List profiles",
-          "description": "List this host's profiles: Off and each profile's id (what `profile` takes), name, footprint (its models), which parts it has, the library id `subagent_profile` takes when it differs, whether it is marked \"The Overseer may start it\", and which is the default. With cwd, a project's own profiles too.",
+          "description": "List this host's profiles: each profile's id (what `profile` takes), name, footprint (its models), which parts it has, the library id `subagent_profile` takes when it differs, whether it is marked \"The Overseer may start it\", and which is the default. With cwd, a project's own profiles too.",
           "parameters": {
             "type": "object",
             "properties": {
@@ -415,7 +415,7 @@
               },
               "subagent_profile": {
                 "type": "string",
-                "description": "Subagent profile id or off, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."
+                "description": "Subagent profile id, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."
               },
               "sandbox": {
                 "type": "string",
@@ -523,11 +523,11 @@
               },
               "profile": {
                 "type": "string",
-                "description": "A profile id or off (sova_list_profiles): switches this chat's whole Models part at once (its own model and effort, its helpers, alignment settings), checked first, all or nothing; mid-reply, when the reply ends. Its tools, powers and modes never change, nor the default. Not with model, thinking or subagent_profile."
+                "description": "A profile id (sova_list_profiles): switches this chat's whole Models part at once (its own model and effort, its helpers, alignment settings), checked first, all or nothing; mid-reply, when the reply ends. Its tools, powers and modes never change, nor the default. Not with model, thinking or subagent_profile."
               },
               "subagent_profile": {
                 "type": "string",
-                "description": "Subagent profile id or off. Changes only this chat's helpers (later work, not running workers), never its own model or the default."
+                "description": "Subagent profile id (sova_list_profiles). Changes only this chat's helpers (later work, not running workers), never its own model or the default."
               },
               "sandbox": {
                 "type": "string",
@@ -2989,7 +2989,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 102360,
+      "bytes": 102352,
       "tools": [
         {
           "name": "sova_attention",
@@ -3303,7 +3303,7 @@
         {
           "name": "sova_list_profiles",
           "label": "List profiles",
-          "description": "List this host's profiles: Off and each profile's id (what `profile` takes), name, footprint (its models), which parts it has, the library id `subagent_profile` takes when it differs, whether it is marked \"The Overseer may start it\", and which is the default. With cwd, a project's own profiles too.",
+          "description": "List this host's profiles: each profile's id (what `profile` takes), name, footprint (its models), which parts it has, the library id `subagent_profile` takes when it differs, whether it is marked \"The Overseer may start it\", and which is the default. With cwd, a project's own profiles too.",
           "parameters": {
             "type": "object",
             "properties": {
@@ -3403,7 +3403,7 @@
               },
               "subagent_profile": {
                 "type": "string",
-                "description": "Subagent profile id or off, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."
+                "description": "Subagent profile id, from sova_list_subagent_profiles. This session only, before its first prompt; never saves a default."
               },
               "sandbox": {
                 "type": "string",
@@ -3511,11 +3511,11 @@
               },
               "profile": {
                 "type": "string",
-                "description": "A profile id or off (sova_list_profiles): switches this chat's whole Models part at once (its own model and effort, its helpers, alignment settings), checked first, all or nothing; mid-reply, when the reply ends. Its tools, powers and modes never change, nor the default. Not with model, thinking or subagent_profile."
+                "description": "A profile id (sova_list_profiles): switches this chat's whole Models part at once (its own model and effort, its helpers, alignment settings), checked first, all or nothing; mid-reply, when the reply ends. Its tools, powers and modes never change, nor the default. Not with model, thinking or subagent_profile."
               },
               "subagent_profile": {
                 "type": "string",
-                "description": "Subagent profile id or off. Changes only this chat's helpers (later work, not running workers), never its own model or the default."
+                "description": "Subagent profile id (sova_list_profiles). Changes only this chat's helpers (later work, not running workers), never its own model or the default."
               },
               "sandbox": {
                 "type": "string",

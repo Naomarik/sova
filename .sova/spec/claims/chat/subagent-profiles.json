@@ -1,4 +1,29 @@
 {
+  "§chat.subagent-profiles/builtins": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.profiles/joined",
+      "§app.claude-logins/accounts-tab"
+    ],
+    "code": [
+      "pi-config/extensions/subagents/builtin-profiles.ts",
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "pi-config/extensions/subagents/subagent-profiles.test.ts",
+      "server/profile-sources.ts",
+      "server/joined-profiles.ts",
+      "server/joined-profiles.test.ts",
+      "server/subagent-profiles.ts",
+      "server/subagent-profiles.test.ts",
+      "server/default-profile-accounts.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-24T13:40Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+    }
+  },
   "§chat.subagent-profiles/editor-rows": {
     "kind": "behavior",
     "requires": [
@@ -14,8 +39,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T22:15Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.subagent-profiles/file": {
@@ -35,14 +60,14 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T02:46Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#95cb1e08"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.subagent-profiles/limit-row": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "verified",
     "code": [
       "src/components/SubagentLimitRow.tsx",
       "src/components/ChatView.tsx",
@@ -59,18 +84,19 @@
       "server/profile-switch.ts",
       "server/profile-switch.integration.test.ts",
       "src/lib/profile-switch.ts",
-      "src/lib/chat-profile-state.ts"
+      "src/lib/chat-profile-state.ts",
+      "src/lib/profile-switch.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.subagent-profiles/menu": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ModeMenu.tsx",
       "src/lib/api.ts",
@@ -82,15 +108,68 @@
       "server/profile-switch.ts",
       "server/profile-editor.ts",
       "server/profile-editor-routes.ts",
-      "src/lib/profile-switch.ts"
+      "src/lib/profile-switch.ts",
+      "src/components/SubagentProfilesSettings.tsx",
+      "src/lib/settings-nav.ts"
     ],
     "requires": [
       "§chat.create-mode/delegate-parity"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+    }
+  },
+  "§chat.subagent-profiles/no-helper-profile": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.subagent-profiles/resolution"
+    ],
+    "code": [
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/mode/prompt.ts",
+      "server/modes/engine.ts",
+      "server/modes/engine-rules.test.ts",
+      "server/harness/pi/modes.ts",
+      "server/harness/pi/open.ts",
+      "server/chat-manager.ts",
+      "server/playbook-runs/env.ts",
+      "server/profile-editor-routes.ts",
+      "src/components/ModeMenu.tsx",
+      "src/lib/profile-switch.ts",
+      "src/components/ProfilePicker.tsx",
+      "src/lib/profiles.ts",
+      "server/default-profile-accounts.test.ts",
+      "server/default-start-builtin.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+    }
+  },
+  "§chat.subagent-profiles/no-seeding": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.subagent-profiles/file"
+    ],
+    "code": [
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "pi-config/extensions/subagents/subagent-profiles.test.ts",
+      "server/subagent-profiles.ts",
+      "server/settings-roundtrip.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.subagent-profiles/off": {
@@ -99,20 +178,29 @@
     "evidence": "verified",
     "code": [
       "pi-config/extensions/subagents/subagent-profiles.ts",
-      "pi-config/extensions/mode/prompt.ts",
-      "pi-config/extensions/subagents/team-defaults.ts",
-      "pi-config/extensions/subagents/teams.ts",
       "src/components/ProfilePicker.tsx",
       "src/components/ProfileGrid.tsx",
       "src/components/ProfilesSettings.tsx",
       "src/lib/profiles.ts",
       "server/session-profile-cards.test.ts",
-      "server/modes/engine-rules.test.ts"
+      "server/modes/engine-rules.test.ts",
+      "pi-config/extensions/subagents/subagent-profiles.test.ts",
+      "pi-config/extensions/subagents/tests/profile-off.ts",
+      "server/joined-profiles.ts",
+      "server/session-profile-routes.ts",
+      "server/profile-switch.ts",
+      "server/overseer-tools.ts",
+      "server/overseer-profiles.ts",
+      "server/overseer-tools.test.ts",
+      "server/modes/engine.ts",
+      "server/subagent-profiles.ts",
+      "server/default-profile.ts",
+      "shared/profiles.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T22:15Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+      "at": "2026-11-24T13:40Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.subagent-profiles/overseer": {
@@ -133,12 +221,14 @@
       "server/project-overseer-tools.test.ts",
       "server/overseer-org-tools.ts",
       "server/chat-manager.ts",
-      "server/default-start.ts"
+      "server/default-start.ts",
+      "server/overseer-tools.test.ts",
+      "server/modes/engine.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-09T00:59Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#b05c9a88"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.subagent-profiles/replaced": {
@@ -187,18 +277,20 @@
       "shared/team-defaults.ts",
       "server/align-settings.ts",
       "pi-config/extensions/mode/align-settings.ts",
-      "server/modes/engine-rules.test.ts"
+      "server/modes/engine-rules.test.ts",
+      "pi-config/extensions/subagents/builtin-profiles.ts",
+      "server/modes/engine.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T22:15Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat.subagent-profiles/settings": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/SubagentProfilesSettings.tsx",
       "src/components/SettingsDialog.tsx",
@@ -222,8 +314,33 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T22:15Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+    }
+  },
+  "§chat.subagent-profiles/shadowing": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.subagent-profiles/builtins"
+    ],
+    "code": [
+      "pi-config/extensions/subagents/builtin-profiles.ts",
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "server/joined-profiles.ts",
+      "server/joined-profiles.test.ts",
+      "server/profile-editor.ts",
+      "server/profile-editor.test.ts",
+      "src/lib/profiles-settings.ts",
+      "src/lib/profiles-settings.test.ts",
+      "src/components/ProfilesSettings.tsx",
+      "server/session-profile-cards.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-24T13:40Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§chat/subagent-profiles": {

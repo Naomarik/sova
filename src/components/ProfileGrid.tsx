@@ -14,8 +14,8 @@ const focusAfterPick = new Map<string, string>();
 const CUSTOM_KEY = "custom";
 
 /**
- * The empty screen's profile cards: one radio group, Off first under no label, a card per
- * profile in the picker's groups, then Custom…. Arrow keys move focus between cards (Home and End
+ * The empty screen's profile cards: one radio group, a card per profile in the picker's groups
+ * (Yours, This project, Built in), then Custom…. Arrow keys move focus between cards (Home and End
  * to the ends); Enter, Space or a click picks. A card that can't be used here is disabled with its
  * reason, and picking it does nothing. A One at a time profile live in another session is a link
  * to that session instead (no radio: Tab reaches it, the arrow keys skip it). A Find a profile
@@ -27,9 +27,9 @@ export function ProfileGrid(props: {
   /** The checked card's key: a profile's, CUSTOM for a board pick. */
   checked: string | null;
   subagents: readonly { id: string; footprint: string; models?: number }[];
-  /** Off's caption ("Keeps the chat's own model"). */
-  mineCaption: CardCaption;
-  /** What Off keeps, in words, added to its accessible name and hover text. */
+  /** The caption of a card drawn under no label (an older server's no-profile card). */
+  mineCaption?: CardCaption;
+  /** What that card keeps, in words, added to its accessible name and hover text. */
   mineKeeps?: string;
   /** This computer's default profile: its card carries a Default chip. */
   isDefault?: (p: ListedProfile) => boolean;
@@ -117,7 +117,7 @@ export function ProfileGrid(props: {
                           key={p.key}
                           icon={profileIconName(p.icon)}
                           label={p.label}
-                          caption={s.id === "mine" && !props.unusable(p) ? props.mineCaption : profileCaptionParts(p, props.subagents, props.unusable(p))}
+                          caption={s.id === "mine" && !props.unusable(p) && props.mineCaption ? props.mineCaption : profileCaptionParts(p, props.subagents, props.unusable(p))}
                           checked={props.checked === p.key}
                           tabbable={tabbable() === p.key}
                           off={!!props.unusable(p)}
@@ -165,7 +165,7 @@ function ProfileTile(props: {
   caption: CardCaption;
   checked: boolean;
   tabbable: boolean;
-  /** Off's "what it keeps": added to the accessible name and the hover text. */
+  /** What a no-profile card keeps: added to the accessible name and the hover text. */
   keeps?: string;
   /** It can't be picked here: its caption says why. */
   off: boolean;
@@ -305,7 +305,7 @@ function CaptionItem(props: { part: CaptionPart }) {
           {(a) => (
             <>
               <Icon name="subagents" small />
-              <span class="caption-word">subagents</span>
+              <span class="caption-word">helpers</span>
               <span>{a().text}</span>
             </>
           )}

@@ -24,8 +24,12 @@ import { appliesAfter, type BranchEntries, chatModeOf, CREATE_NOT_TAKEN, default
 import { loadDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
 import { restorePick, pickEntryFor, shortModel } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { isBuiltinProfileId } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 /** The profile a chat is on when it names none: Off (§chat.subagent-profiles/off). */
-const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "Off" });
+/** No profile to name: a chat whose helpers can't be named (Sova's own chats, which show no picker, or a library that
+    can't be read), or one with no helper profile at all (nothing chosen, no account connected). An older build's Off
+    key and id, and no name: never the word "Off". */
+const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "" });
 import { decodeMemberContext, MEMBER_ENV } from "../pi-config/extensions/subagents/mailbox.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { forgetModelCaches, toContextInfo, workerWindowResolver } from "./models";
@@ -2831,15 +2835,9 @@ class ChatSession {
     if (!this.hasModeOwner()) throw new ModeRefusedError("Modes aren't available in this chat.");
     this.flushDeferredAppends();
     const entry = pickEntryFor(this.extensionBranch(), profile);
-    if (entry) {
-      // Only the helpers move (§chat.subagent-profiles/overseer): a chat that names its profile only by its
-      // helper pick (or by nothing) first records the profile it is on, so the new pick doesn't rename it.
-      if (!this.profileOnBranch()) {
-        const on = this.chatProfileOn();
-        this.harness.state.append(CHAT_PROFILE, { v: 1, id: on.id, ...(on.key ? { key: on.key } : {}), name: on.name });
-      }
-      this.harness.state.append(SUBAGENT_PROFILE, entry.data);
-    }
+    // Only the helpers move (§chat.subagent-profiles/overseer): a chat on a full profile keeps its name; one on
+    // helpers alone is named by the helpers it runs, so its label follows.
+    if (entry) this.harness.state.append(SUBAGENT_PROFILE, entry.data);
     markOwned(this.path);
     return { ...this.subagentProfileInfo(), applies: this.harness.isRunning() ? "after-turn" as const : "now" as const };
   }
@@ -2850,22 +2848,24 @@ class ChatSession {
   private switchOutcome: Pick<ChatProfileState, "applied" | "failed"> = {};
 
   /**
-   * Which joined profile this chat is on: the newest of the switch's hidden entry and the profile entry the
-   * chat started with, else the helper pick's library profile, else Off.
+   * Which joined profile this chat is on: the full profile it started on or switched to (the newer of the switch's
+   * hidden entry and the profile entry it started with), else the helpers in effect: its pick, else this
+   * computer's default. Never Off, except for a chat whose helpers can't be named (no modes here, or a library
+   * that can't be read), which shows no picker.
    */
-  chatProfileOn(): { id: string; key?: string; name: string; model?: string; thinking?: string } {
+  chatProfileOn(): { id: string; key?: string; name: string; model?: string; thinking?: string; libraryId?: string } {
     const named = this.profileOnBranch();
     if (named) return named;
-    const pick = this.subagentPick;
-    if (pick && pick !== "off") {
-      const name = this.subagentProfileInfo().profiles.find((p) => p.id === pick)?.name ?? pick;
-      return { id: pick, key: `library:${pick}`, name };
-    }
-    return OFF_ON;
+    if (!this.hasModeOwner()) return OFF_ON;
+    const info = this.subagentProfileInfo();
+    const id = info.current.id;
+    if (id === null || id === "off") return OFF_ON;
+    const key = isBuiltinProfileId(id) && !info.settings.profiles.some((p) => p.id === id) ? `sova:${id}` : `library:${id}`;
+    return { id, key, name: info.current.name, libraryId: id };
   }
 
-  /** The profile the branch names: the newest of a switch's hidden entry and the profile entry the chat started
-      with (one that picked no profile is Off); undefined when it names none. */
+  /** The full profile the branch names: the newest of a switch's hidden entry and the profile entry the chat started
+      with; undefined when the newest names no full profile (none, a pick of no profile, helpers alone, an older Off). */
   private profileOnBranch(): { id: string; key?: string; name: string; model?: string; thinking?: string } | undefined {
     const view = this.harness.state.branch();
     const named = view.latest(CHAT_PROFILE);
@@ -2876,13 +2876,13 @@ class ChatSession {
     const pos = (r: { id: EntryId | null } | null) => (r?.id ? (at.get(r.id) ?? -1) : -1);
     if (named && (!started || pos(named) >= pos(started))) {
       const d = named.data;
+      if (d.id === "off" || d.key === "sova:default" || d.key?.startsWith("library:")) return undefined;
       return { id: d.id, ...(d.key ? { key: d.key } : {}), name: d.name, ...(d.model ? { model: d.model } : {}), ...(d.thinking ? { thinking: d.thinking } : {}) };
     }
     const p = started!.data.profile;
-    if (!p) return OFF_ON; // a pick of no profile: Off
+    if (!p) return undefined; // a pick of no profile: the helpers in effect name it
     return { id: p.id, key: keyOf(p), name: p.label, ...(p.model ? { model: p.model } : {}), ...(p.thinking ? { thinking: p.thinking } : {}) };
   }
-
 
   /** What the menu, the thread's line and the limit row read (the `chat_profile` message). */
   chatProfileState(): ChatProfileState {
@@ -2897,6 +2897,7 @@ class ChatSession {
         edited: !!on.model && !!model && model !== on.model,
         ...(model ? { model } : {}),
         ...(on.model ? { profileModel: on.model } : {}),
+        ...("libraryId" in on && on.libraryId ? { libraryId: on.libraryId } : {}),
       },
       ...(p ? { pending: { id: p.id, ...(p.key ? { key: p.key } : {}), name: p.name, helpers: p.helpers, setsModel: !!p.model } } : {}),
       ...this.switchOutcome,
@@ -2929,8 +2930,10 @@ class ChatSession {
     if (refused) return { ok: false, status: 409, error: refused };
     if (t.thinking !== undefined && !THINKING_LEVELS.includes(t.thinking)) return { ok: false, status: 400, error: `"${t.thinking}" isn't an effort level.` };
     try {
-      // A profile with no helpers of its own takes the default's: the library must answer for that too.
-      requireSubagentProfile(t.subagents ?? this.subagentProfileInfo().default);
+      // A profile with no helpers of its own takes the default's: the library must answer for that too (with no default
+      // helpers at all, "off", there is none to check).
+      const helpers = t.subagents ?? this.subagentProfileInfo().default;
+      if (helpers !== "off") requireSubagentProfile(helpers);
     } catch (err) {
       return { ok: false, status: 400, error: err instanceof Error ? err.message : String(err) };
     }
@@ -2989,9 +2992,12 @@ class ChatSession {
    * the profile. The model goes first: if pi refuses it, nothing else was written.
    */
   /** The helper pick a switch writes: its own helpers; without any, the default's, pinned only when the chat
-      already has a pick (a pick can't be cleared); a chat with none keeps following the default. */
+      already has a pick (a pick can't be cleared); a chat with none keeps following the default. With no default
+      helpers at all (nothing chosen, no account connected: "off"), nothing to pin. */
   private switchPickOf(t: ProfileSwitchTarget): string | undefined {
-    return t.subagents ?? (this.subagentPick !== undefined ? this.subagentProfileInfo().default : undefined);
+    if (t.subagents) return t.subagents;
+    const def = this.subagentPick !== undefined ? this.subagentProfileInfo().default : undefined;
+    return def === "off" ? undefined : def;
   }
 
   /** The chat's own profile again, unedited, with the helpers it already has: a switch that changes nothing. */
@@ -3000,7 +3006,9 @@ class ChatSession {
     const ref = this.harness.model()?.ref;
     const edited = !!on.model && !!ref && ref !== on.model;
     const pick = this.switchPickOf(t);
-    return on.id === t.id && !edited && (pick === undefined || pick === this.subagentPick);
+    // Helpers it already runs: its own pick, or the default's it follows (pinning them would change nothing now).
+    const samePick = pick === undefined || pick === this.subagentPick || (this.subagentPick === undefined && pick === this.subagentProfileInfo().current.id);
+    return on.id === t.id && !edited && samePick;
   }
 
   private async applyProfileSwitch(t: ProfileSwitchTarget, model: HarnessModel | undefined): Promise<{ ok: true } | { ok: false; status: 409; error: string }> {
@@ -5229,7 +5237,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       // The merge thread (its Sova profile): its sandbox On from its start, at the read-only level (its tools write only
       // in their tmp) and the main checkout it starts in never a writable root; the rest goes through the merge verbs.
       // Sova's own machine-facing chats (the merge thread, its reviewers, the release thread): no reply shape (§chat.mode-menu/reply-shape).
-      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}), ...(sovaNamedKind(snap) ? { replyShapeOff: true } : {}) }),
+      // Those and the special loadouts (the Overseer's own chat): no built-in helper profile while no default is chosen.
+      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}), ...(sovaNamedKind(snap) ? { replyShapeOff: true } : {}), ...(special || sovaNamedKind(snap) ? { noHelperProfile: true } : {}) }),
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),

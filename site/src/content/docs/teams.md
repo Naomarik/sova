@@ -75,7 +75,7 @@ Inboxes are kept on disk with the main chat, so a server restart or a chat reloa
 
 Every team gets a **coordinator**: a member that builds nothing and keeps the team moving. Your
 [profile](/docs/subagent-profiles/)'s **Teams** section chooses its model; where it names
-none (under **Off** too), the coordinator runs on your chat's own model.
+none (the built-in OpenAI profile, for one), the coordinator runs on your chat's own model.
 
 - **It sees the whole team.** It's given every member's assignment, and its roster shows each
   member's state, how full its context is and how many items it has open.

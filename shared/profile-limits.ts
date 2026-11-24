@@ -6,7 +6,7 @@ export const PROFILE_LABEL_RULE: TextRule = { kind: "text", label: "Profile name
 /** What a profile file's read accepts: a session profile an older Sova saved with a longer name (up to 60) still reads. */
 export const PROFILE_READ_RULE: TextRule = { ...PROFILE_LABEL_RULE, max: 60 };
 
-export const PROFILE_NAME_OFF = `Profile name can't be "Off", the built-in profile's.`;
+export const PROFILE_NAME_OFF = `Profile name can't be "Off".`;
 export const PROFILE_NAME_TAKEN = "Another profile has this name.";
 
 /** The name rule of a save or rename: `taken` holds the other profiles' names (any case). */

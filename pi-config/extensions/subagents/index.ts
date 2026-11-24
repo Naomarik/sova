@@ -3628,7 +3628,9 @@ export function registerSubagents(
 				lastOutput: current?.finalOutput() || old?.summary?.lastAssistantText || "",
 			});
 			try {
-				seeded = seedContinuationSession(path.join(agentDir(), "sessions", sessionDirName(dir)), dir, text, CURRENT_SESSION_VERSION);
+				// A helper of a chat with a home continues in that home's sessions/ (Sova sets SOVA_CHAT_HOME), else in pi's folder.
+				const home = process.env.SOVA_CHAT_HOME;
+				seeded = seedContinuationSession(home && path.isAbsolute(home) ? path.join(home, "sessions") : path.join(agentDir(), "sessions", sessionDirName(dir)), dir, text, CURRENT_SESSION_VERSION);
 			} catch (error) {
 				throw new Error(`Cannot resume ${id}: could not write its new session (${error instanceof Error ? error.message : String(error)}).`);
 			}

@@ -909,6 +909,23 @@ async function listHomeSessionFiles(files: string[]): Promise<void> {
   );
 }
 
+/** Told at each full build's walk (server start, a page connecting, the 5-minute sweep): a reader of the homes that
+    re-checks them then (homes that arrived from outside). Each must be quick and never throw. */
+const fullBuildListeners = new Set<() => void>();
+export function onFullListBuild(fn: () => void): () => void {
+  fullBuildListeners.add(fn);
+  return () => fullBuildListeners.delete(fn);
+}
+function fullListBuilt(): void {
+  for (const fn of fullBuildListeners) {
+    try {
+      fn();
+    } catch (err) {
+      console.warn("[sessions] a full-build listener failed:", err instanceof Error ? err.message : err);
+    }
+  }
+}
+
 export async function listSessionFiles(): Promise<string[]> {
   const files: string[] = [];
   let top: Dirent[] = [];
@@ -1917,6 +1934,7 @@ async function buildSessionsNow(track?: { files?: string[]; dirty?: ReadonlySet<
   const stores = storesGeneration();
   const rowSeq = rowChangeSeq();
   const files = track?.files ?? (await listSessionFiles());
+  if (!track?.files) fullListBuilt();
   const resolveWindow = await windowResolver();
   // Every chat's job folder in one pass: the outside stamp compares them, and each built row reads its count.
   const jobs = runningJobCounts(undefined, startedAt);

@@ -3469,9 +3469,13 @@ const wakeBoot = async (idleMs = 4000) => {
 const scheduleNudge = (delay, reason, id) => `[call wake_nudge ${JSON.stringify({ action: "schedule", delay, reason })}]${id ? ` #${id}` : ""}`;
 const fires = (path, id) => entries(path).filter((e) => e.type === "message" && e.message?.role === "user" && JSON.stringify(e.message.content).includes(`[wake_nudge ${id}]`));
 const wakeLog = () => readdirSync(scratch).filter((f) => /^server-\d+\.log$/.test(f)).flatMap((f) => readFileSync(join(scratch, f), "utf8").split("\n")).filter((l) => l.includes("[wake-keeper]"));
+/** Every wake record's file name: the state root's folder, and each home's wakes/ (a homed chat's, §app.chat-homes/layout). */
 const wakeRecords = () => {
-  const dir = join(agent, "sova", "wake-nudges");
-  return existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")) : [];
+  const dirs = [join(agent, "sova", "wake-nudges")];
+  try {
+    for (const h of readdirSync(homesOf(agent))) dirs.push(join(homesOf(agent), h, "wakes"));
+  } catch {}
+  return dirs.flatMap((dir) => (existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".json")) : []));
 };
 /** Set a nudge, close the tab, and wait for the idle stop. Its process, and when the nudge is due. */
 async function nudgeThenShutDown(o, delay, reason) {

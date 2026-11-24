@@ -20,7 +20,7 @@ import type { InflightMarker } from "./chat-runtime/inflight";
 import { joinedText, toHEntry } from "./harness/pi/reader";
 import { createWorkerSession } from "./harness/pi/worker-session";
 import { placedByParent } from "./chat-homes/place";
-import { registerHomeMember, reloadHome, setHelperRecordSource } from "./chat-homes/records";
+import { membersFromRegistry, registerHomeMember, reloadHome, setHelperRecordSource } from "./chat-homes/records";
 import { chatHome, hasHome, homeIdOfPath, homeOfSessionFile, listHomeIds } from "./chat-homes/root";
 import { logAutoResume } from "./overseer-store";
 import { stateRoot } from "./state-root";
@@ -189,6 +189,7 @@ export class WorkerRegistry {
     this.archived = o.archived ?? isArchived;
     this.logResume = o.logResume ?? logAutoResume;
     for (const rec of this.readAll()) this.track(rec);
+    if (this.homes) membersFromRegistry();
     // Clean Up and compression ask the registry, not the disk, whether a helper is still in use.
     if (this.homes) setHelperRecordSource(() => [...this.live.values()].map((l) => l.rec));
   }

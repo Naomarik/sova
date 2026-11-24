@@ -135,12 +135,17 @@ function fresh(s: State): void {
   }
 }
 
-function loadHome(s: State, homeId: string): HomeEntry {
-  // The folder first: a write landing while the files are read shows as a move at the next check.
-  const entry: HomeEntry = { docs: new Map(), base: new Map(), stamp: new Map(), dirStamp: stampOf(chatDir(homeId)) };
-  for (const doc of HOME_DOCS) readInto(entry, homeId, doc);
+function loadHome(s: State, homeId: string, members = true): HomeEntry {
+  // The folder first: a write landing while the files are read shows as a move at the next check. A home with no
+  // chat/ yet (most: its records are made at their first write) costs this one stat.
+  const dirStamp = stampOf(chatDir(homeId));
+  const entry: HomeEntry = { docs: new Map(), base: new Map(), stamp: new Map(), dirStamp };
+  for (const doc of HOME_DOCS) {
+    if (dirStamp) readInto(entry, homeId, doc);
+    else remember(entry, doc, { version: 1, id: homeId }, "");
+  }
   s.homes.set(homeId, entry);
-  listMembers(s, homeId);
+  if (members) listMembers(s, homeId);
   return entry;
 }
 
@@ -156,9 +161,17 @@ function listMembers(s: State, homeId: string): void {
 function loaded(): State {
   const s = state();
   if (s.loaded) return s;
+  // The worker registry listed every home's workers/ at start (membersFromRegistry): not again here.
+  const members = !s.membersLoaded;
   s.loaded = s.membersLoaded = true;
-  for (const id of listHomeIds()) if (!s.homes.has(id)) loadHome(s, id);
+  for (const id of listHomeIds()) if (!s.homes.has(id)) loadHome(s, id, members);
   return s;
+}
+
+/** The worker registry read every home's helpers' records and registered each as its home's member: the members
+    are known without listing the homes again. */
+export function membersFromRegistry(): void {
+  state().membersLoaded = true;
 }
 
 /** Every home's members known, without reading its records (a chat process asks about one id). */

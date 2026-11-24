@@ -246,6 +246,13 @@ export interface CodingModeNow {
 export const codingModeWords = (m: { mode: string; minorModes: string[] }): string =>
   [m.mode, ...m.minorModes.map((x) => (x === "vis" ? "visuals" : x))].join(" · ");
 
+/** The Overseer's line for it: the default profile by name, else the helpers in effect, else the words "this computer's
+    default profile" (an older server's `{id: "off"}` names none of them). */
+export function codingNowLine(now: CodingModeNow): string {
+  const named = now.profile && now.profile.id !== "off" ? now.profile.name : now.subagents && now.subagents.id !== "off" ? now.subagents.name : null;
+  return `A coding session started now is on ${named ?? "this computer's default profile"}, in ${codingModeWords(now)}${named ? " (this computer's default profile)" : ""}`;
+}
+
 export interface ProjectOverseerSettings {
   version: 1;
   /** Always the never-looser level derived from `powers.overseer` (for an older Sova that reads only the level). */

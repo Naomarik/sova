@@ -8,8 +8,10 @@ system's `tar` only). Both act on the install the environment names, as the serv
   names, else `~/.local/state/sova/chats/<12 hex of the state root's hash>`;
 - the older chats' shared folders: `$SOVA_SHARED_BASE` (absolute), else `~/.local/state/sova/shared`.
 
-Stop Sova (and any pi TUI on that agent dir) first: both refuse while a live record names a
-running process.
+Stop Sova, its chat processes (`bun scripts/stop-chats.ts --agent-dir <agent dir>`) and any pi TUI
+on that agent dir first. Both refuse while something positively answers: the server's port, a chat's
+socket, its systemd unit or its pid. A chat record a crash or reboot left behind (none of those
+answer) blocks nothing. `--allow-running` goes ahead anyway; use it only when you are sure nothing runs.
 
 ## Backup
 

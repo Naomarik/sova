@@ -445,15 +445,16 @@ async function restore(from, { dry, log }) {
 
 // ---- main ---------------------------------------------------------------------------------------
 
-export async function rollback({ dryRun = false, noBackup = false, backupOut, fromBackup, env = process.env, log = console.log, hooks } = {}) {
+export async function rollback({ dryRun = false, noBackup = false, allowRunning = false, backupOut, fromBackup, env = process.env, log = console.log, hooks } = {}) {
   const agent = agentDir(env);
   const running = [...liveProcesses(agent).map((r) => `pi (pid ${r.pid})`), ...(await runningSova(agent))];
-  if (running.length) throw new Error(`Still running on ${agent}: ${running.join(", ")}. Stop Sova, then its chats (bun scripts/stop-chats.ts --agent-dir ${agent}), first.`);
+  if (running.length && !allowRunning)
+    throw new Error(`Still running on ${agent}: ${running.join(", ")}. Stop Sova, then its chats (bun scripts/stop-chats.ts --agent-dir ${agent}), first; --allow-running goes ahead anyway, only when you are sure nothing runs.`);
   if (fromBackup) {
     await restore(fromBackup, { dry: dryRun, log });
     return null;
   }
-  if (!dryRun && !noBackup) await backup({ out: backupOut, env, log });
+  if (!dryRun && !noBackup) await backup({ out: backupOut, env, log, allowRunning });
   const state = stateRootOf(agent);
   const homes = homesRoot(agent, env);
   const shared = sharedBase(env);
@@ -472,8 +473,8 @@ export async function rollback({ dryRun = false, noBackup = false, backupOut, fr
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   try {
-    const a = parseArgs(process.argv.slice(2), { "dry-run": "flag", "no-backup": "flag", "backup-out": "value", "from-backup": "value" });
-    const r = await rollback({ dryRun: !!a["dry-run"], noBackup: !!a["no-backup"], backupOut: a["backup-out"], fromBackup: a["from-backup"] });
+    const a = parseArgs(process.argv.slice(2), { "dry-run": "flag", "no-backup": "flag", "allow-running": "flag", "backup-out": "value", "from-backup": "value" });
+    const r = await rollback({ dryRun: !!a["dry-run"], noBackup: !!a["no-backup"], allowRunning: !!a["allow-running"], backupOut: a["backup-out"], fromBackup: a["from-backup"] });
     if (r && r.problems.length) process.exit(2);
   } catch (err) {
     console.error(`rollback: ${err instanceof Error ? err.message : String(err)}`);

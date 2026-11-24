@@ -116,8 +116,8 @@ export async function runningSova(agent) {
   }
   // Chat processes outlive their server: each is recorded in <state>/chats/registry/, naming its socket
   // wherever it is (<state>/chats/s/, or a runtime dir when that path is too long). A record that hasn't
-  // ended counts as running unless its socket is there and refuses: one this process can't see (another
-  // namespace's temp dir) is not proof it stopped.
+  // ended counts as running when something positively answers: its socket, its systemd unit, or its pid.
+  // A record left by a crash or reboot (no socket, no unit, no process) stops nothing.
   const { connect } = await import("node:net");
   const probe = (sock) =>
     new Promise((ok) => {
@@ -146,10 +146,34 @@ export async function runningSova(agent) {
     }
     if (!rec || rec.death || typeof rec.sock !== "string") continue;
     const what = `a chat process (${rec.unit ?? n}, ${rec.sessionPath ?? "?"})`;
-    if (!existsSync(rec.sock)) out.push(`${what}, its socket not visible from here`);
-    else if ((await probe(rec.sock)) === "open") out.push(what);
+    if (existsSync(rec.sock)) {
+      if ((await probe(rec.sock)) === "open") out.push(what);
+      continue;
+    }
+    if (unitActive(rec.unit)) out.push(`${what}, its unit active`);
+    else if (pidAlive(rec.pid)) out.push(`${what}, pid ${rec.pid} alive`);
   }
   return out;
+}
+
+/** Whether a systemd user unit is active (false where there is no systemd, or it says anything else). */
+function unitActive(unit) {
+  if (process.platform !== "linux" || typeof unit !== "string" || !/^[A-Za-z0-9@._:-]+$/.test(unit)) return false;
+  try {
+    return execFileSync("systemctl", ["--user", "is-active", unit], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 }).trim() === "active";
+  } catch {
+    return false; // inactive, unknown or no systemd: it exits non-zero
+  }
+}
+
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === "EPERM";
+  }
 }
 
 export function sha256File(file) {

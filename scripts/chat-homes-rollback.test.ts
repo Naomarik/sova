@@ -40,15 +40,20 @@ test("a rollback cut short after its moves, run again, points the worker records
   assert.ok(!existsSync(join(homes, ".rollback-journal.json")), "the journal is retired");
 });
 
-test("a recorded chat process refuses the rollback wherever its socket is; a dead one doesn't", async () => {
+test("a chat whose record names a live process refuses the rollback; a dead one, or one a reboot left behind, doesn't", async () => {
   const agent = join(scratch, "agent2");
   const env = { PI_CODING_AGENT_DIR: agent, SOVA_CHAT_HOMES: join(scratch, "homes2"), SOVA_SHARED_BASE: join(scratch, "shared2"), HOME: scratch };
+  // Records without a unit: the unit tier runs no systemctl (the unit check is the lab's).
   const reg = join(agent, "sova", "chats", "registry");
   mkdirSync(reg, { recursive: true });
   const rec = join(reg, "c.json");
-  // Its socket under another runtime dir this process can't see: not proof it stopped.
-  writeFileSync(rec, JSON.stringify({ chatId: "c", unit: "sova-chat-x-c", sessionPath: "/s/c.jsonl", sock: join(scratch, "elsewhere", "c.sock") }));
-  await assert.rejects(rollback({ noBackup: true, dryRun: true, env, log: () => {} }), /Still running .*a chat process \(sova-chat-x-c/);
+  // No socket, but its process answers (the runner itself stands in for a live chat process).
+  writeFileSync(rec, JSON.stringify({ chatId: "c", sessionPath: "/s/c.jsonl", pid: process.ppid, sock: join(scratch, "elsewhere", "c.sock") }));
+  await assert.rejects(rollback({ noBackup: true, dryRun: true, env, log: () => {} }), /Still running .*a chat process \(c\.json.*pid \d+ alive.*--allow-running/);
+  await rollback({ noBackup: true, dryRun: true, allowRunning: true, env, log: () => {} });
+  // Left by a reboot: no socket, no unit, no process.
+  writeFileSync(rec, JSON.stringify({ chatId: "c", sessionPath: "/s/c.jsonl", pid: 2147483646, sock: join(scratch, "elsewhere", "c.sock") }));
+  await rollback({ noBackup: true, dryRun: true, env, log: () => {} });
   // One whose process died (its record carries the death) refuses nothing.
   writeFileSync(rec, JSON.stringify({ chatId: "c", unit: "sova-chat-x-c", sessionPath: "/s/c.jsonl", sock: join(scratch, "elsewhere", "c.sock"), death: { at: "x" } }));
   await rollback({ noBackup: true, dryRun: true, env, log: () => {} });

@@ -96,6 +96,7 @@ import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { configureCleanup, worktreesSummary } from "./worktree-cleanup";
+import { compressedGuard } from "./archive-compress/guard";
 import { realRetireDeps, removeFinished, restoreRetired } from "./worktree-retire";
 import { retirementViewOf } from "./worktree-retire-view";
 import { cleanupAnswer, pendingWhileOff, removeGate, summaryWhileOff, viewWhileOff } from "./cleanup-switch";
@@ -329,6 +330,9 @@ export function buildApp(deps: AppDeps) {
     const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
     return incoming && isDirectLocal(incoming) ? next() : gzip(c, next);
   });
+
+  // A compressed chat is never opened or read: a route asked about one answers 409 (§app.session-list/archive-compression).
+  app.use("/api/*", compressedGuard());
 
   app.onError((err, c) => {
     // Sharing is off (§mesh.public/sharing-off): a link store refused before writing anything.

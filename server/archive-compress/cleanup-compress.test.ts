@@ -72,6 +72,11 @@ describe("POST /api/sessions/cleanup with action compress", () => {
     assert.equal(row?.title, `chat ${n}`, "its title as it was");
     const [, again] = await post("/api/sessions/cleanup", { mode: "paths", paths: [path], action: "compress" });
     assert.equal(again.compressedCount, 0, "already compressed: left out");
+    const read = await app.request(`/api/transcript?path=${encodeURIComponent(path)}`);
+    assert.equal(read.status, 409, "a route that would read it");
+    assert.deepEqual(await read.json(), { error: "This chat is compressed, so Sova doesn't open it." });
+    const [unarchive] = await post("/api/sessions/archive", { path, archived: false });
+    assert.equal(unarchive, 409, "no Unarchive");
     const [, del] = await post("/api/sessions/cleanup", { mode: "paths", paths: [path] });
     assert.equal(del.deletedCount, 1, JSON.stringify(del));
     assert.ok(!existsSync(`${path}.gz`));

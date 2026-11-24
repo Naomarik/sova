@@ -28,6 +28,7 @@ import { meshUpgrade } from "./mesh";
 import { EVENTS_PATH } from "../shared/events";
 import { upgradeEventsSocket } from "./events-ws";
 import { type Normalize, piNormalize, SessionTail } from "./watch";
+import { COMPRESSED_REFUSAL, compressedAt } from "./archive-compress/store";
 import { sharedWorkerWindowResolver } from "./models";
 import { contextTally, type Format, type WindowResolver } from "./worker-context";
 import { wireOf } from "./wire-rows";
@@ -641,6 +642,12 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
       return;
     }
     const path = resolveSessionPath(url.searchParams.get("path"));
+    // A compressed chat is never opened (§app.session-list/archive-compression): nothing starts, nothing is read.
+    if (path && compressedAt(path)) {
+      sendJson(ws, route === "/ws/chat" ? { type: "error", code: "internal", message: COMPRESSED_REFUSAL } : { type: "error", message: COMPRESSED_REFUSAL });
+      ws.close(4404, "compressed");
+      return;
+    }
     if (!path || !existsSync(path)) {
       const message = path ? "Session file not found" : "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)";
       sendJson(ws, route === "/ws/chat" ? { type: "error", code: "internal", message } : { type: "error", message });

@@ -5,6 +5,7 @@
 // lifecycle events numbered per runtime; browser frames passed through. Today the chat runs in this
 // process: a call runs the chat's method at once (its guards run at the moment of the call, exactly
 // as a direct call did) and its answer comes back as a reply.
+import { COMPRESSED_REFUSAL, compressedAt } from "./archive-compress/store";
 import type { ProfileSwitchTarget } from "../shared/profile-switch";
 import { createSettingsTool } from "./create-settings-tool";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -466,6 +467,8 @@ export async function acquireChatHandle(path: string, force = false): Promise<Ch
   // The server's router: every chat in a process of its own (it waits for the chat's own take-back,
   // if a previous server left it running).
   if (!router) throw new Error("no chat router: the server hosts no chat in its process");
+  // A compressed chat never starts (§app.session-list/archive-compression): its file is gone, and a start would make an empty one.
+  if (compressedAt(path)) throw new Error(COMPRESSED_REFUSAL);
   return router.acquire(path, force);
 }
 

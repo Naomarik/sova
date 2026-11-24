@@ -4,7 +4,7 @@ import { memoryRowText, sameMemoryChoice } from "../lib/memory-ui";
 import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
 import { ApiError, fetchProfiles, getChatMode, getMode, pickProfile, postMode, putDefaultProfile, saveCurrentProfile, switchProfile, updateProfileFromChat } from "../lib/api";
 import type { ChatProfileState } from "../../shared/protocol";
-import type { JoinedProfile, ProfilesListing } from "../../shared/profiles";
+import { OFF_KEY, type JoinedProfile, type ProfilesListing } from "../../shared/profiles";
 import { defaultLabel, defaultTitle, editedName, menuPick, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, updateOffered } from "../lib/profile-switch";
 import {
   APPROVE_HOOKS_LABEL,
@@ -184,8 +184,14 @@ export function ModeMenu(props: { control: ModeControl }) {
   /** This chat's row in the joined list, once both have arrived. */
   const currentRow = createMemo((): JoinedProfile | undefined => {
     const c = chatProfile()?.current;
-    if (!c) return undefined;
-    return joined().find((r) => (c.key ? r.key === c.key : false)) ?? joined().find((r) => r.id === c.id);
+    if (!c || c.id === "off") return undefined;
+    const lib = c.libraryId;
+    // By key; else the helpers in effect (a library-only row first); else by id.
+    return (
+      joined().find((r) => (c.key ? r.key === c.key : false)) ??
+      (lib ? (joined().find((r) => r.kind === "library" && r.libraryId === lib) ?? joined().find((r) => r.libraryId === lib)) : undefined) ??
+      joined().find((r) => r.id === c.id)
+    );
   });
   const profileName = () => chatProfile()?.current.name ?? "…";
   /** "Claude (edited)" while the chat's model was changed by hand (§chat.profiles/edited). */
@@ -193,8 +199,13 @@ export function ModeMenu(props: { control: ModeControl }) {
   const listed = createMemo(() => pickerRows(joined()));
   const matches = createMemo(() => filterProfiles(listed(), search()));
   const isCurrent = (r: JoinedProfile) => r.key === currentRow()?.key || (!currentRow() && r.id === chatProfile()?.current.id);
-  /** Save Current is for a chat ON something: Off configures nothing. */
+  /** Save Current is for a chat on a profile (an older server's Off names none). */
   const canSaveCurrent = () => !!chatProfile() && chatProfile()!.current.id !== "off";
+  /** The joined key of the profile in effect, when it names one (never an older server's Off). */
+  const inEffectKey = () => {
+    const k = currentRow()?.key ?? chatProfile()?.current.key;
+    return k && k !== OFF_KEY && chatProfile()?.current.id !== "off" ? k : undefined;
+  };
 
   // This chat's own state only: its WS "mode" message, or before it the mode known from the list or
   // this tab's last visit. With neither there is nothing to show: the default in `info()` is not
@@ -300,7 +311,7 @@ export function ModeMenu(props: { control: ModeControl }) {
   const openPicker = () => {
     setPicker(true);
     setSaveName(null);
-    // The current row first (or Off's: the list's own start), never the input: focusing it would
+    // The current row first (else the list's start), never the input: focusing it would
     // raise a phone's keyboard. Typing from a row moves into the input (onKeyDown below).
     const at = Math.max(0, matches().findIndex(isCurrent));
     focusChoice(at);
@@ -529,8 +540,9 @@ export function ModeMenu(props: { control: ModeControl }) {
 
   /** Settings → Profiles on this chat's profile, at its Models part (the spec writer's row for spec). */
   const manageProfiles = (section?: "spec") => {
-    const key = currentRow()?.key ?? chatProfile()?.current.key;
-    openProfiles({ ...(key ? { profile: key } : {}), ...(host() ? {} : { path: props.control.path }), part: "models", ...(section ? { section } : {}) });
+    // The profile whose helpers this chat runs; with none named, Settings finds it from the chat's path.
+    const key = inEffectKey();
+    openProfiles({ ...(key ? { profile: key } : {}), ...(host() ? {} : { path: props.control.path, ...(key ? { chat: key } : {}) }), part: "models", ...(section ? { section } : {}) });
   };
 
   /**
@@ -986,8 +998,8 @@ export function ModeMenu(props: { control: ModeControl }) {
           when={!picker()}
           fallback={
             <>
-              {/* The picker panel (§chat.subagent-profiles/menu): Back, search, Off then your
-                  profiles and this project's, each with its footprint, then Manage and Save Current. */}
+              {/* The picker panel (§chat.subagent-profiles/menu): Back, search, your profiles,
+                  this project's and the built-in ones, each with its footprint, then Manage and Save Current. */}
               <div class="composer-flyout-head">
                 <button type="button" class="button button-sm button-ghost composer-flyout-back" onClick={closePicker}>
                   <Icon name="chevron-left" small />
@@ -1199,6 +1211,7 @@ export function ModeMenu(props: { control: ModeControl }) {
                   {updating() ? "Saving…" : `Update ${profileName()}`}
                 </button>
               </Show>
+              <Show when={canSaveCurrent()}>
               <button
                 type="button"
                 class="button button-ghost button-sm mode-menu-save"
@@ -1211,6 +1224,7 @@ export function ModeMenu(props: { control: ModeControl }) {
                 </Show>
                 {defaultLabel(saveState(), chatProfile() ? profileName() : null)}
               </button>
+              </Show>
             </div>
           </div>
         </Show>

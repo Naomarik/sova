@@ -12,6 +12,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Pulls, TransferError } from "../mesh/links-transfer";
 import { tarMembers } from "../mesh/tar-list";
 import { stateRoot, agentRoot } from "../state-root";
+import { markOwned } from "../write-guard";
 import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
 import { registerArrivedHome } from "../chat-homes/place";
 import { dropStages, git, havesOf, publishTrees, rebuildWorktrees, SnapshotError, type StagedTree } from "./git-snapshot";
@@ -338,6 +339,9 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     const home = chatHome(r.arrivedId);
     const file = await findConversation(home, r.arrivedId);
     if (!file) throw new Error("The arrived chat's conversation isn't in its home.");
+    // This server wrote every conversation of the home (the arrival's relocation): its write guard must not take
+    // them for a foreign process's and refuse the chat's next prompt.
+    for (const n of await readdir(join(home, "sessions")).catch(() => [] as string[])) if (n.endsWith(".jsonl")) markOwned(join(home, "sessions", n));
     updateTransport(tid, { path: file });
     const stopped = [...(body?.stopped?.jobs ?? []), ...(body?.stopped?.copies ?? [])];
     const renamedNotes = (readTransport(tid)?.renamed ?? []).map((x) => ` Its branch was ${x.from} there; that name was taken, so it is ${x.to}.`).join("");

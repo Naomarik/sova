@@ -51,7 +51,9 @@ import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { wireRequestChats } from "./owner-request-chat";
-import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, indexedSessionPaths, lastListedRows, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { hotFolders } from "./session-watch-scope";
+import { viewedIds } from "./seen";
 import { startScheduleKeeper } from "./schedule-routes";
 import { cancelChatWakes, startWakeKeeper } from "./wake-keeper-live";
 import { monitorJobs, startJobKeeper, stopJobsOf, sweepJobs } from "./background-jobs";
@@ -334,6 +336,28 @@ const events = startEvents({
 // changes, an org statechart moves or something the digest lists changes, and pushes the digest
 // and the Overseer's state built from its own list.
 let feedChanged: (() => void) | null = null;
+// §app.session-list/live-watch-scope: the open (a socket on it), held and live-recorded chats'
+// folders, plus every folder with a chat active in the last 7 days by the last listing's rows.
+const activeSessionFolders = (): Set<string> => {
+  const files: string[] = chatHandles().map((c) => c.path);
+  for (const r of readLiveRecords({ includeOwn: true })) files.push(r.sessionFile);
+  const byId = indexedSessionPaths();
+  for (const id of viewedIds()) {
+    const p = byId.get(id);
+    if (p) files.push(p);
+  }
+  return hotFolders({ rows: [], active: files });
+};
+const liveWatchScope = {
+  active: activeSessionFolders,
+  hot: () => {
+    // Nothing listed yet (the first sync, at the feed's start): every folder, as before.
+    if (lastListedRows().size === 0) return null;
+    const hot = hotFolders({ rows: lastListedRows().values(), active: [] });
+    for (const d of activeSessionFolders()) hot.add(d);
+    return hot;
+  },
+};
 onOrgChange(() => feedChanged?.());
 configureSessionFeed({
   // Re-reads only the session files the watch named since the last build (with a full sweep).
@@ -342,7 +366,7 @@ configureSessionFeed({
   watch: (changed) => {
     feedChanged = changed;
     const tracked = trackSessionFiles();
-    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs, checkQueueViews], files: tracked.note });
+    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs, checkQueueViews], files: tracked.note, scope: liveWatchScope });
     const offAttention = onAttentionNotified(changed);
     return () => {
       feedChanged = null;

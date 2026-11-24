@@ -72,6 +72,9 @@ export function trackViewer(id: string, delta: 1 | -1): void {
   markSeen(id);
 }
 
+/** The sessions with a socket open on them now (§app.session-list/live-watch-scope's "open"). */
+export const viewedIds = (): string[] => [...viewing.keys()];
+
 /** A socket is open on it right now: it is in front of the user, so it is seen as of now. */
 export function isViewing(id: string): boolean {
   return (viewing.get(id) ?? 0) > 0;

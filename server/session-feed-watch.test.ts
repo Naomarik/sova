@@ -1,7 +1,7 @@
 // What tells the session feed to compare (§app.decisions/push): file watches over temp folders and
 // a stubbed live-record signature. No server, no ~/.pi.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { type FSWatcher, mkdirSync, mkdtempSync, rmSync, utimesSync, watch, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -136,5 +136,65 @@ describe("watchFeedInputs", () => {
     writeFileSync(join(f.sessionsDir, "--w--", "d.jsonl"), "{}\n");
     await sleep(300);
     assert.equal(n, 1);
+  });
+});
+
+describe("watchFeedInputs with a scope (§app.session-list/live-watch-scope)", () => {
+  test("a cold folder is left unwatched; a hot one, one changed lately and one opened are watched", async () => {
+    const f = fixture();
+    const cold = join(f.sessionsDir, "--cold--");
+    const hot = join(f.sessionsDir, "--hot--");
+    const home = join(f.sessionsDir, "..", "homes", "h1", "sessions");
+    for (const d of [cold, hot, home]) mkdirSync(d, { recursive: true });
+    const old = new Date(Date.now() - 30 * 86_400_000);
+    for (const d of [cold, hot, home, join(f.sessionsDir, "--w--")]) utimesSync(d, old, old);
+    const active = new Set<string>();
+    const heard: string[] = [];
+    const stop = watchFeedInputs(() => {}, {
+      sessionsDir: f.sessionsDir,
+      liveDir: f.liveDir,
+      roots: () => [],
+      liveSignature: () => "same",
+      liveCheckMs: 50,
+      files: (p) => p && heard.push(p),
+      scope: { hot: () => new Set([hot, ...active]), active: () => active, folders: () => [home] },
+    });
+    try {
+      writeFileSync(join(cold, "a.jsonl"), "{}\n");
+      writeFileSync(join(hot, "b.jsonl"), "{}\n");
+      assert.ok(await until(() => heard.some((p) => p.endsWith("b.jsonl"))), "a hot folder is watched");
+      await sleep(200);
+      assert.equal(heard.some((p) => p.endsWith("a.jsonl")), false, "a cold folder is not");
+      writeFileSync(join(home, "c.jsonl"), "{}\n");
+      await sleep(200);
+      assert.equal(heard.some((p) => p.endsWith("c.jsonl")), false, "a cold home is not");
+      active.add(home); // opened: watched at once, not at the next re-sync
+      await sleep(600);
+      writeFileSync(join(home, "d.jsonl"), "{}\n");
+      assert.ok(await until(() => heard.some((p) => p.endsWith("d.jsonl"))), "an opened home is watched");
+    } finally {
+      stop();
+    }
+  });
+
+  test("a watch refused for the system's limit is logged once per sync, naming how many folders went unwatched", () => {
+    const f = fixture();
+    mkdirSync(join(f.sessionsDir, "--x--"));
+    const lines: string[] = [];
+    const limit = Object.assign(new Error("ENOSPC: System limit for number of file watchers reached"), { code: "ENOSPC" });
+    const stop = watchFeedInputs(() => {}, {
+      sessionsDir: f.sessionsDir,
+      liveDir: f.liveDir,
+      roots: () => [],
+      liveSignature: () => "same",
+      log: (l) => lines.push(l),
+      watch: ((dir: string, ...rest: unknown[]) => {
+        if (dir !== f.sessionsDir) throw limit;
+        return (watch as (...a: unknown[]) => FSWatcher)(dir, ...rest);
+      }) as typeof watch,
+    });
+    stop();
+    assert.equal(lines.length, 1);
+    assert.match(lines[0]!, /^Session list: the system's file-watch limit is reached \(ENOSPC: System limit for number of file watchers reached\); 3 folders aren't watched, so their changes reach the list at the next full build\.$/);
   });
 });

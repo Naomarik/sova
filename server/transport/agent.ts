@@ -402,7 +402,7 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     source: req.sourceLabel ?? req.sourcePeer,
     folder: resolve(req.project.path),
     remotes: req.project.remotes,
-    branches: req.worktrees.map((w) => w.branch),
+    branches: req.worktrees.map((w) => w.branch).filter(Boolean),
     checks,
   });
   const made = await deps.startChat({ cwd, title, prompt, model: choice.model, thinking: choice.thinking });

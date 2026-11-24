@@ -65,3 +65,26 @@ test("a moved home's helpers aren't this server's: the registry leaves its recor
   assert.equal(r.has("W-here"), true);
   assert.equal(r.has("W-moved"), false);
 });
+
+test("a chat in a Move's switch, or moved away, starts nowhere here; before the switch, or stopped before the decision, it does", async () => {
+  resetMovedMemo();
+  const { chatHome } = await import("../chat-homes/root");
+  const { startRefusal } = await import("./routes");
+  const { stepDone, updateTransport } = await import("./store");
+  const id = "0199aaaa-0000-7000-8000-00000000000d";
+  const path = `${chatHome(id)}/sessions/2026-01-01T00-00-00-000Z_${id}.jsonl`;
+  createTransport({ tid: "tr_start01", side: "source", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "laptop", peerLabel: "Laptop", path, folder: "~/x", state: "preparing" });
+  assert.equal(startRefusal(path), null, "the team keeps working while that device is prepared");
+  stepDone("tr_start01", "stopped", { state: "packing" });
+  assert.equal(startRefusal(path), "This chat is moving to Laptop. Nothing was sent.");
+  updateTransport("tr_start01", { state: "needs-you" });
+  assert.equal(startRefusal(path), null, "stopped before the decision: it carries on here");
+  updateTransport("tr_start01", { state: "switching", decided: true });
+  assert.match(startRefusal(path) ?? "", /opens there once that finishes/);
+  updateTransport("tr_start01", { state: "needs-you" });
+  assert.match(startRefusal(path) ?? "", /press Retry/, "decided: never here again while it waits");
+  updateTransport("tr_start01", { state: "done" });
+  markMoved(id, { tid: "tr_start01", peer: "laptop", to: "Laptop", at: new Date().toISOString(), arrivedId: id });
+  assert.equal(startRefusal(path), "This chat moved to Laptop; it runs there now.");
+  assert.equal(startRefusal("/elsewhere/sessions/x.jsonl"), null, "a chat outside the homes isn't Transport's");
+});

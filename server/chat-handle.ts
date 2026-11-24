@@ -463,12 +463,19 @@ export type { SessionMarks, SpecialKind } from "./chat-manager";
  * Get (or open) the chat for a session file. Refused (BusyError) when a TUI owns it, or unless
  * `force`, when another process may be writing it; ConfigError when it can't be opened at all.
  */
+let startGuard: ((path: string) => string | null) | null = null;
+/** Transport's say on starting a chat (§app.transport/switch): a Moved chat, or one in a Move's switch, starts nowhere here. */
+export const setChatStartGuard = (fn: ((path: string) => string | null) | null): void => void (startGuard = fn);
+
 export async function acquireChatHandle(path: string, force = false): Promise<ChatHandle> {
   // The server's router: every chat in a process of its own (it waits for the chat's own take-back,
   // if a previous server left it running).
   if (!router) throw new Error("no chat router: the server hosts no chat in its process");
   // A compressed chat never starts (§app.session-list/archive-compression): its file is gone, and a start would make an empty one.
   if (compressedAt(path)) throw new Error(COMPRESSED_REFUSAL);
+  const why = startGuard?.(path);
+  // Read only, as an archived chat is: a pane keeps its rows and is told closed; a request answers 409 with the reason.
+  if (why) throw Object.assign(new ArchivedError(), { message: why });
   return router.acquire(path, force);
 }
 

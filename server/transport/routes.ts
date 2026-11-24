@@ -15,9 +15,9 @@ import { bodyLimit } from "hono/body-limit";
 import { ENTRY_FINAL } from "../../shared/merge-queue";
 import { chatJobs, stopJobsOf } from "../background-jobs";
 import { emitChatNews } from "../chat-home-events";
-import { acquireChatHandle, closeChat } from "../chat-handle";
+import { acquireChatHandle, closeChat, setChatStartGuard } from "../chat-handle";
 import { adoptArrivedHome, forgetWorkerChats, parkWorkerChat, steerWorkerChat, workerMembersOf, workersWorkingOf } from "../chat-host";
-import { chatHome } from "../chat-homes/root";
+import { chatHome, homesRoot } from "../chat-homes/root";
 import { cancelChatWakes } from "../wake-keeper-live";
 import { readBranch } from "../harness/pi/reader";
 import { sessionsChanged } from "../list-generation";
@@ -38,7 +38,7 @@ import { isTransportAgent, needsAnswer, setAfterArrival, setBringHelpersToRest, 
 import { allMoved, markMoved, MOVE_BACK_MS, movedOf, unmarkMoved } from "./moved";
 import { compressFolder, type PackageManifest } from "./package";
 import { cancelTransport, previewTransport, REFUSALS, resumeSources, retryTransport, servedPackage, setSourceDeps, startTransport } from "./source";
-import { listTransports, publicView, readTransport, type TransportRecord, updateTransport } from "./store";
+import { activeTransportOf, listTransports, publicView, readTransport, type TransportRecord, updateTransport } from "./store";
 import { peerPath, PROOF_HEADER, TICKET_HEADER } from "./wire";
 
 const small = bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
@@ -258,7 +258,24 @@ function startBodyRefusal(b: unknown): string | null {
   return null;
 }
 
+/** Why a chat at `path` doesn't start here: it moved away, or a Move's switch has it (from the stop until it opens there,
+    and after the decision even while that waits for a Retry). A chat here again after Move Back starts as before. */
+export function startRefusal(path: string): string | null {
+  const sessions = dirname(path);
+  if (basename(sessions) !== "sessions") return null;
+  const home = dirname(sessions);
+  if (dirname(home) !== homesRoot()) return null;
+  const id = basename(home);
+  const m = movedOf(id);
+  if (m) return `This chat moved to ${m.to}; it runs there now.`;
+  const r = activeTransportOf(id);
+  if (r && r.side === "source" && r.mode === "move" && r.steps.stopped && (r.decided || r.state !== "needs-you"))
+    return r.decided ? `This chat is moving to ${r.peerLabel} and opens there once that finishes: press Retry on its transport if it stopped. Nothing was sent.` : `This chat is moving to ${r.peerLabel}. Nothing was sent.`;
+  return null;
+}
+
 export function mountTransport(app: Hono, mesh: Mesh): void {
+  setChatStartGuard(startRefusal);
   // The page's routes answer this host's own page whether or not the mesh is on (no devices: none to pick).
   const local = (c: Context) => localRequest(c);
 

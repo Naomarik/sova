@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { ASK_KINDS, type AskKind, type DecisionProviderId, type SessionSignals, type SessionSummary, type SignalKind, TURN_OUTCOMES, type TurnCard, type TurnOutcome } from "../shared/protocol";
 import type { Answer } from "./decide";
 import { stateRoot } from "./state-root";
+import { splitOut, withHome } from "./chat-homes/records";
 import { sessionsChanged } from "./list-generation";
 
 /**
@@ -107,8 +108,18 @@ export const signalsFile = () => join(stateRoot(), "signals.json");
 
 const isRec = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
 
-/** Tolerant read: a malformed file or record is dropped, never thrown. */
+/** A chat with a home keeps its entries (its own and its workers') in `<home>/chat/signals.json`
+    (server/chat-homes/records.ts), one field per map of this file. */
+const PARTS = ["sessions", "workers", "stalls"] as const;
+const field = (part: (typeof PARTS)[number]) => `signals.json#${part}`;
+
 function load(file: string): SignalsFile {
+  const data = loadFile(file);
+  return { version: 1, sessions: withHome(data.sessions, "signals", field("sessions")), workers: withHome(data.workers, "signals", field("workers")), stalls: withHome(data.stalls, "signals", field("stalls")) };
+}
+
+/** Tolerant read: a malformed file or record is dropped, never thrown. */
+function loadFile(file: string): SignalsFile {
   try {
     const v = JSON.parse(readFileSync(file, "utf8"));
     if (!isRec(v) || v.version !== 1) return empty();
@@ -152,10 +163,19 @@ export function updateSignals(fn: (data: SignalsFile) => void, file = signalsFil
   const data = load(file);
   fn(data);
   try {
-    mkdirSync(dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(data));
-    renameSync(tmp, file);
+    const out: SignalsFile = empty();
+    let legacyChanged = false;
+    for (const part of PARTS) {
+      const split = splitOut<any>(data[part], "signals", field(part));
+      out[part] = split.legacy;
+      legacyChanged ||= split.legacyChanged;
+    }
+    if (legacyChanged) {
+      mkdirSync(dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(out));
+      renameSync(tmp, file);
+    }
     sessionsChanged();
     cache = { file, at: Date.now(), data };
   } catch (err) {

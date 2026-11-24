@@ -3,7 +3,7 @@ import { dropWakeRecords, cancelWakesBefore } from "../pi-config/extensions/suba
 import { acquireChatHandle, chatHandle, chatsReady } from "./chat-handle";
 import { reopenWorkerChat, wakeOwnerOf, workerChatsOf } from "./chat-host";
 import { getSessionSummary } from "./sessions-index";
-import { LEAD_MS, TICK_MS, wakeDir, WakeKeeper, wakesOn, type WakeWorker } from "./wake-keeper";
+import { LEAD_MS, TICK_MS, wakeDir, wakeDirFor, wakeDirs, WakeKeeper, wakesOn, type WakeWorker } from "./wake-keeper";
 
 const RESUME_WAIT_MS = 20_000;
 const num = (v: string | undefined, fallback: number) => (Number(v) > 0 ? Number(v) : fallback);
@@ -29,6 +29,7 @@ export function startWakeKeeper(env: NodeJS.ProcessEnv = process.env): WakeKeepe
   const dir = wakeDir();
   const keeper = new WakeKeeper({
     dir,
+    dirs: wakeDirs,
     triesFile: join(dir, "keeper", "tries.json"),
     now: Date.now,
     summary: async (path) => {
@@ -54,11 +55,13 @@ export function startWakeKeeper(env: NodeJS.ProcessEnv = process.env): WakeKeepe
 }
 
 /** Chat `sessionId` was archived or deleted: everything it and its workers scheduled is cancelled for good. */
-export function cancelChatWakes(sessionId: string, now = Date.now(), dir = wakeDir(), workers: (id: string) => string[] = workerChatsOf): void {
+export function cancelChatWakes(sessionId: string, now = Date.now(), dir?: string, workers: (id: string) => string[] = workerChatsOf): void {
   try {
     for (const id of [sessionId, ...workers(sessionId)]) {
-      cancelWakesBefore(dir, id, now);
-      dropWakeRecords(dir, id);
+      // A chat with a home keeps its wakes there; its cancel goes beside them, where its process reads it.
+      const at = dir ?? wakeDirFor(id);
+      cancelWakesBefore(at, id, now);
+      dropWakeRecords(at, id);
     }
   } catch (err) {
     console.warn(`[wake-keeper] cancel of ${sessionId} failed: ${err instanceof Error ? err.message : String(err)}`);

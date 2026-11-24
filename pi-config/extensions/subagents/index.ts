@@ -102,7 +102,7 @@ import { RestoredWorker, isRestored } from "./restored.ts";
 import { placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
 import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
-import { chatSharedFolder, SHARED_DIR_ENV, sharedTeamsDir } from "../sandbox/shared-folder.ts";
+import { CHAT_HOME_ENV, chatSharedFolder, SHARED_DIR_ENV, sharedTeamsDir } from "../sandbox/shared-folder.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
 
@@ -3024,7 +3024,13 @@ export function registerSubagents(
 		if (!open && !byMembers && !c.auto) return [];
 		return [`${indent}Inbox: ${open} open · closed by members ${byMembers} · automatically ${c.auto}`];
 	};
-	const sessionMailbox = () => path.join(agentDir(), "sova", "teams", sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey), "mailbox");
+	// A chat with a home (SOVA_CHAT_HOME, set by the server for it and every helper under it) keeps each lead's mailbox in
+	// `<home>/teams/<lead key>/`; an older chat's stays in the agent dir.
+	const sessionMailbox = () => {
+		const key = sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey);
+		const home = process.env[CHAT_HOME_ENV];
+		return home && path.isAbsolute(home) ? path.join(home, "teams", key) : path.join(agentDir(), "sova", "teams", key, "mailbox");
+	};
 	const ensureMailbox = (): string => {
 		if (!mailboxRoot) {
 			// Beside the session's handover notes, and kept: a reattached or resumed member keeps its inbox,

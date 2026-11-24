@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
+import { splitOutSet, withHomeSet } from "./chat-homes/records";
 
 /** The one refusal for anything asked of an archived session (§chat.transcript/instant-open,
     "An archived chat"): a mode, sandbox or profile switch, a worker's resume, a message. */
@@ -11,7 +12,11 @@ export const ARCHIVED_REFUSAL = "That session is archived; unarchive it first.";
     like every agent-dir path: PI_CODING_AGENT_DIR is what the tests move. */
 const archivedFile = () => join(stateRoot(), "archived-sessions.json");
 
-function load(file: string): Set<string> {
+/** A chat with a home keeps its mark in `<home>/chat/meta.json` (server/chat-homes/records.ts). */
+const FIELD = "archived-sessions.json";
+const load = (file: string): Set<string> => withHomeSet(loadFile(file), "meta", FIELD);
+
+function loadFile(file: string): Set<string> {
   try {
     const v = JSON.parse(readFileSync(file, "utf8"));
     return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -65,10 +70,13 @@ export function setArchived(id: string, on: boolean): void {
   const next = load(file);
   if (on) next.add(id);
   else next.delete(id);
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify([...next]));
-  renameSync(tmp, file);
+  const { legacy, legacyChanged } = splitOutSet(next, "meta", FIELD, id);
+  if (legacyChanged) {
+    mkdirSync(dirname(file), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify([...legacy]));
+    renameSync(tmp, file);
+  }
   cache = { file, stamp: stamp(file), checked: Date.now(), ids: next };
   sessionsChanged();
 }

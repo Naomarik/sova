@@ -40,6 +40,7 @@ import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.t
 import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { stateRoot } from "./state-root";
+import { homeDirOf, homeRecordDirs } from "./chat-homes/records";
 import { findExtension, listedExtensions, readExtensionsWithOffers } from "./extensions";
 import { extDrawingDecl } from "./extension-views";
 
@@ -296,7 +297,13 @@ interface SessionRecord {
 
 export const cardsDir = () => join(stateRoot(), "session-cards");
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
-const recordFile = (sessionId: string) => join(cardsDir(), `${sessionId}.json`);
+/** A chat with a home keeps its record in `<home>/chat/cards/<session id>.json`. */
+const recordFile = (sessionId: string) => {
+  const home = homeDirOf(sessionId);
+  return join(home ? join(home, "chat", "cards") : cardsDir(), `${sessionId}.json`);
+};
+/** Every folder that holds records: the server-wide one and each home's. */
+const recordDirs = (): string[] => [cardsDir(), ...homeRecordDirs("cards")];
 const records = new Map<string, { dir: string; rec: SessionRecord | null }>();
 
 function writeAtomic(file: string, data: unknown): void {
@@ -934,11 +941,13 @@ export function openCardsOf(sessionId: string): OpenCard[] {
   const dir = cardsDir();
   if (!openIndex || openIndex.dir !== dir) {
     openIndex = { dir, open: new Map() };
-    let names: string[] = [];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      names = [];
+    const names: string[] = [];
+    for (const d of recordDirs()) {
+      try {
+        names.push(...readdirSync(d));
+      } catch {
+        // none there
+      }
     }
     for (const n of names) {
       if (!n.endsWith(".json")) continue;
@@ -966,11 +975,13 @@ export const cardOwnersChanged = (): void => sessionsChanged();
  * answer it. Scans every record: it happens only when an extension leaves.
  */
 export function closeCardsOfExtension(id: string): void {
-  let names: string[] = [];
-  try {
-    names = readdirSync(cardsDir());
-  } catch {
-    return;
+  const names: string[] = [];
+  for (const d of recordDirs()) {
+    try {
+      names.push(...readdirSync(d));
+    } catch {
+      // none there
+    }
   }
   for (const n of names) {
     if (!n.endsWith(".json")) continue;

@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { checkTmpImage } from "./attachments";
 import { sessionsChanged } from "./list-generation";
+import { splitOut, withHome } from "./chat-homes/records";
 
 /**
  * Persistent composer drafts, keyed by session id (GET/PUT /api/sessions/draft). A draft on a
@@ -81,7 +82,12 @@ function wellFormed(raw: unknown): DraftAttachment[] {
     .map(({ path, name, mimeType, size }) => ({ path, name, mimeType, size }));
 }
 
+/** The drafts of chats with a home are in `<home>/chat/draft.json` (0600; server/chat-homes/records.ts). */
 function load(): Record<string, Draft> {
+  return withHome(loadFile(), "draft", "drafts.json#drafts");
+}
+
+function loadFile(): Record<string, Draft> {
   // No prototype: an id is a file-name fragment, and "__proto__" must stay a plain key.
   const out: Record<string, Draft> = Object.create(null);
   try {
@@ -104,11 +110,14 @@ function load(): Record<string, Draft> {
 let drafts = load();
 
 /** Atomic (tmp + rename), readable only by this account (a draft can hold a typed secret), then the in-memory map is refreshed to what was written. */
-function save(next: Record<string, Draft>): void {
-  mkdirSync(dirname(FILE), { recursive: true });
-  const tmp = `${FILE}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify({ version: 1, drafts: next }), { mode: 0o600 });
-  renameSync(tmp, FILE);
+function save(next: Record<string, Draft>, only?: string): void {
+  const { legacy, legacyChanged } = splitOut(next, "draft", "drafts.json#drafts", { only });
+  if (legacyChanged) {
+    mkdirSync(dirname(FILE), { recursive: true });
+    const tmp = `${FILE}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ version: 1, drafts: legacy }), { mode: 0o600 });
+    renameSync(tmp, FILE);
+  }
   sessionsChanged();
   drafts = next;
 }
@@ -150,7 +159,7 @@ export function setDraft(id: string, text: string, rawAttachments?: unknown, mod
     drafts = next; // absent already: nothing to write
     return;
   }
-  save(next);
+  save(next, id);
 }
 
 /** Messages a chat couldn't take while no tab was left to hear it (§chat.transcript/send-while-starting):

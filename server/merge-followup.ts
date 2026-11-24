@@ -5,6 +5,7 @@ import { type Answer, DecisionError, type DecisionProvider, type JsonObject, typ
 import { maySend } from "./decide-settings";
 import { withoutFooter } from "./attention-signals";
 import { stateRoot } from "./state-root";
+import { splitOut, withHome } from "./chat-homes/records";
 import { withUsageContext } from "../pi-config/extensions/llm-inflight/attribution.ts";
 
 /**
@@ -66,14 +67,18 @@ export const followUpsFile = () => join(stateRoot(), "merge-followups.json");
 /** Store key: one per merge card of one session. */
 export const followUpKey = (sessionId: string, cardId: string) => `${sessionId}:${cardId}`;
 
+/** A chat with a home keeps its cards' follow-ups in `<home>/chat/signals.json` (server/chat-homes/records.ts). */
+const FIELD = "merge-followups.json#cards";
+
 function load(file: string): Store {
+  let cards: Record<string, FollowUpRecord> = {};
   try {
     const v = JSON.parse(readFileSync(file, "utf8")) as { cards?: unknown };
-    if (v && typeof v.cards === "object" && v.cards && !Array.isArray(v.cards)) return { cards: v.cards as Record<string, FollowUpRecord> };
+    if (v && typeof v.cards === "object" && v.cards && !Array.isArray(v.cards)) cards = v.cards as Record<string, FollowUpRecord>;
   } catch {
     // missing or unreadable: empty
   }
-  return { cards: {} };
+  return { cards: withHome(cards, "signals", FIELD) };
 }
 
 let cached: { file: string; store: Store } | null = null;
@@ -82,11 +87,15 @@ function readStore(file = followUpsFile()): Store {
   return cached.store;
 }
 function writeStore(store: Store, file = followUpsFile()): void {
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}`;
-  writeFileSync(tmp, `${JSON.stringify(store, null, 2)}\n`);
-  renameSync(tmp, file);
-  cached = { file, store };
+  const { legacy, legacyChanged } = splitOut(store.cards, "signals", FIELD);
+  if (legacyChanged) {
+    mkdirSync(dirname(file), { recursive: true });
+    const tmp = `${file}.tmp-${process.pid}`;
+    writeFileSync(tmp, `${JSON.stringify({ ...store, cards: legacy }, null, 2)}\n`);
+    renameSync(tmp, file);
+  }
+  // The next write's splitOut compares against what was loaded: keep a fresh merge.
+  cached = { file, store: { ...store, cards: withHome(legacy, "signals", FIELD) } };
 }
 
 /** The pointer older records stored when the reply named no open work: never shown. */

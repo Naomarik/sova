@@ -9,6 +9,7 @@ import type { Answer } from "./decide";
 import { joinedText, lineEntry } from "./harness/pi/reader";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
+import { splitOut, withHome } from "./chat-homes/records";
 
 /**
  * Session tags: the user's own manual tags per session (§app.decisions/session-tags). Automatic
@@ -92,7 +93,21 @@ function cleanRecord(v: unknown): TagRecord | null {
   return out.at !== undefined || out.user ? out : null;
 }
 
+/** A chat with a home keeps its record in `<home>/chat/meta.json` (server/chat-homes/records.ts). */
+const FIELD = "session-tags.json#sessions";
+
 function load(file: string): Store {
+  const store = loadFile(file);
+  const sessions = withHome(store.sessions, "meta", FIELD);
+  for (const [id, r] of Object.entries(sessions)) if (!(id in store.sessions)) {
+    const rec = cleanRecord(r);
+    if (rec) sessions[id] = rec;
+    else delete sessions[id];
+  }
+  return { ...store, sessions };
+}
+
+function loadFile(file: string): Store {
   // No prototype: an id is a plain key, and "__proto__" must stay one.
   const sessions: Record<string, TagRecord> = Object.create(null);
   const store: Store = { sessions };
@@ -123,13 +138,16 @@ function readStore(file = tagsFile()): Store {
 }
 
 /** Re-read, change, write atomically (tmp + rename): another server's ids survive. */
-function update(fn: (s: Store) => boolean, file = tagsFile()): Store {
+function update(fn: (s: Store) => boolean, file = tagsFile(), only?: string): Store {
   const next = load(file);
   if (fn(next)) {
-    mkdirSync(dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ version: 1, ...(next.liveSince !== undefined ? { liveSince: next.liveSince } : {}), sessions: next.sessions }));
-    renameSync(tmp, file);
+    const { legacy, legacyChanged } = splitOut(next.sessions, "meta", FIELD, { only });
+    if (legacyChanged) {
+      mkdirSync(dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify({ version: 1, ...(next.liveSince !== undefined ? { liveSince: next.liveSince } : {}), sessions: legacy }));
+      renameSync(tmp, file);
+    }
     sessionsChanged();
   }
   cache = { file, at: Date.now(), store: next };
@@ -227,7 +245,7 @@ export function setUserTags(id: string, user: string[] | null, path?: string): S
     if (next.at === undefined && !next.user) delete s.sessions[id];
     else s.sessions[id] = next;
     return true;
-  });
+  }, undefined, id);
   const after = wireTags(store.sessions[id]);
   if (!sameTags(before, after)) emit([{ id, ...(path ? { path } : {}), tags: after }]);
   return after;

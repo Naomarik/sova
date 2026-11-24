@@ -2,7 +2,7 @@ import { cardSenderHeaders } from "./extension-sender";
 import { CARD_SENDER_PREFIX } from "../shared/senders";
 import { execFile } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { buildRequest, findCommand } from "../shared/commands-catalog";
 import type { SessionSignals, SessionSummary } from "../shared/protocol";
 import {
@@ -38,6 +38,7 @@ import { recordActed } from "./message-labels";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
+import { homeDirOf, homeRecordDirs } from "./chat-homes/records";
 import { draftProofVia, draftsLeft } from "./spec-drafts-state";
 import { queueTargetOfTree } from "./worktrees";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
@@ -189,13 +190,17 @@ const lastOf = <T>(list: readonly T[], ok: (x: T) => boolean): T | undefined => 
 
 export const offersDir = () => join(stateRoot(), "session-offers");
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
-const recordFile = (sessionId: string) => join(offersDir(), `${sessionId}.json`);
+/** A chat with a home keeps its record in `<home>/chat/offers/<session id>.json`. */
+const recordFile = (sessionId: string) => {
+  const home = homeDirOf(sessionId);
+  return join(home ? join(home, "chat", "offers") : offersDir(), `${sessionId}.json`);
+};
 const countsFile = () => join(offersDir(), "counts.json");
 
 const records = new Map<string, { dir: string; rec: SessionRecord | null }>();
 
 function writeAtomic(file: string, data: unknown): void {
-  mkdirSync(offersDir(), { recursive: true });
+  mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`);
   renameSync(tmp, file);
@@ -938,11 +943,13 @@ export function openOfferOf(sessionId: string): { title: string; at: number } | 
   const dir = offersDir();
   if (!openIndex || openIndex.dir !== dir) {
     openIndex = { dir, open: new Map() };
-    let names: string[] = [];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      names = [];
+    const names: string[] = [];
+    for (const d of [dir, ...homeRecordDirs("offers")]) {
+      try {
+        names.push(...readdirSync(d));
+      } catch {
+        // none there
+      }
     }
     for (const n of names) {
       if (!n.endsWith(".json") || n === "counts.json") continue;

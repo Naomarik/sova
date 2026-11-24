@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { dropWakeRecords, readWakeRecords, WAKE_DIR_NAME, type WakeRecord } from "../pi-config/extensions/subagents/wake-store.ts";
 import { agentRoot, stateRoot } from "./state-root";
+import { homeDirOf } from "./chat-homes/records";
+import { chatHome, listHomeIds } from "./chat-homes/root";
 
 /**
  * The wake keeper (§chat/wake-nudges): brings a shut-down chat back when something in the wake store
@@ -29,6 +31,13 @@ export const MAX_TRIES = 3;
 export const TRY_GAPS_MS = [60_000, 5 * 60_000];
 
 export const wakeDir = () => join(stateRoot(), WAKE_DIR_NAME);
+/** Where one chat's wake records go: `<home>/wakes/` for a chat with a home (and each worker under it), else wakeDir(). */
+export const wakeDirFor = (sessionId: string): string => {
+  const home = homeDirOf(sessionId);
+  return home ? join(home, "wakes") : wakeDir();
+};
+/** Every folder the keeper sweeps: the state root's and each home's. */
+export const wakeDirs = (): string[] => [wakeDir(), ...listHomeIds().map((id) => join(chatHome(id), "wakes"))];
 /** A hermetic server holding copies of real sessions (scripts/hermetic-agent-dir.mjs) keeps no store: nothing of a copied chat may come due. */
 export const wakesOn = () => !existsSync(join(agentRoot(), "copied-sessions.json"));
 
@@ -43,6 +52,8 @@ export interface WakeWorker {
 
 export interface WakeKeeperDeps {
   dir: string;
+  /** Every folder to sweep (default: `dir` alone); a record is dropped from the folder it was read in. */
+  dirs?: () => string[];
   triesFile: string;
   now(): number;
   /** The chat's standing; null when its file is gone. */
@@ -118,7 +129,7 @@ export class WakeKeeper {
 
   private drop(sessionId: string, why: string): void {
     this.d.log(`${sessionId}: dropped (${why})`);
-    dropWakeRecords(this.d.dir, sessionId);
+    dropWakeRecords(this.dirOf.get(sessionId) ?? this.d.dir, sessionId);
     this.forget(sessionId);
   }
 
@@ -128,13 +139,19 @@ export class WakeKeeper {
     this.saveTries();
   }
 
+  /** The folder each chat's records were last read from. */
+  private dirOf = new Map<string, string>();
+
   private async sweep(): Promise<void> {
     const chats = new Map<string, WakeRecord[]>();
-    for (const r of readWakeRecords(this.d.dir)) {
-      const list = chats.get(r.sessionId);
-      if (list) list.push(r);
-      else chats.set(r.sessionId, [r]);
-    }
+    this.dirOf.clear();
+    for (const dir of this.d.dirs?.() ?? [this.d.dir])
+      for (const r of readWakeRecords(dir)) {
+        this.dirOf.set(r.sessionId, dir);
+        const list = chats.get(r.sessionId);
+        if (list) list.push(r);
+        else chats.set(r.sessionId, [r]);
+      }
     for (const id of Object.keys(this.tries)) if (!chats.has(id)) this.forget(id);
     const lead = this.d.leadMs ?? LEAD_MS;
     const earliest = (rs: WakeRecord[]) => Math.min(...rs.flatMap((r) => r.items.map((i) => i.at)));

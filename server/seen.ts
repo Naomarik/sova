@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
+import { splitOut, withHome } from "./chat-homes/records";
 
 /**
  * When the user last had each session in front of them: `<stateRoot>/seen.json`, `{[id]: ms}`.
@@ -17,8 +18,13 @@ import { sessionsChanged } from "./list-generation";
  */
 const seenFile = () => join(stateRoot(), "seen.json");
 
-/** A stamp never goes backwards: a slower writer's older stamp loses to a newer one. */
+/** A stamp never goes backwards: a slower writer's older stamp loses to a newer one. A chat with a home
+    keeps its stamp in `<home>/chat/seen.json` (server/chat-homes/records.ts). */
 function load(file: string): Record<string, number> {
+  return withHome(loadFile(file), "seen", "seen.json");
+}
+
+function loadFile(file: string): Record<string, number> {
   try {
     const v = JSON.parse(readFileSync(file, "utf8"));
     if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
@@ -48,10 +54,13 @@ export function markSeen(id: string, at = Date.now(), file = seenFile()): void {
     const next = load(file);
     if ((next[id] ?? 0) >= at) return;
     next[id] = at;
-    mkdirSync(dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(next));
-    renameSync(tmp, file);
+    const { legacy, legacyChanged } = splitOut(next, "seen", "seen.json", { only: id });
+    if (legacyChanged) {
+      mkdirSync(dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(legacy));
+      renameSync(tmp, file);
+    }
     sessionsChanged();
     cache = { file, at: Date.now(), map: next };
   } catch (err) {

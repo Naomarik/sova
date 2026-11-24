@@ -415,6 +415,7 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     remotes: req.project.remotes,
     branches: req.worktrees.map((w) => w.branch).filter(Boolean),
     checks,
+    sovaFolders: deps.protectedRoots(),
   });
   const made = await deps.startChat({ cwd, title, prompt, model: choice.model, thinking: choice.thinking });
   markAgent(root, made.id, req.tid, deps.now());

@@ -111,6 +111,7 @@ test("nothing missing: ready at once, no agent; something missing: one agent, br
   assert.deepEqual(d.linked, [["agent-1", "sova-laptop", "chat-1"]]);
   assert.deepEqual(d.ended, ["lk_1"], "its link ends once the device is ready: no report bounces between the two chats");
   assert.match(s.prompt, /at most three messages/);
+  assert.ok(s.prompt.includes(`Never write into Sova's own folders (${join(root, "state")})`));
   assert.equal(agentOf(d.deps.stateRoot(), "tr_1")?.state, "ready");
   assert.ok(isTransportAgent(d.deps.stateRoot(), "agent-1"));
 

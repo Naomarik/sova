@@ -1,7 +1,8 @@
 // The live deps of the Transport agent (server/transport/agent.ts) and of Safe Transport
 // (server/transport/safe-transport.ts): this server's routes, chats, workers, models, project
 // doctor and mesh links, and the set transport-core registers with its hooks (transportHelpers).
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { delimiter, join } from "node:path";
 import type { Hono } from "hono";
@@ -14,14 +15,31 @@ import { bringHelpersToRest, busyOf, type HelperView, interruptWaiting, type Saf
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** Where a user's own installs put programs the server's PATH may lack (version managers, toolchains). */
-const USER_BINS = [".local/bin", ".local/share/mise/shims", ".cargo/bin", ".bun/bin", "go/bin", ".volta/bin", ".asdf/shims"];
+/** Where a user's own installs put programs the server's PATH may lack (version managers, toolchains,
+    user gems: `*` is each version folder there). */
+const USER_BINS = [".local/bin", ".local/share/mise/shims", ".cargo/bin", ".bun/bin", "go/bin", ".volta/bin", ".asdf/shims", ".local/share/gem/ruby/*/bin", ".gem/ruby/*/bin"];
 const SYSTEM_BINS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
 
-/** Whether `program` is on this server's PATH or in one of the user's usual install folders. */
+function expand(home: string, d: string): string[] {
+  const i = d.indexOf("*");
+  if (i < 0) return [join(home, d)];
+  const parent = join(home, d.slice(0, i));
+  try {
+    return readdirSync(parent).map((v) => join(parent, v, d.slice(i + 2)));
+  } catch {
+    return [];
+  }
+}
+
+/** Whether `program` is reachable for the user's commands here: on this server's PATH, in one of the
+    user's usual install folders, or found by the user's login shell (a PATH their profile sets). */
 export function whichProgram(program: string, env: NodeJS.ProcessEnv = process.env, home = homedir()): boolean {
-  const dirs = [...(env.PATH ?? "").split(delimiter), ...USER_BINS.map((d) => join(home, d)), ...SYSTEM_BINS].filter(Boolean);
-  return dirs.some((d) => existsSync(join(d, program)));
+  if (!/^[\w.+-]+$/.test(program)) return false;
+  const dirs = [...(env.PATH ?? "").split(delimiter), ...USER_BINS.flatMap((d) => expand(home, d)), ...SYSTEM_BINS].filter(Boolean);
+  if (dirs.some((d) => existsSync(join(d, program)))) return true;
+  const shell = env.SHELL && /\/(ba|z)sh$/.test(env.SHELL) ? env.SHELL : "/bin/bash";
+  const r = spawnSync(shell, ["-lc", 'command -v -- "$0"', program], { env: { ...env, HOME: home }, timeout: 5_000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  return r.status === 0 && r.stdout.trim().length > 0;
 }
 
 /** The Transport agent's live deps; `app` makes its chat through the same route a page's New Session does. */

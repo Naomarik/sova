@@ -14,6 +14,8 @@ export interface BriefFacts {
   /** The branches that arrive with the chat (Sova places their worktrees). */
   branches: string[];
   checks: AgentCheck[];
+  /** Sova's own folders on this device (state root, agent dir, chat homes): never written. */
+  sovaFolders?: string[];
 }
 
 const line = (c: AgentCheck) => `- ${c.id}: ${c.detail}`;
@@ -42,6 +44,9 @@ export function agentBrief(f: BriefFacts): string {
     "",
     "## What you ask first",
     "Ask the user (with align, then end your turn) before anything that needs admin rights (sudo, system packages, system services), anything that costs money, a secret you can't find (never invent one; ask where it is), and deleting or overwriting anything already on this device (a folder at that path, a database, a config file). Never commit, push, merge or switch branches.",
+    ...(f.sovaFolders?.length
+      ? ["", `Never write into Sova's own folders (${f.sovaFolders.join(", ")}): to put a tool on the PATH, use the user's own bin folder or shell profile, never Sova's.`]
+      : []),
     "",
     "## Reporting",
     `You are linked to the chat on ${f.source}. Send it at most three messages with link_send: one when you start, one when you have to ask the user something, and one when you are done (what you installed and changed, and anything it should know here). Never answer a message from it that only acknowledges, thanks or repeats: act on one only when it asks you something or tells you something about getting this device ready, and then answer once. When everything above is fixed, end your turn: Sova runs the checks again, ends the link, and carries the transport on by itself. If something is still missing, the transport waits as Needs you until you or the user fix it.`,

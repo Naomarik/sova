@@ -26,6 +26,8 @@ Writes `<out>/<timestamp>/` (default `$XDG_STATE_HOME/sova/backups`, else
 |---|---|
 | `agent.tar.gz` | the whole agent dir: every conversation, Sova's state and settings, logins (live records left out) |
 | `homes.tar.gz` | every chat home, compressed ones included (when there are homes) |
+| `homes-superseded.tar.gz` | `<homes>.superseded/`: the compressed safety copies a chat coming home replaced (when there are any) |
+| `homes-incoming.tar.gz` | `<homes>.incoming/`: a Transport's staging (when there is any) |
 | `shared.tar.gz` | the older chats' shared folders (when there are any) |
 | `backup.json` | where each came from, its sha256, size and entry count, the Sova commit and branch, counts of conversations, homes and compressed chats |
 
@@ -67,6 +69,9 @@ paths of everything the first run moved too, then retires the journal.
 `--dry-run` says what it would do and changes nothing. A problem (a compressed file that is missing
 or doesn't match) is printed as `PROBLEM:`, that chat is left as it was, and the exit code is 2.
 
+The default rollback leaves `<homes>.superseded/` and `<homes>.incoming/` where they are: master
+reads neither, and they stay for the record.
+
 Then run master's code: `git -C <checkout> switch master` (or your install's update) and restart Sova.
 
 ### Back to a backup exactly
@@ -76,7 +81,8 @@ node scripts/chat-homes/rollback.mjs --from-backup <backup folder>
 ```
 
 Checks every archive against backup.json, moves what is there now aside to
-`<path>.before-restore-<timestamp>` (the agent dir, the homes, the shared folders), and unpacks the
+`<path>.before-restore-<timestamp>` (the agent dir, the homes and their `.superseded` and `.incoming`
+siblings, the shared folders), and unpacks the
 backup in their place. Chats made since the backup are in the moved-aside folders.
 
 ## What it does not cover

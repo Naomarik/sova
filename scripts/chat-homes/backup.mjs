@@ -4,6 +4,7 @@
 // Writes <out>/<timestamp>/ (default $XDG_STATE_HOME/sova/backups, else ~/.local/state/sova/backups):
 //   agent.tar.gz   the agent dir (conversations, Sova's state, settings, logins), live records left out
 //   homes.tar.gz   the chat homes, compressed ones included (when there are any)
+//   homes-superseded.tar.gz, homes-incoming.tar.gz   <homes>.superseded and <homes>.incoming (when there)
 //   shared.tar.gz  the older chats' shared folders (when there are any)
 //   backup.json    where each came from, its sha256 and size, the Sova commit, and counts
 // Every archive is listed back after writing. Refuses while a pi or Sova process runs on the agent dir
@@ -57,6 +58,9 @@ export async function backup({ out, allowRunning = false, env = process.env, log
   };
   await pack("agent.tar.gz", agent, [`${basename(agent)}/sessions/live`]);
   await pack("homes.tar.gz", homes);
+  // Siblings of the homes root a Transport keeps: a coming-home chat's superseded safety copies, and staging.
+  await pack("homes-superseded.tar.gz", `${homes}.superseded`);
+  await pack("homes-incoming.tar.gz", `${homes}.incoming`);
   await pack("shared.tar.gz", shared);
   const manifest = {
     v: 1,
@@ -64,6 +68,8 @@ export async function backup({ out, allowRunning = false, env = process.env, log
     agentDir: agent,
     stateRoot: stateRootOf(agent),
     homesRoot: homes,
+    homesSuperseded: `${homes}.superseded`,
+    homesIncoming: `${homes}.incoming`,
     sharedBase: shared,
     sova: checkoutInfo(here),
     counts: {

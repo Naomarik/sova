@@ -425,7 +425,7 @@ async function restore(from, { dry, log }) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   // Each place the backup knew: restored from its part, or, when it had none (nothing there then),
   // whatever is there now is moved aside, so the install is exactly as backed up.
-  const places = [manifest.agentDir, manifest.homesRoot, manifest.sharedBase].filter(Boolean);
+  const places = [manifest.agentDir, manifest.homesRoot, manifest.homesSuperseded, manifest.homesIncoming, manifest.sharedBase].filter(Boolean);
   for (const target of places) {
     const p = manifest.parts.find((x) => x.from === target);
     if (dry) {

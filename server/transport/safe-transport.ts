@@ -73,6 +73,7 @@ export function wrapUpTargets(helpers: readonly HelperView[]): { helper: HelperV
   return [...out.values()];
 }
 
+/** Each list names helpers by their own chat's session id, which the move keeps (a worker id is only its parent's). */
 export interface RestResult {
   /** The helpers stopped mid-turn (Interrupt and Move): they arrive marked Interrupted and are told to continue. */
   interrupted: string[];
@@ -136,18 +137,18 @@ export async function bringHelpersToRest(
       if (w.interrupt) {
         interruptSince ??= now();
         // An abort that never settles doesn't hold the Move for ever: who still works is said.
-        if (now() - interruptSince > INTERRUPT_SETTLE_MS) return { interrupted: [...interrupted], wrapped: [...wrappedAt], stillWorking: busy.map((h) => h.workerId) };
+        if (now() - interruptSince > INTERRUPT_SETTLE_MS) return { interrupted: [...interrupted], wrapped: [...wrappedAt], stillWorking: busy.map((h) => h.chatId) };
         // Each poll: a helper busy again (a teammate's message, a wake right after its abort) is stopped again.
         for (const h of busy) {
-          interrupted.add(h.workerId);
-          wrappedAt.delete(h.workerId);
+          interrupted.add(h.chatId);
+          wrappedAt.delete(h.chatId);
           await deps.abort(h.chatId).catch(() => undefined);
         }
       } else if (!told) {
         // Those working as the Move begins are the ones that resume there; one woken only to hear this stays idle.
         told = true;
-        for (const h of busy) wrappedAt.add(h.workerId);
-        for (const t of wrapUpTargets(all)) await deps.tell(t.helper.chatId, t.text, `transport-wrap-up:${chatId}:${t.helper.workerId}`).catch(() => undefined);
+        for (const h of busy) wrappedAt.add(h.chatId);
+        for (const t of wrapUpTargets(all)) await deps.tell(t.helper.chatId, t.text, `transport-wrap-up:${chatId}:${t.helper.chatId}`).catch(() => undefined);
       }
       await new Promise<void>((resolve) => {
         w.wake = resolve;

@@ -1115,10 +1115,24 @@ export function workerChatsOf(sessionId: string): string[] {
   return router?.workers.chatsOf(sessionId) ?? [];
 }
 
-/** The live workers of parent session `sessionId`, with whether each runs a turn now (Safe Transport). */
-export function workersWorkingOf(sessionId: string): { chatId: string; workerId: string; working: boolean }[] {
+/** The live workers under session `sessionId` at any depth (a helper's own helpers too), with whether each
+    runs a turn now (Safe Transport). `parent`: the chat that started it. */
+export function workersWorkingOf(sessionId: string): { chatId: string; workerId: string; working: boolean; parent: string }[] {
   const w = router?.workers;
-  return w ? w.list(sessionId).map((r) => ({ chatId: r.chatId, workerId: r.workerId, working: w.working(r.chatId) })) : [];
+  if (!w) return [];
+  const out: ReturnType<typeof workersWorkingOf> = [];
+  const seen = new Set<string>([sessionId]);
+  const queue = [sessionId];
+  while (queue.length && out.length < 2000) {
+    const at = queue.shift()!;
+    for (const r of w.list(at)) {
+      if (seen.has(r.chatId)) continue;
+      seen.add(r.chatId);
+      out.push({ chatId: r.chatId, workerId: r.workerId, working: w.working(r.chatId), parent: at });
+      queue.push(r.chatId);
+    }
+  }
+  return out;
 }
 
 /** Steer worker chat `chatId` (it reads it at its next step, or starts a turn when idle). */

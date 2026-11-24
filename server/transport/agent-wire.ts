@@ -92,7 +92,8 @@ export function liveSafeDeps(): SafeDeps {
       const seat = new Map<string, { teamId: string; role: string; duty?: "coordinator" | "monitor" }>();
       for (const t of teams) for (const m of t.members) if (!m.ejectedAt) seat.set(m.workerId, { teamId: t.id, role: m.role, ...(m.duty ? { duty: m.duty } : {}) });
       return live.map((w) => {
-        const s = seat.get(w.workerId);
+        // A seat is the lead's team roster's: a helper's own helper (ids are per parent) has none, so it is told itself.
+        const s = w.parent === chatId ? seat.get(w.workerId) : undefined;
         return { workerId: w.workerId, chatId: w.chatId, name: s?.role ?? w.workerId, working: w.working, ...(s ? { teamId: s.teamId, ...(s.duty ? { duty: s.duty } : {}) } : {}) };
       });
     },

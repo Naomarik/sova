@@ -82,14 +82,19 @@ function linesOf(dir: string, days: Iterable<string>, field: "owner" | "sid", ow
       if (!name.endsWith(".gz")) lines.pop();
       for (const line of lines) {
         if (!line) continue;
-        let r: { key?: unknown; owner?: unknown; sid?: unknown };
+        let r: { key?: unknown; owner?: unknown; sid?: unknown; parent?: unknown };
         try {
           r = JSON.parse(line) as typeof r;
         } catch {
           continue;
         }
         const who = r[field];
-        if (typeof who !== "string" || !owners.has(who) || typeof r.key !== "string" || seen.has(r.key)) continue;
+        if (typeof who !== "string" || typeof r.key !== "string" || seen.has(r.key)) continue;
+        // A helper's call names its parent: it is the chat's even when no index knows the helper yet.
+        if (!owners.has(who)) {
+          if (field !== "owner" || typeof r.parent !== "string" || !owners.has(r.parent)) continue;
+          owners.add(who);
+        }
         seen.add(r.key);
         list.push(line);
       }
@@ -98,6 +103,10 @@ function linesOf(dir: string, days: Iterable<string>, field: "owner" | "sid", ow
 }
 
 export function cutChatUsage(d: CutDeps, q: { sid: string; members: string[]; origin: string }): ChatUsageCut {
+  // What was written a moment ago (a helper's call that ended at the switch) is read first.
+  const now = Date.now();
+  const recent = [utcDay(now - DAY_MS), utcDay(now)];
+  for (const day of recent) d.ledger.scanDay(day);
   d.attention.refresh();
   d.perf.refresh();
   d.tools.refresh();
@@ -117,7 +126,7 @@ export function cutChatUsage(d: CutDeps, q: { sid: string; members: string[]; or
   grow(familyOf(q.sid));
   grow(d.moved.family(q.sid));
 
-  const callDays = new Set<string>();
+  const callDays = new Set<string>(recent);
   for (const o of owners) for (const day of d.ledger.owners.get(o)?.days ?? []) callDays.add(day);
   const movedCallDays = d.moved.ownerDays(owners);
   const replyDays = new Set<string>();
@@ -131,7 +140,10 @@ export function cutChatUsage(d: CutDeps, q: { sid: string; members: string[]; or
   const seenCalls = new Set<string>();
   const seenReplies = new Set<string>();
   const seenTools = new Set<string>();
+  // Twice when the first read found helpers by their parent: a helper's own helper may come before it.
+  const known = owners.size;
   linesOf(d.roots.usage, callDays, "owner", owners, seenCalls, calls, q.origin);
+  if (owners.size > known) linesOf(d.roots.usage, callDays, "owner", owners, seenCalls, calls, q.origin);
   linesOf(path.join(d.roots.moved, "v1"), movedCallDays, "owner", owners, seenCalls, calls, null);
   linesOf(d.roots.perf, around([...replyDays, ...callDays]), "sid", owners, seenReplies, replies, q.origin);
   linesOf(path.join(d.roots.moved, "perf", "v1"), around(d.moved.replyDays(owners)), "sid", owners, seenReplies, replies, null);

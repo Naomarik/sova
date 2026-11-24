@@ -3,11 +3,15 @@
 // them, and read only for that chat's own usage (§app.extensions/chat-usage), marked as spent elsewhere. Built the first
 // time a chat asks while the folder exists: with nothing moved, nothing here runs.
 //
-//   moved/v1/<UTC day>/m-<chat>.jsonl        model calls (the ledger's records, as written on the source)
-//   moved/perf/v1/<UTC day>/m-<chat>.jsonl   reply timings
-//   moved/tools/v1/<UTC day>/m-<chat>.jsonl  tool runs
-//   moved/you/<sid>.json                     your time there: {runs: [[s, e, row]], sec}
-//   moved/index.json                         {chats: {<chat>: {devices: [<device id>]}}}
+//   moved/v1/<UTC day>/m-<chat>-<origin>.jsonl        model calls (the ledger's records, as written where spent)
+//   moved/perf/v1/<UTC day>/m-<chat>-<origin>.jsonl   reply timings
+//   moved/tools/v1/<UTC day>/m-<chat>-<origin>.jsonl  tool runs
+//   moved/you/<sid>.json                              your time there, by origin: {byOrigin: {<origin>: {runs, sec}}}
+//   moved/index.json                                  {chats: {<chat>: {origins: [...]}}, names: {<origin>: <label>}}
+//
+// An origin is the device the records were spent on, by its usage origin id (server/usage-export.ts usageOrigin):
+// its host.json id, or one kept for usage alone. So a device knows its own records when a chat comes back, whether
+// or not it ever had a host.json, and names the others as the devices that sent them were called.
 import fs from "node:fs";
 import path from "node:path";
 import type { UsageModelRow, UsageSpend } from "../../shared/usage/wire";
@@ -22,6 +26,11 @@ export interface MovedYou {
   runs: [number, number, string][];
   sec: number;
 }
+
+/** A moved file's name: `m-<chat>-<origin>.jsonl`; the origin, or null for a name that isn't one. */
+export const movedFile = (chat: string, origin: string): string => `m-${chat}-${origin}.jsonl`;
+export const originOfFile = (name: string): string | null => /^m-[\w-]+-([uh]_[a-z0-9]{8})\.jsonl(\.gz)?$/.exec(name)?.[1] ?? null;
+export const ORIGIN_RE = /^[uh]_[a-z0-9]{8}$/;
 
 export interface MovedOptions {
   /** `<agent dir>/usage/moved`. */
@@ -84,14 +93,32 @@ export class MovedUsage {
     return spend.calls || agent ? { spend, models, agent } : null;
   }
 
-  /** Your time at a conversation, as it came from where it was spent. */
+  /** Your time at a conversation, as it came from where it was spent, every origin summed. */
   you(sid: string): MovedYou | null {
-    return readYou(this.o.root, sid);
+    const by = readYou(this.o.root, sid);
+    if (!by) return null;
+    const out: MovedYou = { runs: [], sec: 0 };
+    for (const y of Object.values(by)) {
+      out.runs.push(...y.runs);
+      out.sec += y.sec;
+    }
+    return out;
   }
 
-  /** The devices a chat's moved records were spent on. */
+  /** Your time at a conversation by origin (the cut carries it so). */
+  youByOrigin(sid: string): Record<string, MovedYou> {
+    return readYou(this.o.root, sid) ?? {};
+  }
+
+  /** The devices a chat's moved records were spent on, by the names they came with. */
   devicesOf(chat: string): string[] {
-    return readIndex(this.o.root).chats[chat]?.devices ?? [];
+    const index = readIndex(this.o.root);
+    return (index.chats[chat]?.origins ?? []).map((o) => index.names[o] ?? o);
+  }
+
+  /** Every origin's name this device knows (the cut passes them on). */
+  names(): Record<string, string> {
+    return readIndex(this.o.root).names;
   }
 
   /** The days with moved model calls or replies or tool runs of these sessions (the cut reads them). */
@@ -120,20 +147,29 @@ export class MovedUsage {
 
 export const utcDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
-export function readYou(root: string, sid: string): MovedYou | null {
+/** A conversation's moved your-time, by origin; null when none came. */
+export function readYou(root: string, sid: string): Record<string, MovedYou> | null {
   try {
-    const v = JSON.parse(fs.readFileSync(path.join(root, "you", `${encodeURIComponent(sid)}.json`), "utf8")) as MovedYou;
-    return Array.isArray(v.runs) && typeof v.sec === "number" ? v : null;
+    const v = JSON.parse(fs.readFileSync(path.join(root, "you", `${encodeURIComponent(sid)}.json`), "utf8")) as { byOrigin?: Record<string, MovedYou> };
+    if (!v || typeof v.byOrigin !== "object" || !v.byOrigin) return null;
+    const out: Record<string, MovedYou> = {};
+    for (const [o, y] of Object.entries(v.byOrigin)) if (y && Array.isArray(y.runs) && typeof y.sec === "number") out[o] = y;
+    return out;
   } catch {
     return null;
   }
 }
 
-export function readIndex(root: string): { chats: Record<string, { devices: string[] }> } {
+export interface MovedIndex {
+  chats: Record<string, { origins: string[] }>;
+  names: Record<string, string>;
+}
+
+export function readIndex(root: string): MovedIndex {
   try {
-    const v = JSON.parse(fs.readFileSync(path.join(root, "index.json"), "utf8")) as { chats?: unknown };
-    return v && typeof v.chats === "object" && v.chats ? (v as { chats: Record<string, { devices: string[] }> }) : { chats: {} };
+    const v = JSON.parse(fs.readFileSync(path.join(root, "index.json"), "utf8")) as Partial<MovedIndex>;
+    return { chats: v && typeof v.chats === "object" && v.chats ? v.chats : {}, names: v && typeof v.names === "object" && v.names ? v.names : {} };
   } catch {
-    return { chats: {} };
+    return { chats: {}, names: {} };
   }
 }

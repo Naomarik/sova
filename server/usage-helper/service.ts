@@ -12,7 +12,7 @@ import { LabelStore } from "./labels";
 import { TimeQueries } from "./time";
 import { chatUsage } from "./chat";
 import { cutChatUsage, type CutDeps } from "./cut";
-import { MovedUsage, movedRoot } from "./moved";
+import { MovedUsage, movedRoot, ORIGIN_RE } from "./moved";
 import { ToolRunStore } from "./tool-store";
 
 /**
@@ -156,7 +156,8 @@ export function createService(opts: ServiceOptions): Service {
       // One chat's records as written, for Transport to carry (server/usage-helper/cut.ts).
       case "chat-cut": {
         if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");
-        return cutChatUsage(cutDeps, { sid: req.sid, members: strings(req.members).slice(0, 2000) });
+        if (typeof req.origin !== "string" || !ORIGIN_RE.test(req.origin)) throw new BadRequest("origin is required");
+        return cutChatUsage(cutDeps, { sid: req.sid, members: strings(req.members).slice(0, 2000), origin: req.origin });
       }
       case "session-timings": {
         if (typeof req.sid !== "string" || !req.sid) throw new BadRequest("sid is required");

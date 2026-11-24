@@ -213,13 +213,18 @@ test("a clean clone behind the chat's commit takes its commits, branch and chang
   writeFileSync(join(src, "a"), "a\nunfinished\n");
   const s = await surveyWorktree("src7", src);
   const p = await packWorktrees({ tid: "t7", trees: [s], haves: [], outDir: join(root, "pack7") });
-  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack7"), tid: "t7", metas: p.metas, targets: { src7: behind } });
+  // Yours, on main while the chat is on feat: left as it is.
+  const mineBefore = facts(behind);
+  await assert.rejects(rebuildWorktrees({ repo: null, codeDir: join(root, "pack7"), tid: "t7", metas: p.metas, targets: { src7: behind } }), (e: unknown) => e instanceof SnapshotError && /on its own branch main, and the chat's code is on feat; nothing was changed/.test(e.message));
+  assert.equal(facts(behind), mineBefore, "the user's clone stays on main, untouched");
+  // The same clone made for this transport (the Transport agent's): taken over.
+  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack7"), tid: "t7", metas: p.metas, targets: { src7: behind }, ours: [behind] });
   await publishTrees(staged, "t7");
   assert.equal(facts(behind), facts(src));
   assert.equal(readFileSync(join(behind, "target", "build.o"), "utf8"), "agent's build\n", "the agent's build output stays");
   assert.equal(g(behind, "rev-parse", "main").trim(), g(src, "rev-parse", "main").trim(), "its own branch stays where it was");
   const why = async (target: string) =>
-    rebuildWorktrees({ repo: null, codeDir: join(root, "pack7"), tid: "t7", metas: p.metas, targets: { src7: target } }).then(
+    rebuildWorktrees({ repo: null, codeDir: join(root, "pack7"), tid: "t7", metas: p.metas, targets: { src7: target }, ours: [target] }).then(
       () => "",
       (e: unknown) => (e instanceof SnapshotError && e.reason === "taken" ? e.message : String(e)),
     );
@@ -246,4 +251,28 @@ test("a file there where the chat's new file needs a folder is in the way: refus
   await assert.rejects(rebuildWorktrees({ repo: null, codeDir: join(root, "pack8"), tid: "t8", metas: p.metas, targets: { src8: target } }), (e: unknown) => e instanceof SnapshotError && e.reason === "taken" && /already has cfg,/.test(e.message));
   assert.equal(readFileSync(join(target, "cfg"), "utf8"), "my cfg\n");
   assert.equal(g(target, "for-each-ref", "refs/sova"), "");
+});
+
+test("a detached clone behind the chat's commit gets the chat's branch by the edge-case rule: a suffix when that name holds another commit there", async () => {
+  const src = join(root, "src9");
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "main");
+  writeFileSync(join(src, "a"), "a\n");
+  g(src, "add", "a");
+  g(src, "commit", "-qm", "a");
+  const target = join(root, "there9", "src9");
+  g(root, "clone", "-q", src, target);
+  const base = g(target, "rev-parse", "HEAD").trim();
+  g(target, "checkout", "-q", "--detach");
+  writeFileSync(join(src, "a"), "a\nb\n");
+  g(src, "commit", "-qam", "b");
+  writeFileSync(join(src, "a"), "a\nb\nwip\n");
+  const p = await packWorktrees({ tid: "t9", trees: [await surveyWorktree("src9", src)], haves: [], outDir: join(root, "pack9") });
+  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack9"), tid: "t9", metas: p.metas, targets: { src9: target } });
+  assert.equal(staged[0]!.branch, "main-2");
+  assert.equal(staged[0]!.renamedFrom, "main");
+  await publishTrees(staged, "t9");
+  assert.equal(g(target, "rev-parse", "main").trim(), base, "its own main stays where it was");
+  assert.equal(g(target, "branch", "--show-current").trim(), "main-2");
+  assert.equal(g(target, "diff"), g(src, "diff"));
 });

@@ -121,7 +121,8 @@ export async function takeOffer(from: { id: string; label: string }, raw: string
     folder: resolve(b.folder),
     state: "preparing",
     ticket: b.ticket,
-    ext: { offer: { trees: b.trees, repoRel: b.repoRel, project: b.project, ...(b.model ? { model: b.model } : {}), ...(typeof b.chatModel === "string" && b.chatModel.length < 200 ? { chatModel: b.chatModel } : {}) } },
+    // The folders that aren't here yet: one the Transport agent then makes is this transport's to take over.
+    ext: { absentAtOffer: (b.trees ?? []).map((t) => (t.rel ? resolve(dirname(resolve(b.folder)), t.rel) : resolve(b.folder))).filter((p) => !existsSync(p)), offer: { trees: b.trees, repoRel: b.repoRel, project: b.project, ...(b.model ? { model: b.model } : {}), ...(typeof b.chatModel === "string" && b.chatModel.length < 200 ? { chatModel: b.chatModel } : {}) } },
   });
   stepDone(b.tid, "offered");
   log(`${b.tid}: offered by ${from.label} (${b.mode} of ${b.chat.id})`);
@@ -254,7 +255,7 @@ async function arrive(tid: string): Promise<void> {
     for (const t of o.trees) targets[t.name] = t.rel ? resolve(dirname(cur.folder), t.rel) : cur.folder;
     const repo = repoPathOf(cur);
     let staged: StagedTree[] = [];
-    if (manifest.worktrees.length) staged = await rebuildWorktrees({ repo, codeDir: join(at, "code"), tid, metas: manifest.worktrees.map((w) => w.meta), targets });
+    if (manifest.worktrees.length) staged = await rebuildWorktrees({ repo, codeDir: join(at, "code"), tid, metas: manifest.worktrees.map((w) => w.meta), targets, ours: ((cur.ext ?? {}) as { absentAtOffer?: string[] }).absentAtOffer ?? [] });
     await knob(tid, "staged");
     stepDone(tid, "staged", { ext: { staged, targets } });
     // The home, pointed at this device: a Copy's conversations get ids of their own.

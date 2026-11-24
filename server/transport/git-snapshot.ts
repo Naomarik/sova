@@ -375,6 +375,8 @@ export interface StagedTree {
   base?: WorktreeMeta;
   /** The base folder's HEAD when it was checked: publish refuses if it moved since. */
   baseHead?: string;
+  /** The base folder was made for this transport (it didn't exist when the offer came). */
+  ours?: boolean;
 }
 
 const stageOf = (target: string, tid: string) => join(dirname(target), `.incoming-${tid}-${basename(target)}`);
@@ -403,10 +405,12 @@ async function heldTree(codeDir: string, meta: WorktreeMeta, target: string): Pr
 
 /**
  * Whether `target` can take the chat's code (§app.transport/arrival): a checkout of the same repository with no
- * tracked change, at the chat's commit or behind it, whose branch of that name (if any) is too. Its HEAD when it can,
- * else why not, in words for the person. Needs the package's commits fetched into it.
+ * tracked change, at the chat's commit or behind it. Taken over only when it was made for this transport (`ours`)
+ * or is on the chat's branch already: its branch moves to the chat's commit. One detached at such a commit gets the
+ * chat's branch by the edge-case rule (reused at the same commit, else a suffix). A checkout of yours on another
+ * branch is left as it is: refused. Its HEAD and the branch to check out, else why not. Needs the package's commits.
  */
-async function baseOf(target: string, meta: WorktreeMeta): Promise<{ head: string } | { why: string }> {
+async function baseOf(target: string, meta: WorktreeMeta, ours: boolean, tid: string): Promise<{ head: string; branch: string | null; renamedFrom?: string } | { why: string }> {
   const taken = `${target} already exists there`;
   if (!existsSync(join(target, ".git"))) return { why: `${taken} and isn't a checkout of this project; pick another folder.` };
   const head = (await git(target, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim();
@@ -417,12 +421,17 @@ async function baseOf(target: string, meta: WorktreeMeta): Promise<{ head: strin
   const changed = (await git(target, ["status", "--porcelain=v1", "-uno"])).stdout.trim();
   const n = changed ? changed.split("\n").length : 0;
   if (n) return { why: `${taken} with changes of its own (${n} ${n === 1 ? "file" : "files"}); nothing was replaced. Commit or move them away, or pick another folder.` };
-  if (meta.branch) {
+  const cur = (await git(target, ["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim() || null;
+  if (!meta.branch) return ours || !cur ? { head, branch: null } : { why: `${taken} on its own branch ${cur}, and the chat's code isn't on a branch; nothing was changed. Pick another folder.` };
+  if (ours || cur === meta.branch) {
     const at = (await git(target, ["rev-parse", "-q", "--verify", `refs/heads/${meta.branch}`])).stdout.trim();
     if (at && at !== meta.head && (await git(target, ["merge-base", "--is-ancestor", at, meta.head])).code !== 0)
       return { why: `${taken} with its own ${meta.branch} branch, which the chat's doesn't build on; pick another folder.` };
+    return { head, branch: meta.branch };
   }
-  return { head };
+  if (cur) return { why: `${taken} on its own branch ${cur}, and the chat's code is on ${meta.branch}; nothing was changed. Check out ${meta.branch} there, or pick another folder.` };
+  const b = await branchThere(target, meta.branch, meta.head, tid);
+  return { head, branch: b.branch, ...(b.renamedFrom ? { renamedFrom: b.renamedFrom } : {}) };
 }
 
 /** Files the snapshot adds since `from` that a file there already stands on (writing the changes would replace it). */
@@ -445,7 +454,8 @@ async function inTheWay(target: string, meta: WorktreeMeta, from: string): Promi
 }
 
 /** A base folder: the snapshot rebuilt and checked in a scratch worktree of its repository (then dropped), its loose files unpacked aside. */
-async function baseTree(repo: string, codeDir: string, meta: WorktreeMeta, target: string, head: string): Promise<StagedTree> {
+async function baseTree(repo: string, codeDir: string, meta: WorktreeMeta, target: string, base: { head: string; branch: string | null; renamedFrom?: string }, ours: boolean): Promise<StagedTree> {
+  const head = base.head;
   const scratch = join(codeDir, meta.name, "check");
   await git(repo, ["worktree", "remove", "--force", scratch]);
   await rm(scratch, { recursive: true, force: true });
@@ -460,21 +470,21 @@ async function baseTree(repo: string, codeDir: string, meta: WorktreeMeta, targe
   }
   const way = await inTheWay(target, meta, head);
   if (way.length) throw new SnapshotError("taken", `${target} already has ${way.slice(0, 3).join(", ")}${way.length > 3 ? ` and ${way.length - 3} more` : ""}, which the chat's code adds; nothing was replaced. Move ${way.length === 1 ? "it" : "them"} away or pick another folder.`);
-  return { ...(await heldTree(codeDir, meta, target)), base: meta, baseHead: head };
+  return { ...(await heldTree(codeDir, meta, target)), base: meta, baseHead: head, branch: base.branch, ...(base.renamedFrom ? { renamedFrom: base.renamedFrom } : {}), ...(ours ? { ours: true } : {}) };
 }
 
 /** At publish: a base folder takes the chat's commit, branch and unfinished changes (working tree, index, flags). */
 async function applyBase(t: StagedTree): Promise<void> {
   const meta = t.base!;
   if (await holds(t.target, meta)) return; // a retry after it was applied
-  const again = await baseOf(t.target, meta);
+  const again = await baseOf(t.target, meta, !!t.ours, "");
   const changed = `${t.target} changed there since it was checked; nothing was replaced. Retry to check it again.`;
   if ("why" in again || again.head !== t.baseHead || (await inTheWay(t.target, meta, again.head)).length) throw new SnapshotError("taken", changed);
   await ok(t.target, ["read-tree", "--reset", "-u", `${meta.snap}^{tree}`], "Writing the changes");
   await ok(t.target, ["read-tree", "-m", `${meta.snap}^{tree}`, `${meta.snap}^^{tree}`], "Writing the index");
-  if (meta.branch) {
-    await ok(t.target, ["update-ref", `refs/heads/${meta.branch}`, meta.head], "Moving the branch");
-    await ok(t.target, ["symbolic-ref", "HEAD", `refs/heads/${meta.branch}`], "Checking out the branch");
+  if (t.branch) {
+    await ok(t.target, ["update-ref", `refs/heads/${t.branch}`, meta.head], "Moving the branch");
+    await ok(t.target, ["symbolic-ref", "HEAD", `refs/heads/${t.branch}`], "Checking out the branch");
   } else await ok(t.target, ["update-ref", "--no-deref", "HEAD", meta.head], "Checking out the commit");
   if (meta.ita.length) await ok(t.target, ["add", "-N", "--pathspec-from-file=-", "--pathspec-file-nul"], "Marking intent-to-add", { input: meta.ita.join("\0") });
   if (meta.assume.length) await ok(t.target, ["update-index", "-z", "--assume-unchanged", "--stdin"], "Marking assume-unchanged", { input: meta.assume.join("\0") });
@@ -682,7 +692,8 @@ async function fetchBundle(repo: string, codeDir: string, tid: string): Promise<
   await ok(repo, ["fetch", "-q", join(codeDir, "commits.bundle"), `+${refOf(tid, "*")}:${refOf(tid, "*")}`], "Fetching the bundle");
 }
 
-export async function rebuildWorktrees(o: { repo: string | null; codeDir: string; tid: string; metas: readonly WorktreeMeta[]; targets: Record<string, string> }): Promise<StagedTree[]> {
+export async function rebuildWorktrees(o: { repo: string | null; codeDir: string; tid: string; metas: readonly WorktreeMeta[]; targets: Record<string, string>; ours?: readonly string[] }): Promise<StagedTree[]> {
+  const ours = (target: string) => (o.ours ?? []).includes(target);
   const out: StagedTree[] = [];
   const main = o.metas.find((m) => m.main);
   let repo = o.repo;
@@ -695,9 +706,9 @@ export async function rebuildWorktrees(o: { repo: string | null; codeDir: string
     try {
       if (there) fetched = await fetchBundle(target, o.codeDir, o.tid).then(() => true, () => false);
       const held = fetched && (await holds(target, main));
-      const base = fetched && !held ? await baseOf(target, main) : null;
+      const base = fetched && !held ? await baseOf(target, main, ours(target), o.tid) : null;
       if (held) out.push(await heldTree(o.codeDir, main, target));
-      else if (base && "head" in base) out.push(await baseTree(target, o.codeDir, main, target, base.head));
+      else if (base && "head" in base) out.push(await baseTree(target, o.codeDir, main, target, base, ours(target)));
       else if (there) throw new SnapshotError("taken", base && "why" in base ? base.why : `${target} already exists there and holds another repository; pick another folder.`);
       else out.push(await rebuildOne(null, o.codeDir, o.tid, main, target));
     } catch (err) {
@@ -720,9 +731,9 @@ export async function rebuildWorktrees(o: { repo: string | null; codeDir: string
       continue;
     }
     if (repo && existsSync(join(target, ".git"))) {
-      const base = await baseOf(target, m);
+      const base = await baseOf(target, m, ours(target), o.tid);
       if ("why" in base) throw new SnapshotError("taken", base.why);
-      out.push(await baseTree(repo, o.codeDir, m, target, base.head));
+      out.push(await baseTree(repo, o.codeDir, m, target, base, ours(target)));
       continue;
     }
     out.push(await rebuildOne(repo, o.codeDir, o.tid, m, target));

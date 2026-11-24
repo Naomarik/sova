@@ -76,7 +76,8 @@ export interface AgentDeps {
   /** This device's name, for the brief. */
   device(): string;
   /** Whether a program is reachable for the user's commands here. */
-  which(program: string): boolean;
+  /** Which of `programs` are reachable for the user's commands here (never blocking the server). */
+  which(programs: string[]): Promise<Set<string>>;
   git(args: string[], cwd: string): Promise<{ code: number; stdout: string }>;
   /** The project's own doctor checks (§app.project-services/doctor) on a folder with a definition; null: none ran. */
   doctor(folder: string): Promise<AgentCheck[] | null>;
@@ -215,7 +216,8 @@ export async function preflight(asked: ProjectRef, deps: Pick<AgentDeps, "which"
   if (!ours) return checks;
   const has = (f: string) => existsSync(join(path, f));
   const needs = projectNeeds(has);
-  for (const p of needs.programs) checks.push({ id: `tool:${p}`, ok: deps.which(p), detail: deps.which(p) ? `${p} found` : `${p} isn't installed for this user` });
+  const found = needs.programs.length ? await deps.which(needs.programs) : new Set<string>();
+  for (const p of needs.programs) checks.push({ id: `tool:${p}`, ok: found.has(p), detail: found.has(p) ? `${p} found` : `${p} isn't installed for this user` });
   for (const d of needs.deps) checks.push({ id: `deps:${d.dir}`, ok: has(d.dir), detail: has(d.dir) ? `${d.dir} installed` : `${d.dir} is missing: ${d.how}` });
   if (has(".sova/project.json")) {
     const doc = await deps.doctor(path).catch(() => null);

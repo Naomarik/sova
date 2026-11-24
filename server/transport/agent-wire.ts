@@ -1,7 +1,7 @@
 // The live deps of the Transport agent (server/transport/agent.ts) and of Safe Transport
 // (server/transport/safe-transport.ts): this server's routes, chats, workers, models, project
 // doctor and mesh links, and the set transport-core registers with its hooks (transportHelpers).
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { delimiter, join } from "node:path";
@@ -31,15 +31,56 @@ function expand(home: string, d: string): string[] {
   }
 }
 
-/** Whether `program` is reachable for the user's commands here: on this server's PATH, in one of the
-    user's usual install folders, or found by the user's login shell (a PATH their profile sets). */
-export function whichProgram(program: string, env: NodeJS.ProcessEnv = process.env, home = homedir()): boolean {
-  if (!/^[\w.+-]+$/.test(program)) return false;
-  const dirs = [...(env.PATH ?? "").split(delimiter), ...USER_BINS.flatMap((d) => expand(home, d)), ...SYSTEM_BINS].filter(Boolean);
-  if (dirs.some((d) => existsSync(join(d, program)))) return true;
+/** How long a program's lookup is kept: the dialog's preview asks on every open. */
+export const WHICH_TTL_MS = 60_000;
+const whichMemo = new Map<string, { at: number; found: boolean }>();
+
+/** The programs of `programs` the user's login shell finds (a PATH their profile sets), in one shell run, off the
+    event loop: a profile with a version manager takes up to seconds. */
+function loginShellFinds(programs: string[], env: NodeJS.ProcessEnv, home: string): Promise<Set<string>> {
   const shell = env.SHELL && /\/(ba|z)sh$/.test(env.SHELL) ? env.SHELL : "/bin/bash";
-  const r = spawnSync(shell, ["-lc", 'command -v -- "$0"', program], { env: { ...env, HOME: home }, timeout: 5_000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-  return r.status === 0 && r.stdout.trim().length > 0;
+  return new Promise((done) => {
+    let out = "";
+    const child = spawn(shell, ["-lc", 'for p in "$@"; do command -v -- "$p" >/dev/null 2>&1 && printf "%s\\n" "$p"; done', "sova-which", ...programs], {
+      env: { ...env, HOME: home },
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    child.stdout.on("data", (b: Buffer) => (out += b.toString("utf8")));
+    const end = () => {
+      clearTimeout(timer);
+      done(new Set(out.split("\n").filter((p) => programs.includes(p))));
+    };
+    child.on("close", end);
+    child.on("error", end);
+  });
+}
+
+/** Which of `programs` are reachable for the user's commands here: on this server's PATH, in one of the user's
+    usual install folders, or found by the user's login shell (one run for all the rest). Each answer is kept
+    WHICH_TTL_MS. Only plain program names are looked up. */
+export async function whichPrograms(programs: string[], env: NodeJS.ProcessEnv = process.env, home = homedir(), now = Date.now()): Promise<Set<string>> {
+  const found = new Set<string>();
+  const ask: string[] = [];
+  const dirs = [...(env.PATH ?? "").split(delimiter), ...USER_BINS.flatMap((d) => expand(home, d)), ...SYSTEM_BINS].filter(Boolean);
+  for (const p of new Set(programs)) {
+    if (!/^[\w.+-]+$/.test(p)) continue;
+    const hit = whichMemo.get(p);
+    if (hit && now - hit.at < WHICH_TTL_MS) {
+      if (hit.found) found.add(p);
+    } else if (dirs.some((d) => existsSync(join(d, p)))) {
+      whichMemo.set(p, { at: now, found: true });
+      found.add(p);
+    } else ask.push(p);
+  }
+  if (ask.length) {
+    const shell = await loginShellFinds(ask, env, home);
+    for (const p of ask) {
+      whichMemo.set(p, { at: now, found: shell.has(p) });
+      if (shell.has(p)) found.add(p);
+    }
+  }
+  return found;
 }
 
 /** The Transport agent's live deps; `app` makes its chat through the same route a page's New Session does. */
@@ -49,7 +90,7 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
     home: () => homedir(),
     protectedRoots: () => [stateRoot(), agentRoot(), homesRoot()],
     device: () => meshSelf().label || hostname(),
-    which: (p) => whichProgram(p),
+    which: (ps) => whichPrograms(ps),
     git: async (args, cwd) => {
       const { realGit } = await import("../project-services/engine");
       const r = await realGit(args, cwd);

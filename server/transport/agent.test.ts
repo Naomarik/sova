@@ -38,7 +38,7 @@ function device(root: string, over: Partial<AgentDeps> = {}) {
     home: () => root,
     protectedRoots: () => [join(root, "state")],
     device: () => "laptop-b",
-    which: () => true,
+    which: async (ps) => new Set(ps),
     git: async (args) => (args[0] === "remote" ? { code: 0, stdout: `origin\t${REMOTE} (fetch)\n` } : { code: 0, stdout: "" }),
     doctor: async () => null,
     offeredModels: async () => ["zai/glm-5.3", ...onboardModels()],
@@ -86,7 +86,7 @@ test("the checks: a missing folder says clone; a folder of another repository is
   assert.deepEqual((await preflight({ remotes: [], path: req.project.path }, d.deps)).map((c) => [c.id, c.ok]), [["folder", false]], "nothing to know it by: not taken as the project");
   const other = device(root, { git: async (args) => (args[0] === "remote" ? { code: 0, stdout: "origin\tgit@github.com:acme/else.git (fetch)\n" } : { code: 0, stdout: "" }) });
   assert.deepEqual((await preflight(req.project, other.deps)).map((c) => [c.id, c.ok]), [["folder", false]]);
-  const noPnpm = device(root, { which: (p) => p !== "pnpm" });
+  const noPnpm = device(root, { which: async (ps) => new Set(ps.filter((p) => p !== "pnpm")) });
   assert.deepEqual((await preflight(req.project, noPnpm.deps)).filter((c) => !c.ok).map((c) => c.id), ["tool:pnpm", "deps:node_modules"]);
 });
 

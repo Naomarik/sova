@@ -273,7 +273,8 @@ export async function profilesListing(cwd?: string | null, path?: string): Promi
     defaultProfile: def.info,
     library: { file: library.file, ...(library.state === "malformed" ? { error: library.errors.join("; ") } : {}) },
     template,
-    ...(await thisChatKey(path).then((k) => (k ? { thisChat: k } : {}))),
+    // The row that chat is on: a "library:<id>" key with no row of its own is the row carrying that helper half.
+    ...(await thisChatKey(path).then((k) => (k ? { thisChat: pickJoined(joined, k)?.key ?? k } : {}))),
     ...(src.yoursError ? { error: src.yoursError } : {}),
   };
 }

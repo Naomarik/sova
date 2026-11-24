@@ -407,6 +407,14 @@ describe("every kind of profile Sova makes picks, shows as picked, and picking i
         assert.equal(now.disposed, false, `${kind}: picking it again restarts nothing`);
         void chat;
       }
+      // A chat on helpers alone, where a profile of yours carries them: This chat names that row (here, after
+      // Make It Yours on DeepSeek, its copy).
+      const onHelpers = makeSession();
+      await (await acquireChat(onHelpers, true)).switchSubagentProfile("deepseek");
+      assert.equal((await profilesListing(cwd, onHelpers)).thisChat, "user:deepseek");
+      const onPair = makeSession();
+      await (await acquireChat(onPair, true)).switchSubagentProfile("claude-subs");
+      assert.equal((await profilesListing(cwd, onPair)).thisChat, "user:subs", "the pair carrying the helper half it runs");
       // Make It Yours took the built-in DeepSeek profile's place: listed once, as yours.
       const l = await profilesListing(cwd);
       assert.deepEqual(l.joined?.filter((r) => r.name === "DeepSeek").map((r) => [r.key, r.replaces]), [["user:deepseek", "sova:deepseek"]]);

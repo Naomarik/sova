@@ -246,6 +246,8 @@ function ownerOfKey(s: State, key: string, inLegacy: boolean): string | null {
 }
 
 function writeHomeField(s: State, homeId: string, doc: HomeDoc, field: string, value: unknown): void {
+  // A home removed by its chat's Delete is never made again by a late write.
+  if (!hasHome(homeId)) return;
   const h = s.homes.get(homeId) ?? loadHome(s, homeId);
   const ser = value === undefined ? undefined : JSON.stringify(value);
   const tag = `${doc}|${field}`;

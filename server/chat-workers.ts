@@ -20,6 +20,8 @@ import type { InflightMarker } from "./chat-runtime/inflight";
 import { joinedText, toHEntry } from "./harness/pi/reader";
 import { createWorkerSession } from "./harness/pi/worker-session";
 import { placedByParent } from "./chat-homes/place";
+import { registerHomeMember } from "./chat-homes/records";
+import { chatHome, hasHome, homeIdOfPath, homeOfSessionFile, listHomeIds } from "./chat-homes/root";
 import { logAutoResume } from "./overseer-store";
 import { stateRoot } from "./state-root";
 
@@ -34,6 +36,8 @@ const DEATH_LINES = 20;
 const DEATH_BYTES = 2048;
 
 export const workersDir = () => join(stateRoot(), "chats", "workers");
+/** A homed chat's helpers' records (§app.chat-homes/lifetime): `<home>/workers/`, beside their conversations. */
+export const homeWorkersDir = (homeId: string) => join(chatHome(homeId), "workers");
 
 /** A parent chat, as its link or its binding names it. */
 type Parent = { sessionId: string; path: string };
@@ -160,6 +164,8 @@ export class WorkerRegistry {
   private readonly keys = new Map<string, string>();
   private readonly starting = new Map<string, Promise<WorkerRef>>();
   private readonly dir: () => string;
+  /** The real registry also keeps and reads records in chat homes (a test's own folder does not). */
+  private readonly homes: boolean;
   private readonly now: () => number;
 
   constructor(
@@ -175,6 +181,7 @@ export class WorkerRegistry {
     } = {},
   ) {
     this.dir = o.dir ?? workersDir;
+    this.homes = o.dir === undefined;
     this.now = o.now ?? Date.now;
     this.autoResume = o.autoResume ?? crashResumeOn;
     this.openParent = o.openParent ?? ((path) => acquireChatHandle(path));
@@ -189,17 +196,37 @@ export class WorkerRegistry {
 
   // ---- records ------------------------------------------------------------------------------------
 
-  private file = (chatId: string) => join(this.dir(), `${encodeURIComponent(chatId)}.json`);
+  /** A helper's record sits in the home holding its conversation (its top chat's, at any depth), else in the server's folder. */
+  private dirOf(rec: Pick<WorkerRecord, "path">): string {
+    const home = this.homes ? homeOfSessionFile(rec.path) : null;
+    return home ? join(home, "workers") : this.dir();
+  }
   private write(rec: WorkerRecord): void {
-    mkdirSync(this.dir(), { recursive: true, mode: 0o700 });
-    const f = this.file(rec.chatId);
+    const dir = this.dirOf(rec);
+    if (dir !== this.dir()) {
+      const home = homeIdOfPath(rec.path)!;
+      // A home removed by its chat's Delete is never made again by a helper's late write.
+      if (!hasHome(home)) return;
+      // Its records (seen, signals, attachments…) go to the same home from its first write (server/chat-homes/records.ts).
+      registerHomeMember(rec.chatId, home);
+    }
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const f = join(dir, `${encodeURIComponent(rec.chatId)}.json`);
     writeFileSync(`${f}.tmp`, `${JSON.stringify(rec)}\n`, { mode: 0o600 });
     renameSync(`${f}.tmp`, f);
   }
+  /** Every record, the server's folder and every home's, all before any chat opens: server start decides "worker or
+      ordinary chat" by whether a record is loaded. Finished helpers' records are kept and loaded too. */
   private readAll(): WorkerRecord[] {
+    const out: WorkerRecord[] = [];
+    for (const dir of [this.dir(), ...(this.homes ? listHomeIds().map(homeWorkersDir) : [])]) out.push(...this.readDir(dir));
+    return out;
+  }
+  /** One folder's records; a home's helpers are known to belong to it from here on. */
+  private readDir(dir: string): WorkerRecord[] {
     let names: string[];
     try {
-      names = readdirSync(this.dir());
+      names = readdirSync(dir);
     } catch {
       return [];
     }
@@ -207,8 +234,12 @@ export class WorkerRegistry {
     for (const n of names) {
       if (!n.endsWith(".json")) continue;
       try {
-        const rec = JSON.parse(readFileSync(join(this.dir(), n), "utf8")) as WorkerRecord;
-        if (rec?.v === 1 && rec.chatId && rec.path) out.push(rec);
+        const rec = JSON.parse(readFileSync(join(dir, n), "utf8")) as WorkerRecord;
+        if (rec?.v === 1 && rec.chatId && rec.path) {
+          out.push(rec);
+          const home = this.homes ? homeIdOfPath(rec.path) : null;
+          if (home) registerHomeMember(rec.chatId, home);
+        }
       } catch {
         // half-written or foreign: not a worker of ours
       }

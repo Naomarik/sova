@@ -3,14 +3,16 @@ import { removeOutputFiles } from "./shell-output";
 import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, lstatSync, readdirSync, statSync } from "node:fs";
-import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
+import { type FileHandle, lstat, open, readdir, rm, stat, unlink } from "node:fs/promises";
 import { removeChatSharedFolder } from "../pi-config/extensions/sandbox/shared-folder.ts";
 import { runsOfChat } from "./playbook-runs/store";
 import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
-import { hasHome, homeIdOfPath, homesRoot, isHomeSessionFile } from "./chat-homes/root";
+import { chatHome, forgetHome, hasHome, homeIdOfPath, homesRoot, isHomeSessionFile } from "./chat-homes/root";
+import { forgetHomeRecords, refreshHomeRecords } from "./chat-homes/records";
+import { emitChatNews } from "./chat-home-events";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import type { HEntry } from "../shared/harness";
 import { isLinkMessage } from "../shared/link-message";
@@ -2211,6 +2213,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         dropGroupAssignments([s.id]);
         removeSharedFolder(s.id);
         sessionArchived(s.id);
+        await deletedChat(s.id, s.workerSession);
         return { ok: true, summary: { ...s, archived: true, deleted: true } };
       }
     }
@@ -2227,6 +2230,55 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
  * on it ended (its workers stopped with any report still waiting to open it, its links, its memory).
  * A chat still starting now is closed by its own start once that finishes (server/chat-host.ts).
  */
+/**
+ * A chat is gone by your own Delete (§app.chat-homes/lifetime): a chat with a home loses the whole home, its helpers'
+ * conversations, records, mailboxes, wakes, memory, attachments and shared folder with it, after each helper's time is
+ * kept for the usage helper (the chat's own was kept by the caller). An older chat's places were cleared by the caller.
+ * Either way the event stream hears `chat.removed` for a top-level chat.
+ */
+async function deletedChat(id: string, worker: boolean | undefined, keepUntil?: number): Promise<void> {
+  if (!hasHome(id)) {
+    if (!worker) emitChatNews({ name: "chat.removed", chat: id });
+    return;
+  }
+  const home = chatHome(id);
+  let names: string[] = [];
+  try {
+    names = await readdir(join(home, "sessions"));
+  } catch {
+    // no conversations folder left
+  }
+  for (const n of names) {
+    if (!n.endsWith(".jsonl")) continue;
+    const p = join(home, "sessions", n);
+    const sid = idOf(p);
+    if (sid !== id) {
+      await keepSessionTimeSpent(sid, keepUntil);
+      removeSessionTimeSpent(sid);
+      removeSessionLabels(sid);
+    }
+    dropEntry(p);
+  }
+  try {
+    await rm(home, { recursive: true, force: true });
+  } catch (err) {
+    console.error(`[sessions] Deleted chat ${id}: its home could not be removed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  forgetHome(id);
+  forgetHomeRecords(id);
+  emitChatNews({ name: "chat.removed", chat: id, home });
+}
+
+// A full build also picks up homes this server did not make (server/chat-homes/records.ts).
+onFullListBuild(refreshHomeRecords);
+
+/** A helper's conversation inside a chat's home is the chat's, kept as long as the chat is (§app.chat-homes/lifetime):
+    no Clean Up takes it alone. */
+const helperInHome = (path: string): boolean => {
+  const home = isHomeSessionFile(path) ? homeIdOfPath(path) : null;
+  return !!home && home !== idOf(path);
+};
+
 /** An archived (or deleted) chat's shared folder goes with it (shared-folder.ts). */
 function removeSharedFolder(id: string): void {
   if (!removeChatSharedFolder(id)) console.error(`[sessions] Archived chat ${id}: its shared folder could not be removed`);
@@ -2322,7 +2374,7 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
     // An attached org's workspace sessions (batons, project-overseer conversations) belong to the
     // org: baton.json and overseer state name them, so no mode ever deletes one. Silent in the
     // bulk modes, like the Overseer's files, so the dry run's count is what the real run deletes.
-    const kept = keptBy(path);
+    const kept = keptBy(path) ?? (helperInHome(path) ? "A helper's conversation is kept with its chat: delete the chat itself." : null);
     if (kept) {
       if (req.mode === "paths") refusals.push({ path, reason: kept });
       continue;
@@ -2389,6 +2441,7 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
           continue;
         }
       }
+      const worker = (await summarize(path).catch(() => null))?.workerSession;
       await unlink(path);
       await cleanDeletedTours(id);
       dropEntry(path);
@@ -2404,6 +2457,7 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       removeSessionTimeSpent(id);
       removeSessionLabels(id);
       sessionArchived(id);
+      await deletedChat(id, worker, keepUntil);
       deletedIds.push(id);
       forgotten.push(id);
     } catch {

@@ -2,7 +2,7 @@
 // A chat home's own records (server/chat-homes/records.ts): a homed chat's entries go to its home's
 // chat/*.json, everyone else's stay in the server-wide files, and every read sees both.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -20,6 +20,7 @@ const { getDraft, setDraft } = await import("../drafts");
 const { readSignals, updateSignals, workerKey } = await import("../signals-store");
 const { checkTmpImage, deleteAttachment, saveUploadedImage, sessionAttachmentsDir } = await import("../attachments");
 const { findTmpImagePaths } = await import("../../shared/tmp-paths");
+const { WorkerRegistry } = await import("../chat-workers");
 
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -90,4 +91,17 @@ test("a homed chat's uploads live in its home and are served and deleted from th
   assert.equal(checkTmpImage(join(process.env.SOVA_CHAT_HOMES!, HOMED, "shared", "x.png")).ok, false);
   assert.deepEqual(deleteAttachment(up.path), { ok: true });
   assert.equal(existsSync(up.path), false);
+});
+
+test("a helper's record kept in its chat's home is loaded at start, and its records follow it there", () => {
+  const helper = "019a0000-0000-7000-8000-00000000000d";
+  const home = join(process.env.SOVA_CHAT_HOMES!, HOMED);
+  mkdirSync(join(home, "workers"), { recursive: true });
+  const rec = { v: 1, chatId: helper, path: join(home, "sessions", `x_${helper}.jsonl`), key: "k", kind: "worker", parent: { sessionId: HOMED, path: join(home, "sessions", `x_${HOMED}.jsonl`), workerId: "ag_02" }, spec: { kind: "worker", parent: { sessionId: HOMED, path: "", workerId: "ag_02" }, cwd: scratch }, state: "ended", startedAt: new Date(0).toISOString() };
+  writeFileSync(join(home, "workers", `${helper}.json`), JSON.stringify(rec));
+  resetHomeRecordsForTest();
+  const reg = new WorkerRegistry({ start: async () => { throw new Error("no process here"); }, stop: async () => {} });
+  assert.equal(reg.record(helper)?.state, "ended", "a finished helper's record is kept and loaded");
+  assert.equal(homeOf(helper), HOMED);
+  assert.equal(existsSync(join(state, "chats", "workers", `${helper}.json`)), false);
 });

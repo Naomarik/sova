@@ -19,6 +19,6 @@ test("a test run from a chat's shell doesn't see the chat's own variables", () =
   });
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
   const keys: string[] = JSON.parse(readFileSync(seen, "utf8"));
-  // Only the runner's own: its test slice and its code pin.
-  assert.deepEqual(keys.filter((k) => k !== "SOVA_CHAT_SLICE" && k !== "SOVA_CHAT_CODE"), []);
+  // Only the runner's own: its test slice, its code pin and its throwaway chat homes (set anew, never the chat's).
+  assert.deepEqual(keys.filter((k) => k !== "SOVA_CHAT_SLICE" && k !== "SOVA_CHAT_CODE" && k !== "SOVA_CHAT_HOMES"), []);
 });

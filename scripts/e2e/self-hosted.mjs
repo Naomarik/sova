@@ -100,6 +100,8 @@ export async function selfHosted({ fakeClaude = false, label = "e2e" } = {}) {
       writeFileSync(join(login, ".claude.json"), JSON.stringify({ hasCompletedOnboarding: true, oauthAccount: { emailAddress: `${label}@example.invalid` } }));
       Object.assign(extra, { PATH: `${bin}:${process.env.PATH ?? ""}`, CLAUDE_CONFIG_DIR: login });
     }
+    // Its chat homes (server/chat-homes/root.ts) in the scratch too.
+    extra.SOVA_CHAT_HOMES = join(scratch, "chat-homes");
     const fd = openSync(log, "a");
     child = spawn(join(ROOT, "scripts", "start-server.sh"), [], { cwd: ROOT, env: serverEnv(extra), stdio: ["ignore", fd, fd] });
     closeSync(fd);

@@ -152,6 +152,7 @@ import {
   sc,
   server,
   serverEnv,
+  homesOf,
   show,
   sleep,
   startMock,
@@ -1662,15 +1663,23 @@ async function plumbing() {
 
 // ── stage 4: workers, team members and hidden chats as chat processes (stage4-design.md §8) ─────
 
-/** The server's worker records (<stateRoot>/chats/workers/*.json, design §2.4), of one parent chat
-    when `parentPath` is given: {chatId, path, kind, parent: {sessionId, path, workerId}, placement, state, ended}. */
+/** The server's worker records (<stateRoot>/chats/workers/*.json, design §2.4; a homed chat's in its home's
+    workers/, §app.chat-homes/layout), of one parent chat when `parentPath` is given:
+    {chatId, path, kind, parent: {sessionId, path, workerId}, placement, state, ended}. */
 function workerRecords(parentPath) {
-  const dir = join(sova, "chats", "workers");
-  let files = [];
+  const dirs = [join(sova, "chats", "workers")];
   try {
-    files = readdirSync(dir);
+    for (const h of readdirSync(homesOf(agent))) dirs.push(join(homesOf(agent), h, "workers"));
   } catch {}
-  return files.map((f) => readJson(join(dir, f))).filter((r) => r && (!parentPath || baseName(r.parent?.path) === baseName(parentPath)));
+  const out = [];
+  for (const dir of dirs) {
+    let files = [];
+    try {
+      files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+    } catch {}
+    for (const f of files) out.push(readJson(join(dir, f)));
+  }
+  return out.filter((r) => r && (!parentPath || baseName(r.parent?.path) === baseName(parentPath)));
 }
 /** The first worker record of the parent that `pred` accepts, waited for. */
 async function workerOf(parentPath, pred = () => true, ms = 60000) {

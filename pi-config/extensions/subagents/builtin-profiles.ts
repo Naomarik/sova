@@ -160,21 +160,26 @@ function readJson(file: string): unknown {
 		return undefined;
 	}
 }
-/** A Claude Code directory is signed in: a token in its credentials file, or (macOS keeps the token in the keychain) an account in its `.claude.json`. */
-function claudeSignedIn(creds: string, claudeJson: string): boolean {
+/**
+ * A Claude Code directory is signed in as Settings → Accounts reads it (server/auth-status.ts): a token in its
+ * credentials file, which decides whenever it exists (an empty token is signed out). Only on macOS, with no file
+ * (the token is in the keychain, which this synchronous reader never opens), an account in its `.claude.json` stands in.
+ */
+function claudeSignedIn(creds: string, claudeJson: string, platform: NodeJS.Platform): boolean {
 	const c = readJson(creds);
 	if (isRecord(c) && isRecord(c.claudeAiOauth) && hasText(c.claudeAiOauth.accessToken)) return true;
+	if (platform !== "darwin" || fs.existsSync(creds)) return false;
 	const j = readJson(claudeJson);
 	return isRecord(j) && isRecord(j.oauthAccount);
 }
 
 /** Read the accounts now. Only reads, and keeps no secret. */
-export function readAccountsAt(p: AccountPaths): ConnectedAccounts {
+export function readAccountsAt(p: AccountPaths, platform: NodeJS.Platform = process.platform): ConnectedAccounts {
 	const auth = readJson(p.piAuth);
 	const entry = (key: string) => (isRecord(auth) && isRecord(auth[key]) ? auth[key] : undefined);
 	const openai = hasText(entry("openai-codex")?.access);
 	const ollamaCloud = hasText(entry("ollama-cloud")?.key);
-	let claude = claudeSignedIn(p.claudeCreds, p.claudeJson);
+	let claude = claudeSignedIn(p.claudeCreds, p.claudeJson, platform);
 	if (!claude) {
 		const accounts = readJson(p.claudeAccounts);
 		const logins = isRecord(accounts) && Array.isArray(accounts.logins) ? accounts.logins : [];
@@ -182,7 +187,7 @@ export function readAccountsAt(p: AccountPaths): ConnectedAccounts {
 			const id = isRecord(l) && typeof l.id === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(l.id) ? l.id : undefined;
 			if (!id) return false;
 			const dir = path.join(p.claudeLoginsDir, id);
-			return claudeSignedIn(path.join(dir, ".credentials.json"), path.join(dir, ".claude.json"));
+			return claudeSignedIn(path.join(dir, ".credentials.json"), path.join(dir, ".claude.json"), platform);
 		});
 	}
 	return { claude, openai, ollamaCloud };

@@ -314,22 +314,26 @@ test("the built-in default by connected accounts (b2): Claude, then OpenAI, then
 				const listed = builtinsFor(c);
 				assert.deepEqual(listed, claudeOn || openai || ollamaCloud ? BUILTIN_PROFILE_IDS.filter((id) => (id === "claude" ? claudeOn : id === "openai" ? openai : ollamaCloud)) : ["claude"], JSON.stringify(c));
 			}
-	// The accounts as read from their files: a Claude sign-in (credentials, or an account in .claude.json as on macOS),
+	// The accounts as read from their files: a Claude sign-in (a token in its credentials, or on macOS with no file an account in .claude.json),
 	// pi's own OpenAI sign-in, an Ollama Cloud key; nothing else counts (a Z.ai or DeepSeek key, local Ollama).
 	const home = tempDir();
 	const agent = path.join(home, "agent");
 	fs.mkdirSync(agent);
 	const paths = accountPaths(agent, {}, home);
-	const read = () => readAccountsAt(paths);
+	const read = () => readAccountsAt(paths, "linux");
 	assert.deepEqual(read(), { claude: false, openai: false, ollamaCloud: false });
 	fs.writeFileSync(paths.piAuth, JSON.stringify({ zai: { type: "api_key", key: "k" }, deepseek: { type: "api_key", key: "k" }, ollama: { type: "api_key", key: "k" } }));
 	assert.deepEqual(read(), { claude: false, openai: false, ollamaCloud: false });
 	fs.writeFileSync(paths.piAuth, JSON.stringify({ "openai-codex": { type: "oauth", access: "t" }, "ollama-cloud": { type: "api_key", key: "k" } }));
 	assert.deepEqual(read(), { claude: false, openai: true, ollamaCloud: true });
 	fs.writeFileSync(paths.claudeJson, JSON.stringify({ oauthAccount: { emailAddress: "a@b.c" } }));
-	assert.equal(read().claude, true, "macOS keeps the token in the keychain: the account in .claude.json says it is signed in");
-	fs.rmSync(paths.claudeJson);
+	assert.equal(read().claude, false, "off macOS an account in .claude.json alone isn't a sign-in, as Settings → Accounts reads it");
+	assert.equal(readAccountsAt(paths, "darwin").claude, true, "macOS keeps the token in the keychain: with no credentials file, the account in .claude.json says it is signed in");
 	fs.mkdirSync(path.dirname(paths.claudeCreds), { recursive: true });
+	// A signed-out login keeps its file with an empty token: not connected on any platform (the file decides).
+	fs.writeFileSync(paths.claudeCreds, JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "r" } }));
+	assert.deepEqual([read().claude, readAccountsAt(paths, "darwin").claude], [false, false]);
+	fs.rmSync(paths.claudeJson);
 	fs.writeFileSync(paths.claudeCreds, JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
 	assert.equal(read().claude, true);
 });

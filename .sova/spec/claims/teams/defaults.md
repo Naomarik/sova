@@ -158,9 +158,11 @@ mode, not only Delegate. There is no separate model for members: a profile has n
   and says so: mid-handover there is nobody to ask. A member of a team saved before members had
   kinds has none: its successor keeps its predecessor's model and says so, and is never refused. A
   model named for a member, or for its whole team, stays its successor's too.
-- **Off.** On Off (§chat.subagent-profiles/off) nothing routes a member: a kind is optional, a member
-  runs on the model named for it or its team, else the chat's own model, and its result line says no
-  profile routes it. A library that can't be read routes members by `mode-delegate.json`, as Delegate
+- **No helper profile.** In a chat with no helper profile (§chat.subagent-profiles/no-helper-profile)
+  nothing routes a member: a kind is optional, a member runs on the model named for it or its team,
+  else the chat's own model, and its result line says no profile routes it ("this chat has no helper
+  profile"). Settings → Profiles says it under Teams: "Members run on the Delegate model for their
+  kind of work." (§chat.subagent-profiles/settings). A library that can't be read routes members by `mode-delegate.json`, as Delegate
   does then.
 - **The chat is told to name one.** `team_create`'s and `team_add`'s text, the `/team <objective>`
   planning message and Delegate's instructions each say to name a kind for every member, so the

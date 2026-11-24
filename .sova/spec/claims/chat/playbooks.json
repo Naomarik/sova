@@ -402,15 +402,15 @@
   "§chat.playbooks/run-card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "unreviewed",
+    "evidence": "reviewed",
     "requires": [
       "§chat.playbooks/description-file",
       "§chat.playbooks/model-order"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-16T19:29Z",
-      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     },
     "code": [
       "server/playbook-runs/routes.ts",
@@ -460,7 +460,8 @@
       "src/lib/card-lander.ts",
       "src/lib/card-lander.test.ts",
       "src/lib/jump-cover.ts",
-      "src/lib/jump-cover.test.ts"
+      "src/lib/jump-cover.test.ts",
+      "server/default-profile-accounts.test.ts"
     ]
   },
   "§chat.playbooks/run-record": {

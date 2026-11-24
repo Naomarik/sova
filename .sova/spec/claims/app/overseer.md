@@ -268,11 +268,15 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   thinking and subagent_profile without it: a profile switches all of its Models part at once.
   Nothing was changed."). Mid-reply, the result says it switches when the reply ends.
 - **The models alone (§chat.subagent-profiles/overseer).** `sova_list_profiles` (its other name,
-  `sova_list_subagent_profiles`) lists Off and every profile, each a named setup: their id, name,
+  `sova_list_subagent_profiles`) lists every profile, the built-in ones listed on that host
+  included and no Off (§chat.subagent-profiles/off), each a named setup: their id, name,
   worker and chat models (the footprint), which parts
   they have and this host's default; an optional `host` reads the peer's own list.
-  `sova_create_session` and `sova_set_session` take `subagent_profile` still (a library id or
-  `off`), pinning that session's hidden ID pick for its helpers, never the device default. On
+  `sova_create_session` and `sova_set_session` take `subagent_profile` still (a library or built-in
+  profile's id), pinning that session's hidden ID pick for its helpers, never the device default.
+  `off`, as `profile` or `subagent_profile`, is refused before anything changes with one sentence
+  naming the profiles there are ("No profile is named "off"; the profiles here are {names}.
+  Nothing was changed.", or "… No session was created."). On
   `sova_set_session` that is all it moves, never the chat's own model; on `sova_create_session` the
   rest of the start is this computer's default, as above. The result names the pick; running workers and the main model stay unchanged. An
   unknown id is refused before session creation or mutation; a create with `host` checks the peer's
@@ -2512,7 +2516,8 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
 - **`sova_org_project {org?, project}`**: the project row; its overseer: its conversation (a
   session link), working or not, unread, its powers as set and in force, with the brake's reason,
   watching and the pace, models, what a coding session started now gets (this computer's default
-  profile and its mode, §app.project-overseer/coding-mode), the extra instructions, both allowances used and left and the held items
+  profile by name, else the helpers in effect, else the words "this computer's default profile",
+  never "Off", and its mode, §app.project-overseer/coding-mode), the extra instructions, both allowances used and left and the held items
   (§app.project-overseer/limits); its last 10 actions; its gathering sessions and offers; decisions
   by state and area, and the open conflicts with who they are routed to; spec status (frozen, edited
   outside); its coding sessions from their statecharts (title, who started it, working or idle, branch,
@@ -2773,7 +2778,8 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   prompt when none is given; without an item, `prompt` and `title` are required. It counts against
   the Overseer's per-turn sessions created and running at once, like any session it starts, and
   never against the project overseer's limits. The result names the session, its branch and its
-  path, and the mode and profile it started with. Without `already_agreed` the session
+  path, and the mode and profile it started with (no profile word when there is no default
+  profile, §chat.subagent-profiles/no-helper-profile). Without `already_agreed` the session
   runs with align on, whatever `minor_modes` say, and first asks the operator to confirm the brief
   (§app.project-overseer/confirm-brief). Its prompt says
   a coding session's alignment questions are the user's: it never answers them, and tells the user

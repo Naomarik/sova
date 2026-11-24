@@ -196,9 +196,9 @@
       "pi-config/extensions/mode/delegate.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-09T23:07Z",
-      "source": "pi-session:11c2d12a-bd23-4062-86b0-4bda053a8931#e9d77662"
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§app.settings-dialog/number-boxes": {
@@ -400,8 +400,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T22:16Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§app.settings-dialog/profile-set-all": {
@@ -411,7 +411,7 @@
       "§app.settings-dialog/modes"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/SubagentProfilesSettings.tsx",
       "src/lib/subagent-editor.ts",
@@ -421,8 +421,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§app.settings-dialog/profiles": {
@@ -441,7 +441,8 @@
       "src/lib/profiles-settings.ts",
       "src/lib/profiles-settings.test.ts",
       "src/lib/profiles-draft.ts",
-      "src/components/SubagentProfilesSettings.css"
+      "src/components/SubagentProfilesSettings.css",
+      "src/components/SubagentProfilesSettings.tsx"
     ],
     "requires": [
       "§chat.profiles/model",
@@ -450,14 +451,14 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:45Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§app.settings-dialog/save-bar": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/lib/settings-draft.ts",
       "src/lib/settings-draft.test.ts",

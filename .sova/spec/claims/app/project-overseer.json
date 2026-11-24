@@ -50,7 +50,7 @@
   "§app.project-overseer/coding-mode": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.project-overseer/tools",
       "§chat/mode-menu",
@@ -82,12 +82,14 @@
       "server/overseer-org-view.ts",
       "server/app.ts",
       "server/coding-default-profile.ts",
-      "server/project-overseer.test.ts"
+      "server/project-overseer.test.ts",
+      "shared/project-overseer-coding-line.test.ts",
+      "server/default-profile-accounts.test.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:46Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§app.project-overseer/coding-worktrees": {
@@ -964,7 +966,7 @@
   "§app.project-overseer/tools": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/project-overseer-tools.ts",
       "server/project-overseer.ts",
@@ -1008,8 +1010,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-18T20:26Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§app.project-overseer/watch-loop": {

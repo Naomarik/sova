@@ -518,7 +518,10 @@ is, never moving again, as the read-only record of what was agreed, and the run 
     a line says the team adds anyone else it needs. The main chat and each team's coordinator and
     monitor aren't shown (they run on the chat's and your own settings); the coordinator and
     monitor still count toward the limit of 24 helpers, two for every team, one with no required
-    members included.
+    members included. The profile a card routes by ("your profile's model",
+    §chat.playbooks/model-order) is this computer's default helper profile; while none is chosen the
+    card has none, since a run is Sova's own and never takes the built-in profile the accounts give
+    (§chat.subagent-profiles/no-helper-profile), so such a role falls to the chat's own model.
   - **The steps,** each with the team that works on it, their stop points and the cycle's settings, and **how it runs** (this
     chat or a new one, a new worktree, the powers it asks for, the commands it lists).
   - **Flow,** folded by default: a drawing of the playbook's flow (§chat.playbooks/flow).

@@ -17,6 +17,26 @@
       "server/openai-login.integration.test.ts"
     ]
   },
+  "§app.openai-login/gpt-sol": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.openai-login/chats"
+    ],
+    "code": [
+      "pi-config/models.json",
+      "server/harness/pi/models-json.test.ts",
+      "shared/design-models.ts",
+      "server/design/describe.ts",
+      "pi-config/extensions/subagents/subagent-profiles.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+    }
+  },
   "§app.openai-login/section": {
     "kind": "behavior",
     "authority": "accepted",

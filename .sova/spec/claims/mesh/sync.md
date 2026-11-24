@@ -68,7 +68,10 @@ dates with the library, and each merges what it receives into its own:
   dated like an edit and kept in the sync state, so it travels to every host and a host that still
   has the profile drops it, unless that host edited it after the deletion. A library file that
   disappears, or a library that first appears (seeded, copied in), deletes nothing.
-- **A starter yields.** A seeded library is dated as old (§chat.subagent-profiles/file). While a
+- **The built-in profiles never travel.** Claude, OpenAI and DeepSeek are in no file
+  (§chat.subagent-profiles/builtins); a copy made with Make It Yours is a profile like any other.
+- **A starter yields.** This Sova seeds no library (§chat.subagent-profiles/no-seeding), but one an
+  older Sova seeded is dated as old, its file's modification time the Unix epoch. While a
   host's library is still only its untouched starter, merging with a library that holds any profile
   edited anywhere takes that library and drops the starter's profile (nothing is recorded as
   deleted). A host alone keeps its starter, and two hosts with only starters keep one.

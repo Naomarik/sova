@@ -66,8 +66,10 @@ always runs in it.
 
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
 
-The orchestrating major mode: the four kinds of work and where each is routed, fallbacks and Off,
-teams (linking to their own page, §site.docs/teams), watching workers, and workers after a restart.
+The orchestrating major mode: the four kinds of work and where each is routed (the gear opening
+Settings → Profiles on the profile this chat's helpers run on, and a table of the built-in Claude,
+OpenAI and DeepSeek profiles' routes), fallbacks, teams (linking to their own page,
+§site.docs/teams), watching workers, and workers after a restart. It names no Off.
 Create (§site.docs/create) does all of this and shares these settings.
 
 ## §site.docs/teams — Teams (`/docs/teams/`)
@@ -83,7 +85,8 @@ waiting for an answer, a replaced member's messages going to its successor, inbo
 safety net, open items returned to their senders, nothing lost to a restart); the coordinator and
 the monitor every team gets from Sova (the chat names only the members who do the work, so a team
 runs 2 more workers than it names and small independent jobs are cheaper as separate workers; their
-models from the subagent profile's Teams section, else the chat's own model, Off included; each
+models from the profile's Teams section, else the chat's own model, the built-in OpenAI profile's
+example; each
 member the chat names runs on its work kind's model, a planning or investigation member never edits,
 and a member named with neither a kind nor a model is refused); the
 coordinator (sees every assignment and the roster, steers by role, answers members' questions, the
@@ -102,7 +105,11 @@ its tools and session powers) and Models (the chat's own model and its helpers',
 override included; its Teams section chooses the models of the coordinator and monitor every team
 gets, else they run on the chat's own model). How a new chat starts on this computer's one default
 profile, how a chat switches its profile after a usage limit, or any time, all at once (its Models part), what "(edited)"
-means, editing profiles in Settings → Profiles (there is no Subagents tab), and Off. A profile never
+means, editing profiles in Settings → Profiles (there is no Subagents tab; the This chat chip, the
+Jump to row, Teams on the chat's own model), the built-in Claude, OpenAI and DeepSeek profiles (a
+**Built in** section with their routes, listed only where their account is connected, Make It
+Yours), and the default until you choose one, which follows the connected accounts (Claude, else
+OpenAI, else DeepSeek). There is no Off: no helpers means turning Delegate off. A profile never
 turns on a project mode. The page sits in the Features group, not under Modes: a profile is not a
 mode.
 
@@ -131,8 +138,9 @@ every worker but a team's monitor has for those look-ups, spec on or off (§app.
 the spec tools a chat, its workers, the merge queue and releases run (§tools.spec/mode-reading), the census note and its one unread line before
 finishing, updating a claim the task didn't create without asking and listing it in the reply's one
 spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
-writer, what workers get (and the claims a finished worker's changes landed in), and project coding
-sessions.
+writer (a helper, set in the profile's Spec writer row, which the spec gear opens for the profile
+this chat's helpers run on; with none, the session writes the spec itself), what workers get (and
+the claims a finished worker's changes landed in), and project coding sessions.
 
 ## §site.docs/design — Lookbook (`/docs/modes/vis/lookbook/`)
 

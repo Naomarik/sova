@@ -251,9 +251,10 @@ The library is `<agent dir>/subagent-profiles.json`, shared with pi in the termi
 reaches every chat on that profile from its next turn or team action; running workers and the
 main model keep their models. `<agent dir>/subagent-profiles-default.json` is this device's own
 choice, written when this computer's default profile is chosen (§chat.profiles/default), and never syncs. Legacy `mode-delegate.json`, `mode-spec.json` and `team-defaults.json`
-remain for seeding and fallback, not as second editors.
+remain only as the fallback of a malformed library, not as second editors; nothing seeds from them
+now (§chat.subagent-profiles/no-seeding).
 
-Built-in legacy Delegate values, used when seeding, each the catalog's current model of its family
+Built-in legacy Delegate values, used when those files are read and name none, each the catalog's current model of its family
 (§app.claude-code-provider/catalog): Planning & specs Claude Code `claude-fable-5-2` (Fable 5.2)
 medium, fallback `claude-opus-5-5` (Opus 5.5) high; Investigation `claude-opus-5-5` low; Routine
 `claude-opus-5-5` low; Complex `claude-opus-5-5` medium; no fallbacks but Planning's.
@@ -565,20 +566,31 @@ the list on the left, the picked profile's editor on the right (§app.settings-d
 on a narrow panel (under 480px of the tab's width) the editor sits under the list.
 
 - **The list** starts with **New Profile**, then three groups: **Yours**, **This project ({name})**,
-  and **Built in**, which holds Off (§chat.subagent-profiles/off; it changes none of a chat's
-  settings, and it stands where the new chat screen's My settings card was) and any profile file Sova
-  ships (it ships none today). The system profiles are never listed. Each row is the profile's name
-  over its footprint ("Opus 5.5 + GPT-6.1 Sol", §chat.profiles/joined): its models only, never its
+  and **Built in**, which holds the built-in profiles whose account is connected here and that no
+  profile of yours takes the place of (§chat.subagent-profiles/builtins,
+  §chat.subagent-profiles/shadowing), and any profile file Sova ships (it ships none); with none of
+  those, and no problem to show, there is no Built in heading. There is no Off
+  (§chat.subagent-profiles/off). The system profiles are never listed. Each row is the profile's name
+  over its footprint ("Opus 5.5 + GPT-6.2 Sol", §chat.profiles/joined): its models only, never its
   modes (delegate, align, spec) or tools (Edit files, say), and no source badge, since the group a row sits under says
   where it comes from. The default row carries a **Default** chip (this computer's default,
   §chat.profiles/default); a project profile that needs your approval (§chat.profiles/trust), one
   that reads and messages sessions say, carries **Needs approval**, gone once approved; and one
-  hidden from the pickers carries **Hidden** once hidden.
+  hidden from the pickers carries **Hidden** once hidden. The row of the profile in effect for the
+  chat Settings was opened for (the chat whose gear or Manage Profiles… opened it, else the chat on
+  screen, on this computer) carries a **This chat** chip, in the info tone, beside Default; with no
+  chat open, or a chat with no profile, no row does. Under the list, while the default isn't the
+  one chosen, a muted line says why (§chat.profiles/default).
   Clicking a row opens it in the editor; the picked row is tinted. A long name or footprint wraps and
   is never cut short. Without a session folder, This project says "Open a session to see its
   project's profiles."
+- **Opening.** Settings opens on the profile asked for, else the one in effect for that chat, else
+  the default, else the first row. A gear or Manage Profiles… asks for the chat's profile in effect
+  (§chat.subagent-profiles/menu); one that asks for an older chat's Off opens that chat's profile
+  instead. Opening Settings while it is already open moves it to the tab asked for.
 - **New Profile** adds a profile under Yours, named "New profile", starting from the models of the
-  profile open in the editor (this computer's default's when Off is), and opens it on its Models part. It is saved
+  profile open in the editor (where it has no helpers, this computer's default's; with no default
+  at all, the built-in Claude's), and opens it on its Models part. It is saved
   with the dialog's Save Changes, both halves, linked.
 - **Problems.** A file that couldn't be read is its own row under its group, with a **Can't be
   read** badge, its path and the exact error, so a mistake made by hand or by an agent shows here. A
@@ -597,9 +609,12 @@ on a narrow panel (under 480px of the tab's width) the editor sits under the lis
 
 The editor's head is the profile's name field ("Profile name", §chat.profiles/profile-name) and, on
 the right, a **Default** chip while it is this computer's default, else **Make Default**
-(§chat.profiles/default). Under it, two tabs: **Models** and **When a Chat Starts**.
+(§chat.profiles/default), then the **This chat** chip while it is the profile in effect for the
+chat Settings was opened for (§app.settings-dialog/profiles), with the line "This chat's helpers run
+on this profile." under the head. Under it, two tabs: **Models** and **When a Chat Starts**.
 
-- **Models** opens first, with the line "A chat can switch to these any time." Then **Set All To**
+- **Models** opens first, with the **Jump to** row (Delegate, Teams, Review, Alignment,
+  §chat.subagent-profiles/editor-rows) and the line "A chat can switch to these any time." Then **Set All To**
   (§app.settings-dialog/profile-set-all) and one compact row per role, its label, a model and an
   effort, in four groups: **This chat** (the chat's own model and effort), **Delegate** (Planning,
   Investigation, Routine, Complex), **Teams** (Coordinator and Monitor; no Members row, §teams.defaults/member-kinds) and **Review** (Spec
@@ -610,7 +625,12 @@ the right, a **Default** chip while it is this computer's default, else **Make D
   §chat.subagent-profiles/editor-rows); the handover's retire timeout sits in the Coordinator's
   row. A row holding something Save waits for opens itself. When
   the profile's library half is shared (§chat.profiles/joined), the part says "Also used by {name}"
-  ("{name} and {name}", "{name} and {n} others") under its line, since an edit changes each.
+  ("{name} and {name}", "{name} and {n} others") under its line, since an edit changes each. A
+  profile of yours with no helpers of its own offers **Choose Helpers** and, beside it, **Open
+  {default}**, which opens this computer's default profile, whose helpers a chat on it takes, at its
+  Models part. Teams with no models chosen reads "Uses the chat's own model" for both roles, under
+  the line "Members run on the Delegate model for their kind of work."
+  (§chat.subagent-profiles/settings).
 - **When a Chat Starts** opens with the line "Mode and add-ons are where a chat begins; you can
   still change them in its mode menu. Tools and powers lock at the first message." Then **Mode**
   (normal or Delegate; never Create, §chat.create-mode/per-chat-only), **Add-ons** (Align, Spec,
@@ -626,15 +646,25 @@ the right, a **Default** chip while it is this computer's default, else **Make D
   that changed through its own writer (§chat.profiles/joined); unsaved edits hold a close. A change
   to When a Chat Starts reaches new chats only; one to Models reaches every chat on that profile from
   its next turn or team action. Make Default saves with it.
-- **Also for yours:** **Duplicate**, **Delete** (refused for the default: "Make another profile the
-  default first."; a shared library half stays for the profiles still linking it, §chat.profiles/joined) and **Hide From Picker** (**Show In Picker** once hidden, saved at once).
+- **Also for yours:** **Duplicate**, **Delete** (disabled, with the title "Make another profile the
+  default first.", on a chosen default, one made the default in this unsaved draft included; enabled
+  on a default only the connected accounts give, such as a Make It Yours copy, whose delete brings
+  the built-in one back and writes no default, §chat.profiles/default; a shared library half stays for the profiles still linking it,
+  §chat.profiles/joined, and one in a built-in one's place stays, §chat.subagent-profiles/shadowing) and **Hide From Picker** (**Show In Picker** once hidden, saved at once).
 - **A project's profile** shows every field read-only, its name included, and a warn notice: "This
   profile is a file in the project, so an agent or you change it there." followed by what it asks
   for ("It asks to read and message sessions."), and, while it needs your approval
   (§chat.profiles/trust), **Approve Profile**, which saves at once and only from your own click;
   once approved the notice keeps its first sentence. Make Default and Hide From Picker stay offered.
-- **Off** shows only its name, Make Default (or the Default chip) and "Built in. A chat keeps its own
-  model and modes, and the agent picks every worker." (§chat.subagent-profiles/off).
+- **A built-in profile** (§chat.subagent-profiles/builtins) shows both parts read-only, its name
+  included, with Make Default (or the Default chip), Hide From Picker and **Make It Yours**, and the
+  line "Built in for your {account} account. Make It Yours to change it." ({account}: Claude, OpenAI
+  or Ollama Cloud; "Built in. Make It Yours to change it." when its models name none or several).
+  **Make It Yours** adds an editable copy under Yours, both parts, with the built-in one's name, and
+  opens it where the built-in one was; it is saved with Save Changes, and once saved takes the
+  built-in one's place (§chat.subagent-profiles/shadowing). While one of yours already has that name it
+  is disabled, its title "One of yours is already named {name}.". Update and Set All To aren't
+  offered on it.
 
 ## §app.settings-dialog/profile-set-all — Set All To
 
@@ -643,8 +673,8 @@ changes every model row of the Models part, This chat included, to the model pic
 row's effort where the new model takes it; where it doesn't, that row's effort is left blank and
 holds Save, as changing one row's model does (§app.settings-dialog/modes). It picks the model's own
 backend for each row. It is an edit like any other: nothing is written until Save Changes, Cancel
-undoes it, and each row can still be changed on its own afterwards. A project's profile and Off
-don't offer it.
+undoes it, and each row can still be changed on its own afterwards. A project's profile and a
+built-in one don't offer it.
 
 ## §app.settings-dialog/overseer — Overseer
 
@@ -867,7 +897,7 @@ Discard button of its own: saving is the dialog's. Merge Queue (below), MCP Serv
   without asking.
 - **Save waits for every dirty form to be valid.** While any is incomplete or invalid, Save
   Changes is disabled and the status line, in error, names the first such form and what it needs
-  ("Profiles: My setup's Delegate rows each need a model and an effort.", "Mesh: This host needs a name."). The form's own fields
+  ("Profiles: Claude's Delegate rows each need a model and an effort.", "Mesh: This host needs a name."). The form's own fields
   still say it inline. A form with no unsaved changes never holds Save.
 - **The status line** says, first match wins: **Saving…**; why Save waits; a failed save ("Saved
   Models; Profiles failed.", or "Profiles failed." when nothing else was written); what is unsaved

@@ -242,9 +242,9 @@
       "site/src/content/docs/modes/delegate.md"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§site.docs/design": {
@@ -855,7 +855,12 @@
     "evidence": "reviewed",
     "code": [
       "site/src/content/docs/modes/spec.md"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+    }
   },
   "§site.docs/subagent-profiles": {
     "kind": "behavior",
@@ -884,8 +889,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T19:46Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#33385786"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§site.docs/teams": {
@@ -921,8 +926,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T22:16Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§site.docs/themes": {

@@ -102,7 +102,7 @@
       "§app.teams/requests"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/teams.ts",
@@ -113,8 +113,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-08T22:15Z",
-      "source": "pi-session:f599f57e-519d-4f33-9088-ed8a9cd164b5#cebf8649"
+      "at": "2026-11-24T13:41Z",
+      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
     }
   },
   "§teams.defaults/monitor": {

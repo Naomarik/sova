@@ -2,7 +2,8 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 The mode menu is the control in a chat's composer foot that switches that chat's major and minor
-modes, switches its profile's Models part, and makes its profile the default for new chats.
+modes, switches its profile's Models part, and makes its profile the default for new chats (a chat
+with no profile has none to make the default, §chat.subagent-profiles/no-helper-profile).
 
 Owns: the trigger and the menu, how a switch reaches one chat, the mode prompt holding across turn
 starters and minor toggles, which minor modes reach workers, the reply shape every chat's prompt
@@ -125,7 +126,7 @@ It uses the model menu's popover shell (`.model-menu`): a `[popover="auto"]` rig
 the composer flyout), and a bottom sheet under 768px. The list inside is an ARIA **menu**. A listbox
 doesn't fit the main panel: it mixes one exclusive choice with independent toggles and a
 Profile action. The Profile action opens a searchable profile-picker panel in the same
-popover (§chat.subagent-profiles/menu), with Off first and the current profile checked.
+popover (§chat.subagent-profiles/menu), with the profile in effect checked and no Off.
 
 ```html
 <div class="model-menu mode-menu" id="mode-popover" popover="auto">
@@ -158,7 +159,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
     </div>
     <div class="model-menu-group" role="group" aria-labelledby="mode-group-profile">
       <div class="list-group-label" id="mode-group-profile">Profile</div>
-      <div class="popover-item" role="menuitem" aria-haspopup="true" tabindex="-1">…subagents… Profile · My setup (edited) …chevron-right…</div>
+      <div class="popover-item" role="menuitem" aria-haspopup="true" tabindex="-1">…subagents… Profile · Claude (edited) …chevron-right…</div>
     </div>
   </div>
   <div class="mode-menu-foot">
@@ -226,7 +227,8 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   Like any write of the default, a session that has never switched (no mode entry on its branch)
   follows it too from its next start or reopen. "Unchanged" is true now, not forever. It stays
   pressable in a chat that can't switch (`This chat can't switch.`).
-- **The button states.** `Make {name} the Default` while this chat's profile is not this computer's
+- **The button states.** A chat with no profile (§chat.subagent-profiles/no-helper-profile) shows
+  neither button. `Make {name} the Default` while this chat's profile is not this computer's
   default (its project modes never count, on or off, since no default holds them); `Already the
   default` with a check, `aria-disabled`, while it is — a button offering to save what is already
   saved is the thing this wording exists to rule out. What new sessions start from is the server's
@@ -877,7 +879,7 @@ choose between a team (`team_create`) and separate workers (`agent_spawn`):
   shared files; only the coordinator sees teammates' tasks, so a member's prompt says who it
   works with and on what; and every member names its work kind, which picks its model
   (§teams.defaults/member-kinds). `team_add`'s text, `/team`'s planning message and Delegate's
-  instructions (and Off's variant of them) say to name a kind too.
+  instructions (and their variant for a chat with no helper profile) say to name a kind too.
 - **Plan steps.** What asks an agent for a plan's steps never asks for them in order; it asks which
   can run at the same time. That holds for an alignment's approach steps (§chat.alignment/document),
   in the `align` tool, its import file and the align block, and for a feature chat's plan
@@ -903,9 +905,12 @@ exactly what the menu's same switch does, with its refusals (§chat.mode-menu/ho
   mode has that name. A broken one is refused with its problem. One with tools, commands or hooks
   turns on only when that exact version is already approved; otherwise it is refused, pointing at
   the mode menu: typing never approves.
-- **`/mode strict on|off`** (§chat.mode-menu/strict) and **`/mode subagents <id|off>`**, which pins
-  this chat's helpers to a library profile by id or name, as the Overseer's `subagent_profile` does
-  (§chat.subagent-profiles/overseer): only the helpers move.
+- **`/mode strict on|off`** (§chat.mode-menu/strict) and **`/mode subagents <id|name>`**, which pins
+  this chat's helpers to a profile this computer lists (a library profile, named as screens show it,
+  or a built-in one, §chat.subagent-profiles/builtins) by id or name, as the Overseer's
+  `subagent_profile` does (§chat.subagent-profiles/overseer): only the helpers move. Any other name,
+  `off` included, switches nothing and says "No profile is named "{name}"; the profiles here are
+  {names}.".
 - **`/review plan|implementation [al_N]`** asks for an adversarial review (§chat.alignment-review/tui).
 - **Anything else**, bare `/mode`, `/mode status` and `/mode default` included, switches nothing and is
   answered with the usage line (`Usage: /mode [normal|delegate|strict on|strict off|subagents <profile>|`
@@ -954,8 +959,8 @@ Sova's copy of it never loads in a Sova chat or its workers.
   and in the prompt of each worker its modes reach.
 - **The warm-up too.** A chat process and the server each open one throwaway session at their start
   to make Claude Code's models available. It runs Sova's modes as well, so no copy of the pi mode
-  extension loads there either; it seeds an absent subagent library (`subagent-profiles.json` and
-  `subagent-profiles-default.json`) and writes nothing else of the modes'.
+  extension loads there either, and it writes nothing of the modes': an absent subagent library
+  stays absent (§chat.subagent-profiles/no-seeding).
 - **What the model sees.** Sova's modes give the model the same mode section, the same tools with
   the same names, descriptions and schemas, activated at the same moments, and the same hidden
   notes as the pi mode extension did, so Sova running every chat's modes adds no prompt or tool

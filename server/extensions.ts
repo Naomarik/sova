@@ -20,7 +20,7 @@ import { isExtensionKey, sovaToken } from "./auth";
 
 export const contractWords = (): string => `1.${EXTENSION_CONTRACT}`;
 
-// The generic extension host (ext-contract-v1.20: the folder, the list Sova writes and the program it runs,
+// The generic extension host (ext-contract-v1.21: an extension that reads chats, its `chat` events and a chat's usage, v1.21; the folder, the list Sova writes and the program it runs,
 // server/extension-loader.ts, v1.20; v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts, v1.16; card types and drawing kinds in chat transcripts, server/extension-views.ts, v1.17; a command's `overseer`, `description` and `job` keys, §app.overseer/extension-commands, v1.18). An extension is a static UI (`dist`) plus a
 // loopback HTTP backend (`api`), each optional, named in a manifest Settings → Extensions writes (a hand
 // edit waits for approval). Everything that acts reads the active entries; only that screen reads every entry.

@@ -96,7 +96,6 @@ import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { configureCleanup, worktreesSummary } from "./worktree-cleanup";
-import { compressedGuard } from "./archive-compress/guard";
 import { realRetireDeps, removeFinished, restoreRetired } from "./worktree-retire";
 import { retirementViewOf } from "./worktree-retire-view";
 import { cleanupAnswer, pendingWhileOff, removeGate, summaryWhileOff, viewWhileOff } from "./cleanup-switch";
@@ -206,7 +205,7 @@ import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
-import { actsAsExtension, answerWithoutDrafts, EXTENSION_DRAFT_REFUSAL, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal, isDraftRead } from "./extension-doors";
+import { actsAsExtension, answerWithoutDrafts, EXTENSION_DRAFT_REFUSAL, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal, isDraftRead, mayActAsExtension } from "./extension-doors";
 import { extensionSenderOf } from "./extension-sender";
 import { registerUpdatesRoutes } from "./updates/routes";
 
@@ -287,7 +286,7 @@ export function buildApp(deps: AppDeps) {
       return c.json({ error: closed.error, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
     }
     // A chat's unsent draft never reaches an extension (§app.extensions/reads-chats): not its route, nor a word of it in any answer.
-    const extension = actsAsExtension(c);
+    const extension = mayActAsExtension(c) && actsAsExtension(c);
     if (extension && isDraftRead(c.req.method, new URL(c.req.url).pathname)) {
       audited?.(403, "/api/sessions/draft");
       return c.json({ error: EXTENSION_DRAFT_REFUSAL, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
@@ -330,9 +329,6 @@ export function buildApp(deps: AppDeps) {
     const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
     return incoming && isDirectLocal(incoming) ? next() : gzip(c, next);
   });
-
-  // A compressed chat is never opened or read: a route asked about one answers 409 (§app.session-list/archive-compression).
-  app.use("/api/*", compressedGuard());
 
   app.onError((err, c) => {
     // Sharing is off (§mesh.public/sharing-off): a link store refused before writing anything.

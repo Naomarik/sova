@@ -78,5 +78,8 @@ describe("the unsent draft never reaches a key", () => {
     assert.ok(!(await res.text()).includes("secret"));
     const plain = new Response("{\"id\":\"a\"}", { headers: { "content-type": "application/json" } });
     assert.equal(await answerWithoutDrafts(plain), plain, "an answer with no draft in it is passed on as it is");
+    const broken = await answerWithoutDrafts(new Response('{"draftPreview":"secret"', { headers: { "content-type": "application/json" } }));
+    assert.equal(broken.status, 502, "one that may hold a draft and can't be read fails closed");
+    assert.ok(!(await broken.text()).includes("secret"));
   });
 });

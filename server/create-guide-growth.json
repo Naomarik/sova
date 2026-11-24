@@ -632,6 +632,7 @@
    "usage.time": "scripts",
    "usage.today": "scripts",
    "usage.session": "scripts",
+   "chat.usage": "scripts",
    "usage.sessions": "scripts",
    "design.list": "scripts",
    "design.page": "scripts",

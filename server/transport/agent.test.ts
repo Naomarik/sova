@@ -147,6 +147,8 @@ test("after arrival: private files still holding the source's paths go to the ag
   // The device was prepared already, so no agent ran: one starts for these files alone.
   assert.deepEqual(await afterArrival(req, d.deps), [env]);
   assert.match(d.started[0]!.prompt, /still holds laptop's \/Users\/omar\/webapps\/motors/);
+  assert.match(d.started[0]!.prompt, /you have no link to it/);
+  assert.deepEqual(d.linked, [], "the chat is here now: no link");
   await afterArrival(req, d.deps);
   assert.equal(d.started.length, 1);
   assert.match(d.told[0]!, /still hold that computer's values/);

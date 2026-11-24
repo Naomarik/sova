@@ -16,6 +16,8 @@ export interface BriefFacts {
   checks: AgentCheck[];
   /** Sova's own folders on this device (state root, agent dir, chat homes): never written. */
   sovaFolders?: string[];
+  /** After arrival: the chat is on this device now, so there is no link to report over. */
+  arrived?: boolean;
 }
 
 const line = (c: AgentCheck) => `- ${c.id}: ${c.detail}`;
@@ -49,7 +51,9 @@ export function agentBrief(f: BriefFacts): string {
       : []),
     "",
     "## Reporting",
-    `You are linked to the chat on ${f.source}. Send it at most three messages with link_send: one when you start, one when you have to ask the user something, and one when you are done (what you installed and changed, and anything it should know here). Never answer a message from it that only acknowledges, thanks or repeats: act on one only when it asks you something or tells you something about getting this device ready, and then answer once. When everything above is fixed, end your turn: Sova runs the checks again, ends the link, and carries the transport on by itself. If something is still missing, the transport waits as Needs you until you or the user fix it.`,
+    f.arrived
+      ? "The chat has arrived on this device already, and you have no link to it: say what you changed in your reply, then end your turn."
+      : `You are linked to the chat on ${f.source}. Send it at most three messages with link_send: one when you start, one when you have to ask the user something, and one when you are done (what you installed and changed, and anything it should know here). Never answer a message from it that only acknowledges, thanks or repeats: act on one only when it asks you something or tells you something about getting this device ready, and then answer once. When everything above is fixed, end your turn: Sova runs the checks again, ends the link, and carries the transport on by itself. If something is still missing, the transport waits as Needs you until you or the user fix it.`,
   ].join("\n");
 }
 

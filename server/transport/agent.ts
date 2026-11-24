@@ -401,7 +401,7 @@ export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps,
 }
 
 /** Start the transport's agent: its chat here, on its model, briefed with `checks`, linked to the chat on the source. */
-async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: AgentDeps): Promise<AgentState | { needsYou: string }> {
+async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: AgentDeps, arrived = false): Promise<AgentState | { needsYou: string }> {
   const root = deps.stateRoot();
   const title = `Transport: ${req.title}`;
   const choice = agentModel(req.model, await deps.offeredModels());
@@ -418,10 +418,14 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     branches: req.worktrees.map((w) => w.branch).filter(Boolean),
     checks,
     sovaFolders: deps.protectedRoots(),
+    arrived,
   });
   const made = await deps.startChat({ cwd, title, prompt, model: choice.model, thinking: choice.thinking });
   markAgent(root, made.id, req.tid, deps.now());
-  const linked = await deps.link(made.id, req.sourcePeer, req.sourceChatId).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+  // After arrival the chat is here (a Move leaves only its Moved row there): a link joins two devices, so none is made.
+  const linked: { linkId: string } | { error: string } = arrived
+    ? { error: "the chat has arrived on this device" }
+    : await deps.link(made.id, req.sourcePeer, req.sourceChatId).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
   const agent: AgentState = { sessionId: made.id, path: made.path, title, model: choice.model, ...("linkId" in linked ? { linkId: linked.linkId } : { linkError: linked.error }), state: "working", checks, startedAt: deps.now() };
   saveAgent(deps, req.tid, agent);
   return agent;
@@ -488,7 +492,7 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
     saveAgent(deps, req.tid, { ...agent, state: "working" });
   } else {
     const checks = hits.map((h) => ({ id: `private:${h.file}`, ok: false, detail: `${h.file} still holds ${source}'s ${h.found.join(", ")}: point it at this computer` }));
-    const started = await startAgent(req, checks, deps);
+    const started = await startAgent(req, checks, deps, true);
     if ("needsYou" in started) return [];
   }
   return hits.map((h) => h.file);

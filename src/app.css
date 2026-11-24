@@ -272,7 +272,11 @@ html, body { overflow: clip; overscroll-behavior: none; }
   border: 0;
   border-radius: 0;
 }
-.cleanup-choices > li:not(:last-child) > .cleanup-choice { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.cleanup-choices > li:not(:last-child) { border-bottom: var(--stroke-thin) solid var(--color-border); }
+/* A row and its Compress button side by side (§app.session-list/archive-compress): siblings, never nested. */
+.cleanup-choice-item { display: flex; align-items: center; }
+.cleanup-choice-item > .cleanup-choice { flex: 1; min-width: 0; }
+.cleanup-compress { flex: none; margin-inline-end: var(--space-2); }
 .cleanup-choice .list-title,
 .cleanup-choice .list-meta { display: block; }
 /* The scope is the point of the row: wrap it on a narrow sheet rather than cut it. */

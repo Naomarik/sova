@@ -637,6 +637,8 @@ export function SessionRow(props: {
             </Show>
             <p class="list-meta">
               {relativeTime(s().lastActiveAt, props.now)}
+              {/* §app.session-list/archive-compression: kept for the record, never opened. */}
+              <Show when={s().compressed}>{" · Compressed"}</Show>
               {/* A shut-down chat whose background job still runs (§app.background-jobs/pane): its
                   end will wake the chat. The server sends the count only while the chat has no process. */}
               <Show when={!s().chat && (s().jobsRunning ?? 0) > 0}>

@@ -10,14 +10,17 @@ import { Icon, trapFocus } from "./ui";
 /** Anything the cleanup endpoint accepts; `paths` is the delete-one-archived-session mode. */
 type AnyCleanup = CleanupRequest | PathsCleanupRequest;
 
-const ACTIONS: { req: CleanupRequest; label: string; name: string }[] = [
-  { req: { mode: "age", minAgeDays: 7 }, label: "Older Than 7 Days", name: "Delete Sessions Older Than 7 Days" },
-  { req: { mode: "age", minAgeDays: 30 }, label: "Older Than 30 Days", name: "Delete Sessions Older Than 30 Days" },
+/** `compress`: the row's Compress button's accessible name (§app.session-list/archive-compress); Empty Sessions has none. */
+const ACTIONS: { req: CleanupRequest; label: string; name: string; compress?: string }[] = [
+  { req: { mode: "age", minAgeDays: 7 }, label: "Older Than 7 Days", name: "Delete Sessions Older Than 7 Days", compress: "Compress Sessions Older Than 7 Days" },
+  { req: { mode: "age", minAgeDays: 30 }, label: "Older Than 30 Days", name: "Delete Sessions Older Than 30 Days", compress: "Compress Sessions Older Than 30 Days" },
   { req: { mode: "husks" }, label: "Empty Sessions", name: "Delete Empty Sessions" },
 ];
 
+const isCompress = (r: AnyCleanup): boolean => r.action === "compress";
+
 const sameReq = (a: AnyCleanup, b: AnyCleanup): boolean => {
-  if (a.mode !== b.mode) return false;
+  if (a.mode !== b.mode || isCompress(a) !== isCompress(b)) return false;
   if (a.mode === "age" && b.mode === "age") return a.minAgeDays === b.minAgeDays;
   if (a.mode === "paths" && b.mode === "paths") return a.paths.join("\n") === b.paths.join("\n");
   return true; // both husks
@@ -62,11 +65,11 @@ export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: st
     }
   };
 
-  const done = (result: CleanupResponse) => {
+  const done = (result: CleanupResponse, compress: boolean) => {
     setPreview(null);
     const skipped = skippedText(result);
     const refusals = result.refused?.length ? ` ${result.refused.map((r) => r.reason).join(" ")}` : "";
-    const text = `Deleted ${sessionsWord(result.deletedCount)}.${skipped ? ` ${skipped}.` : ""}${refusals}`;
+    const text = `${compress ? "Compressed" : "Deleted"} ${sessionsWord(result.deletedCount)}.${skipped ? ` ${skipped}.` : ""}${refusals}`;
     toast(text);
     announce(text);
     // The open session's file is gone: leave it rather than show a transcript that can't load.
@@ -75,9 +78,13 @@ export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: st
     props.onDeleted();
   };
 
-  const failed = (err: unknown) => {
+  const failed = (err: unknown, compress: boolean) => {
     setPreview(null);
-    toast(`Couldn't delete sessions. Some may be gone; the list is refreshed. ${(err as Error).message}`);
+    toast(
+      compress
+        ? `Couldn't compress sessions. Some may be compressed; the list is refreshed. ${(err as Error).message}`
+        : `Couldn't delete sessions. Some may be gone; the list is refreshed. ${(err as Error).message}`,
+    );
     props.onDeleted();
   };
 
@@ -113,8 +120,8 @@ export function ArchiveCleanup(props: { sessions: SessionSummary[]; selected: st
               preview={p().result}
               sessions={props.sessions}
               onCancel={() => setPreview(null)}
-              onDone={done}
-              onFailed={failed}
+              onDone={(r) => done(r, isCompress(p().req))}
+              onFailed={(e) => failed(e, isCompress(p().req))}
             />
           </Portal>
         )}
@@ -149,14 +156,15 @@ function CleanupPicker(props: { checking: AnyCleanup | null; sessions: SessionSu
         </div>
         <div class="modal-body">
           <p class="message-text cleanup-intro" id="cleanup-pick-body">
-            Pick what to delete. You'll see how many sessions match before anything is deleted.
+            Pick what to delete or compress. You'll see how many sessions match first.
           </p>
           <ul class="list cleanup-choices">
             <For each={ACTIONS}>
               {(a, i) => {
                 const busy = () => props.checking !== null && sameReq(props.checking, a.req);
+                const compressing = () => props.checking !== null && sameReq(props.checking, { ...a.req, action: "compress" });
                 return (
-                  <li>
+                  <li class="cleanup-choice-item">
                     <button
                       ref={(el) => {
                         if (i() === 0) first = el;
@@ -171,11 +179,22 @@ function CleanupPicker(props: { checking: AnyCleanup | null; sessions: SessionSu
                       <span class="list-main">
                         <span class="list-title">{a.label}</span>
                         <span class="list-meta" id={`cleanup-pick-${i()}`}>
-                          {busy() ? "Checking…" : cleanupScope(a.req)}
+                          {busy() || compressing() ? "Checking…" : cleanupScope(a.req)}
                         </span>
                       </span>
                       <Icon name="chevron-right" small />
                     </button>
+                    <Show when={a.compress}>
+                      <button
+                        type="button"
+                        class="button button-sm button-ghost cleanup-compress"
+                        aria-label={a.compress}
+                        aria-disabled={props.checking ? "true" : undefined}
+                        onClick={() => !props.checking && props.onPick({ ...a.req, action: "compress" })}
+                      >
+                        Compress
+                      </button>
+                    </Show>
                   </li>
                 );
               }}
@@ -188,9 +207,10 @@ function CleanupPicker(props: { checking: AnyCleanup | null; sessions: SessionSu
             <ul class="list cleanup-choices">
               <For each={props.sessions}>
                 {(s, i) => {
-                  const busy = () => props.checking !== null && sameReq(props.checking, { mode: "paths", paths: [s.path] });
+                  const busy = () =>
+                    props.checking !== null && (sameReq(props.checking, { mode: "paths", paths: [s.path] }) || sameReq(props.checking, { mode: "paths", paths: [s.path], action: "compress" }));
                   return (
-                    <li>
+                    <li class="cleanup-choice-item">
                       <button
                         type="button"
                         class="list-row list-row-interactive cleanup-choice"
@@ -202,11 +222,22 @@ function CleanupPicker(props: { checking: AnyCleanup | null; sessions: SessionSu
                         <span class="list-main">
                           <span class="list-title">{s.title}</span>
                           <span class="list-meta" id={`cleanup-pick-one-${i()}`}>
-                            {busy() ? "Checking…" : relativeTime(s.lastActiveAt)}
+                            {busy() ? "Checking…" : s.compressed ? `${relativeTime(s.lastActiveAt)} · Compressed` : relativeTime(s.lastActiveAt)}
                           </span>
                         </span>
                         <Icon name="chevron-right" small />
                       </button>
+                      <Show when={!s.compressed}>
+                        <button
+                          type="button"
+                          class="button button-sm button-ghost cleanup-compress"
+                          aria-label={`Compress “${s.title}”`}
+                          aria-disabled={props.checking ? "true" : undefined}
+                          onClick={() => !props.checking && props.onPick({ mode: "paths", paths: [s.path], action: "compress" })}
+                        >
+                          Compress
+                        </button>
+                      </Show>
                     </li>
                   );
                 }}
@@ -234,6 +265,8 @@ function CleanupDialog(props: {
   onFailed(err: unknown): void;
 }) {
   const n = () => cleanupCandidates(props.preview);
+  const compress = () => isCompress(props.req);
+  const one = () => props.req.mode === "paths" && props.req.paths.length === 1;
   const skipped = () => skippedText(props.preview);
   const [pending, setPending] = createSignal(false);
   let cancelButton!: HTMLButtonElement;
@@ -248,6 +281,10 @@ function CleanupDialog(props: {
   /** What the request targets; for `paths` the named session(s) themselves. */
   const scope = () => {
     if (props.req.mode !== "paths") return cleanupScope(props.req);
+    if (compress()) {
+      const [first] = props.req.paths;
+      return first !== undefined && props.req.paths.length === 1 ? `One archived session: ${nameOf(first)}.` : `${props.req.paths.length} archived sessions.`;
+    }
     const [one] = props.req.paths;
     return one !== undefined
       ? `One archived session: ${nameOf(one)}.`
@@ -281,7 +318,7 @@ function CleanupDialog(props: {
       >
         <div class="modal-head">
           <h2 class="modal-title" id="cleanup-title">
-            {n() > 0 ? `Delete ${sessionsWord(n())}?` : "0 sessions to delete."}
+            {compress() ? (n() > 0 ? `Compress ${sessionsWord(n())}?` : "0 sessions to compress.") : n() > 0 ? `Delete ${sessionsWord(n())}?` : "0 sessions to delete."}
           </h2>
         </div>
         <div class="modal-body" id="cleanup-body">
@@ -290,14 +327,18 @@ function CleanupDialog(props: {
             when={n() > 0}
             fallback={
               <p class="message-text">
-                {props.preview.refused?.length ? "Nothing was deleted." : "Nothing matches right now, so nothing was changed."}
+                {props.preview.refused?.length ? (compress() ? "Nothing was compressed." : "Nothing was deleted.") : "Nothing matches right now, so nothing was changed."}
               </p>
             }
           >
             <p class="message-text">
-              {props.req.mode === "paths" && props.req.paths.length === 1
-                ? "This permanently deletes its transcript file — this can't be undone."
-                : "This permanently deletes their transcript files — this can't be undone."}
+              {compress()
+                ? one()
+                  ? "It stays in the Archive, marked Compressed. Sova won't open or search it again, and you can still delete it."
+                  : "They stay in the Archive, marked Compressed. Sova won't open or search them again, and you can still delete them."
+                : one()
+                  ? "This permanently deletes its transcript file — this can't be undone."
+                  : "This permanently deletes their transcript files — this can't be undone."}
             </p>
           </Show>
           <Show when={skipped()}>
@@ -313,8 +354,19 @@ function CleanupDialog(props: {
         </div>
         <div class="modal-foot">
           <Show when={n() > 0}>
-            <button type="button" class="button button-destructive" aria-disabled={pending() ? "true" : undefined} onClick={() => void confirm()}>
-              {pending() ? "Deleting…" : `Delete ${n() === 1 ? "Session" : `${n()} Sessions`}`}
+            <button
+              type="button"
+              class={compress() ? "button button-primary" : "button button-destructive"}
+              aria-disabled={pending() ? "true" : undefined}
+              onClick={() => void confirm()}
+            >
+              {compress()
+                ? pending()
+                  ? "Compressing…"
+                  : `Compress ${n() === 1 ? "Session" : `${n()} Sessions`}`
+                : pending()
+                  ? "Deleting…"
+                  : `Delete ${n() === 1 ? "Session" : `${n()} Sessions`}`}
             </button>
           </Show>
           <span class="modal-spacer" />

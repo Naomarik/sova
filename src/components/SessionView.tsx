@@ -431,7 +431,14 @@ export function SessionView(props: {
       {/* The host's state, whichever view is open (§mesh/compatibility). */}
       <Show when={sendingOff(path) === "display" && hostOf(path)}>{(h) => <HostDisplayBar host={h()} />}</Show>
       <Show when={updateNeededFor(path) && hostOf(path)}>{(h) => <HostUpdatePage host={h()} />}</Show>
-      <Show when={updateNeededFor(path) ? null : viewKey()} keyed>
+      {/* A compressed chat never opens (§app.session-list/archive-compression): no transcript, no composer, no Unarchive. */}
+      <Show when={s().compressed}>
+        <div class="empty">
+          <Icon name="archive" class="empty-mark" />
+          <p class="empty-body">This chat is compressed. Sova keeps it for the record and doesn't open it.</p>
+        </div>
+      </Show>
+      <Show when={!s().compressed && (updateNeededFor(path) ? null : viewKey())} keyed>
         {(_key) => {
           const d = decision();
           return (

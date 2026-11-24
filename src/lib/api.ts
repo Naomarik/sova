@@ -890,7 +890,7 @@ function refusalsOf(body: unknown): BatchRefusal[] | null {
 }
 
 /** POST /api/sessions/cleanup `{ mode:"paths" }`: named session paths, e.g. one archived row. */
-export type PathsCleanupRequest = { mode: "paths"; paths: string[] };
+export type PathsCleanupRequest = { mode: "paths"; paths: string[]; action?: "compress" };
 
 /** One cleanup response, read leniently (`parseCleanupResult`), plus what paths mode refused. */
 export interface CleanupResponse extends CleanupResult {

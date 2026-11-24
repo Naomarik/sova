@@ -132,6 +132,11 @@ export function buildJoined(input: JoinInputs): JoinedProfile[] {
     if (by) replaced.set(id, by);
   }
   const shipped = shippedAll.filter((r) => !isBuiltinProfileId(r.id) || (listedBuiltins.has(r.id) && !replaced.has(r.id)));
+  // Listed with no account of its own: the fallback Claude when none is connected.
+  const connected = input.connected ?? NO_ACCOUNTS;
+  for (const r of shipped) {
+    if (isBuiltinProfileId(r.id) && !(r.id === "claude" ? connected.claude : r.id === "openai" ? connected.openai : connected.ollamaCloud)) r.notConnected = true;
+  }
   const libraryOnly = libraryRows([...yoursSession, ...shipped, ...project]);
   const yours = [...yoursSession, ...libraryOnly].sort(byName);
   for (const [id, by] of replaced) {

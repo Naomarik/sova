@@ -92,6 +92,8 @@ describe("the joined list", () => {
       assert.deepEqual(r.filter((x) => x.group === "builtin").map((x) => x.key), listed, label);
       assert.deepEqual(r.filter((x) => x.replaces).map((x) => [x.key, x.replaces]), replaced, label);
       assert.equal(r.some((x) => x.kind === "off" || x.key === OFF_KEY), false, label);
+      // Only the fallback Claude, listed with nothing connected, is marked as not connected.
+      assert.deepEqual(r.filter((x) => x.notConnected).map((x) => x.key), listed.length === 1 && listed[0] === "sova:claude" && !connected.claude ? ["sova:claude"] : [], label);
       const names = r.map((x) => x.name.toLowerCase());
       assert.equal(new Set(names).size, names.length, `${label}: each name once`);
     }

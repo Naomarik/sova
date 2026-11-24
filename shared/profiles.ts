@@ -237,6 +237,8 @@ export interface JoinedProfile {
   providers: string[];
   /** A row of yours that takes a built-in profile's place, which is then not listed: that profile's key ("sova:claude"). */
   replaces?: string;
+  /** A built-in profile listed though its account isn't connected here (Claude, the fallback with none connected). */
+  notConnected?: true;
   /** How many helper roles its library half sets (the {n} in "its {n} helpers"). */
   helperRoles: number;
   isDefault?: true;

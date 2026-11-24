@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
-import { DESIGN_NONCE_SLOT, DESIGN_PAGE_CSP, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, DESIGN_STREAM_CSP, designHasFirstPaint, designHasStyles, designPageCsp, designPageDoc, designShellDoc, designStreamDoc, fromDesignFrame, versionLabel } from "./design-frame";
+import { DESIGN_NONCE_SLOT, DESIGN_NOTE_TAG, DESIGN_PAGE_CSP, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, DESIGN_STREAM_CSP, designHasFirstPaint, designHasStyles, designPageCsp, designPageDoc, designScriptsDropped, designShellDoc, designStreamDoc, fromDesignFrame, versionLabel } from "./design-frame";
 
 const directives = (csp: string) => new Map(csp.split("; ").map((d) => [d.split(" ")[0], d.split(" ").slice(1)] as const));
 
@@ -53,6 +53,80 @@ test("only the nonce's boot runs inline, and it runs the page's scripts itself",
   assert.equal(held.split(`nonce="${DESIGN_NONCE_SLOT}"`).length, 2, "one script carries the nonce");
   assert.match(held, /querySelectorAll\("script:not\(\[src\]\)"\)/);
   assert.match(held, /meta\[http-equiv\]/, "and its policy tag is taken out of view");
+});
+
+/** A stand-in element: a tag, attributes, children (text or elements), listeners and an open shadow root. */
+type El = { tagName: string; attributes: { name: string; value: string }[]; children: (El | string)[]; shadow?: El; listeners: string[] };
+const el = (tagName: string, attrs: Record<string, string> = {}): El => ({ tagName, attributes: Object.entries(attrs).map(([name, value]) => ({ name, value })), children: [], listeners: [] });
+const textOf = (e: El | string): string => (typeof e === "string" ? e : e.children.map(textOf).join(""));
+
+/**
+ * The seal of a finished page run over a stand-in document as the browser hands it over (parsed, readyState
+ * "interactive"): its inline scripts and handler attributes. What the page's code did, what went to the console, and
+ * the root element's children the seal added.
+ */
+function sealed(scripts: { type?: string; text: string }[], handlers: Record<string, string> = {}) {
+  const head = designPageDoc("", { motion: true }).head;
+  const seal = head.slice(head.indexOf(`nonce="${DESIGN_NONCE_SLOT}">`) + `nonce="${DESIGN_NONCE_SLOT}">`.length, head.lastIndexOf("</script>"));
+  const button = el("BUTTON", handlers);
+  const root = el("HTML");
+  const errors: unknown[][] = [];
+  const ran: string[] = [];
+  let onReady: (() => void) | null = null;
+  const node = (tag: string): El & Record<string, unknown> => {
+    const e = el(tag.toUpperCase()) as El & Record<string, unknown>;
+    e.setAttribute = (k: string, v: string) => e.attributes.push({ name: k, value: v });
+    e.append = (...kids: (El | string)[]) => e.children.push(...kids);
+    e.attachShadow = () => (e.shadow = node("#shadow"));
+    return e;
+  };
+  Object.assign(button, { removeAttribute: (n: string) => (button.attributes = button.attributes.filter((a) => a.name !== n)), addEventListener: (t: string) => button.listeners.push(t) });
+  Object.assign(root, { append: (...kids: El[]) => root.children.push(...kids) });
+  const document = {
+    currentScript: { remove() {} },
+    readyState: "interactive",
+    documentElement: root,
+    fonts: { ready: Promise.resolve() },
+    getAnimations: () => [],
+    createElement: node,
+    addEventListener: (t: string, f: () => void) => t === "readystatechange" && (onReady = f),
+    querySelectorAll: (sel: string) => (sel === "*" ? [button] : sel === "script:not([src])" ? scripts.map((s) => ({ type: s.type ?? "", textContent: s.text })) : []),
+  };
+  const ctx = vm.createContext({ document, console: { error: (...a: unknown[]) => errors.push(a) }, ran, parent: { postMessage() {} }, addEventListener() {}, requestAnimationFrame() {}, setTimeout() {} });
+  ctx.window = ctx;
+  vm.runInContext(seal, ctx);
+  onReady!();
+  return { ran, errors, notes: root.children.filter((c): c is El => typeof c !== "string" && c.tagName === DESIGN_NOTE_TAG.toUpperCase()), button };
+}
+
+test("a page whose code all parses runs it and shows no note, whatever else it carries", () => {
+  const s = sealed([{ text: "ran.push('one')" }, { text: "ran.push('two')" }, { type: "application/json", text: "{not: js" }, { type: "module", text: "import x from 'y'" }], { onclick: "ran.push('click')" });
+  assert.deepEqual(s.ran, ["one", "two"], "its classic scripts ran, in order; data and modules are neither run nor counted");
+  assert.deepEqual(s.button.listeners, ["click"], "its handler became a listener");
+  assert.deepEqual(s.notes, []);
+  assert.deepEqual(s.errors, []);
+});
+
+test("each script or handler that doesn't parse is left out, logs its parse error, and the page shows one note with the count", () => {
+  // e.key=[redacted]'Escape': what the share's old scrub made of a working page.
+  const broken = "addEventListener('keydown',(e)=>{if(e.key=[redacted]'Escape')close()})";
+  for (const [scripts, handlers, n] of [
+    [[{ text: broken }, { text: "ran.push('ok')" }], {}, 1],
+    [[{ text: "ran.push('ok')" }], { onkeydown: "if(event.key=[redacted]'Enter')go()" }, 1],
+    [[{ text: broken }, { text: "ran.push('ok')" }, { text: "let =" }], { onclick: "(" }, 3],
+  ] as const) {
+    const s = sealed([...scripts], { ...handlers });
+    assert.deepEqual(s.ran, ["ok"], "the code that parses still runs");
+    assert.equal(s.errors.length, n);
+    // The frame's own realm made the error, so it is told by name, not instanceof.
+    for (const e of s.errors) assert.equal((e.at(-1) as Error).name, "SyntaxError", `logged with its parse error: ${String(e)}`);
+    assert.equal(s.notes.length, 1, "one note, however many");
+    const note = s.notes[0]!;
+    assert.equal(textOf(note.shadow!), designScriptsDropped(n));
+    assert.match(note.attributes.find((a) => a.name === "style")!.value, /position:fixed;.*pointer-events:none/, "pinned in a corner, never taking a click");
+  }
+  assert.equal(designScriptsDropped(1), "A script in this design couldn't run, so parts of it may not respond.");
+  assert.equal(designScriptsDropped(3), "3 scripts in this design couldn't run, so parts of it may not respond.");
 });
 
 test("a grid card holds motion and the full view runs it", () => {

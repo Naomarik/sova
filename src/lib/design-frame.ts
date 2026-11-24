@@ -63,13 +63,37 @@ export const DESIGN_FRAME_LEFT = "This page tried to leave its frame, so it was 
 const head = (csp: string) =>
   `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta http-equiv="x-dns-prefetch-control" content="off"><meta name="referrer" content="no-referrer">`;
 
+/** The note a finished page shows when the seal left out `n` scripts (or inline handlers) that don't parse. */
+export const designScriptsDropped = (n: number): string => `${n === 1 ? NOTE_ONE : `${n}${NOTE_MANY}`}${NOTE_REST}`;
+const NOTE_ONE = "A script in this design";
+const NOTE_MANY = " scripts in this design";
+const NOTE_REST = " couldn't run, so parts of it may not respond.";
+
+/** The note's element: a name no page uses, its look in a shadow root the page's styles don't reach. */
+export const DESIGN_NOTE_TAG = "sova-design-note";
+
+/**
+ * The seal's note, as a function of the count (inlined into SEAL_SCRIPT): a quiet warn chip, a dot and the words, in the
+ * page's bottom-left corner. It never takes a click (each part says so: `all:initial` would reset the host's inherited
+ * pointer-events), and it hangs off the root element, so a page that rewrites its body keeps it.
+ */
+const NOTE_SCRIPT = `(n)=>{const h=document.createElement(${JSON.stringify(DESIGN_NOTE_TAG)});
+h.setAttribute("style","all:initial;position:fixed;left:8px;bottom:8px;z-index:2147483647;pointer-events:none");
+const r=h.attachShadow({mode:"open"}),c=document.createElement("span"),d=document.createElement("span");
+c.setAttribute("role","status");
+c.setAttribute("style","all:initial;pointer-events:none;display:inline-flex;align-items:center;gap:6px;max-width:calc(100vw - 16px);box-sizing:border-box;padding:3px 10px;border-radius:999px;background:#FBF1DE;color:#8A5A00;font:530 12.5px/1.45 Inter,system-ui,-apple-system,'Segoe UI',sans-serif");
+d.setAttribute("style","all:initial;pointer-events:none;flex:none;width:6px;height:6px;border-radius:50%;background:#8A5A00");
+c.append(d,(n===1?${JSON.stringify(NOTE_ONE)}:n+${JSON.stringify(NOTE_MANY)})+${JSON.stringify(NOTE_REST)});r.append(c);document.documentElement.append(h);}`;
+
 /**
  * Run before any page code, and only this runs by the nonce. WebRTC is the one way out no content
  * policy closes, so its interfaces go. The nonce is then hidden, so no frame the page makes, in any
  * tree, can run a script of its own: its policy is inherited, and its inline script has no nonce.
  * The page's scripts are run here instead, as the document finishes parsing and before
  * DOMContentLoaded, so their listeners for it still fire. Inline handlers (which the policy can't
- * allow) are moved onto listeners. A form that nobody stopped is stopped here: its validation and
+ * allow) are moved onto listeners. A script or handler that doesn't parse is left out: its error goes to
+ * the console, and the page shows a small note saying how many (NOTE_SCRIPT), never on a page whose
+ * code all parses. A form that nobody stopped is stopped here: its validation and
  * submit handlers run, and a post would only be refused by `form-action`. The page says it has drawn
  * once its fonts are in and its opening animations have run (a fade-in starts from nothing), so a
  * picture held above it never gives way to a page still appearing.
@@ -80,13 +104,15 @@ for(const m of document.querySelectorAll("meta[http-equiv]"))m.remove();
 addEventListener("submit",(e)=>e.preventDefault());
 {let ran=false;document.addEventListener("readystatechange",()=>{
 if(ran||document.readyState!=="interactive")return;ran=true;
+let dropped=0;const drop=(where,e)=>{dropped++;console.error("This design's "+where+" couldn't run:",e);};
 for(const el of document.querySelectorAll("*"))for(const a of [...el.attributes]){
 if(!/^on[a-z]+$/.test(a.name)||el.tagName==="BODY"&&a.name==="onload")continue;
-let f;try{f=new Function("event",a.value);}catch{continue;}
+let f;try{f=new Function("event",a.value);}catch(e){drop(a.name+" handler",e);continue;}
 el.removeAttribute(a.name);
 el.addEventListener(a.name.slice(2),function(e){if(f.call(this,e)===false)e.preventDefault();});}
-const parses=(c)=>{try{new Function(c);return true;}catch{return false;}};
+const parses=(c)=>{try{new Function(c);return true;}catch(e){drop("script",e);return false;}};
 const code=[...document.querySelectorAll("script:not([src])")].filter((s)=>!s.type||/javascript|ecmascript/i.test(s.type)).map((s)=>s.textContent).filter(parses).join("\\n;\\n");
+if(dropped)(${NOTE_SCRIPT})(dropped);
 if(code)(0,eval)(code);
 });}
 {const raf=requestAnimationFrame.bind(window),said=()=>parent.postMessage({"sova-design-frame":1,op:"drawn"},"*");

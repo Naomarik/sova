@@ -58,7 +58,11 @@ const design = (label: string, runId: string, versions: { n: number; min: number
   updatedAt: T(0),
   ...more,
 });
-const page = (mark: string) => `<!doctype html><html><head><style>h1{color:red}</style></head><body><h1>${mark}</h1><script>document.title="ran"</script></body></html>`;
+/** Code the redactor's name guesses would rewrite (`e.key=[redacted]'Escape'`), which a page keeps as written. */
+const CODE = `addEventListener('keydown',(e)=>{if(e.key==='Escape')close()});let key='draft';key=chatKey(x);const cfg={"token": "abc"};`;
+/** An unshaped value behind a secret name, in quotes: the page scrub still takes it. */
+const UNSHAPED = "fake0unshaped".padEnd(24, "z");
+const page = (mark: string) => `<!doctype html><html><head><style>h1{color:red}</style></head><body><h1>${mark}</h1><script>document.title="ran"</script><script>${CODE}</script><script>const apiKey="${UNSHAPED}"</script></body></html>`;
 
 /** A chat: u1 · a1 · card(run1) · a2 · u3 · card(run2) · a3, runs run1 and run2; and its design store. */
 function chat(sid: string): string {
@@ -80,7 +84,7 @@ function chat(sid: string): string {
     msg("u1", null, "user", "make a lookbook", 1),
     msg("a1", "u1", "assistant", "on it", 2),
     card("t1", "a1", "run1", 3),
-    msg("a2", "t1", "assistant", "here it is", 4),
+    msg("a2", "t1", "assistant", `here it is: ${CODE}`, 4),
     msg("u3", "a2", "user", "another", 10),
     card("t2", "u3", "run2", 11),
     runMark("m2", "t2", "run1", 12),
@@ -189,12 +193,23 @@ describe("design documents", () => {
       const doc = (await sessionShareDesign(live, "A", 1, kind))!;
       assert.ok(doc.includes("PAGE-A1"), kind);
       assert.ok(!doc.includes("sk-ant-api03-"), `${kind}: the secret is scrubbed`);
+      assert.ok(!doc.includes(UNSHAPED) && doc.includes("apiKey="), `${kind}: so is an unshaped one behind a secret name`);
       if (kind === "page" || kind === "tile") {
         assert.ok(doc.includes("createElement(\"iframe\")") && doc.includes("URL.createObjectURL(new Blob([html]"), `${kind}: the shell makes the page's frame, a blob: document`);
         assert.ok(!doc.includes(".srcdoc"), `${kind}: never srcdoc, whose base URL would be the shell's address under the link`);
         assert.ok(doc.includes('document.title=\\"ran\\"'), `${kind}: the page's own script is kept`);
-      } else assert.ok(!doc.includes("createElement(\"iframe\")") && doc.startsWith("<!doctype html>"), `${kind}: one document, no shell`);
+        assert.ok(doc.includes(JSON.stringify(CODE).slice(1, -1)), `${kind}: its code is byte for byte as written`);
+      } else {
+        assert.ok(!doc.includes("createElement(\"iframe\")") && doc.startsWith("<!doctype html>"), `${kind}: one document, no shell`);
+        assert.ok(doc.includes(`<script>${CODE}</script>`), `${kind}: its code is byte for byte as written`);
+      }
     }
+  });
+
+  test("the conversation keeps the whole redactor: the same code in a message is still guessed at", async () => {
+    const text = (await sessionShareView(src(path, sid)))!.items.find((i) => i.text.startsWith("here it is"))!.text;
+    assert.ok(!text.includes("key='draft'") && text.includes("key='[redacted]'"), text);
+    assert.ok(!text.includes("e.key==='Escape'"), text);
   });
 
   test("headers: a sandbox (opaque origin), Google Fonts only, framable by its own host only", () => {

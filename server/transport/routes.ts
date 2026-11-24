@@ -3,9 +3,12 @@
 // (§app.access/your-click). The peer routes: every one but the package's is a sessions route on the
 // destination (server/mesh/access.ts); the package's belongs to no grant and checks the one-time
 // ticket itself (§mesh.peers/transport-ticket), comparing in constant time and never logging it.
+import { execFile } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
-import { rename } from "node:fs/promises";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { rename, rm as rmAsync } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
+import { createZstdDecompress } from "node:zlib";
 import { dirname, join } from "node:path";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -14,7 +17,7 @@ import { chatJobs, stopJobsOf } from "../background-jobs";
 import { emitChatNews } from "../chat-home-events";
 import { acquireChatHandle, closeChat } from "../chat-handle";
 import { adoptArrivedHome, forgetWorkerChats, parkWorkerChat, steerWorkerChat, workerMembersOf, workersWorkingOf } from "../chat-host";
-import { chatHome } from "../chat-homes/root";
+import { chatHome, homesRoot } from "../chat-homes/root";
 import { readBranch } from "../harness/pi/reader";
 import { sessionsChanged } from "../list-generation";
 import { mintClickProof } from "../mesh/click-proof";
@@ -23,17 +26,17 @@ import { serveTar } from "../mesh/links-transfer";
 import { localRequest } from "../mesh/proxy";
 import { pageOnlyRefusal } from "../page-only";
 import { resolveSessionPath } from "../paths";
-import { archiveSession, getSessionSummary } from "../sessions-index";
+import { archiveSession, cleanupSessions, getSessionSummary } from "../sessions-index";
 import { stateRoot } from "../state-root";
 import { worktreesOf } from "../worktrees-state";
 import * as dest from "./destination";
-import { git } from "./git-snapshot";
+import { git, publishTrees, rebuildWorktrees } from "./git-snapshot";
 import { isTransportAgent, needsAnswer, setAfterArrival, setBringHelpersToRest, setInterruptWaiting, setIsTransportAgent, setNeedsAnswer, setPrepareDestination, setPreviewExtras, interruptWaiting, releasePause, type ProjectRef } from "./hooks";
-import { markMoved } from "./moved";
+import { allMoved, markMoved, MOVE_BACK_MS, movedOf, unmarkMoved } from "./moved";
 import { compressFolder, type PackageManifest } from "./package";
 import { cancelTransport, previewTransport, REFUSALS, resumeSources, retryTransport, servedPackage, setSourceDeps, startTransport } from "./source";
 import { listTransports, publicView, readTransport, type TransportRecord, updateTransport } from "./store";
-import { PROOF_HEADER, TICKET_HEADER } from "./wire";
+import { peerPath, PROOF_HEADER, TICKET_HEADER } from "./wire";
 
 const small = bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
@@ -69,7 +72,8 @@ async function moved(r: TransportRecord): Promise<void> {
   const ext = (r.ext ?? {}) as { ownedTrees?: string[]; packedTrees?: { name: string; path: string; main: boolean }[] };
   // The team leaves this server's memory first: archiving must not end their records (the safety copy keeps them idle).
   forgetWorkerChats(workerMembersOf(r.chatId).map((m) => m.sid));
-  markMoved(r.chatId, { tid: r.tid, peer: r.peer, to: r.peerLabel, at: new Date().toISOString(), arrivedId: r.arrivedId ?? r.chatId });
+  const arrivedPath = ((r.ext ?? {}) as { arrivedPath?: string }).arrivedPath;
+  markMoved(r.chatId, { tid: r.tid, peer: r.peer, to: r.peerLabel, at: new Date().toISOString(), arrivedId: r.arrivedId ?? r.chatId, ...(arrivedPath ? { arrivedPath } : {}) });
   const a = await archiveSession(r.path, true);
   if (!a.ok) log(`${r.tid}: the Moved row's archive mark failed: ${a.error}`);
   // The safety copy keeps the package: the code exactly as it left, every commit and change.
@@ -98,9 +102,112 @@ async function moved(r: TransportRecord): Promise<void> {
     const common = (await git(p, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim();
     const rm = await git(common ? dirname(common) : p, ["worktree", "remove", "--force", p]);
     if (rm.code !== 0) log(`${r.tid}: ${p} was not removed: ${rm.stderr.trim()}`);
+    else updateTransport(r.tid, (cur) => ({ ext: { removedTrees: [...(((cur.ext ?? {}) as { removedTrees?: unknown[] }).removedTrees ?? []), { name: t.name, path: p, common }] } }));
   }
   emitChatNews({ name: "chat.removed", chat: r.chatId, home });
   sessionsChanged();
+}
+
+/** A zstd archive read into a plain tar beside it (removed by the caller). */
+async function unzstd(file: string, out: string): Promise<void> {
+  await pipeline(createReadStream(file), createZstdDecompress(), createWriteStream(out, { mode: 0o600 }));
+}
+
+/** Extract `tarFile` into `dir`, never replacing a file already there (GNU tar's --skip-old-files, bsdtar's -k). */
+function extractKeeping(tarFile: string, dir: string): Promise<void> {
+  const run = (flag: string) =>
+    new Promise<number>((done) => execFile("tar", ["-x", "-p", flag, "-f", tarFile, "-C", dir], { maxBuffer: 8 * 1024 * 1024 }, (err) => done(err ? ((err as { code?: number }).code ?? 1) : 0)));
+  return run("--skip-old-files").then((code) => (code === 0 ? undefined : run("-k").then((c) => (c === 0 ? undefined : Promise.reject(new Error(`tar couldn't restore into ${dir}`))))));
+}
+
+/** Whether a Moved row can come back, and how (§app.transport/moved-row): Move Back for 7 days while nothing happened there, then Copy Back. */
+export async function backState(r: TransportRecord, mesh: Pick<Mesh, "peerFetch">): Promise<{ can: "move" | "copy" | null; reason?: string; peer: string; to: string; path?: string }> {
+  const m = movedOf(r.chatId);
+  const base = { peer: r.peer, to: r.peerLabel, ...(m?.arrivedPath ? { path: m.arrivedPath } : {}) };
+  if (!m || m.tid !== r.tid) return { ...base, can: null, reason: "This chat runs here." };
+  const ext = (r.ext ?? {}) as { compressedAt?: string };
+  if (Date.now() - Date.parse(m.at) > MOVE_BACK_MS || ext.compressedAt) return { ...base, can: "copy" };
+  try {
+    const res = await mesh.peerFetch(r.peer, peerPath.status(r.tid), { signal: AbortSignal.timeout(8_000) });
+    if (res.status === 403) return { ...base, can: null, reason: REFUSALS.noGrant(r.peerLabel) };
+    if (!res.ok) return { ...base, can: null, reason: REFUSALS.offline(r.peerLabel) };
+    const s = (await res.json()) as { turned?: boolean };
+    return { ...base, can: s.turned === false ? "move" : "copy" };
+  } catch {
+    return { ...base, can: null, reason: REFUSALS.offline(r.peerLabel) };
+  }
+}
+
+/** Move Back on this device (the chat's first one): the other device stops it, then it runs here again from its safety copy. */
+async function moveBackToHere(r: TransportRecord, mesh: Pick<Mesh, "peerFetch">): Promise<{ ok: boolean; error?: string }> {
+  const st = await backState(r, mesh);
+  if (st.can !== "move") return { ok: false, error: st.reason ?? `It has changed on ${r.peerLabel}, so this copies it back as a new chat.` };
+  const res = await mesh.peerFetch(r.peer, `/api/peer/transport/${r.tid}/move-back`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: r.path }), signal: AbortSignal.timeout(60_000) }).catch(() => null);
+  if (!res) return { ok: false, error: REFUSALS.offline(r.peerLabel) };
+  if (!res.ok) return { ok: false, error: ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? `${r.peerLabel} answered ${res.status}` };
+  // From here the chat runs nowhere until it is restored: a failure is retried (the other side answers "again").
+  const home = chatHome(r.chatId);
+  const removed = ((r.ext ?? {}) as { removedTrees?: { name: string; path: string; common: string }[] }).removedTrees ?? [];
+  const at = join(homesRoot(), ".incoming", `${r.tid}-back`);
+  try {
+    if (removed.length) {
+      await rmAsync(at, { recursive: true, force: true });
+      mkdirSync(at, { recursive: true, mode: 0o700 });
+      const pkg = join(home, "transport", `${r.tid}.tar.zst`);
+      await unzstd(pkg, join(at, "pkg.tar"));
+      await extractKeeping(join(at, "pkg.tar"), at);
+      const manifest = JSON.parse(readFileSync(join(at, "package.json"), "utf8")) as PackageManifest;
+      const metas = manifest.worktrees.filter((w) => removed.some((x) => x.name === w.name)).map((w) => w.meta);
+      const targets = Object.fromEntries(removed.map((x) => [x.name, x.path]));
+      const repo = removed[0] ? dirname(removed[0].common) : null;
+      const staged = await rebuildWorktrees({ repo, codeDir: join(at, "code"), tid: r.tid, metas, targets });
+      await publishTrees(staged, r.tid);
+      // What never travelled (build output, unticked files) comes back from the folder's own archive; nothing is replaced.
+      for (const x of removed) {
+        const kept = join(home, "transport", `${r.tid}-code-${x.name}.tar.zst`);
+        if (!existsSync(kept)) continue;
+        await unzstd(kept, join(at, `${x.name}.tar`));
+        await extractKeeping(join(at, `${x.name}.tar`), dirname(x.path));
+      }
+    }
+    unmarkMoved(r.chatId);
+    const a = await archiveSession(r.path, false);
+    if (!a.ok) log(`${r.tid}: unarchive after Move Back: ${a.error}`);
+    adoptArrivedHome(r.chatId);
+    sessionsChanged();
+    emitChatNews({ name: "chat.created", chat: r.chatId, home });
+    updateTransport(r.tid, { ext: { movedBack: new Date().toISOString(), removedTrees: [] } });
+    log(`${r.tid}: moved back from ${r.peerLabel}`);
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`${r.tid}: Move Back stopped: ${msg}`);
+    return { ok: false, error: `Move Back from ${r.peerLabel} stopped: ${msg}. Press Move Back again to continue.` };
+  } finally {
+    await rmAsync(at, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** The safety copy of a Move older than 7 days is compressed, never removed (§app.transport/moved-row). */
+async function compressOldSafetyCopies(): Promise<void> {
+  const now = Date.now();
+  const paths: string[] = [];
+  const tids: string[] = [];
+  for (const [, m] of Object.entries(allMoved())) {
+    if (now - Date.parse(m.at) <= MOVE_BACK_MS) continue;
+    const r = readTransport(m.tid);
+    if (!r || r.side !== "source" || ((r.ext ?? {}) as { compressedAt?: string }).compressedAt) continue;
+    paths.push(r.path);
+    tids.push(r.tid);
+  }
+  if (!paths.length) return;
+  const res = await cleanupSessions({ mode: "paths", paths, dryRun: false, action: "compress", by: "auto" } as never);
+  const done = new Set((res as { compressedIds?: string[] }).compressedIds ?? []);
+  for (const tid of tids) {
+    const r = readTransport(tid);
+    if (r && done.has(r.chatId)) updateTransport(tid, { ext: { compressedAt: new Date().toISOString() } });
+  }
+  log(`compressed ${done.size} safety copies older than 7 days`);
 }
 
 export function mountTransport(app: Hono, mesh: Mesh): void {
@@ -186,6 +293,24 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     })
     .catch((err) => log(`no Transport agent in this build: ${err instanceof Error ? err.message : String(err)}`));
 
+  // The device a chat moved to, asked to give it back: stop it here, park its team, and become the Moved side.
+  dest.setMoveBackHere(async (r, back) => {
+    const id = r.arrivedId ?? r.chatId;
+    const helpers = workerMembersOf(id).map((m) => m.sid);
+    for (const h of [...helpers].reverse()) await parkWorkerChat(h);
+    await closeChat(r.path, `This chat is moving back to ${r.peerLabel}.`, { quiet: "archived" });
+    forgetWorkerChats(helpers);
+    markMoved(id, { tid: r.tid, peer: r.peer, to: r.peerLabel, at: new Date().toISOString(), arrivedId: r.sourceChatId, arrivedPath: back.path });
+    const a = await archiveSession(r.path, true);
+    if (!a.ok) log(`${r.tid}: archive after Move Back: ${a.error}`);
+    emitChatNews({ name: "chat.removed", chat: id, home: chatHome(id) });
+    sessionsChanged();
+  });
+  // Safety copies past their 7 days: checked 10 minutes after start, then every 6 hours.
+  const pass = () => void compressOldSafetyCopies().catch((err) => log(`safety-copy compression: ${err instanceof Error ? err.message : String(err)}`));
+  setTimeout(pass, 10 * 60_000).unref?.();
+  setInterval(pass, 6 * 3_600_000).unref?.();
+
   // Transports this server was in the middle of go on (settled at the next contact).
   const all = listTransports();
   resumeSources(all);
@@ -246,7 +371,30 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       return res.ok ? c.json({ ok: true }) : c.json({ error: res.error }, res.status as 409);
     });
 
+  app.get("/api/transport/:tid/back", async (c) => {
+    if (!local(c)) return notFound(c);
+    const r = readTransport(c.req.param("tid"));
+    return r ? c.json(await backState(r, mesh)) : notFound(c);
+  });
+
+  app.post("/api/transport/:tid/move-back", small, async (c) => {
+    if (!local(c)) return notFound(c);
+    const refused = pageOnlyRefusal(c, YOUR_CLICK);
+    if (refused) return c.json({ error: refused, yourClick: true }, 403);
+    const r = readTransport(c.req.param("tid"));
+    if (!r || r.side !== "source") return notFound(c);
+    const res = await moveBackToHere(r, mesh);
+    return res.ok ? c.json({ ok: true }) : c.json({ error: res.error }, 409);
+  });
+
   // ---- the peer listener ------------------------------------------------------------------------
+
+  app.post("/api/peer/transport/:tid/move-back", small, async (c) => {
+    const caller = mesh.requestPeer(c);
+    if (!caller) return notFound(c);
+    const r = await dest.moveBack(caller, c.req.param("tid"), ((await c.req.json().catch(() => null)) ?? {}) as never);
+    return c.json(r.body as object, r.status as 200);
+  });
 
   app.get("/api/peer/transport/hello", (c) => (mesh.requestPeer(c) ? c.json({ ok: true }) : notFound(c)));
 

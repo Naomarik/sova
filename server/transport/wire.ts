@@ -60,6 +60,8 @@ export interface StatusBody {
   renamed?: { from: string; to: string }[];
   /** The chat there has had a turn since it arrived (Move Back is gone). */
   turned?: boolean;
+  /** The chat's conversation there, once it opened. */
+  path?: string;
 }
 
 export interface ReadyBody {

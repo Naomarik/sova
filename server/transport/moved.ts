@@ -13,6 +13,8 @@ export interface MovedMark {
   at: string;
   /** Its id there. */
   arrivedId: string;
+  /** Its conversation there (Open There). */
+  arrivedPath?: string;
 }
 
 /** Move Back is offered for this long after a Move (§app.transport/moved-row). */

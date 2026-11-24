@@ -5,7 +5,7 @@
 // the source sends its commit: the worktrees go to their folders and the home appears in one rename.
 // A failure leaves nothing published; Cancel removes what arrived.
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -343,7 +343,8 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     const note = `${r.mode === "move" ? "Moved" : "Copied"} from ${r.peerLabel}.${stopped.length ? ` Stopped there: ${stopped.join(", ")}.` : ""}${renamedNotes}`;
     await need().openWithNote(file, note);
     await knob(tid, "opened");
-    stepDone(tid, "opened", { state: "done" });
+    // Its size once the note is in: any later growth is a turn here, and Move Back is gone (§app.transport/moved-row).
+    stepDone(tid, "opened", { state: "done", ext: { openedSize: sizeNow(file) } });
     // A moved team carries on: each helper that was working is told it moved; an idle one stays idle.
     if (r.mode === "move")
       for (const [list, interrupted] of [[body?.interrupted ?? [], true], [body?.wrapped ?? [], false]] as const)
@@ -383,7 +384,46 @@ export function statusOf(from: { id: string }, tid: string): StatusBody {
     ...(r.received !== undefined ? { received: r.received } : {}),
     ...(r.arrivedId ? { arrivedId: r.arrivedId } : {}),
     ...(r.renamed?.length ? { renamed: r.renamed } : {}),
+    ...(r.steps.opened && r.path ? { path: r.path, turned: turnedHere(r) } : {}),
   };
+}
+
+const sizeNow = (file: string): number => {
+  try {
+    return statSync(file).size;
+  } catch {
+    return -1;
+  }
+};
+
+/** Whether the arrived chat has had a turn here since it opened (its conversation grew past the arrival note). */
+function turnedHere(r: TransportRecord): boolean {
+  const was = ((r.ext ?? {}) as { openedSize?: number }).openedSize;
+  return was === undefined || sizeNow(r.path) !== was;
+}
+
+/** What Move Back does here (the device the chat is on): stop it, become the Moved side. Injected by routes.ts. */
+export interface MoveBackHere {
+  (r: TransportRecord, back: { path: string }): Promise<void>;
+}
+let moveBackHere: MoveBackHere | null = null;
+export const setMoveBackHere = (fn: MoveBackHere): void => void (moveBackHere = fn);
+
+/** Move Back, asked by the device the chat came from (POST …/move-back): only while nothing happened here. */
+export async function moveBack(from: { id: string }, tid: string, body: { path?: unknown }): Promise<{ status: number; body: unknown }> {
+  const r = readTransport(tid);
+  if (!r || r.side !== "destination" || r.peer !== from.id || r.mode !== "move" || !r.steps.opened) return ok({ error: "No such transport" }, 404);
+  if (((r.ext ?? {}) as { movedBack?: string }).movedBack) return ok({ ok: true, again: true });
+  if (turnedHere(r)) return ok({ error: "It has changed here since it arrived, so only a Copy can bring it back.", turned: true }, 409);
+  if (typeof body?.path !== "string") return ok({ error: "Bad request" }, 400);
+  try {
+    await moveBackHere!(r, { path: body.path });
+    updateTransport(tid, { ext: { movedBack: new Date().toISOString() } });
+    log(`${tid}: moved back to ${r.peerLabel}`);
+    return ok({ ok: true });
+  } catch (err) {
+    return ok({ error: err instanceof Error ? err.message : String(err) }, 500);
+  }
 }
 
 /** Retry (POST …/retry): continue from what arrived. */

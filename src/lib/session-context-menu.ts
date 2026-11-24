@@ -33,7 +33,7 @@ export interface RowMenuModel {
  * in the panel's words. `regenerating`: this session's Regenerate Title is in flight (lib/auto-title).
  */
 export function rowMenuOf(
-  s: Pick<SessionSummary, "title" | "originalTitle" | "fixedName" | "archived" | "compressed">,
+  s: Pick<SessionSummary, "title" | "originalTitle" | "fixedName" | "archived" | "compressed" | "moved">,
   drag: ArchiveDrag,
   tiles: Pick<DropTiles, "groupNote">,
   regenerating = false,
@@ -50,6 +50,9 @@ export function rowMenuOf(
   const archive: RowMenuModel["archive"] = s.compressed
     ? // §app.session-list/archive-compression: a compressed chat has no Unarchive.
       { label: "Unarchive", act: null, disabled: "It is compressed: Sova keeps it for the record and doesn't open it." }
+    : s.moved
+    ? // §app.transport/moved-row: it runs on the other device now.
+      { label: "Unarchive", act: null, disabled: `It moved to ${s.moved.to}; Move Back brings it here.` }
     : s.archived
     ? { label: "Unarchive", act: "unarchive", disabled: "" }
     : drag.kind === "archive"

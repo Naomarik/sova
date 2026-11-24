@@ -54,3 +54,15 @@ export function sizeText(n: number): string {
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
   return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
+
+export interface BackState {
+  can: "move" | "copy" | null;
+  reason?: string;
+  peer: string;
+  to: string;
+  path?: string;
+}
+
+export const transportBack = (tid: string) => call<BackState>(`/api/transport/${encodeURIComponent(tid)}/back`);
+export const moveBack = (tid: string) => call<{ ok: boolean }>(`/api/transport/${encodeURIComponent(tid)}/move-back`, { method: "POST", body: "{}" });
+export const transportsOf = (sessionId: string) => call<{ transports: TransportView[] }>(`/api/transport?session=${encodeURIComponent(sessionId)}`);

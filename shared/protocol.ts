@@ -148,6 +148,10 @@ export interface SessionSummary {
       when compressing (its file is never read again), it shows "{time} · Compressed", it never opens
       and has no Unarchive; Clean Up can still delete it. Absent: not compressed, or an older server. */
   compressed?: true;
+  /** A chat Moved to another device (§app.transport/moved-row): this device keeps its archived row, which reads
+      "Moved to {to}", never runs here and has no Unarchive; `tid` names the transport (Move Back's), `path` its
+      conversation there (Open There). Absent: it runs here, or an older server. */
+  moved?: { to: string; peer: string; tid: string; at: string; path?: string };
   /** The user's group for this session (`SessionGroup.id`, POST /api/session-groups/assign; ids
       persist in ~/.pi/agent/sova/session-groups.json). One group at most, and purely additive:
       a grouped session stays in its region (Live & web, or the Archive) as well. Absent when it

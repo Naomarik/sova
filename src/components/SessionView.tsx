@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { MovedPanel } from "./TransportDialog";
 import { sharingOffHere } from "../lib/public-links";
 import { shareHref } from "../lib/share-slice";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../../shared/protocol";
@@ -438,7 +439,9 @@ export function SessionView(props: {
           <p class="empty-body">This chat is compressed. Sova keeps it for the record and doesn't open it.</p>
         </div>
       </Show>
-      <Show when={!s().compressed && (updateNeededFor(path) ? null : viewKey())} keyed>
+      {/* A Moved row (§app.transport/moved-row): it runs on that device now; no transcript, no composer. */}
+      <Show when={!s().compressed && s().moved}>{(m) => <MovedPanel moved={m()} />}</Show>
+      <Show when={!s().compressed && !s().moved && (updateNeededFor(path) ? null : viewKey())} keyed>
         {(_key) => {
           const d = decision();
           return (

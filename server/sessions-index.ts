@@ -60,6 +60,7 @@ import { opTrack } from "./stall-recorder";
 import { type JobCounts, runningJobCount, runningJobCounts } from "./background-jobs";
 import { stateRoot } from "./state-root";
 import { compressedAt, compressedRows } from "./archive-compress/store";
+import { allMoved, movedOf } from "./transport/moved";
 import { compressChat, deleteCompressed } from "./archive-compress/compress";
 
 /**
@@ -2040,11 +2041,25 @@ async function buildSessionsNow(track?: { files?: string[]; dirty?: ReadonlySet<
     for (let i = out.length - 1; i >= 0; i--) if (packed.has(out[i]!.path) || compressedAt(out[i]!.path)) out.splice(i, 1);
     for (const r of packed.values()) out.push(r);
   }
+  // Moved chats (§app.transport/moved-row): their row carries where they went. One object per unchanged row.
+  if (Object.keys(allMoved()).length) for (let i = 0; i < out.length; i++) out[i] = withMoved(out[i]!);
   lastRows = new Map(out.map((r) => [r.path, r]));
   const mark: BuildMark = { stores, rowSeq, outside, files: read, live, parents: reads.parents, workers, fullAt: keepRows ? prev!.fullAt : startedAt };
   lastMark = mark;
   out.sort(byActivity);
   return { rows: out, files, mark };
+}
+
+const movedRows = new WeakMap<SessionSummary, SessionSummary>();
+/** A row with its Moved mark, if it moved away; the same object for the same row and mark. */
+function withMoved(row: SessionSummary): SessionSummary {
+  const m = movedOf(row.id);
+  if (!m) return row;
+  const cached = movedRows.get(row);
+  if (cached && cached.moved?.tid === m.tid && cached.moved.path === m.arrivedPath) return cached;
+  const next: SessionSummary = { ...row, moved: { to: m.to, peer: m.peer, tid: m.tid, at: m.at, ...(m.arrivedPath ? { path: m.arrivedPath } : {}) } };
+  movedRows.set(row, next);
+  return next;
 }
 
 function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {

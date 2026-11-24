@@ -510,8 +510,11 @@ async function pack(r: TransportRecord): Promise<void> {
 /** The destination said the chat opened there: the Move is done here (the Copy too). */
 async function finish(r: TransportRecord, s: StatusBody): Promise<"stop"> {
   if (!r.decided) updateTransport(r.tid, { ticket: undefined, ticketBurnt: true, decided: true });
-  if (r.mode === "move" && !r.steps.confirmed) await need().moved(readTransport(r.tid)!);
-  stepDone(r.tid, "confirmed", { state: "done", ...(s.arrivedId ? { arrivedId: s.arrivedId } : {}), ...(s.renamed ? { renamed: s.renamed } : {}) });
+  if (r.mode === "move" && !r.steps.confirmed) {
+    if (s.path) updateTransport(r.tid, { ext: { arrivedPath: s.path }, ...(s.arrivedId ? { arrivedId: s.arrivedId } : {}) });
+    await need().moved(readTransport(r.tid)!);
+  }
+  stepDone(r.tid, "confirmed", { state: "done", ...(s.arrivedId ? { arrivedId: s.arrivedId } : {}), ...(s.renamed ? { renamed: s.renamed } : {}), ...(s.path ? { ext: { arrivedPath: s.path } } : {}) });
   log(`${logName(r)}: ${r.mode === "move" ? "moved" : "copied"} to ${r.peerLabel}`);
   return "stop";
 }

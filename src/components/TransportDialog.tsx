@@ -3,10 +3,11 @@
 // untracked files (unticked), what that device still needs, and busy helpers at a Move. Start Transport is
 // your click; then the dialog follows the transport until it is done or needs you (Retry, Cancel).
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
-import { type TransportView, sizeText, startTransport, transportAct, transportOf, transportPreview } from "../lib/transport-api";
+import { sessionHrefOn } from "../lib/mesh";
+import { type BackState, moveBack, type TransportView, sizeText, startTransport, transportAct, transportBack, transportOf, transportPreview, transportsOf } from "../lib/transport-api";
 import { announce, toast } from "../lib/ui-state";
 import { type BusyChoice, TransportBusyHelpers, TransportDeviceNeeds, TransportWaiting } from "./TransportHelpers";
-import { Banner, trapFocus } from "./ui";
+import { Banner, Icon, trapFocus } from "./ui";
 
 type Mode = "move" | "copy";
 const MODES: readonly { id: Mode; label: string; line: string }[] = [
@@ -51,6 +52,20 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
   const [pending, setPending] = createSignal(false);
   const [running, setRunning] = createSignal<TransportView | null>(null);
 
+  // A transport of this chat already under way (or needing you) shows its progress, Retry and Cancel.
+  createEffect(() => {
+    const b = base();
+    if (!b) return;
+    void transportsOf(b.chat.id)
+      .then(({ transports }) => {
+        const t = [...transports].reverse().find((x) => x.side === "source" && x.state !== "done" && x.state !== "cancelled");
+        if (t && !running()) {
+          setRunning(t);
+          if (t.state !== "needs-you") follow(t.tid);
+        }
+      })
+      .catch(() => {});
+  });
   createEffect(() => {
     const b = base();
     if (b && !folder()) setFolder(b.folder);
@@ -310,5 +325,60 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * A Moved row opened here (§app.transport/moved-row): where it went, Open There, and while nothing happened
+ * there Move Back (else Copy Back). No transcript and no composer: it runs on that device now.
+ */
+export function MovedPanel(props: { moved: { to: string; peer: string; tid: string; path?: string } }) {
+  const [back, { refetch }] = createResource(() => props.moved.tid, (tid) => transportBack(tid).catch((err: unknown) => ({ can: null, reason: err instanceof Error ? err.message : String(err), peer: props.moved.peer, to: props.moved.to }) as BackState));
+  const [pending, setPending] = createSignal(false);
+  const [said, setSaid] = createSignal<string | null>(null);
+  const there = () => (props.moved.path ? sessionHrefOn(props.moved.peer, props.moved.path) : null);
+  const doBack = async () => {
+    setPending(true);
+    setSaid(null);
+    try {
+      await moveBack(props.moved.tid);
+      const line = `Moved back from ${props.moved.to}.`;
+      toast(line);
+      announce(line);
+    } catch (err) {
+      setSaid(err instanceof Error ? err.message : String(err));
+      void refetch();
+    } finally {
+      setPending(false);
+    }
+  };
+  return (
+    <div class="empty">
+      <Icon name="external" class="empty-mark" />
+      <p class="empty-body">This chat moved to {props.moved.to}.</p>
+      <Show when={said()}>{(s) => <p class="empty-body text-error">{s()}</p>}</Show>
+      <div class="empty-action cluster">
+        <Show when={there()}>
+          {(href) => (
+            <a class="button" href={href()}>
+              Open There
+            </a>
+          )}
+        </Show>
+        <Show when={back()?.can === "move"}>
+          <button type="button" class="button button-primary" aria-disabled={pending() ? "true" : undefined} title={`Bring it back here. Nothing has happened to it on ${props.moved.to} yet.`} onClick={() => !pending() && void doBack()}>
+            {pending() ? "Moving Back…" : "Move Back"}
+          </button>
+        </Show>
+        <Show when={back()?.can === "copy" && there()}>
+          {(href) => (
+            <a class="button" href={href()} title={`It has changed on ${props.moved.to}, so this copies it back as a new chat.`} onClick={() => toast(`Open its ⋯ menu on ${props.moved.to} and choose Transport…, then Copy.`)}>
+              Copy Back
+            </a>
+          )}
+        </Show>
+        <Show when={back()?.can === null && back()?.reason}>{(r) => <p class="text-caption text-muted">{r()}</p>}</Show>
+      </div>
+    </div>
   );
 }

@@ -639,6 +639,8 @@ export function SessionRow(props: {
               {relativeTime(s().lastActiveAt, props.now)}
               {/* §app.session-list/archive-compression: kept for the record, never opened. */}
               <Show when={s().compressed}>{" · Compressed"}</Show>
+              {/* §app.transport/moved-row: it runs on the other device now. */}
+              <Show when={s().moved}>{(m) => ` · Moved to ${m().to}`}</Show>
               {/* A shut-down chat whose background job still runs (§app.background-jobs/pane): its
                   end will wake the chat. The server sends the count only while the chat has no process. */}
               <Show when={!s().chat && (s().jobsRunning ?? 0) > 0}>

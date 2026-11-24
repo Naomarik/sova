@@ -13,6 +13,8 @@ export interface BriefFacts {
   remotes: string[];
   /** The branches that arrive with the chat (Sova places their worktrees). */
   branches: string[];
+  /** The chat's own tree: the branch, and the commit when known, its folder must be checked out at. */
+  checkout?: { branch: string; head?: string };
   checks: AgentCheck[];
   /** Sova's own folders on this device (state root, agent dir, chat homes): never written. */
   sovaFolders?: string[];
@@ -40,6 +42,11 @@ export function agentBrief(f: BriefFacts): string {
     `- Folder on this device: ${f.folder}`,
     `- Its repository: ${f.remotes.length ? f.remotes.join(", ") : "no remote recorded: ask the user where to get it"}`,
     ...(f.branches.length ? [`- Arriving with the chat: ${f.branches.join(", ")}`] : []),
+    ...(f.checkout
+      ? [
+          `- When you clone it, check out ${f.checkout.branch}${f.checkout.head ? ` at commit ${f.checkout.head}` : ""} and leave the tracked files exactly as they are: Sova puts the chat's own unfinished changes on top when it arrives. If that branch${f.checkout.head ? " or commit" : ""} isn't on the remote, leave the clone on its default branch and say so.`,
+        ]
+      : []),
     "",
     "## What you may do alone",
     "Anything inside the project's folder and the user's own account on this device: clone the repository into its folder, install its dependencies and tool versions in the user's home (a version manager, a toolchain, the package manager its lockfile names), run its setup, build and tests, and edit its private files (the local config git ignores) so they hold this computer's values: database strings, paths and ports. With a `.sova/project.json`, use `project_verbs` (doctor, create, up, test) rather than starting anything by hand.",

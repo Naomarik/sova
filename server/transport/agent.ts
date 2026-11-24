@@ -46,7 +46,8 @@ export interface PrepareRequest {
   sourceChatId: string;
   title: string;
   project: ProjectRef;
-  worktrees: { name: string; branch: string }[];
+  /** Each tree that travels, the chat's own first: its branch ("" when detached) and, when the offer names it, its commit. */
+  worktrees: { name: string; branch: string; head?: string }[];
   /** The model the dialog chose; absent: the strongest this device can run. */
   model?: string;
   /** The source chat's own model: the last fallback when this device runs neither Claude Code nor gpt-6-astra. */
@@ -438,6 +439,7 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     folder: resolve(req.project.path),
     remotes: req.project.remotes,
     branches: req.worktrees.map((w) => w.branch).filter(Boolean),
+    ...(req.worktrees[0]?.branch ? { checkout: { branch: req.worktrees[0].branch, ...(req.worktrees[0].head ? { head: req.worktrees[0].head } : {}) } } : {}),
     checks,
     sovaFolders: deps.protectedRoots(),
     arrived,

@@ -107,6 +107,7 @@ test("nothing missing: ready at once, no agent; something missing: one agent, br
   const s = d.started[0]!;
   assert.match(s.prompt, /doesn't exist: clone git@github\.com:acme\/motors\.git there/);
   assert.match(s.prompt, /What you ask first/);
+  assert.match(s.prompt, /check out feat\/fix and leave the tracked files exactly as they are/);
   assert.equal(s.model, onboardModels()[0], "the strongest model this device offers");
   assert.equal(s.cwd, join(root, "webapps"), "it starts in the nearest folder that exists");
   assert.deepEqual(d.linked, [["agent-1", "sova-laptop", "chat-1"]]);

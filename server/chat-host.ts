@@ -75,7 +75,7 @@ import { reattachDescribers } from "./design/describe";
 import { type WakeOwner, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
 import { installCoordinatorRegistry, reattachCoordinators } from "./design/coordinator";
 import { WAKE_DIR_ENV, WAKE_WORKER_ENV } from "../pi-config/extensions/subagents/wake-store.ts";
-import { wakeDir, wakesOn } from "./wake-keeper";
+import { wakeDir, wakeDirFor, wakesOn } from "./wake-keeper";
 import { jobCardsEnv, jobsEnv } from "./background-jobs";
 import { readWorkerNice } from "./process-priority";
 import type { Driver } from "./project-services/drivers";
@@ -256,7 +256,7 @@ export class ChatHostRouter {
             SOVA_CHAT_STATE_ROOT: stateRoot(),
             [CHAT_HOMES_ROOT_ENV]: homesRoot(),
             ...(homeOfSessionFile(c.sessionPath) ? { [CHAT_HOME_ENV]: homeOfSessionFile(c.sessionPath)! } : {}),
-            ...(wakesOn() ? { [WAKE_DIR_ENV]: wakeDir() } : {}),
+            ...(wakesOn() ? { [WAKE_DIR_ENV]: wakeDirFor(c.chatId) } : {}),
             ...(w?.kind === "worker" ? { [WAKE_WORKER_ENV]: "1" } : {}),
             // A chat in a systemd unit keeps what its commands leave running (§app.background-jobs/where).
             ...jobsEnv(host?.driver),

@@ -370,6 +370,9 @@ export interface StagedTree {
   /** The folder already held this code (a project prepared there, or a retry after publish): its carried
       loose files, unpacked and checked in `dir`, are put in at publish beside what is there, replacing nothing. */
   loose?: { dir: string; files: Record<string, string> };
+  /** The folder holds this commit with nothing changed (a project prepared there): the snapshot's tracked changes are
+      written into it at publish, once checked in a scratch worktree. */
+  base?: WorktreeMeta;
 }
 
 const stageOf = (target: string, tid: string) => join(dirname(target), `.incoming-${tid}-${basename(target)}`);
@@ -394,6 +397,59 @@ async function heldTree(codeDir: string, meta: WorktreeMeta, target: string): Pr
   await extractTar(join(codeDir, meta.name, "loose.tar"), dir);
   await verifyFiles(dir, meta);
   return { name: meta.name, target, stage: target, branch: meta.branch, main: meta.main, ...(meta.private?.length ? { private: meta.private } : {}), loose: { dir, files: meta.files } };
+}
+
+/** Whether `target` is a checkout of this commit and branch with no tracked change: the snapshot's changes can go on it. */
+async function isBase(target: string, meta: WorktreeMeta): Promise<boolean> {
+  if (!existsSync(join(target, ".git"))) return false;
+  if ((await git(target, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim() !== meta.head) return false;
+  const branch = (await git(target, ["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim() || null;
+  if (branch !== meta.branch) return false;
+  return (await git(target, ["status", "--porcelain=v1", "-uno"])).stdout.trim() === "";
+}
+
+/** Files the snapshot adds that a file there already stands on (writing the changes would replace it). */
+async function inTheWay(target: string, meta: WorktreeMeta): Promise<string[]> {
+  const added = nul(await ok(target, ["diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", "HEAD", `${meta.snap}^{tree}`], "Reading the changes"));
+  const out: string[] = [];
+  for (const p of added) if (await lstat(join(target, p)).then(() => true, () => false)) out.push(p);
+  return out;
+}
+
+/** A base folder: the snapshot rebuilt and checked in a scratch worktree of its repository (then dropped), its loose files unpacked aside. */
+async function baseTree(repo: string, codeDir: string, tid: string, meta: WorktreeMeta, target: string): Promise<StagedTree> {
+  const scratch = join(codeDir, meta.name, "check");
+  await git(repo, ["worktree", "remove", "--force", scratch]);
+  await rm(scratch, { recursive: true, force: true });
+  await git(repo, ["worktree", "prune"]);
+  await ok(repo, ["worktree", "add", "-q", "--no-checkout", "--detach", scratch, meta.head], "Checking the package");
+  try {
+    await finishStage(scratch, join(codeDir, meta.name), meta);
+  } finally {
+    await git(repo, ["worktree", "remove", "--force", scratch]);
+    await rm(scratch, { recursive: true, force: true });
+    await git(repo, ["worktree", "prune"]);
+  }
+  const way = await inTheWay(target, meta);
+  if (way.length) throw new SnapshotError("taken", `${target} already has ${way.slice(0, 3).join(", ")}${way.length > 3 ? ` and ${way.length - 3} more` : ""}, which the chat's changes add; nothing was replaced. Move ${way.length === 1 ? "it" : "them"} away or pick another folder.`);
+  return { ...(await heldTree(codeDir, meta, target)), base: meta };
+}
+
+/** At publish: a base folder takes the snapshot's tracked changes (working tree, then index, then its flags). */
+async function applyBase(t: StagedTree): Promise<void> {
+  const meta = t.base!;
+  if (!(await isBase(t.target, meta))) {
+    if (await holds(t.target, meta)) return; // a retry after it was applied
+    throw new SnapshotError("taken", `${t.target} changed there since it was checked; nothing was replaced. Retry to check it again.`);
+  }
+  if ((await inTheWay(t.target, meta)).length) throw new SnapshotError("taken", `${t.target} changed there since it was checked; nothing was replaced. Retry to check it again.`);
+  await ok(t.target, ["read-tree", "--reset", "-u", `${meta.snap}^{tree}`], "Writing the changes");
+  await ok(t.target, ["read-tree", "-m", `${meta.snap}^{tree}`, `${meta.snap}^^{tree}`], "Writing the index");
+  if (meta.ita.length) await ok(t.target, ["add", "-N", "--pathspec-from-file=-", "--pathspec-file-nul"], "Marking intent-to-add", { input: meta.ita.join("\0") });
+  if (meta.assume.length) await ok(t.target, ["update-index", "-z", "--assume-unchanged", "--stdin"], "Marking assume-unchanged", { input: meta.assume.join("\0") });
+  if (meta.skip.length) await ok(t.target, ["update-index", "-z", "--skip-worktree", "--stdin"], "Marking skip-worktree", { input: meta.skip.join("\0") });
+  await git(t.target, ["update-index", "-q", "--refresh"]);
+  if ((await statusSha(t.target)) !== meta.statusSha) throw new SnapshotError("mismatch", `${meta.name} didn't take its changes exactly there.`);
 }
 
 async function shaOf(abs: string): Promise<string> {
@@ -602,11 +658,22 @@ export async function rebuildWorktrees(o: { repo: string | null; codeDir: string
   if (main) {
     const target = o.targets[main.name]!;
     const held = await holds(target, main);
-    if (held) out.push(await heldTree(o.codeDir, main, target));
-    else out.push(await rebuildOne(null, o.codeDir, o.tid, main, target));
-    repo = out[0]!.stage;
+    const base = !held && (await isBase(target, main));
     // A main checkout already there has none of the package's commits yet: its linked worktrees build on them.
-    if (held) await fetchBundle(repo, o.codeDir, o.tid);
+    if (held || base) await fetchBundle(target, o.codeDir, o.tid);
+    try {
+      if (held) out.push(await heldTree(o.codeDir, main, target));
+      else if (base) out.push(await baseTree(target, o.codeDir, o.tid, main, target));
+      else out.push(await rebuildOne(null, o.codeDir, o.tid, main, target));
+    } catch (err) {
+      // The folder is someone's repository: what this attempt fetched into it goes with the failure.
+      if (held || base) {
+        const refs = (await git(target, ["for-each-ref", "--format=delete %(refname)", `refs/sova/transport/${o.tid}/`])).stdout;
+        if (refs.trim()) await git(target, ["update-ref", "--stdin"], { input: refs });
+      }
+      throw err;
+    }
+    repo = out[0]!.stage;
   } else if (repo) {
     await fetchBundle(repo, o.codeDir, o.tid);
   }
@@ -615,6 +682,10 @@ export async function rebuildWorktrees(o: { repo: string | null; codeDir: string
     const target = o.targets[m.name]!;
     if (await holds(target, m)) {
       out.push(await heldTree(o.codeDir, m, target));
+      continue;
+    }
+    if (repo && (await isBase(target, m))) {
+      out.push(await baseTree(repo, o.codeDir, o.tid, m, target));
       continue;
     }
     out.push(await rebuildOne(repo, o.codeDir, o.tid, m, target));
@@ -629,6 +700,7 @@ export async function publishTrees(trees: readonly StagedTree[], tid: string, o:
   const kept: KeptFile[] = [];
   const privateFiles: string[] = [];
   for (const t of trees) {
+    if (t.base) await applyBase(t);
     const landed = t.loose ? await putLoose(t, o.from ?? "there", kept) : null;
     for (const p of t.private ?? []) privateFiles.push(join(t.target, landed?.get(p) ?? p));
   }

@@ -154,3 +154,32 @@ test("a main checkout already there (held) gets the package's commits, so the ch
   assert.equal(readFileSync(join(there, "u.txt"), "utf8"), "u\n");
   assert.equal(g(target, "for-each-ref", "refs/sova"), "", "the transport's refs are dropped");
 });
+
+test("a clean checkout of the same commit there (a project prepared there) takes the chat's tracked changes and new files; one standing on a file the changes add is refused, replacing nothing", async () => {
+  const src = join(root, "src6");
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "main");
+  writeFileSync(join(src, "lib.rs"), "fn a() {}\n");
+  g(src, "add", "lib.rs");
+  g(src, "commit", "-qm", "a");
+  const target = join(root, "there6", "src6");
+  g(root, "clone", "-q", src, target);
+  const blocked = join(root, "there6b", "src6");
+  g(root, "clone", "-q", src, blocked);
+  writeFileSync(join(blocked, "added.rs"), "mine\n");
+  writeFileSync(join(src, "lib.rs"), "fn a() {}\nfn b() {}\n");
+  writeFileSync(join(src, "added.rs"), "new\n");
+  g(src, "add", "added.rs");
+  writeFileSync(join(src, "Cargo.lock"), "lock\n");
+  const s = await surveyWorktree("src6", src);
+  const p = await packWorktrees({ tid: "t6", trees: [s], haves: await havesOf(target), outDir: join(root, "pack6") });
+  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack6"), tid: "t6", metas: p.metas, targets: { src6: target } });
+  assert.equal(readFileSync(join(target, "lib.rs"), "utf8"), "fn a() {}\n", "nothing is in place before publish");
+  await publishTrees(staged, "t6");
+  assert.equal(facts(target), facts(src));
+  assert.equal(readFileSync(join(target, "Cargo.lock"), "utf8"), "lock\n");
+  assert.equal(g(target, "worktree", "list", "--porcelain").split("\n").filter((l) => l.startsWith("worktree ")).length, 1, "the check's scratch worktree is gone");
+  await assert.rejects(rebuildWorktrees({ repo: null, codeDir: join(root, "pack6"), tid: "t6", metas: p.metas, targets: { src6: blocked } }), (e: unknown) => e instanceof SnapshotError && e.reason === "taken" && /added\.rs/.test(e.message));
+  assert.equal(readFileSync(join(blocked, "added.rs"), "utf8"), "mine\n");
+  assert.equal(g(blocked, "for-each-ref", "refs/sova"), "", "nothing of the attempt stays in that repository");
+});

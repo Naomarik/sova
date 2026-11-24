@@ -8,7 +8,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, lstatSync } from "node:fs";
-import { copyFile, lstat, mkdir, readdir, readFile, readlink, realpath, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdir, readdir, readFile, readlink, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { checkMembers, entryOf, listTar, type TarEntry, writeTar } from "./tar";
 
@@ -243,6 +243,8 @@ export interface WorktreeMeta {
   assume: string[];
   /** Every carried loose file: its sha256, or `L <target>` for a link. */
   files: Record<string, string>;
+  /** The carried files git ignores that aren't in a scratch folder (the ticked private files). */
+  private?: string[];
   /** This repository's own ignore rules (`info/exclude`), carried so a file hidden here is hidden there. */
   exclude?: string;
   main: boolean;
@@ -306,6 +308,7 @@ export async function packWorktrees(o: {
       refs.push(refOf(o.tid, t.name));
       // The loose files, by tar: full modes and links (git keeps only the executable bit).
       const files: Record<string, string> = {};
+      const privates: string[] = [];
       const entries: TarEntry[] = [];
       const dirs = new Set<string>();
       for (const f of [...t.loose].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))) {
@@ -322,6 +325,7 @@ export async function packWorktrees(o: {
         if (!e) continue;
         entries.push(e);
         files[f.path] = e.type === "symlink" ? `L ${e.target}` : await fileSha(join(t.path, f.path));
+        if (f.kind === "private") privates.push(f.path);
       }
       await writeTar(join(wo, "loose.tar"), entries);
       let exclude: string | undefined;
@@ -331,7 +335,7 @@ export async function packWorktrees(o: {
       } catch {
         // no exclude file
       }
-      const meta: WorktreeMeta = { name: t.name, branch: t.branch, head: t.head, snap: ct, statusSha: await statusSha(t.path), ita, skip, assume, files, ...(exclude ? { exclude } : {}), main: t.main };
+      const meta: WorktreeMeta = { name: t.name, branch: t.branch, head: t.head, snap: ct, statusSha: await statusSha(t.path), ita, skip, assume, files, ...(privates.length ? { private: privates } : {}), ...(exclude ? { exclude } : {}), main: t.main };
       await writeFile(join(wo, "worktree.json"), `${JSON.stringify(meta)}\n`, { mode: 0o600 });
       metas.push(meta);
     }
@@ -361,6 +365,11 @@ export interface StagedTree {
   /** The branch's name here when it differs there. */
   renamedFrom?: string;
   main: boolean;
+  /** The ticked private files, by path in the tree. */
+  private?: string[];
+  /** The folder already held this code (a project prepared there, or a retry after publish): its carried
+      loose files, unpacked and checked in `dir`, are put in at publish beside what is there, replacing nothing. */
+  loose?: { dir: string; files: Record<string, string> };
 }
 
 const stageOf = (target: string, tid: string) => join(dirname(target), `.incoming-${tid}-${basename(target)}`);
@@ -369,7 +378,74 @@ const stageOf = (target: string, tid: string) => join(dirname(target), `.incomin
 async function holds(target: string, meta: WorktreeMeta): Promise<boolean> {
   if (!existsSync(join(target, ".git"))) return false;
   const head = (await git(target, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim();
-  return head === meta.head && (await statusSha(target).catch(() => "")) === meta.statusSha;
+  if (head !== meta.head || (await statusSha(target).catch(() => "")) !== meta.statusSha) return false;
+  // The status names the changed files, not their content: changed files there must match the snapshot's.
+  const changed = (await git(target, ["status", "--porcelain=v1", "-uno"])).stdout.trim();
+  if (!changed) return true;
+  if ((await git(target, ["cat-file", "-e", `${meta.snap}^{tree}`])).code !== 0) return false;
+  return (await git(target, ["diff", "--quiet", meta.snap, "--"])).code === 0;
+}
+
+/** A folder that already holds the code: its loose files unpacked aside and checked, for publish to put in. */
+async function heldTree(codeDir: string, meta: WorktreeMeta, target: string): Promise<StagedTree> {
+  const dir = join(codeDir, meta.name, "loose");
+  await rm(dir, { recursive: true, force: true });
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await extractTar(join(codeDir, meta.name, "loose.tar"), dir);
+  await verifyFiles(dir, meta);
+  return { name: meta.name, target, stage: target, branch: meta.branch, main: meta.main, ...(meta.private?.length ? { private: meta.private } : {}), loose: { dir, files: meta.files } };
+}
+
+async function shaOf(abs: string): Promise<string> {
+  try {
+    const st = await lstat(abs);
+    return st.isSymbolicLink() ? `L ${await readlink(abs)}` : st.isFile() ? await fileSha(abs) : "other";
+  } catch {
+    return "missing";
+  }
+}
+
+/** One loose file put where nothing is: its bytes, mode and time, or the link. */
+async function placeLoose(from: string, to: string): Promise<void> {
+  await mkdir(dirname(to), { recursive: true });
+  const st = await lstat(from);
+  if (st.isSymbolicLink()) await symlink(await readlink(from), to);
+  else await cp(from, to, { preserveTimestamps: true, errorOnExist: true, force: false });
+}
+
+/** What publish did with a held folder's loose files: a file that differs there is kept, and the arrived one goes beside it. */
+export interface KeptFile {
+  tree: string;
+  /** The file there, kept as it was. */
+  path: string;
+  /** Where the arrived copy went, beside it. */
+  beside: string;
+}
+
+async function putLoose(t: StagedTree, from: string, kept: KeptFile[]): Promise<Map<string, string>> {
+  const landed = new Map<string, string>();
+  const tag = `from-${from.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "there"}`;
+  for (const [p, want] of Object.entries(t.loose!.files)) {
+    const src = join(t.loose!.dir, p);
+    const dest = join(t.target, p);
+    const have = await shaOf(dest);
+    if (have === want) {
+      landed.set(p, p);
+      continue;
+    }
+    if (have === "missing") {
+      await placeLoose(src, dest);
+      landed.set(p, p);
+      continue;
+    }
+    // Something else is there: it stays, and the arrived copy goes beside it (the same one again: already there).
+    let beside = `${p}.${tag}`;
+    for (let i = 2; (await shaOf(join(t.target, beside))) !== "missing" && (await shaOf(join(t.target, beside))) !== want; i++) beside = `${p}.${tag}-${i}`;
+    if ((await shaOf(join(t.target, beside))) === "missing") await placeLoose(src, join(t.target, beside));
+    kept.push({ tree: t.name, path: p, beside });
+    landed.set(p, beside);
+  }
+  return landed;
 }
 
 async function extractTar(tarFile: string, into: string): Promise<void> {
@@ -403,6 +479,10 @@ async function verify(stage: string, meta: WorktreeMeta): Promise<void> {
     const short = (await git(stage, ["status", "--short", "-uno"])).stdout.split("\n").slice(0, 5).join("; ");
     throw new SnapshotError("mismatch", `${meta.name} didn't rebuild exactly (status differs: ${short || "no detail"}).`);
   }
+  await verifyFiles(stage, meta);
+}
+
+async function verifyFiles(stage: string, meta: WorktreeMeta): Promise<void> {
   for (const [p, want] of Object.entries(meta.files)) {
     const abs = join(stage, p);
     let have: string;
@@ -454,7 +534,7 @@ async function rebuildOne(repo: string | null, codeDir: string, tid: string, met
       await ok(stage, ["symbolic-ref", "HEAD", `refs/heads/${meta.branch}`], "Checking out the branch");
     } else await ok(stage, ["update-ref", "--no-deref", "HEAD", meta.head], "Checking out the commit");
     await finishStage(stage, wo, meta);
-    return { name: meta.name, target, stage, branch: meta.branch, main: true };
+    return { name: meta.name, target, stage, branch: meta.branch, main: true, ...(meta.private?.length ? { private: meta.private } : {}) };
   }
   if (!repo) throw new SnapshotError("git", `No repository there for ${meta.name}.`);
   if (existsSync(target)) throw new SnapshotError("taken", `${target} already exists there; pick another folder.`);
@@ -473,7 +553,7 @@ async function rebuildOne(repo: string | null, codeDir: string, tid: string, met
     await ok(repo, ["worktree", "add", "-q", "--no-checkout", stage, b.branch], "Adding the worktree");
   }
   await finishStage(stage, wo, meta);
-  return { name: meta.name, target, stage, branch: b.branch, ...(b.renamedFrom ? { renamedFrom: b.renamedFrom } : {}), main: false };
+  return { name: meta.name, target, stage, branch: b.branch, ...(b.renamedFrom ? { renamedFrom: b.renamedFrom } : {}), main: false, ...(meta.private?.length ? { private: meta.private } : {}) };
 }
 
 async function finishStage(stage: string, wo: string, meta: WorktreeMeta): Promise<void> {
@@ -506,7 +586,7 @@ export async function rebuildWorktrees(o: { repo: string | null; codeDir: string
   let repo = o.repo;
   if (main) {
     const target = o.targets[main.name]!;
-    if (await holds(target, main)) out.push({ name: main.name, target, stage: target, branch: main.branch, main: true });
+    if (await holds(target, main)) out.push(await heldTree(o.codeDir, main, target));
     else out.push(await rebuildOne(null, o.codeDir, o.tid, main, target));
     repo = out[0]!.stage;
   } else if (repo) {
@@ -518,7 +598,7 @@ export async function rebuildWorktrees(o: { repo: string | null; codeDir: string
     if (m.main) continue;
     const target = o.targets[m.name]!;
     if (await holds(target, m)) {
-      out.push({ name: m.name, target, stage: target, branch: m.branch, main: false });
+      out.push(await heldTree(o.codeDir, m, target));
       continue;
     }
     out.push(await rebuildOne(repo, o.codeDir, o.tid, m, target));
@@ -526,8 +606,21 @@ export async function rebuildWorktrees(o: { repo: string | null; codeDir: string
   return out;
 }
 
-/** Move each staged tree into its folder (the main checkout first), then drop the transport's refs. */
-export async function publishTrees(trees: readonly StagedTree[], tid: string): Promise<void> {
+/** Move each staged tree into its folder (the main checkout first), then drop the transport's refs. A folder that
+    already held the code gets the arrived loose files beside what is there (`from`: the source device, for the
+    name a kept file's arrived copy takes). Where every ticked private file landed, and what was kept. */
+export async function publishTrees(trees: readonly StagedTree[], tid: string, o: { from?: string } = {}): Promise<{ privateFiles: string[]; kept: KeptFile[] }> {
+  const kept: KeptFile[] = [];
+  const privateFiles: string[] = [];
+  for (const t of trees) {
+    const landed = t.loose ? await putLoose(t, o.from ?? "there", kept) : null;
+    for (const p of t.private ?? []) privateFiles.push(join(t.target, landed?.get(p) ?? p));
+  }
+  await publishStages(trees, tid);
+  return { privateFiles, kept };
+}
+
+async function publishStages(trees: readonly StagedTree[], tid: string): Promise<void> {
   const main = trees.find((t) => t.main);
   let repo: string | null = null;
   if (main) {

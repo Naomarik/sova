@@ -15,7 +15,7 @@ import { stateRoot, agentRoot } from "../state-root";
 import { markOwned } from "../write-guard";
 import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
 import { registerArrivedHome } from "../chat-homes/place";
-import { dropStages, git, havesOf, publishTrees, rebuildWorktrees, SnapshotError, type StagedTree } from "./git-snapshot";
+import { dropStages, git, havesOf, type KeptFile, publishTrees, rebuildWorktrees, SnapshotError, type StagedTree } from "./git-snapshot";
 import { afterArrival, knob, prepareDestination, type PrepareRequest } from "./hooks";
 import { verifyHome, type PackageManifest } from "./package";
 import { findConversation, relocateHome, sessionIdOfName } from "./relocate";
@@ -267,7 +267,9 @@ async function arrive(tid: string): Promise<void> {
     await fixManifest(join(at, "home"), arrivedId, cur.mode);
     log(`${tid}: relocated ${moved.conversations} conversations, ${moved.workers} helper records, ${moved.records} records`);
     await knob(tid, "verified");
-    stepDone(tid, "verified", { state: "switching", arrivedId, renamed: staged.filter((s) => s.renamedFrom).map((s) => ({ from: s.renamedFrom!, to: s.branch! })) });
+    // The source's own spellings of its folders: a private file still holding one goes to the Transport agent.
+    const sourceValues = [...new Set([manifest.source.homeDir, manifest.source.home, manifest.source.agentDir, manifest.source.stateRoot, ...(manifest.chat.cwd ? [manifest.chat.cwd] : []), ...manifest.worktrees.map((w) => w.path)].filter((v): v is string => typeof v === "string" && v.length > 1))];
+    stepDone(tid, "verified", { ext: { sourceValues }, state: "switching", arrivedId, renamed: staged.filter((s) => s.renamedFrom).map((s) => ({ from: s.renamedFrom!, to: s.branch! })) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof SnapshotError && err.reason === "needs-base") updateTransport(tid, { haves: [] });
@@ -322,7 +324,10 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     await knob(tid, "decided");
     const ext = (r.ext ?? {}) as { staged?: StagedTree[] };
     if (!r.steps.published) {
-      if (ext.staged?.length) await publishTrees(ext.staged, tid);
+      if (ext.staged?.length) {
+        const put = await publishTrees(ext.staged, tid, { from: r.peerLabel });
+        updateTransport(tid, { ext: { privateFiles: put.privateFiles, kept: put.kept } });
+      }
       const home = chatHome(r.arrivedId);
       const staged = join(incomingOf(tid), "home");
       if (existsSync(staged)) {
@@ -345,7 +350,9 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     updateTransport(tid, { path: file });
     const stopped = [...(body?.stopped?.jobs ?? []), ...(body?.stopped?.copies ?? [])];
     const renamedNotes = (readTransport(tid)?.renamed ?? []).map((x) => ` Its branch was ${x.from} there; that name was taken, so it is ${x.to}.`).join("");
-    const note = `${r.mode === "move" ? "Moved" : "Copied"} from ${r.peerLabel}.${stopped.length ? ` Stopped there: ${stopped.join(", ")}.` : ""}${renamedNotes}`;
+    const done = (readTransport(tid)?.ext ?? {}) as { kept?: KeptFile[]; privateFiles?: string[]; sourceValues?: string[]; targets?: Record<string, string> };
+    const keptNotes = (done.kept ?? []).map((k) => ` ${k.tree}/${k.path} was already here and differs, so it was kept; the one from ${r.peerLabel} is ${k.tree}/${k.beside}.`).join("");
+    const note = `${r.mode === "move" ? "Moved" : "Copied"} from ${r.peerLabel}.${stopped.length ? ` Stopped there: ${stopped.join(", ")}.` : ""}${renamedNotes}${keptNotes}`;
     await need().openWithNote(file, note);
     await knob(tid, "opened");
     // Its size once the note is in: any later growth is a turn here, and Move Back is gone (§app.transport/moved-row).
@@ -355,7 +362,6 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
       for (const [list, interrupted] of [[body?.interrupted ?? [], true], [body?.wrapped ?? [], false]] as const)
         for (const chatId of list) await need().tellHelper(chatId, need().helperNote(r.peerLabel, interrupted), `${tid}:moved:${chatId}`).catch((err) => log(`${tid}: ${chatId} wasn't told it moved: ${err instanceof Error ? err.message : String(err)}`));
     const o = offerOf(r);
-    const targets = ((readTransport(tid)?.ext ?? {}) as { targets?: Record<string, string> }).targets ?? {};
     afterArrival({
       tid,
       sourcePeer: r.peer,
@@ -364,8 +370,8 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
       title: r.title,
       project: { remotes: o.project.remotes, path: repoPathOf(r) ?? r.folder },
       worktrees: o.trees.map((t) => ({ name: t.name, branch: t.branch })),
-      privateFiles: [],
-      sourceValues: Object.values(targets),
+      privateFiles: done.privateFiles ?? [],
+      sourceValues: done.sourceValues ?? [],
     });
     log(`${logName(r)}: arrived as ${r.arrivedId}`);
     return ok({ ok: true, arrivedId: r.arrivedId });

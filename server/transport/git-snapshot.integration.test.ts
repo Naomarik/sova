@@ -97,3 +97,33 @@ test("a folder that filled up after the rebuild is never removed at publish: it 
   await assert.rejects(publishTrees(staged, "t3"), (e: unknown) => e instanceof SnapshotError && e.reason === "taken");
   assert.equal(readFileSync(join(target, "x"), "utf8"), "mine\n");
 });
+
+test("a folder there that already holds the code gets the arrived loose files, replacing nothing: a differing private file is kept, the arrived one beside it", async () => {
+  const src = join(root, "src4");
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "master");
+  writeFileSync(join(src, ".gitignore"), ".env\n");
+  writeFileSync(join(src, "a"), "a\n");
+  g(src, "add", "-A");
+  g(src, "commit", "-qm", "a");
+  const target = join(root, "there4", "src4");
+  g(root, "clone", "-q", src, target);
+  writeFileSync(join(target, ".env"), "DSN=there\n");
+  writeFileSync(join(src, ".env"), "DSN=lab\nDATA=/src/data\n");
+  writeFileSync(join(src, "new.txt"), "n\n");
+  const s = await surveyWorktree("src4", src);
+  const p = await packWorktrees({ tid: "t4", trees: [s], haves: [], outDir: join(root, "pack4") });
+  assert.deepEqual(p.metas[0]!.private, [".env"]);
+  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack4"), tid: "t4", metas: p.metas, targets: { src4: target } });
+  assert.ok(!existsSync(join(target, "new.txt")), "nothing is in place before publish");
+  const put = await publishTrees(staged, "t4", { from: "Lab A" });
+  assert.equal(readFileSync(join(target, ".env"), "utf8"), "DSN=there\n", "the file there is kept");
+  assert.equal(readFileSync(join(target, ".env.from-Lab-A"), "utf8"), "DSN=lab\nDATA=/src/data\n");
+  assert.equal(readFileSync(join(target, "new.txt"), "utf8"), "n\n");
+  assert.deepEqual(put.kept, [{ tree: "src4", path: ".env", beside: ".env.from-Lab-A" }]);
+  assert.deepEqual(put.privateFiles, [join(target, ".env.from-Lab-A")]);
+  // A retry puts nothing twice.
+  const again = await publishTrees(await rebuildWorktrees({ repo: null, codeDir: join(root, "pack4"), tid: "t4", metas: p.metas, targets: { src4: target } }), "t4", { from: "Lab A" });
+  assert.deepEqual(again.kept, [{ tree: "src4", path: ".env", beside: ".env.from-Lab-A" }]);
+  assert.ok(!existsSync(join(target, ".env.from-Lab-A-2")));
+});

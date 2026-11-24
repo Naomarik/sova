@@ -58,10 +58,12 @@ export function startWakeKeeper(env: NodeJS.ProcessEnv = process.env): WakeKeepe
 export function cancelChatWakes(sessionId: string, now = Date.now(), dir?: string, workers: (id: string) => string[] = workerChatsOf): void {
   try {
     for (const id of [sessionId, ...workers(sessionId)]) {
-      // A chat with a home keeps its wakes there; its cancel goes beside them, where its process reads it.
+      // A chat with a home keeps its wakes there; its cancel goes beside them, where its process reads it. Its records
+      // are dropped from the state root's folder too: the keeper sweeps both.
       const at = dir ?? wakeDirFor(id);
       cancelWakesBefore(at, id, now);
       dropWakeRecords(at, id);
+      if (!dir && at !== wakeDir()) dropWakeRecords(wakeDir(), id);
     }
   } catch (err) {
     console.warn(`[wake-keeper] cancel of ${sessionId} failed: ${err instanceof Error ? err.message : String(err)}`);

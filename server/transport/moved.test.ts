@@ -122,3 +122,49 @@ test("the start guard is a memory lookup: 200 records on disk are read once, the
   updateTransport("tr_load0000", { state: "done" });
   assert.equal(startRefusal(path(ids[0]!)), null);
 });
+
+test("A→B→A by a fresh Move after A's Moved row was deleted: the arrival clears A's old Moved mark and opens, a Retry too", async () => {
+  resetMovedMemo();
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const dest = await import("./destination");
+  const { cameBack, startRefusal } = await import("./routes");
+  const { movedOf } = await import("./moved");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const id = "0199aaaa-0000-7000-8000-00000000000e";
+  // A once moved it to B (the done source record, the mark); its Moved row was deleted since.
+  createTransport({ tid: "tr_rtold01", side: "source", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "b", peerLabel: "lab B", path: "/gone.jsonl", folder: "~/x", state: "done" });
+  markMoved(id, { tid: "tr_rtold01", peer: "b", to: "lab B", at: new Date().toISOString(), arrivedId: id });
+  // B moves it back to A: published here, about to open.
+  const home = ensureChatHome(id);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  const file = join(home, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", id })}\n`);
+  createTransport({
+    tid: "tr_rtback1", side: "destination", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "b", peerLabel: "lab B", path: "", folder: "/x", state: "switching", arrivedId: id,
+    steps: { offered: "t", prepared: "t", pulled: "t", staged: "t", verified: "t", decided: "t", published: "t" },
+    ext: { offer: { trees: [], repoRel: null, project: { remotes: [], roots: [] } } },
+  });
+  const opened: string[] = [];
+  dest.setDestinationDeps({
+    peerFetch: async () => new Response("{}"),
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack,
+    openWithNote: async (p) => {
+      const why = startRefusal(p);
+      if (why) throw new Error(why);
+      opened.push(p);
+    },
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+  });
+  assert.equal(startRefusal(file), "This chat moved to lab B; it runs there now.", "the old mark is what stuck it");
+  const res = await dest.commit({ id: "b" }, "tr_rtback1", {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(opened, [file]);
+  assert.equal(movedOf(id), undefined);
+  assert.equal(startRefusal(file), null, "it runs here again");
+  assert.equal(readTransport("tr_rtback1")?.state, "done");
+});

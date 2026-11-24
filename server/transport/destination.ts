@@ -35,6 +35,8 @@ export interface DestinationDeps {
   clickProven(peerId: string, proof: string, body: string): Promise<boolean>;
   /** After the home is in place: list it, track its helpers. */
   adopt(homeId: string): void;
+  /** The chat came back to a device it once moved away from: that old Moved mark goes. */
+  cameBack(homeId: string): void;
   /** The arrived chat opened, its note written (no turn starts). */
   openWithNote(path: string, text: string): Promise<void>;
   /** A helper told to carry on (it moved while working). */
@@ -365,6 +367,8 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
       stepDone(tid, "published");
       await rm(incomingOf(tid), { recursive: true, force: true });
     }
+    // A chat coming home to a device it once moved away from: that old Moved mark would keep it from opening (also on a Retry).
+    need().cameBack(r.arrivedId);
     const home = chatHome(r.arrivedId);
     const file = await findConversation(home, r.arrivedId);
     if (!file) throw new Error("The arrived chat's conversation isn't in its home.");

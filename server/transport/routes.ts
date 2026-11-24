@@ -274,6 +274,11 @@ export function startRefusal(path: string): string | null {
   return null;
 }
 
+/** A chat that arrived on a device it once moved away from: it runs here again, so its old Moved mark goes. */
+export function cameBack(id: string): void {
+  if (movedOf(id)) (unmarkMoved(id), log(`${id}: came back here; its old Moved mark is cleared`));
+}
+
 export function mountTransport(app: Hono, mesh: Mesh): void {
   setChatStartGuard(startRefusal);
   // The page's routes answer this host's own page whether or not the mesh is on (no devices: none to pick).
@@ -356,6 +361,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       interrupted
         ? `This chat moved from ${device} while you were working, and your turn was interrupted. Folders and ports may differ here. Continue where you stopped.`
         : `This chat moved from ${device}. Folders and ports may differ here. Continue where you left off.`,
+    cameBack,
     importUsage: (bytes, from) => ({ ...importChatUsage(bytes, { from }) }),
   });
 

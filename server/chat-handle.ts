@@ -466,6 +466,8 @@ export type { SessionMarks, SpecialKind } from "./chat-manager";
 let startGuard: ((path: string) => string | null) | null = null;
 /** Transport's say on starting a chat (§app.transport/switch): a Moved chat, or one in a Move's switch, starts nowhere here. */
 export const setChatStartGuard = (fn: ((path: string) => string | null) | null): void => void (startGuard = fn);
+/** Why the chat at `path` starts nowhere here (Transport's guard), or null. */
+export const chatStartRefusal = (path: string): string | null => startGuard?.(path) ?? null;
 
 export async function acquireChatHandle(path: string, force = false): Promise<ChatHandle> {
   // The server's router: every chat in a process of its own (it waits for the chat's own take-back,

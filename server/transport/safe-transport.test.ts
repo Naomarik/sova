@@ -67,12 +67,12 @@ test("Safe Transport tells them, waits until none works, reports progress, and l
   assert.deepEqual(f.aborted, []);
   assert.equal(progress[0], 2);
   assert.equal(progress.at(-1), 0);
-  assert.deepEqual(r, { interrupted: [], wrapped: ["ag_01", "ag_02"] });
+  assert.deepEqual(r, { interrupted: [], wrapped: ["ag_01", "ag_02"], stillWorking: [] });
 });
 
 test("Interrupt and Move stops working helpers at once; pressed during a wait, it stops the rest", async () => {
   const f = fake([h("ag_01", true), h("ag_02", false)]);
-  assert.deepEqual(await bringHelpersToRest("chat-2", "interrupt", () => undefined, f.deps), { interrupted: ["ag_01"], wrapped: [] });
+  assert.deepEqual(await bringHelpersToRest("chat-2", "interrupt", () => undefined, f.deps), { interrupted: ["ag_01"], wrapped: [], stillWorking: [] });
   assert.deepEqual(f.told, []);
 
   // A helper that never wraps up on its own: the wait goes on until Interrupt and Move.
@@ -84,7 +84,17 @@ test("Interrupt and Move stops working helpers at once; pressed during a wait, i
     return sleep(ms);
   };
   const r = await bringHelpersToRest("chat-3", "safe", () => undefined, stuck.deps);
-  assert.deepEqual(r, { interrupted: ["ag_01"], wrapped: [] });
+  assert.deepEqual(r, { interrupted: ["ag_01"], wrapped: [], stillWorking: [] });
   assert.deepEqual(stuck.told, ["c-ag_01"]);
   assert.equal(interruptWaiting("chat-3"), false);
+});
+
+test("a helper that keeps working after its abort is stopped again each time, and named once the settle time is up", async () => {
+  const f = fake([h("ag_01", true)]);
+  let aborts = 0;
+  f.deps.abort = async () => void aborts++; // never takes
+  let t = 0;
+  const r = await bringHelpersToRest("chat-4", "interrupt", () => undefined, f.deps, { now: () => (t += 10_000) });
+  assert.deepEqual(r, { interrupted: ["ag_01"], wrapped: [], stillWorking: ["ag_01"] });
+  assert.ok(aborts > 1);
 });

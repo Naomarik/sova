@@ -1115,6 +1115,22 @@ export function workerChatsOf(sessionId: string): string[] {
   return router?.workers.chatsOf(sessionId) ?? [];
 }
 
+/** The live workers of parent session `sessionId`, with whether each runs a turn now (Safe Transport). */
+export function workersWorkingOf(sessionId: string): { chatId: string; workerId: string; working: boolean }[] {
+  const w = router?.workers;
+  return w ? w.list(sessionId).map((r) => ({ chatId: r.chatId, workerId: r.workerId, working: w.working(r.chatId) })) : [];
+}
+
+/** Steer worker chat `chatId` (it reads it at its next step, or starts a turn when idle). */
+export async function steerWorkerChat(chatId: string, text: string, key: string): Promise<void> {
+  await router?.workers.send(chatId, { text, delivery: "steer", key });
+}
+
+/** Abort worker chat `chatId`'s turn: its chat stays. */
+export async function abortWorkerChat(chatId: string): Promise<void> {
+  await router?.workers.abort(chatId);
+}
+
 /** Every worker and team member under session `sessionId` at any depth, ended ones included, as their records say. */
 export function workerMembersOf(sessionId: string): { sid: string; path: string; workerId: string; kind: string; parent: string; env: Readonly<Record<string, string>> }[] {
   const out: ReturnType<typeof workerMembersOf> = [];

@@ -393,6 +393,14 @@ export class WorkerRegistry {
     return [...this.live.values()].filter((l) => l.rec.parent.sessionId === parentSessionId && l.rec.state !== "ended").map((l) => this.ref(l));
   }
 
+  /** Whether worker chat `chatId` runs a turn now (starting, running or compacting): what a Move waits on (§app.transport/safe-transport). */
+  working(chatId: string): boolean {
+    const l = this.live.get(chatId);
+    if (!l) return false;
+    const s = this.stateOf(l).status;
+    return s === "running" || s === "starting";
+  }
+
   /** Stop every worker of parent session `parentSessionId` (it was archived or deleted). */
   async stopAllOf(parentSessionId: string, reason: string): Promise<void> {
     // Every report still waiting to open the parent, an ended worker's included.

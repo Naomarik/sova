@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { onboardModels } from "../projects/onboard";
-import { type AgentDeps, agentModel, agentOf, afterArrival, isTransportAgent, prepareDestination, preflight, type PrepareRequest, projectNeeds, sameRemote, sourceValuesIn } from "./agent";
+import { agentBrief } from "./agent-prompt";
+import { type AgentDeps, agentModel, cleanRemote, needsAnswer, agentOf, afterArrival, isTransportAgent, prepareDestination, preflight, type PrepareRequest, projectNeeds, sameRemote, sourceValuesIn } from "./agent";
 
 after(dropScratchAgentDir);
 
@@ -33,6 +34,8 @@ function device(root: string, over: Partial<AgentDeps> = {}) {
   let clock = 0;
   const deps: AgentDeps = {
     stateRoot: () => join(root, "state"),
+    home: () => root,
+    protectedRoots: () => [join(root, "state")],
     device: () => "laptop-b",
     which: () => true,
     git: async (args) => (args[0] === "remote" ? { code: 0, stdout: `origin\t${REMOTE} (fetch)\n` } : { code: 0, stdout: "" }),
@@ -78,6 +81,7 @@ test("the checks: a missing folder says clone; a folder of another repository is
   mkdirSync(req.project.path, { recursive: true });
   writeFileSync(join(req.project.path, "package.json"), "{}");
   writeFileSync(join(req.project.path, "pnpm-lock.yaml"), "");
+  assert.deepEqual((await preflight({ remotes: [], path: req.project.path }, d.deps)).map((c) => [c.id, c.ok]), [["folder", false]], "nothing to know it by: not taken as the project");
   const other = device(root, { git: async (args) => (args[0] === "remote" ? { code: 0, stdout: "origin\tgit@github.com:acme/else.git (fetch)\n" } : { code: 0, stdout: "" }) });
   assert.deepEqual((await preflight(req.project, other.deps)).map((c) => [c.id, c.ok]), [["folder", false]]);
   const noPnpm = device(root, { which: (p) => p !== "pnpm" });
@@ -141,4 +145,30 @@ test("after arrival: private files still holding the source's paths go to the ag
   await afterArrival(req, d.deps);
   assert.equal(d.started.length, 1);
   assert.match(d.told[0]!, /still hold that computer's values/);
+});
+
+test("a remote's credentials never reach the brief, a check or the dialog's answer", async () => {
+  const root = scratchRoot("transport-agent-");
+  const d = device(root);
+  const tokenUrl = "https://x-access-token:ghp_SECRET@github.com/acme/motors.git";
+  assert.equal(cleanRemote(tokenUrl), "https://github.com/acme/motors.git");
+  assert.equal(cleanRemote("ssh://git@host/o/r.git"), "ssh://git@host/o/r.git");
+  assert.equal(cleanRemote("ssh://me:pw@host/o/r.git"), "ssh://host/o/r.git");
+  const req = { ...request(root), project: { remotes: [tokenUrl], path: join(root, "webapps", "motors") } };
+  const answer = await needsAnswer(req.project, d.deps);
+  assert.ok(answer.needs.length && !JSON.stringify(answer).includes("SECRET"));
+  await prepareDestination(req, d.deps);
+  assert.ok(!d.started[0]!.prompt.includes("SECRET"));
+  assert.ok(!agentBrief({ title: "t", device: "d", source: "s", folder: "/f", remotes: [cleanRemote(tokenUrl)], branches: [], checks: [] }).includes("SECRET"));
+});
+
+test("a folder outside the home or inside Sova's own folders is refused before anything is made or started", async () => {
+  const root = scratchRoot("transport-agent-");
+  const d = device(root);
+  for (const path of ["/etc/motors", join(root, "state", "x", "y"), "relative/motors", root]) {
+    const r = await prepareDestination({ ...request(root), project: { remotes: [REMOTE], path } }, d.deps);
+    assert.ok("needsYou" in r, path);
+  }
+  assert.equal(d.started.length, 0);
+  assert.match((await needsAnswer({ remotes: [REMOTE], path: "/etc/motors" }, d.deps)).needs[0]!, /isn't a folder inside your home/);
 });

@@ -9,6 +9,11 @@
 // agent. After arrival, private files still holding the source computer's paths are handed to the
 // agent to point at this one. Everything that reaches the rest of the server goes through
 // AgentDeps; server/transport/agent-wire.ts gives the live ones.
+//
+// Trust: prepareDestination and afterArrival act (make folders, start a chat with install rights), so
+// only arrival code that has verified the transport's ticket calls them (§mesh.peers/transport-ticket);
+// needsAnswer only reads (git and, for a folder with a definition, its doctor). All three refuse a
+// folder outside the user's home or inside Sova's own folders, and never repeat a remote's credentials.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -64,6 +69,10 @@ export interface AgentState {
 
 export interface AgentDeps {
   stateRoot(): string;
+  /** The user's home here: a project's folder is inside it. */
+  home(): string;
+  /** Folders a project's folder is never in: Sova's state root, the agent dir, the chat homes. */
+  protectedRoots(): string[];
   /** This device's name, for the brief. */
   device(): string;
   /** Whether a program is reachable for the user's commands here. */
@@ -133,6 +142,29 @@ const normRemote = (u: string): string =>
 /** Whether two remote URLs name the same repository (ssh and https forms alike). Pure. */
 export const sameRemote = (a: string, b: string): boolean => normRemote(a) === normRemote(b);
 
+/** A remote URL without the credentials it may carry (`https://user:token@host/…` → `https://host/…`;
+    an ssh URL keeps its user, never a password): what a brief, a check or an answer may say. Pure. */
+export const cleanRemote = (u: string): string =>
+  u.trim().replace(/^([a-z][a-z0-9+.-]*:\/\/)([^@/]*)@/i, (_m, scheme: string, who: string) => (/^ssh/i.test(scheme) && who && !who.includes(":") ? `${scheme}${who}@` : scheme));
+
+/** The project as the destination acts on it: its remotes without credentials. Pure. */
+const cleanProject = (p: ProjectRef): ProjectRef => ({ ...p, remotes: p.remotes.map(cleanRemote) });
+
+const within = (child: string, parent: string): boolean => {
+  const c = resolve(child);
+  const r = resolve(parent);
+  return c === r || c.startsWith(r.endsWith("/") ? r : `${r}/`);
+};
+
+/** Why this device refuses a project folder the source named, or null: it is absolute, inside the
+    user's home, and in none of Sova's own folders. Pure. */
+export function folderRefusal(path: string, home: string, protectedRoots: readonly string[]): string | null {
+  if (!path || !path.startsWith("/")) return `The folder on this device must be an absolute path, not "${path}"`;
+  if (!within(path, home) || resolve(path) === resolve(home)) return `${path} isn't a folder inside your home on this device`;
+  if (protectedRoots.some((r) => r && (within(path, r) || within(r, path)))) return `${path} is one of Sova's own folders on this device`;
+  return null;
+}
+
 /**
  * The project's setup checks on this device, mechanically, before any agent: the folder (there, a
  * repository, this project's), each program its files name, its installed dependencies, and its own
@@ -172,7 +204,8 @@ async function sameProject(path: string, project: ProjectRef, deps: Pick<AgentDe
     const r = await deps.git(["cat-file", "-e", `${project.firstCommit}^{commit}`], path).catch(() => ({ code: 1, stdout: "" }));
     if (r.code === 0) return true;
   }
-  if (!project.remotes.length) return !project.firstCommit;
+  // With nothing to know the project by, a repository there is somebody else's until the user says.
+  if (!project.remotes.length) return false;
   const r = await deps.git(["remote", "-v"], path).catch(() => ({ code: 1, stdout: "" }));
   const urls = r.stdout.split("\n").map((l) => l.split(/\s+/)[1] ?? "").filter(Boolean);
   return urls.some((u) => project.remotes.some((x) => sameRemote(u, x)));
@@ -257,7 +290,8 @@ export const isTransportAgent = (root: string, sessionId: string): boolean => !!
 // ---- the model ----------------------------------------------------------------------------------
 
 /** The agent's model: the dialog's pick, else the strongest this device offers, as for setup chats
-    (Claude Code's current Opus, then gpt-6-astra); null when it offers neither. */
+    (Claude Code's current Opus, then gpt-6-astra); null when it offers neither. The dialog lists only
+    this device's own choices (needsAnswer's models), so its pick is taken as given. */
 export const agentModel = (asked: string | undefined, offered: readonly string[] | null) => {
   const c = onboardModel({ model: asked ?? null, thinking: AGENT_THINKING }, offered);
   return c ? { model: c.model, thinking: AGENT_THINKING } : null;
@@ -282,8 +316,10 @@ export interface NeedsAnswer {
 }
 
 /** The answer to the source's "what does this device still need for this project" (the peer route). */
-export async function needsAnswer(project: ProjectRef, deps: AgentDeps): Promise<NeedsAnswer> {
-  const [checks, offered] = await Promise.all([preflight(project, deps), deps.offeredModels()]);
+export async function needsAnswer(asked: ProjectRef, deps: AgentDeps): Promise<NeedsAnswer> {
+  const project = cleanProject(asked);
+  const refused = folderRefusal(project.path, deps.home(), deps.protectedRoots());
+  const [checks, offered] = await Promise.all([refused ? [{ id: "folder", ok: false, detail: refused }] : preflight(project, deps), deps.offeredModels()]);
   const m = agentModelChoices(offered);
   return { needs: missingOf(checks).map((c) => c.detail), models: m.models, modelDefault: m.default, preparedAt: preparedAt(deps.stateRoot(), project) };
 }
@@ -299,7 +335,10 @@ const deviceNeeds = (device: string, n: number, title: string) =>
  * (started once per transport; a Retry finds it again, re-checks and nudges it) works until a turn of
  * its ends with every check green. `signal` (a Cancel) stops the wait; the agent's chat stays.
  */
-export async function prepareDestination(req: PrepareRequest, deps: AgentDeps, opts: { signal?: AbortSignal } = {}): Promise<PrepareResult> {
+export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps, opts: { signal?: AbortSignal } = {}): Promise<PrepareResult> {
+  const req = { ...asked, project: cleanProject(asked.project) };
+  const refused = folderRefusal(req.project.path, deps.home(), deps.protectedRoots());
+  if (refused) return { needsYou: refused };
   const root = deps.stateRoot();
   let checks = await preflight(req.project, deps);
   if (!missingOf(checks).length) {
@@ -404,7 +443,9 @@ export function sourceValuesIn(files: readonly string[], values: readonly string
  * paths go to the transport's agent to point at this one, started now when the device was already
  * prepared and none ran. None hold any: nothing is sent. Returns the files handed over.
  */
-export async function afterArrival(req: PrepareRequest & { privateFiles: string[]; sourceValues: string[] }, deps: AgentDeps): Promise<string[]> {
+export async function afterArrival(asked: PrepareRequest & { privateFiles: string[]; sourceValues: string[] }, deps: AgentDeps): Promise<string[]> {
+  const req = { ...asked, project: cleanProject(asked.project) };
+  if (folderRefusal(req.project.path, deps.home(), deps.protectedRoots())) return [];
   const hits = sourceValuesIn(req.privateFiles, req.sourceValues);
   if (!hits.length) return [];
   const source = req.sourceLabel ?? req.sourcePeer;

@@ -78,6 +78,8 @@ export interface RestResult {
   interrupted: string[];
   /** The helpers that were working when the Move began and wrapped up on their own: they resume there with a note. */
   wrapped: string[];
+  /** Helpers still working after an interrupt's aborts had INTERRUPT_SETTLE_MS to settle: the switch stops them hard or refuses. */
+  stillWorking: string[];
 }
 
 interface Waiting {
@@ -105,7 +107,14 @@ export const isWaiting = (chatId: string): boolean => waiting.has(chatId);
  * working one. Resolves with who was interrupted and who wrapped up. `signal` aborts the wait (the
  * transport was cancelled): it rejects, and nothing more is sent.
  */
-export async function bringHelpersToRest(chatId: string, mode: "safe" | "interrupt", onProgress: (working: number) => void, deps: SafeDeps, opts: { signal?: AbortSignal } = {}): Promise<RestResult> {
+export async function bringHelpersToRest(
+  chatId: string,
+  mode: "safe" | "interrupt",
+  onProgress: (working: number) => void,
+  deps: SafeDeps,
+  opts: { signal?: AbortSignal; now?: () => number } = {},
+): Promise<RestResult> {
+  const now = opts.now ?? Date.now;
   if (waiting.has(chatId)) throw new Error("A Move of this chat is already waiting on its helpers.");
   const w: Waiting = { interrupt: mode === "interrupt", wake: null };
   waiting.set(chatId, w);
@@ -125,15 +134,15 @@ export async function bringHelpersToRest(chatId: string, mode: "safe" | "interru
       progress(busy.length);
       if (!busy.length) break;
       if (w.interrupt) {
-        interruptSince ??= Date.now();
+        interruptSince ??= now();
+        // An abort that never settles doesn't hold the Move for ever: who still works is said.
+        if (now() - interruptSince > INTERRUPT_SETTLE_MS) return { interrupted: [...interrupted], wrapped: [...wrappedAt], stillWorking: busy.map((h) => h.workerId) };
+        // Each poll: a helper busy again (a teammate's message, a wake right after its abort) is stopped again.
         for (const h of busy) {
-          if (interrupted.has(h.workerId)) continue;
           interrupted.add(h.workerId);
           wrappedAt.delete(h.workerId);
           await deps.abort(h.chatId).catch(() => undefined);
         }
-        // An abort that never settles doesn't hold the Move for ever.
-        if (Date.now() - interruptSince > INTERRUPT_SETTLE_MS) break;
       } else if (!told) {
         // Those working as the Move begins are the ones that resume there; one woken only to hear this stays idle.
         told = true;
@@ -146,7 +155,7 @@ export async function bringHelpersToRest(chatId: string, mode: "safe" | "interru
       });
       w.wake = null;
     }
-    return { interrupted: [...interrupted], wrapped: [...wrappedAt] };
+    return { interrupted: [...interrupted], wrapped: [...wrappedAt], stillWorking: [] };
   } finally {
     waiting.delete(chatId);
   }

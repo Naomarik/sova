@@ -72,5 +72,6 @@ backup in their place. Chats made since the backup are in the moved-aside folder
 
 - Claude Code's own store (`~/.claude`) and its logins are never touched by chat homes, so neither
   command takes them.
-- A Claude Code chat made on the branch keeps login ids in its hidden login entries; master shows
-  those as it shows an unknown login.
+- A Claude Code chat started on the branch names its logins by id in its hidden login entries. On
+  master the chat keeps its login (master reads the id), but its login-switch notes don't show.
+  The conversation files are never rewritten for this.

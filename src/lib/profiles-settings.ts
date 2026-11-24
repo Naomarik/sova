@@ -331,9 +331,23 @@ export function withDuplicate(d: ProfilesDraft, key: string, fallbackHelpers: He
   return withNewProfile(d, { model: row.model, thinking: row.thinking, helpers: row.lib ? (d.library[row.lib] ?? null) : null, starts: row.starts, name: `${row.name} copy` }, row.lib ? fallbackHelpers : null);
 }
 
-/** Delete: refused for the default; a library half another profile still links stays. */
-export function withDeleted(d: ProfilesDraft, key: string): ProfilesDraft | string {
-  if (d.default === key) return "Make another profile the default first.";
+/**
+ * Why Delete is refused for `key`, or null: the default is refused, unless it is the default only because the accounts
+ * connected here give it (`derivedDefault`: the listing's default key when `fromAccounts`; nobody pressed Make Default,
+ * in the file or in this draft). Deleting that one brings the built-in profile back, as the server allows.
+ */
+export function deleteRefusal(d: ProfilesDraft, key: string, derivedDefault: string | null = null): string | null {
+  return d.default === key && key !== derivedDefault ? "Make another profile the default first." : null;
+}
+
+/** The listing's default key when it is only derived from the connected accounts, else null. */
+export const derivedDefaultOf = (l: { defaultProfile?: { key: string; chosen: boolean; fromAccounts?: true } } | null | undefined): string | null =>
+  l?.defaultProfile && !l.defaultProfile.chosen && l.defaultProfile.fromAccounts ? l.defaultProfile.key : null;
+
+/** Delete: refused for the default (deleteRefusal); a library half another profile still links stays. */
+export function withDeleted(d: ProfilesDraft, key: string, derivedDefault: string | null = null): ProfilesDraft | string {
+  const refused = deleteRefusal(d, key, derivedDefault);
+  if (refused) return refused;
   const next = clone(d);
   const row = next.rows.find((r) => r.key === key);
   next.rows = next.rows.filter((r) => r.key !== key);

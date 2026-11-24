@@ -54,6 +54,7 @@ test("not chosen yet (review b2): the connected accounts decide, each time, and 
     const before = files();
     const d = await resolveDefaultProfile();
     assert.deepEqual([d.row.key, d.info.chosen, d.fromAccounts], [key, false, key !== "sova:default"], JSON.stringify(accounts));
+    assert.equal(d.info.fromAccounts, key !== "sova:default" ? true : undefined, "the listing says it is the accounts' (Settings lets its row be deleted)");
     const listed = (await joinedProfiles()).filter((r) => r.group === "builtin").map((r) => r.key);
     assert.deepEqual(listed, key === "sova:default" ? [] : listed.filter((k) => k.startsWith("sova:")), JSON.stringify(accounts));
     if (key === "sova:default") assert.deepEqual([listed, d.info.name, d.row.library, d.row.session], [[], "", undefined, undefined], "no built-in listed, nothing named");
@@ -70,7 +71,7 @@ test("Make Default writes the file; from then on the default never moves by itse
   chooseDefaultProfile(rows.find((r) => r.key === "sova:openai")!, rows);
   signIn({ openai: true, claude: true });
   const d = await resolveDefaultProfile();
-  assert.deepEqual([d.row.key, d.info.chosen, d.fromAccounts], ["sova:openai", true, false]);
+  assert.deepEqual([d.row.key, d.info.chosen, d.fromAccounts, d.info.fromAccounts], ["sova:openai", true, false, undefined]);
   rmSync(join(agentDir, "sova", "default-profile.json"));
   rmSync(join(agentDir, "subagent-profiles-default.json"), { force: true });
 });

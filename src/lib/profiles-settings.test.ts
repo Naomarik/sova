@@ -19,6 +19,8 @@ import {
   sharersOf,
   typedDraft,
   withDeleted,
+  deleteRefusal,
+  derivedDefaultOf,
   withDuplicate,
   withMadeYours,
   builtInLine,
@@ -235,6 +237,26 @@ test("Delete: refused for the default; a library half another profile links stay
   assert.ok(one.library.c, "Claude still links it");
   const two = withDeleted({ ...one, default: OFF_KEY }, "user:claude") as ProfilesDraft;
   assert.equal(two.library.c, undefined, "nobody links it now");
+});
+
+test("Delete on a default only the accounts give (a Make It Yours copy nobody made the default) is allowed, as the server allows it; a chosen one is refused", () => {
+  const d = draftOf(WIRE, "user:claude");
+  const derived = derivedDefaultOf({ defaultProfile: { key: "user:claude", chosen: false, fromAccounts: true } });
+  assert.equal(derived, "user:claude");
+  assert.equal(deleteRefusal(d, "user:claude", derived), null, "the editor's Delete is enabled");
+  const gone = withDeleted(d, "user:claude", derived) as ProfilesDraft;
+  assert.equal(typeof gone, "object");
+  assert.equal(gone.rows.some((r) => r.key === "user:claude"), false);
+  assert.equal(gone.default, "user:claude", "no default written: the save deletes it last, and the built-in one comes back");
+  // Chosen (a file names it), or derived from the older default files: refused, as before.
+  for (const l of [{ defaultProfile: { key: "user:claude", chosen: true } }, { defaultProfile: { key: "user:claude", chosen: false } }, null]) {
+    assert.equal(deleteRefusal(d, "user:claude", derivedDefaultOf(l)), "Make another profile the default first.", JSON.stringify(l));
+    assert.equal(withDeleted(d, "user:claude", derivedDefaultOf(l)), "Make another profile the default first.");
+  }
+  // Made the default in this draft (Make Default pressed, not saved yet): chosen, so refused.
+  const picked = draftOf(WIRE, "user:twin");
+  picked.default = "user:claude";
+  assert.equal(deleteRefusal(picked, "user:claude", derivedDefaultOf({ defaultProfile: { key: "user:twin", chosen: false, fromAccounts: true } })), "Make another profile the default first.");
 });
 
 test("what Save waits for: a name's rules, then each library half's rows, in the editor's sentences", () => {

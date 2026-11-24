@@ -258,6 +258,9 @@ export interface DefaultProfileInfo {
   chosen: boolean;
   /** Why it isn't the one chosen (a default naming no profile here, or a file that can't be read). */
   note?: string;
+  /** Not chosen, and worked out from the accounts connected here (a built-in profile, or the row of yours taking its
+      place), never from a file: deleting that row is allowed, and the built-in one comes back. */
+  fromAccounts?: true;
 }
 
 /** A library-only profile's This chat row (§chat.profiles/joined). */

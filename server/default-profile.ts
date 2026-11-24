@@ -72,7 +72,7 @@ export const isNoDefault = (row: Pick<JoinedProfile, "key">): boolean => row.key
  */
 export function defaultAmong(rows: readonly JoinedProfile[], file: DefaultFileState, libraryDefault: string | null, fallback: string | null = "claude"): { row: JoinedProfile; info: DefaultProfileInfo; fromAccounts: boolean } {
   let fromAccounts = false;
-  const info = (row: JoinedProfile, chosen: boolean, note?: string) => ({ row, fromAccounts, info: { key: row.key, id: row.id, name: row.name, chosen, ...(note ? { note } : {}) } });
+  const info = (row: JoinedProfile, chosen: boolean, note?: string) => ({ row, fromAccounts, info: { key: row.key, id: row.id, name: row.name, chosen, ...(note ? { note } : {}), ...(fromAccounts ? { fromAccounts: true as const } : {}) } });
   // Not chosen: the pair linking the saved default helpers (yours first, by name), else that helper profile's
   // own row (a library-only one, or a built-in one or the row that takes its place), else the fallback's.
   const derived = (): JoinedProfile => {

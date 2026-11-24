@@ -23,6 +23,8 @@ import {
   setAllTo,
   sharersOf,
   withDeleted,
+  deleteRefusal,
+  derivedDefaultOf,
   withDuplicate,
   withMadeYours,
   withNewProfile,
@@ -191,7 +193,7 @@ export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: 
   const remove = (key: string) => {
     const d = draft();
     if (!d) return;
-    const out = withDeleted(d, key);
+    const out = withDeleted(d, key, derivedDefaultOf(l()));
     if (typeof out === "string") return setActionError(out);
     setActionError(null);
     store.setDraft(out);
@@ -455,6 +457,7 @@ export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: 
                     return d && d.key !== c().key ? { name: d.name, open: () => (setPicked(d.key), setPart("models"), setActionError(null)) } : undefined;
                   })()}
                   onDuplicate={() => duplicate(c().key)}
+                  deleteRefused={deleteRefusal(draft()!, c().key, derivedDefaultOf(l()))}
                   onDelete={() => remove(c().key)}
                   onHide={(hidden) => void act(c().key, () => setProfileHidden(c().key, hidden, props.cwd), `Couldn't change ${c().name}.`)}
                   onApprove={() => {
@@ -487,6 +490,8 @@ function ProfileEditor(props: {
   focusSpec: boolean;
   onSpecFocused(): void;
   draft: ProfilesDraft;
+  /** Why Delete is refused (the default, unless only the accounts give it), or null. */
+  deleteRefused: string | null;
   draftRow: DraftRow | undefined;
   libProfile: SubagentProfile | null;
   busy: boolean;
@@ -610,8 +615,8 @@ function ProfileEditor(props: {
           <button
             type="button"
             class="button button-sm button-destructive"
-            disabled={props.saving || props.r.isDefault}
-            title={props.r.isDefault ? "Make another profile the default first." : undefined}
+            disabled={props.saving || !!props.deleteRefused}
+            title={props.deleteRefused ?? undefined}
             onClick={props.onDelete}
           >
             Delete

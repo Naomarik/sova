@@ -4,6 +4,7 @@ import { OFF_ID, type DefaultProfileInfo, type JoinedProfile } from "../shared/p
 import {
   builtinFallback, loadSubagentProfiles, profilesDefaultOf, readProfilesDefault, writeProfilesDefault,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { isBuiltinProfileId, readConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import { joinedProfiles, pickJoined } from "./joined-profiles";
 import { readMode, writeMode, type ModePatch } from "./mode-state";
 import { agentRoot, stateRoot } from "./state-root";
@@ -54,6 +55,18 @@ function writeDefaultProfileFile(profile: string, file = defaultProfileFile()): 
     rmSync(tmp, { force: true });
     throw err;
   }
+}
+
+/**
+ * Whether a default nobody chose (`fromAccounts`) can run whole here: the account of the built-in profile it is (or
+ * whose place it takes) is connected. With none connected the fallback is Claude, which can't run: a new chat and a
+ * coding session then take only its helpers, and keep the model new chats open on (§chat.profiles/default).
+ */
+export function builtinAccountConnected(row: JoinedProfile, dir = agentRoot()): boolean {
+  const id = isBuiltinProfileId(row.id) ? row.id : row.replaces?.replace(/^sova:/, "");
+  if (!isBuiltinProfileId(id)) return false;
+  const c = readConnectedAccounts(dir);
+  return id === "claude" ? c.claude : id === "openai" ? c.openai : c.ollamaCloud;
 }
 
 /**

@@ -3,7 +3,8 @@
 //
 // The default before one is chosen (§chat.profiles/default): worked out from the accounts connected here each time
 // (a Claude sign-in, then pi's own OpenAI sign-in, then an Ollama Cloud key), with nothing written; Make Default
-// writes it, and from then on it never moves by itself. Sova's own runs (a playbook card's) keep no helper profile.
+// writes it, and from then on it never moves by itself. A coding session started now takes it whole, as a new chat
+// does (§app.project-overseer/coding-mode). Sova's own runs (a playbook card's) keep no helper profile.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,6 +23,8 @@ process.env.CLAUDE_CONFIG_DIR = claudeDir;
 const { resolveDefaultProfile, chooseDefaultProfile } = await import("./default-profile");
 const { joinedProfiles } = await import("./joined-profiles");
 const { cardHelpers } = await import("./playbook-runs/env");
+const { codingDefaultProfile, codingTakesOf } = await import("./coding-default-profile");
+const { codingChoice } = await import("./project-overseer");
 
 const authFile = join(agentDir, "auth.json");
 const claudeCreds = join(claudeDir, ".credentials.json");
@@ -75,4 +78,25 @@ test("a playbook card's run (review b3): no default chosen gives no helper profi
   assert.equal(r.reviewer, null);
   assert.equal(r.spec.writer, null);
   assert.equal(r.teams.state, "absent");
+});
+
+test("a coding session on a default nobody chose takes the built-in profile whole, after the project's coding model", () => {
+  writeFileSync(join(agentDir, "sova", "defaults.json"), JSON.stringify({ version: 1, model: "openai/older-default", thinking: "low" }));
+  const settings = { model: null, thinking: null, codingModel: null, codingThinking: null, gatheringModel: null, gatheringThinking: null };
+  const running = { model: null, thinking: null };
+  try {
+    signIn({ claude: true });
+    const takes = codingTakesOf(codingDefaultProfile());
+    assert.deepEqual([takes.id, takes.model, takes.thinking, takes.subagents], ["claude", "claude-code-cli/claude-opus-5-5", "medium", "claude"]);
+    assert.deepEqual(codingChoice({}, settings, running, takes), { model: "claude-code-cli/claude-opus-5-5", thinking: "medium" }, "no project coding model: the built-in's");
+    assert.deepEqual(codingChoice({}, { ...settings, codingModel: "openai/project-coder", codingThinking: "high" }, running, takes), { model: "openai/project-coder", thinking: "high" }, "the project's coding model wins");
+    // Nothing connected: the fallback is Claude, which can't run here; only its helpers, the older new-chat model.
+    signIn({});
+    const none = codingTakesOf(codingDefaultProfile());
+    assert.deepEqual([none.id, none.model, none.thinking, none.subagents], ["claude", undefined, undefined, "claude"]);
+    assert.deepEqual(codingChoice({}, settings, running, none), { model: "openai/older-default", thinking: "low" });
+    assert.equal(existsSync(join(agentDir, "sova", "default-profile.json")), false, "nothing chosen or written");
+  } finally {
+    rmSync(join(agentDir, "sova", "defaults.json"), { force: true });
+  }
 });

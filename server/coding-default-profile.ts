@@ -2,7 +2,7 @@ import { DEFAULT_PROFILE, profileKey, type JoinedProfile, type ListedProfile } f
 import { builtinFallback, loadSubagentProfiles, profilesDefaultOf, readProfilesDefault } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { BUILTIN_PROFILE_IDS, readConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import { buildJoined, findJoined } from "./joined-profiles";
-import { defaultAmong, readDefaultProfileFile } from "./default-profile";
+import { builtinAccountConnected, defaultAmong, readDefaultProfileFile } from "./default-profile";
 import { builtinSessionProfile, readHidden } from "./profile-sources";
 import { readProfiles } from "./profiles-store";
 import { agentRoot } from "./state-root";
@@ -24,10 +24,12 @@ export function codingDefaultProfile(dir = agentRoot()): JoinedProfile {
   const rows = buildJoined({ sources: { builtins, yours, project: { state: "none", profiles: [] } as never }, library, hidden: readHidden(), connected: readConnectedAccounts(dir) });
   const fallback = builtinFallback(dir);
   const d = defaultAmong(rows, readDefaultProfileFile(), profilesDefaultOf(library, readProfilesDefault(dir), null).id, fallback);
-  return d.fromAccounts ? helpersOnly(d.row) : d.row;
+  // A default nobody chose (the built-in profile the accounts give) is taken whole, as a new chat takes it: its model
+  // after the project's coding model. Only its helpers when its account isn't connected (Claude with none connected).
+  return d.fromAccounts && !builtinAccountConnected(d.row, dir) ? helpersOnly(d.row) : d.row;
 }
 
-/** A default nobody chose (the built-in one the accounts give): a coding session takes only its helpers, as a new chat does. */
+/** A default nobody chose that can't run here: a coding session takes only its helpers, as a new chat does. */
 const helpersOnly = (row: JoinedProfile): JoinedProfile => {
   const { session: _session, ...rest } = row;
   return rest;

@@ -122,6 +122,7 @@ test("a folder there that already holds the code gets the arrived loose files, r
   assert.equal(readFileSync(join(target, "new.txt"), "utf8"), "n\n");
   assert.deepEqual(put.kept, [{ tree: "src4", path: ".env", beside: ".env.from-Lab-A" }]);
   assert.deepEqual(put.privateFiles, [join(target, ".env.from-Lab-A")]);
+  assert.equal(g(target, "status", "--porcelain"), "?? new.txt\n", "the arrived private copy stays hidden from git");
   // A retry puts nothing twice.
   const again = await publishTrees(await rebuildWorktrees({ repo: null, codeDir: join(root, "pack4"), tid: "t4", metas: p.metas, targets: { src4: target } }), "t4", { from: "Lab A" });
   assert.deepEqual(again.kept, [{ tree: "src4", path: ".env", beside: ".env.from-Lab-A" }]);

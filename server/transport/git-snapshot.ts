@@ -442,6 +442,15 @@ async function putLoose(t: StagedTree, from: string, kept: KeptFile[]): Promise<
     let beside = `${p}.${tag}`;
     for (let i = 2; (await shaOf(join(t.target, beside))) !== "missing" && (await shaOf(join(t.target, beside))) !== want; i++) beside = `${p}.${tag}-${i}`;
     if ((await shaOf(join(t.target, beside))) === "missing") await placeLoose(src, join(t.target, beside));
+    // A private file's arrived copy stays as hidden from git as the file it sits beside (never committed by mistake).
+    if (t.private?.includes(p) && (await git(t.target, ["check-ignore", "-q", "--no-index", beside])).code !== 0) {
+      const { common } = await gitDirs(t.target);
+      await mkdir(join(common, "info"), { recursive: true });
+      const file = join(common, "info", "exclude");
+      const have = await readFile(file, "utf8").catch(() => "");
+      const line = `/${beside.replace(/([*?[\]\\!#])/g, "\\$1")}`;
+      if (!have.split("\n").includes(line)) await writeFile(file, `${have}${have && !have.endsWith("\n") ? "\n" : ""}${line}\n`);
+    }
     kept.push({ tree: t.name, path: p, beside });
     landed.set(p, beside);
   }

@@ -39,3 +39,34 @@ test("a rollback cut short after its moves, run again, points the worker records
   assert.ok(existsSync(join(homes, ".rolled-back", id)), "the emptied home is kept aside");
   assert.ok(!existsSync(join(homes, ".rollback-journal.json")), "the journal is retired");
 });
+
+test("a recorded chat process refuses the rollback wherever its socket is; a dead one doesn't", async () => {
+  const agent = join(scratch, "agent2");
+  const env = { PI_CODING_AGENT_DIR: agent, SOVA_CHAT_HOMES: join(scratch, "homes2"), SOVA_SHARED_BASE: join(scratch, "shared2"), HOME: scratch };
+  const reg = join(agent, "sova", "chats", "registry");
+  mkdirSync(reg, { recursive: true });
+  const rec = join(reg, "c.json");
+  // Its socket under another runtime dir this process can't see: not proof it stopped.
+  writeFileSync(rec, JSON.stringify({ chatId: "c", unit: "sova-chat-x-c", sessionPath: "/s/c.jsonl", sock: join(scratch, "elsewhere", "c.sock") }));
+  await assert.rejects(rollback({ noBackup: true, dryRun: true, env, log: () => {} }), /Still running .*a chat process \(sova-chat-x-c/);
+  // One whose process died (its record carries the death) refuses nothing.
+  writeFileSync(rec, JSON.stringify({ chatId: "c", unit: "sova-chat-x-c", sessionPath: "/s/c.jsonl", sock: join(scratch, "elsewhere", "c.sock"), death: { at: "x" } }));
+  await rollback({ noBackup: true, dryRun: true, env, log: () => {} });
+});
+
+test("a rerun never reports a compressed chat an earlier run restored", async () => {
+  const agent = join(scratch, "agent3");
+  const homes = join(scratch, "homes3");
+  const env = { PI_CODING_AGENT_DIR: agent, SOVA_CHAT_HOMES: homes, SOVA_SHARED_BASE: join(scratch, "shared3"), HOME: scratch };
+  mkdirSync(join(agent, "sova"), { recursive: true });
+  const dir = join(agent, "sessions", "--w--");
+  mkdirSync(dir, { recursive: true });
+  const restored = join(dir, "a.jsonl");
+  writeFileSync(restored, "{}\n"); // restored by the first run: its .gz is gone
+  const store = join(agent, "sova", "compressed-sessions.json");
+  writeFileSync(store, JSON.stringify({ v: 1, chats: { a: { id: "a", kind: "files", row: { path: restored }, files: [{ path: restored, gz: `${restored}.gz`, size: 3, sha256: "x" }] }, b: { id: "b", kind: "files", row: { path: join(dir, "b.jsonl") }, files: [{ path: join(dir, "b.jsonl"), gz: join(dir, "b.jsonl.gz"), size: 3, sha256: "x" }] } } }));
+  const lines: string[] = [];
+  const r = await rollback({ noBackup: true, env, log: (l: string) => lines.push(l) });
+  assert.deepEqual(r.problems, [`${join(dir, "b.jsonl.gz")} is missing: chat b can't be uncompressed`], "only the chat really missing");
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(store, "utf8")).chats), ["b"], "the restored one left the store");
+});

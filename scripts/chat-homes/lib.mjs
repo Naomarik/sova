@@ -114,26 +114,40 @@ export async function runningSova(agent) {
       // nothing answers: that server is gone
     }
   }
-  const socks = join(state, "chats", "s");
-  let names = [];
-  try {
-    names = readdirSync(socks).filter((n) => n.endsWith(".sock"));
-  } catch {
-    // no chat sockets
-  }
+  // Chat processes outlive their server: each is recorded in <state>/chats/registry/, naming its socket
+  // wherever it is (<state>/chats/s/, or a runtime dir when that path is too long). A record that hasn't
+  // ended counts as running unless its socket is there and refuses: one this process can't see (another
+  // namespace's temp dir) is not proof it stopped.
   const { connect } = await import("node:net");
-  for (const n of names) {
-    const alive = await new Promise((ok) => {
-      const c = connect(join(socks, n));
+  const probe = (sock) =>
+    new Promise((ok) => {
+      const c = connect(sock);
       const done = (v) => {
         c.destroy();
         ok(v);
       };
-      c.once("connect", () => done(true));
-      c.once("error", () => done(false));
-      setTimeout(() => done(false), 1000).unref?.();
+      c.once("connect", () => done("open"));
+      c.once("error", () => done("refused"));
+      setTimeout(() => done("refused"), 1000).unref?.();
     });
-    if (alive) out.push(`a chat process (${n})`);
+  const reg = join(state, "chats", "registry");
+  let recs = [];
+  try {
+    recs = readdirSync(reg).filter((n) => n.endsWith(".json"));
+  } catch {
+    // no chat was ever recorded
+  }
+  for (const n of recs) {
+    let rec;
+    try {
+      rec = JSON.parse(readFileSync(join(reg, n), "utf8"));
+    } catch {
+      continue;
+    }
+    if (!rec || rec.death || typeof rec.sock !== "string") continue;
+    const what = `a chat process (${rec.unit ?? n}, ${rec.sessionPath ?? "?"})`;
+    if (!existsSync(rec.sock)) out.push(`${what}, its socket not visible from here`);
+    else if ((await probe(rec.sock)) === "open") out.push(what);
   }
   return out;
 }

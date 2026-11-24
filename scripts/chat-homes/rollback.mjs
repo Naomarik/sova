@@ -96,7 +96,29 @@ async function uncompress({ state, homes, dry, report }) {
       const e = readJson(join(homes, n), null);
       if (e?.id && !entries[e.id]) entries[e.id] = e;
     }
+  /** A chat restored here (now or by an earlier run) leaves the store at once: a rerun after a problem
+      elsewhere never reports it again. */
+  const drop = (id) => {
+    if (dry || !exists(storeFile)) return;
+    const cur = readJson(storeFile, null);
+    if (!cur?.chats?.[id]) return;
+    delete cur.chats[id];
+    writeJson(storeFile, cur);
+  };
+  const kept = join(homes, ".rolled-back");
+  const restoredAlready = async (e) => {
+    if (e.kind === "files") return (e.files ?? []).length > 0 && e.files.every((f) => exists(f.path) && !exists(f.gz));
+    const archive = e.archive ?? join(homes, `${e.id}.tar.gz`);
+    const aside = join(kept, `${e.id}.tar.gz`);
+    return !exists(archive) && exists(aside) && (!e.archiveSha256 || (await sha256File(aside)) === e.archiveSha256);
+  };
   for (const e of Object.values(entries)) {
+    if (await restoredAlready(e)) {
+      drop(e.id);
+      continue;
+    }
+    const problemsBefore = report.problems.length;
+    const keptBefore = report.kept.length;
     if (e.kind === "files") {
       for (const f of e.files ?? []) {
         if (exists(f.path) && !exists(f.gz)) continue; // done already
@@ -166,6 +188,7 @@ async function uncompress({ state, homes, dry, report }) {
       if (exists(side)) renameSync(side, join(homes, ".rolled-back", `${e.id}.compressed.json`));
       report.uncompressed.push(home);
     }
+    if (!dry && report.problems.length === problemsBefore && report.kept.length === keptBefore) drop(e.id);
   }
   if (!dry && exists(storeFile) && report.problems.length === 0) renameSync(storeFile, `${storeFile}.rolled-back`);
 }
@@ -425,7 +448,7 @@ async function restore(from, { dry, log }) {
 export async function rollback({ dryRun = false, noBackup = false, backupOut, fromBackup, env = process.env, log = console.log, hooks } = {}) {
   const agent = agentDir(env);
   const running = [...liveProcesses(agent).map((r) => `pi (pid ${r.pid})`), ...(await runningSova(agent))];
-  if (running.length) throw new Error(`Still running on ${agent}: ${running.join(", ")}. Stop it first.`);
+  if (running.length) throw new Error(`Still running on ${agent}: ${running.join(", ")}. Stop Sova, then its chats (bun scripts/stop-chats.ts --agent-dir ${agent}), first.`);
   if (fromBackup) {
     await restore(fromBackup, { dry: dryRun, log });
     return null;

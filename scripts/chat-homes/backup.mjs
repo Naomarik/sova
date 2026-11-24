@@ -38,7 +38,7 @@ export async function backup({ out, allowRunning = false, env = process.env, log
   const agent = agentDir(env);
   if (!exists(agent)) throw new Error(`No agent dir at ${agent}.`);
   const running = [...liveProcesses(agent).map((r) => `pi (pid ${r.pid})`), ...(await runningSova(agent))];
-  if (running.length && !allowRunning) throw new Error(`Still running on ${agent}: ${running.join(", ")}. Stop it first, or pass --allow-running.`);
+  if (running.length && !allowRunning) throw new Error(`Still running on ${agent}: ${running.join(", ")}. Stop Sova, then its chats (bun scripts/stop-chats.ts --agent-dir ${agent}), or pass --allow-running.`);
   const homes = homesRoot(agent, env);
   const shared = sharedBase(env);
   const base = out ?? join(env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "sova", "backups");

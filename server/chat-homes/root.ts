@@ -38,6 +38,33 @@ export const MARKER_FILE = "chat-homes.json";
  */
 export const MANIFEST_FILE = ["manifest", "json"].join(".");
 export const LAYOUT_VERSION = 1;
+/** A home's index of its files' kinds. */
+export const INDEX_FILE = "index.json";
+
+/**
+ * How each of a home's files is written (§app.chat-homes/layout), by pattern relative to the home: a `log` is only
+ * appended (a reader, a sync or a Transport takes it from an offset), a `doc` is replaced whole. `private` files are
+ * never carried or handed to an extension (the unsent draft). First match wins.
+ */
+export const HOME_FILE_KINDS: readonly { pattern: string; kind: "log" | "doc"; private?: true }[] = [
+  { pattern: MANIFEST_FILE, kind: "doc" },
+  { pattern: "index.json", kind: "doc" },
+  { pattern: "sessions/*.jsonl", kind: "log" },
+  { pattern: "chat/draft.json", kind: "doc", private: true },
+  { pattern: "chat/*.json", kind: "doc" },
+  { pattern: "chat/memory/**", kind: "doc" },
+  { pattern: "chat/attachments/**", kind: "doc" },
+  { pattern: "chat/cards/**", kind: "doc" },
+  { pattern: "chat/offers/**", kind: "doc" },
+  { pattern: "usage/*/labels.jsonl", kind: "log" },
+  { pattern: "usage/*/**", kind: "doc" },
+  { pattern: "workers/*.json", kind: "doc" },
+  { pattern: "teams/**/*.jsonl", kind: "log" },
+  { pattern: "teams/**", kind: "doc" },
+  { pattern: "wakes/**", kind: "doc" },
+  { pattern: "shared/**", kind: "doc" },
+  { pattern: "ext/**", kind: "doc" },
+];
 
 export interface HomeManifest {
   v: 1;
@@ -226,7 +253,7 @@ export function abandonNewHome(id: string): void {
   if (!isHomeId(id)) return;
   const home = join(homesRoot(), id);
   try {
-    const top = readdirSync(home).filter((n) => n !== MANIFEST_FILE && n !== "sessions");
+    const top = readdirSync(home).filter((n) => n !== MANIFEST_FILE && n !== INDEX_FILE && n !== "sessions");
     if (top.length > 0 || readdirSync(join(home, "sessions")).length > 0) return;
     rmSync(home, { recursive: true, force: true });
     known().delete(id);
@@ -274,6 +301,7 @@ export function ensureChatHome(id: string): string {
       const manifest: HomeManifest = { v: 1, id, stateRoot: canonicalStateRoot(), layout: LAYOUT_VERSION, device: { id: device.id, name: device.name }, createdAt: new Date().toISOString() };
       writeJsonAtomic(join(home, MANIFEST_FILE), manifest);
     }
+    if (!existsSync(join(home, INDEX_FILE))) writeJsonAtomic(join(home, INDEX_FILE), { v: 1, layout: LAYOUT_VERSION, files: HOME_FILE_KINDS });
     known().add(id);
   }
   if (!overridden && !fromMarker) {

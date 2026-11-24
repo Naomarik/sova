@@ -6,8 +6,10 @@
 import { dirname } from "node:path";
 import type { WorkerSession } from "../../shared/chat-runtime";
 import { createSessionFile, mintSessionId, type NewSessionFile } from "../harness/pi/state";
+import { emitChatNews } from "../chat-home-events";
+import { sessionsChanged } from "../list-generation";
 import { chatHomesOn } from "../web-settings";
-import { abandonNewHome, ensureChatHome, homeSessionsDir, homesRootAvailable, isHomeSessionFile } from "./root";
+import { abandonNewHome, chatHome, ensureChatHome, hasHome, homeIdOfPath, homeSessionsDir, homesRootAvailable, isHomeSessionFile } from "./root";
 
 export interface NewChatPlace {
   id: string;
@@ -31,12 +33,38 @@ export function newChatPlace(cwd: string, id?: string, on: boolean = chatHomesOn
  */
 export function createNewChatFile(opts: Omit<NewSessionFile, "sessionsDir">, on: boolean = chatHomesOn()): { path: string; id: string } {
   const place = newChatPlace(opts.cwd, opts.id, on);
+  let made: { path: string; id: string };
   try {
-    return createSessionFile({ ...opts, ...(place ? { id: place.id, sessionsDir: place.sessionsDir } : {}) });
+    made = createSessionFile({ ...opts, ...(place ? { id: place.id, sessionsDir: place.sessionsDir } : {}) });
   } catch (err) {
     if (place) abandonNewHome(place.id);
     throw err;
   }
+  if (place) homeBorn(place.id);
+  return made;
+}
+
+/** A new chat's home now holds its conversation: `chat.created` on the event stream (§app.events/names). Once per home,
+    never for a helper placed in its parent's home. */
+function homeBorn(id: string): void {
+  emitChatNews({ name: "chat.created", chat: id, home: chatHome(id) });
+}
+
+/** A fork's file was written into its own home (newChatPlacer): announced like any new chat's. */
+export function forkBorn(forkPath: string): void {
+  const id = homeIdOfPath(forkPath);
+  if (id && isHomeSessionFile(forkPath)) homeBorn(id);
+}
+
+/**
+ * A home that arrived from outside (a Transport's publishing rename into the homes root): read now (its manifest must
+ * already name this state root), listed at once, and announced. False when it isn't a home of this state root.
+ */
+export function registerArrivedHome(id: string): boolean {
+  if (!hasHome(id)) return false;
+  sessionsChanged();
+  homeBorn(id);
+  return true;
 }
 
 /** For a fork: the folder for the fork's freshly minted id (its own home), or undefined while the switch is off. */

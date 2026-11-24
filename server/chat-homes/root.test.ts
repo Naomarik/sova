@@ -26,6 +26,7 @@ describe("where homes live", () => {
     assert.equal(homesRoot(), homes);
     ensureChatHome(ID);
     assert.equal(existsSync(join(state, MARKER_FILE)), false, "a harness never points real state at scratch");
+    assert.equal(JSON.parse(readFileSync(join(homes, ID, "index.json"), "utf8")).files.find((f: { pattern: string }) => f.pattern === "sessions/*.jsonl").kind, "log");
     const m = JSON.parse(readFileSync(join(homes, ID, "manifest.json"), "utf8"));
     assert.equal(m.stateRoot, state);
     assert.equal(m.id, ID);

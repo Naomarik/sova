@@ -3,7 +3,7 @@
 // every refusal the UI cannot know (the strip shows the server's sentence); server/harness/pi/fork.ts
 // owns the read-only source parse and the fork's bytes. The source is never written, opened as a
 // runtime, prompted or notified — and no model is called: creating the fork is file work only.
-import { newChatPlacer } from "./chat-homes/place";
+import { forkBorn, newChatPlacer } from "./chat-homes/place";
 import type { Hono } from "hono";
 import { existsSync } from "node:fs";
 import { assertNotLive, BusyError, chatHandle } from "./chat-handle";
@@ -114,6 +114,7 @@ export function registerSessionForkRoutes(app: Hono): void {
     // The fork's memory starts as the source's; its first sync keeps what its own branch still matches,
     // so it holds memory up to the fork point (§chat.memory/log).
     copyMemory(summary.id, fork.sessionId);
+    forkBorn(fork.path); // chat.created, when the fork has a home of its own
     const made = await getSessionSummary(fork.path);
     if (!made) return c.json({ error: "Failed to read back the forked session." }, 500);
     return c.json(made, 201);

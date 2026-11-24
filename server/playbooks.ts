@@ -297,11 +297,11 @@ export const FOLDED_SETUP_PLAYBOOKS: readonly string[] = ["release-maker", "proj
 export const isListed = (p: PlaybookInfo): boolean => p.spec?.listed !== false;
 
 /**
- * The catalog, rescanned, one group after another and each sorted by title (then id): shipped
- * first, minus any the user replaced; then the user's; then the project's. A project playbook never replaces anything: it is
- * listed in its own group even when its id matches one above. Sova's own (system-playbooks/) come only with
- * `includeUnlisted`, after the shipped ones, and nothing replaces them: a user's playbook with one of their ids is
- * simply the user's.
+ * The catalog, rescanned, one group after another and each sorted by title (then id): the project's
+ * first; then the user's; then the shipped ones, minus any the user replaced. A project playbook never
+ * replaces anything: it is listed in its own group even when its id matches a shipped one. Sova's own
+ * (system-playbooks/) come only with `includeUnlisted`, after the shipped ones, and nothing replaces
+ * them: a user's playbook with one of their ids is simply the user's.
  */
 export async function listPlaybooks(cwd?: string, deps: PlaybooksDeps = {}): Promise<PlaybookCatalog> {
   const [shipped, system, user, project] = await Promise.all([
@@ -316,10 +316,10 @@ export async function listPlaybooks(cwd?: string, deps: PlaybooksDeps = {}): Pro
   // A playbook only Sova's own chats run (`listed: false`) is left out unless the caller asks for it.
   const shown = (p: PlaybookInfo) => deps.includeUnlisted || isListed(p);
   const playbooks = [
+    ...project.entries.filter(shown),
+    ...user.entries.filter(shown).sort(byTitle),
     ...shipped.entries.filter((p) => !userIds.has(p.id) && shown(p)).sort(byTitle),
     ...system.entries.sort(byTitle),
-    ...user.entries.filter(shown).sort(byTitle),
-    ...project.entries.filter(shown),
   ];
   return { playbooks, project: project.state, ...(user.error ? { error: user.error } : {}) };
 }

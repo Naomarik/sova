@@ -3,11 +3,8 @@
 > Part of [Sova branding](overview.md). The visual identity is the design skill; this page is the
 > product's self-description.
 
-**Superseded in part.** The one line, the one paragraph, the audience, and the "what it is not"
-list now live in `.sova/marketing/brand.json` and are rendered into
-[`.sova/marketing/BRAND.md`](../../.sova/marketing/BRAND.md). That is what the marketing playbooks
-read; where the two disagree, `brand.json` is the maintained copy. This page keeps the reasoning
-behind those words and what a rendered brand book has no field for.
+This page is the maintained copy of the one line, the one paragraph, the audience, and the
+"what it is not" list, with the reasoning behind those words.
 
 ## One line
 

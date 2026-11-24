@@ -42,9 +42,9 @@
       "src/lib/updates.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:13Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-23T18:45Z",
+      "source": "pi-session:85cca8ec-6f14-4f3f-8e24-a0c4533b9d1e#7efec2cd"
     }
   },
   "§app.updates/indicator": {
@@ -86,6 +86,33 @@
       "by": "user",
       "at": "2026-11-04T06:59Z",
       "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§app.updates/release-notes": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/updates",
+      "§app.updates/check",
+      "§app.updates/running",
+      "§app.updates/operator",
+      "§app/markdown-viewer"
+    ],
+    "code": [
+      "src/components/UpdatesSettings.tsx",
+      "src/lib/updates.ts",
+      "server/updates/check.ts",
+      "server/updates/check.test.ts",
+      "server/updates/routes.ts",
+      "server/updates/routes.test.ts",
+      "shared/protocol.ts",
+      "src/lib/api.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-23T18:45Z",
+      "source": "pi-session:85cca8ec-6f14-4f3f-8e24-a0c4533b9d1e#7efec2cd"
     }
   },
   "§app.updates/reload-note": {
@@ -224,11 +251,13 @@
       "scripts/install.sh",
       "scripts/install.test.sh",
       "src/lib/updates.ts",
-      "server/updates/manager-restart.test.ts"
+      "server/updates/manager-restart.test.ts",
+      "src/lib/updates.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "by": "naomarik",
+      "at": "2026-11-23T18:45Z",
+      "source": "pi-session:85cca8ec-6f14-4f3f-8e24-a0c4533b9d1e#7efec2cd"
     }
   },
   "§app/updates": {

@@ -1,0 +1,19 @@
+{
+  "id": "merge-reviewer-shell",
+  "label": "Merge reviewer (shell)",
+  "icon": "search",
+  "description": "The merge queue's review step when its review kit asks for a shell: reads the branch with the kit, may run commands in a folder of its own (never the merge copy), and answers ok, notes or blocking. No edit tools, no web, workers, timers or worktrees.",
+  "remove": [
+    "mcp",
+    "edit",
+    "web",
+    "workers",
+    "timers",
+    "worktrees"
+  ],
+  "grant": [],
+  "singleton": false,
+  "overseerMayStart": false,
+  "mode": "normal",
+  "minorModes": []
+}

@@ -96,6 +96,9 @@
 //     trestart  Part C C1 (--mode unit): with a reply and a worker running, the operator's confirmed Apply on
 //               a scratch project's slot 0 adopting the trial's stand-in unit is not refused as busy and
 //               restarts the server within seconds; chats and worker keep their processes, nothing resumed
+//     tmcp      §app.mcp/tool-list: with one approved, checked command server, a new chat opens without
+//               waiting on its list (no "ask mcp.list unanswered" in its log) and declares that server's
+//               tool before its first message
 //     tdefault  Part B/C B4/B1: no switch, and a stale SOVA_CHAT_HOST=off: chats and workers still run in processes
 //               of their own, never in the server or as its children
 //     tserverless  Part B 5e(a): with the server stopped for good, a quiet chat exits after the (shortened)
@@ -164,7 +167,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "tj6", "tj6b", "hermetic", "tyourclick", "tprofile"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tmcp", "tserverless", "tstopchats", "tw1", "tw2", "tw3", "tw4", "tw5", "tw6", "tw7", "tw8", "tj1", "tj2", "tj3", "tj4", "tj5", "tj6", "tj6b", "hermetic", "tyourclick", "tprofile"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -3110,6 +3113,38 @@ async function tdefault() {
   await nextServer();
 }
 
+// Tmcp: a new chat's MCP list, which it asks the server for while it opens (server/harness/pi/mcp.ts session_start),
+// is answered during the open (server/chat-host.ts openOn): an unanswered ask held the open for its 10 s and left the
+// chat with no servers until its first message.
+async function tmcp() {
+  const stub = join(ROOT, "server", "harness", "pi", "testing", "mcp-stub.fixture.mjs");
+  const log = join(scratch, "tmcp-stub.log");
+  // Add and Check, as the operator's page does (it approves what it adds): the page's cookie, no token header.
+  const res = await fetch(`${base}/api/mcp/servers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", cookie: pageCookie(agent, tokenOf(agent)) },
+    body: JSON.stringify({ way: "command", name: "stub", command: `node ${stub} --name stub --log ${log} --tools echo` }),
+  });
+  const row = await res.json().catch(() => null);
+  if (!R.check(res.ok && row?.state === "connected", `tmcp: the stub server is added, approved and checked (${res.status} ${row?.state ?? JSON.stringify(row)?.slice(0, 200)})`)) return;
+  try {
+    const { path } = await c.api("/api/sessions", { method: "POST", body: JSON.stringify({ cwd: proj }) });
+    const t0 = Date.now();
+    const s = await chat(c, path, 40000);
+    const openMs = Date.now() - t0;
+    // The chat's start is the rest of it: well under the 10 s the unanswered ask held it for.
+    R.check(openMs < 9000, `tmcp: the new chat opened in ${(openMs / 1000).toFixed(1)} s, under the 10 s an unanswered ask takes`);
+    const said = procLogOf(path, { unit: record(path)?.unit, pid: chatPid(path) });
+    R.check(!/ask mcp\.list unanswered/.test(said), `tmcp: its log has no unanswered MCP list ask`, said.split("\n").filter((l) => /unanswered/.test(l)).join("; ").slice(0, 300));
+    const tools = await c.api(`/api/sessions/tools?path=${encodeURIComponent(path)}`);
+    const names = tools?.state === "ok" ? tools.tools.map((t) => t.name) : [];
+    R.check(names.includes("mcp__stub__echo"), `tmcp: before its first message it declares the stub's tool (${names.filter((n) => n.startsWith("mcp__")).join(", ") || tools?.state + " " + (tools?.reason ?? "none")})`);
+    s.close();
+  } finally {
+    await fetch(`${base}/api/mcp/rows/${row.id}`, { method: "DELETE", headers: { cookie: pageCookie(agent, tokenOf(agent)) } }).catch(() => {});
+  }
+}
+
 // Tserverless (Part B 5e(a)): chats with no server. Idle-stop shortened (SOVA_CHAT_IDLE_MIN=0.05). The
 // server stops for good, chats left running (systemctl stop of its unit, or a launchd bootout on darwin);
 // a quiet chat with no controller then exits by itself after the idle time, a chat mid-reply keeps
@@ -4132,7 +4167,7 @@ async function jobWakesWorker(name, idleMs) {
 const tj6 = () => jobWakesWorker("tj6", 120000);
 const tj6b = () => jobWakesWorker("tj6b", 4000);
 
-const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, tj6, tj6b, hermetic, tprofile, plumbing, serve, real: () => t1(opt("model")) };
+const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tmcp, tserverless, tstopchats, tw1, tw2, tw3, tw4, tw5, tw6, tw7, tw8, tj1, tj2, tj3, tj4, tj5, tj6, tj6b, hermetic, tprofile, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

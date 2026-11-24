@@ -110,7 +110,7 @@ places is a count that disagrees in one of them.
   writes it.
 
 - **Updates · this machine** — last, under its own heading: what runs, the last check and what it
-  found, Check Now, the upgrade button and its progress (§app/updates), then **Update from**,
+  found, Check Now, Release Notes, the upgrade button and its progress (§app/updates), then **Update from**,
   **Check for updates automatically** and **Upgrade automatically**. Those three are the form
   **Updates**, staged and written by the dialog's Save Changes (§app.settings-dialog/save-bar);
   Check Now and the upgrade are actions that run at once.

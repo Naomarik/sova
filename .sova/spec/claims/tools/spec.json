@@ -136,7 +136,8 @@
     "kind": "behavior",
     "requires": [
       "§tools.spec/census-created",
-      "§tools.spec/where-lookup"
+      "§tools.spec/where-lookup",
+      "§tools.spec/split-topics"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -145,7 +146,9 @@
       "pi-config/extensions/spec/README.md",
       "pi-config/extensions/spec/core/README.md",
       "pi-config/extensions/spec/tests/census-rank.test.mjs",
-      "pi-config/extensions/spec/tests/core.test.mjs"
+      "pi-config/extensions/spec/tests/core.test.mjs",
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs"
     ],
     "agreed": {
       "by": "naomarik",
@@ -452,8 +455,6 @@
       "pi-config/extensions/spec/docs/CHANGELOG.md",
       "pi-config/extensions/mode/spec-mode.test.ts",
       "pi-config/extensions/mode/spec-guard.test.ts",
-      "playbooks/spec-review/PLAYBOOK.md",
-      "server/spec-review-playbook.test.ts",
       "server/chat-host.ts",
       "server/chat-runtime/supervisor.ts",
       "server/chat-runtime/supervisor.test.ts",
@@ -464,9 +465,9 @@
       "scripts/test-env.mjs"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T16:06Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
+      "by": "naomarik",
+      "at": "2026-11-18T14:38Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#09a1410d"
     }
   },
   "§tools.spec/near-impact": {
@@ -604,35 +605,23 @@
       "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
-  "§tools.spec/review-playbook": {
-    "kind": "behavior",
-    "authority": "accepted",
-    "evidence": "verified",
-    "requires": [
-      "§chat.playbooks/bundles",
-      "§tools.spec/mode-reading",
-      "§tools.spec/frame"
-    ],
-    "code": [
-      "playbooks/spec-review/PLAYBOOK.md",
-      "server/spec-review-playbook.test.ts",
-      "server/spec-review-playbook.integration.test.ts"
-    ]
-  },
   "§tools.spec/single-read": {
     "kind": "behavior",
     "authority": "accepted",
     "evidence": "verified",
     "requires": [
       "§tools.spec/contents-view",
-      "§tools.spec/context-packets"
+      "§tools.spec/context-packets",
+      "§tools.spec/split-topics"
     ],
     "code": [
       "pi-config/extensions/spec/core/read.mjs",
       "pi-config/extensions/spec/core/toc.mjs",
       "pi-config/extensions/spec/core/sova-spec.mjs",
       "pi-config/extensions/spec/tests/toc.test.mjs",
-      "pi-config/extensions/spec/core/README.md"
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs"
     ]
   },
   "§tools.spec/span-promotion": {
@@ -677,12 +666,33 @@
       "source": "pi-session:7a1fa31b-5894-46dc-af05-4e67fa0fc16a#2ba326c2"
     }
   },
+  "§tools.spec/split-topics": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [],
+    "code": [
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/core/sova-spec.mjs",
+      "pi-config/extensions/spec/core/toc.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs",
+      "pi-config/extensions/spec/core/README.md",
+      "pi-config/extensions/spec/core/topic.mjs",
+      "pi-config/extensions/spec/tests/search/split-units.mjs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-20T10:51Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#4ff8b381"
+    }
+  },
   "§tools.spec/unread-landed": {
     "kind": "behavior",
     "requires": [
       "§tools.spec/census-note",
       "§tools.spec/census-rank",
-      "§tools.spec/no-turn-end-check"
+      "§tools.spec/no-turn-end-check",
+      "§tools.spec/split-topics"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -707,7 +717,8 @@
     "evidence": "verified",
     "requires": [
       "§tools.spec/contents-view",
-      "§tools.spec/inspection-safety"
+      "§tools.spec/inspection-safety",
+      "§tools.spec/split-topics"
     ],
     "code": [
       "pi-config/extensions/spec/core/where.mjs",
@@ -716,15 +727,23 @@
       "pi-config/extensions/spec/tests/map-fixture.mjs",
       "pi-config/extensions/spec/core/README.md",
       "pi-config/extensions/spec/tests/where.test.mjs",
-      "pi-config/extensions/spec/README.md"
-    ]
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-20T10:52Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#4ff8b381"
+    }
   },
   "§tools.spec/where-topic": {
     "kind": "behavior",
     "authority": "accepted",
     "evidence": "verified",
     "requires": [
-      "§tools.spec/where-lookup"
+      "§tools.spec/where-lookup",
+      "§tools.spec/split-topics"
     ],
     "code": [
       "pi-config/extensions/spec/core/where.mjs",
@@ -732,11 +751,15 @@
       "pi-config/extensions/spec/core/sova-spec.mjs",
       "pi-config/extensions/spec/tests/where.test.mjs",
       "pi-config/extensions/spec/core/README.md",
-      "pi-config/extensions/spec/README.md"
+      "pi-config/extensions/spec/README.md",
+      "pi-config/extensions/spec/core/parts.mjs",
+      "pi-config/extensions/spec/tests/parts.test.mjs",
+      "pi-config/extensions/spec/tests/search/split-units.mjs"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-11T07:56Z"
+      "at": "2026-11-20T10:51Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#4ff8b381"
     }
   },
   "§tools.spec/worker-landed": {
@@ -821,9 +844,9 @@
       "§chat/mode-menu"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-12T16:06Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#96bae24a"
+      "by": "naomarik",
+      "at": "2026-11-18T14:38Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#09a1410d"
     }
   }
 }

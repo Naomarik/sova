@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { changelogSection, checkForUpdate, compareVersions, describeRunning, githubWebOf, offersUpgrade, OFFICIAL_REPO, parseLsRemote, repoUrlOf } from "./check";
+import { changelogSection, changelogSections, checkForUpdate, compareVersions, describeRunning, githubWebOf, offersUpgrade, OFFICIAL_REPO, parseLsRemote, releaseNotesMarkdown, repoUrlOf, sectionsBetween } from "./check";
 import { gitIn } from "./git";
 import { makeRepos, type Repos } from "./testing";
 
@@ -186,4 +186,59 @@ test("helpers: ls-remote peeling, versions, changelog sections, the repository's
   assert.equal(githubWebOf("file:///tmp/x"), null);
   assert.equal(repoUrlOf({}), OFFICIAL_REPO);
   assert.equal(repoUrlOf({ SOVA_UPDATES_REPO_URL: "file:///srv/standin.git" }), "file:///srv/standin.git");
+});
+
+const LOG = `# Changelog
+
+What changed. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
+
+## v0.4.0 — 2026-11-03
+
+Four.
+
+### Removed
+
+- ${"x".repeat(7000)}
+
+## Unreleased notes
+
+Not a release.
+
+## v0.3.10 — 2026-11-02
+
+Three-ten.
+
+## v0.3.2 — 2026-11-01
+
+Three-two.
+`;
+
+test("changelog sections: every numbered release newest first, the preamble and unnumbered sections dropped, nothing capped", () => {
+  const s = changelogSections(LOG);
+  assert.deepEqual(s.map((x) => x.version), ["v0.4.0", "v0.3.10", "v0.3.2"]);
+  assert.equal(s[0]!.heading, "## v0.4.0 — 2026-11-03");
+  assert.match(s[0]!.body, /^Four\.\n\n### Removed\n\n- x{7000}$/, "its own subheadings kept, uncapped");
+  assert.ok(!s.some((x) => /CONTRIBUTING|Not a release/.test(x.body)), "the preamble's relative link and the unnumbered section are gone");
+  // Between two versions: after the first, up to and including the second.
+  assert.deepEqual(sectionsBetween(s, "v0.3.2", "v0.4.0").map((x) => x.version), ["v0.4.0", "v0.3.10"]);
+  assert.deepEqual(sectionsBetween(s, "v0.3.10", "v0.3.10"), []);
+  assert.equal(changelogSection(LOG, "v0.4.0")!.length, 6001, "the check's one-release notes keep their cap");
+});
+
+test("the Release Notes document: a newer release first under its divider, then the running one; a copy past its release says so", () => {
+  const running = LOG.replace(/## v0\.4\.0[\s\S]*?(?=## Unreleased)/, "");
+  const plain = releaseNotesMarkdown({ running, baseVersion: "v0.3.10", pastBase: 0 })!;
+  assert.match(plain, /^## v0\.3\.10 — 2026-11-02\n\nThree-ten\.\n\n## v0\.3\.2/);
+  assert.doesNotMatch(plain, /not installed yet|You're on|changes past/);
+  const offered = releaseNotesMarkdown({ running, baseVersion: "v0.3.2", pastBase: 0, offer: { version: "v0.4.0", changelog: LOG, url: "https://example.invalid/notes" } })!;
+  const order = ["# New in v0.4.0, not installed yet\n\n---\n\n## v0.4.0", "## v0.3.10", "[Read the notes on GitHub](https://example.invalid/notes)", "# You're on v0.3.2\n\n---\n\n## v0.3.2"].map((h) => offered.indexOf(h));
+  assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1]!)), `in order: ${order}`);
+  assert.equal(offered.match(/## v0\.3\.10/g)?.length, 1, "a release the copy already has the notes of isn't repeated");
+  // A copy past its last release: one line first, no commit list.
+  const past = releaseNotesMarkdown({ running, baseVersion: "v0.3.10", pastBase: 3 })!;
+  assert.match(past, /^This copy is 3 changes past v0\.3\.10\. Those changes have no release notes yet\.\n\n## v0\.3\.10/);
+  assert.match(releaseNotesMarkdown({ running, baseVersion: "v0.3.10", pastBase: 1 })!, /^This copy is 1 change past/);
+  // Going back (an offer older than what runs) has no new part; an empty changelog has nothing to show.
+  assert.doesNotMatch(releaseNotesMarkdown({ running: LOG, baseVersion: "v0.4.0", pastBase: 0, offer: { version: "v0.3.10", changelog: LOG, url: null } })!, /not installed yet/);
+  assert.equal(releaseNotesMarkdown({ running: "# Changelog\n", baseVersion: null, pastBase: null }), null);
 });

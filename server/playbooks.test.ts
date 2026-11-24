@@ -62,6 +62,19 @@ test("the real shipped catalog: brandmaker parses, and its body no longer carrie
   assert.ok(!b.body.includes("promptHint:"), "frontmatter stripped");
 });
 
+test("the real shipped catalog lists Context audit, with a valid playbook.json that opens its card", async () => {
+  const cat = await listPlaybooks(undefined, { userDir: join(fresh("nouser"), "absent") });
+  const c = cat.playbooks.find((p) => p.id === "context-audit");
+  assert.ok(c, "context-audit is shipped and listed");
+  assert.equal(c.title, "Context audit");
+  assert.equal(c.source, "sova");
+  assert.equal(c.specError, undefined);
+  assert.ok(c.spec, "its playbook.json parses");
+  assert.deepEqual(c.spec.steps.map((s) => s.id), ["inventory", "read", "report", "decide", "fix", "recheck"]);
+  assert.equal(c.spec.run.worktree, "new");
+  assert.match(c.body, /^# Context audit/);
+});
+
 test("a user playbook with a shipped id replaces it, marked replacesSova; others are simply added", async () => {
   const deps = base();
   drop(deps.shippedDir, "brand", fm({ title: "Shipped Brand" }, "shipped"));
@@ -71,7 +84,7 @@ test("a user playbook with a shipped id replaces it, marked replacesSova; others
   const cat = await listPlaybooks(undefined, deps);
   assert.deepEqual(
     cat.playbooks.map((p) => [p.source, p.id]),
-    [["sova", "other"], ["user", "extra"], ["user", "brand"]],
+    [["user", "extra"], ["user", "brand"], ["sova", "other"]],
   );
   const brand = cat.playbooks.filter((p) => p.id === "brand");
   assert.equal(brand.length, 1, "the shipped copy is gone, not listed twice");
@@ -104,10 +117,24 @@ test("project playbooks are found under the cwd's .sova/marketing/playbooks", as
   drop(deps.shippedDir, "launch", fm({ title: "Shipped Launch" }, "s"));
   const cat = await listPlaybooks(cwd, deps);
   assert.deepEqual(cat.project, { state: "ok" });
-  assert.deepEqual(cat.playbooks.map((p) => [p.source, p.id]), [["sova", "launch"], ["project", "launch"]], "a project id replaces nothing");
+  assert.deepEqual(cat.playbooks.map((p) => [p.source, p.id]), [["project", "launch"], ["sova", "launch"]], "the project's first; a project id replaces nothing");
   const p = cat.playbooks.find((x) => x.source === "project")!;
   assert.equal(p.dir, join(cwd, ".sova", "marketing", "playbooks", "launch"));
   assert.equal(p.description, "Ship it");
+});
+
+test("the catalog's order is the dialog's: the project's, then the user's, then Sova's, each by title", async () => {
+  const deps = base();
+  const cwd = fresh("order");
+  drop(deps.shippedDir, "a-shipped", fm({ title: "A shipped" }, "s"));
+  drop(deps.userDir, "b-mine", fm({ title: "B mine" }, "u"));
+  drop(join(cwd, PROJECT_PLAYBOOKS), "z-proj", fm({ title: "Z proj" }, "p"));
+  drop(join(cwd, PROJECT_PLAYBOOKS), "c-proj", fm({ title: "C proj" }, "p"));
+  const cat = await listPlaybooks(cwd, deps);
+  assert.deepEqual(
+    cat.playbooks.map((p) => [p.source, p.id]),
+    [["project", "c-proj"], ["project", "z-proj"], ["user", "b-mine"], ["sova", "a-shipped"]],
+  );
 });
 
 test("a cwd without .sova is ok and empty", async () => {
@@ -284,17 +311,17 @@ test("system-playbooks/: never listed whatever its description says, found only 
   const listed = (await listPlaybooks(undefined, deps)).playbooks;
   assert.deepEqual(listed.map((p) => [p.source, p.id, p.replacesSova]), [["user", "project-setup", undefined]], "only the user's, an ordinary playbook of theirs");
   const all = (await listPlaybooks(undefined, { ...deps, includeUnlisted: true })).playbooks;
-  assert.deepEqual(all.map((p) => [p.source, p.id, p.body]), [["sova", "project-setup", "sova's"], ["user", "project-setup", "mine"]]);
-  assert.equal(all[0]!.dir, join(deps.systemDir, "project-setup"));
+  assert.deepEqual(all.map((p) => [p.source, p.id, p.body]), [["user", "project-setup", "mine"], ["sova", "project-setup", "sova's"]]);
+  assert.equal(all.find((p) => p.source === "sova")!.dir, join(deps.systemDir, "project-setup"));
 });
 
-test("the real tree: system-playbooks/ holds Sova's six, playbooks/ the four you start, no id in both, nothing in playbooks/ hidden", async () => {
+test("the real tree: system-playbooks/ holds Sova's six, playbooks/ the three you start, no id in both, nothing in playbooks/ hidden", async () => {
   // This tree's own folders, read directly: a cwd would resolve to the main checkout's project (server/project-root.ts).
   const root = fileURLToPath(new URL("../", import.meta.url));
   const deps = { userDir: join(fresh("nouser"), "absent") };
   const system = ["merge-queue", "project-deploy", "project-setup", "project-verbs", "release", "release-maker"];
   const listed = (await listPlaybooks(undefined, deps)).playbooks;
-  assert.deepEqual(listed.map((p) => p.id).sort(), ["ab-cycle", "brandmaker", "marketing", "spec-review"], "the Playbooks dialog's Sova group");
+  assert.deepEqual(listed.map((p) => p.id).sort(), ["ab-cycle", "brandmaker", "context-audit"], "the Playbooks dialog's Sova group");
   const all = (await listPlaybooks(undefined, { ...deps, includeUnlisted: true })).playbooks;
   const inSystem = all.filter((p) => p.dir.startsWith(join(root, "system-playbooks")));
   assert.deepEqual(inSystem.map((p) => p.id).sort(), system, "Sova's own callers find all six there");

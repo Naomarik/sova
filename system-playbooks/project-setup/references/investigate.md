@@ -76,10 +76,10 @@ order to offer them:
   `nx affected -t test --base=${merge.base} --head=HEAD`, `bazel test` over `bazel query` of the
   changed files, or a `.sova/bin/` script reading `$SOVA_MERGE_CHANGED`. It must exit 0 and write
   `{"passed": 0, "failed": 0, "skipped": "<why>"}` when nothing it covers changed.
-- **One required check per package that changes often**, the rest optional with a blast-radius map
-  (`.sova/playbook-config/merge-queue/`) so the merge thread picks them by path.
+- **One required check per package that changes often**, the rest optional with folder rules
+  (`merge.rules`: each package's paths → its check) so Sova runs them by path.
 - **Split a slow suite** into groups of under 30 minutes each (the hard limit), the slow groups
-  optional and picked by path.
+  optional, with a folder rule for each group's paths.
 A release can run everything: `release.checks` are the place for the full suite.
 
 ## Containers, compose and Nix

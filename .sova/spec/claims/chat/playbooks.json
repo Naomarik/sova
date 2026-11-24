@@ -9,8 +9,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-18T20:21Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "at": "2026-11-22T08:39Z",
+      "source": "pi-session:01a1fa0a-5b4e-764e-a4dd-374f516e7837#903dfb29"
     },
     "code": [
       "playbooks/ab-cycle/PLAYBOOK.md",
@@ -183,6 +183,44 @@
       "server/playbook-runs/plan.test.ts"
     ]
   },
+  "§chat.playbooks/context-audit": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.playbooks/description-file",
+      "§chat.playbooks/bundles",
+      "§chat.sandbox/shared-folder"
+    ],
+    "code": [
+      "playbooks/context-audit/PLAYBOOK.md",
+      "playbooks/context-audit/phases/decide.md",
+      "playbooks/context-audit/phases/fix.md",
+      "playbooks/context-audit/phases/inventory.md",
+      "playbooks/context-audit/phases/read.md",
+      "playbooks/context-audit/phases/recheck.md",
+      "playbooks/context-audit/phases/report.md",
+      "playbooks/context-audit/playbook.json",
+      "playbooks/context-audit/references/contradictions.md",
+      "playbooks/context-audit/references/layout.md",
+      "playbooks/context-audit/references/metrics.md",
+      "playbooks/context-audit/references/report.md",
+      "playbooks/context-audit/references/roles/challenger.md",
+      "playbooks/context-audit/references/roles/fixer.md",
+      "playbooks/context-audit/references/roles/investigator.md",
+      "playbooks/context-audit/references/roles/writer.md",
+      "playbooks/context-audit/references/what-loads.md",
+      "playbooks/context-audit/scripts/context-audit.mjs",
+      "server/playbooks.test.ts",
+      "playbooks/context-audit/tests/scratch.mjs",
+      "playbooks/context-audit/tests/scripts.test.mjs"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-23T09:39Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#fb5ff014"
+    }
+  },
   "§chat.playbooks/description-file": {
     "kind": "behavior",
     "authority": "accepted",
@@ -331,13 +369,13 @@
       "server/merge-queue/settings.ts",
       "server/project-settings.ts",
       "pi-config/extensions/worktrees/setup-rule.ts",
-      "system-playbooks/merge-queue/scripts/blast-radius.mjs",
       "system-playbooks/project-setup/scripts/project-setup.mjs",
       "migrations/playbook-config-old-place/index.d.mts",
       "server/merge-queue/settings-edit.test.ts",
       "server/merge-queue/thread.test.ts",
       "server/playbooks.test.ts",
-      "server/migrations.test.ts"
+      "server/migrations.test.ts",
+      ".sova/playbook-config/merge-queue/references/picks.md"
     ],
     "agreed": {
       "by": "naomarik",
@@ -533,7 +571,12 @@
     "evidence": "reviewed",
     "code": [
       "src/components/PlaybooksDialog.tsx"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T14:38Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#09a1410d"
+    }
   },
   "§chat.playbooks/system-playbooks": {
     "kind": "behavior",
@@ -563,8 +606,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-18T20:28Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "at": "2026-11-23T07:33Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#9293db4f"
     }
   },
   "§chat.playbooks/the-modal": {
@@ -575,12 +618,14 @@
       "src/components/PlaybooksDialog.tsx",
       "src/components/ChatView.tsx",
       "src/components/ScheduleCard.tsx",
-      "src/app.css"
+      "src/app.css",
+      "src/lib/playbooks.ts",
+      "src/lib/playbooks.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-16T19:29Z",
-      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#d1428b4d"
+      "by": "naomarik",
+      "at": "2026-11-18T14:38Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#09a1410d"
     }
   },
   "§chat.playbooks/the-project-listing": {
@@ -592,8 +637,14 @@
       "src/lib/playbooks.ts",
       "src/components/PlaybooksDialog.tsx",
       "server/files.ts",
-      "server/project-root.ts"
-    ]
+      "server/project-root.ts",
+      "src/lib/playbooks.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-18T14:38Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#09a1410d"
+    }
   },
   "§chat.playbooks/tokens": {
     "kind": "note",
@@ -696,8 +747,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-18T20:29Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#aaa171b7"
+      "at": "2026-11-23T07:33Z",
+      "source": "pi-session:63ccd4c0-6e9b-4732-adfd-8b1e928e89d7#9293db4f"
     }
   },
   "§chat/playbooks": {

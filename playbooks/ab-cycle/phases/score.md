@@ -7,4 +7,8 @@
 5. Carry over: the best arm becomes the next cycle's base if it beats the base by more than the noise; otherwise the base stays. Say which.
 6. Add the round to the record: `node scripts/record.mjs add <campaign> --round <n> --outcome carried` when the best arm was carried over (the other arms are recorded as dropped), `--outcome dropped` when none was. Every arm gets a line, the losing ones too. If it refuses a line, reword that arm's `problem`, `why` or `change` in general words in `arms.json` and add again: never quote a case or a reply.
 
-Then apply the stop rule (`phases/stop-rule.md`) and the cycle settings in your plan: go round again by yourself, or stop and ask.
+Then apply the stop rule (`phases/stop-rule.md`) and the cycle settings in your plan: go round again by yourself, or stop and ask. Either way the outlook follows:
+
+7. As the report goes out, start fresh consultants, one per rival, each with this round to read, the record (`node scripts/record.mjs show <name>`), this cycle's knobs and its outlook file (`rounds/<n>/outlooks/<seat>.md`); `references/roles/consultant.md`. It only reads: nothing past a stop runs without the user's answer.
+8. When the outlooks arrive, save their closing blocks to `rounds/<n>/outlook.json`, run `node scripts/record.mjs outlook <campaign> --round <n>`, and post their plain lines as a second message. The outlook arriving is never the user's answer: at a stop, end your turn again. An answer the user gave before it arrived is held: post the outlook, then ask the user to confirm or change it (at the last stop, once the reviewer's verdict is out: `phases/decide.md`).
+9. Going round by yourself, the outlooks are the go-ahead, knobs unchanged (`phases/fix.md`).

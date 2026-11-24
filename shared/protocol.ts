@@ -6439,6 +6439,18 @@ export interface UpdatesState {
   available: boolean;
   /** Why the last automatic upgrade didn't start, until the next check. */
   autoRefusal: string | null;
+  /** This copy has release notes to show (`GET /api/updates/notes`): its commit has a CHANGELOG.md. Absent from older servers. */
+  notesAvailable?: boolean;
+}
+
+/** `GET /api/updates/notes` (404 when this copy has none): the Release Notes window's document. */
+export interface UpdateNotes {
+  title: string;
+  subtitle?: string;
+  /** The releases newest first; a newer release on offer first of all, under its own heading. */
+  markdown: string;
+  /** The offered release's notes on GitHub, when one is on offer. */
+  url: string | null;
 }
 
 /** `POST /api/updates/apply`. */

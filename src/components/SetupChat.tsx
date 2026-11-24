@@ -5,7 +5,7 @@ import { refusal, trySetupBranch } from "../lib/merge-queue-client";
 import { queueRow } from "../lib/merge-queue";
 import { createPoll, type Poll } from "../lib/poll";
 import { createProjectQueue, type ProjectQueue } from "../lib/project-queue";
-import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
+import { mergeRunHref, pipelineHref, projectSessionHref } from "../lib/projects-route";
 import { requestListRefresh } from "../lib/list-refresh";
 import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, standsInQueue, trialChip, trialLine, trialStale, type SetupChatView, type SetupProposal, type SetupStatus, type SetupSurface } from "../lib/setup-chat";
 import { announce, toast } from "../lib/ui-state";
@@ -178,6 +178,12 @@ function SetupChatLine(props: { projectId: string; chat: SetupChatView; poll: Se
                 Open Setup Chat
               </a>
             )}
+          </Show>
+          {/* Its proposal beside the setup in force, live while it writes (§app.merge-queue/explainer). */}
+          <Show when={props.chat.proposal || working()}>
+            <a class="button button-sm button-ghost" href={pipelineHref(props.projectId, "queue", "proposal")}>
+              Open Queue Overview
+            </a>
           </Show>
           <Show when={props.fresh}>
             <button

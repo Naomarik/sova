@@ -52,3 +52,12 @@ A dev result lists every query; any other set's lists aggregates only.
 |---|---|---|---|---|---|
 | unquoted words | 0% | 0% | 0.000 | 0% | 2×51 (refused: one path or token), 1×1 |
 | one quoted argument | 0% | 0% | 0.000 | 0% | 1×52 (no match) |
+
+## A split spec against its unsplit one
+
+`split-units.mjs <before root> <after root> [--json]` checks, without a bench, that a spec whose long
+claims were split (core/README.md, **Split topics**) is searched as before: for every split topic of
+`after`, the fields its topic search scores (heading, first sentence, names, prose, area heading: each
+word's count and the field's length) against the same claim in `before`, every other unit, and the
+word statistics over all units. Exit 0 when all are equal, 1 naming each topic and field that differs.
+A split that moves a claim's lines can change its first sentence, and the script names it.

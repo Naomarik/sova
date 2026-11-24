@@ -83,15 +83,84 @@ export async function withdrawnNote(git: Git, tag: string): Promise<{ why: strin
   return { why: why || "no reason given", at: (at ?? "").trim() };
 }
 
+/** One release's section of CHANGELOG.md: its version, its heading line ("## v0.3.3 — 2026-10-14") and its text below it, trimmed. */
+export interface ChangelogSection {
+  version: string;
+  heading: string;
+  body: string;
+}
+
+/**
+ * Every numbered release's section of CHANGELOG.md, in the file's order (newest first), each from its
+ * "## vX.Y.Z" line up to the next "## ". The preamble above the first is dropped, and so is a "## "
+ * section that names no version. Uncapped.
+ */
+export function changelogSections(changelog: string): ChangelogSection[] {
+  const out: ChangelogSection[] = [];
+  let cur: { version: string; heading: string; lines: string[] } | null = null;
+  const close = () => {
+    if (cur) out.push({ version: cur.version, heading: cur.heading, body: cur.lines.join("\n").trim() });
+    cur = null;
+  };
+  for (const line of changelog.split("\n")) {
+    if (line.startsWith("## ")) {
+      close();
+      const m = /^## (v\d+\.\d+\.\d+)(?=$|[\s—-])/.exec(line);
+      if (m) cur = { version: m[1]!, heading: line.trimEnd(), lines: [] };
+      continue;
+    }
+    cur?.lines.push(line);
+  }
+  close();
+  return out;
+}
+
 /** That release's section of CHANGELOG.md ("## v0.3.3 — …" up to the next "## "), trimmed and capped. */
 export function changelogSection(changelog: string, version: string): string | null {
-  const lines = changelog.split("\n");
-  const start = lines.findIndex((l) => l.startsWith(`## ${version}`) && (l.length === 3 + version.length || /[\s—-]/.test(l[3 + version.length]!)));
-  if (start < 0) return null;
-  let end = lines.findIndex((l, i) => i > start && l.startsWith("## "));
-  if (end < 0) end = lines.length;
-  const text = lines.slice(start + 1, end).join("\n").trim();
+  const text = changelogSections(changelog).find((s) => s.version === version)?.body;
   return text ? (text.length > 6000 ? `${text.slice(0, 6000)}…` : text) : null;
+}
+
+/** The sections of the releases after `from` up to and including `to`, newest first. */
+export const sectionsBetween = (sections: ChangelogSection[], from: string, to: string): ChangelogSection[] =>
+  sections.filter((s) => compareVersions(s.version, from) > 0 && compareVersions(s.version, to) <= 0);
+
+/** What the Release Notes window shows: `GET /api/updates/notes`. */
+export interface NotesInput {
+  /** The running copy's CHANGELOG.md (at its commit). */
+  running: string;
+  /** The newest release the copy contains, and how many commits past it. */
+  baseVersion: string | null;
+  pastBase: number | null;
+  /** A newer release on offer: its version, its CHANGELOG.md and its notes' page. */
+  offer?: { version: string; changelog: string; url: string | null } | null;
+}
+
+const sectionText = (s: ChangelogSection): string => (s.body ? `${s.heading}\n\n${s.body}` : s.heading);
+
+/**
+ * The notes as one markdown text, newest first: when a newer release is on offer, every release after
+ * the running one up to it under "New, not installed yet" (with the link to its notes), then "You're on
+ * vX.Y.Z" and the running release and those before it. A copy past its last release says so in one line
+ * first. Null when there's nothing to show. Pure.
+ */
+export function releaseNotesMarkdown(input: NotesInput): string | null {
+  const mine = changelogSections(input.running);
+  const base = input.baseVersion;
+  const have = base ? mine.filter((s) => compareVersions(s.version, base) <= 0) : mine;
+  const offer = input.offer && base && compareVersions(input.offer.version, base) > 0 ? input.offer : null;
+  const fresh = offer ? sectionsBetween(changelogSections(offer.changelog), base!, offer.version) : [];
+  const past = base && input.pastBase ? `This copy is ${input.pastBase} ${input.pastBase === 1 ? "change" : "changes"} past ${base}. Those changes have no release notes yet.` : null;
+  const parts: string[] = [];
+  if (fresh.length > 0) {
+    // A divider is a heading with a rule under it: the reader draws # and ## alike, so the rule tells it from a release's heading.
+    parts.push(`# New in ${offer!.version}, not installed yet`, "---", ...fresh.map(sectionText));
+    if (offer!.url) parts.push(`[Read the notes on GitHub](${offer!.url})`);
+    parts.push(`# You're on ${base}`, "---");
+    if (past) parts.push(past);
+  } else if (past) parts.push(past);
+  parts.push(...have.map(sectionText));
+  return fresh.length > 0 || have.length > 0 ? `${parts.join("\n\n")}\n` : null;
 }
 
 export interface Running {

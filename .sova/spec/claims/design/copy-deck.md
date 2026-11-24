@@ -268,7 +268,7 @@ words, in the composer, the session pane, the chat's queue cards and the project
 |---|---|
 | Flyout row (§chat/composer) | Playbooks · chat sessions only, absent in a watch view · while the composer is blocked: `aria-disabled`, described by the composer's reason |
 | Modal title | step 1: Playbooks · step 2: {title}, the playbook's own |
-| Group headings | Sova · Yours · This project (a group with no rows has no heading) |
+| Group headings | This project · Yours · Sova (a group with no rows has no heading) · Sova's heading is its fold toggle: the arrow and the word Sova, no count; its accessible name is Sova, its open or folded state given by `aria-expanded` |
 | Row | {title} · under it {description}, one line, truncated, the full text in the row's `title` · no description: the title alone · frontmatter `title`, else `name`, else the id (each skipped when missing, empty or whitespace-only) |
 | Step 1 foot | `Close` |
 | Loading | skeleton rows after 300ms, no words |

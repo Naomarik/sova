@@ -85,7 +85,7 @@ for (const layout of [1, 2]) {
     assert.equal(c[0].severity, "warn");
     assert.equal(c[0].cap, CAP);
     assert.ok(c[0].was < CAP && c[0].bytes > CAP, JSON.stringify(c[0]));
-    assert.match(c[0].message, /split it by topic into sibling claims/);
+    assert.match(c[0].message, /split it by topic into sibling H2s declared right after it, the old § keeping a short summary that requires them and ends in one line per part, "- §part — <its heading>"$/);
     assert.equal(cross.exit, base.exit, "the warning doesn't change draft check's exit");
 
     freshDraft(root, "edge");

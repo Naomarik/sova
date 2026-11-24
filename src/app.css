@@ -1139,6 +1139,25 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .playbook-schedule-line .icon { vertical-align: -2px; margin-right: var(--space-1); }
 .playbook-card-error { color: var(--status-warn); }
 .playbook-card-error .icon { vertical-align: -2px; margin-right: var(--space-1); }
+/* The Playbooks dialog's groups (§chat.playbooks/the-modal): spaced as the modal body spaces its
+   children. Sova's heading is the one that folds: a full-width 44px row wearing the group label,
+   the sidebar folder head's twist turning when it opens. */
+.playbooks-groups { display: flex; flex-direction: column; gap: var(--space-4); }
+.playbooks-fold-head { margin: 0; }
+.playbooks-fold-toggle {
+  width: 100%;
+  min-height: var(--row-height);
+  padding-block: var(--space-2);
+  border: 0;
+  background: none;
+  text-align: left;
+  transition: color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
+}
+.playbooks-fold-toggle:hover { color: var(--color-ink-2); background: var(--color-sunken); }
+.playbooks-fold-toggle:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.playbooks-fold-toggle .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.playbooks-fold-toggle[aria-expanded="true"] .icon-twist { transform: rotate(90deg); }
+.playbooks-groups .list[hidden] { display: none; }
 .profile-changes-head .chip { margin-left: auto; }
 .profile-change-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .profile-change {
@@ -1526,18 +1545,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .settings-updates-status p { margin: 0; }
 .settings-updates-checked { font-size: var(--fs-caption); color: var(--color-ink-2); }
 .settings-updates-offer { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
-.settings-updates-notes { width: 100%; }
-.settings-updates-notes summary { cursor: pointer; min-height: var(--tap-min); display: flex; align-items: center; color: var(--color-accent); }
-.settings-updates-notes pre {
-  margin: 0 0 var(--space-2);
-  max-height: 16rem;
-  overflow: auto;
-  white-space: pre-wrap;
-  font-family: var(--font-body);
-  font-size: var(--fs-caption);
-  color: var(--color-ink-2);
-}
 .settings-updates-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
+/* base.css has no .button-row rule: Check Now beside Release Notes, a confirm's two buttons. */
+.settings-updates .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .settings-server-status p { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
 .settings-updates-confirm p { margin: 0; max-width: var(--measure); }
 .settings-updates-progress p { margin: 0 0 var(--space-2); }
@@ -2111,6 +2121,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .transcript-header .banner { flex-wrap: nowrap; min-width: 0; width: 100%; max-width: calc(var(--measure) + var(--space-9) - var(--space-6)); margin: 0 auto; }
 .transcript-header .banner-main { flex: 1 1 0; min-width: 0; }
 .transcript-header .banner-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* From 3 pairings they fold into one line; Show All opens them in a list under it, which scrolls once
+   the header passes about 40% of the pane. */
+.transcript-header:has(> .pair-list) { display: flex; flex-direction: column; max-height: 40%; }
+.pair-list { min-height: 0; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
 
 /* A card head with a chip (a Paired queue batch) on a phone: the name gives way (ellipsis) so the
    chip and time stay in. */

@@ -265,6 +265,11 @@ describe("a branch's card in its own chat", () => {
     }
   });
 
+  test("a branch pushed for its request: its chat is told it went to the project's remote, never a remote named origin it may not have", () => {
+    const e = { branch: "feat/x", target: "master", commit: "a".repeat(40), notes: [], request: { publishedHead: "b".repeat(40) } } as never as MergeEntry;
+    assert.equal(noticeText("pushed", e), "feat/x passed Sova's checks and was pushed to the project's remote at bbbbbbb; open its request on the host.");
+  });
+
   test("an entry sent back before Send Back was retired (no standing Land): its words say it needs the user's Land again, never a button that is gone", () => {
     const e = { branch: "feat/x", target: "master", commit: "a".repeat(40), notes: [], reason: "the review flagged it" } as never as MergeEntry;
     const plain = noticeText("sent-back", e);

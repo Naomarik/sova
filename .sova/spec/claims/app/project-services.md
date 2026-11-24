@@ -107,9 +107,19 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   (§app.project-services/conform), and the Running Copies tab opens it (§app.project-services/services-ui).
 - **`merge`** (optional): how the project's branches land through its merge queue
   (§app/merge-queue), outside the definition's hash. `target` (a branch; default the main
-  checkout's branch), `push` (boolean; absent: push when the repository has an `origin` remote),
-  `checks`: 1 to 30 checks `{id, label, run: argv, timeout?, rerun?, requires?, optional?, needsSelect?}` in the
-  order they run (`optional: true`: not required; it runs only when the merge thread picks it;
+  checkout's branch), `push` (boolean; absent: push when the repository has an `origin` remote), `remote` (optional:
+  the remote the queue fetches from and pushes to; absent: `origin`, §app.merge-queue/project-shapes),
+  `squash` (optional boolean, absent: false: under Merge locally, land each branch as one commit,
+  §app.merge-queue/strategies),
+  `checks`: 1 to 30 checks `{id, label, run: argv, timeout?, rerun?, requires?, optional?, needsSelect?, perSelector?, cwd?, env?, report?, rerunTest?}` in the
+  order they run (`perSelector: true`: folder rules hitting it with different selections run it once
+  per selection, §app.merge-queue/rules; `cwd`: the folder it runs in, relative to the checkout and
+  inside it, absent the checkout's root; `env`: variables of its own, never a `SOVA_*` name; `report`:
+  the test report its runner writes, `{junit: path}` or `{tap: path | "stdout"}`, relative to `cwd`;
+  `rerunTest`: argv appended once per failing test to rerun it by name, `${test}` its name; such a
+  rerun counts a test passed only when its report lists it as run and passed (a JUnit or TAP case, or
+  `passedTests` in `SOVA_OUT`),
+  §app.merge-queue/project-shapes) (`optional: true`: not required; it runs only when the merge thread picks it;
   `needsSelect: true`: the merge thread's pick of it must name its selection, §app.merge-queue/checks) (ids unique; `run` a template argv that may also read `${merge.base}`, `${merge.tip}` and
   `${merge.target}`; `rerun: true` when its failures name test files and `run` plus those files
   reruns only them (a check that is the project's `test.run` with selection flags after it is rerun
@@ -123,7 +133,11 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   folder of the project's request kit (§app.merge-queue/request-kit); and `reuse` (optional boolean,
   absent: true): whether checks may reuse passes from identical code (§app.merge-queue/checks),
   `false` making every check run every file; and `deleteBranches` (optional boolean, absent: false): whether
-automatic cleanup deletes a landed branch as well as its folder (§chat.worktrees/retirement). With no `merge` section the queue
+automatic cleanup deletes a landed branch as well as its folder (§chat.worktrees/retirement). `rules` (optional, at most 100, and only beside a list of `checks`): the folder rules, each
+  `{paths: [globs], check, select?, why}` (`why` 1–200 characters; no `select` item starts with
+  `-`), §app.merge-queue/rules; a rule naming an undeclared check, or a `needsSelect` check with no
+  `select`, is refused with the definition. `reviewFixes` (optional boolean, absent: false; only
+  with a `review` kit, read from the target's definition): the reviewer may fix what it finds (§app.merge-queue/review-kit). With no `merge` section the queue
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
   `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths),
@@ -214,7 +228,7 @@ Every verb answers one JSON object with keys in this order: `v` (1), `verb`, `pr
 `instance`, `slot`, `generation`, `checkout`, `branch`, `ok`, `changed`, `state` (`absent`,
 `stopped`, `running` or `degraded`), `steps` (`{id, kind, result: done|skipped|failed, ms, detail?,
 fingerprint?}`), `services` (`{name, scope, kind: process|static|container, state: stopped|starting|
-ready|degraded|failed|external, unit, pid, ports, ready?, detail?, rssBytes?, gaveUp?}`), `data` (`{name, kind, ref, exists}`),
+ready|degraded|failed|external, unit, pid, ports, ready?, detail?, rssBytes?, restarting?, gaveUp?, giveUp?}`), `data` (`{name, kind, ref, exists}`),
 `links` (`{id, instance, endpoint, port, createdAt, expiresAt, state: active|expired|revoked,
 createdBy, url?}`, §app.project-services/share: share's link, the links revoke ended, and the active
 links of the instance status reads; empty otherwise), then the verb's own key (`instances` for status of a whole
@@ -285,22 +299,40 @@ probe's answer).
   whatever they leave behind is killed with them. Which process listens on a port is read from
   `/proc` on Linux, else from `lsof`.
 
-**The restart limit**, with either driver and in every project: a service whose unit fails 5 starts
-in a row, however long each ran before it failed, is given up on and stays failed: status shows it
-`failed`, and the Running Copies tab shows its copy Failed, with Start (§app.project-services/services-ui).
-A run that stayed up 60 s before it failed starts a fresh count, so a service that runs a while
-between failures is started again each time. The detached driver keeps the count in the unit's
-record, so a restart of Sova doesn't reset it. systemd counts starts within a window, never
-failures in a row: its units get `StartLimitBurst=5` and `StartLimitIntervalSec=310` (5 × the 2 s
-delay plus the 60 s run), so 5 failed runs each shorter than 60 s give up however slowly each
-failed, and a service that stays up 60 s before each failure never does; where quick failures and
-long runs mix inside one window, systemd may give up sooner than the detached driver's count.
-It waits there for someone to start it again: nothing restarts it, the server's own start included
-(§app.project-services/reconcile), since the give-up is kept in its unit's record and holds
-through a restart of Sova (systemd keeps the unit loaded as failed, `start-limit-hit`; the detached
-driver writes `gaveUp` into the unit's record and kills what it left). Any start of the unit by
-hand clears it (`up` of its copy, §app.project-services/up, an `apply` restart, `reset`'s restart),
-and so does `down`.
+**The restart limit** is one rule, with either driver and in every project, and no project or
+setting changes it:
+
+- **Failing at start**: a service gets 5 tries, 2 s apart. Once its unit has failed 5 starts in a
+  row, however long each ran before it failed, it is given up on. A run that stayed up 60 s before
+  it failed starts a fresh count.
+- **Crashing after a while**: a service that runs a while between failures is started again each
+  time, until it has failed 10 times within an hour (any 60 minutes, its quick failures counted
+  too); then it is given up on as well.
+
+Sova's server enforces it itself: while it runs, it watches every service unit of its own copies
+(its own state hash only; never a unit another Sova started) and stops the unit that reached the
+limit, whatever start limit the unit was started with. A unit started under older settings (before
+Nov 12 systemd units carried `StartLimitIntervalSec=10s` and `StartLimitBurst=5`, which a service
+that crashes in 0.4 s and waits 2 s never trips) is held to the same rule. It counts failures from
+the supervisor's own facts, never by sampling the unit's state: with systemd, the unit's restart
+count (`NRestarts`) and its start and exit timestamps; with the detached driver, the count it keeps
+in the unit's record. So tries that come and go between two of its checks are each counted, and a
+restart of Sova doesn't reset the count. New systemd units still carry their own start limit
+(`StartLimitBurst=5`, `StartLimitIntervalSec=310`: 5 × the 2 s delay plus the 60 s run), so a quick
+crash loop also ends while Sova's server is down; where systemd's limit stops a unit before Sova's
+watch does, that counts as giving up too.
+
+When Sova gives up on a service it stops its unit (nothing of it is left running) and records the
+give-up in its own record of the copy: when, which rule (5 in a row, 10 in an hour, or the system's
+limit), how many tries, the last try's exit code and the last 5 log lines. That record is the source
+of truth, since stopping a transient unit unloads it and systemd forgets that it hit its limit: it
+gives the try count and the reason, and where systemd's own limit stopped the unit first it reads
+"stopped by the system limit after {n} tries". The give-up holds through a restart of Sova: status
+shows the service `failed` (§app.project-services/status-logs), the Running Copies tab shows its copy
+Failed, with what failed and Start (§app.project-services/services-ui), and nothing restarts it, the
+server's own start included (§app.project-services/reconcile). Only a start of the copy by hand runs
+it again, with a fresh count (`up` or Start, §app.project-services/up, an `apply` restart, `reset`'s
+restart); `down` clears the give-up too.
 
 A requested background job runs through this same driver (§app.background-jobs/request). Sova stops,
 restarts and signals only units with its own prefix and state hash, never a process it
@@ -403,10 +435,17 @@ on Linux resident less shared pages, on macOS resident memory), each data resour
 as the one check `supervisor` (informational: it never makes `ok` false). A service the definition
 no longer declares whose unit (or static serve) still runs is listed too, after the declared ones,
 as `degraded` with its unit and pid and the detail "no longer in the definition" (a shared one:
-"shared, no longer in any definition"), so what still runs is never hidden. A service its restart
-limit gave up on (§app.project-services/supervisor) is `failed`, `gaveUp: true`, with the detail "start limit hit: 5
-failed starts in a row; it waits to be started again", through Sova's restarts, until a start or
-`down` clears it. `status` of a project
+"shared, no longer in any definition"), so what still runs is never hidden. A service that failed
+and waits for, or is in, its next try within its restart limit (§app.project-services/supervisor) carries
+`restarting: {try, of: 5}`, `try` being the try now under way or waited for (its failures in a row
+plus 1, so the first restart is try 2). A service its restart limit gave up on is `failed`,
+`gaveUp: true`, with `giveUp: {rule, tries, at, exit, lines}` from Sova's record of the copy (`rule`
+`in-a-row`, `in-an-hour` or `system-limit`; `at` the last try's time; `exit` its exit code, or null
+when none is known; `lines` its last 5 log lines, which for a model are redacted and wrapped as
+untrusted text as `logs` are) and the detail "failed {n} times in a row and stopped retrying; it
+waits to be started again" ("failed {n} times in an hour and stopped retrying; it waits to be
+started again", or "stopped by the system limit after {n} tries; it waits to be started again"),
+through Sova's restarts, until a start or `down` clears it. `status` of a project
 lists every instance as `instances`, with the shared services; each instance also carries its active
 share links (`links`, their `url` only for the operator) and `share` (`{endpoints, refused}`: the
 endpoints its definition lists, and the sentence saying why it can't be shared, null when it can).
@@ -759,7 +798,11 @@ answering the one result shape with its own `merge` key (§app.project-services/
   history too, read-only: §app.merge-queue/history; the queue's view, its state and why it is paused, the
   current run, the waiting line with estimates, what needs the user, what needs a fix, recent
   landings with their runs, the target's and pushed heads, and the test checks flagged broken on the
-  target) and `merge.logs` (a run, optionally one step and a line count).
+  target) and `merge.logs` (a run, optionally one step and a line count), and `merge.events` (a
+  project, optionally narrowed to an entry, a run or a branch, and how many: the queue's recorded
+  events, newest first, the history's included, §app.merge-queue/activity; a read any chat on the
+  project may call). The page reads the same events by entry, run, branch, who acted or kind, paged
+  back from an event (`GET /api/merge-queue/projects/<project>/events`).
 - **Setting it up**: `merge.setup` (a project's checks, one test command with its time and what
   starts first, or no automated tests; a test run tries them, called **Test run of the checks** on
   screen, and a save commits them), the
@@ -984,14 +1027,23 @@ The operator sees and drives every running copy from two places, both on this ho
   memory (the sum of its services' memory, each process's own memory as the resource monitor
   measures it, as a project card counts a copy, §app.projects/home-glance, which leaves out Sova's
   own server; none shown until one is read, never a bare "—"), its state as a chip
-  (Running, Starting, Degraded, Failed, Stopped, Absent; Failed, error, while a service gave up
-  retrying, §app.project-services/supervisor, named under the row "{service} failed and stopped
-  retrying; Start runs it again"; Starting while the copy is degraded only because a
-  service is still starting, none failed or degraded; a service that is not ready is named under the
-  row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",
+  (Running, Starting, Restarting, Degraded, Failed, Stopped, Absent; Failed, error, while a service
+  gave up retrying, §app.project-services/supervisor, with the failed block below; Restarting, warn,
+  while a service failed and is retrying within its restart limit and none gave up, named under the
+  row "{service} failed · restarting, try {n} of 5" (status's `restarting`,
+  §app.project-services/status-logs), in place of Starting; Starting while the copy is degraded only
+  because a service is still starting, none failed, retrying or degraded; any other service that is
+  not ready is named under the row with its state), and who created it ("by you", "by a coding session", "by its overseer", "by the Overseer",
   "by conformance"; the caller's tag is its title). While the main checkout has no copy, "The main checkout has no copy here yet." and **Start
   Main** (`up` of the project) sit under In use's rows (not while archived). Shared services are listed in their own block
   under the copies, once each, with their ports, state and memory, and Start and Stop of their own.
+- **The failed block**: under a Failed copy's facts, for each service that gave up (status's
+  `giveUp`), what failed and how many times: "{service} failed {n} times in a row and stopped
+  retrying" ("{service} failed {n} times in an hour and stopped retrying"; where the system's own
+  limit stopped it, "{service} was stopped by the system limit after {n} tries"), then "Last try:
+  {time} · exit {code}" ("exit unknown" with no exit code), its last 5 log lines in mono, oldest
+  first, and "Start runs it again." The row's actions are Start, Logs and, on a branch copy,
+  Teardown.
 - **The copy limit** (§app.project-services/instances) opens the tab, above the rows: "{n} copies on
   this host, {r} running · up to {cap} at once on this machine" ({n} counts the copies in the
   project's usable slots, the main checkout's, conformance's and any record outside the usable slots

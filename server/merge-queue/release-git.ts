@@ -30,12 +30,13 @@ async function identity(git: Git, root: string): Promise<NodeJS.ProcessEnv> {
 /** A withdrawn release's marker tag: `withdrawn/<tag>` at its commit, the reason its message (never moved otherwise). */
 export const WITHDRAWN_PREFIX = "withdrawn/";
 
-export const hasOrigin = async (git: Git, root: string): Promise<boolean> => (await git(["remote"], root)).stdout.split("\n").includes("origin");
+/** Whether the project has its remote (`origin`, or the name merge.remote gives). */
+export const hasOrigin = async (git: Git, root: string, remote = "origin"): Promise<boolean> => (await git(["remote"], root)).stdout.split("\n").includes(remote);
 
-/** origin's refs, name → object (and `<name>^{}` → peeled commit). */
-async function remoteRefs(git: Git, root: string, refs: string[]): Promise<Map<string, string> | string> {
-  const r = await git(["ls-remote", "origin", ...refs], root, { timeoutMs: 60_000 });
-  if (r.code !== 0) return `origin can't be read: ${first(r)}`;
+/** The remote's refs, name → object (and `<name>^{}` → peeled commit). */
+async function remoteRefs(git: Git, root: string, refs: string[], remote = "origin"): Promise<Map<string, string> | string> {
+  const r = await git(["ls-remote", remote, ...refs], root, { timeoutMs: 60_000 });
+  if (r.code !== 0) return `${remote} can't be read: ${first(r)}`;
   const out = new Map<string, string>();
   for (const line of r.stdout.split("\n")) {
     const m = /^([0-9a-f]{40,64})\s+(\S+)$/.exec(line.trim());
@@ -69,6 +70,8 @@ export interface PublishGit {
   message: string;
   /** Whether Publish pushes: the project pushes (merge.push not false) and has an origin. */
   push: boolean;
+  /** The remote it pushes to (merge.remote); absent: origin. */
+  remote?: string;
   /** Commits the queue landed (first-parent rule, as the queue's own push). */
   landed: ReadonlySet<string>;
 }
@@ -100,28 +103,29 @@ export async function publishGit(git: Git, p: PublishGit): Promise<PublishGitRes
       if (r.code !== 0) throw new Error(`couldn't move ${ch}: ${first(r)}`);
       saved.push({ ref, was });
     }
-    if (!p.push) return { ok: true, pushed: (await hasOrigin(git, root)) ? "not-pushed" : "no-remote", why: (await hasOrigin(git, root)) ? "the project doesn't push" : "no remote named origin: tagged on this machine", channelsFrom };
+    const to = p.remote ?? "origin";
+    if (!p.push) return { ok: true, pushed: (await hasOrigin(git, root, to)) ? "not-pushed" : "no-remote", why: (await hasOrigin(git, root, to)) ? "the project doesn't push" : `no remote named ${to}: tagged on this machine`, channelsFrom };
     const head = `refs/heads/${p.target}`;
-    const remote = await remoteRefs(git, root, [head, tagRef, `${tagRef}^{}`, ...p.channels.flatMap((c) => [`refs/tags/${c}`, `refs/tags/${c}^{}`])]);
+    const remote = await remoteRefs(git, root, [head, tagRef, `${tagRef}^{}`, ...p.channels.flatMap((c) => [`refs/tags/${c}`, `refs/tags/${c}^{}`])], to);
     if (typeof remote === "string") throw new Error(remote);
     const rHead = remote.get(head) ?? null;
     if (rHead && rHead !== commit) {
-      if (!(await revParse(git, root, rHead))) throw new Error(`origin's ${p.target} (${short(rHead)}) has commits this repository doesn't`);
-      if (!(await isAncestor(git, root, rHead, commit))) throw new Error(`origin's ${p.target} (${short(rHead)}) isn't in the release's history: never forced`);
+      if (!(await revParse(git, root, rHead))) throw new Error(`${to}'s ${p.target} (${short(rHead)}) has commits this repository doesn't`);
+      if (!(await isAncestor(git, root, rHead, commit))) throw new Error(`${to}'s ${p.target} (${short(rHead)}) isn't in the release's history: never forced`);
       const foreign = (await firstParents(git, root, rHead, commit)).filter((c) => !p.landed.has(c));
       if (foreign.length) throw new Error(`${p.target} has ${foreign.length} commit${foreign.length === 1 ? "" : "s"} the queue didn't land (${short(foreign[0]!)}): never published`);
     }
     const rTag = peeledOf(remote, tagRef);
-    if (rTag && rTag !== commit) throw new Error(`origin already has ${tag} at ${short(rTag)}: a numbered tag never moves`);
+    if (rTag && rTag !== commit) throw new Error(`${to} already has ${tag} at ${short(rTag)}: a numbered tag never moves`);
     // Each channel is leased on what this repository last had for it: origin's moved elsewhere refuses the whole push.
     const leases = p.channels.map((c) => `--force-with-lease=refs/tags/${c}:${saved.find((x) => x.ref === `refs/tags/${c}`)?.was ?? ""}`);
     const specs = [`${commit}:${head}`, ...(rTag ? [] : [`${tagRef}:${tagRef}`]), ...p.channels.map((c) => `refs/tags/${c}:refs/tags/${c}`)];
-    const r = await git(["push", "--atomic", "--porcelain", ...leases, "origin", ...specs], root, { timeoutMs: 180_000, env: { ...env, ...noBackgroundCleanupEnv() } });
-    if (r.code !== 0) throw new Error(`origin refused the push: ${first(r)}`);
-    const after = await remoteRefs(git, root, [head, tagRef, `${tagRef}^{}`, ...p.channels.flatMap((c) => [`refs/tags/${c}`, `refs/tags/${c}^{}`])]);
+    const r = await git(["push", "--atomic", "--porcelain", ...leases, to, ...specs], root, { timeoutMs: 180_000, env: { ...env, ...noBackgroundCleanupEnv() } });
+    if (r.code !== 0) throw new Error(`${to} refused the push: ${first(r)}`);
+    const after = await remoteRefs(git, root, [head, tagRef, `${tagRef}^{}`, ...p.channels.flatMap((c) => [`refs/tags/${c}`, `refs/tags/${c}^{}`])], to);
     if (typeof after === "string") return { ok: true, pushed: "pushed", why: `pushed; ${after}`, channelsFrom };
     const off = [after.get(head) === commit ? null : p.target, peeledOf(after, tagRef) === commit ? null : tag, ...p.channels.map((c) => (peeledOf(after, `refs/tags/${c}`) === commit ? null : c))].filter(Boolean);
-    if (off.length) return { ok: true, pushed: "pushed", why: `pushed, but origin doesn't show ${off.join(", ")} at ${short(commit)} yet`, channelsFrom };
+    if (off.length) return { ok: true, pushed: "pushed", why: `pushed, but ${to} doesn't show ${off.join(", ")} at ${short(commit)} yet`, channelsFrom };
     return { ok: true, pushed: "pushed", channelsFrom };
   } catch (err) {
     await putBack(git, root, saved);
@@ -138,6 +142,8 @@ export interface WithdrawGit {
   sha: string;
   why: string;
   push: boolean;
+  /** The remote it pushes to (merge.remote); absent: origin. */
+  remote?: string;
 }
 
 export type WithdrawGitResult = { ok: true; pushed: PushState; why?: string; channelsFrom: Record<string, string | null> } | { ok: false; why: string };
@@ -145,6 +151,7 @@ export type WithdrawGitResult = { ok: true; pushed: PushState; why?: string; cha
 /** Move each channel back (with a lease on its old value when pushing); the numbered tag is never touched. */
 export async function withdrawGit(git: Git, w: WithdrawGit): Promise<WithdrawGitResult> {
   const { root } = w;
+  const to = w.remote ?? "origin";
   const saved: Saved[] = [];
   const env = await identity(git, root);
   const channelsFrom: Record<string, string | null> = {};
@@ -167,14 +174,14 @@ export async function withdrawGit(git: Git, w: WithdrawGit): Promise<WithdrawGit
     const m = await git([...NO_BACKGROUND_CLEANUP, "tag", "-f", "-a", `${WITHDRAWN_PREFIX}${w.tag}`, "-m", w.why, w.sha], root, { env });
     if (m.code !== 0) throw new Error(`couldn't mark ${w.tag} withdrawn: ${first(m)}`);
     saved.push({ ref: marker, was: hadMarker });
-    if (!w.push) return { ok: true, pushed: (await hasOrigin(git, root)) ? "not-pushed" : "no-remote", channelsFrom };
+    if (!w.push) return { ok: true, pushed: (await hasOrigin(git, root, to)) ? "not-pushed" : "no-remote", channelsFrom };
     const names = Object.keys(w.channels);
-    const remote = await remoteRefs(git, root, [...names.map((c) => `refs/tags/${c}`), marker]);
+    const remote = await remoteRefs(git, root, [...names.map((c) => `refs/tags/${c}`), marker], to);
     if (typeof remote === "string") throw new Error(remote);
     const leases = [...names.map((c) => `--force-with-lease=refs/tags/${c}:${saved.find((x) => x.ref === `refs/tags/${c}`)?.was ?? ""}`), `--force-with-lease=${marker}:${remote.get(marker) ?? ""}`];
     const specs = [...names.map((c) => (w.channels[c] ? `refs/tags/${c}:refs/tags/${c}` : `:refs/tags/${c}`)).filter((s) => !(s.startsWith(":") && !remote.get(s.slice(1)))), `${marker}:${marker}`];
-    const r = await git(["push", "--atomic", "--porcelain", ...leases, "origin", ...specs], root, { timeoutMs: 180_000, env: { ...env, ...noBackgroundCleanupEnv() } });
-    if (r.code !== 0) throw new Error(`origin refused the push: ${first(r)}`);
+    const r = await git(["push", "--atomic", "--porcelain", ...leases, to, ...specs], root, { timeoutMs: 180_000, env: { ...env, ...noBackgroundCleanupEnv() } });
+    if (r.code !== 0) throw new Error(`${to} refused the push: ${first(r)}`);
     return { ok: true, pushed: "pushed", channelsFrom };
   } catch (err) {
     await putBack(git, root, saved);

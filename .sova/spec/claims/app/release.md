@@ -479,7 +479,10 @@ The project page has a **Releases** tab after Merge Queue (§app.organizations/p
 `#/projects/<pid>/releases`, reading `release.status` every 5 seconds and following the session feed's
 `release` frames; the tab and the Deploy tab share that one read. The same frames,
 every project's, also drive the sidebar's landing bar, which never publishes or cancels a release: its Open
-Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
+Releases opens this tab for both (§app.merge-queue/landing-bar). The queue's own screen shows the releases too, through its
+Merge queue / Releases scope switch, with the release setup, the releases, their branches, a
+proposed release setup and the release setup's history, opened by **Release Overview** in this
+tab's head (§app.merge-queue/explainer). Top to bottom:
 
 - **Head**: "Releases" (a **Not set up** chip while not set up) and **Start Release**, while releases
   are set up and read, no release is open and the project isn't archived, and **Change Setup** once

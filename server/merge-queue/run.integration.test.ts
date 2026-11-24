@@ -499,15 +499,29 @@ describe("a merge run", () => {
     expect(callsAt(fx, "setup")).toHaveLength(0);
   });
 
-  test("a check that times out voids the run; an abort voids it too", async () => {
+  test("a branch rule naming a check the target runs only with a selection, with none, is refused: the branch's, no check runs", async () => {
+    const fx = fixture({ moreChecks: [{ id: "e2e", label: "Walkthroughs", run: ["node", "checks/unit.mjs"], optional: true, needsSelect: true }] });
+    // The branch's own copy of e2e drops needsSelect, so its file parses; the target's still says it needs one.
+    const def = fx.definition() as { merge: { checks: { id: string; needsSelect?: boolean }[]; rules?: unknown[] } };
+    for (const c of def.merge.checks) if (c.id === "e2e") delete c.needsSelect;
+    def.merge.rules = [{ paths: ["src/**"], check: "e2e", why: "the UI changed" }];
+    const br = fx.branch("rules", { ".sova/project.json": JSON.stringify(def, null, 2), "src/list.txt": "x\n" });
+    const r = await run(fx, br);
+    expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r.out.why).toBe(`your branch's folder rules are refused: src/** → e2e: "e2e" runs with a selection on ${fx.target} and this rule names none`);
+    expect(callsAt(fx, "unit")).toHaveLength(0);
+  });
+
+  test("a check past its time limit is timed on the target alone (never a void); an abort voids the run", async () => {
     const fx = fixture();
     const def = fx.definition();
     (def.merge as { checks: { timeout?: number }[] }).checks[1]!.timeout = 2;
     fx.commitIn(fx.project, { ".sova/project.json": JSON.stringify(def, null, 2) }, "unit times out at 2 s");
     const br = fx.branch("hang", { "tests/a.txt": "hang\n" });
     const r = await run(fx, br);
-    expect(r.out).toMatchObject({ verdict: "void" });
-    expect(r.out.why).toContain("timed out");
+    // §app.merge-queue/time-limit: it finishes on the target alone, so the time-out is the branch's.
+    expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r.out.why).toMatch(/^Unit tests ran past its 2 s time limit with your branch and finishes in \d+ s on master alone/);
     const ctl = new AbortController();
     const br2 = fx.branch("hang2", { "tests/b.txt": "hang\n" });
     const pending = run(fx, br2, { signal: ctl.signal });

@@ -14,7 +14,7 @@ The dialog fetches once each time it opens.
 
 | Group | `source` | Folder | Notes |
 |---|---|---|---|
-| **Sova** | `sova` | `playbooks/` at the Sova repo root | Shipped with Sova: the playbooks you start yourself. Sova's own playbooks, the ones only Sova starts, are in `system-playbooks/` beside it and never in this list (§chat.playbooks/system-playbooks) |
+| **Sova** | `sova` | `playbooks/` at the Sova repo root | Shipped with Sova and offered to every project: the playbooks you start yourself, A/B cycle (§chat.playbooks/ab-cycle), Brandmaker and Context audit (§chat.playbooks/context-audit). Sova's own playbooks, the ones only Sova starts, are in `system-playbooks/` beside it and never in this list (§chat.playbooks/system-playbooks) |
 | **Yours** | `user` | `~/.pi/agent/sova/playbooks/` | Your own. An id that matches one in `playbooks/` **replaces** it: the shipped entry is dropped and yours carries `replacesSova: true`. The interface deliberately **does not render** that flag: the row already sits under the Yours heading, so a marker would only repeat it. The field exists in the data, asserted in `server/playbooks.test.ts`. An id that matches one of Sova's own playbooks replaces nothing: it is listed here like any other of yours |
 | **This project** | `project` | `<project root>/.sova/playbooks/`, then `<project root>/.sova/marketing/playbooks/` | The session's project (§chat.profiles/projects): a worktree or subfolder reads its main checkout's. An id in both folders is listed once, from `.sova/playbooks/`. It never replaces anything. It is always its own group, even when an id matches one above. What a project adds to Sova's own chats is in `.sova/playbook-config/`, never listed (§chat.playbooks/playbook-config) |
 
@@ -51,9 +51,11 @@ frontmatter either way, so a folder written as a pi or Claude Code skill is also
 - `body` is the entry file's text after the fence, with leading blank lines removed. `dir` is the
   playbook's **absolute** directory, which the sent turn names (below).
 
-**Order.** Sova, then Yours, then This project. Each group is sorted by title,
-case-insensitively, with the id breaking ties, so the order never depends on `readdir`. The
-client groups and sorts the same way again (`src/lib/playbooks.ts`).
+**Order.** This project, then Yours, then Sova: what the project and you wrote comes before what
+Sova ships. Each group is sorted by title, case-insensitively, with the id breaking ties, so the
+order never depends on `readdir`. The client groups and sorts the same way again
+(`src/lib/playbooks.ts`). Sova's own playbooks, found only by Sova's own callers, come after the
+shipped ones.
 
 **An unreadable user folder** doesn't fail the request. The catalog carries `error`, still lists
 everything else, and the dialog shows a caption line above the groups (§design/copy-deck). A user folder that
@@ -112,8 +114,8 @@ it couldn't:
 |---|---|---|
 | `ok` | The cwd is a local folder and its project's playbooks folders were read (or don't exist) | Its playbooks under This project. With none, no heading |
 | `none` | No cwd was sent | Nothing |
-| `remote` | The cwd is on a remote target | A caption note below the groups |
-| `missing` | The cwd is relative, doesn't exist, isn't a folder, or can't be read. It is also `missing` when one of the project's playbooks folders exists but can't be read | A caption note below the groups |
+| `remote` | The cwd is on a remote target | A caption note at the top of the list, where This project would be |
+| `missing` | The cwd is relative, doesn't exist, isn't a folder, or can't be read. It is also `missing` when one of the project's playbooks folders exists but can't be read | A caption note at the top of the list, where This project would be |
 
 The note is the **server's `message`**, which names the target or the folder and the actual
 fault. A client fallback is used only when the server sent no message (§design/copy-deck).
@@ -152,10 +154,11 @@ modal**, and only one renders at a time: step 2 never stacks on step 1. The moda
   <!-- step 1 -->
   <div class="modal-body">
     <!-- user folder unreadable: <p class="text-caption text-muted">…</p> -->
-    <div role="group" aria-labelledby="playbooks-group-sova">
-      <h3 class="list-group-label" id="playbooks-group-sova">Sova</h3>
+    <!-- project remote / missing: <p class="text-caption text-muted">{message}</p> -->
+    <div role="group" aria-labelledby="playbooks-group-project">
+      <h3 class="list-group-label" id="playbooks-group-project">This project</h3>
       <div class="list">
-        <!-- roving tabindex: exactly one row is tabindex="0" -->
+        <!-- roving tabindex: exactly one row (or the Sova toggle) is tabindex="0" -->
         <button type="button" class="list-row list-row-interactive" tabindex="0" title="{description}">
           <span class="list-main">
             <span class="list-line"><span class="list-title">Accessibility audit</span></span>
@@ -165,8 +168,18 @@ modal**, and only one renders at a time: step 2 never stacks on step 1. The moda
         </button>
       </div>
     </div>
-    …Yours, This project: only the groups that have rows…
-    <!-- project remote / missing: <p class="text-caption text-muted">{message}</p> -->
+    …Yours, when it has rows: a heading and its rows, never folded…
+    <div role="group" aria-labelledby="playbooks-group-sova">
+      <!-- one full-width toggle row, folded by default; no count -->
+      <h3 class="playbooks-fold-head">
+        <button type="button" class="list-group-label playbooks-fold-toggle" id="playbooks-group-sova"
+                tabindex="-1" aria-expanded="false" aria-controls="playbooks-fold-rows">
+          <span class="icon icon-sm icon-twist" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
+          Sova
+        </button>
+      </h3>
+      <div class="list" id="playbooks-fold-rows" hidden>…Sova's rows…</div>
+    </div>
   </div>
   <div class="modal-foot"><span class="modal-spacer"></span><button type="button" class="button">Close</button></div>
 
@@ -191,8 +204,17 @@ modal**, and only one renders at a time: step 2 never stacks on step 1. The moda
 
 ### Step 1 · The catalog
 
-- Groups appear in the order Sova · Yours · This project. **A group with no rows has no
-  heading.** The remote/missing note is a caption after the groups, not a heading of its own.
+- Groups appear in the order This project · Yours · Sova. **A group with no rows has no
+  heading.** The remote/missing note is a caption at the top of the list, where This project's
+  rows would be, not a heading of its own.
+- **Sova's section is folded.** Its heading is one full-width toggle row: an arrow and the word
+  `Sova`, with no count. Pressing it opens the section in place and turns the arrow; pressing it
+  again folds it. It **starts folded every time the dialog opens**; nothing is remembered between
+  openings. Yours sits between This project and Sova and is never folded.
+- **It opens by itself** when nothing is listed above it (no rows under This project or Yours,
+  whatever the project listing's state), and when the dialog returns to step 1 from a Sova
+  playbook (Back, including after reopening on one you left text in), so that row can take focus.
+  Opened by itself, it can still be folded by hand.
 - **Each row is one whole-row target**: a `button.list-row` at the 44px row convention, with no
   nested controls. The title sits over the description. The description **truncates to one
   line**, and the full text is in the row's `title`. A playbook with no description shows only
@@ -200,9 +222,12 @@ modal**, and only one renders at a time: step 2 never stacks on step 1. The moda
   its step 2 a schedule card above the text box (§chat.schedules/where-shown). Activating a row goes
   to step 2, or to the card of one with a description (§chat.playbooks/ways-in).
 - **Keyboard** follows the flyout's roving-tabindex pattern (§chat/composer "Keyboard"): exactly one row is in
-  the Tab order, `↑`/`↓` move across all groups and wrap, and `Home`/`End` jump to the ends. The
-  modal takes focus on open, and when the catalog arrives focus moves to the **first row**, as
-  after `Retry` (its button goes with the banner). `Tab` goes from the row to `Close`.
+  the Tab order, `↑`/`↓` move across the visible rows of all groups and wrap, and `Home`/`End`
+  jump to the ends. Sova's toggle row is one of those rows; while it is folded, its playbooks are
+  skipped. `Enter` or `Space` on the toggle opens or folds it, and on the toggle `→` opens it and
+  `←` folds it. The modal takes focus on open, and when the catalog arrives focus moves to the
+  **first playbook row** shown (the toggle only when it is all there is), as after `Retry` (its
+  button goes with the banner). `Tab` goes from the row to `Close`.
 - `Esc`, `Close` or a scrim click closes the modal. Focus returns to the composer's
   `plus` trigger.
 
@@ -385,7 +410,7 @@ whatever their own description says (§chat.playbooks/system-playbooks).
 ## §chat.playbooks/system-playbooks — Sova's own playbooks are in `system-playbooks/`
 
 The six playbooks only Sova starts ship in `system-playbooks/` at the Sova repo root, beside
-`playbooks/`, which keeps only the ones you start (A/B cycle, Brandmaker, Marketing, Spec review):
+`playbooks/`, which keeps only the ones you start (A/B cycle, Brandmaker, Context audit):
 
 | Playbook | Folder | Started by |
 |---|---|---|
@@ -737,18 +762,37 @@ and show the result.
   fix and to risk beside what it did: expected fixes, unexpected fixes, expected breaks and
   unexpected breaks. An arm with no prediction says so. A missed prediction is shown and recorded
   only: the winner is still picked by pass rate, then cost.
+- **The consultant's outlook.** After the baseline and after each round is scored, the round's
+  report is shown at once and a fresh consultant starts by itself. It reads the results and the
+  failing replies and, while you decide, sends a short plain follow-up as its own message: whether
+  the subject can still improve (likely, unlikely or futile), why the last change won or lost,
+  what the next round should do, the expected gain against the bar, and a recommendation (another
+  cycle, keep the baseline, or run the confirm), with one more line when a better fix needs
+  something the cycle didn't allow. It names no case numbers, file names or code. On your
+  go-ahead the same consultant writes the next round's one change, from its outlook. An answer you
+  give before the outlook arrives is held: the outlook is posted, then you're asked to confirm or
+  change your answer.
+- **What an outlook can stop.** A futile outlook writes no change and pauses to ask you: keep the
+  baseline, run a round anyway, or allow more to change; with rivals, it pauses only when all of
+  them say futile. An outlook never ends a campaign by itself. Each outlook's expected gain is one
+  exact figure, shown beside what happened in the next round's report. At the last stop the report
+  comes first, then the outlook, then the landing reviewer's verdict, which reads it; the record is
+  closed after that.
 - **A record that outlives the campaign.** Each subject (such as "vis") has a record kept in the
   project's repository, at `.sova/ab/<name>.jsonl`, and landed with Land: a winner's landing
-  carries it, and a parked campaign lands it alone. It holds every attempt, losing ones included:
-  the problem in general words, the change and why, the test models with their pass rates before
-  and after, expected and observed counts, whether it was carried or dropped, and its campaign
-  and round.
+  carries it, and a campaign closed as "baseline kept" or parked lands it alone. A campaign
+  closes by landing a winner, running another cycle, keeping the baseline (shown as "baseline
+  kept", never as parked) or parking. The record holds every attempt, losing ones included: the
+  problem in general words, the change and why, the test models with their pass rates before and
+  after, expected and observed counts, whether it was carried or dropped, and its campaign and
+  round; it also keeps each round's outlook.
 - **No private text in the record.** It holds no real-chat text, case wording or case numbers,
   and no machine details such as home folders or addresses; a check refuses such a line before
   it is written. The check also refuses the campaign's own case names, whatever their style.
 - **Who reads the record.** A new campaign's first report says which record it continues and
-  what it holds. Consultants read it before proposing a change, and the landing reviewer before
-  its verdict; the grader never does. When a new test model fails, the recorded fixes are
+  what it holds. Consultants read it before proposing a change, and the landing reviewer reads
+  it and the campaign's outlooks before its verdict, which may be Baseline kept; the grader reads
+  neither. When a new test model fails, the recorded fixes are
   re-tested before new ones are proposed.
 - **Test chats never see the record.** Each arm's copy removes it in a commit of its own that
   never lands, so it is gone from the copy's files and its current commit; a round refuses to
@@ -784,6 +828,47 @@ Sova's own project carries a pi upgrade playbook for moving Sova to a newer pi r
 - Its judge (planning) and its implementer (main implementation) list Fable 5.2 at high effort
   first; the main chat runs on the model you chose for the chat.
 
+## §chat.playbooks/context-audit — The Context audit playbook
+
+Sova ships a Context audit playbook (`/context-audit`) to every project: it checks everything the
+project can load into its agents for contradictions and bloat, reports them, and fixes only what
+you pick, on a branch.
+
+- **What it reads.** Everything the project can load by default: its instruction files and the
+  guides they point to (one link deep unless told to go further; pages past that are counted, not
+  read), its skills, prompt commands, playbooks and project modes. A field on the card narrows it
+  to named folders or skills, and the report says what was left out. Your own files (your personal
+  instruction file, skills, prompt commands and playbooks) are read only when the card's switch
+  for them is on, which it is off by default; they are then reported, never fixed, since no branch
+  covers them. A context file or skill switched off in Sova is listed as off and not counted. It
+  never turns one on or off. A generated skill folder is treated as output: its fix goes to the
+  source and the command that generates it.
+- **Sizes** are estimates as the Context tab gives them, characters / 4 shown as ≈ tokens, plus
+  lines. A skill's entry page is judged in three bands, as pointers and never as a failure: up to
+  150 lines is fine, 150 to 400 is worth a look, over 400 is heavy. An entry page meant to be read
+  whole is marked as such. For a heavy one it proposes an index-first layout: a short entry page,
+  one page per topic read only when needed, and shared rules on one page.
+- **Who works.** The team is sized to how many context files and skills there are: one
+  investigator per subject, up to the most the card allows, which the card shows before anything
+  runs. Investigators collect the files by subject and read them for
+  contradictions and layout; a challenger checks each contradiction against the exact lines, so
+  one is listed only with both sides located; a report writer gathers the findings, writes the
+  report and stays available to answer your questions about it in the main chat; a fixer applies
+  the fixes you pick.
+- **The report is in the chat only**, short enough to read: the count of issues by severity, then
+  each issue in at least one sentence saying what it is, contradictions first and worst first, each
+  with where both sides are and the proposed fix, and a short note per heavy skill on its proposed
+  layout. No report file is saved, in the project or outside it. The run's working list (its
+  inventory and the saved switches) lives in the run chat's shared folder and is removed when that
+  chat is archived (§chat.sandbox/shared-folder); the audit deletes nothing itself.
+- **It always stops at the report.** Nothing changes until you pick fixes. It never guesses which
+  of two contradicting rules you meant: those are your questions.
+- **Fixes go on a branch** in the run's own worktree, only those you picked. A layout change moves
+  text without changing its meaning. Then the run checks again and compares with its own first
+  pass in the same run. It never lands the branch: you review and land it the usual way.
+- **Its own pages follow the layout it recommends**: a short entry page, one page per step, and
+  reference pages.
+
 ## §chat.playbooks/later — Decided, not built yet
 
 Decided with the design and not in this release:
@@ -807,7 +892,7 @@ Decided with the design and not in this release:
 | Load failed | `.banner-error`: title `Couldn't load the playbooks.`, the real reason as its body, and a `Retry` action that fetches again, after which focus goes to the first row. `Close` still closes |
 | No rows in any group | The line `No playbooks yet.` The project note, if any, still follows it |
 | User folder unreadable | A caption above the groups. Everything else lists as usual |
-| `project` `remote` / `missing` | The caption note after the groups (above) |
+| `project` `remote` / `missing` | The caption note at the top of the list (above) |
 | Blocked, on step 2 | See "When sending stops being possible" |
 
 ## §chat.playbooks/rules — Rules
@@ -836,6 +921,7 @@ reachable.
 |---|---|
 | Modal | `.scrim` `.modal` `.modal-head` `.modal-title` `.modal-body` `.modal-foot` `.modal-spacer` |
 | Groups and rows | `.list-group-label` `.list` `button.list-row.list-row-interactive` `.list-main` `.list-line` `.list-meta-row` `.list-title` `.list-meta` |
+| Sova's fold | `.playbooks-groups` `h3.playbooks-fold-head` `button.list-group-label.playbooks-fold-toggle` (44px, the arrow `.icon-twist` turned while `aria-expanded="true"`) |
 | Step 2 | `.field` `.field-label` `.field-hint` `.input.textarea` · reason `.text-caption.text-muted` |
 | States | `.skeleton.skeleton-row` `.banner-error` · notes `.text-caption.text-muted` · empty `.text-muted` |
 

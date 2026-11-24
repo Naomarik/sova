@@ -28,39 +28,6 @@ They change context delivery, not release policy.
 In Sova, every chat and worker, the merge queue and releases run the spec tools of the copy of Sova
 that runs them, never another copy a link in the pi folder leads to (§tools.spec/mode-reading); the
 pi terminal and a remote target use their agent dir's.
-A shipped playbook runs these tools for a review the operator starts, inside limits the operator
-sets, and only then.
-
-## §tools.spec/review-playbook — A spec review runs only when the operator starts it
-
-Sova ships a Spec review playbook (`playbooks/spec-review/`, §chat.playbooks): one Markdown entry
-with no script and no state of its own. It answers one question about a project's spec, either
-comparing code and docs against a known base revision or looking back at how the spec workflow went,
-never both in one run, and only when the operator sends it. It declares no schedule, and leaves no
-worker, monitor or timer running after its report.
-
-Its brief names the question, the kind, the root, a base that is an ancestor of HEAD, the scope and
-the limits: minutes, report length, model runs and tokens. A brief the operator's message gives in
-full is approved as sent; otherwise only a bounded preflight runs before the operator approves one.
-That preflight refuses a root that isn't the checkout's top folder, or a base that isn't a commit
-and an ancestor of HEAD, before it lists anything; otherwise it prints the full base and at most 201
-lines of the files changed since it. The approved scope is frozen: a file changed later is reported
-as outside it and never read, and a supporting read stays inside the root, scope and limits and is
-named in the report. The limits are cooperative: nothing enforces them, the report gives each as
-observed or unknown, a read budget bounds only the bytes of the page it returns, apart from the
-always-on frame the first read carries (§tools.spec/frame), and while token
-use is unknown the run asks before any further model run.
-
-A run writes nothing beyond its chat: no files, no assessment receipts, no workers, no cleanup. It
-reads with git, with the helpers known to apply turned off (fsmonitor, external diff, textconv;
-not a sandbox), with the trusted spec tools at the declared base, and with the agent's own file
-reading. Each published command re-establishes the tools' location, root and base itself, never
-relying on an earlier call. It reads a claim as spec mode does (§tools.spec/mode-reading): `toc`
-for the claim's neighbours, then `read` for one exact passage at a time, the first read bringing the frame and every later one
-adding `--no-frame`, keeping whole-chain `packet` and `scope` out of its reading step. A request for a durable assessment receipt is reported as having
-no tool, since the assessment companion is retired. The report has
-fixed sections within the report length and keeps observed, inferred and proposed apart; changes to
-the playbook's own method appear there only as proposed diffs, never applied by the run.
 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 
@@ -151,7 +118,10 @@ command the line came from (`node "$core/sova-spec.mjs" census --changed --relat
 `--root`, `--base`, `--own-base` and `--spec`), whose output names each of them, so the line stays
 short however many § the change touched (under 500 characters for 25 touched § with short ids).
 With none marked read first, it reads "none read first; lower-ranked: <command>".
-A § with a stale literal says so beside its id: "(still states 12)". A § the session ran
+A § with a stale literal says so beside its id: "(still states 12)". A split topic
+(§tools.spec/split-topics) is one entry under the topic's §, never one per part, with its best part
+(§tools.spec/census-rank) beside it when a part is touched: "§U (best part §P)", or "§U (best part §P; still states 12)"; a read of the topic or of
+any of its touched parts counts as reading it. A § the session ran
 `sova-spec.mjs read` on, by its literal id in any of its shell commands so far (a read of a shell
 variable counts every § that command spells), or read with the `spec` tool's `read`
 (§app.spec-lookup/spec-tool), counts as read; a §
@@ -212,7 +182,14 @@ the § mapping fewer code files, then goes by id), with its `score`, `fanIn`, `r
 relevance is at least 0.036 or that have a stale literal, and `census.named` every other one, so each
 is in exactly one of the two. The text output prints a
 `read first (ranked by the changed lines):` line, each § with its heaviest names and stale
-literals, and a `named:` line. Nothing in the ranking knows a project: the names come from
+literals, and a `named:` line. A split topic (§tools.spec/split-topics) is ranked once, as one
+passage under the topic's §: any touched part puts it in the rank, landing in every changed file its
+touched parts land in; its text is the topic's with all its parts', the passages that weigh a name and
+the fan-in count topics, never parts, and the code-file tie-break counts the topic's and its parts'
+files together. Its rank row adds `parts` (its touched parts), `files` (the changed files they land
+in) and `part`, the touched part whose own text holds the heaviest of its own files' changed names
+(first in its summary's order on a tie). Each touched part keeps its own entry in the touched list,
+carrying its topic's rank. Nothing in the ranking knows a project: the names come from
 the diff and the spec. A rank is a literal match, never proof that a § is or isn't affected; without
 `--related` the census does not rank.
 
@@ -247,7 +224,7 @@ offered (§app.spec-lookup/spec-tool), runs these same reads without a shell, an
 line, which the write tools still need; a code-writing worker's spec brief says the same after its
 trusted-tools line.
 
-That shell line (and the same line in the shipped spec review playbook) sets `$core` to
+That shell line sets `$core` to
 `$SOVA_SPEC_CORE` when it is set and not empty, else to the agent dir's
 `extensions/spec/core` (`$PI_CODING_AGENT_DIR`, a leading `~` expanded, else `~/.pi/agent`), and it
 reads the same in every chat and every version, so an update never changes a chat's prompt.
@@ -647,11 +624,53 @@ each declaration's `bytes`, with no finding per declaration. `draft check` warns
 (`declaration-over-cap`, with `bytes`, `cap` and `was`, its size on the draft's base, absent for a new
 claim) for each declaration the draft takes from at or below the cap to over it, or makes larger while
 it is over; one over the cap that the draft leaves as it was or shrinks is counted under `preexisting`.
-Each warning says to split the claim by topic into sibling claims, the old § keeping a short summary
-that `requires` its parts. A promotion preview or write gives the same warning for each selected
+Each warning says to split the claim by topic into sibling H2s declared right after it, the old §
+keeping a short summary that `requires` them and ends in one line per part, `- §part — <its heading>`,
+the shape search reads as one topic (§tools.spec/split-topics). A promotion preview or write gives the same warning for each selected
 declaration it would land that way (`sizeWarnings`), and `land` gives the same `sizeWarnings` for the
 records it lands (§tools.spec/land). None of them refuses anything or changes an exit status, and none
 keeps a landing (`land`) from making the claim official.
+
+## §tools.spec/split-topics — A claim split into parts is read as one topic
+
+A claim cut into parts to fit the size cap (§tools.spec/declaration-cap) is a split topic when its
+prose ends in a summary of its parts: at least two lines of the form `- §part — <the part's heading
+title>`, outside fenced code and HTML comments, with only blank lines after them. The lines name, in
+order, the claims declared right after the topic in the same file: the first line names the claim
+declared right after the topic, and each later line the claim declared right after the one before.
+Each part is an H2 with a record, the topic's record `requires` it, and its line repeats its heading
+title word for word. The topic itself may be an H1 or an H2. A part that is a split topic itself
+breaks the outer summary, so topics never nest. Nothing else marks a split topic: no record field
+and nothing stored. Each command finds them in the claim files it reads, and a spec with none answers
+exactly as it would without this rule.
+
+Topic and name search (§tools.spec/where-topic), file lookups (§tools.spec/where-lookup) and the
+census's ranking (§tools.spec/census-rank) treat a topic and its parts as one claim under the topic's
+§, and name the part that fits best. `toc --dir down` on a topic (§tools.spec/contents-view) first
+lists its parts, in its summary's order, in a group headed "parts (its summary lists them: search reads
+them as one topic with it)", and an H1 topic's parts are not listed again as its children; `toc --dir
+up` on a part first gives its topic, in a group headed "the split topic it is a part of", leaving out
+the parent when it is that topic. `read` names a topic's parts in its JSON form
+(§tools.spec/single-read). Every other command
+(`check`, `packet`, `scope`, the draft commands, `land`) reads the parts as the claims they are.
+
+`check` counts them in `counts.split` (`topics`, `parts`), present only when there is at least one
+split topic. A claim that is not one but whose list of `- §claim — <title>` lines, outside fenced
+code and HTML comments, was meant as a summary has a broken summary. A list counts as meant when one of
+its lines names the claim declared right after it and another repeats, word for word, the heading of a
+claim declared later in the same file; or when the list that ends its prose opens with at least two
+lines naming the claims declared right after it, in order, as when every part was renamed. Here the
+list is the one that ends its prose, or, when its prose ends otherwise, every such line in it. `check`
+then warns `split-summary-broken`, naming the claim and why: its list is not the end of its prose; its
+summary does not list the claim declared after it first; it lists only one part; a part is not the
+claim declared after the one before it; a part has no record; a part is not an H2; the claim does not
+require a part; a line's title is not the part's heading (both quoted); or a part is a split topic
+itself. The warning adds that the claim is not read as a split topic, so search and lookups list it and
+those claims separately. Like `check`'s other warnings it makes the exit 1, never 2, refuses nothing
+and changes no search or lookup answer. Any other list is not a summary and draws no warning, such as one
+naming claims elsewhere or out of order, or one in fenced code or an HTML comment.
+One known limit: a list of what a claim requires that names exactly the claims declared right after it,
+in order, in its own words, warns like a summary whose parts were all renamed.
 
 ## §tools.spec/draft-hygiene — Drafts left behind are reported, and only an approved list or confirmed-official drafts are pruned
 
@@ -871,7 +890,13 @@ characters with a letter, that looks like a name the code uses: it contains `/`,
 `-`, `$`, `=` or a bracket, or has a capital after its first letter, or is upper case; plain words
 are not tokens. It occurs in a file when it appears there with no letter, digit, `_` or `$` on
 either side. A token counts for more the fewer records use it (its score is the log of the record
-count over the records using it), and a claim's score is the sum over the tokens it shares. Claims
+count over the records using it), and a claim's score is the sum over the tokens it shares. A split
+topic (§tools.spec/split-topics) is one claim here, under its own §: it is listed once when it or any
+of its parts names the file, its interface tokens are its own and its parts' together, each once, and
+a topic with its parts counts as one record, in the weights and in `counts.claims` alike. Its row says
+how many of its parts list the file (JSON `parts`: `listing` and `of`, with `topic: false` when only
+its parts list it; text: "n of its m parts list it too", "none of its m parts lists it" or "listed by
+n of its m parts" after its score). Unmapped candidates are grouped the same way. Claims
 sharing no token follow the ranked ones in id order, with their `code` list as the only link. The
 first ten are shown; how many more there are and the `--all` flag that lists every one, none
 dropped, are named in the text and in the JSON form alike (`notShown`, `hint`), and a cut list exits
@@ -882,7 +907,13 @@ through the core's own refusal rules (inside the root, no symlink on its path, a
 only the one file asked about; a file it cannot read is reported as not read, with why, exit 1, and
 its claims are still listed, unranked. For a token it lists the claims whose backticked spans equal
 it or contain it as a whole name: first those that use it in their heading or first sentence, as
-defining it, then the rest, as mentioning it, and then ranks the claims by the token's words as a
+defining it, then the rest, as mentioning it. A split topic is one row under its own §, its spans the
+topic's and its parts' together, each once. Each part's own heading and first sentence count as the
+topic's, by the rule an unsplit claim follows: the topic defines the name when its own heading or first
+sentence, or any part's heading or first sentence, holds it, and mentions it when it holds the name
+only elsewhere in their text. The row names the part that holds it, one that defines it first,
+else the first in its summary's order (JSON `part`: its `id`, `title` and, when it has any, `labels`,
+shaped as a row's; text: an `in part: §P — <title>` line). Then it ranks the claims by the token's words as a
 topic (§tools.spec/where-topic, which also says how the two kinds share the ten shown); neither
 finding a claim is exit 1.
 
@@ -899,17 +930,31 @@ rest, so `trees` finds `tree`. Each claim and area is scored by field-weighted B
 heading, its first sentence, its backticked names, its prose and, for a claim inside an area, that
 area's heading: a query word counts more the fewer passages use
 it, more the more often a field holds it (with diminishing returns), more in a short field than a
-long one, and most in the heading. A row scoring below a fixed fraction of the best one is dropped,
+long one, and most in the heading. A split topic (§tools.spec/split-topics) is one passage under
+the topic's §, scored on one text rebuilt as the claim read before the cut: the topic's own text without its summary
+lines (and without the blank lines that leaves at its end), then each part's text without its heading
+line, in the summary's order; a part that opens with a table's header row and rule line drops those
+two lines when the text before it already holds them, since the cut repeats them so the part's table
+stands alone. Its heading and area heading are the topic's; its first sentence and its backticked
+names are taken from that text by the rules for any claim, so a part's heading or a summary line adds
+no word and no name. A part is never a passage of its own: how many passages use a word, and their
+average lengths, are counted over topics, so cutting a claim into parts adds no passage to those
+counts, and a spec with nothing split ranks exactly as it would without split topics. A row scoring below a fixed fraction of the best one is dropped,
 unless its heading holds every query word; equal scores go by id. The ranking is computed from the
 claim files on each call, in the core alone: no index is stored, nothing is fetched or run, and the
 same spec and query give the same rows.
 
 Topic matches are rows of their own kind, `topic`, under their own heading, which calls them ranked
 word matches, neither name matches nor mappings; each shows its score and the query words it matched
-(JSON: `score`, `matched`). `counts.topic` counts them, beside the name counts; the JSON form adds a
+(JSON: `score`, `matched`). A split topic's row also names its best part: the part whose own text, its
+heading included, scored alone under the same counts, scores highest for the query (JSON `part`: its `id`, `title` and,
+when it has any, `labels`, shaped as a row's;
+text: a `best part: §P — <title>` line under its matched words), and none when no part holds a query
+word. `counts.topic` counts them, beside the name counts; the JSON form adds a
 `topicNotice` saying a topic row is a word match to read, never proof of what the claim covers, while
 its `notice` speaks for name matches only. A claim listed as defining or mentioning the name is not
-repeated as a topic row. Name rows come first, then topic rows; the name rows shown without `--all`
+repeated as a topic row; a split topic named through one of its parts is listed under the topic's §,
+so a topic is never listed twice. Name rows come first, then topic rows; the name rows shown without `--all`
 are the same ten as without topic search, and topic rows fill only the places of the ten that name
 rows leave free; `notShown` and the hint count the rows of both kinds left out. The answer exits 0 when either kind found a claim, so a
 topic-only hit is a success; it exits 1 when neither found one, when a name row was left out of the
@@ -1045,7 +1090,9 @@ record lists: the first 12 paths, each marked when it is missing or refused, the
 are, so a builder learns which files keep the promise without the whole closure's code list. An
 area's H1 whose record carries `notOwned` (§tools.spec/record-fields) also shows, on the passage's
 first fragment, a "doesn't own" line: each owner's heading title and § id, in record order, or
-"nothing declared" for `[]`; an H2 never shows its area's. A passage larger than the budget arrives as exact UTF-8 fragments,
+"nothing declared" for `[]`; an H2 never shows its area's. In the JSON form a split topic's passage
+(§tools.spec/split-topics) also names its parts (`parts`: each one's `id`, heading `title` and, when it
+has any, `labels`, in its summary's order); the text form is unchanged. A passage larger than the budget arrives as exact UTF-8 fragments,
 as packet prose does, whose concatenation recovers it.
 
 After the passage, a footer names the § it declares through `requires` and the § its prose names

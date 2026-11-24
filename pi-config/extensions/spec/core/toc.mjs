@@ -2,6 +2,7 @@
 // never reads anything but the parsed graph and never writes. Shared pull helpers for read.mjs live here too.
 import { createHash } from "node:crypto";
 import { embedsOf, embeddedBy, aboutNotes, frameOf, frameSummary, frameLine } from "./fields.mjs";
+import { splitOf } from "./parts.mjs";
 
 export const DIRS = ["out", "in", "down", "up", "mentions"];
 const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
@@ -293,10 +294,11 @@ export function boundedRefusal(command, budget, code, extra = {}) {
 
 // ---------------------------------------------------------------- toc
 const GROUPS = {
-  out: ["requires", "embeds", "about", "named"], in: ["required-by", "required-through-parent", "embedded-by", "embedded-through-parent", "about-it"], down: ["children", "members", "children-about"], up: ["parent"], mentions: ["mentioned-by"],
+  out: ["requires", "embeds", "about", "named"], in: ["required-by", "required-through-parent", "embedded-by", "embedded-through-parent", "about-it"], down: ["parts", "children", "members", "children-about"], up: ["topic", "parent"], mentions: ["mentioned-by"],
 };
 const HEADS = { requires: "requires", embeds: "embeds (drawn inside it; read delivers them whole)", about: "about (notes that serve it)",
   named: "named in its text, not required", "required-by": "required by", "required-through-parent": "required through its H1", "embedded-by": "embedded by", "embedded-through-parent": "embedded through its H1", "about-it": "notes about it",
+  parts: "parts (its summary lists them: search reads them as one topic with it)", topic: "the split topic it is a part of",
   children: "children", "children-about": "notes about its H2s", members: "members", parent: "parent", "mentioned-by": "mentioned by" };
 function labelsOf(rec) {
   const l = {};
@@ -333,15 +335,20 @@ function neighbours(ctx, id, dir, parentOf) {
       ...aboutLines(ctx, id, p)];
   }
   if (dir === "down") {
-    if (rec.kind === "section") return (rec.members ?? []).map((m) => ({ id: m, group: "members" }));
-    const kids = childrenInOrder(ctx, id);
+    // A split topic's parts come first, in its summary's order; an H1's parts are not listed again as children.
+    const parts = splitOf(ctx).down.get(id) ?? [], first = parts.map((p) => ({ id: p, group: "parts" }));
+    if (rec.kind === "section") return [...first, ...(rec.members ?? []).map((m) => ({ id: m, group: "members" }))];
+    const kids = childrenInOrder(ctx, id).filter((c) => !parts.includes(c));
     // An H1 also names the notes about its H2s, one hop: by the first H2 each serves, then id.
     const notes = seed.level === 1 ? aboutNotes(ctx, kids).filter((n) => !kids.includes(n.id))
       .sort((a, b) => kids.indexOf(a.target) - kids.indexOf(b.target) || (a.id < b.id ? -1 : 1)) : [];
-    return [...kids.map((c) => ({ id: c, group: "children" })),
+    return [...first, ...kids.map((c) => ({ id: c, group: "children" })),
       ...notes.map((n) => ({ id: n.id, group: "children-about", src: ctx.decls.get(n.id), target: n.target, back: [ctx.decls.get(n.target), seed], about: true }))];
   }
-  if (dir === "up") { const p = parentOf(id, ctx.dirKinds); return p && ctx.claims.has(p) ? [{ id: p, group: "parent" }] : []; }
+  if (dir === "up") {
+    const t = splitOf(ctx).up.get(id), p = parentOf(id, ctx.dirKinds);
+    return [...(t ? [{ id: t, group: "topic" }] : []), ...(p && ctx.claims.has(p) && p !== t ? [{ id: p, group: "parent" }] : [])];
+  }
   const alias = seed.level === 1 && /^§[a-z][a-z-]*\/[a-z][a-z-]*$/.test(id) ? id.replace("/", ".") : null, out = [];
   for (const from of [...ctx.decls.keys()].sort()) {
     const d = ctx.decls.get(from);

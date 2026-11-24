@@ -6,14 +6,15 @@
  * approval), or `"none"` declared (lands after a clean merge, labelled "No checks declared"). The merge thread can add
  * checks (picks), never drop one. A check with nothing to do exits 0 and writes `{skipped: "<why>"}` to SOVA_OUT.
  */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import type { CheckPick, CheckSource, ChecksDeclared, RunStep } from "../../shared/merge-queue";
 import type { Argv, MergeCheckDecl, ProjectDef } from "../../shared/project-contract";
 import { portsFor, render } from "../../shared/project-contract";
 import { inheritedEnv } from "../project-services/env-allow";
 import { SPEC_CORE } from "../spec-runner";
 import { runProc, type Proc } from "./copy";
+import { looksLikeTap, parseTap, readDeclaredReport, type ReportDecl, reportOfCases, rootPathOf } from "./test-reports";
 
 /** What the project declares for its checks. */
 export function checksOf(def: ProjectDef | null): ChecksDeclared {
@@ -37,6 +38,16 @@ export interface PlannedCheck {
   select?: string[];
   /** The merge thread picked it: it runs with SOVA_MERGE_PICKED=1, so a check that runs only when triggered runs. */
   picked?: true;
+  /** A pick added after its run started (q9): when. */
+  addedAt?: string;
+  /** The folder it runs in, from the repository root (MergeCheckDecl.cwd); absent: the root. */
+  cwd?: string;
+  /** Its own variables (MergeCheckDecl.env), rendered with the templates. */
+  env?: Record<string, string>;
+  /** The test report its runner writes (MergeCheckDecl.report). */
+  report?: ReportDecl;
+  /** How to rerun one failing test by name (MergeCheckDecl.rerunTest). */
+  rerunTest?: Argv;
 }
 
 const fromDecl = (c: MergeCheckDecl, source: CheckSource, why?: string, select?: string[]): PlannedCheck => ({
@@ -49,15 +60,21 @@ const fromDecl = (c: MergeCheckDecl, source: CheckSource, why?: string, select?:
   source,
   ...(why ? { why } : {}),
   ...(select?.length ? { select } : {}),
+  ...(c.cwd && c.cwd !== "." ? { cwd: c.cwd } : {}),
+  ...(c.env ? { env: c.env } : {}),
+  ...(c.report ? { report: c.report } : {}),
+  ...(c.rerunTest ? { rerunTest: c.rerunTest } : {}),
 });
 
 /**
- * The checks a run runs, in order: the required ones (declaration order), then each pick. A pick naming a required
- * check with no selectors marks it picked (source and why shown; it runs even when nothing triggers it); with
+ * The checks a run runs, in order: the required ones (declaration order), then each folder rule's trigger
+ * (rules.ts ruleTriggers, source "trigger"), then each of the merge thread's picks. A trigger or pick naming a
+ * required check with no selectors marks it (source and why shown; it runs even when its own script would skip); with
  * selectors it runs again narrowed; naming an optional check runs that check; naming nothing declared is dropped (the
- * thread can't add commands, nor drop one). `"none"` and `"unset"` give an empty list.
+ * thread can't add commands, nor drop one). One that asks for exactly what the list already runs (same check, same
+ * selection) adds its reason to that one instead of a second run. `"none"` and `"unset"` give an empty list.
  */
-export function planChecks(def: ProjectDef | null, picks: readonly CheckPick[] = [], release: readonly MergeCheckDecl[] = []): PlannedCheck[] {
+export function planChecks(def: ProjectDef | null, picks: readonly CheckPick[] = [], release: readonly MergeCheckDecl[] = [], triggers: readonly CheckPick[] = []): PlannedCheck[] {
   const declared = checksOf(def);
   if (declared === "unset") return [];
   if (declared === "none") return withRelease([], release);
@@ -66,20 +83,33 @@ export function planChecks(def: ProjectDef | null, picks: readonly CheckPick[] =
       ? (def!.merge!.checks as MergeCheckDecl[])
       : [{ id: "test", label: "Tests", run: def!.test!.run, timeout: def!.test!.timeout, rerun: true, requires: def!.test!.requires }];
   const out = decls.filter((c) => !c.optional).map((c) => fromDecl(c, "required"));
-  for (const p of picks) {
+  const of = (c: PlannedCheck, id: string) => c.id === id || c.id.startsWith(`${id}+`);
+  for (const p of [...triggers.map((t) => ({ ...t, source: "trigger" as const })), ...picks.map((x) => ({ ...x, source: "picked" as const }))]) {
     const d = decls.find((c) => c.id === p.id);
     if (!d) continue;
+    const source = p.source;
     const select = (p.select ?? []).filter((s) => typeof s === "string" && s && !s.startsWith("-"));
     if (!d.optional && !select.length) {
       const req = out.find((c) => c.id === d.id)!;
-      if (!req.picked) Object.assign(req, { source: "picked" as const, picked: true as const, ...(p.why ? { why: p.why } : {}) });
+      if (!req.picked) Object.assign(req, { source, picked: true as const, ...(p.why ? { why: p.why } : {}) });
+      else if (p.why && req.why !== p.why) req.why = joinWhy(req.why, p.why);
       continue;
     }
-    const id = out.some((c) => c.id === d.id) ? `${d.id}+${out.filter((c) => c.id === d.id || c.id.startsWith(`${d.id}+`)).length}` : d.id;
-    out.push({ ...fromDecl(d, "picked", p.why, select), picked: true, id, label: select.length ? `${d.label} (${select.length === 1 ? select[0] : `${select.length} selected`})` : d.label });
+    const same = out.find((c) => of(c, d.id) && c.picked && JSON.stringify(c.select ?? []) === JSON.stringify(select));
+    if (same) {
+      if (p.why && same.why !== p.why) same.why = joinWhy(same.why, p.why);
+      continue;
+    }
+    const id = out.some((c) => c.id === d.id) ? `${d.id}+${out.filter((c) => of(c, d.id)).length}` : d.id;
+    out.push({ ...fromDecl(d, source, p.why, select), picked: true, id, label: select.length ? `${d.label} (${select.length === 1 ? select[0] : `${select.length} selected`})` : d.label });
   }
   return withRelease(out, release);
 }
+
+const joinWhy = (a: string | undefined, b: string): string => {
+  const s = a ? `${a}; ${b}` : b;
+  return s.length > 300 ? `${s.slice(0, 299)}…` : s;
+};
 
 /** A release entry's gating checks (the release section's, resolved), after the merge set, in order; one the list
  *  already runs in full (a required merge check the release names again) runs once. */
@@ -94,7 +124,7 @@ function withRelease(out: PlannedCheck[], release: readonly MergeCheckDecl[]): P
 
 /** The CheckPick list the queue shows (hooks.checks). */
 export const picksOf = (list: readonly PlannedCheck[]): CheckPick[] =>
-  list.map((c) => ({ id: c.id, label: c.label, source: c.source, ...(c.why ? { why: c.why } : {}), ...(c.select ? { select: c.select } : {}) }));
+  list.map((c) => ({ id: c.id, label: c.label, source: c.source, ...(c.why ? { why: c.why } : {}), ...(c.select ? { select: c.select } : {}), ...(c.addedAt ? { addedAt: c.addedAt } : {}) }));
 
 // ---- environment ----------------------------------------------------------------------------------
 
@@ -198,6 +228,12 @@ export interface CheckReport {
   /** Every failing test's name (uncapped, unique, as testKey reads it), for a runner that names tests but no file
    *  (Kaocha). */
   failingNames: string[];
+  /** Every test that ran and passed, by name in failingNames' form, when the report names passing tests (a JUnit or
+   *  TAP case, SOVA_OUT's `passedTests`); the proof a rerun by name ran the tests it named. */
+  passedNames?: string[];
+  /** Each failing test as a rerun by name takes it (`test` the runner's bare name: a JUnit case's `name`, a TAP point's
+   *  description, a SOVA_OUT failure's `name`), with its file when known; from a report that names tests. */
+  failingTests?: { test: string; file?: string }[];
   /** The test files the runner says it actually ran (`ranFiles`), when it says so; absent from a runner that doesn't. */
   ranFiles?: string[];
   /** Test files that already passed on identical code and weren't run again (SOVA_OUT `reused`), when any. */
@@ -291,6 +327,7 @@ export function readCheckOut(file: string): CheckReport | null {
   const failingNames = [...new Set((Array.isArray(o.failures) ? o.failures : []).flatMap((f) => (f && typeof f === "object" && typeof (f as Record<string, unknown>).name === "string" && (f as Record<string, unknown>).name ? [testKey(String((f as Record<string, unknown>).name).slice(0, 500))] : [])).filter(Boolean))];
   const skippedWhy = typeof o.skipped === "string" && o.skipped ? o.skipped.slice(0, 300) : undefined;
   const ranFiles = Array.isArray(o.ranFiles) ? [...new Set(o.ranFiles.filter((f): f is string => typeof f === "string" && !!f))] : undefined;
+  const passedNames = Array.isArray(o.passedTests) ? [...new Set(o.passedTests.filter((f): f is string => typeof f === "string" && !!f).map((f) => testKey(f.slice(0, 500))))] : undefined;
   const reused = readReused(o.reused);
   return {
     passed: n(o.passed),
@@ -301,7 +338,9 @@ export function readCheckOut(file: string): CheckReport | null {
     failures,
     failingFiles,
     failingNames,
+    ...(failures.some((f) => f.name) ? { failingTests: failures.flatMap((f) => (f.name ? [{ test: f.name, ...(f.file ? { file: f.file } : {}) }] : [])) } : {}),
     ...(ranFiles ? { ranFiles } : {}),
+    ...(passedNames ? { passedNames } : {}),
     ...(reused ? { reused } : {}),
     notes: Array.isArray(o.notes) ? o.notes.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 300)).slice(0, 10) : [],
   };
@@ -377,25 +416,78 @@ export async function runCheck(o: {
   check: PlannedCheck;
   stepId: string;
   logFile: string;
+  /** Test files to rerun (repository paths, as a report names them): given to the check from its own folder. */
   files?: string[];
+  /** Failing tests to rerun by name (CheckReport.failingTests' `test`): the check's `rerunTest` appended once per
+   *  name, `${test}` that name. Ignored for a check that declares no rerunTest. */
+  tests?: string[];
   /** SOVA_FRESH=1 (freshOf); else SOVA_REUSE_SAMPLE. */
   fresh: boolean;
   signal?: AbortSignal;
 }): Promise<CheckRun> {
   const vars = templateVarsOf(o.def, o.scope);
   const rendered = o.check.run.map((a) => render(a, vars));
-  const argv = o.files?.length ? [...rerunArgvOf(o.def, o.check, rendered), ...o.files] : [...rendered, ...(o.check.select ?? [])];
+  const cwdRel = o.check.cwd && o.check.cwd !== "." ? o.check.cwd : ".";
+  const cwd = cwdRel === "." ? o.scope.copy : join(o.scope.copy, cwdRel);
+  const local = (f: string) => (cwdRel === "." ? f : f.startsWith(`${cwdRel}/`) ? f.slice(cwdRel.length + 1) : relative(cwdRel, f));
+  const files = (o.files ?? []).map(local);
+  const byName = o.check.rerunTest && o.tests?.length ? o.tests.flatMap((t) => o.check.rerunTest!.map((a) => render(a, { ...vars, test: t }))) : [];
+  const argv = files.length || byName.length ? [...rerunArgvOf(o.def, o.check, rendered), ...byName, ...files] : [...rendered, ...(o.check.select ?? [])];
   const out = `${o.logFile}.out.json`;
   rmSync(out, { force: true });
   mkdirSync(dirname(o.logFile), { recursive: true });
   const log = (s: string) => writeFileSync(o.logFile, s, { flag: "a" });
-  log(`$ ${argv.join(" ")}\n`);
+  log(`${cwdRel === "." ? "" : `[in ${cwdRel}/]\n`}$ ${argv.join(" ")}\n`);
   log(o.fresh ? "[fresh: every test file runs (SOVA_FRESH=1)]\n" : `[passes from identical code may stand; ${Number(REUSE_SAMPLE) * 100}% of them re-checked (SOVA_REUSE_SAMPLE=${REUSE_SAMPLE})]\n`);
-  const proc = await runProc(argv, { cwd: o.scope.copy, env: envOf(o.def, o.scope, { step: o.stepId, out, picked: !!o.check.picked, fresh: o.fresh }), timeoutMs: o.check.timeoutSec * 1000, ...(o.signal ? { signal: o.signal } : {}), log });
+  const env = envOf(o.def, o.scope, { step: o.stepId, out, picked: !!o.check.picked, fresh: o.fresh });
+  for (const [k, v] of Object.entries(o.check.env ?? {})) env[k] = render(v, vars);
+  const started = Date.now();
+  const proc = existsSync(cwd)
+    ? await runProc(argv, { cwd, env, timeoutMs: o.check.timeoutSec * 1000, ...(o.signal ? { signal: o.signal } : {}), log })
+    : missingFolder(cwdRel, log);
   log(`\n[exit ${proc.code}${proc.timedOut ? `, timed out after ${o.check.timeoutSec} s` : ""}${proc.aborted ? ", aborted" : ""}, ${Math.round(proc.ms / 1000)} s]\n`);
-  const report = readCheckOut(out);
-  const failingFiles = report?.failingFiles.length ? report.failingFiles : proc.code !== 0 ? failingFilesIn(proc.out) : [];
+  const report = reportOf({ out, check: o.check, copy: o.scope.copy, cwd: cwdRel, since: started, output: proc.out });
+  if (report && report.notes[0]?.startsWith("read from the ")) log(`[${report.notes[0]}: ${report.passed ?? 0} passed, ${report.failed ?? 0} failed${report.failingFiles.length ? `, failing files ${report.failingFiles.slice(0, 5).join(", ")}` : ""}]\n`);
+  const failingFiles = report?.failingFiles.length ? report.failingFiles : proc.code !== 0 ? failingFilesIn(proc.out).map((f) => (cwdRel === "." ? f : rootPathOf(f, cwdRel, o.scope.copy) ?? f)) : [];
   return { proc, report, failingFiles };
+}
+
+/** A check whose folder the merged tree hasn't: it fails (exit 127) saying so, nothing run. */
+function missingFolder(cwd: string, log: (s: string) => void): Proc {
+  const why = `the check's folder ${cwd}/ isn't in the merged tree\n`;
+  log(why);
+  return { code: 127, timedOut: false, aborted: false, ms: 0, out: why };
+}
+
+/**
+ * A check's report: its SOVA_OUT when it wrote one (its files read from its folder), else the test report it declares
+ * (JUnit XML or TAP, test-reports.ts), else a TAP stream on its output that says so (`TAP version`); null when none.
+ */
+export function reportOf(o: { out: string; check: Pick<PlannedCheck, "report">; copy: string; cwd: string; since: number; output: string }): CheckReport | null {
+  const own = readCheckOut(o.out);
+  if (own) return o.cwd === "." ? own : rootedReport(own, o.cwd, o.copy);
+  if (o.check.report) {
+    const r = readDeclaredReport(o.check.report, { copy: o.copy, cwd: o.cwd, since: o.since, output: o.output });
+    if (r) return r;
+  }
+  if (/^TAP version \d+\s*$/m.test(o.output) && looksLikeTap(o.output)) {
+    const cases = parseTap(o.output);
+    if (cases.length) return reportOfCases(cases, { cwd: o.cwd, copy: o.copy, format: "tap" });
+  }
+  return null;
+}
+
+/** A SOVA_OUT written from a check's own folder, every file in it made a repository path. */
+function rootedReport(r: CheckReport, cwd: string, copy: string): CheckReport {
+  const p = (f: string) => rootPathOf(f, cwd, copy) ?? f;
+  return {
+    ...r,
+    failures: r.failures.map((f) => (f.file ? { ...f, file: p(f.file) } : f)),
+    failingFiles: r.failingFiles.map(p),
+    ...(r.failingTests ? { failingTests: r.failingTests.map((t) => (t.file ? { ...t, file: p(t.file) } : t)) } : {}),
+    ...(r.ranFiles ? { ranFiles: r.ranFiles.map(p) } : {}),
+    ...(r.reused ? { reused: { ...r.reused, list: r.reused.list.map((x) => ({ ...x, file: p(x.file) })) } } : {}),
+  };
 }
 
 /** The step's counts as the run shows them. */

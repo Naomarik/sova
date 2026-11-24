@@ -44,10 +44,13 @@ Branches run one at a time, in the order you approved them, and each row shows i
    beside the project, never in your folders. The branch's spec drafts become official there, so
    the docs that land are the ones that were tested.
 2. **Checked.** The project's checks run on that merge: the ones it always runs, the ones the
-   change's files call for, and any the merge thread adds for this branch. A project may also have
-   a read-only **review** look at the change.
+   change's files call for (the project's folder rules, read from the branch, so a rule it adds
+   counts on its own landing), and any the merge thread adds for this branch. A project may also
+   have a read-only **review** look at the change. A project that pushes ends the run with
+   **Private names and secrets**: a scan of what would be pushed for secrets and the project's
+   private names.
 3. **Landed.** The main branch moves to exactly the commit that was tested, then your main folder
-   follows, and the queue pushes it to `origin`. A project can instead land by opening a pull
+   follows, and the queue pushes it to `origin` (or the remote the project names). A project can instead land by opening a pull
    request on GitHub, a merge request on GitLab, or only pushing the branch (**How it lands**, in
    Settings → Merge Queue).
 
@@ -66,7 +69,9 @@ alone.
 
 A red check is blamed on the branch only once the same check has passed on the main branch alone,
 in the same copy. A failure that also happens on the main branch is noted on the landing and
-doesn't hold the branch; a test that passes when run again is noted as flaky.
+doesn't hold the branch. A failure is rerun as narrowly as the check allows (only the failing test,
+when the check can rerun one by name), and a test that passes when run again is noted as flaky. The
+**Flaky tests** list counts each one across landings, with **Fix in New Chat**.
 
 ### Sent back to the chat, by itself
 
@@ -112,6 +117,9 @@ the Merge Queue tab's **Needs you** and in the sidebar's landing bar:
 - **Needs you**: a question from the merge thread or the chat, with its choices.
 - **Can't tell whose failure**: a check failed on the merge and on the main branch alone.
   **Land Anyway** lands the commit it tested; **Try Again** checks it afresh and uses no try.
+- **Private names**: the Private names and secrets step found something, shown by file and line
+  and kind, never the text itself. **Allow** marks it as fine for this project, **Send Back** asks
+  the chat to rewrite its history without it, and **Ask the Merge Thread** asks the thread.
 - **Out of tries**, **A fix needs your OK** (a fix on top of work you asked for, or wider than
   asked) and **Drafts changed** beyond making them fit: **Land**.
 
@@ -128,11 +136,13 @@ session. The queue's requests never count as "land it".
 ## The Merge Queue tab
 
 The project page's **Merge Queue** tab shows the main branch at its commit and whether `origin` has
-it, the queue's state with **Pause Queue** and **Queue Settings**, what is being checked now (the
+it, the queue's state with **Queue Overview**, **Pause Queue** and **Queue Settings**, what is being checked now (the
 check, a meter and how long it takes), and **Waiting**, the line of waiting branches, which opens and
 closes. Under them a strip of tabs sorts the rest: **Ready to land**, **Needs you**, **With its
 chat**, **Waiting on GitHub** or **GitLab** (for a project that lands there), **Held**, **Landed**,
-with each landing's notes and, under them, the **Retired** list with **Restore**, **Dry runs** (the
+with the queue's health on top (the usual time to land, the pass rate, the slowest checks, the
+flaky tests), each landing's notes, **Show Older** and a search by branch across the whole history,
+and, under them, the **Retired** list with **Restore**, **Dry runs** (the
 project's newest 20 [dry runs](/docs/dry-runs/)), and **Queue chats**.
 Each tab has its own address, so a reload or Back keeps it. While automatic cleanup is switched off,
 as it ships, one line says so and Held lists nothing; Retired and Restore still work.
@@ -145,6 +155,14 @@ card points to it.
 <!-- screen: merge-queue-tab | A project's Merge Queue tab: the main branch at its commit, the branch being checked with its meter, the branches waiting in line, and the recent landings with their notes. -->
 
 Each run has a page of its own: the branch, the commit that was tested, its verdict in plain words (and, for a red run, whose failure it is), then every check with why it ran, its time and its **Log**. Nothing merges from a run until every check passes.
+It also says whether the run reused the merge copy's installed packages and build output, or was a
+clean run. **Clean Run** checks the same commit again from nothing; the queue makes one clean run a
+week by itself.
+
+**Queue Overview** opens a screen that explains the whole queue: its setup drawn stage by stage
+(each check with what sets it off and its pass rate), what is in the queue now, each run's plan
+beside what it actually did, each branch's story and the history of the setup. Each run has an
+**Activity** list too: everything that happened to it, newest first, with who acted and why.
 
 <!-- screen: merge-queue-run | One branch's run page: its verdict, the tested commit, and Checks and why, each check with its result, its time and its log. -->
 
@@ -155,7 +173,7 @@ Queue** starts it again.
 ## The merge thread
 
 Each project has one **merge thread**, a chat Sova starts to help the queue: it writes a note on
-each landing, picks extra tests the change could break, judges conflicts and explains failures. It
+each landing, adds checks the change could break on top of the folder rules, judges conflicts and explains failures. It
 acts only through the queue, never moves the main branch itself, and a missing or slow thread
 never delays a landing. When it has a question about a branch, it asks in that branch's chat.
 A question no branch's chat can carry shows on its card on the Merge Queue tab with one button,

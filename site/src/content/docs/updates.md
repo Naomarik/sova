@@ -21,7 +21,7 @@ moved back. The script installs the same `stable` default from any tag or branch
 
 To pin a version, set `SOVA_REF`:
 
-- `| SOVA_REF=v0.17.1 bash` installs that release, and a re-run with it stays there.
+- `| SOVA_REF=v0.18.0 bash` installs that release, and a re-run with it stays there.
 - `| SOVA_REF=master bash`, or any other branch, updates to that branch's latest commit on each run.
 - A commit works too, as seven or more hex digits.
 
@@ -64,8 +64,8 @@ later after a check that couldn't reach the repository. **Check Now** checks at 
 no branch, tag or file of your copy. It finds one of:
 
 - **Up to date.**
-- **Update available**: "Update available: v0.3.3" with **Release Notes**, or for a branch "12 new
-  commits · latest: …" with **See the Changes**.
+- **Update available**: "Update available: v0.3.3", or for a branch "12 new commits · latest: …"
+  with **See the Changes**.
 - **Ahead**: this copy is newer than the source, such as "You're ahead of Stable; updates resume
   when Stable catches up." Sova never moves to older code.
 - **Diverged**: neither contains the other, for example after a branch was rewritten. An installed
@@ -76,6 +76,15 @@ no branch, tag or file of your copy. It finds one of:
   when, and that Stable is back on the release before. An installed copy is offered **Go Back to**
   that release, with the upgrade's own confirm; a developer copy is told the same and offered
   nothing. Nothing moves on its own.
+
+### Release notes
+
+**Release Notes**, beside **Check Now**, opens the notes of every release in the reading window,
+newest first. While a newer release is on offer, its notes (and those of any release between) come
+first under "New in v0.3.3, not installed yet", with a link to them on GitHub; then "You're on
+v0.3.2" marks the release this copy runs, and the ones before it follow. A copy past its last
+release starts with one line, such as "This copy is 12 changes past v0.3.2. Those changes have no
+release notes yet." The button shows whenever this copy's commit has a changelog.
 
 While an update is waiting, the Settings gear at the foot of the sidebar carries a small dot, and
 its label reads "Settings · update available". Nothing else announces it.
@@ -103,7 +112,8 @@ the branch its source names; with uncommitted changes it refuses and changes not
 uncommitted changes in 3 files. Commit or stash them, then upgrade.").
 
 Only one upgrade runs at a time, and none starts while a restart is scheduled. Its outcome stays in
-the section for a day, with the path of its log. A developer copy's upgrade runs no installer, so its
+the section for a day: a successful one as a quiet line under the last check ("Upgraded to v0.3.3
+2h ago."), one that failed or was put back as a warning with the path of its log. A developer copy's upgrade runs no installer, so its
 launcher and app entry stay as they are.
 
 **From v0.9.0 or v0.10.0:** Upgrade in Settings fails on these two releases ("Cannot find module"),

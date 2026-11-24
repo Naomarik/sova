@@ -28,6 +28,7 @@ import type { ChatProfileInfo } from "../../shared/protocol";
 import { InsightStrip } from "./InsightStrip";
 import { createProjectOverseerControl, ProjectOverseerHead } from "./ProjectOverseerHead";
 import { createVerbsChatControl, VerbsChatFresh, VerbsChatNote } from "./VerbsChatFresh";
+import { SetupOverviewLink } from "./pipeline/SetupOverviewLink";
 import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { trackSessionView } from "../lib/time-spent";
@@ -312,6 +313,8 @@ export function SessionView(props: {
       </Show>
       {/* The project's Project verbs chat alone: Start Fresh…, where the Overseer's Clear sits in its own head. */}
       <Show when={verbsControl && verbsProject}>{(pid) => <VerbsChatFresh projectId={pid()} control={verbsControl!} describedBy={verbsWhyId} />}</Show>
+      {/* The project's Setup chat alone: Queue Overview, the queue screen beside its proposal (§app.merge-queue/explainer). */}
+      <Show when={verbsProject}>{(pid) => <SetupOverviewLink projectId={pid()} path={path} busy={() => !!s().busy} />}</Show>
       <CodeState control={codeControl()} />
       {/* The remote identity is always present; the connection chip reports liveness separately. */}
       <RemoteChip path={path} summary={s()} />

@@ -1,0 +1,18 @@
+{
+  "id": "merge-reviewer-fix",
+  "label": "Merge reviewer (fixes)",
+  "icon": "search",
+  "description": "The merge queue's review step when the project lets the reviewer fix what it finds (merge.reviewFixes): reads the branch with the kit in a folder of its own at the branch's commit, may fix its blocking findings there and commit the fix, and answers ok, notes or blocking. No web, workers, timers or worktrees.",
+  "remove": [
+    "mcp",
+    "web",
+    "workers",
+    "timers",
+    "worktrees"
+  ],
+  "grant": [],
+  "singleton": false,
+  "overseerMayStart": false,
+  "mode": "normal",
+  "minorModes": []
+}

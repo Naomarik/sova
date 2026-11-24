@@ -1,6 +1,6 @@
 // The A/B cycle's memory, as functions with no side effects at import (so a test can import them; the
 // other scripts run at import): a round's prediction beside what it did (references/ledger.md), the
-// subject's record and its check (references/record.md), and the rule that no arm may hold the record
+// subject's record and its check (references/record.md), each round's outlook, and the rule that no arm may hold the record
 // (references/arms.md). Node builtins only.
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
@@ -242,8 +242,22 @@ const COMMIT = /^[0-9a-f]{7,40}$/;
 const KNOB = /^[a-z][a-z0-9-]*$/;
 const pct = (v) => v === null || (typeof v === "number" && v >= 0 && v <= 100);
 
+/** How a close is shown: `keep` is "baseline kept", never "parked". */
+export const VERDICTS = { land: "land the winner", cycle: "another cycle", park: "parked", keep: "baseline kept" };
+const IMPROVE = ["likely", "unlikely", "futile"];
+const RECOMMENDS = { cycle: "run another cycle", keep: "keep the baseline", confirm: "run the confirm" };
+/** An outlook's expected gain: one exact figure in the campaign's own measure, "+2 cases" or "+15 points on pass rate". */
+const GAIN = /^([+-]?\d+(?:\.\d+)?) (?:(cases?)|points? on (\S.*))$/;
+
+/** An expected gain as a figure: {n, unit: "cases" | "points", on?}, or null when it isn't one. */
+export function gainOf(text) {
+  const m = GAIN.exec(String(text ?? "").trim());
+  return m ? { n: Number(m[1]), unit: m[2] ? "cases" : "points", ...(m[3] ? { on: m[3].trim() } : {}) } : null;
+}
+
 const ATTEMPT_KEYS = ["v", "kind", "date", "campaign", "round", "arm", "problem", "change", "why", "text", "files", "lines", "knobs", "models", "all", "predicted", "observed", "outcome", "note"];
 const CLOSE_KEYS = ["v", "kind", "date", "campaign", "verdict", "master", "rounds", "confirm", "note"];
+const OUTLOOK_KEYS = ["v", "kind", "date", "campaign", "round", "seat", "improve", "lost", "next", "gain", "recommend", "needs"];
 
 /**
  * What is wrong with one line of a record: [{field, what}], [] when it may be written. Every field has
@@ -295,14 +309,25 @@ export function checkLine(line, corpus) {
     shape("outcome", line.outcome === "carried" || line.outcome === "dropped", "must be carried or dropped");
   } else if (line.kind === "close") {
     for (const k of Object.keys(line)) if (!CLOSE_KEYS.includes(k)) say(k, "isn't a field of a record");
-    shape("verdict", ["land", "cycle", "park"].includes(line.verdict), "must be land, cycle or park");
+    shape("verdict", Object.hasOwn(VERDICTS, line.verdict), "must be land, cycle, park or keep");
     shape("master", line.master === null || (typeof line.master === "string" && COMMIT.test(line.master)), "must be a commit");
     shape("rounds", isInt(line.rounds), "must be a count");
     if (line.confirm !== undefined) {
       if (!Array.isArray(line.confirm)) say("confirm", "must list the test models");
       else line.confirm.forEach((m, i) => model(`confirm[${i}]`, m, ["master", "winner"]));
     }
-  } else say("kind", "must be attempt or close");
+  } else if (line.kind === "outlook") {
+    for (const k of Object.keys(line)) if (!OUTLOOK_KEYS.includes(k)) say(k, "isn't a field of a record");
+    shape("round", isInt(line.round), "must be a round number");
+    if (line.seat !== undefined) shape("seat", typeof line.seat === "string" && /^[A-Za-z0-9][\w-]*$/.test(line.seat), "must be a consultant's seat");
+    shape("improve", IMPROVE.includes(line.improve), `must be ${IMPROVE.join(", ")}`);
+    free("lost", line.lost, true);
+    free("next", line.next, true);
+    free("gain", line.gain, true);
+    if (typeof line.gain === "string" && line.gain.trim() && !gainOf(line.gain)) say("gain", 'must be one figure: "+N cases" or "+N points on <measure>"');
+    shape("recommend", Object.hasOwn(RECOMMENDS, line.recommend), `must be ${Object.keys(RECOMMENDS).join(", ")}`);
+    if (line.needs !== undefined) shape("needs", typeof line.needs === "string" && KNOB.test(line.needs), "must be a knob id");
+  } else say("kind", "must be attempt, outlook or close");
   return bad;
 }
 
@@ -393,6 +418,52 @@ export function closeLine({ campaign, date, verdict, master, rounds, confirm, no
   return { v: 1, kind: "close", date, campaign, verdict, master: master ?? null, rounds, ...(confirm?.length ? { confirm } : {}), ...(typeof note === "string" && note.trim() ? { note: note.trim() } : {}) };
 }
 
+/**
+ * One outlook's line from its entry in rounds/<n>/outlook.json (the consultant's closing block): named
+ * fields only, `needs: none` left out. Shape and privacy are checkLine's.
+ */
+export function outlookLine({ campaign, round, entry, date }) {
+  const t = (v) => (typeof v === "string" ? v.trim().replace(/\s+/g, " ") : v);
+  const needs = t(entry?.needs);
+  return {
+    v: 1,
+    kind: "outlook",
+    date,
+    campaign,
+    round,
+    ...(entry?.seat !== undefined && entry.seat !== null ? { seat: String(entry.seat) } : {}),
+    improve: t(entry?.improve),
+    lost: t(entry?.lost),
+    next: t(entry?.next),
+    gain: t(entry?.gain),
+    recommend: t(entry?.recommend),
+    ...(needs === undefined || needs === null || needs === "" || needs === "none" ? {} : { needs }),
+  };
+}
+
+/**
+ * The table Expected gain vs observed: what the previous round's outlook expected beside what this
+ * round did. `outlooks` are that outlook's entries; `rows` [{arm, prediction}] as for predictionTable.
+ * Each arm shows both figures against its base: cases turned (fixed less broken, a case once per test
+ * model) and the pass rate's points.
+ */
+export function gainTable(round, outlooks, rows) {
+  const cell = (v) => String(v ?? "-").replace(/\|/g, "/").replace(/\s+/g, " ");
+  const sign = (n) => (n > 0 ? `+${n}` : `${n}`);
+  const observed = rows
+    .map(({ arm, prediction: p }) => {
+      const fixed = p.fixedExpected.n + p.fixedUnexpected.n;
+      const broke = p.brokeExpected.n + p.brokeUnexpected.n;
+      const points = Math.round(10 * ((p.compared?.arm ?? 0) - (p.compared?.base ?? 0))) / 10;
+      return `${cell(arm)} ${sign(fixed - broke)} ${Math.abs(fixed - broke) === 1 ? "case" : "cases"} (${fixed} fixed, ${broke} broken), ${sign(points)} points`;
+    })
+    .join("; ");
+  const out = [`**Expected gain vs observed** (Round ${round}'s outlook)`, "", "| Outlook | Can improve | Expected gain | Observed |", "|---|---|---|---|"];
+  outlooks.forEach((o, i) => out.push(`| ${cell(o.seat ?? i + 1)} | ${cell(o.improve)} | ${cell(o.gain)} | ${observed || "no arm ran"} |`));
+  out.push("", "Observed against each arm's base: cases fixed less broken, a case counted once per test model, and the pass rate's points.");
+  return out.join("\n");
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Showing a record
 // ---------------------------------------------------------------------------------------------------
@@ -401,11 +472,13 @@ const attemptsOf = (lines) => lines.filter((l) => l.kind === "attempt");
 /** An attempt made it worse when its pass rate over every test model is below its base's. */
 export const madeWorse = (l) => l.kind === "attempt" && typeof l.all?.arm === "number" && typeof l.all?.base === "number" && l.all.arm < l.all.base;
 
-/** "vis: 6 attempts in 2 campaigns, 2 carried, 1 made it worse". */
+/** "vis: 6 attempts in 2 campaigns, 2 carried, 1 made it worse", and what the last outlook said when there is one. */
 export function recordSummary(name, lines) {
   const a = attemptsOf(lines);
-  if (!a.length) return `${name}: no attempts yet`;
-  return `${name}: ${plural(a.length, "attempt")} in ${plural(new Set(a.map((l) => l.campaign)).size, "campaign")}, ${a.filter((l) => l.outcome === "carried").length} carried, ${a.filter(madeWorse).length} made it worse`;
+  const o = lines.filter((l) => l.kind === "outlook").at(-1);
+  const last = o ? `; last outlook: ${o.improve}, ${RECOMMENDS[o.recommend] ?? o.recommend}` : "";
+  if (!a.length) return `${name}: no attempts yet${last}`;
+  return `${name}: ${plural(a.length, "attempt")} in ${plural(new Set(a.map((l) => l.campaign)).size, "campaign")}, ${a.filter((l) => l.outcome === "carried").length} carried, ${a.filter(madeWorse).length} made it worse${last}`;
 }
 
 const modelName = (m) => `${m.model}${m.effort ? ` · ${m.effort}` : ""}`;
@@ -440,12 +513,21 @@ export function showRecord(name, allLines, { campaign } = {}) {
       if (l.note) out.push(`  - Note: ${l.note}`);
     }
   }
+  // Each round's outlook, under its campaign and round.
+  const outlooks = lines.filter((l) => l.kind === "outlook");
+  if (outlooks.length) {
+    out.push("", "### Outlooks", "");
+    for (const o of outlooks) {
+      out.push(`- **${o.improve.charAt(0).toUpperCase()}${o.improve.slice(1)} to improve** · ${o.campaign} round ${o.round}${o.seat ? ` seat ${o.seat}` : ""} · ${o.date} · expected ${o.gain} · ${RECOMMENDS[o.recommend] ?? o.recommend}${o.needs ? ` · needs: ${o.needs}` : ""}`);
+      out.push(`  - Won or lost: ${o.lost}`, `  - Next: ${o.next}`);
+    }
+  }
   const closes = lines.filter((l) => l.kind === "close");
   if (closes.length) {
     out.push("", "### Campaigns closed", "");
     for (const c of closes)
       out.push(
-        `- ${c.campaign} · ${c.date} · ${c.verdict === "land" ? "land the winner" : c.verdict === "cycle" ? "another cycle" : "parked"} · ${plural(c.rounds, "round")}${c.master ? ` · master at ${c.master.slice(0, 10)}` : ""}${
+        `- ${c.campaign} · ${c.date} · ${VERDICTS[c.verdict] ?? c.verdict} · ${plural(c.rounds, "round")}${c.master ? ` · master at ${c.master.slice(0, 10)}` : ""}${
           c.confirm?.length ? ` · confirm run, master → winner: ${c.confirm.map((m) => `${modelName(m)} ${pc(m.master)} → ${pc(m.winner)} (${plural(m.cases, "sealed case")})`).join("; ")}` : ""
         }${c.note ? ` · ${c.note}` : ""}`,
       );

@@ -62,14 +62,15 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T04:36Z",
-      "source": "pi-session:3afd71cb-9954-48a8-837f-625d03a69b14#15ceea0f"
+      "at": "2026-11-22T16:27Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
     },
     "code": [
       "system-playbooks/project-setup/PLAYBOOK.md",
       "system-playbooks/project-setup/references/drawing.md",
       "system-playbooks/project-setup/scripts/project-setup.mjs",
-      "system-playbooks/project-setup/references/examples/clojure-vps.md"
+      "system-playbooks/project-setup/references/examples/clojure-vps.md",
+      "server/projects/setup-playbook.test.ts"
     ]
   },
   "§app.project-setup/investigate": {
@@ -144,9 +145,9 @@
       "§app.project-runtime/review"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-19T07:07Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
+      "by": "user",
+      "at": "2026-11-22T15:50Z",
+      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
     },
     "code": [
       "system-playbooks/project-setup/PLAYBOOK.md",
@@ -172,7 +173,9 @@
       "src/lib/api.ts",
       "src/lib/project-software.ts",
       "pi-config/extensions/worktrees/index.ts",
-      "server/merge-queue/ingest.ts"
+      "server/merge-queue/ingest.ts",
+      "src/components/pipeline/SetupOverviewLink.tsx",
+      "src/components/pipeline/PipelineProposal.tsx"
     ]
   },
   "§app.project-setup/sova": {

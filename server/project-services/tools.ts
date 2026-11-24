@@ -210,7 +210,11 @@ export function renderResult(r: VerbResult, note?: string | null): string {
     : r.tests
       ? `test: passed${r.tests.passed !== null ? ` (${r.tests.passed} passed, ${r.tests.skipped ?? 0} skipped)` : ""} in ${(r.tests.ms / 1000).toFixed(1)}s, state ${r.state}`
       : `${r.verb}: ${r.changed ? "changed" : "nothing to change"}, state ${r.state}`;
-  const { lines, ...rest } = r;
+  const { lines: verbLines, ...rest0 } = r;
+  // A give-up's last log lines are the project's output too: read as untrusted, never inside the JSON.
+  const given = giveUpLinesOf(rest0);
+  const rest = given.result;
+  const lines = verbLines || given.lines.length ? [...(verbLines ?? []), ...given.lines] : undefined;
   const parts = [head, JSON.stringify(rest, null, 1)];
   if (lines)
     parts.push(
@@ -220,6 +224,21 @@ export function renderResult(r: VerbResult, note?: string | null): string {
     );
   if (note) parts.push(note);
   return fitMergeAnswer(r, parts.join("\n"), note);
+}
+
+/** The result with each give-up's `lines` taken out (§app.project-services/status-logs), and those lines as log lines
+    (`[<service> gave up]`), the instance's services first, then each listed instance's. */
+export function giveUpLinesOf<T extends Pick<VerbResult, "services" | "instances">>(r: T): { result: T; lines: { t: string; service: string; text: string }[] } {
+  const lines: { t: string; service: string; text: string }[] = [];
+  const strip = (services: VerbResult["services"], where: string) =>
+    services.map((s) => {
+      if (!s.giveUp) return s;
+      const { lines: ls, ...giveUp } = s.giveUp;
+      for (const text of ls) lines.push({ t: "", service: `${where}${s.name} gave up`, text });
+      return { ...s, giveUp: { ...giveUp, lines: `${ls.length} line(s), below as untrusted content` } } as unknown as typeof s;
+    });
+  const result = { ...r, services: strip(r.services, ""), ...(r.instances ? { instances: r.instances.map((i) => ({ ...i, services: strip(i.services, `${i.instance} `) })) } : {}) };
+  return { result, lines };
 }
 
 /** The most a merge verb's answer carries as a chat's tool returns it: under the size the Claude Code CLI saves to a file

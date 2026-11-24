@@ -227,7 +227,10 @@ counts as the approval of the mode's tools and commands, never its hooks.
 
 ## §site.docs/playbooks-and-schedules — Playbooks and schedules (`/docs/playbooks-and-schedules/`)
 
-Running a playbook from the composer's Playbooks dialog; a project playbook's schedule: who fires
+Running a playbook from the composer's Playbooks dialog, which lists the project's playbooks first,
+then your own, then Sova's in a section folded until you open it (open by itself when nothing is
+listed above it); the Context audit playbook Sova ships (§chat.playbooks/context-audit), in a line;
+a project playbook's schedule: who fires
 it, its triggers (times, intervals, `claude-limit-reset`) and their limits, and approving or revoking
 it (in the Playbooks dialog, or in the Overseer's Approvals & Schedules). A schedule never turns on a
 project mode.
@@ -269,8 +272,9 @@ profiles), and the overseers' own switches, on by default.
 Keeping Sova current, in Setup after Install: running the install command again and how the
 `stable` tag moves, pinning with `SOVA_REF`, then Settings → General's Updates · this machine: what
 runs and the kind of copy, the source (stable, master or a branch), checking and what a check finds,
-the dot on Settings, upgrading with the previous version kept until the new one answers and put back
-when it doesn't, Upgrade automatically, the banner a page open across an upgrade
+Release Notes in the reading window, the dot on Settings, upgrading with the previous version kept
+until the new one answers and put back when it doesn't, the quiet "Upgraded to" line a successful
+upgrade leaves, Upgrade automatically, the banner a page open across an upgrade
 shows ("A newer Sova is available.", mesh or not), and that only the operator can update.
 
 ## §site.docs/create — Create (`/docs/modes/create/`)

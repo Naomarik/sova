@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { closeSync, fstatSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import type { GiveUpView } from "../../shared/project-contract";
 import { stateRoot } from "../state-root";
 
 /**
@@ -61,6 +62,9 @@ export interface InstanceRecord {
   ports: Record<string, Record<string, number>>;
   /** Container service → the container its last start ran as, so a down can remove it after the service left the definition. */
   containers?: Record<string, { engine: string; name: string }>;
+  /** Per service: the restart limit's give-up (§app.project-services/supervisor), until a start or down clears it.
+      Written only by the engine's give-up helpers (never by a verb's save of its own copy of the record). */
+  giveUps?: Record<string, GiveUpView>;
 }
 
 /** A project's shared services (§app.project-services/contract `scope: shared`): one per project. */
@@ -69,6 +73,8 @@ export interface SharedRecord {
   id: string;
   desired: Record<string, "running" | "stopped">;
   ports: Record<string, Record<string, number>>;
+  /** Per shared service: the restart limit's give-up, as an instance keeps its own. */
+  giveUps?: Record<string, GiveUpView>;
 }
 
 export interface Registry {

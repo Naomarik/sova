@@ -52,11 +52,22 @@ main checkout's file, so a branch can't move them.
 The `merge` section says how the project's branches land through its merge queue.
 
 - `checks`: 1 to 30 checks, in order, each with an `id`, a `label` and a `run` command. Or `"none"`, for
-  a project with no automated tests.
+  a project with no automated tests. A check may also name the folder it runs in (`cwd`, relative to
+  the checkout), variables of its own (`env`), the test report its runner writes (`report`:
+  `{"junit": path}`, `{"tap": path}` or `{"tap": "stdout"}`), and how to rerun one failing test
+  by name (`rerunTest`, with `${test}` for its name). `perSelector: true` runs it once per selection
+  the folder rules ask for.
 - `target`: the branch that receives work. By default, the main checkout's branch.
 - `push`: whether to push after landing. By default, when the repository has an `origin` remote.
+- `remote`: the remote the queue fetches from and pushes to. By default `origin`.
+- `squash`: `true` lands each branch as one commit, under `local` landing. By default `false`.
+- `rules`: the folder rules, up to 100, each `{"paths": [globs], "check", "select"?, "why"}`: which
+  changed paths run which check, with which selection and why. They are read from the branch being
+  landed, so a rule it adds counts on its own landing. A rule naming a check that isn't declared is
+  refused with the file.
 - `install`: run in the merge copy when a branch changes one of its `inputs`.
 - `review`: the folder of the project's review kit. Adding it turns review on when it lands.
+- `reviewFixes`: `true`, with a review kit, lets the reviewer fix what it finds.
 - `land`: how a branch lands: `local` (the default), `github-pr`, `gitlab-mr` or `push-branch`. This
   computer's own choice overrides it.
 - `request`: the folder of the project's request kit.
@@ -71,7 +82,7 @@ Merge Queue tab offers **Set Up with a Chat**.
 The checks are read from the target's copy of the file, never the branch's. A branch that changes them
 is checked with the old list, and its own list counts once it lands.
 
-Settings → Merge Queue saves `push`, `review`, `reuse`, `deleteBranches` and each check's limits as one
+Settings → Merge Queue saves `push`, `review`, `reuse`, `deleteBranches`, `squash` and each check's limits as one
 commit, which you confirm.
 Check commands, the install step, the target and the kits change by a branch and Land.
 

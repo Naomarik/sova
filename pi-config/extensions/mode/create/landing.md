@@ -17,7 +17,7 @@ A card lands on the main branch with no checks, so a change that fails one turns
 
 ## Changing the setup
 
-- Change: anything about how branches land, how releases go or how the project ships, beyond the values in the next section.
+- Change: anything about how branches land, how releases go or how the project ships, beyond the values in the next section: among them the folder rules (key `rules`: when these paths change, run this check with this selection), each check's own folder, variables and test report, and whether the reviewer may fix what it finds by itself (key `reviewFixes`).
 - Lives: `.sova/project.json` (`merge`, `release`, `deploy`) and the folders they name.
 - Approves: the person: Change Setup, their answers, then Land on the Setup chat's branch.
 - By: Screen. Change Setup on the Merge Queue tab, the Releases tab or Settings → Merge Queue reopens the same Setup chat; it draws the current setup, marks what changes, dry-runs it, and proposes it on a branch. Land on it runs a dry run of that branch's head first, then lands by itself, since the queue checks a branch with the target's checks, not the branch's.
@@ -35,7 +35,7 @@ A card lands on the main branch with no checks, so a change that fails one turns
 
 ## How a branch lands
 
-- Change: merge locally, a pull request on GitHub, a merge request on GitLab, or push the branch only. Key: `merge.land`, or a choice kept on this computer, which wins.
+- Change: merge locally, a pull request on GitHub, a merge request on GitLab, or push the branch only. Key: `merge.land`, or a choice kept on this computer, which wins. Merging locally, each branch may land as one commit instead of a merge commit (key `squash`, off unless true). The remote the queue fetches from and pushes to is `origin` unless the project names another (key `remote`).
 - Lives: the project's file, shared with everyone on the repository, or this computer.
 - Approves: the person alone.
 - By: Screen. Settings → Merge Queue, How it lands. It asks where to keep the choice, and it shows what's suggested from `origin`.

@@ -245,6 +245,67 @@ test("a record is shown grouped by problem, with the attempts that lost and the 
   assert.deepEqual(one.split("\n").filter((l) => l.startsWith("- **")).length, 1, "one campaign's lines only");
 });
 
+// ---- the outlook ----
+
+const OUTLOOK = { seat: "1", improve: "likely", lost: "The rule moved up but still reads as optional", next: "Make the rule a condition of drawing at all", gain: "+2 cases", recommend: "cycle", needs: "none" };
+const outlook = (over = {}) => rec.outlookLine({ campaign: "vis-dsl", round: 2, date: "2026-11-19", entry: { ...OUTLOOK, ...over } });
+
+test("an outlook's line is built from its closing block's named fields, its expected gain one exact figure, and `needs: none` left out", () => {
+  assert.deepEqual(outlook({ lost: "  The rule moved up\n but still reads as optional ", url: COPY }), { v: 1, kind: "outlook", date: "2026-11-19", campaign: "vis-dsl", round: 2, seat: "1", improve: "likely", lost: "The rule moved up but still reads as optional", next: "Make the rule a condition of drawing at all", gain: "+2 cases", recommend: "cycle" });
+  assert.equal(outlook({ needs: "tool-code" }).needs, "tool-code");
+  assert.equal("seat" in outlook({ seat: undefined }), false, "one consultant needs no seat");
+  assert.deepEqual(rec.checkLine(outlook()), []);
+  for (const [gain, want] of [["+2 cases", { n: 2, unit: "cases" }], ["+1 case", { n: 1, unit: "cases" }], ["0 cases", { n: 0, unit: "cases" }], ["+12.5 points on pass rate", { n: 12.5, unit: "points", on: "pass rate" }]]) {
+    assert.deepEqual(rec.gainOf(gain), want, gain);
+    assert.deepEqual(rec.checkLine(outlook({ gain })), [], gain);
+  }
+  for (const gain of ["a few cases", "+2", "+2 cases or more", "about +2 points", "+5 points"]) assert.deepEqual(rec.checkLine(outlook({ gain })).map((b) => b.field), ["gain"], gain);
+});
+
+test("an outlook's line is refused naming its field: an unknown word, a case id or a case's words in its free text, a field a record doesn't have", () => {
+  const corpus = rec.corpusOf(["Please draw the monthly revenue for the northern region as a stacked bar chart"], ["arrow-labels"]);
+  const fields = (over, c = corpus) => rec.checkLine({ ...outlook(), ...over }, c).map((b) => b.field);
+  assert.deepEqual(fields({ improve: "maybe" }), ["improve"]);
+  assert.deepEqual(fields({ recommend: "land" }), ["recommend"]);
+  assert.deepEqual(fields({ needs: "Tool Code" }), ["needs"]);
+  assert.deepEqual(fields({ seat: "a seat" }), ["seat"]);
+  assert.deepEqual(fields({ round: -1 }), ["round"]);
+  assert.deepEqual(fields({ lost: "" }), ["lost"]);
+  assert.deepEqual(fields({ expectFix: ["f01"] }), ["expectFix"]);
+  for (const field of ["lost", "next"]) {
+    assert.deepEqual(fields({ [field]: "The same slip as arrow-labels" }), [field], `${field}: a case id by name`);
+    assert.deepEqual(fields({ [field]: "as in f01" }, undefined), [field], `${field}: a token shaped like a case id`);
+    assert.deepEqual(fields({ [field]: "It was asked to draw the monthly revenue for the northern region as a stacked chart" }), [field], `${field}: 8 words from a case`);
+  }
+  assert.deepEqual(rec.checkLine({ ...outlook(), gain: "+2 points on arrow-labels" }, corpus), [{ field: "gain", what: "holds a case id (arrow-labels)" }]);
+});
+
+test("a record shows each round's outlook under its campaign and round, its summary the last outlook, and a keep close as baseline kept", () => {
+  const futile = { ...outlook({ seat: undefined, improve: "futile", recommend: "keep", gain: "+0 cases", needs: "tool-code" }), round: 3 };
+  const keep = rec.closeLine({ campaign: "vis-dsl", date: "2026-11-21", verdict: "keep", master: "3c9e1f7a", rounds: 2 });
+  assert.deepEqual(rec.checkLine(keep), []);
+  const lines = [attempt().line, outlook(), futile, keep];
+  assert.equal(rec.recordSummary("vis", lines), "vis: 1 attempt in 1 campaign, 1 carried, 0 made it worse; last outlook: futile, keep the baseline");
+  assert.equal(rec.recordSummary("vis", [{ ...outlook(), round: 0 }]), "vis: no attempts yet; last outlook: likely, run another cycle");
+  const md = rec.showRecord("vis", lines);
+  assert.deepEqual(md.split("\n").filter((l) => l.startsWith("### ")), ["### skips the guide before drawing", "### Outlooks", "### Campaigns closed"]);
+  assert.match(md, /^- \*\*Likely to improve\*\* · vis-dsl round 2 seat 1 · 2026-11-19 · expected \+2 cases · run another cycle$/m);
+  assert.match(md, /^- \*\*Futile to improve\*\* · vis-dsl round 3 · 2026-11-19 · expected \+0 cases · keep the baseline · needs: tool-code$/m);
+  assert.match(md, /^ {2}- Won or lost: The rule moved up but still reads as optional$/m);
+  assert.match(md, /^ {2}- Next: Make the rule a condition of drawing at all$/m);
+  assert.match(md, /vis-dsl · 2026-11-21 · baseline kept · 2 rounds/);
+  assert.ok(!/parked/.test(md), "keep is never shown as parked");
+});
+
+test("the table Expected gain vs observed: each outlook's figure beside every arm's cases turned and points against its base", () => {
+  const t = rec.gainTable(1, [OUTLOOK, { ...OUTLOOK, seat: "2", improve: "unlikely", gain: "+5 points on pass rate" }], [{ arm: "B", prediction: prediction() }]);
+  // prediction(): f01 and f03 fixed, p02 broken; 40% → 60% on 5 cases.
+  assert.match(t, /^\*\*Expected gain vs observed\*\* \(Round 1's outlook\)$/m);
+  assert.match(t, /^\| 1 \| likely \| \+2 cases \| B \+1 case \(2 fixed, 1 broken\), \+20 points \|$/m);
+  assert.match(t, /^\| 2 \| unlikely \| \+5 points on pass rate \| B \+1 case \(2 fixed, 1 broken\), \+20 points \|$/m);
+  assert.match(rec.gainTable(0, [{ ...OUTLOOK, seat: undefined }], []), /^\| 1 \| likely \| \+2 cases \| no arm ran \|$/m);
+});
+
 /** The records committed in the project the playbook ships in: the nearest folder above it holding .sova/ab, if any. */
 function committedRecords() {
   for (let d = dirname(PLAYBOOK); d !== dirname(d); d = dirname(d)) if (existsSync(join(d, ".sova", "ab"))) return join(d, ".sova", "ab");
@@ -259,7 +320,7 @@ test("every committed record passes the check, and so do the lines references/re
   }
   const page = readFileSync(join(PLAYBOOK, "references", "record.md"), "utf8");
   const shown = [...page.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => JSON.parse(m[1]));
-  assert.deepEqual(shown.map((l) => l.kind), ["attempt", "close"]);
+  assert.deepEqual(shown.map((l) => l.kind), ["attempt", "outlook", "close"]);
   for (const line of shown) assert.deepEqual(rec.checkLine(line), [], line.kind);
 });
 

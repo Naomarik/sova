@@ -139,10 +139,3 @@ A project has no coding-mode setting of its own: its coding sessions start in th
 default mode, the one **Make {name} the Default** in a chat's mode menu sets, and the project page names
 it. A coding session has spec only when that default does, and you or an Overseer can turn it on or off
 in a running session, as in any chat.
-
-## A spec review
-
-Sova ships a **Spec review** playbook. It answers one question about a project's spec: either how
-the code and docs compare with an earlier revision, or how the spec workflow went. It runs only when
-you send it, within the limits its brief sets (minutes, report length, model runs and tokens), and
-it writes nothing but its report in the chat.

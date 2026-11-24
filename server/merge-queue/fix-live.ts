@@ -90,3 +90,31 @@ export async function liveFix(projectId: string, req: { branch: string; commit: 
   const wt = made.worktree as { path?: string; branch?: string } | undefined;
   return { session: made.sessionId, path: made.path, ...(wt?.branch ? { branch: wt.branch } : !shared ? { branch: ctx.branch } : {}), ...(wt?.path ? { worktree: wt.path } : cwd ? { worktree: cwd } : {}) };
 }
+
+/**
+ * Fix in New Chat on a flaky test (the queue's flaky list): a fresh coding chat on a new branch from the target, told
+ * the test, how often it failed and passed on its rerun, and each run's page and failing step's log. Marks the test
+ * with the chat it started.
+ */
+export async function liveFixFlaky(projectId: string, key: string): Promise<FixAnswer> {
+  const [{ mergeQueues }, { listProjects }] = await Promise.all([import("./wire"), import("../projects/spaces")]);
+  const root = listProjects().find((p) => p.id === projectId)?.root;
+  const qs = mergeQueues();
+  if (!root || !qs) throw new MergeFailure("not-found", `no project ${projectId}`);
+  const q = await qs.get(root);
+  const t = q.flaky.get(key);
+  if (!t) throw new MergeFailure("not-found", "no such flaky test: look again");
+  const { flakyFixText } = await import("./flaky");
+  const stepIds = t.check.startsWith("setup:") ? [t.check, `rerun-tip:${t.check}`] : [`check:${t.check}`];
+  const logs = t.runs.slice(0, 5).flatMap((r) => {
+    const run = q.store.readRun(r.run);
+    const st = run?.steps.find((s) => stepIds.includes(s.id));
+    return st ? [{ run: r.run, path: join(q.store.runDir(r.run), st.log) }] : [];
+  });
+  const text = flakyFixText(t, { target: q.target, runPage: (run) => `#/projects/${encodeURIComponent(projectId)}/merge-queue/${run}`, logs });
+  const { startFixChat } = await import("../project-overseer");
+  const made = await startFixChat(projectId, { prompt: text, title: `Fix flaky ${t.name ?? t.file ?? t.checkLabel}` });
+  q.flaky.markFix(key, { at: new Date().toISOString(), session: made.sessionId, path: made.path });
+  const wt = made.worktree as { path?: string; branch?: string } | undefined;
+  return { session: made.sessionId, path: made.path, ...(wt?.branch ? { branch: wt.branch } : {}), ...(wt?.path ? { worktree: wt.path } : {}) };
+}

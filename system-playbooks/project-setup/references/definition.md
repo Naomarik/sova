@@ -62,7 +62,8 @@ The queue merges each approved commit onto the newest `target` in a merge copy b
 (`<parent of the main checkout>/.worktrees/<repo>-merge`), runs `setup`, the install when needed, the
 spec land when the project has a spec, the checks and the review there, and only then moves the
 target (or opens a request). **The queue reads this section from the target's head, never from the
-branch being landed.**
+branch being landed**, with one exception: `rules`, which are read from the branch, so a rule edit
+takes effect on its own landing (the run says "This branch changed its own rules" and what changed).
 
 | key | value |
 |---|---|
@@ -75,8 +76,12 @@ branch being landed.**
 | `request` | the request kit's folder: how a pull/merge request's title and body are written. Only with a request `land` |
 | `reuse` | `true` / `false`. Absent or `true`: a check whose runner supports it may reuse passes from identical code (same argv and inputs). `false`: every check runs in full on every landing (`SOVA_FRESH=1`). A trial follows it too |
 | `deleteBranches` | `true` / `false`. Absent or `false`: automatic cleanup removes a landed branch's folder and keeps the branch. `true`: it deletes the branch too, its last commit staying restorable. |
+| `reviewFixes` | `true` / `false`, only with `review`. Absent or `false`: the reviewer only reads. `true`: it may fix its blocking findings itself (a shell and edit tools, its own sandbox on, in a folder of its own at the branch's commit); its commit goes on the branch and is checked by the merge thread like a chat's fix, then the checks run again. Read from the target's definition only. The review kit's own `PLAYBOOK.md` frontmatter may declare `model`, `thinking`, `passes` (1–3), `time-limit` (minutes, 1–120) and `tools: shell`. |
+| `remote` | the remote's name the queue fetches from and pushes to (and opens requests on); default `origin`. A project with no remote of that name lands locally and never pushes |
+| `rules` | folder rules, at most 100: `{paths, check, select?, why}` each. When a branch changes a path matching one of `paths` (globs from the repository root: `**` any depth, `*` within a folder, `?` one character), Sova adds the check `check` (a `checks` id) to the run, with `select` appended to its command, and shows it as Triggered with `why` and the matched paths. Needs `checks` to be a list. A rule naming an undeclared check, or a `needsSelect` check without `select`, is refused. Rules hitting one check join into one run (their selections joined; a rule with no `select` runs it whole), except a `perSelector` check, which runs once per selection. The merge thread may add checks on top, never remove one |
+| `squash` | `true` / `false`, with `land` `"local"`: `true` lands each branch as one commit on the target (its message the branch's name and commit subjects) instead of a merge commit; the checks run on exactly that commit. Default `false` |
 
-**A check**: `{id, label?, run, timeout?, rerun?, requires?, optional?, needsSelect?}`.
+**A check**: `{id, label?, run, timeout?, rerun?, requires?, optional?, needsSelect?, perSelector?, cwd?, env?, report?, rerunTest?}`.
 - `id`: a name, unique among the checks (and among the release's own).
 - `label`: what the queue shows, 1–60 characters, default the id.
 - `run`: an argv. Templates: the definition's own (`${checkout}` is the merge copy, `${main}` the main
@@ -90,16 +95,33 @@ branch being landed.**
   target's, or the branch's). A check whose runner names no files (a build, a typecheck) leaves it off.
 - `requires`: services of `services` brought up in the merge copy, in its own slot and ports, before
   the check, and stopped after the checks.
-- `optional: true`: out of the required set; runs only when the merge thread picks it for a branch
-  (by the project's blast-radius map in `.sova/playbook-config/merge-queue/`, or its judgement). A trial
+- `optional: true`: out of the required set; runs only when a folder rule (`rules`) or the merge thread
+  adds it for a branch. A trial
   runs every optional check with no selection appended, so one that takes a selection (a group, files,
   walkthroughs) must not fail without one: it works out what the branch calls for (from
   `$SOVA_MERGE_TARGET` and the branch's changes since the merge base) or exits 0 with
   `{"skipped": "<why>"}` in `$SOVA_OUT`. A check that exits 2 with no selection fails every trial.
-- `needsSelect` (`true`): a pick of it must name its selection; the merge thread's pick without one
+- `perSelector` (`true`): it takes one selection per run (one slow group): folder rules hitting it with
+  different selections run it once per selection, not once with them joined.
+- `needsSelect` (`true`): a pick of it (and a folder rule naming it) must name its selection; the merge thread's pick without one
   (`merge.extend` with no `select`) is refused. A trial still runs it with none, as above.
+- `cwd`: the folder it runs in, relative to the repository root (one package of a multi-package
+  repository, `"services/api"`); default the root. Its report's files and the files a rerun passes are
+  relative to it; Sova shows them from the root.
+- `env`: `{NAME: value}` of its own over the allow-list below (never a `SOVA_` name); values may use the
+  templates (`{"PYTHONPATH": "${checkout}/src"}`).
+- `report`: the test report its runner writes, read when it writes no `$SOVA_OUT`, so its failing
+  tests and files are named (blame, reruns): `{"junit": "<file or folder>"}` (JUnit XML: pytest
+  `--junitxml`, Maven Surefire, Gradle, jest-junit, go-junit-report; a folder means every `*.xml` in
+  it) or `{"tap": "stdout"}` / `{"tap": "<file>"}` (TAP: `node --test --test-reporter=tap`, prove,
+  tape). Relative to `cwd`; only a report written during the run counts. A check printing a TAP stream
+  that starts `TAP version` is read without one.
+- `rerunTest`: an argv appended to rerun one failing test by its name, holding `${test}`
+  (`["-k", "${test}"]` for pytest, `["--test-name-pattern", "${test}"]` for node/bun). Without it a
+  rerun names files only. A rerun by name counts a test passed only when the check's report lists it as
+  run and passed (a JUnit or TAP case, or `passedTests` in `$SOVA_OUT`); otherwise it stays failing.
 
-**What a check sees.** It runs in the merge copy (cwd its root) with an allow-list environment:
+**What a check sees.** It runs in the merge copy (cwd its root, or its `cwd`) with an allow-list environment:
 `PATH`, `HOME`, `USER`, `LANG`, `TZ`, `TMPDIR`, the XDG dirs, `MISE_*`, plus `SOVA_V`, `SOVA_SLOT`,
 `SOVA_CHECKOUT`, `SOVA_MAIN`, `SOVA_DATA`, `SOVA_VERB=merge`, `SOVA_PORT_<SVC>_<PORT>`,
 `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP`, `SOVA_MERGE_TARGET`, `SOVA_MERGE_CHANGED` (a file listing the
@@ -107,7 +129,7 @@ changed paths), `SOVA_MERGE_PICKED=1` when the thread picked it, `SOVA_OUT` and 
 **No secret and no chat variable reaches it**: a test that needs an API key reads it from a
 gitignored file a `setup` step copies from the main checkout, or it is not a landing check. A check
 writes its counts to `$SOVA_OUT` as JSON, `{"passed": n, "failed": n, "skipped"?: n | "<why>",
-"failures"?: [{name, message?, file?, line?}]}`; one with nothing to do for this change exits 0 and
+"failures"?: [{name, message?, file?, line?}], "passedTests"?: [name]}`; one with nothing to do for this change exits 0 and
 writes `{"passed": 0, "failed": 0, "skipped": "<why>"}` (a lint of changed files when none changed).
 Without a report only the exit counts.
 

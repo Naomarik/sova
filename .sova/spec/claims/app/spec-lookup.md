@@ -45,6 +45,15 @@ None of it has a switch: no project, conversation or setting turns it off.
   given, or a `§` id, is refused there: "Use a ref this conversation's look-ups gave you." The
   full view takes a `§` id (anything else: "Name a § id that find or outline listed."), and marks a
   proposal "(authority: candidate)".
+- **Split topics open whole.** A claim cut into parts (§tools.spec/split-topics) is found as one
+  topic, and every part of it can be opened. A `find` row for a split topic has under it "best part:"
+  and that part's line, with a ref of its own in the session's view (a handle in the outsider view, a
+  `§` id in the full view), so it can be read at once; a `read` of a split topic ends with "Its parts
+  (read each by its ref):" and one line per part, each with its ref, in either view; and `outline`
+  with a topic's ref lists its parts. Each part's line reads as any other line of the session's view:
+  in the full view with its authority in brackets, and in the outsider view a part that is only a
+  proposal opened by "Proposed, not settled yet:" (§app.spec-lookup/outsider-view). No assistant is
+  sent to a topic whose parts it cannot open.
 - **Caps.** A `find` or `outline` result is at most 12 KB and a `read` 32 KB (a longer one is cut,
   with a `more` cursor, `m1`, `m2`…, kept per conversation, that continues it); at most 30 look-ups
   per reply (counted since the last message someone wrote), then "That's enough look-ups for this

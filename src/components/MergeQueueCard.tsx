@@ -1,7 +1,7 @@
 import { createSignal, For, Show, useContext } from "solid-js";
 import type { CardInfo } from "../../shared/transcript-cards";
 import { clockTime, tildePath } from "../lib/format";
-import { cardActionLabel, cardActions, cardDecision, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardPlaceRow, cardSha, foldedLine, isNewest, notPushed, queueRowOf, reviewNotes, reviewPointer, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
+import { cardActionDone, cardActionLabel, cardActionRoute, cardActions, cardDecision, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardPlaceRow, cardSha, foldedLine, isNewest, notPushed, queueRowOf, reviewNotes, reviewPointer, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
 import { findingPlace, kindWord, reviewRowCardId } from "../lib/merge-review-card";
 import { ensureRendered, transcriptRoot } from "../lib/jump";
 import { leaveReviewJump } from "../lib/review-jump";
@@ -10,7 +10,7 @@ import { HELD_NOTE_LINE, STANDING_LINE, standingWords } from "../lib/merge-stand
 import { CardContext } from "../lib/card-controls";
 import { pickDecision } from "../lib/merge-decision-pick";
 import { paneScopedId, usePaneScope } from "../lib/pane-scope";
-import { answerEntry, cancelEntry, landBranch, refusal } from "../lib/merge-queue-client";
+import { answerEntry, cancelEntry, landBranch, readQueue, refusal } from "../lib/merge-queue-client";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, home, toast } from "../lib/ui-state";
 import { ChangesDialog, useChangesSession } from "./ChangesViewer";
@@ -117,25 +117,34 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
     // The entry the card follows now (a re-approval after a hand-back moves the same card on).
     const e = { id: d().entry };
     try {
+      const route = cardActionRoute(a, !!decision());
+      if (route.verb === "none") {
+        setError(route.why);
+        announce(route.why);
+        return;
+      }
+      // Allow with no list of matches marks every place the scan still holds open, the ones the question names.
       const r =
-        a === "cancel" || a === "remove"
+        route.verb === "cancel"
           ? await cancelEntry(e)
-          : a === "accept" || a === "land-anyway" || a === "try-again"
-            ? await answerEntry(e, a)
-            : a === "land" && decision()
-              ? // A decision's Land, on the queue itself: out of tries, a new standing approval at the branch's newest
-                // commit with 3 new tries; a fix that needs your OK, back in line; drafts changed, re-pinned as they are.
-                await answerEntry(e, "land")
-              : // Land: the commit the card was approved at; Land Again: the branch's head.
-                await landBranch(d().root, d().branch, { commit: a === "land-again" ? d().head : d().commit });
+          : route.verb === "answer"
+            ? await answerEntry(e, route.answer)
+            : // Land: the commit the card was approved at; Land Again: the branch's head.
+              await landBranch(d().root, d().branch, { commit: route.commit === "head" ? d().head : d().commit });
       const no = refusal(r);
       if (no) {
         setError(no);
         announce(no);
       } else {
-        const done = `${cardActionLabel(a)}: ${d().branch}.`;
+        const done = cardActionDone(a, d().branch);
         toast(done);
         announce(done);
+        // Ask the Merge Thread: open its chat, where the queue's own view records it.
+        if (a === "ask-thread") {
+          const project = d().project;
+          const path = await readQueue(d().root).then((v) => v.thread?.path, () => undefined);
+          if (path) location.hash = projectSessionHref(project, path);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

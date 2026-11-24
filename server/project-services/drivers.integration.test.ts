@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { DetachedDriver, RESTART_BURST, RESTART_SEC, restartTickMs, STABLE_RUN_SEC } from "./drivers";
+import { DetachedDriver, HOURLY_LIMIT, RESTART_BURST, RESTART_SEC, restartTickMs, STABLE_RUN_SEC } from "./drivers";
 import { type ProcEntry, type ProcTable, psTable, realSyncExec } from "./proctable";
 import { procsDir } from "./store";
 
@@ -163,7 +163,7 @@ test("the detached driver's restart watch: a crash is started again; a clean exi
   for (let i = 0; i < 100 && (st = await d.status(loop)).state !== "failed"; i++) await sleep(50);
   assert.equal(st.state, "failed");
   assert.equal(st.gaveUp, true);
-  assert.match(st.detail ?? "", /^start limit hit: 5 failed starts/);
+  assert.equal(st.detail, "failed 5 times in a row and stopped retrying; it waits to be started again");
   await d.stop(loop);
 });
 
@@ -247,7 +247,7 @@ test("detached restart watch at production timing (2 s delay, 1 s ticks): a serv
     t += restartTickMs(RESTART_SEC * 1000);
     for (const line of await d.tick()) {
       if (line === `${unit}: started again`) starts++;
-      else if (line === `${unit}: start limit hit`) gaveUpAt = tick;
+      else if (line === `${unit}: failed 5 times in a row and stopped retrying; it waits to be started again`) gaveUpAt = tick;
       else assert.fail(line);
     }
   }
@@ -257,7 +257,8 @@ test("detached restart watch at production timing (2 s delay, 1 s ticks): a serv
   const st = await d.status(unit);
   assert.equal(st.state, "failed");
   assert.equal(st.gaveUp, true);
-  assert.match(st.detail ?? "", /^start limit hit: 5 failed starts in a row/);
+  assert.equal(st.detail, "failed 5 times in a row and stopped retrying; it waits to be started again");
+  assert.deepEqual([st.giveUp?.rule, st.giveUp?.tries, st.giveUp?.lines], ["in-a-row", 5, []], "its record: the rule, the tries, the last lines (this run wrote none)");
   // Much later, still not started again: the mark is in its record.
   t += 10 * 60_000;
   assert.deepEqual(await d.tick(), []);
@@ -311,7 +312,7 @@ test("detached restart watch at production timing: a service that runs 4 s befor
   assert.equal(st.gaveUp, true, `gave up (${spawns()} starts)`);
   assert.equal(st.state, "failed");
   assert.equal(spawns(), RESTART_BURST, "5 failed starts in a row, then failed");
-  assert.match(st.detail ?? "", /^start limit hit: 5 failed starts in a row/);
+  assert.equal(st.detail, "failed 5 times in a row and stopped retrying; it waits to be started again");
   assert.ok(JSON.parse(readFileSync(join(root, "procs", `${unit}.json`), "utf8")).gaveUp, "its record keeps it");
   t += 10 * 60_000;
   await d.tick();
@@ -319,22 +320,28 @@ test("detached restart watch at production timing: a service that runs 4 s befor
   await d.stop(unit);
 });
 
-test("detached restart watch at production timing: a service that stays up past STABLE_RUN_SEC between its failures never gives up", async () => {
+test("detached restart watch at production timing: a service that stays up past STABLE_RUN_SEC between its failures never gives up in a row, but does at its 10th failure within an hour", async () => {
   const root = mkdtempSync(join(tmpdir(), "sova-detached-stable-"));
   after(() => rmSync(root, { recursive: true, force: true }));
   let t = 1_700_000_000_000;
   // Three quick failures (4 s each), then a run that stays up 61 s and fails too, over and over: never 5 quick
-  // failures in a row, though far more than 5 failed starts.
+  // failures in a row, but its 10th failure comes about 4 minutes in, well within the hour.
   const { table, spawns } = clockTable(() => t, (n) => (n % 4 === 3 ? (STABLE_RUN_SEC + 1) * 1000 : 4_000));
   const d = new DetachedDriver(100, { table, restart: true, restartMs: RESTART_SEC * 1000, procsDir: () => join(root, "procs"), logsDir: () => join(root, "logs"), now: () => t });
   const unit = "u-stable";
   await d.start({ unit, argv: [process.execPath, "-e", "process.exit(3)"], cwd: root, env: {} });
-  for (let i = 0; i < 2_000 && spawns() < 16; i++) {
+  let st = await d.status(unit);
+  for (let i = 0; i < 2_000 && !st.gaveUp; i++) {
     t += restartTickMs(RESTART_SEC * 1000);
     await d.tick();
-    assert.equal((await d.status(unit)).gaveUp, undefined, `still restarted after ${spawns()} starts`);
+    st = await d.status(unit);
+    if (!st.gaveUp) assert.ok((st.failuresInRow ?? 0) < RESTART_BURST, `never 5 in a row (${spawns()} starts)`);
   }
-  assert.equal(spawns(), 16, "16 starts, every one failed");
+  assert.equal(spawns(), HOURLY_LIMIT, "10 starts, every one failed, then it gave up");
+  assert.equal(st.state, "failed");
+  assert.equal(st.giveUp?.rule, "in-an-hour");
+  assert.equal(st.giveUp?.tries, HOURLY_LIMIT);
+  assert.equal(st.detail, "failed 10 times in an hour and stopped retrying; it waits to be started again");
   // Gone on the fake table, so the stop has nothing left to signal.
   t += 10 * 60_000;
   await d.stop(unit);

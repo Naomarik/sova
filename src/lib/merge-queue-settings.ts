@@ -68,6 +68,8 @@ export interface ProjectDraft {
   reuse: boolean;
   /** Delete branches when cleaning up: off unless the project turned it on. */
   deleteBranches: boolean;
+  /** Merging locally, each branch lands as one commit: off unless the project turned it on. */
+  squash: boolean;
   checks: Record<string, { timeoutSec: number; rerun: boolean; optional: boolean }>;
   /** Each time-limit box as typed, once edited (blank, half-typed, out of range kept as is):
       never sent; a box whose text isn't a time limit holds the save (draftProblem). */
@@ -102,7 +104,7 @@ export const draftHolds = (d: ProjectDraft, s: MergeQueueSettings, hasOrigin: bo
 export function toProjectDraft(s: MergeQueueSettings, hasOrigin: boolean): ProjectDraft {
   const checks: ProjectDraft["checks"] = {};
   for (const c of s.checks.list) checks[c.id] = { timeoutSec: c.timeoutSec, rerun: c.rerun, optional: c.optional };
-  return { push: pushes(s, hasOrigin), review: s.review.on, reuse: s.reuse !== false, deleteBranches: s.deleteBranches === true, checks };
+  return { push: pushes(s, hasOrigin), review: s.review.on, reuse: s.reuse !== false, deleteBranches: s.deleteBranches === true, squash: s.squash === true, checks };
 }
 
 /** Only what the user changed: an untouched field is never written (absent push stays absent). Pure. */
@@ -112,6 +114,7 @@ export function changesOf(d: ProjectDraft, s: MergeQueueSettings, hasOrigin: boo
   if (d.push !== base.push) out.push = d.push;
   if (d.review !== base.review) out.review = d.review;
   if (d.deleteBranches !== base.deleteBranches) out.deleteBranches = d.deleteBranches;
+  if (typeof d.squash === "boolean" && d.squash !== base.squash) out.squash = d.squash;
   if (typeof d.reuse === "boolean" && d.reuse !== base.reuse) out.reuse = d.reuse;
   const checks: NonNullable<MergeSettingsChange["checks"]> = {};
   for (const [id, c] of Object.entries(d.checks)) {
@@ -132,6 +135,7 @@ export function changeLines(ch: MergeSettingsChange, s: MergeQueueSettings): str
   const lines: string[] = [];
   if (ch.push !== undefined) lines.push(ch.push ? "Push after each landing: on" : "Push after each landing: off");
   if (ch.deleteBranches !== undefined) lines.push(ch.deleteBranches ? "Delete branches when cleaning up: on" : "Delete branches when cleaning up: off");
+  if (ch.squash !== undefined) lines.push(ch.squash ? "One commit per branch: on" : "One commit per branch: off");
   if (ch.review !== undefined) lines.push(ch.review ? "Review each landing: on" : "Review each landing: off");
   if (ch.reuse !== undefined) lines.push(ch.reuse ? "Reuse passes from identical code: on" : "Reuse passes from identical code: off");
   for (const c of s.checks.list) {
@@ -150,6 +154,10 @@ export function changeLines(ch: MergeSettingsChange, s: MergeQueueSettings): str
 export const deleteBranchesHint = (on: boolean): string =>
   on ? "Automatic cleanup removes a landed branch's folder, then the branch. Its last commit stays restorable." : "Automatic cleanup removes a landed branch's folder and keeps the branch.";
 
+/** One commit per branch (merge.squash): what it does, under its switch (shown with Merge locally). */
+export const squashHint = (on: boolean, target: string): string =>
+  on ? `Each branch lands on ${target} as one commit holding its changes and their docs; the checks run on exactly that commit.` : `Each branch lands with a merge commit on ${target}, its own commits kept.`;
+
 /** "Saved to master as 1a2b3c4; pushed with the next landing." */
 export function savedWords(target: string, commit: string, pushesAfter: boolean): string {
   return `Saved to ${target} as ${commit.slice(0, 7)}${pushesAfter ? "; pushed with the next landing" : ""}.`;
@@ -166,7 +174,7 @@ export function rebaseDraft(d: ProjectDraft, base: ProjectDraft, fresh: ProjectD
   }
   // What was typed stays in its box (for checks still there).
   const kept = Object.entries(d.minutesText ?? {}).filter(([id]) => id in checks);
-  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), reuse: pick(d.reuse, base.reuse, fresh.reuse), deleteBranches: pick(d.deleteBranches, base.deleteBranches, fresh.deleteBranches), checks, ...(kept.length ? { minutesText: Object.fromEntries(kept) } : {}) };
+  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), reuse: pick(d.reuse, base.reuse, fresh.reuse), deleteBranches: pick(d.deleteBranches, base.deleteBranches, fresh.deleteBranches), squash: pick(d.squash, base.squash, fresh.squash), checks, ...(kept.length ? { minutesText: Object.fromEntries(kept) } : {}) };
 }
 
 /** A refused call's words: the server's `{error: {code, message}}` envelope, a plain `{error}`, or the error's own message. Pure. */

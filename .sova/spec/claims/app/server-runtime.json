@@ -84,7 +84,6 @@
       "server/merge-queue/thread.ts",
       "server/merge-queue/settings-edit.ts",
       "server/project-services/tools.ts",
-      "system-playbooks/merge-queue/scripts/blast-radius.mjs",
       "system-playbooks/project-setup/scripts/project-setup.mjs",
       "system-playbooks/release-maker/scripts/release-maker.mjs",
       ".sova/project.json",

@@ -7,7 +7,7 @@ import { ApiError, getHostServices, getProject, listProjects, openProjectOversee
 import { relativeTime } from "../lib/format";
 import { placementOf, sortProjects } from "../lib/projects";
 import { createPoll } from "../lib/poll";
-import { projectHref, projectSessionHref, projectTabHref, type ProjectsRoute, type ProjectTab, type QueueTab } from "../lib/projects-route";
+import { projectHref, projectSessionHref, projectTabHref, type PipelineAt, type ProjectsRoute, type ProjectTab, type QueueTab } from "../lib/projects-route";
 import { adoptedLine, copyChip, copyName, entryHref, entryTitle, memoryOf, openEntry, refusalLine, SERVICE_CHIP } from "../lib/services-view";
 import { projectHostOf } from "../lib/mesh";
 import { announce, toast } from "../lib/ui-state";
@@ -31,6 +31,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
   const tab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "sessions") : "sessions"));
   const run = createMemo(() => (props.route.kind === "project" ? props.route.run : undefined));
   const queueTab = createMemo(() => (props.route.kind === "project" ? props.route.queueTab : undefined));
+  const pipeline = createMemo(() => (props.route.kind === "project" ? props.route.pipeline : undefined));
   return (
     <Switch>
       <Match when={props.route.kind === "list"}>
@@ -38,7 +39,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
       </Match>
       {/* Keyed on the project alone: a tab change keeps the page and what it fetched. */}
       <Match when={props.route.kind === "project" && props.route.projectId} keyed>
-        {(pid) => <ProjectRoute projectId={pid} tab={tab()} run={run()} queueTab={queueTab()} titleRef={props.titleRef} sessions={props.sessions} attention={props.attention} />}
+        {(pid) => <ProjectRoute projectId={pid} tab={tab()} run={run()} queueTab={queueTab()} pipeline={pipeline()} titleRef={props.titleRef} sessions={props.sessions} attention={props.attention} />}
       </Match>
       <Match when={props.route.kind === "overseer" && props.route.projectId} keyed>
         {(pid) => <OverseerDoor projectId={pid} titleRef={props.titleRef} />}
@@ -48,7 +49,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
 }
 
 /** One project's page, once its read lands: the org's part composed in only while one places it. */
-function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string; queueTab?: QueueTab; titleRef(el: HTMLHeadingElement): void; sessions?: () => readonly SessionSummary[] | undefined; attention?: () => AttentionDigest | undefined }) {
+function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string; queueTab?: QueueTab; pipeline?: PipelineAt; titleRef(el: HTMLHeadingElement): void; sessions?: () => readonly SessionSummary[] | undefined; attention?: () => AttentionDigest | undefined }) {
   // What this tab last read of it (here, or the sidebar's project list) draws the page at once; the read updates it.
   const [project, { refetch, mutate }] = createResource(
     () => props.projectId,
@@ -78,13 +79,14 @@ function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string;
         </InsightsPage>
       }
     >
-      <Show when={space()} keyed fallback={<ProjectPage project={latest()!} tab={props.tab} run={props.run} queueTab={props.queueTab} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} sessions={props.sessions} attention={props.attention} />}>
+      <Show when={space()} keyed fallback={<ProjectPage project={latest()!} tab={props.tab} run={props.run} queueTab={props.queueTab} pipeline={props.pipeline} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} sessions={props.sessions} attention={props.attention} />}>
         {(orgId) => (
           <ProjectPage
             project={latest()!}
             tab={props.tab}
             run={props.run}
             queueTab={props.queueTab}
+            pipeline={props.pipeline}
             titleRef={props.titleRef}
             onProject={mutate}
             refetchProject={() => void refetch()}
@@ -299,7 +301,7 @@ function RunningCopies() {
                                     </Show>
                                   </span>
                                   <span class="services-row-chip">
-                                    <Chip tone={copyChip(c.state, !!c.starting).tone}>{copyChip(c.state, !!c.starting).word}</Chip>
+                                    <Chip tone={copyChip(c.state, !!c.starting, !!c.gaveUp, !!c.restarting).tone}>{copyChip(c.state, !!c.starting, !!c.gaveUp, !!c.restarting).word}</Chip>
                                   </span>
                                   <span class="services-row-meta">
                                     <span>slot {c.slot}</span>

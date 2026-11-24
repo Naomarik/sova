@@ -11,9 +11,9 @@ const { rendersSomething } = await import("./rendered");
 
 const { For, children, createComponent, createRoot, createSignal } = solid;
 // The overload without `keyed`, which createComponent's inference can't pick.
-const Show = solid.Show as (props: { when: unknown; children: JSX.Element }) => JSX.Element;
+const Show = solid.Show as (props: { when: unknown; fallback?: JSX.Element; children: JSX.Element }) => JSX.Element;
 
-test("the Paired with lines' shape: a Show holding a For draws nothing with no items, something with one", () => {
+test("the Paired with lines' shape: a Show holding the fold, whose fallback is a For, draws nothing with no items, something with one or 3", () => {
   createRoot((dispose) => {
     const [items, setItems] = createSignal<string[]>([]);
     const [on, setOn] = createSignal(true);
@@ -23,11 +23,20 @@ test("the Paired with lines' shape: a Show holding a For draws nothing with no i
           return on();
         },
         get children() {
-          return createComponent(For, {
-            get each() {
-              return items();
+          // From 3 the lines fold into one line; under 3 the For draws them as they are.
+          return createComponent(Show, {
+            get when() {
+              return items().length >= 3;
             },
-            children: (x: string) => x,
+            get fallback() {
+              return createComponent(For, {
+                get each() {
+                  return items();
+                },
+                children: (x: string) => x,
+              });
+            },
+            children: "Paired with 3 chats",
           });
         },
       }),
@@ -36,6 +45,8 @@ test("the Paired with lines' shape: a Show holding a For draws nothing with no i
     assert.equal(rendersSomething(resolved()), false);
     setItems(["line"]);
     assert.equal(rendersSomething(resolved()), true);
+    setItems(["a", "b", "c"]);
+    assert.equal(rendersSomething(resolved()), true, "the folded line");
     setItems([]);
     assert.equal(rendersSomething(resolved()), false, "the last line going takes the strip with it");
     setItems(["line"]);

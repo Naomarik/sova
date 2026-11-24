@@ -1,10 +1,9 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { OFF_ID, type DefaultProfileInfo, type JoinedProfile } from "../shared/profiles";
+import { OFF_ID, OFF_KEY, type DefaultProfileInfo, type JoinedProfile } from "../shared/profiles";
 import {
   builtinFallback, loadSubagentProfiles, profilesDefaultOf, readProfilesDefault, writeProfilesDefault,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
-import { isBuiltinProfileId, readConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import { joinedProfiles, pickJoined } from "./joined-profiles";
 import { readMode, writeMode, type ModePatch } from "./mode-state";
 import { agentRoot, stateRoot } from "./state-root";
@@ -58,47 +57,44 @@ function writeDefaultProfileFile(profile: string, file = defaultProfileFile()): 
 }
 
 /**
- * Whether a default nobody chose (`fromAccounts`) can run whole here: the account of the built-in profile it is (or
- * whose place it takes) is connected. With none connected the fallback is Claude, which can't run: a new chat and a
- * coding session then take only its helpers, and keep the model new chats open on (§chat.profiles/default).
+ * No default: none chosen, no saved default helpers, and no account connected, so no built-in profile (decision
+ * q3). A chat on it has no helper profile and keeps the model new chats open on; nothing names it (an empty name,
+ * never "Off"). Its key and id are an older build's Off, which every reader already takes for "no profile".
  */
-export function builtinAccountConnected(row: JoinedProfile, dir = agentRoot()): boolean {
-  const id = isBuiltinProfileId(row.id) ? row.id : row.replaces?.replace(/^sova:/, "");
-  if (!isBuiltinProfileId(id)) return false;
-  const c = readConnectedAccounts(dir);
-  return id === "claude" ? c.claude : id === "openai" ? c.openai : c.ollamaCloud;
-}
+export const NO_DEFAULT_ROW: JoinedProfile = Object.freeze({ key: OFF_KEY, id: OFF_ID, kind: "builtin", group: "builtin", name: "", footprint: "", providers: [], helperRoles: 0 }) as JoinedProfile;
+export const isNoDefault = (row: Pick<JoinedProfile, "key">): boolean => row.key === OFF_KEY;
 
 /**
  * The default among `rows` (pure). `file`: default-profile.json as read; `libraryDefault`: the id
  * subagent-profiles-default.json names (null: none, "off", or one that names nothing here), used while no
- * default was chosen; `fallback`: the built-in profile the connected accounts give, used after that.
- * `fromAccounts`: the default is that fallback, which nobody chose.
+ * default was chosen; `fallback`: the built-in profile the connected accounts give, used after that (null: none
+ * connected). `fromAccounts`: the default is that fallback, which nobody chose. With neither, NO_DEFAULT_ROW.
  */
-export function defaultAmong(rows: readonly JoinedProfile[], file: DefaultFileState, libraryDefault: string | null, fallback: string = "claude"): { row: JoinedProfile; info: DefaultProfileInfo; fromAccounts: boolean } {
+export function defaultAmong(rows: readonly JoinedProfile[], file: DefaultFileState, libraryDefault: string | null, fallback: string | null = "claude"): { row: JoinedProfile; info: DefaultProfileInfo; fromAccounts: boolean } {
   let fromAccounts = false;
   const info = (row: JoinedProfile, chosen: boolean, note?: string) => ({ row, fromAccounts, info: { key: row.key, id: row.id, name: row.name, chosen, ...(note ? { note } : {}) } });
   // Not chosen: the pair linking the saved default helpers (yours first, by name), else that helper profile's
   // own row (a library-only one, or a built-in one or the row that takes its place), else the fallback's.
   const derived = (): JoinedProfile => {
-    for (const [id, accounts] of [...(libraryDefault === null ? [] : [[libraryDefault, false] as const]), [fallback, true] as const]) {
+    for (const [id, accounts] of [...(libraryDefault === null ? [] : [[libraryDefault, false] as const]), ...(fallback === null ? [] : [[fallback, true] as const])]) {
       const linking = rows.filter((r) => r.libraryId === id && r.kind !== "library");
       const row = linking.find((r) => r.group === "yours") ?? rows.find((r) => r.kind === "library" && r.id === id) ?? pickJoined(rows, id) ?? linking[0];
       fromAccounts = accounts;
       if (row) return row;
     }
-    fromAccounts = true;
-    return rows[0]!;
+    fromAccounts = false;
+    return NO_DEFAULT_ROW;
   };
+  const startsOn = (row: JoinedProfile) => (isNoDefault(row) ? "no profile" : row.name);
   if (file.state === "ok" && file.profile !== OFF_ID) {
     const row = pickJoined(rows, file.profile);
     if (row) return info(row, true);
     const instead = derived();
-    return info(instead, false, `The default, "${file.profile}", isn't a profile here, so new chats start on ${instead.name}.`);
+    return info(instead, false, `The default, "${file.profile}", isn't a profile here, so new chats start on ${startsOn(instead)}.`);
   }
   if (file.state === "malformed") {
     const instead = derived();
-    return info(instead, false, `${DEFAULT_PROFILE_FILE_NAME} can't be read (${file.error}), so new chats start on ${instead.name}.`);
+    return info(instead, false, `${DEFAULT_PROFILE_FILE_NAME} can't be read (${file.error}), so new chats start on ${startsOn(instead)}.`);
   }
   return info(derived(), false);
 }

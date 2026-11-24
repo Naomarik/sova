@@ -19,6 +19,10 @@ mkdirSync(cwd, { recursive: true });
 mkdirSync(join(dir, "sessions", "live"), { recursive: true });
 linkPiConfigExtensions(dir);
 process.env.PI_CODING_AGENT_DIR = dir;
+// Claude connected (a throwaway Claude Code directory, signed in): a chat here is on the built-in Claude profile.
+mkdirSync(join(dir, "claude-code"), { recursive: true });
+writeFileSync(join(dir, "claude-code", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+process.env.CLAUDE_CONFIG_DIR = join(dir, "claude-code");
 await import("./testing/in-process-chats"); // chats open in this process (the server hosts none)
 const { buildApp } = await import("./app");
 // A chat's pick read from its file goes through this (server/index.ts reads the file's entries); this

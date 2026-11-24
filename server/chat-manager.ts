@@ -26,8 +26,10 @@ import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefaul
 import { restorePick, pickEntryFor, shortModel } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { isBuiltinProfileId } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 /** The profile a chat is on when it names none: Off (§chat.subagent-profiles/off). */
-/** A chat whose helpers can't be named (Sova's own chats, which show no picker, or a library that can't be read). */
-const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "Off" });
+/** No profile to name: a chat whose helpers can't be named (Sova's own chats, which show no picker, or a library that
+    can't be read), or one with no helper profile at all (nothing chosen, no account connected). An older build's Off
+    key and id, and no name: never the word "Off". */
+const OFF_ON = Object.freeze({ id: "off", key: "sova:default", name: "" });
 import { decodeMemberContext, MEMBER_ENV } from "../pi-config/extensions/subagents/mailbox.ts";
 import { modelAllowed, modelDenial, readModelPolicy } from "./model-policy";
 import { forgetModelCaches, toContextInfo, workerWindowResolver } from "./models";
@@ -2928,8 +2930,10 @@ class ChatSession {
     if (refused) return { ok: false, status: 409, error: refused };
     if (t.thinking !== undefined && !THINKING_LEVELS.includes(t.thinking)) return { ok: false, status: 400, error: `"${t.thinking}" isn't an effort level.` };
     try {
-      // A profile with no helpers of its own takes the default's: the library must answer for that too.
-      requireSubagentProfile(t.subagents ?? this.subagentProfileInfo().default);
+      // A profile with no helpers of its own takes the default's: the library must answer for that too (with no default
+      // helpers at all, "off", there is none to check).
+      const helpers = t.subagents ?? this.subagentProfileInfo().default;
+      if (helpers !== "off") requireSubagentProfile(helpers);
     } catch (err) {
       return { ok: false, status: 400, error: err instanceof Error ? err.message : String(err) };
     }
@@ -2988,9 +2992,12 @@ class ChatSession {
    * the profile. The model goes first: if pi refuses it, nothing else was written.
    */
   /** The helper pick a switch writes: its own helpers; without any, the default's, pinned only when the chat
-      already has a pick (a pick can't be cleared); a chat with none keeps following the default. */
+      already has a pick (a pick can't be cleared); a chat with none keeps following the default. With no default
+      helpers at all (nothing chosen, no account connected: "off"), nothing to pin. */
   private switchPickOf(t: ProfileSwitchTarget): string | undefined {
-    return t.subagents ?? (this.subagentPick !== undefined ? this.subagentProfileInfo().default : undefined);
+    if (t.subagents) return t.subagents;
+    const def = this.subagentPick !== undefined ? this.subagentProfileInfo().default : undefined;
+    return def === "off" ? undefined : def;
   }
 
   /** The chat's own profile again, unedited, with the helpers it already has: a switch that changes nothing. */

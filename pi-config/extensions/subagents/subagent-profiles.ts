@@ -539,8 +539,9 @@ export const NO_HELPER_PROFILE_ENV = "SOVA_NO_HELPER_PROFILE";
 /** The launch flag a host gives its own chats for the same (Sova's mode engine and this extension both read it). */
 export const NO_HELPER_PROFILE_FLAG = "no-helper-profile";
 
-/** The built-in profile a chat falls back to on this computer now: the connected accounts' (Claude, then OpenAI, then DeepSeek). */
-export const builtinFallback = (agentDir: string): BuiltinProfileId => builtinDefaultFor(readConnectedAccounts(agentDir));
+/** The built-in profile a chat falls back to on this computer now: the connected accounts' (Claude, then OpenAI, then
+    DeepSeek); null with none connected, so a chat with no pick and no default has no helper profile. */
+export const builtinFallback = (agentDir: string): BuiltinProfileId | null => builtinDefaultFor(readConnectedAccounts(agentDir));
 
 /** What resolution falls back to in this process: builtinFallback, or null under NO_HELPER_PROFILE_ENV. */
 export const fallbackNow = (agentDir: string, env: NodeJS.ProcessEnv = process.env): BuiltinProfileId | null =>

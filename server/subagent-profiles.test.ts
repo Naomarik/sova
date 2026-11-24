@@ -36,15 +36,15 @@ const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
   ...over,
 });
 
-test("no seeding: an absent library writes nothing; info lists the built-in profile the accounts give and resolves to it", () => {
+test("no seeding: an absent library writes nothing; info lists the built-in profile the accounts give and resolves to it, and none with no account", () => {
   const d = agentDir();
   writeFileSync(join(d, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: { backend: "pi", model: "zai/glm-5.3", effort: "low" }, fallback: null } } }));
   const info = subagentProfilesInfo(undefined, d);
   assert.equal(info.error, undefined);
-  assert.deepEqual(info.profiles.map((p) => p.id), ["claude"], "no account connected: Claude alone, and no Off");
-  assert.equal(info.default, "claude");
-  assert.deepEqual([info.current.id, info.current.source], ["claude", "default"]);
-  assert.equal(info.template.delegate.planning.primary.model, "claude-fable-5-2", "New Profile starts from the default's helpers");
+  assert.deepEqual(info.profiles.map((p) => p.id), [], "no account connected: no built-in profile, and no Off");
+  assert.equal(info.default, "off");
+  assert.deepEqual([info.current.id, info.current.source], ["off", "default"], "no helper profile, never the legacy files");
+  assert.equal(info.template.delegate.planning.primary.model, "claude-fable-5-2", "New Profile starts from the built-in Claude's helpers");
   assert.equal(existsSync(subagentProfilesPath(d)), false, "no library written");
   assert.equal(existsSync(subagentProfileDefaultPath(d)), false, "no default written");
   // With OpenAI signed in (pi's own sign-in), OpenAI is listed and is the default; Claude isn't listed.
@@ -62,7 +62,10 @@ test("requireSubagentProfile: a library or built-in id passes; \"off\" answers w
   const d = agentDir();
   assert.equal(requireSubagentProfile("claude", d), "claude");
   assert.equal(requireSubagentProfile("openai", d), "openai", "a built-in id is a pick even when its account isn't listed here");
-  assert.throws(() => requireSubagentProfile("off", d), /^Error: No profile is named "off"; the profiles here are Claude\.$/);
+  assert.throws(() => requireSubagentProfile("off", d), /^Error: No profile is named "off"; the profiles here are none\.$/, "no account connected: none listed");
+  writeFileSync(join(d, "auth.json"), JSON.stringify({ "openai-codex": { type: "oauth", access: "t" } }));
+  assert.throws(() => requireSubagentProfile("off", d), /^Error: No profile is named "off"; the profiles here are OpenAI\.$/);
+  rmSync(join(d, "auth.json"));
   assert.throws(() => requireSubagentProfile("nope", d), /Unknown subagent profile/);
   assert.throws(() => requireSubagentProfile(42, d), /Unknown subagent profile/);
   writeFileSync(subagentProfilesPath(d), "{ nope");

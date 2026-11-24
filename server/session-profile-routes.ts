@@ -12,7 +12,7 @@ import { getSessionInsight } from "./insights";
 import { helperProfileOf, loadSubagentProfiles } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { readConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import { chatProfileKey, switchChatProfile } from "./profile-switch";
-import { resolveDefaultProfile } from "./default-profile";
+import { isNoDefault, resolveDefaultProfile } from "./default-profile";
 import { buildJoined, joinedProfiles, pickJoined } from "./joined-profiles";
 import { agentRoot } from "./state-root";
 import { resolveSessionPath } from "./paths";
@@ -77,7 +77,8 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   if (!by && namesDefault(choice)) {
     // One nobody chose (the built-in one the accounts give) gives its helpers alone, as a new chat gets them.
     const d = await resolveDefaultProfile(s.cwd);
-    choice = d.fromAccounts && (d.row.libraryId ?? d.row.library?.id) ? `library:${d.row.libraryId ?? d.row.library!.id}` : choiceOfRow(d.row);
+    // No default at all (nothing chosen, no account connected): a pick of no profile, which sets nothing.
+    choice = isNoDefault(d.row) ? null : d.fromAccounts && (d.row.libraryId ?? d.row.library?.id) ? `library:${d.row.libraryId ?? d.row.library!.id}` : choiceOfRow(d.row);
   }
   // A joined key ("sova:claude", "user:night", "project:<root>#id"): the row it names, a built-in profile's
   // place taken by one of yours included.
@@ -97,9 +98,10 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
     if (row) (libraryPick = { id: row.id, name: row.name }), (r = { ok: true, profile: null });
   }
   if (!r.ok) return { ok: false, status: r.approval ? 409 : 400, error: r.error, ...(r.approval ? { approval: true as const } : {}) };
-  if (!by && !libraryPick && !r.profile) {
-    // A board that sets nothing: the default, as above.
-    const d = await resolveDefaultProfile(s.cwd);
+  const none = !by && !libraryPick && !r.profile ? await resolveDefaultProfile(s.cwd) : null;
+  if (none && !isNoDefault(none.row)) {
+    // A board that sets nothing: the default, as above (with no default at all, nothing).
+    const d = none;
     const row = d.row;
     if (row.session && !d.fromAccounts) r = await resolveChoice(choiceOfRow(row), s.cwd);
     else libraryPick = { id: row.libraryId ?? row.id, name: row.name };

@@ -24,7 +24,7 @@ const { resolveDefaultProfile, chooseDefaultProfile } = await import("./default-
 const { joinedProfiles } = await import("./joined-profiles");
 const { cardHelpers } = await import("./playbook-runs/env");
 const { codingDefaultProfile, codingTakesOf } = await import("./coding-default-profile");
-const { codingChoice } = await import("./project-overseer");
+const { codingChoice, codingModeNow, codingModeNowWords } = await import("./project-overseer");
 
 const authFile = join(agentDir, "auth.json");
 const claudeCreds = join(claudeDir, ".credentials.json");
@@ -46,13 +46,17 @@ test("not chosen yet (review b2): the connected accounts decide, each time, and 
     [{ openai: true, claude: true }, "sova:claude"],
     [{ ollama: true }, "sova:deepseek"],
     [{ ollama: true, openai: true }, "sova:openai"],
-    [{}, "sova:claude"],
+    // Nothing connected: no built-in profile, so no default at all (the no-profile row, which nothing names).
+    [{}, "sova:default"],
   ];
   for (const [accounts, key] of steps) {
     signIn(accounts);
     const before = files();
     const d = await resolveDefaultProfile();
-    assert.deepEqual([d.row.key, d.info.chosen, d.fromAccounts], [key, false, true], JSON.stringify(accounts));
+    assert.deepEqual([d.row.key, d.info.chosen, d.fromAccounts], [key, false, key !== "sova:default"], JSON.stringify(accounts));
+    const listed = (await joinedProfiles()).filter((r) => r.group === "builtin").map((r) => r.key);
+    assert.deepEqual(listed, key === "sova:default" ? [] : listed.filter((k) => k.startsWith("sova:")), JSON.stringify(accounts));
+    if (key === "sova:default") assert.deepEqual([listed, d.info.name, d.row.library, d.row.session], [[], "", undefined, undefined], "no built-in listed, nothing named");
     assert.deepEqual(files(), before, `${JSON.stringify(accounts)}: nothing written`);
   }
   assert.equal(existsSync(join(agentDir, "subagent-profiles.json")), false);
@@ -90,11 +94,14 @@ test("a coding session on a default nobody chose takes the built-in profile whol
     assert.deepEqual([takes.id, takes.model, takes.thinking, takes.subagents], ["claude", "claude-code-cli/claude-opus-5-5", "medium", "claude"]);
     assert.deepEqual(codingChoice({}, settings, running, takes), { model: "claude-code-cli/claude-opus-5-5", thinking: "medium" }, "no project coding model: the built-in's");
     assert.deepEqual(codingChoice({}, { ...settings, codingModel: "openai/project-coder", codingThinking: "high" }, running, takes), { model: "openai/project-coder", thinking: "high" }, "the project's coding model wins");
-    // Nothing connected: the fallback is Claude, which can't run here; only its helpers, the older new-chat model.
+    // Nothing connected: no default profile; no helpers, the older new-chat model.
     signIn({});
     const none = codingTakesOf(codingDefaultProfile());
-    assert.deepEqual([none.id, none.model, none.thinking, none.subagents], ["claude", undefined, undefined, "claude"]);
+    assert.deepEqual([none.id, none.name, none.model, none.thinking, none.subagents], ["off", "", undefined, undefined, undefined]);
     assert.deepEqual(codingChoice({}, settings, running, none), { model: "openai/older-default", thinking: "low" });
+    const now = codingModeNow();
+    assert.equal(now.profile, undefined, "the project overseer names no profile");
+    assert.doesNotMatch(codingModeNowWords(now), /on ,|\bOff\b/);
     assert.equal(existsSync(join(agentDir, "sova", "default-profile.json")), false, "nothing chosen or written");
   } finally {
     rmSync(join(agentDir, "sova", "defaults.json"), { force: true });

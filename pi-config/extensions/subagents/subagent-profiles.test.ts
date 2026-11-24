@@ -28,6 +28,7 @@ import {
 	helperProfileOf,
 	NO_HELPER_PROFILE_ENV,
 	pickableHelpers,
+	builtinFallback,
 	subagentProfileDefaultPath,
 	subagentProfilesPath,
 	seedReviewer,
@@ -177,7 +178,7 @@ test("the default as resolution uses it: the file's choice (a library or built-i
 	}
 });
 
-test("no seeding (b1): a missing library reads as an empty one, writes nothing, and the built-in default resolves before the legacy files", () => {
+test("no seeding (b1): a missing library reads as an empty one, writes nothing, and the legacy files are never read: no helper profile with nothing connected, the built-in one once an account is", () => {
 	const dir = tempDir();
 	// Legacy files that an older build would have seeded from: no longer read while the library is fine.
 	fs.writeFileSync(path.join(dir, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: pi("legacy/model"), fallback: null } } }));
@@ -192,8 +193,13 @@ test("no seeding (b1): a missing library reads as an empty one, writes nothing, 
 	assert.equal(state.state, "ok");
 	assert.deepEqual(state.state === "ok" && state.value.profiles, []);
 	assert.notEqual(r.source, "legacy");
-	assert.equal(r.id, "claude", "no account connected: the built-in Claude profile");
-	assert.deepEqual(r.delegate?.profiles, builtinHelpers("claude").delegate);
+	// This test's HOME is a throwaway one: no account connected, so no built-in profile and no helper profile at all.
+	assert.deepEqual([r.id, r.source, r.delegate, r.reviewer], [OFF_PROFILE_ID, "default", null, null], "no account connected: no helper profile, never the legacy delegate");
+	assert.equal(builtinFallback(dir), null);
+	// With Claude connected, the built-in Claude profile, still before the legacy files.
+	const claude = resolveSubagents(dir, undefined, undefined, undefined, "claude");
+	assert.deepEqual([claude.id, claude.source], ["claude", "default"]);
+	assert.deepEqual(claude.delegate?.profiles, builtinHelpers("claude").delegate);
 	assert.deepEqual(fs.readdirSync(dir).sort(), before, "nothing written: no library, no default file");
 	// A malformed team-defaults.json beside it changes nothing either.
 	fs.writeFileSync(path.join(dir, "team-defaults.json"), "{ nope");
@@ -304,15 +310,16 @@ test("built-in profiles: each resolves by its id; a profile of yours takes its p
 	assert.match(raw, /"My setup"/);
 });
 
-test("the built-in default by connected accounts (b2): Claude, then OpenAI, then DeepSeek; none: Claude; each listed only when connected", () => {
+test("the built-in default by connected accounts (b2): Claude, then OpenAI, then DeepSeek; none connected: none; each listed only when connected", () => {
 	for (const claudeOn of [false, true])
 		for (const openai of [false, true])
 			for (const ollamaCloud of [false, true]) {
 				const c: ConnectedAccounts = { claude: claudeOn, openai, ollamaCloud };
-				const want = claudeOn ? "claude" : openai ? "openai" : ollamaCloud ? "deepseek" : "claude";
+				const want = claudeOn ? "claude" : openai ? "openai" : ollamaCloud ? "deepseek" : null;
 				assert.equal(builtinDefaultFor(c), want, JSON.stringify(c));
 				const listed = builtinsFor(c);
-				assert.deepEqual(listed, claudeOn || openai || ollamaCloud ? BUILTIN_PROFILE_IDS.filter((id) => (id === "claude" ? claudeOn : id === "openai" ? openai : ollamaCloud)) : ["claude"], JSON.stringify(c));
+				assert.deepEqual(listed, BUILTIN_PROFILE_IDS.filter((id) => (id === "claude" ? claudeOn : id === "openai" ? openai : ollamaCloud)), JSON.stringify(c));
+				assert.deepEqual(pickableHelpers([], c).map((p) => p.id), listed, `${JSON.stringify(c)}: the pickers list only these`);
 			}
 	// The accounts as read from their files: a Claude sign-in (a token in its credentials, or on macOS with no file an account in .claude.json),
 	// pi's own OpenAI sign-in, an Ollama Cloud key; nothing else counts (a Z.ai or DeepSeek key, local Ollama).

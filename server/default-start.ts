@@ -7,10 +7,10 @@ import { applyProfile } from "./session-profile-routes";
 
 /**
  * A new chat with no profile named starts on this computer's default (§chat.profiles/default).
- * A default with no session half, or one nobody chose (the built-in profile the accounts give), needs
- * nothing: the chat follows the default's helpers and is named by them. A chosen default with a session
- * half is picked as on the empty screen, so its chip, its When a Chat Starts part and its helpers are
- * the chat's.
+ * A default with no session half needs nothing: the chat follows the default's helpers and is named by
+ * them. A default with a session half (chosen, or the built-in one the connected accounts give) is
+ * picked as on the empty screen, so its chip, its When a Chat Starts part, its model and its helpers
+ * are the chat's.
  *
  * An Overseer's start (and any start a person didn't make) never gets powers or tool changes the
  * profile isn't marked for: a default that isn't capability-neutral and lacks "Overseer may start"
@@ -23,10 +23,14 @@ import { applyProfile } from "./session-profile-routes";
 export async function startOnDefault(path: string, cwd: string, byOverseer: boolean, helpers?: string): Promise<{ ok: true; applied: "none" | "whole" | "models" } | { ok: false; error: string }> {
   const d = await resolveDefaultProfile(cwd).catch(() => null);
   const half = d?.row.session;
-  // Helpers alone, or a default nobody chose (the built-in one the accounts here give, which a new chat takes the
-  // helpers of, as a starter that held only helpers did): nothing to write. The chat follows the default's helpers,
-  // and its card is the checked one, named by them (§chat.profiles/default).
-  if (!d || !half || d.fromAccounts) return { ok: true, applied: "none" };
+  // Helpers alone (a library profile, or a seeded starter shown as Claude, which keeps its own models): nothing to
+  // write. The chat follows the default's helpers, and its card is the checked one, named by them
+  // (§chat.profiles/default). A built-in profile the accounts give, though nobody chose it, is picked whole, as a
+  // chosen default is: the new chat is on it from its first message, its own model included. Existing chats never
+  // change model.
+  // No default at all (nothing chosen, nothing connected) has no session half either: the chat keeps the model new
+  // chats open on, with no helper profile.
+  if (!d || !half) return { ok: true, applied: "none" };
   const whole = !byOverseer || isCapabilityNeutral(half) || (half.overseerMayStart && half.approval !== "needed");
   if (whole && half.approval !== "needed") {
     const r = await applyProfile(path, { source: half.source, id: half.id }, byOverseer ? "overseer" : undefined);

@@ -90,7 +90,7 @@ test("memory is never a coding session's: refused when named, dropped from the d
 test("subagent_profile: any profile here; \"off\" answered with the profiles there are; an unknown one refused with where to look", () => {
   writeDefault("normal", []);
   assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "big" }), { mode: { mode: "normal", minorModes: [], subagentProfile: "big" } });
-  assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "off" }), { error: 'No profile is named "off"; the profiles here are House, Big team and Claude.' });
+  assert.deepEqual(checkedCodingModeChoice({ subagent_profile: "off" }), { error: 'No profile is named "off"; the profiles here are House and Big team.' }, "no account connected: no built-in profile among them");
   assert.equal((checkedCodingModeChoice({ subagent_profile: "nope" }) as { error: string }).error, "Unknown subagent profile: nope. sova_list_subagent_profiles lists them.");
   assert.deepEqual(codingModeSwitch({ subagent_profile: "big" }), { mode: { subagentProfile: "big" } }, "a profile alone leaves the mode as it is");
   const info = { profiles: [{ id: "big", name: "Big team" }], current: { id: "house", name: "House" } } as never;

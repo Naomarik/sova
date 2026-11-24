@@ -13,6 +13,11 @@ import { beforeEach, describe, test } from "node:test";
 const agentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-profile-editor-")));
 process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
+// Claude connected (a throwaway Claude Code directory, signed in): the built-in Claude profile is listed.
+const claudeDir = join(agentDir, "claude-code");
+mkdirSync(claudeDir, { recursive: true });
+writeFileSync(join(claudeDir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+process.env.CLAUDE_CONFIG_DIR = claudeDir;
 const stateDir = join(agentDir, "sova");
 mkdirSync(stateDir, { recursive: true });
 const yoursFile = join(stateDir, "session-profiles.json");
@@ -301,7 +306,7 @@ describe("duplicating and deleting", () => {
     assert.equal(json<Lib>(libFile).profiles.some((p) => p.id === "house"), false);
   });
 
-  // A home with no account in it (the built-in fallback is Claude): never the real ~/.claude.
+  // A home with no account in it: never the real ~/.claude.
   const noAccounts = async (fn: () => Promise<void>) => {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "sova-profile-editor-home-")));
     const was = { HOME: process.env.HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR };
@@ -331,7 +336,7 @@ describe("duplicating and deleting", () => {
     }));
 
   test("a Make It Yours copy that is the default only because the accounts give it can be deleted; the built-in comes back", () =>
-    noAccounts(async () => {
+    (async () => {
       for (const f of [libDefaultFile, defaultProfileFile]) rmSync(f, { force: true });
       sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [sp.legacyProfile(agentDir, "claude", "Claude")] });
       writeFileSync(yoursFile, JSON.stringify({ version: 1, profiles: [claudeCopy] }, null, 2));
@@ -349,7 +354,7 @@ describe("duplicating and deleting", () => {
       writeFileSync(defaultProfileFile, JSON.stringify({ version: 1, profile: "claude" }));
       const refused = await deleteMine("user:claude", deps);
       assert.deepEqual(refused.ok ? null : [refused.status, refused.error], [409, "Make another profile the default first."]);
-    }));
+    })());
 });
 
 describe("the default", () => {

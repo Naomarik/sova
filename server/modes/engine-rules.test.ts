@@ -370,12 +370,18 @@ test("subagent profiles: the chat's pick is re-read at each turn; an older Off p
   await p.mode("subagents b");
   assert.equal(entries.length, before + 1, "the same pick again writes nothing");
   await p.mode("subagents nope");
-  assert.equal(p.notes.at(-1)!.text, `No profile is named "nope"; the profiles here are A, B and Claude.`);
-  await p.mode("subagents off");
-  assert.equal(p.notes.at(-1)!.text, `No profile is named "off"; the profiles here are A, B and Claude.`);
-  assert.equal(entries.length, before + 1, "nothing written for either");
-  await p.mode("subagents claude");
-  assert.match((await p.turn()) ?? "", /Planning & specs .* → backend "claude-code", model "claude-fable-5-2", effort "high"/, "a built-in profile by its id");
+  assert.equal(p.notes.at(-1)!.text, `No profile is named "nope"; the profiles here are A and B.`, "no account connected: no built-in profile");
+  // pi's own OpenAI sign-in: the built-in OpenAI profile is one of them.
+  writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ "openai-codex": { type: "oauth", access: "t" } }));
+  try {
+    await p.mode("subagents off");
+    assert.equal(p.notes.at(-1)!.text, `No profile is named "off"; the profiles here are A, B and OpenAI.`);
+    assert.equal(entries.length, before + 1, "nothing written for either");
+    await p.mode("subagents openai");
+    assert.match((await p.turn()) ?? "", /Planning & specs .* → (backend "pi", model "openai-codex\/gpt-6\.2-sol"|NO AVAILABLE WORKER \(openai-codex\/gpt-6\.2-sol )/, "a built-in profile by its id");
+  } finally {
+    rmSync(join(agentDir, "auth.json"), { force: true });
+  }
 });
 
 test("Sova's own chats (the no-helper-profile flag): with no default chosen, no helper profile, never the built-in one (b3); a default chosen still applies", async () => {
@@ -386,10 +392,23 @@ test("Sova's own chats (the no-helper-profile flag): with no default chosen, no 
   const none = (await own.turn()) ?? "";
   assert.match(none, /no subagent profile routes them/);
   assert.doesNotMatch(none, /→ backend/, "no worker line: delegate null");
-  // A user's chat on the same computer: the built-in profile the accounts give (none connected here: Claude).
+  // A user's chat on the same computer: the built-in profile the accounts give; none connected here, so none either.
   const user = fakePi([...entries]);
   await user.start();
-  assert.match((await user.turn()) ?? "", /Planning & specs .* → backend "claude-code", model "claude-fable-5-2", effort "high"/);
+  const theirs = (await user.turn()) ?? "";
+  assert.match(theirs, /no subagent profile routes them/);
+  assert.doesNotMatch(theirs, /→ backend/, "no account connected: no helper profile, never the legacy delegate");
+  writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ "openai-codex": { type: "oauth", access: "t" } }));
+  try {
+    const signedIn = fakePi([...entries]);
+    await signedIn.start();
+    assert.match((await signedIn.turn()) ?? "", /Planning & specs .* → (backend "pi", model "openai-codex\/gpt-6\.2-sol"|NO AVAILABLE WORKER \(openai-codex\/gpt-6\.2-sol )/, "OpenAI connected: its built-in profile");
+    const ownStill = fakePi([...entries], { flags: { "no-helper-profile": true } });
+    await ownStill.start();
+    assert.doesNotMatch((await ownStill.turn()) ?? "", /→ backend/, "Sova's own chats: still none (b3)");
+  } finally {
+    rmSync(join(agentDir, "auth.json"), { force: true });
+  }
   // Nothing was written for either.
   const { existsSync } = await import("node:fs");
   assert.equal(existsSync(join(agentDir, "subagent-profiles.json")), false);

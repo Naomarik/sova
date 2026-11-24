@@ -96,6 +96,8 @@ export async function makeChatDefault(path: string): Promise<DefaultProfileInfo>
   if (s.overseer || s.projectOverseer || s.baton || s.org || s.workerSession || s.queueChat) throw new DefaultRefusal("This chat has no profile to make the default.");
   const chat = chatHandle(path) ?? (await acquireChatHandle(path));
   const key = await chatKey(chat);
+  // No profile in effect (nothing chosen, no account connected): nothing to make the default.
+  if (key === OFF_KEY) throw new DefaultRefusal("This chat has no profile to make the default.");
   const now = await chatNow(chat);
   const rows = await joinedProfiles(s.cwd);
   const row = pickJoined(rows, key);

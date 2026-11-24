@@ -486,27 +486,26 @@ describe("a new chat with no profile named starts on this computer's default", (
     }
   });
 
-  test("with no default anywhere, the built-in profile the accounts give: its helpers alone, the chat's model untouched, nothing written", async () => {
+  test("with no default anywhere, the built-in profile the accounts give: picked whole for a new chat, no default written, and its helpers follow the default once one is chosen", async () => {
     const defFile = sp.subagentProfileDefaultPath(agentDir);
     const held = readFileSync(defFile, "utf8");
     rmSync(defFile);
     try {
       const path = makeSession();
+      // Only an Ollama Cloud key here: the built-in DeepSeek profile, its own model included.
+      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "whole" });
       const chat = await acquireChat(path, true);
-      const model = chat.harness.model()?.ref;
-      const before = readFileSync(path, "utf8");
-      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "none" });
-      assert.equal(readFileSync(path, "utf8"), before);
-      assert.equal(pickOf(path), undefined);
-      assert.equal((await acquireChat(path, true)).subagentProfileInfo().current.id, "deepseek", "its helpers are the built-in DeepSeek profile's");
-      // It follows the default: once one is chosen, its helpers move with it, from the next read.
+      assert.deepEqual([chat.harness.model()?.ref, chat.harness.thinking()], ["ollama-cloud/deepseek-v4.1-flash", "high"]);
+      assert.equal((await chat.chatProfileState()).current.key, "sova:deepseek");
+      assert.equal(chat.subagentProfileInfo().current.id, "deepseek", "its helpers are the built-in DeepSeek profile's");
+      // A chat with no pick of its own follows the default's helpers: once one is chosen, they move with it.
+      const follower = makeSession();
+      const f = await acquireChat(follower, true);
+      assert.equal(f.subagentProfileInfo().current.id, "deepseek");
       sp.writeProfilesDefault(agentDir, { version: 1, default: "claude-subs" });
-      assert.equal((await acquireChat(path, true)).subagentProfileInfo().current.id, "claude-subs", "a chat with no pick moves when the default moves");
+      assert.equal((await acquireChat(follower, true)).subagentProfileInfo().current.id, "claude-subs", "a chat with no pick moves when the default moves");
       rmSync(defFile);
-      assert.equal((await acquireChat(path, true)).harness.model()?.ref, model);
-      assert.equal(existsSync(defFile), false, "no default written");
-      assert.equal(existsSync(join(stateDir, "default-profile.json")), false);
-      assert.deepEqual([(await (await acquireChat(path, true)).chatProfileState()).current.key], ["sova:deepseek"]);
+      assert.equal(existsSync(join(stateDir, "default-profile.json")), false, "no default written");
     } finally {
       writeFileSync(defFile, held);
     }

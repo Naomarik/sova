@@ -3512,7 +3512,7 @@ test("every team gets both standing roles on the chat's own model where the sett
 	} finally { await nul.cleanup(); }
 });
 
-test("a host's own chats (the no-helper-profile flag): with no default chosen, teams get no helper profile, never the built-in one; a user's chat gets the built-in one (b3)", async () => {
+test("a host's own chats (the no-helper-profile flag): with no default chosen, teams get no helper profile, never the built-in one; a user's chat gets the built-in one, and none with no account connected (b3)", async () => {
 	const held = process.env[NO_HELPER_PROFILE_ENV];
 	delete process.env[NO_HELPER_PROFILE_ENV];
 	const run = async (flags: Record<string, unknown>) => {
@@ -3529,8 +3529,23 @@ test("a host's own chats (the no-helper-profile flag): with no default chosen, t
 	try {
 		const own = await run({ "no-helper-profile": true });
 		assert.match(own.text, /^Team defaults: [^\n]*no helper profile[^\n]*, so both roles use this chat's own model/);
-		const user = await run({});
-		assert.match(user.text, /\n {2}Coordinator: role "coordinator", primary claude-code · claude-opus-5-5 · medium, fallback none\n/, "the built-in Claude profile (no account connected here)");
+		const none = await run({});
+		assert.match(none.text, /^Team defaults: [^\n]*no helper profile[^\n]*, so both roles use this chat's own model/, "a user's chat with no account connected: no built-in profile either");
+		// Claude connected (a throwaway Claude Code directory, signed in): the built-in Claude profile.
+		const claudeDir = fs.mkdtempSync(path.join(os.tmpdir(), "subagents-tests-claude-"));
+		fs.writeFileSync(path.join(claudeDir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+		const heldClaude = process.env.CLAUDE_CONFIG_DIR;
+		process.env.CLAUDE_CONFIG_DIR = claudeDir;
+		try {
+			const user = await run({});
+			assert.match(user.text, /\n {2}Coordinator: role "coordinator", primary claude-code · claude-opus-5-5 · medium, fallback none\n/, "the built-in Claude profile");
+			const ownSignedIn = await run({ "no-helper-profile": true });
+			assert.match(ownSignedIn.text, /^Team defaults: [^\n]*no helper profile/, "Sova's own chats: still none");
+		} finally {
+			if (heldClaude === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+			else process.env.CLAUDE_CONFIG_DIR = heldClaude;
+			fs.rmSync(claudeDir, { recursive: true, force: true });
+		}
 		assert.equal(own.files.some((f) => f.startsWith("subagent-profiles")), false, "nothing written");
 	} finally {
 		if (held !== undefined) process.env[NO_HELPER_PROFILE_ENV] = held;

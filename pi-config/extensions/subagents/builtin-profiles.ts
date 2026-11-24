@@ -5,7 +5,7 @@
  *
  * Which ones a computer has, and which one a chat with no default falls back to, follow the accounts
  * connected here (`readConnectedAccounts`): a Claude sign-in, pi's own OpenAI sign-in, an Ollama Cloud key.
- * The order is Claude, then OpenAI, then DeepSeek; with none connected it is Claude.
+ * The order is Claude, then OpenAI, then DeepSeek; with none connected there is none, and no fallback.
  *
  * A profile of the user's takes a built-in one's place (`shadowOf`): one with the same id (a copy made
  * from it), else one with the same name, else, for Claude, the seeded starter (`my-setup`, which older
@@ -89,14 +89,14 @@ export interface ConnectedAccounts {
 	ollamaCloud: boolean;
 }
 
-/** The built-in profiles a computer with these accounts has, in order. With none connected, Claude alone. */
+/** The built-in profiles a computer with these accounts has, in order. With none connected, none. */
 export function builtinsFor(c: ConnectedAccounts): BuiltinProfileId[] {
-	const out = BUILTIN_PROFILE_IDS.filter((id) => (id === "claude" ? c.claude : id === "openai" ? c.openai : c.ollamaCloud));
-	return out.length ? out : ["claude"];
+	return BUILTIN_PROFILE_IDS.filter((id) => (id === "claude" ? c.claude : id === "openai" ? c.openai : c.ollamaCloud));
 }
 
-/** The built-in profile a chat falls back to while no default is chosen: Claude, then OpenAI, then DeepSeek. */
-export const builtinDefaultFor = (c: ConnectedAccounts): BuiltinProfileId => builtinsFor(c)[0]!;
+/** The built-in profile a chat falls back to while no default is chosen: Claude, then OpenAI, then DeepSeek; null
+    with none connected (no helper profile). */
+export const builtinDefaultFor = (c: ConnectedAccounts): BuiltinProfileId | null => builtinsFor(c)[0] ?? null;
 
 /**
  * The profile of the user's that takes the built-in `id`'s place, or undefined: one with its id, else

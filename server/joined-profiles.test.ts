@@ -53,8 +53,8 @@ describe("the joined list", () => {
       ["user:plain", "session", "Plain"],
       ["library:solo", "library", "Solo"],
       ["user:work", "pair", "Work"],
-      ["sova:claude", "builtin", "Claude"],
     ]);
+    assert.equal(r.some((x) => x.group === "builtin"), false, "no account connected: no built-in profile");
     const pair = r[2]!;
     assert.equal(pair.libraryId, "claude-lib");
     assert.equal(pair.library?.name, "Claude helpers");
@@ -69,11 +69,11 @@ describe("the joined list", () => {
     assert.equal(r[1]!.footprint, "gpt-6.1-sol + glm-5.3", "a library-only row shows its helpers' models");
   });
 
-  test("built-in profiles: listed when their account is connected (Claude alone when none is), unless a row of yours takes their place", () => {
+  test("built-in profiles: listed when their account is connected (none when none is), unless a row of yours takes their place", () => {
     // [connected, yours, library, the built-in rows listed, the rows of yours that take a place]
     const none: ConnectedAccounts = { claude: false, openai: false, ollamaCloud: false };
     const cases: [ConnectedAccounts, ListedProfile[], SubagentProfile[], string[], [string, string][]][] = [
-      [none, [], [], ["sova:claude"], []],
+      [none, [], [], [], []],
       [{ ...none, openai: true }, [], [], ["sova:openai"], []],
       [{ ...none, ollamaCloud: true }, [], [], ["sova:deepseek"], []],
       [ALL, [], [], ["sova:claude", "sova:openai", "sova:deepseek"], []],

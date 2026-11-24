@@ -1021,7 +1021,8 @@ export function codingModeNow(): CodingModeNow {
     // An unreadable library: no profile to name.
   }
   const def = defaultTakes();
-  return { mode: m.mode, minorModes: m.minorModes, subagents, ...(def ? { profile: { id: def.id, name: def.name } } : {}) };
+  // No default profile at all (none chosen, no account connected): none to name.
+  return { mode: m.mode, minorModes: m.minorModes, subagents, ...(def && def.id !== "off" ? { profile: { id: def.id, name: def.name } } : {}) };
 }
 
 /** The prompt's words for it: "on Claude, in normal · spec (this computer's default profile)". */

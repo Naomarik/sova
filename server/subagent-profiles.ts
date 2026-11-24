@@ -4,7 +4,7 @@ import { LIBRARY_KEY, listKept, markRestored } from "./sync/kept";
 import {
   loadSubagentProfiles, parseSubagentProfiles, readProfilesDefault, readSubagentProfiles, resolveSubagents, profilesDefaultOf,
   footprint, profileProviders, profileSlots, writeSubagentProfiles, writeProfilesDefault, builtinFallback, helperProfileOf, pickableHelpers,
-  profileWorkers, shortModel as workerModelName,
+  profileWorkers, shortModel as workerModelName, OFF_PROFILE_ID,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { readConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import type { SubagentProfile, SubagentProfilesFile, SubagentProfilesInfo, SubagentProfilesReplaced } from "../shared/subagent-profiles";
@@ -15,8 +15,9 @@ import { profileHash } from "./sync/profile-merge";
 
 /**
  * The helper profiles as Settings, the pickers and the pick checks read them: the library's (named as
- * screens show them) and the built-in ones listed here, this device's default (never Off: a missing or
- * "off" default is the built-in one the connected accounts give), and what `pick` resolves to now.
+ * screens show them) and the built-in ones listed here, this device's default (a missing or "off" default is the
+ * built-in one the connected accounts give; "off" only with none connected: no helper profile), and what `pick`
+ * resolves to now.
  */
 export function subagentProfilesInfo(pick?: string, dir = agentRoot()): SubagentProfilesInfo {
   const state = loadSubagentProfiles(dir);
@@ -24,14 +25,15 @@ export function subagentProfilesInfo(pick?: string, dir = agentRoot()): Subagent
   const fallback = builtinFallback(dir);
   const r = resolveSubagents(dir, pick, state, def, fallback);
   const d = profilesDefaultOf(state, def, fallback);
-  const defaultId = d.id ?? fallback;
+  // No default and nothing connected: "off", no helper profile (what the field always said for none).
+  const defaultId = d.id ?? fallback ?? OFF_PROFILE_ID;
   const library = state.state === "ok" ? state.value.profiles : [];
   const warnings: string[] = [];
   if (d.note) warnings.push(d.note);
   const listed = state.state === "malformed" ? [] : pickableHelpers(library, readConnectedAccounts(dir));
   const helpers = listed.map((c) => helperProfileOf(c.id, library)!).filter(Boolean);
-  // New Profile's helpers start from the default's.
-  const { id: _id, name: _name, ...from } = helperProfileOf(defaultId, library) ?? helperProfileOf(fallback, library)!;
+  // New Profile's helpers start from the default's (the built-in Claude's when there is none).
+  const { id: _id, name: _name, ...from } = helperProfileOf(defaultId, library) ?? helperProfileOf(fallback ?? "claude", library)!;
   return {
     settings: state.state === "ok" ? state.value : { version: 1, profiles: [] },
     default: defaultId,

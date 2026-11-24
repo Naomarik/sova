@@ -2,7 +2,7 @@ import { DEFAULT_PROFILE, profileKey, type JoinedProfile, type ListedProfile } f
 import { builtinFallback, loadSubagentProfiles, profilesDefaultOf, readProfilesDefault } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { BUILTIN_PROFILE_IDS, readConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import { buildJoined, findJoined } from "./joined-profiles";
-import { builtinAccountConnected, defaultAmong, readDefaultProfileFile } from "./default-profile";
+import { defaultAmong, readDefaultProfileFile } from "./default-profile";
 import { builtinSessionProfile, readHidden } from "./profile-sources";
 import { readProfiles } from "./profiles-store";
 import { agentRoot } from "./state-root";
@@ -25,15 +25,9 @@ export function codingDefaultProfile(dir = agentRoot()): JoinedProfile {
   const fallback = builtinFallback(dir);
   const d = defaultAmong(rows, readDefaultProfileFile(), profilesDefaultOf(library, readProfilesDefault(dir), null).id, fallback);
   // A default nobody chose (the built-in profile the accounts give) is taken whole, as a new chat takes it: its model
-  // after the project's coding model. Only its helpers when its account isn't connected (Claude with none connected).
-  return d.fromAccounts && !builtinAccountConnected(d.row, dir) ? helpersOnly(d.row) : d.row;
+  // after the project's coding model. With none at all (nothing connected), no profile: no helpers, no model of its own.
+  return d.row;
 }
-
-/** A default nobody chose that can't run here: a coding session takes only its helpers, as a new chat does. */
-const helpersOnly = (row: JoinedProfile): JoinedProfile => {
-  const { session: _session, ...rest } = row;
-  return rest;
-};
 
 /** What a coding session takes from a profile (§app.project-overseer/coding-mode): its mode and add-ons, its This
     chat model and effort, and its helpers' id. Never its tools, powers, One at a time or first message: a coding

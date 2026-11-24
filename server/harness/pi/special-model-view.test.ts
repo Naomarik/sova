@@ -54,6 +54,11 @@ process.env.HOME = join(root, "home");
 mkdirSync(process.env.HOME, { recursive: true });
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
+// Claude connected (a throwaway Claude Code directory, signed in), as when this was recorded: the project overseer's
+// prompt names the default profile a coding session starts on, the built-in Claude one.
+mkdirSync(join(root, "claude"), { recursive: true });
+writeFileSync(join(root, "claude", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "t" } }));
+process.env.CLAUDE_CONFIG_DIR = join(root, "claude");
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(scriptedModelsJson()));
 writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProvider: "scripted", defaultModel: "scripted", retry: { baseDelayMs: 1 } }));

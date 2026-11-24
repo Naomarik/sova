@@ -387,7 +387,9 @@ export function drive(tid: string): void {
 function needsYou(tid: string, reason: string): void {
   const r = readTransport(tid);
   log(`${tid}: needs you: ${reason}`);
-  updateTransport(tid, { state: "needs-you", needsYou: { reason: `Transport to ${r?.peerLabel ?? "that device"} stopped: ${reason.replace(/\.$/, "")}. The chat carries on here.`, at: new Date().toISOString() } });
+  // Once decided the chat is no longer here: it waits to open there.
+  const after = r?.decided ? "The chat opens there once it is finished: press Retry." : "The chat carries on here.";
+  updateTransport(tid, { state: "needs-you", needsYou: { reason: `Transport to ${r?.peerLabel ?? "that device"} stopped: ${reason.replace(/\.$/, "")}. ${after}`, at: new Date().toISOString() } });
 }
 
 async function statusThere(r: TransportRecord): Promise<StatusBody | null> {
@@ -427,7 +429,9 @@ async function step(r: TransportRecord): Promise<"wait" | "again" | "stop"> {
       stepDone(r.tid, "decided");
     }
     const cur = readTransport(r.tid)!;
-    const res = await post(cur, peerPath.commit(r.tid), { stopped: cur.stopped ?? { jobs: [], copies: [] }, interrupted: cur.interrupted ?? [], wrapped: cur.wrapped ?? [] });
+    // Decided: an unreachable destination is asked again at the next contact, never a failure here.
+    const res = await post(cur, peerPath.commit(r.tid), { stopped: cur.stopped ?? { jobs: [], copies: [] }, interrupted: cur.interrupted ?? [], wrapped: cur.wrapped ?? [] }).catch(() => null);
+    if (!res) return "wait";
     if (!res.ok) return res.status >= 500 ? "wait" : (needsYou(r.tid, String(res.body.error ?? `${r.peerLabel} answered ${res.status}`)), "stop");
     return "again";
   }

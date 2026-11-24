@@ -372,7 +372,12 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     const done = (readTransport(tid)?.ext ?? {}) as { kept?: KeptFile[]; privateFiles?: string[]; sourceValues?: string[]; targets?: Record<string, string> };
     const keptNotes = (done.kept ?? []).map((k) => ` ${k.tree}/${k.path} was already here and differs, so it was kept; the one from ${r.peerLabel} is ${k.tree}/${k.beside}.`).join("");
     const note = `${r.mode === "move" ? "Moved" : "Copied"} from ${r.peerLabel}.${stopped.length ? ` Stopped there: ${stopped.join(", ")}.` : ""}${renamedNotes}${keptNotes}`;
-    await need().openWithNote(file, note);
+    // Once only: a run that died after writing it (before "opened") finds it there.
+    // Looked for only past where the conversation ended before this transport's first try (an earlier Move's note may read the same).
+    const text = await readFile(file, "utf8").catch(() => "");
+    const from = ((readTransport(tid)?.ext ?? {}) as { noteFrom?: number }).noteFrom ?? (updateTransport(tid, { ext: { noteFrom: Buffer.byteLength(text) } }), Buffer.byteLength(text));
+    const said = Buffer.from(text).subarray(from).toString("utf8").split("\n").some((l) => l.includes('"sova-transport-arrival"') && l.includes(JSON.stringify(note).slice(1, -1)));
+    if (!said) await need().openWithNote(file, note);
     await knob(tid, "opened");
     // Its size once the note is in: any later growth is a turn here, and Move Back is gone (§app.transport/moved-row).
     stepDone(tid, "opened", { state: "done", ext: { openedPrint: await fingerprint(readTransport(tid)!) } });

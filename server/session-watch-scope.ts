@@ -48,5 +48,6 @@ export function isWatchLimit(err: unknown): boolean {
 
 export function watchLimitLine(err: unknown, folders: number): string {
   const what = err instanceof Error ? err.message : String(err);
-  return `Session list: the system's file-watch limit is reached (${what}); ${folders} folders aren't watched, so their changes reach the list at the next full build.`;
+  const n = folders === 1 ? "1 folder isn't" : `${folders} folders aren't`;
+  return `Session list: the system's file-watch limit is reached (${what}); ${n} watched, so their changes reach the list at the next full build.`;
 }

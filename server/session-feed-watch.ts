@@ -53,7 +53,13 @@ export interface FeedWatchOptions {
    * running is watched at once. pi's sessions folder, `roots` and the live folder stay watched.
    * `hot()` null (nothing listed yet): every folder is watched, as without a scope.
    */
-  scope?: { hot: () => ReadonlySet<string> | null; active?: () => ReadonlySet<string>; folders?: () => readonly string[] };
+  scope?: {
+    hot: () => ReadonlySet<string> | null;
+    active?: () => ReadonlySet<string>;
+    folders?: () => readonly string[];
+    /** An active folder `folders()` didn't list that is still a session folder (a home just made). */
+    accepts?: (dir: string) => boolean;
+  };
   /** Where the out-of-watches line goes, and the watch itself (tests). */
   log?: (line: string) => void;
   watch?: typeof watch;
@@ -100,9 +106,38 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
   /** Each sync after the first that adds a watch: files written before it existed went unseen. */
   let synced = false;
 
-  /** This sync's watches the system refused for its file-watch limit: logged once per sync. */
+  /** This sync's watches the system refused for its file-watch limit (and any lost to it since the
+      last sync): logged once per sync. */
   let limitErr: unknown = null;
   let limited = 0;
+  /** When each folder was last dropped for being out of scope: re-watched, only what was written
+      since needs reading. One not watched since the start: what was written since then (the tracker's
+      first build read everything before). A watch lost to an error means a full read, since events
+      may have been lost before it. */
+  const startedAt = Date.now();
+  const dropped = new Map<string, number>();
+  /** Notes the folder's session files written since `since`, so the tracker reads
+      only those, never every folder. Unreadable: the next listing reads everything. */
+  const noteFolder = (dir: string, since: number): void => {
+    if (!files) return;
+    let names: string[];
+    try {
+      names = readdirSync(dir).filter((n) => n.endsWith(".jsonl"));
+    } catch {
+      files(null);
+      return;
+    }
+    for (const n of names) {
+      const p = join(dir, n);
+      try {
+        // A file removed while unwatched is the stat sweep's: it finds it gone within a minute.
+        if (statSync(p).mtimeMs < since - 2_000) continue;
+      } catch {
+        continue;
+      }
+      files(p);
+    }
+  };
   const add = (dir: string, on: (name: string | Buffer | null) => void): void => {
     if (watchers.has(dir)) return;
     if (limitErr !== null) {
@@ -115,14 +150,21 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
         if (!stopped) on(name);
       });
       w.on("error", (err) => {
-        if (isWatchLimit(err)) (opts.log ?? console.warn)(watchLimitLine(err, 1));
+        // Told with the next sync's one line, never a line per watcher.
+        if (isWatchLimit(err)) lostToLimit = { err, n: lostToLimit.n + 1 };
         w.close();
         if (watchers.get(dir) === w) watchers.delete(dir);
+        dropped.delete(dir);
         // Events may have been lost before the error: the next listing reads everything.
         if (!stopped) files?.(null);
       });
       watchers.set(dir, w);
-      if (synced && dir !== liveDir) files?.(null);
+      if (synced && dir !== liveDir) {
+        // A folder back in scope, or new: only its own files are read, never a full build.
+        if (scope) noteFolder(dir, dropped.get(dir) ?? startedAt);
+        else files?.(null);
+      }
+      dropped.delete(dir);
     } catch (err) {
       if (isWatchLimit(err)) {
         limitErr = err;
@@ -131,6 +173,7 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
       // missing or unwatchable: the next re-sync tries again
     }
   };
+  let lostToLimit: { err: unknown; n: number } = { err: null, n: 0 };
 
   let lastLive: string | null = null;
   let liveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -173,42 +216,61 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
   };
   const sync = (): void => {
     if (stopped) return;
-    limitErr = null;
-    limited = 0;
-    const want = new Set<string>([sessionsDir]);
+    limitErr = lostToLimit.n > 0 ? lostToLimit.err : null;
+    limited = lostToLimit.n;
+    lostToLimit = { err: null, n: 0 };
     const now = Date.now();
     let hot: ReadonlySet<string> | null = null;
+    let active: ReadonlySet<string> = new Set();
     try {
       hot = scope ? scope.hot() : null;
+      active = scope?.active?.() ?? active;
     } catch {
       hot = null; // can't say: watch every folder, as before
     }
+    // The folders that may hold a chat: pi's per-folder ones, the homes', and an open or running chat's
+    // home that `folders()` hasn't listed yet (`accepts`).
+    const candidates = new Set<string>();
     try {
       for (const d of readdirSync(sessionsDir, { withFileTypes: true })) {
         const p = join(sessionsDir, d.name);
-        if (d.isDirectory() && p !== liveDir && (!hot || scoped(p, hot, now))) want.add(p);
+        if (d.isDirectory() && p !== liveDir) candidates.add(p);
       }
     } catch {
       // no sessions folder yet
     }
     if (scope?.folders) {
       try {
-        for (const p of scope.folders()) if (!hot || scoped(p, hot, now)) want.add(p);
+        for (const p of scope.folders()) candidates.add(p);
       } catch {
         // the homes can't be listed now: the next re-sync tries again
       }
     }
-    for (const r of roots()) want.add(r);
+    for (const d of active) if (!candidates.has(d) && scope?.accepts?.(d) && exists(d)) candidates.add(d);
+    // Order matters only at the system's watch limit: the live folder, pi's sessions folder and the
+    // organizations' first, then the open and running chats', then the recent ones, then the rest.
+    const want = new Set<string>([liveDir, sessionsDir, ...roots()]);
+    if (!hot) for (const p of candidates) want.add(p);
+    else {
+      for (const p of candidates) if (active.has(p)) want.add(p);
+      for (const p of candidates) if (hot.has(p)) want.add(p);
+      for (const p of candidates) if (!want.has(p) && scoped(p, hot, now)) want.add(p);
+    }
     for (const [dir, w] of watchers) {
-      if (dir === liveDir || want.has(dir)) continue;
+      if (want.has(dir)) continue;
       w.close();
       watchers.delete(dir);
       // A folder gone (or moved away) may take its files with no event for each. One merely out of
       // scope keeps its files: the tracker's stat sweep and full build read them as before.
       if (!scope || !exists(dir)) files?.(null);
+      else dropped.set(dir, now);
     }
     for (const dir of want) {
-      if (dir === sessionsDir) {
+      if (dir === liveDir)
+        add(dir, (name) => {
+          if (name === null || (String(name).endsWith(".json") && !String(name).startsWith("."))) liveSoon();
+        });
+      else if (dir === sessionsDir) {
         add(dir, (name) => {
           // A new cwd folder needs its own watch; a top-level file is a session.
           if (name === null || !String(name).endsWith(".jsonl")) syncSoon();
@@ -224,9 +286,6 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
           changed();
         });
     }
-    add(liveDir, (name) => {
-      if (name === null || (String(name).endsWith(".json") && !String(name).startsWith("."))) liveSoon();
-    });
     if (limitErr !== null) (opts.log ?? console.warn)(watchLimitLine(limitErr, limited));
     synced = true;
   };

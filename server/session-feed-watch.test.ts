@@ -140,38 +140,50 @@ describe("watchFeedInputs", () => {
 });
 
 describe("watchFeedInputs with a scope (§app.session-list/live-watch-scope)", () => {
-  test("a cold folder is left unwatched; a hot one, one changed lately and one opened are watched", async () => {
+  test("a cold folder is left unwatched; a hot one, and one opened, are watched, and re-watching reads only that folder's new files", async () => {
     const f = fixture();
     const cold = join(f.sessionsDir, "--cold--");
     const hot = join(f.sessionsDir, "--hot--");
     const home = join(f.sessionsDir, "..", "homes", "h1", "sessions");
+    const fresh = join(f.sessionsDir, "..", "homes", "h2", "sessions");
     for (const d of [cold, hot, home]) mkdirSync(d, { recursive: true });
+    writeFileSync(join(home, "old.jsonl"), "{}\n");
     const old = new Date(Date.now() - 30 * 86_400_000);
+    utimesSync(join(home, "old.jsonl"), old, old);
     for (const d of [cold, hot, home, join(f.sessionsDir, "--w--")]) utimesSync(d, old, old);
     const active = new Set<string>();
-    const heard: string[] = [];
+    const heard: (string | null)[] = [];
     const stop = watchFeedInputs(() => {}, {
       sessionsDir: f.sessionsDir,
       liveDir: f.liveDir,
       roots: () => [],
       liveSignature: () => "same",
       liveCheckMs: 50,
-      files: (p) => p && heard.push(p),
-      scope: { hot: () => new Set([hot, ...active]), active: () => active, folders: () => [home] },
+      files: (p) => heard.push(p),
+      scope: { hot: () => new Set([hot, ...active]), active: () => active, folders: () => [home], accepts: (d) => d === fresh },
     });
+    const named = (end: string) => heard.some((p) => p?.endsWith(end));
     try {
       writeFileSync(join(cold, "a.jsonl"), "{}\n");
       writeFileSync(join(hot, "b.jsonl"), "{}\n");
-      assert.ok(await until(() => heard.some((p) => p.endsWith("b.jsonl"))), "a hot folder is watched");
+      assert.ok(await until(() => named("b.jsonl")), "a hot folder is watched");
       await sleep(200);
-      assert.equal(heard.some((p) => p.endsWith("a.jsonl")), false, "a cold folder is not");
+      assert.equal(named("a.jsonl"), false, "a cold folder is not");
       writeFileSync(join(home, "c.jsonl"), "{}\n");
+      utimesSync(home, old, old);
       await sleep(200);
-      assert.equal(heard.some((p) => p.endsWith("c.jsonl")), false, "a cold home is not");
+      assert.equal(named("c.jsonl"), false, "a cold home is not");
       active.add(home); // opened: watched at once, not at the next re-sync
-      await sleep(600);
+      assert.ok(await until(() => named("c.jsonl")), "the file written while unwatched is noted when it is watched again");
+      assert.equal(named("old.jsonl"), false, "a file older than the watch's start is not");
+      assert.equal(heard.includes(null), false, "no full read for a folder back in scope");
       writeFileSync(join(home, "d.jsonl"), "{}\n");
-      assert.ok(await until(() => heard.some((p) => p.endsWith("d.jsonl"))), "an opened home is watched");
+      assert.ok(await until(() => named("d.jsonl")), "an opened home is watched");
+      mkdirSync(fresh, { recursive: true });
+      active.add(fresh); // a home just made, not listed by folders() yet
+      await sleep(400);
+      writeFileSync(join(fresh, "e.jsonl"), "{}\n");
+      assert.ok(await until(() => named("e.jsonl")), "an active home folders() hasn't listed is watched");
     } finally {
       stop();
     }
@@ -189,12 +201,13 @@ describe("watchFeedInputs with a scope (§app.session-list/live-watch-scope)", (
       liveSignature: () => "same",
       log: (l) => lines.push(l),
       watch: ((dir: string, ...rest: unknown[]) => {
-        if (dir !== f.sessionsDir) throw limit;
-        return (watch as (...a: unknown[]) => FSWatcher)(dir, ...rest);
+        if (dir === f.sessionsDir || dir === f.liveDir) return (watch as (...a: unknown[]) => FSWatcher)(dir, ...rest);
+        throw limit;
       }) as typeof watch,
     });
     stop();
-    assert.equal(lines.length, 1);
-    assert.match(lines[0]!, /^Session list: the system's file-watch limit is reached \(ENOSPC: System limit for number of file watchers reached\); 3 folders aren't watched, so their changes reach the list at the next full build\.$/);
+    assert.deepEqual(lines, [
+      "Session list: the system's file-watch limit is reached (ENOSPC: System limit for number of file watchers reached); 2 folders aren't watched, so their changes reach the list at the next full build.",
+    ]);
   });
 });

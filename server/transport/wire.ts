@@ -28,6 +28,8 @@ export interface OfferTree {
   main: boolean;
   /** Where it goes there, relative to the folder's parent ("" for the chat's own tree: the folder). */
   rel: string;
+  /** Its HEAD commit when offered (it may move on before the switch). */
+  head?: string;
 }
 
 export interface OfferBody {

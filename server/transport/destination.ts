@@ -137,6 +137,8 @@ interface OfferExt {
   model?: string;
   chatModel?: string;
 }
+/** The chat's own tree (the folder) first, as the Transport agent reads the list. */
+const ownFirst = <T extends { rel: string }>(trees: readonly T[]): T[] => [...trees].sort((a, b) => (a.rel === "" ? 0 : 1) - (b.rel === "" ? 0 : 1));
 const offerOf = (r: TransportRecord): OfferExt => (r.ext?.offer ?? { trees: [], repoRel: null, project: { remotes: [], roots: [] } }) as OfferExt;
 
 /** Where the repository is here for a chat whose tree is a linked worktree; null when the package builds it whole. */
@@ -164,7 +166,7 @@ async function prepare(tid: string): Promise<void> {
       sourceChatId: r.sourceChatId,
       title: r.title,
       project: { remotes: o.project.remotes, ...(o.project.roots[0] ? { firstCommit: o.project.roots[0] } : {}), path: repo ?? r.folder },
-      worktrees: o.trees.map((t) => ({ name: t.name, branch: t.branch })),
+      worktrees: ownFirst(o.trees).map((t) => ({ name: t.name, branch: t.branch, ...(typeof t.head === "string" && /^[0-9a-f]{40,64}$/.test(t.head) ? { head: t.head } : {}) })),
       ...(o.model ? { model: o.model } : {}),
       ...(o.chatModel ? { chatModel: o.chatModel } : {}),
     };
@@ -396,7 +398,7 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
       sourceChatId: r.sourceChatId,
       title: r.title,
       project: { remotes: o.project.remotes, path: repoPathOf(r) ?? r.folder },
-      worktrees: o.trees.map((t) => ({ name: t.name, branch: t.branch })),
+      worktrees: ownFirst(o.trees).map((t) => ({ name: t.name, branch: t.branch, ...(typeof t.head === "string" && /^[0-9a-f]{40,64}$/.test(t.head) ? { head: t.head } : {}) })),
       ...(o.model ? { model: o.model } : {}),
       ...(o.chatModel ? { chatModel: o.chatModel } : {}),
       privateFiles: done.privateFiles ?? [],

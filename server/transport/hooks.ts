@@ -22,7 +22,8 @@ export interface PrepareRequest {
   sourceChatId: string;
   title: string;
   project: ProjectRef;
-  worktrees: { name: string; branch: string | null }[];
+  /** The chat's own tree first. `head`: its commit when offered. */
+  worktrees: { name: string; branch: string | null; head?: string }[];
   model?: string;
   /** The source chat's own model ("provider/model"): the agent's last fallback for its default. */
   chatModel?: string;

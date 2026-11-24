@@ -291,7 +291,7 @@ export async function startTransport(b: StartBody): Promise<{ ok: true; tid: str
   const base = own ? dirname(own.path) : dirname(c.cwd);
   const trees: OfferTree[] = t.trees.map((x) => {
     const rel = x === own ? "" : relative(base, x.path);
-    return { name: x.name, branch: x.branch, main: x.main, rel: rel.startsWith("..") ? basename(x.path) : rel };
+    return { name: x.name, branch: x.branch, main: x.main, rel: rel.startsWith("..") ? basename(x.path) : rel, ...(x.head ? { head: x.head } : {}) };
   });
   let repoRel: string | null = null;
   if (own && !own.main) {

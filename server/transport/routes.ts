@@ -364,7 +364,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     .then((m) => {
       const h = m.transportHelpers(app, (tid, a) => void updateTransport(tid, { ext: { agent: a } }));
       // Their worktree branch is a name; a detached HEAD's is "".
-      const named = <T extends { worktrees: { name: string; branch: string | null }[] }>(req: T) => ({ ...req, worktrees: req.worktrees.map((w) => ({ name: w.name, branch: w.branch ?? "" })) });
+      const named = <T extends { worktrees: { name: string; branch: string | null }[] }>(req: T) => ({ ...req, worktrees: req.worktrees.map((w) => ({ ...w, branch: w.branch ?? "" })) });
       setPrepareDestination((req, o) => h.prepareDestination(named(req), o));
       setAfterArrival((req) => void h.afterArrival(named(req)));
       setNeedsAnswer((p, opts) => h.needsAnswer(p, opts));

@@ -235,7 +235,7 @@ test("G4: a pristine session's loadout, profile, subagent pick and mode pin (eac
   chat.writeProfile({ v: 1, profile } as never);
   await disposeHeldChat(path, "golden");
   chat = await open(path, model);
-  await chat.switchSubagentProfile("off");
+  await chat.switchSubagentProfile("claude");
   // The pin first (the branch has no mode entry, so the chat's default is written as its own), then a
   // switch through the extension's /mode, then a pin that matches it and writes nothing.
   assert.equal(chat.pinMode(), true);
@@ -387,7 +387,7 @@ test("G7: the Overseer: a rule adopted by a click, carried by /clear, used by a 
 test("G8: a project overseer's file, and a web session made with a subagent profile (open + append on a header-only file)", async () => {
   const po = await projectOverseer.ensureProjectOverseer(project.id);
   golden("G8-project-overseer", po.path, canon({ [project.id]: "<PROJECT>" }));
-  const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd, subagent_profile: "off" }) });
+  const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd, subagent_profile: "claude" }) });
   assert.equal(res.status, 201, await res.clone().text());
   const { path } = (await res.json()) as { path: string };
   golden("G8-web-session-profile", path);

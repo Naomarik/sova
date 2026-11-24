@@ -89,7 +89,7 @@ test("a sandbox switch opens it and switches it", async () => {
 
 test("a subagent profile pick opens it and picks", async () => {
   const path = closedChat();
-  const r = await opensFor(path, await post(`/api/subagents?path=${q(path)}`, { profile: "off" }));
+  const r = await opensFor(path, await post(`/api/subagents?path=${q(path)}`, { profile: "claude" }));
   assert.equal(r.status, 200, JSON.stringify(r.body));
 });
 
@@ -119,7 +119,7 @@ test("reads never open it: its subagent profile and its memory outline come from
 test("a session file that isn't there is still a 404, and nothing opens", async () => {
   const path = join(dir, "sessions", "--quiet-actions--", "2026-10-12T00-00-00-000Z_01a0c1a5-0000-7000-8000-00000000dead.jsonl");
   for (const url of [`/api/mode?path=${q(path)}`, `/api/sandbox?path=${q(path)}`, `/api/subagents?path=${q(path)}`, `/api/workers/resume?path=${q(path)}&id=ag_01`]) {
-    const res = await post(url, url.includes("mode") ? { minorModes: [] } : url.includes("sandbox") ? { state: "on" } : { profile: "off" });
+    const res = await post(url, url.includes("mode") ? { minorModes: [] } : url.includes("sandbox") ? { state: "on" } : { profile: "claude" });
     assert.equal(res.status, 404, url);
   }
   assert.equal((await app.request(`/api/settings/subagents?path=${q(path)}`)).status, 404);

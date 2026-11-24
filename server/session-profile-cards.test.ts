@@ -4,7 +4,9 @@
 // Profile cards in real runtimes: a pick sets the effort and the subagent pick with the entry, is
 // checked before anything is written, pins the device default when switching back from a card that
 // set subagents, never writes defaults.json; its mode and minor modes are pinned together, and go
-// back to mode.json's default when switching back; Save Current As Profile writes yours only.
+// back to mode.json's default when switching back; a pick of no profile (an older page's Off) is the
+// default; a helpers-only pick on a chat with no profile moves only the helpers, with no reopen; a
+// pick that changes nothing does nothing; Save Current As Profile writes yours only.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,8 +23,10 @@ writeFileSync(
 );
 // The policy turns zai off, so a card on a zai model can't be picked.
 writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ version: 1, disabledProviders: ["zai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));
-// Two providers with keys, so a card can name a model other than the one a fresh session opens on.
-writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test" }, openai: { type: "api_key", key: "test" } }));
+// Two providers with keys, so a card can name a model other than the one a fresh session opens on; and an
+// Ollama Cloud key with this tree's models.json, so the built-in DeepSeek profile's model is one here.
+writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ anthropic: { type: "api_key", key: "test" }, openai: { type: "api_key", key: "test" }, "ollama-cloud": { type: "api_key", key: "test" } }));
+writeFileSync(join(agentDir, "models.json"), readFileSync(join(import.meta.dirname, "..", "pi-config", "models.json"), "utf8"));
 const sessionsDir = join(agentDir, "sessions", "--tmp-cards--");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
@@ -64,6 +68,7 @@ const { applyProfile, profilesListing } = await import("./session-profile-routes
 const { saveCurrentFor } = await import("./profile-editor-routes");
 const { startOnDefault } = await import("./default-start");
 const { PROFILE_ENTRY } = await import("../shared/profiles");
+const { CHAT_PROFILE_ENTRY } = await import("../shared/profile-switch");
 const { addWebSession } = await import("./web-sessions");
 const { markOwned } = await import("./write-guard");
 
@@ -91,7 +96,7 @@ const defaultsFile = join(stateDir, "defaults.json");
 const yours = { source: "user" as const };
 
 describe("a card's effort and subagents", () => {
-  test("a pick sets the effort and the subagent pick with the entry; Off afterwards pins the helpers to off", async () => {
+  test("a pick sets the effort and the subagent pick with the entry; no profile afterwards is the default, and again changes nothing", async () => {
     const path = makeSession();
     await acquireChat(path, true);
     assert.deepEqual(await applyProfile(path, { ...yours, id: "subs" }), { ok: true });
@@ -99,33 +104,35 @@ describe("a card's effort and subagents", () => {
     assert.equal(after.filter((e) => e.customType === PROFILE_ENTRY).length, 1);
     assert.ok(after.some((e) => e.type === "thinking_level_change"), "the card's effort is set");
     assert.equal(pickOf(path), "claude-subs");
-    // Back to Off: the agent picks every worker, so the helpers are pinned to off (§chat.subagent-profiles/off).
+    // An older page's Off card (no profile): this computer's default, House, whose helpers it pins.
     assert.deepEqual(await applyProfile(path, null), { ok: true });
-    assert.equal(pickOf(path), "off");
+    assert.equal(pickOf(path), "house");
     assert.equal(picks(path).length, 2);
-    // Off again: nothing more to pin.
+    // Again: it is on the default already, so nothing is written.
+    const before = readFileSync(path, "utf8");
     assert.deepEqual(await applyProfile(path, null), { ok: true });
-    assert.equal(picks(path).length, 2);
+    assert.equal(readFileSync(path, "utf8"), before);
+    assert.equal(entries(path).some((e) => e.customType === sp.PICK_ENTRY_TYPE && (e.data as { profile: string }).profile === "off"), false, "\"off\" is never written");
   });
 
-  test("a card without subagents after one that set them pins Off when the device default is Off", async () => {
+  test("a card without subagents after one that set them pins the built-in profile's helpers when the device default is an older Off", async () => {
     sp.writeProfilesDefault(agentDir, { version: 1, default: "off" });
     try {
       const path = makeSession();
       assert.deepEqual(await applyProfile(path, { ...yours, id: "subs" }), { ok: true });
       assert.deepEqual(await applyProfile(path, { ...yours, id: "plain" }), { ok: true });
-      assert.equal(pickOf(path), "off");
+      assert.equal(pickOf(path), "deepseek", "only an Ollama Cloud key here: the built-in DeepSeek profile");
     } finally {
       sp.writeProfilesDefault(agentDir, { version: 1, default: "house" });
     }
   });
 
-  test("a session that never had a pick gets none from a pick without subagents; Off pins off", async () => {
+  test("a session that never had a pick gets none from a pick without subagents; no profile afterwards is the default's helpers", async () => {
     const path = makeSession();
     assert.deepEqual(await applyProfile(path, { ...yours, id: "plain" }), { ok: true });
     assert.equal(picks(path).length, 0);
     assert.deepEqual(await applyProfile(path, null), { ok: true });
-    assert.equal(pickOf(path), "off");
+    assert.equal(pickOf(path), "house");
   });
 
   test("switching back to a profile without subagents pins this computer's default profile's helpers", async () => {
@@ -135,16 +142,28 @@ describe("a card's effort and subagents", () => {
     assert.equal(pickOf(path), "house", "the saved default helpers, no default chosen yet");
   });
 
-  test("a library profile no session profile links is picked as Off with its helpers", async () => {
+  test("a library profile no session profile links is picked by its helpers alone: no reopen, no profile entry, the chat named by it; again changes nothing", async () => {
     const libFile = join(agentDir, "subagent-profiles.json");
     const before = readFileSync(libFile, "utf8");
-    sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [...(JSON.parse(before) as { profiles: unknown[] }).profiles, sp.legacyProfile(agentDir, "solo", "Solo")] });
+    // An older build's starter, as on a computer set up before built-in profiles: shown as Claude.
+    sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [...(JSON.parse(before) as { profiles: unknown[] }).profiles, sp.legacyProfile(agentDir, "my-setup", "My setup")] });
     try {
-      for (const pick of ["library:solo", "solo"]) {
+      for (const pick of ["library:my-setup", "my-setup"]) {
         const path = makeSession();
+        const chat = await acquireChat(path, true);
         assert.deepEqual(await applyProfile(path, pick), { ok: true }, pick);
-        assert.deepEqual(entries(path).filter((e) => e.customType === PROFILE_ENTRY).map((e) => (e.data as { profile: unknown }).profile), [null]);
-        assert.equal(pickOf(path), "solo");
+        assert.equal(entries(path).filter((e) => e.customType === PROFILE_ENTRY).length, 0, `${pick}: no profile entry, so no Off`);
+        assert.equal(pickOf(path), "my-setup");
+        assert.equal(chat.disposed, false, `${pick}: the chat was not closed`);
+        const state = await chat.chatProfileState();
+        assert.deepEqual([state.current.id, state.current.name, state.current.key, state.current.libraryId], ["my-setup", "Claude", "library:my-setup", "my-setup"]);
+        assert.deepEqual(entries(path).filter((e) => e.customType === CHAT_PROFILE_ENTRY).map((e) => (e.data as { id: string }).id), ["my-setup"], "the history names it");
+        // The second pick: nothing written, the chat not closed (review b1 of al_1).
+        const text = readFileSync(path, "utf8");
+        assert.deepEqual(await applyProfile(path, pick), { ok: true });
+        assert.equal(readFileSync(path, "utf8"), text);
+        assert.equal(chat.disposed, false);
+        assert.equal((await chat.chatProfileState()).current.id, "my-setup");
       }
       const bad = await applyProfile(makeSession(), "library:nope");
       assert.equal(bad.ok, false);
@@ -189,12 +208,13 @@ describe("a card's effort and subagents", () => {
 
   test("the listing says which cards can't be used here, and why", async () => {
     const l = await profilesListing(cwd);
-    assert.deepEqual(Object.keys(l.unusable ?? {}).sort(), ["user:dangling", "user:denied"]);
+    // (The built-in profiles' models have no credentials in this test's runtime: those say so too.)
+    assert.deepEqual(Object.keys(l.unusable ?? {}).filter((k) => !k.startsWith("sova:")).sort(), ["user:dangling", "user:denied"]);
     assert.match(l.unusable!["user:denied"]!, /^Provider zai is turned off in Settings → Models/);
-    assert.deepEqual(l.subagents?.map((s) => s.id), ["off", "house", "claude-subs"]);
+    assert.deepEqual(l.subagents?.map((s) => s.id), ["house", "claude-subs", "deepseek"], "the library's, then the built-in one listed here (an Ollama Cloud key); no Off");
+    assert.equal(l.joined?.some((r) => r.kind === "off"), false);
     // The cards' subagents count: the footprint's distinct primary models, counted, never parsed by the client.
-    assert.equal(l.subagents?.[0]?.models, 0, "off names no models");
-    for (const s of l.subagents!.slice(1)) {
+    for (const s of l.subagents!) {
       assert.ok(s.models! > 0, `${s.id} names a model`);
       if (!s.footprint.includes("+")) assert.equal(s.models, s.footprint.split(" · ").length, `${s.id}: ${s.footprint}`);
     }
@@ -266,74 +286,27 @@ describe("a card's mode and minor modes", () => {
 /** The `mine` of each profile entry on the file, in order (null for an entry without one). */
 const mines = (path: string) => entries(path).filter((e) => e.customType === PROFILE_ENTRY).map((e) => (e.data as { mine?: unknown }).mine ?? null);
 
-describe("My settings comes back as you left it (§chat.profiles/applying)", () => {
-  test("what was set by hand before the first pick is remembered, carried across picks, and put back by My settings", async () => {
+describe("no profile is the default; nothing is remembered or put back (§chat.profiles/applying)", () => {
+  test("a pick remembers nothing of what was set by hand; the default afterwards is its own profile, never the hand-set state", async () => {
     const path = makeSession();
     const chat = await acquireChat(path, true);
-    const model = chat.harness.model()?.ref;
-    assert.ok(model && model !== "openai/gpt-5.5");
-    // By hand, before any profile: delegate with spec, low effort, subagents off (the device default is house).
     await chat.switchMode({ mode: "delegate", minorModes: ["spec"] });
-    chat.setThinking("low");
-    await chat.switchSubagentProfile("off");
-    const byHand = { mode: "delegate", minorModes: ["spec"], model, thinking: chat.harness.thinking(), subagents: "off" };
-    // Three profiles, each moving something: the model and effort, the mode, the effort and subagents.
     for (const id of ["gpt", "aligned", "subs"]) assert.deepEqual(await applyProfile(path, { ...yours, id }), { ok: true }, id);
-    const held = await acquireChat(path, true);
-    assert.equal(held.profileMessage().mine?.mode, "delegate", "the picker hears what My settings puts back");
+    assert.deepEqual(mines(path), [null, null, null], "no `mine` is written");
     assert.deepEqual(await applyProfile(path, null), { ok: true });
-    const back = await acquireChat(path, true);
-    assert.deepEqual(
-      { mode: back.modeState.mode, minorModes: [...back.modeState.minorModes], model: back.harness.model()?.ref, thinking: back.harness.thinking(), subagents: pickOf(path) },
-      byHand,
-    );
-    assert.deepEqual(pinned(path), { mode: "delegate", minorModes: ["spec"] }, "the mode is pinned with its minor modes");
-    // Remembered at the first pick, the same on every later one, and gone once back on My settings.
-    const m = mines(path);
-    assert.deepEqual(m.slice(0, 3), [byHand, byHand, byHand]);
-    assert.equal(m[3], null);
-    assert.equal(back.profileMessage().mine, undefined);
+    assert.deepEqual(pinned(path), { mode: "normal", minorModes: [] }, "mode.json's, as any card without modes after one with them");
+    assert.equal(pickOf(path), "house");
     assert.equal(readFileSync(modeFile, "utf8"), MODE_DEFAULT, "mode.json is never written");
     assert.equal(existsSync(defaultsFile), false, "defaults.json is never written");
   });
 
-  test("the next first pick remembers afresh", async () => {
-    const path = makeSession();
-    assert.deepEqual(await applyProfile(path, { ...yours, id: "aligned" }), { ok: true });
-    assert.deepEqual(await applyProfile(path, null), { ok: true });
-    const chat = await acquireChat(path, true);
-    await chat.switchMode({ mode: "normal", minorModes: ["vis"] });
-    assert.deepEqual(await applyProfile(path, { ...yours, id: "aligned" }), { ok: true });
-    assert.deepEqual(await applyProfile(path, null), { ok: true });
-    assert.deepEqual(await reopened(path), { mode: "normal", minorModes: ["vis"] });
-  });
-
-  test("a remembered model that can't be used now falls to the one a new session opens on", async () => {
-    const fresh = (await acquireChat(makeSession(), true)).harness.model()?.ref;
-    const path = makeSession();
-    const chat = await acquireChat(path, true);
-    await chat.setModelRef("openai/gpt-5.5");
-    writeFileSync(yoursFile, JSON.stringify({ ...YOURS, profiles: [...YOURS.profiles, { id: "fresh-model", label: "Fresh model", model: fresh }] }));
-    const policy = readFileSync(join(agentDir, "model-policy.json"), "utf8");
-    try {
-      assert.deepEqual(await applyProfile(path, { ...yours, id: "fresh-model" }), { ok: true });
-      writeFileSync(join(agentDir, "model-policy.json"), JSON.stringify({ ...JSON.parse(policy), disabledProviders: ["zai", "openai"] }));
-      assert.deepEqual(await applyProfile(path, null), { ok: true });
-      assert.equal((await acquireChat(path, true)).harness.model()?.ref, fresh);
-    } finally {
-      writeFileSync(join(agentDir, "model-policy.json"), policy);
-      writeFileSync(yoursFile, JSON.stringify(YOURS, null, 2));
-    }
-  });
-
-  test("an entry an older build wrote, with no `mine`: My settings puts mode.json's mode back, as before", async () => {
+  test("an entry an older build wrote with a `mine`: read, never put back", async () => {
     const path = makeSession();
     assert.deepEqual(await applyProfile(path, { ...yours, id: "aligned" }), { ok: true });
     await disposeHeldChat(path, "test");
-    const lines = entries(path).map((e) => (e.customType === PROFILE_ENTRY ? { ...e, data: { ...(e.data as object), mine: undefined } } : e));
+    const lines = entries(path).map((e) => (e.customType === PROFILE_ENTRY ? { ...e, data: { ...(e.data as object), mine: { mode: "delegate", minorModes: ["vis"] } } } : e));
     writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
     markOwned(path);
-    assert.deepEqual(mines(path), [null]);
     assert.deepEqual(await applyProfile(path, null), { ok: true });
     assert.deepEqual(pinned(path), { mode: "normal", minorModes: [] });
   });
@@ -393,6 +366,57 @@ describe("Save Current As Profile", () => {
   });
 });
 
+describe("every kind of profile Sova makes picks, shows as picked, and picking it again changes nothing (§chat.profiles/applying)", () => {
+  const sources = { piModels: async () => { throw new Error("offline"); }, policy: () => ({ version: 1 as const, disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }) };
+  const deps = { sources, cwd };
+  test("a built-in profile, New Profile, Duplicate, Save Current As Profile and Make It Yours", async () => {
+    const { saveMine, duplicateMine } = await import("./profile-editor");
+    const yoursBefore = readFileSync(yoursFile, "utf8");
+    const libBefore = readFileSync(join(agentDir, "subagent-profiles.json"), "utf8");
+    try {
+      const made: [string, () => Promise<string>][] = [
+        ["built in", async () => "sova:deepseek"],
+        ["New Profile", async () => { const r = await saveMine({ name: "Night", thinking: "low" }, deps); assert.ok(r.ok, !r.ok ? r.error : ""); return r.savedKey!; }],
+        ["Duplicate", async () => { const r = await duplicateMine("user:subs", deps); assert.ok(r.ok, !r.ok ? r.error : ""); return r.savedKey!; }],
+        ["Save Current As Profile", async () => {
+          const from = makeSession();
+          assert.deepEqual(await applyProfile(from, { ...yours, id: "gpt" }), { ok: true });
+          const r = await saveCurrentFor(from, "From a chat", sources, cwd);
+          assert.ok(r.ok, !r.ok ? r.error : "");
+          return r.savedKey!;
+        }],
+        ["Make It Yours", async () => {
+          const r = await saveMine({ name: "DeepSeek", model: "ollama-cloud/deepseek-v4.1-flash", thinking: "high" }, deps);
+          assert.ok(r.ok, !r.ok ? r.error : "");
+          assert.equal(r.savedKey, "user:deepseek", "the copy takes the built-in profile's id");
+          return r.savedKey!;
+        }],
+      ];
+      for (const [kind, make] of made) {
+        const key = await make();
+        const l = await profilesListing(cwd);
+        assert.ok(l.joined?.some((r) => r.key === key), `${kind}: listed`);
+        const path = makeSession();
+        const chat = await acquireChat(path, true);
+        assert.deepEqual(await applyProfile(path, key), { ok: true }, kind);
+        const now = await acquireChat(path, true);
+        assert.equal((await now.chatProfileState()).current.key, key, `${kind}: shows as picked`);
+        const text = readFileSync(path, "utf8");
+        assert.deepEqual(await applyProfile(path, key), { ok: true }, `${kind} again`);
+        assert.equal(readFileSync(path, "utf8"), text, `${kind}: picking it again writes nothing`);
+        assert.equal(now.disposed, false, `${kind}: picking it again restarts nothing`);
+        void chat;
+      }
+      // Make It Yours took the built-in DeepSeek profile's place: listed once, as yours.
+      const l = await profilesListing(cwd);
+      assert.deepEqual(l.joined?.filter((r) => r.name === "DeepSeek").map((r) => [r.key, r.replaces]), [["user:deepseek", "sova:deepseek"]]);
+    } finally {
+      writeFileSync(yoursFile, yoursBefore);
+      writeFileSync(join(agentDir, "subagent-profiles.json"), libBefore);
+    }
+  });
+});
+
 describe("a new chat with no profile named starts on this computer's default", () => {
   // A default that grants a session power and sets minor modes and helpers.
   const reader = { id: "reader", label: "Reader", grant: ["sessions.read"], minorModes: ["spec"], subagents: "claude-subs" };
@@ -440,15 +464,36 @@ describe("a new chat with no profile named starts on this computer's default", (
     });
   });
 
-  test("Off as the default writes nothing to the new chat", async () => {
+  test("an older Off as the default reads as none chosen: the saved default helpers are the new chat's pick, so its card is checked", async () => {
     writeFileSync(join(stateDir, "default-profile.json"), JSON.stringify({ version: 1, profile: "off" }));
     try {
       const path = makeSession();
-      const before = readFileSync(path, "utf8");
-      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "none" });
-      assert.equal(readFileSync(path, "utf8"), before);
+      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "models" });
+      assert.deepEqual(profileEntries(path), [], "no profile entry");
+      assert.equal(pickOf(path), "house");
+      const state = await (await acquireChat(path, true)).chatProfileState();
+      assert.deepEqual([state.current.key, state.current.name], ["library:house", "House"]);
     } finally {
       rmSync(join(stateDir, "default-profile.json"), { force: true });
+    }
+  });
+
+  test("with no default anywhere, the built-in profile the accounts give: its helpers alone, the chat's model untouched, nothing written but the chat's pick", async () => {
+    const defFile = sp.subagentProfileDefaultPath(agentDir);
+    const held = readFileSync(defFile, "utf8");
+    rmSync(defFile);
+    try {
+      const path = makeSession();
+      const chat = await acquireChat(path, true);
+      const model = chat.harness.model()?.ref;
+      assert.deepEqual(await startOnDefault(path, cwd, false), { ok: true, applied: "models" });
+      assert.equal(pickOf(path), "deepseek");
+      assert.equal((await acquireChat(path, true)).harness.model()?.ref, model);
+      assert.equal(existsSync(defFile), false, "no default written");
+      assert.equal(existsSync(join(stateDir, "default-profile.json")), false);
+      assert.deepEqual([(await (await acquireChat(path, true)).chatProfileState()).current.key], ["sova:deepseek"]);
+    } finally {
+      writeFileSync(defFile, held);
     }
   });
 });

@@ -32,6 +32,8 @@ export interface ChatFacts {
   inTerminal: boolean;
   /** Archive compression packed it (§app.session-list/archive-compression). */
   compressed?: boolean;
+  /** Its model, "provider/model", when known. */
+  model?: string | null;
 }
 
 export interface PeerFacts {
@@ -198,7 +200,7 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
     devices.push({ id: p.id, label: p.label, state: d.state });
     if (peerId && d.state === "ready") {
       try {
-        const res = await need().peerFetch(p.id, "/api/peer/transport/needs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(projectRef(c, t, folderFor(c, t))), signal: AbortSignal.timeout(10_000) });
+        const res = await need().peerFetch(p.id, "/api/peer/transport/needs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...projectRef(c, t, folderFor(c, t)), ...(c.model ? { chatModel: c.model } : {}) }), signal: AbortSignal.timeout(10_000) });
         if (res.ok) {
           const a = (await res.json()) as { needs?: string[]; models?: string[]; modelDefault?: string | null };
           needs = a.needs ?? [];
@@ -343,6 +345,7 @@ async function sendOffer(tid: string): Promise<{ ok: true } | { ok: false; error
     trees: ext.offerTrees ?? [],
     sourceLabel: d.selfLabel(),
     ...(r.choices?.agentModel ? { model: r.choices.agentModel } : {}),
+    ...(c?.model ? { chatModel: c.model } : {}),
   };
   const body = JSON.stringify(offer);
   const proof = d.mintProof(r.peer, body);

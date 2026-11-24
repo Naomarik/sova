@@ -45,6 +45,8 @@ export interface OfferBody {
   trees: OfferTree[];
   sourceLabel: string;
   model?: string;
+  /** The source chat's own model. */
+  chatModel?: string;
 }
 
 export interface StatusBody {

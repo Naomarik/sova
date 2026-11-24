@@ -24,6 +24,8 @@ export interface PrepareRequest {
   project: ProjectRef;
   worktrees: { name: string; branch: string | null }[];
   model?: string;
+  /** The source chat's own model ("provider/model"): the agent's last fallback for its default. */
+  chatModel?: string;
 }
 
 export type Prepared = { ready: true } | { needsYou: string };
@@ -49,7 +51,7 @@ export interface PreviewExtras {
 type PrepareFn = (req: PrepareRequest, o: { signal: AbortSignal }) => Promise<Prepared>;
 type RestFn = (chatId: string, mode: "safe" | "interrupt", onProgress: (waiting: number) => void, o: { signal: AbortSignal }) => Promise<RestResult>;
 type AfterFn = (req: PrepareRequest & { privateFiles: string[]; sourceValues: string[] }) => void | Promise<void>;
-type NeedsFn = (project: ProjectRef) => Promise<NeedsAnswer>;
+type NeedsFn = (project: ProjectRef, opts?: { chatModel?: string }) => Promise<NeedsAnswer>;
 type ExtrasFn = (chatId: string) => Promise<PreviewExtras> | PreviewExtras;
 type InterruptFn = (chatId: string) => boolean;
 type IsAgentFn = (sessionId: string) => boolean;
@@ -73,8 +75,8 @@ export const setInterruptWaiting = (fn: InterruptFn | null): void => void (hooks
 export const setIsTransportAgent = (fn: IsAgentFn | null): void => void (hooks.isAgent = fn);
 
 export const prepareDestination = (req: PrepareRequest, o: { signal: AbortSignal }): Promise<Prepared> => (hooks.prepare ? hooks.prepare(req, o) : Promise.resolve({ ready: true }));
-export const needsAnswer = (project: ProjectRef): Promise<NeedsAnswer> =>
-  hooks.needs ? hooks.needs(project) : Promise.resolve({ needs: [], models: [], modelDefault: null, preparedAt: null });
+export const needsAnswer = (project: ProjectRef, opts: { chatModel?: string } = {}): Promise<NeedsAnswer> =>
+  hooks.needs ? hooks.needs(project, opts) : Promise.resolve({ needs: [], models: [], modelDefault: null, preparedAt: null });
 export const previewExtras = async (chatId: string): Promise<PreviewExtras> => (hooks.extras ? hooks.extras(chatId) : { busyHelpers: [] });
 export const interruptWaiting = (chatId: string): boolean => hooks.interrupt?.(chatId) ?? false;
 export const isTransportAgent = (sessionId: string): boolean => hooks.isAgent?.(sessionId) ?? false;

@@ -121,7 +121,7 @@ export async function takeOffer(from: { id: string; label: string }, raw: string
     folder: resolve(b.folder),
     state: "preparing",
     ticket: b.ticket,
-    ext: { offer: { trees: b.trees, repoRel: b.repoRel, project: b.project, ...(b.model ? { model: b.model } : {}) } },
+    ext: { offer: { trees: b.trees, repoRel: b.repoRel, project: b.project, ...(b.model ? { model: b.model } : {}), ...(typeof b.chatModel === "string" && b.chatModel.length < 200 ? { chatModel: b.chatModel } : {}) } },
   });
   stepDone(b.tid, "offered");
   log(`${b.tid}: offered by ${from.label} (${b.mode} of ${b.chat.id})`);
@@ -134,6 +134,7 @@ interface OfferExt {
   repoRel: string | null;
   project: OfferBody["project"];
   model?: string;
+  chatModel?: string;
 }
 const offerOf = (r: TransportRecord): OfferExt => (r.ext?.offer ?? { trees: [], repoRel: null, project: { remotes: [], roots: [] } }) as OfferExt;
 
@@ -164,6 +165,7 @@ async function prepare(tid: string): Promise<void> {
       project: { remotes: o.project.remotes, ...(o.project.roots[0] ? { firstCommit: o.project.roots[0] } : {}), path: repo ?? r.folder },
       worktrees: o.trees.map((t) => ({ name: t.name, branch: t.branch })),
       ...(o.model ? { model: o.model } : {}),
+      ...(o.chatModel ? { chatModel: o.chatModel } : {}),
     };
     const p = await prepareDestination(req, { signal: ctl.signal });
     if ("needsYou" in p) return void needsYou(tid, p.needsYou);
@@ -395,6 +397,7 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
       project: { remotes: o.project.remotes, path: repoPathOf(r) ?? r.folder },
       worktrees: o.trees.map((t) => ({ name: t.name, branch: t.branch })),
       ...(o.model ? { model: o.model } : {}),
+      ...(o.chatModel ? { chatModel: o.chatModel } : {}),
       privateFiles: done.privateFiles ?? [],
       sourceValues: done.sourceValues ?? [],
     });

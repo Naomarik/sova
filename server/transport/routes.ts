@@ -269,7 +269,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     updateNeeded: mesh.updateNeeded,
     chat: async (path) => {
       const s = await getSessionSummary(path);
-      return s ? { id: s.id, path: s.path, title: s.title || s.id, cwd: s.cwd, specialKind: specialKind(s), inTerminal: !!s.live, ...(s.compressed ? { compressed: true } : {}) } : null;
+      return s ? { id: s.id, path: s.path, title: s.title || s.id, cwd: s.cwd, specialKind: specialKind(s), inTerminal: !!s.live, ...(s.compressed ? { compressed: true } : {}), model: s.model } : null;
     },
     trackedTrees: async (path) => {
       const s = await getSessionSummary(path);
@@ -350,7 +350,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       const named = <T extends { worktrees: { name: string; branch: string | null }[] }>(req: T) => ({ ...req, worktrees: req.worktrees.map((w) => ({ name: w.name, branch: w.branch ?? "" })) });
       setPrepareDestination((req, o) => h.prepareDestination(named(req), o));
       setAfterArrival((req) => void h.afterArrival(named(req)));
-      setNeedsAnswer((p) => h.needsAnswer(p));
+      setNeedsAnswer((p, opts) => h.needsAnswer(p, opts));
       setBringHelpersToRest((chatId, mode, onProgress, o) => h.bringHelpersToRest(chatId, mode, onProgress, o));
       setInterruptWaiting((chatId) => h.interruptWaiting(chatId));
       setIsTransportAgent((id) => h.isTransportAgent(id));
@@ -478,7 +478,8 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     const p = (await c.req.json().catch(() => null)) as ProjectRef | null;
     if (!p || typeof p.path !== "string") return c.json({ error: "Bad project" }, 400);
     // Read only: what this device lacks for that project (nothing is made or started here).
-    return c.json(await needsAnswer({ remotes: Array.isArray(p.remotes) ? p.remotes.map(String) : [], ...(typeof p.firstCommit === "string" ? { firstCommit: p.firstCommit } : {}), path: p.path }));
+    const chatModel = (p as { chatModel?: unknown }).chatModel;
+    return c.json(await needsAnswer({ remotes: Array.isArray(p.remotes) ? p.remotes.map(String) : [], ...(typeof p.firstCommit === "string" ? { firstCommit: p.firstCommit } : {}), path: p.path }, typeof chatModel === "string" && chatModel.length < 200 ? { chatModel } : {}));
   });
 
   app.post("/api/peer/transport/offer", small, async (c) => {

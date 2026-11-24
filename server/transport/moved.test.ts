@@ -168,3 +168,56 @@ test("A→B→A by a fresh Move after A's Moved row was deleted: the arrival cle
   assert.equal(startRefusal(file), null, "it runs here again");
   assert.equal(readTransport("tr_rtback1")?.state, "done");
 });
+
+test("coming home where its old copy was compressed: that copy is moved aside, kept, and the arrived chat opens", async () => {
+  resetMovedMemo();
+  const { ensureChatHome, homesRoot } = await import("../chat-homes/root");
+  const { compressedAt, putCompressed } = await import("../archive-compress/store");
+  const dest = await import("./destination");
+  const { cameBack, startRefusal } = await import("./routes");
+  const { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const id = "0199aaaa-0000-7000-8000-00000000000f";
+  const tid = "tr_rtcomp1";
+  // The arriving home, staged (made as a home, then put where the arrival stages it).
+  const made = ensureChatHome(id);
+  const file = join(made, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", id })}\n`);
+  const staged = join(dest.incomingRoot(), tid, "home");
+  mkdirSync(join(dest.incomingRoot(), tid), { recursive: true });
+  renameSync(made, staged);
+  // Here: the Moved mark, and its old home compressed whole after 7 days.
+  markMoved(id, { tid: "tr_rtold02", peer: "b", to: "lab B", at: new Date().toISOString(), arrivedId: id });
+  const archive = join(homesRoot(), `${id}.tar.gz`);
+  writeFileSync(archive, "old home");
+  putCompressed({ id, kind: "home", at: new Date().toISOString(), by: "auto", row: { id, path: file } as never, archive, home: made });
+  assert.ok(compressedAt(file));
+  createTransport({
+    tid, side: "destination", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "b", peerLabel: "lab B", path: "", folder: "/x", state: "switching", arrivedId: id,
+    steps: { offered: "t", prepared: "t", pulled: "t", staged: "t", verified: "t", decided: "t" },
+    ext: { offer: { trees: [], repoRel: null, project: { remotes: [], roots: [] } } },
+  });
+  const opened: string[] = [];
+  dest.setDestinationDeps({
+    peerFetch: async () => new Response("{}"),
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack,
+    openWithNote: async (p) => {
+      const why = startRefusal(p) ?? (compressedAt(p) ? "compressed" : null);
+      if (why) throw new Error(why);
+      opened.push(p);
+    },
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+  });
+  const res = await dest.commit({ id: "b" }, tid, {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(opened, [file]);
+  assert.equal(compressedAt(file), undefined);
+  const aside = join(`${homesRoot()}.superseded`, `${id}-${tid}`);
+  assert.equal(readFileSync(`${aside}.tar.gz`, "utf8"), "old home", "kept, never deleted");
+  assert.ok(existsSync(`${aside}.compressed.json`));
+  assert.ok(!existsSync(archive));
+});

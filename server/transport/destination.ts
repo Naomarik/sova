@@ -15,6 +15,7 @@ import { stateRoot, agentRoot } from "../state-root";
 import { markOwned } from "../write-guard";
 import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
 import { registerArrivedHome } from "../chat-homes/place";
+import { compressedChats, dropCompressed, sidecarOf } from "../archive-compress/store";
 import { dropStages, git, havesOf, type KeptFile, publishTrees, rebuildWorktrees, SnapshotError, type StagedTree } from "./git-snapshot";
 import { afterArrival, knob, prepareDestination, type PrepareRequest } from "./hooks";
 import { verifyHome, type PackageManifest } from "./package";
@@ -58,6 +59,26 @@ const need = (): DestinationDeps => {
     home, which only Sova's own records and a chat's shared folder fill. */
 export const incomingRoot = (): string => `${homesRoot()}.incoming`;
 const incomingOf = (tid: string) => join(incomingRoot(), tid);
+
+/**
+ * The chat comes home to a device where its old copy was compressed (a Moved row's safety copy after 7 days): that
+ * compressed copy would hide the arrived chat and keep it from opening. It is moved aside, never deleted, to
+ * `<homes root>.superseded/<id>-<tid>.tar.gz` with its entry beside it, and its entry leaves the list.
+ */
+async function supersedeCompressed(id: string, tid: string): Promise<void> {
+  const e = compressedChats()[id];
+  if (!e) return;
+  const aside = `${homesRoot()}.superseded`;
+  mkdirSync(aside, { recursive: true, mode: 0o700 });
+  const base = join(aside, `${id}-${tid}`);
+  await writeFile(`${base}.compressed.json`, `${JSON.stringify(e, null, 2)}\n`, { mode: 0o600 });
+  if (e.kind === "home" && e.archive && existsSync(e.archive)) {
+    await rename(e.archive, `${base}.tar.gz`);
+    await rm(sidecarOf(e.archive), { force: true });
+  }
+  dropCompressed(id);
+  log(`${tid}: its earlier compressed copy here is kept aside at ${base}.*`);
+}
 
 const pulls = new Pulls({
   root: () => join(stateRoot(), "transport"),
@@ -349,6 +370,7 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
       const staged = join(incomingOf(tid), "home");
       if (existsSync(staged)) {
         if (existsSync(home)) throw new Error("This device already has a chat with that id.");
+        await supersedeCompressed(r.arrivedId, tid);
         await rename(staged, home);
       }
       // Its cost, before it is listed: kept apart from this device's own records (a retry counts it once).

@@ -203,7 +203,7 @@ function CleanupPicker(props: { checking: AnyCleanup | null; sessions: SessionSu
           {/* One at a time: the Archive's own
               rows, newest first; only ones the server can delete. Hidden when there are none. */}
           <Show when={props.sessions.length > 0}>
-            <p class="message-text cleanup-intro">Or pick one archived session to delete for good.</p>
+            <p class="message-text cleanup-intro">Or pick one archived session to delete or compress.</p>
             <ul class="list cleanup-choices">
               <For each={props.sessions}>
                 {(s, i) => {

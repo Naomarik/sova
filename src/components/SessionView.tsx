@@ -282,7 +282,8 @@ export function SessionView(props: {
         <p class="session-head-meta">
           {/* First on the path line, so the title above keeps the head's whole width. */}
           {/* A chat Sova names itself keeps that name: nothing to regenerate. */}
-          <Show when={!s().fixedName}>
+          {/* Nor a compressed one: Sova never reads it again (§app.session-list/archive-compression). */}
+          <Show when={!s().fixedName && !s().compressed}>
             <RegenerateTitleButton session={s()} onDone={props.onRefresh} />
           </Show>
           {/* A peer's session names its host first: the folder and everything else are that host's. */}
@@ -326,7 +327,7 @@ export function SessionView(props: {
         </Chip>
       </Show>
       {/* The share page, where a slice of this session is picked and shared. */}
-      <Show when={!sharingOffHere(hostOf(path))}>
+      <Show when={!sharingOffHere(hostOf(path)) && !s().compressed}>
         <a class="button button-icon button-ghost session-share-open" href={shareHref(s().id, { host: hostOf(path) })} aria-label="Share session" title="Share session">
           <Icon name="share" />
         </a>

@@ -62,7 +62,8 @@ describe("POST /api/sessions/cleanup with action compress", () => {
     await archive(path);
     const [s, r] = await post("/api/sessions/cleanup", { mode: "age", minAgeDays: 30, action: "compress" });
     assert.equal(s, 200, JSON.stringify(r));
-    assert.ok(r.compressedIds.includes(path.split("_").pop()!.replace(".jsonl", "")));
+    const id = path.split("_").pop()!.replace(".jsonl", "");
+    assert.ok(r.compressedIds.includes(id));
     assert.equal(r.deletedCount, 0);
     assert.ok(existsSync(kept), "the unarchived chat is untouched");
     assert.ok(!existsSync(path) && existsSync(`${path}.gz`), "compressed where it was");
@@ -77,6 +78,10 @@ describe("POST /api/sessions/cleanup with action compress", () => {
     assert.deepEqual(await read.json(), { error: "This chat is compressed, so Sova doesn't open it." });
     const [unarchive] = await post("/api/sessions/archive", { path, archived: false });
     assert.equal(unarchive, 409, "no Unarchive");
+    const [retitle] = await post("/api/sessions/auto-title", { paths: [path], redo: true });
+    assert.equal(retitle, 409, "no Regenerate title (a paths body)");
+    const share = await app.request(`/api/session-shares/preview?session=${id}`);
+    assert.equal(share.status, 409, "no share preview (by session id)");
     const [, del] = await post("/api/sessions/cleanup", { mode: "paths", paths: [path] });
     assert.equal(del.deletedCount, 1, JSON.stringify(del));
     assert.ok(!existsSync(`${path}.gz`));

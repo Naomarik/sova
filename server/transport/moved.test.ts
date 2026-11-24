@@ -30,3 +30,38 @@ test("Move Back while nothing happened there; Copy Back after a turn there or 7 
   markMoved(r.chatId, { tid: r.tid, peer: "laptop", to: "Laptop", at: new Date(Date.now() - MOVE_BACK_MS - 1000).toISOString(), arrivedId: r.chatId });
   assert.equal((await backState(r, answering({ turned: false }))).can, "copy", "past 7 days only a Copy comes back");
 });
+
+test("a helper's turn on the destination makes it Copy Back; the lead alone unchanged doesn't hide it", async () => {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const { fingerprint, statusOf } = await import("./destination");
+  const { updateTransport } = await import("./store");
+  const { appendFileSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const id = "0199aaaa-0000-7000-8000-00000000000a";
+  const home = ensureChatHome(id);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  writeFileSync(join(home, "sessions", `t_${id}.jsonl`), '{"type":"session"}\n');
+  writeFileSync(join(home, "sessions", "t_W1.jsonl"), '{"type":"session"}\n');
+  const r = createTransport({ tid: "tr_turn0001", side: "destination", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "desk", peerLabel: "Desk", path: join(home, "sessions", `t_${id}.jsonl`), folder: "/x", state: "done", steps: { opened: "now" }, arrivedId: id });
+  updateTransport(r.tid, { ext: { openedPrint: await fingerprint(r) } });
+  assert.equal((await statusOf({ id: "desk" }, r.tid)).turned, false);
+  appendFileSync(join(home, "sessions", "t_W1.jsonl"), '{"type":"message"}\n');
+  assert.equal((await statusOf({ id: "desk" }, r.tid)).turned, true);
+});
+
+test("a moved home's helpers aren't this server's: the registry leaves its records at start", async () => {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const { WorkerRegistry } = await import("../chat-workers");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const rec = (home: string, chatId: string, parent: string) => ({ v: 1, chatId, path: join(home, "sessions", `t_${chatId}.jsonl`), key: `k-${chatId}`, kind: "worker", parent: { sessionId: parent, path: join(home, "sessions", `t_${parent}.jsonl`), workerId: "ag_01" }, spec: {}, state: "idle", startedAt: "now" });
+  for (const [lead, worker, moved] of [["0199aaaa-0000-7000-8000-00000000000b", "W-here", false], ["0199aaaa-0000-7000-8000-00000000000c", "W-moved", true]] as const) {
+    const home = ensureChatHome(lead);
+    mkdirSync(join(home, "workers"), { recursive: true });
+    writeFileSync(join(home, "workers", `${worker}.json`), JSON.stringify(rec(home, worker, lead)));
+    if (moved) markMoved(lead, { tid: "tr_moved001", peer: "laptop", to: "Laptop", at: new Date().toISOString(), arrivedId: lead });
+  }
+  const r = new WorkerRegistry({ start: async () => Promise.reject(new Error("no")), stop: async () => {} });
+  assert.equal(r.has("W-here"), true);
+  assert.equal(r.has("W-moved"), false);
+});

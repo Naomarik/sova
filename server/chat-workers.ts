@@ -24,6 +24,7 @@ import { registerHomeMember, reloadHome, setHelperRecordSource } from "./chat-ho
 import { chatHome, hasHome, homeIdOfPath, homeOfSessionFile, listHomeIds } from "./chat-homes/root";
 import { logAutoResume } from "./overseer-store";
 import { stateRoot } from "./state-root";
+import { movedOf } from "./transport/moved";
 
 /** Frames kept per worker for its watchers (a re-watch from a cursor replays from here). */
 export const WORKER_RING_MAX = 2000;
@@ -221,7 +222,8 @@ export class WorkerRegistry {
       ordinary chat" by whether a record is loaded. Finished helpers' records are kept and loaded too. */
   private readAll(): WorkerRecord[] {
     const out: WorkerRecord[] = [];
-    for (const dir of [this.dir(), ...(this.homes ? listHomeIds().map(homeWorkersDir) : [])]) out.push(...this.readDir(dir));
+    // A home whose chat moved to another device is a safety copy here: its helpers aren't this server's (§app.transport/moved-row).
+    for (const dir of [this.dir(), ...(this.homes ? listHomeIds().filter((id) => !movedOf(id)).map(homeWorkersDir) : [])]) out.push(...this.readDir(dir));
     return out;
   }
   /** A home that arrived from outside (Transport): its helpers' records are tracked now, as a start would have. Records

@@ -4,12 +4,12 @@
 // rebuilds every worktree and points the home at this device, all in staging, and publishes only when
 // the source sends its commit: the worktrees go to their folders and the home appears in one rename.
 // A failure leaves nothing published; Cancel removes what arrived.
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { checkDest, Pulls, TransferError } from "../mesh/links-transfer";
+import { Pulls, TransferError } from "../mesh/links-transfer";
 import { tarMembers } from "../mesh/tar-list";
 import { stateRoot, agentRoot } from "../state-root";
 import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
@@ -49,7 +49,9 @@ const need = (): DestinationDeps => {
   return deps;
 };
 
-const incomingRoot = () => join(homesRoot(), ".incoming");
+/** Staging, beside the homes root (the same filesystem, so the publishing rename is one step) and outside every
+    home, which only Sova's own records and a chat's shared folder fill. */
+export const incomingRoot = (): string => `${homesRoot()}.incoming`;
 const incomingOf = (tid: string) => join(incomingRoot(), tid);
 
 const pulls = new Pulls({
@@ -224,7 +226,6 @@ async function arrive(tid: string): Promise<void> {
           for await (const m of members) all.push({ name: m.name, flag: m.type === "file" ? "0" : m.type === "dir" ? "5" : m.type === "symlink" ? "2" : "?", mode: 0 });
           const why = checkMembers(all);
           if (why) throw new TransferError("protected", `The package was refused: ${why}.`);
-          checkDest({ resolvedDest: at, rootNames: ["package.json", "home", "code"], protectedRoots: [], sandbox: null });
         },
       });
       await knob(tid, "pulled");
@@ -344,7 +345,7 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     await need().openWithNote(file, note);
     await knob(tid, "opened");
     // Its size once the note is in: any later growth is a turn here, and Move Back is gone (§app.transport/moved-row).
-    stepDone(tid, "opened", { state: "done", ext: { openedSize: sizeNow(file) } });
+    stepDone(tid, "opened", { state: "done", ext: { openedPrint: await fingerprint(readTransport(tid)!) } });
     // A moved team carries on: each helper that was working is told it moved; an idle one stays idle.
     if (r.mode === "move")
       for (const [list, interrupted] of [[body?.interrupted ?? [], true], [body?.wrapped ?? [], false]] as const)
@@ -372,7 +373,7 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
 }
 
 /** How far it is (GET …/:tid). */
-export function statusOf(from: { id: string }, tid: string): StatusBody {
+export async function statusOf(from: { id: string }, tid: string): Promise<StatusBody> {
   const r = readTransport(tid);
   if (!r || r.side !== "destination" || r.peer !== from.id) return { tid, state: "unknown", steps: {} };
   return {
@@ -384,22 +385,54 @@ export function statusOf(from: { id: string }, tid: string): StatusBody {
     ...(r.received !== undefined ? { received: r.received } : {}),
     ...(r.arrivedId ? { arrivedId: r.arrivedId } : {}),
     ...(r.renamed?.length ? { renamed: r.renamed } : {}),
-    ...(r.steps.opened && r.path ? { path: r.path, turned: turnedHere(r) } : {}),
+    ...(r.steps.opened && r.path ? { path: r.path, turned: await turnedHere(r) } : {}),
   };
 }
 
-const sizeNow = (file: string): number => {
+/** What a chat's turns change here: every conversation, its shared folder, mailboxes and helper records, and each
+    arrived worktree's HEAD and tracked status. */
+export async function fingerprint(r: TransportRecord): Promise<string> {
+  const home = chatHome(r.arrivedId ?? r.chatId);
+  const parts: string[] = [];
+  const walk = (dir: string, rel: string) => {
+    let names: string[];
+    try {
+      names = readdirSync(join(dir, rel)).sort();
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      const p = rel ? `${rel}/${n}` : n;
+      const st = lstatSafe(join(dir, p));
+      if (!st) continue;
+      if (st.isDirectory()) walk(dir, p);
+      else parts.push(`${p} ${st.size} ${Math.floor(st.mtimeMs)}`);
+    }
+  };
+  for (const d of ["sessions", "shared", "teams", "workers"]) walk(home, d);
+  const targets = ((r.ext ?? {}) as { targets?: Record<string, string> }).targets ?? {};
+  for (const t of Object.values(targets).sort()) {
+    const head = (await git(t, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim();
+    const status = (await git(t, ["status", "--porcelain=v1", "-z", "-uno"])).stdout;
+    parts.push(`${t} ${head} ${createHash("sha256").update(status).digest("hex")}`);
+  }
+  return createHash("sha256").update(parts.join("\n")).digest("hex");
+}
+
+const lstatSafe = (p: string) => {
   try {
-    return statSync(file).size;
+    return lstatSync(p);
   } catch {
-    return -1;
+    return null;
   }
 };
 
-/** Whether the arrived chat has had a turn here since it opened (its conversation grew past the arrival note). */
-function turnedHere(r: TransportRecord): boolean {
-  const was = ((r.ext ?? {}) as { openedSize?: number }).openedSize;
-  return was === undefined || sizeNow(r.path) !== was;
+
+/** Whether anything happened to the arrived chat here since it opened: a turn of the chat or any helper, a file in its
+    shared folder, its mailboxes or records, or its worktrees (§app.transport/moved-row: Move Back only while nothing did). */
+async function turnedHere(r: TransportRecord): Promise<boolean> {
+  const was = ((r.ext ?? {}) as { openedPrint?: string }).openedPrint;
+  return was === undefined || (await fingerprint(r)) !== was;
 }
 
 /** What Move Back does here (the device the chat is on): stop it, become the Moved side. Injected by routes.ts. */
@@ -414,7 +447,7 @@ export async function moveBack(from: { id: string }, tid: string, body: { path?:
   const r = readTransport(tid);
   if (!r || r.side !== "destination" || r.peer !== from.id || r.mode !== "move" || !r.steps.opened) return ok({ error: "No such transport" }, 404);
   if (((r.ext ?? {}) as { movedBack?: string }).movedBack) return ok({ ok: true, again: true });
-  if (turnedHere(r)) return ok({ error: "It has changed here since it arrived, so only a Copy can bring it back.", turned: true }, 409);
+  if (await turnedHere(r)) return ok({ error: "It has changed here since it arrived, so only a Copy can bring it back.", turned: true }, 409);
   if (typeof body?.path !== "string") return ok({ error: "Bad request" }, 400);
   try {
     await moveBackHere!(r, { path: body.path });

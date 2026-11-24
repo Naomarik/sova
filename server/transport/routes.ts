@@ -17,7 +17,8 @@ import { chatJobs, stopJobsOf } from "../background-jobs";
 import { emitChatNews } from "../chat-home-events";
 import { acquireChatHandle, closeChat } from "../chat-handle";
 import { adoptArrivedHome, forgetWorkerChats, parkWorkerChat, steerWorkerChat, workerMembersOf, workersWorkingOf } from "../chat-host";
-import { chatHome, homesRoot } from "../chat-homes/root";
+import { chatHome } from "../chat-homes/root";
+import { cancelChatWakes } from "../wake-keeper-live";
 import { readBranch } from "../harness/pi/reader";
 import { sessionsChanged } from "../list-generation";
 import { mintClickProof } from "../mesh/click-proof";
@@ -70,8 +71,11 @@ type Mesh = Pick<MeshApi, "enabled" | "requestPeer" | "peerFetch" | "peers" | "s
 /** Once the destination confirmed a Move: the Moved row, the safety copy, the worktrees here removed. */
 async function moved(r: TransportRecord): Promise<void> {
   const ext = (r.ext ?? {}) as { ownedTrees?: string[]; packedTrees?: { name: string; path: string; main: boolean }[] };
-  // The team leaves this server's memory first: archiving must not end their records (the safety copy keeps them idle).
-  forgetWorkerChats(workerMembersOf(r.chatId).map((m) => m.sid));
+  // The package carried the wakes; here they are cancelled, the lead's and every helper's at any depth, so nothing
+  // wakes the copy left behind. Then the team leaves this server's memory: archiving must not end their records.
+  const team = workerMembersOf(r.chatId).map((m) => m.sid);
+  for (const id of [r.chatId, ...team]) cancelChatWakes(id, Date.now(), undefined, () => []);
+  forgetWorkerChats(team);
   const arrivedPath = ((r.ext ?? {}) as { arrivedPath?: string }).arrivedPath;
   markMoved(r.chatId, { tid: r.tid, peer: r.peer, to: r.peerLabel, at: new Date().toISOString(), arrivedId: r.arrivedId ?? r.chatId, ...(arrivedPath ? { arrivedPath } : {}) });
   const a = await archiveSession(r.path, true);
@@ -148,7 +152,7 @@ async function moveBackToHere(r: TransportRecord, mesh: Pick<Mesh, "peerFetch">)
   // From here the chat runs nowhere until it is restored: a failure is retried (the other side answers "again").
   const home = chatHome(r.chatId);
   const removed = ((r.ext ?? {}) as { removedTrees?: { name: string; path: string; common: string }[] }).removedTrees ?? [];
-  const at = join(homesRoot(), ".incoming", `${r.tid}-back`);
+  const at = join(dest.incomingRoot(), `${r.tid}-back`);
   try {
     if (removed.length) {
       await rmAsync(at, { recursive: true, force: true });
@@ -321,6 +325,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     const id = r.arrivedId ?? r.chatId;
     const helpers = workerMembersOf(id).map((m) => m.sid);
     for (const h of [...helpers].reverse()) await parkWorkerChat(h);
+    for (const w of [id, ...helpers]) cancelChatWakes(w, Date.now(), undefined, () => []);
     await closeChat(r.path, `This chat is moving back to ${r.peerLabel}.`, { quiet: "archived" });
     forgetWorkerChats(helpers);
     markMoved(id, { tid: r.tid, peer: r.peer, to: r.peerLabel, at: new Date().toISOString(), arrivedId: r.sourceChatId, arrivedPath: back.path });
@@ -459,9 +464,9 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     return serveTar({ ...pkg, range: c.req.header("range") ?? null, ifRange: c.req.header("if-range") ?? null });
   });
 
-  app.get("/api/peer/transport/:tid", (c) => {
+  app.get("/api/peer/transport/:tid", async (c) => {
     const caller = mesh.requestPeer(c);
-    return caller ? c.json(dest.statusOf(caller, c.req.param("tid"))) : notFound(c);
+    return caller ? c.json(await dest.statusOf(caller, c.req.param("tid"))) : notFound(c);
   });
 
   app.post("/api/peer/transport/:tid/ready", small, async (c) => {

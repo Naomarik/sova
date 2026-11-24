@@ -81,8 +81,9 @@ async function moved(r: TransportRecord): Promise<void> {
   forgetWorkerChats(team);
   const arrivedPath = ((r.ext ?? {}) as { arrivedPath?: string }).arrivedPath;
   markMoved(r.chatId, { tid: r.tid, peer: r.peer, to: r.peerLabel, at: new Date().toISOString(), arrivedId: r.arrivedId ?? r.chatId, ...(arrivedPath ? { arrivedPath } : {}) });
-  const a = await archiveSession(r.path, true);
-  if (!a.ok) log(`${r.tid}: the Moved row's archive mark failed: ${a.error}`);
+  // The Moved row is archived by its mark only (the chat was closed at the switch): Archive's own path would take a
+  // chat with no message yet for an empty husk and delete it, safety copy and all. Nothing here is ever deleted.
+  setArchived(r.chatId, true);
   // The safety copy keeps the package: the code exactly as it left, every commit and change.
   const home = chatHome(r.chatId);
   const spool = join(stateRoot(), "transport", "spool", `${r.tid}.tar.zst`);
@@ -277,8 +278,8 @@ export function startRefusal(path: string): string | null {
 
 /**
  * The arrival opens the chat to write its note, and an archived chat opens for nothing: one that arrived archived
- * (archived where it came from) is opened with its mark held off, then archived again as Archive does (its runtime
- * closed). Should that fail, the mark goes back on regardless: the chat stays archived as it came.
+ * (archived where it came from) is opened with its mark held off, then closed again (`rearchive`) and its mark put back:
+ * the chat stays archived as it came, whatever the close does.
  */
 export async function openKeepingArchive(path: string, open: () => Promise<void>, rearchive: () => Promise<void>): Promise<void> {
   const id = basename(dirname(dirname(path)));
@@ -287,12 +288,17 @@ export async function openKeepingArchive(path: string, open: () => Promise<void>
   try {
     await open();
   } finally {
-    if (was)
-      await rearchive().catch((err: unknown) => {
-        log(`${id}: archived again by its mark only (${err instanceof Error ? err.message : String(err)})`);
-        setArchived(id, true);
-      });
+    if (was) {
+      await rearchive().catch((err: unknown) => log(`${id}: its close after the arrival note failed (${err instanceof Error ? err.message : String(err)})`));
+      setArchived(id, true);
+    }
   }
+}
+
+/** An archived arrival, its note written: closed again, and nothing else. Archive's own path would take a chat with
+    no message yet for an empty husk and delete it (its home too), and an arrival never deletes anything. */
+export async function closeArrivedArchived(path: string): Promise<void> {
+  await closeChat(path, "This chat arrived archived.", { quiet: "archived" });
 }
 
 /** Whether the arrived home says its chat is archived (the mark travels in `<home>/chat/meta.json`). */
@@ -400,10 +406,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
           const h = await acquireChatHandle(path);
           if (!(await h.appendNote("sova-transport-arrival", text))) log(`the arrival note for ${path} could not be written`);
         },
-        async () => {
-          const a = await archiveSession(path, true);
-          if (!a.ok) throw new Error(a.error);
-        },
+        () => closeArrivedArchived(path),
       ),
     tellHelper: steerWorkerChat,
     helperNote: (device, interrupted) =>
@@ -439,8 +442,8 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     await closeChat(r.path, `This chat is moving back to ${r.peerLabel}.`, { quiet: "archived" });
     forgetWorkerChats(helpers);
     markMoved(id, { tid: r.tid, peer: r.peer, to: r.peerLabel, at: new Date().toISOString(), arrivedId: r.sourceChatId, arrivedPath: back.path });
-    const a = await archiveSession(r.path, true);
-    if (!a.ok) log(`${r.tid}: archive after Move Back: ${a.error}`);
+    // By the mark only, as at a Move's source (never Archive's empty-husk deletion).
+    setArchived(id, true);
     emitChatNews({ name: "chat.removed", chat: id, home: chatHome(id) });
     sessionsChanged();
   });

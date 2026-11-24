@@ -280,10 +280,7 @@ test("an arrival of a chat archived where it came from opens to write its note, 
   const file = join(ensureChatHome(id), "sessions", `t_${id}.jsonl`);
   setArchived(id, true);
   const seen: string[] = [];
-  await openKeepingArchive(file, async () => void seen.push(isArchived(id) ? "refused: archived" : "opened"), async () => {
-    seen.push("archived again");
-    setArchived(id, true);
-  });
+  await openKeepingArchive(file, async () => void seen.push(isArchived(id) ? "refused: archived" : "opened"), async () => void seen.push("archived again"));
   assert.deepEqual(seen, ["opened", "archived again"]);
   assert.ok(isArchived(id));
   // Archive failing: the mark goes back on anyway.
@@ -334,7 +331,7 @@ test("an archived chat's first Move completes there and is listed archived at on
           if (startRefusal(p) || isArchived(id)) throw new Error(ARCHIVED_REFUSAL);
           notes.push(text);
         },
-        async () => setArchived(id, true),
+        async () => {},
       ),
     tellHelper: async () => {},
     helperNote: () => "",
@@ -345,4 +342,31 @@ test("an archived chat's first Move completes there and is listed archived at on
   assert.equal(notes.length, 1);
   assert.equal(readTransport("tr_arch001")?.state, "done");
   assert.ok(isArchived(id), "listed archived there at once");
+  // Its lead holds only a header (a chat with no message yet): nothing of it is deleted (review HU1).
+  const { existsSync } = await import("node:fs");
+  assert.ok(existsSync(file) && existsSync(home), "the arrived chat and its home stay");
+});
+
+test("an archived chat with no message yet arrives and stays, archived: the re-archive never takes Archive's empty-husk deletion", async () => {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const { isArchived, setArchived } = await import("../archived-sessions");
+  const { closeArrivedArchived, openKeepingArchive } = await import("./routes");
+  const { appendFileSync, existsSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const id = "0199aaaa-0000-7000-8000-000000000014";
+  const home = ensureChatHome(id);
+  const file = join(home, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-01-01T00:00:00.000Z", cwd: "/x" })}\n`);
+  mkdirSync(join(home, "shared"), { recursive: true });
+  writeFileSync(join(home, "shared", "notes.md"), "kept\n");
+  const { addWebSession } = await import("../web-sessions");
+  addWebSession(id); // started in Sova: what Archive's empty-husk deletion takes
+  setArchived(id, true);
+  await openKeepingArchive(
+    file,
+    async () => void appendFileSync(file, `${JSON.stringify({ type: "custom_message", customType: "sova-transport-arrival", content: "Moved from lab A.", display: true })}\n`),
+    () => closeArrivedArchived(file),
+  );
+  assert.ok(existsSync(file) && existsSync(join(home, "shared", "notes.md")), "the arrived chat and its home stay");
+  assert.ok(isArchived(id));
 });

@@ -28,8 +28,9 @@ setChatHomesRoot(homesRoot);
  * Several processes write these files (the server, the chat processes it runs, a second server on
  * the same state root), so a home's file follows the stores' own rule: a write re-reads it and
  * changes only the keys this process changed (against what it last read), leaving another writer's
- * keys as they are; and a read re-reads a home's file whose stat moved, checked at most once a
- * second per kind (CHECK_MS), as the stores re-read their own files.
+ * keys as they are; and a read re-reads a home's files when its `chat/` folder's stat moved (every
+ * write there is a rename into it), checked at most once a second (CHECK_MS): one stat per home, as
+ * the stores re-read their own files.
  */
 
 export type HomeDoc = "meta" | "seen" | "signals";
@@ -47,6 +48,8 @@ interface HomeEntry {
   base: Map<string, Map<string, string>>;
   /** Each file's stat when last read or written here. */
   stamp: Map<HomeDoc, string>;
+  /** The `chat/` folder's stat then: a rename into it by any process moves it. */
+  dirStamp: string;
 }
 
 interface State {
@@ -58,8 +61,8 @@ interface State {
   homes: Map<string, HomeEntry>;
   /** Worker or team member id → the home holding its records. */
   members: Map<string, string>;
-  /** When each kind's files were last checked for another writer's change. */
-  checked: Map<HomeDoc, number>;
+  /** When the homes were last checked for another writer's change. */
+  checkedAt: number;
 }
 
 /** How long a read trusts the homes' files without a stat: as long as the stores trust their own (seen.ts CACHE_MS). */
@@ -69,7 +72,7 @@ let st: State | null = null;
 
 function state(): State {
   const root = homesRoot();
-  if (!st || st.root !== root) st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map(), checked: new Map() };
+  if (!st || st.root !== root) st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map(), checkedAt: 0 };
   return st;
 }
 
@@ -117,16 +120,24 @@ function readInto(h: HomeEntry, homeId: string, doc: HomeDoc): void {
   remember(h, doc, readDoc(homeId, doc), stamp);
 }
 
-/** Re-read the files of `doc` another process changed since this one last read or wrote them. */
-function fresh(s: State, doc: HomeDoc): void {
+const chatDir = (homeId: string): string => join(chatHome(homeId), "chat");
+
+/** Re-read the files of each home whose `chat/` folder moved since this process last read or wrote there. */
+function fresh(s: State): void {
   const now = Date.now();
-  if (now - (s.checked.get(doc) ?? 0) < CHECK_MS) return;
-  s.checked.set(doc, now);
-  for (const [homeId, h] of s.homes) if (stampOf(homeDocFile(homeId, doc)) !== h.stamp.get(doc)) readInto(h, homeId, doc);
+  if (now - s.checkedAt < CHECK_MS) return;
+  s.checkedAt = now;
+  for (const [homeId, h] of s.homes) {
+    const ds = stampOf(chatDir(homeId));
+    if (ds === h.dirStamp) continue;
+    h.dirStamp = ds;
+    for (const doc of HOME_DOCS) if (stampOf(homeDocFile(homeId, doc)) !== h.stamp.get(doc)) readInto(h, homeId, doc);
+  }
 }
 
 function loadHome(s: State, homeId: string): HomeEntry {
-  const entry: HomeEntry = { docs: new Map(), base: new Map(), stamp: new Map() };
+  // The folder first: a write landing while the files are read shows as a move at the next check.
+  const entry: HomeEntry = { docs: new Map(), base: new Map(), stamp: new Map(), dirStamp: stampOf(chatDir(homeId)) };
   for (const doc of HOME_DOCS) readInto(entry, homeId, doc);
   s.homes.set(homeId, entry);
   listMembers(s, homeId);
@@ -285,7 +296,7 @@ function homesWith(s: State, doc: HomeDoc, field: string): HomeEntry[] {
     may change it freely and hand it to splitOut. */
 export function withHome<V>(legacy: Record<string, V>, doc: HomeDoc, field: string): Record<string, V> {
   const s = loaded();
-  fresh(s, doc);
+  fresh(s);
   const out: Record<string, V> = Object.assign(Object.create(Object.getPrototypeOf(legacy)), legacy);
   for (const h of homesWith(s, doc, field)) {
     const m = h.docs.get(doc)![field];
@@ -298,7 +309,7 @@ export function withHome<V>(legacy: Record<string, V>, doc: HomeDoc, field: stri
 /** A store's set (archived ids, web ids) with every home's ids of `doc`/`field` added. */
 export function withHomeSet(legacy: Set<string>, doc: HomeDoc, field: string): Set<string> {
   const s = loaded();
-  fresh(s, doc);
+  fresh(s);
   const out = new Set(legacy);
   for (const h of homesWith(s, doc, field)) {
     const m = h.docs.get(doc)![field];
@@ -355,6 +366,8 @@ function writeHomeField(s: State, homeId: string, doc: HomeDoc, field: string, n
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(out), { mode: 0o644 });
     renameSync(tmp, file);
+    // The folder's stamp is left as it was: the next check sees it moved and stats this home's files, where our own
+    // file's stamp matches and another writer's, landed in between, does not.
     remember(h, doc, out, stampOf(file));
   } catch (err) {
     console.warn(`[chat-homes] ${doc}.json write failed for ${homeId}:`, err instanceof Error ? err.message : String(err));
@@ -433,5 +446,5 @@ export function resetHomeRecordsForTest(): void {
 
 /** For tests: the next read checks every home's files at once, as a second later would. */
 export function expireHomeRecordChecksForTest(): void {
-  st?.checked.clear();
+  if (st) st.checkedAt = 0;
 }

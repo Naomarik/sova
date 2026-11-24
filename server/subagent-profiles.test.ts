@@ -11,7 +11,7 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import type { ModelPolicy } from "../shared/protocol";
 import { requireSubagentProfile, saveSubagentProfileDefault, saveSubagentProfiles, subagentProfilesInfo } from "./subagent-profiles";
 import type { DelegateSources } from "./delegate";
-import { restorePick, subagentProfileDefaultPath, subagentProfilesPath } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { legacyProfile, restorePick, subagentProfileDefaultPath, subagentProfilesPath } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "sova-subagent-profiles-test-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -22,6 +22,12 @@ const agentDir = () => {
   return d;
 };
 
+/** What an older build seeded on first read: one profile from the legacy files, "My setup", made the default. */
+function olderStarter(d: string): void {
+  writeFileSync(subagentProfilesPath(d), JSON.stringify({ version: 1, profiles: [legacyProfile(d)] }));
+  writeFileSync(subagentProfileDefaultPath(d), JSON.stringify({ version: 1, default: "my-setup" }));
+}
+
 const EMPTY: ModelPolicy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
 const piModels = [{ ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "minimal", "low", "medium", "high"] }];
 const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
@@ -30,47 +36,55 @@ const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
   ...over,
 });
 
-test("seeding: one profile from the legacy files; the device default in its own file; info exposes both", () => {
+test("no seeding: an absent library writes nothing; info lists the built-in profile the accounts give and resolves to it", () => {
   const d = agentDir();
   writeFileSync(join(d, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: { backend: "pi", model: "zai/glm-5.3", effort: "low" }, fallback: null } } }));
   const info = subagentProfilesInfo(undefined, d);
   assert.equal(info.error, undefined);
-  assert.deepEqual(info.profiles.map(p => p.id), ["off", "my-setup"]);
-  assert.equal(info.default, "my-setup");
-  assert.equal(info.current.source, "default");
-  assert.equal(info.current.id, "my-setup");
-  assert.equal("default" in info.settings, false, "the library file never carries the default (it is device-local)");
-  assert.equal(JSON.parse(readFileSync(subagentProfileDefaultPath(d), "utf8")).default, "my-setup");
-  assert.equal(JSON.parse(readFileSync(subagentProfilesPath(d), "utf8")).profiles[0].delegate.routine.primary.model, "zai/glm-5.3");
-  const picked = subagentProfilesInfo("off", d);
-  assert.equal(picked.current.source, "pick");
-  assert.equal(picked.current.id, "off");
+  assert.deepEqual(info.profiles.map((p) => p.id), ["claude"], "no account connected: Claude alone, and no Off");
+  assert.equal(info.default, "claude");
+  assert.deepEqual([info.current.id, info.current.source], ["claude", "default"]);
+  assert.equal(info.template.delegate.planning.primary.model, "claude-fable-5-2", "New Profile starts from the default's helpers");
+  assert.equal(existsSync(subagentProfilesPath(d)), false, "no library written");
+  assert.equal(existsSync(subagentProfileDefaultPath(d)), false, "no default written");
+  // With OpenAI signed in (pi's own sign-in), OpenAI is listed and is the default; Claude isn't listed.
+  writeFileSync(join(d, "auth.json"), JSON.stringify({ "openai-codex": { type: "oauth", access: "t" } }));
+  const openai = subagentProfilesInfo(undefined, d);
+  assert.deepEqual([openai.profiles.map((p) => p.id), openai.default], [["openai"], "openai"]);
+  // An older starter reads as Claude and takes its place; an older Off pick follows the default.
+  olderStarter(d);
+  const older = subagentProfilesInfo("off", d);
+  assert.deepEqual(older.profiles.map((p) => [p.id, p.name]), [["my-setup", "Claude"], ["openai", "OpenAI"]]);
+  assert.deepEqual([older.default, older.current.id, older.current.name, older.current.source], ["my-setup", "my-setup", "Claude", "default"]);
 });
 
-test("requireSubagentProfile: unknown ids and an unusable library refuse before anything is written", () => {
+test("requireSubagentProfile: a library or built-in id passes; \"off\" answers with the profiles there are; an unusable library refuses", () => {
   const d = agentDir();
-  assert.equal(requireSubagentProfile("off", d), "off");
+  assert.equal(requireSubagentProfile("claude", d), "claude");
+  assert.equal(requireSubagentProfile("openai", d), "openai", "a built-in id is a pick even when its account isn't listed here");
+  assert.throws(() => requireSubagentProfile("off", d), /^Error: No profile is named "off"; the profiles here are Claude\.$/);
   assert.throws(() => requireSubagentProfile("nope", d), /Unknown subagent profile/);
   assert.throws(() => requireSubagentProfile(42, d), /Unknown subagent profile/);
   writeFileSync(subagentProfilesPath(d), "{ nope");
-  assert.throws(() => requireSubagentProfile("off", d), /malformed|not valid JSON/);
+  assert.throws(() => requireSubagentProfile("claude", d), /malformed|not valid JSON/);
 });
 
 test("saveSubagentProfileDefault writes only the default file — the library's bytes are untouched", () => {
   const d = agentDir();
-  subagentProfilesInfo(undefined, d); // seed the library first
+  olderStarter(d);
   const before = readFileSync(subagentProfilesPath(d), "utf8");
-  saveSubagentProfileDefault("off", d);
+  saveSubagentProfileDefault("openai", d);
   assert.equal(readFileSync(subagentProfilesPath(d), "utf8"), before);
-  assert.equal(JSON.parse(readFileSync(subagentProfileDefaultPath(d), "utf8")).default, "off");
-  assert.equal(subagentProfilesInfo(undefined, d).default, "off");
+  assert.equal(JSON.parse(readFileSync(subagentProfileDefaultPath(d), "utf8")).default, "openai");
+  assert.equal(subagentProfilesInfo(undefined, d).default, "openai");
   saveSubagentProfileDefault("my-setup", d);
   assert.equal(subagentProfilesInfo(undefined, d).default, "my-setup");
+  assert.throws(() => saveSubagentProfileDefault("off", d), /No profile is named "off"/);
 });
 
 test("PUT body: a library carrying a default key is refused, naming where the default lives now", async () => {
   const d = agentDir();
-  subagentProfilesInfo(undefined, d); // seed
+  olderStarter(d);
   const lib = JSON.parse(readFileSync(subagentProfilesPath(d), "utf8"));
   const result = await saveSubagentProfiles({ ...lib, default: "my-setup" }, sources(), d);
   assert.ok("error" in result && !("settings" in result));
@@ -79,7 +93,7 @@ test("PUT body: a library carrying a default key is refused, naming where the de
 
 test("save validation: every slot is checked — a disabled coordinator's tuple included", async () => {
   const d = agentDir();
-  subagentProfilesInfo(undefined, d); // seed "my-setup"
+  olderStarter(d);
   const lib = JSON.parse(readFileSync(subagentProfilesPath(d), "utf8"));
   lib.profiles[0].teams = {
     coordinator: { enabled: false, role: "coordinator", primary: { backend: "pi", model: "zai/gone", effort: "low" }, fallback: null, instructions: "" },
@@ -93,8 +107,9 @@ test("save validation: every slot is checked — a disabled coordinator's tuple 
 
 test("save validation: a tuple left as it was stored in ITS slot never blocks; the same tuple moved to another slot is checked as changed", async () => {
   const d = agentDir();
-  // Legacy routing holds a model the current discovery can't run; the seed stores it as-is.
+  // Legacy routing holds a model the current discovery can't run; an older build's seed stored it as-is.
   writeFileSync(join(d, "mode-delegate.json"), JSON.stringify({ version: 1, profiles: { routine: { primary: { backend: "pi", model: "zai/gone", effort: "low" }, fallback: null } } }));
+  olderStarter(d);
   const seeded = subagentProfilesInfo(undefined, d);
   assert.equal(seeded.settings.profiles[0]?.delegate.routine.primary.model, "zai/gone");
   const kept = await saveSubagentProfiles(seeded.settings, sources(), d);

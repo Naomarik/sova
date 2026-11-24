@@ -2,33 +2,44 @@ import { join } from "node:path";
 import { agentRoot } from "./state-root";
 import { LIBRARY_KEY, listKept, markRestored } from "./sync/kept";
 import {
-  loadSubagentProfiles, legacyProfile, parseSubagentProfiles, readProfilesDefault, readSubagentProfiles, resolveSubagents, profilesDefaultOf,
-  footprint, profileProviders, profileSlots, writeSubagentProfiles, writeProfilesDefault, OFF_FOOTPRINT,
+  loadSubagentProfiles, parseSubagentProfiles, readProfilesDefault, readSubagentProfiles, resolveSubagents, profilesDefaultOf,
+  footprint, profileProviders, profileSlots, writeSubagentProfiles, writeProfilesDefault, builtinFallback, helperProfileOf, pickableHelpers,
   profileWorkers, shortModel as workerModelName,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { readConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import type { SubagentProfile, SubagentProfilesFile, SubagentProfilesInfo, SubagentProfilesReplaced } from "../shared/subagent-profiles";
 import { firstIssue } from "../shared/form-rules";
 import { profileFields } from "../shared/subagent-profile-checks";
 import { delegateOptions, verifySlots, type DelegateSources } from "./delegate";
 import { profileHash } from "./sync/profile-merge";
 
+/**
+ * The helper profiles as Settings, the pickers and the pick checks read them: the library's (named as
+ * screens show them) and the built-in ones listed here, this device's default (never Off: a missing or
+ * "off" default is the built-in one the connected accounts give), and what `pick` resolves to now.
+ */
 export function subagentProfilesInfo(pick?: string, dir = agentRoot()): SubagentProfilesInfo {
   const state = loadSubagentProfiles(dir);
   const def = readProfilesDefault(dir);
-  const r = resolveSubagents(dir, pick, state, def);
-  const d = profilesDefaultOf(state, def);
+  const fallback = builtinFallback(dir);
+  const r = resolveSubagents(dir, pick, state, def, fallback);
+  const d = profilesDefaultOf(state, def, fallback);
+  const defaultId = d.id ?? fallback;
+  const library = state.state === "ok" ? state.value.profiles : [];
   const warnings: string[] = [];
-  if (def.state === "malformed") warnings.push(`the default file ${def.file} is malformed (${def.errors.join("; ")}); the default reads as Off until it is fixed`);
-  else if (d.note) warnings.push(d.note);
+  if (d.note) warnings.push(d.note);
+  const listed = state.state === "malformed" ? [] : pickableHelpers(library, readConnectedAccounts(dir));
+  const helpers = listed.map((c) => helperProfileOf(c.id, library)!).filter(Boolean);
+  // New Profile's helpers start from the default's.
+  const { id: _id, name: _name, ...from } = helperProfileOf(defaultId, library) ?? helperProfileOf(fallback, library)!;
   return {
     settings: state.state === "ok" ? state.value : { version: 1, profiles: [] },
-    default: d.id,
-    template: legacyProfile(dir),
-    profiles: [{ id: "off", name: "Off", footprint: OFF_FOOTPRINT, providers: [] },
-      ...(state.state === "ok" ? state.value.profiles.map(p => ({ id: p.id, name: p.name, footprint: footprint(p), providers: profileProviders(p) })) : [])],
+    default: defaultId,
+    template: { id: "new", name: "New profile", ...JSON.parse(JSON.stringify(from)) },
+    profiles: helpers.map((p) => ({ id: p.id, name: p.name, footprint: footprint(p), providers: profileProviders(p) })),
     current: { id: r.id, name: r.name, source: r.source, ...(r.note ? { note: r.note } : {}) },
     file: state.file,
-    ...(state.state !== "ok" ? { error: state.state === "malformed" ? state.errors.join("; ") : "Fix the malformed legacy team defaults before migrating profiles." } : {}),
+    ...(state.state === "malformed" ? { error: state.errors.join("; ") } : {}),
     ...(warnings.length ? { warnings } : {}),
     ...withReplaced(dir),
   };
@@ -36,11 +47,11 @@ export function subagentProfilesInfo(pick?: string, dir = agentRoot()): Subagent
 
 /**
  * How many distinct primary models a library profile names: the count its footprint shows, never
- * cut at three (the profile cards' subagents count, §chat.profiles/picker). 0 for Off or an id the
- * library lacks.
+ * cut at three (the profile cards' subagents count, §chat.profiles/picker), a built-in one's too. 0
+ * for an id that names none here.
  */
 export function profileModelCount(info: Pick<SubagentProfilesInfo, "settings">, id: string): number {
-  const p = info.settings.profiles.find((x) => x.id === id);
+  const p = helperProfileOf(id, info.settings.profiles);
   return p ? new Set(profileWorkers(p, false).map((w) => workerModelName(w.model))).size : 0;
 }
 
@@ -82,11 +93,17 @@ export function restoreReplacedProfiles(file: unknown, dir = agentRoot(), now = 
   return subagentProfilesInfo(undefined, dir);
 }
 
-/** Validate on this host before writing a session pick or creating anything. */
+/** Validate on this host before writing a session pick or creating anything: a library profile or a built-in one (which a profile of yours may take the place of). */
 export function requireSubagentProfile(id: unknown, dir = agentRoot()): string {
-  const i = subagentProfilesInfo(undefined, dir);
-  if (i.error) throw new Error(i.error);
-  if (typeof id !== "string" || !i.profiles.some(p => p.id === id)) throw new Error(`Unknown subagent profile: ${String(id)}`);
+  const state = loadSubagentProfiles(dir);
+  if (state.state === "malformed") throw new Error(state.errors.join("; "));
+  const library = state.state === "ok" ? state.value.profiles : [];
+  if (typeof id === "string" && id.trim().toLowerCase() === "off") {
+    const names = pickableHelpers(library, readConnectedAccounts(dir)).map((p) => p.name);
+    const list = names.length <= 1 ? (names[0] ?? "none") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+    throw new Error(`No profile is named "off"; the profiles here are ${list}.`);
+  }
+  if (typeof id !== "string" || !helperProfileOf(id, library)) throw new Error(`Unknown subagent profile: ${String(id)}`);
   return id;
 }
 

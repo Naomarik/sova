@@ -189,35 +189,39 @@ export interface ProfilesListing {
   /** Keys of profiles that can't be used on this host now, each with the sentence why (a model the
       policy turns off or with no credentials here, a subagent profile not in this device's library). */
   unusable?: Record<string, string>;
-  /** This device's subagent profiles ("off" first), for the cards' captions. `models`: how many
-      distinct primary models it names (0 for "off"); absent from an older server. */
+  /** This device's helper profiles (the library's, then the built-in ones listed here), for the cards'
+      captions. `models`: how many distinct primary models it names; absent from an older server. */
   subagents?: { id: string; name: string; footprint: string; models?: number }[];
-  /** The one list (§chat.profiles/joined): Off first, then Yours by name, Built in, This project.
-      Absent from an older server. */
+  /** The one list (§chat.profiles/joined): Yours by name, Built in, This project (an older server put Off
+      first). Absent from an older server. */
   joined?: JoinedProfile[];
   /** This computer's default profile (§chat.profiles/default). */
   defaultProfile?: DefaultProfileInfo;
+  /** With `?path=<session>`: the joined key of the profile that chat is on (its chat_profile's current key);
+      absent with no path, or for a chat that shows no picker. */
+  thisChat?: string;
   /** The helper library's file, and why it can't be read. */
   library?: { file: string; error?: string };
-  /** What a New Profile's helpers start from when Off is open (the legacy files' setup). */
+  /** What a New Profile's helpers start from: this computer's default profile's helpers. */
   template?: Omit<SubagentProfile, "id" | "name">;
   error?: string;
 }
 
 /** The row kinds of the joined list (§chat.profiles/joined). */
 export type JoinedKind = "off" | "pair" | "session" | "library" | "builtin" | "project";
+/* "off": only an older server's Off row; this one lists none. */
 
 /** One profile of the joined list: a session profile and the library profile it links, as one. */
 export interface JoinedProfile {
-  /** Unique in the list: "sova:default" (Off), "user:<id>" (pair or unlinked session profile),
-      "library:<id>" (a library profile no session profile links), "project:<root>#<id>", "sova:<id>". */
+  /** Unique in the list: "user:<id>" (pair or unlinked session profile), "library:<id>" (a library profile no
+      session profile links), "project:<root>#<id>", "sova:<id>" (a built-in profile). */
   key: string;
-  /** What the Overseer and the default file take: "off", the session profile's id, or the library id. */
+  /** What the Overseer and the default file take: the session profile's id, or the library id. */
   id: string;
   kind: JoinedKind;
   group: "yours" | "project" | "builtin";
   name: string;
-  /** The When a Chat Starts half and the chat's own model and effort; absent for Off and library-only. */
+  /** The When a Chat Starts half and the chat's own model and effort; absent for library-only. */
   session?: ListedProfile;
   /** The library id this profile's Models part is: the session half's link, or the row's own. */
   libraryId?: string;
@@ -229,8 +233,10 @@ export interface JoinedProfile {
   alsoUsedBy?: string[];
   /** The distinct models of the Models part, the chat's own first: "Opus 5.5 + gpt-6.1-sol". */
   footprint: string;
-  /** Every provider its models spend, both parts, fallbacks included ("claude" for Claude Code); [] for Off. */
+  /** Every provider its models spend, both parts, fallbacks included ("claude" for Claude Code). */
   providers: string[];
+  /** A row of yours that takes a built-in profile's place, which is then not listed: that profile's key ("sova:claude"). */
+  replaces?: string;
   /** How many helper roles its library half sets (the {n} in "its {n} helpers"). */
   helperRoles: number;
   isDefault?: true;
@@ -242,20 +248,21 @@ export interface JoinedProfile {
 
 /** This computer's default profile, as the listing shows it (§chat.profiles/default). */
 export interface DefaultProfileInfo {
-  /** The joined row's key ("sova:default" for Off). */
+  /** The joined row's key. */
   key: string;
-  /** The row's id ("off" for Off). */
+  /** The row's id. */
   id: string;
   name: string;
-  /** false: no default-profile.json yet, so it is read from the older default files. */
+  /** false: no default-profile.json yet, so it is read from the older default files, else worked out from the
+      accounts connected here (Claude, then OpenAI, then DeepSeek). */
   chosen: boolean;
-  /** Why it reads as Off (a default naming no profile here). */
+  /** Why it isn't the one chosen (a default naming no profile here, or a file that can't be read). */
   note?: string;
 }
 
-/** Off's footprint (§chat.profiles/joined), and a library-only profile's This chat row. */
+/** A library-only profile's This chat row (§chat.profiles/joined). */
 export const KEEPS_OWN_MODEL = "Keeps the chat's own model";
-/** Off's key and id in the joined list. */
+/** An older build's Off: its key and id, still read wherever they were written, as this computer's default. */
 export const OFF_KEY = "sova:default";
 export const OFF_ID = "off";
 

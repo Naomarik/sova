@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { ModelFavorites } from "../../pi-config/extensions/command-palette/favorites.ts";
 import { delegateDefaults, parseChoice } from "../../pi-config/extensions/mode/delegate.ts";
 import { specDefaults } from "../../pi-config/extensions/mode/spec.ts";
-import { loadSubagentProfiles, parseSubagentProfiles, readSubagentProfiles, writeSubagentProfiles, type SubagentProfile } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
+import { legacyProfile, parseSubagentProfiles, readSubagentProfiles, SEEDED_MTIME_MS, writeSubagentProfiles, type SubagentProfile } from "../../pi-config/extensions/subagents/subagent-profiles.ts";
 import { compareDocs, DocSync, settingsDocs, themeDoc, validFavorites, type DocManifest, type DocMeta, type DocPeer, type DocPush, type DocReply } from "./docs";
 import { listKept, LIBRARY_KEY } from "./kept";
 import { libraryText, profileHash, remoteItems } from "./profile-merge";
@@ -399,18 +399,27 @@ const save = (h: Host, profiles: SubagentProfile[]) => {
   writeSubagentProfiles(h.agentDir, { version: 1, profiles });
   h.sync.observe();
 };
+/**
+ * The starter an older build seeded on its first read ("My setup", dated at the epoch so a library edited
+ * anywhere wins). This build seeds none, but an older device on the mesh still does.
+ */
+const olderSeed = (dir: string) => {
+  const file = join(dir, LIB);
+  writeFileSync(file, `${JSON.stringify({ version: 1, profiles: [legacyProfile(dir)] }, null, 2)}\n`, { flag: "wx" });
+  utimesSync(file, new Date(), new Date(SEEDED_MTIME_MS));
+};
 const startAll = async (hosts: Host[]) => {
   for (const h of hosts) await h.sync.start();
 };
 const stopAll = (hosts: Host[]) => hosts.forEach((h) => h.sync.stop());
 
-test("library: a fresh device's starter yields to the mesh's real library, which stays untouched (first run, or seeded while running)", async () => {
-  // The incident: the real library exists first; the fresh device seeds its starter minutes later.
+test("library: an older device's starter yields to the mesh's real library, which stays untouched (first run, or seeded while running)", async () => {
+  // The incident: the real library exists first; the fresh device (on an older build) seeds its starter minutes later.
   const [flow, zen] = mesh(2);
   writeSubagentProfiles(flow!.agentDir, { version: 1, profiles: [prof("fast", "Fast", "zai/fast"), prof("deep", "Deep", "zai/deep"), prof("cheap", "Cheap")] });
   const real = flow!.read(LIB);
   await tick();
-  assert.equal(loadSubagentProfiles(zen!.agentDir).state, "ok"); // seeds "My setup", dated at the epoch
+  olderSeed(zen!.agentDir);
   await startAll([flow!, zen!]);
   try {
     await converge([flow!, zen!]);
@@ -434,7 +443,7 @@ test("library: a fresh device's starter yields to the mesh's real library, which
     rmSync(join(air!.agentDir, LIB));
     air!.sync.observe();
     await tick();
-    loadSubagentProfiles(air!.agentDir);
+    olderSeed(air!.agentDir);
     air!.sync.observe();
     await converge([desk!, air!]);
     assert.deepEqual(libOf(desk!), { fast: "zai/fast" });
@@ -444,9 +453,9 @@ test("library: a fresh device's starter yields to the mesh's real library, which
   }
 });
 
-test("library: a device alone keeps its starter; two starters meeting keep one", async () => {
+test("library: a device alone keeps an older build's starter; two starters meeting keep one", async () => {
   const [solo] = mesh(1);
-  loadSubagentProfiles(solo!.agentDir);
+  olderSeed(solo!.agentDir);
   const starter = solo!.read(LIB);
   await solo!.sync.start();
   try {
@@ -457,8 +466,8 @@ test("library: a device alone keeps its starter; two starters meeting keep one",
     solo!.sync.stop();
   }
   const [a, b] = mesh(2);
-  loadSubagentProfiles(a!.agentDir);
-  loadSubagentProfiles(b!.agentDir);
+  olderSeed(a!.agentDir);
+  olderSeed(b!.agentDir);
   await startAll([a!, b!]);
   try {
     await converge([a!, b!]);

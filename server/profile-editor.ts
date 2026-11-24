@@ -5,7 +5,8 @@ import {
 import { PROFILE_LABEL_RULE, PROFILE_NAME_TAKEN, profileNameProblem } from "../shared/profile-limits";
 import { problemOf } from "../shared/form-rules";
 import type { SubagentProfile, SubagentProfilesFile } from "../shared/subagent-profiles";
-import { idFor, legacyProfile, loadSubagentProfiles, writeSubagentProfiles } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { helperProfileOf, idFor, loadSubagentProfiles, writeSubagentProfiles } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { subagentProfilesInfo } from "./subagent-profiles";
 import { resolveDefaultProfile } from "./default-profile";
 import type { DelegateSources } from "./delegate";
 import { joinedProfiles, pickJoined } from "./joined-profiles";
@@ -179,7 +180,8 @@ export async function saveMine(req: ProfileSaveRequest, deps: EditorDeps): Promi
   if (!row) {
     // A new profile: both halves, linked, under one id.
     libId = idFor(name, ids);
-    library.profiles.push({ id: libId, name, ...clone(req.helpers ?? helpersOf(legacyProfile(dir))), members: null } as SubagentProfile);
+    // With no helpers given, this computer's default profile's.
+    library.profiles.push({ id: libId, name, ...clone(req.helpers ?? helpersOf(subagentProfilesInfo(undefined, dir).template)), members: null } as SubagentProfile);
     libChanged = true;
   } else if (libId && libIndex() >= 0) {
     const i = libIndex();
@@ -303,13 +305,13 @@ export interface ChatNow {
   /** Its major mode (in Create, its last normal or Delegate choice) and minor modes. */
   mode?: "normal" | "delegate";
   minorModes?: string[];
-  /** The library profile its helpers resolve to now; "off" or undefined: none. */
+  /** The helper profile (a library or built-in one) its helpers resolve to now; "off" or undefined: none. */
   helpers?: string;
 }
 
 /**
  * Save Current As Profile (§chat.profiles/picker): a new capability-neutral profile of yours with
- * both halves, linked: the chat's model and effort, and a copy of its helpers (Off: none).
+ * both halves, linked: the chat's model and effort, and a copy of its helpers (a built-in profile's too).
  */
 export async function saveCurrentAsProfile(label: unknown, now: ChatNow, deps: EditorDeps): Promise<EditorAnswer> {
   const dir = deps.dir ?? agentRoot();
@@ -322,7 +324,7 @@ export async function saveCurrentAsProfile(label: unknown, now: ChatNow, deps: E
   const why = profileNameProblem(name, library ? takenNames(rows, library) : rows.filter((r) => r.group === "yours").map((r) => r.name));
   if (why === PROFILE_NAME_TAKEN) return fail(409, `You already have a profile named "${name}". Pick another name.`, { field: "name" });
   if (why) return fail(400, why, { field: "name" });
-  const source = now.helpers && now.helpers !== OFF_ID ? library?.profiles.find((l) => l.id === now.helpers) : undefined;
+  const source = now.helpers && now.helpers !== OFF_ID && library ? helperProfileOf(now.helpers, library.profiles) : undefined;
   if (now.helpers && now.helpers !== OFF_ID && !source) return fail(409, lib.ok ? `Its helpers ("${now.helpers}") aren't in this device's library.` : lib.error);
   const ids = library ? takenIds(rows, library) : new Set([DEFAULT_PROFILE_ID, ...rows.map((r) => r.id)]);
   const id = idFor(name, ids);
@@ -330,21 +332,21 @@ export async function saveCurrentAsProfile(label: unknown, now: ChatNow, deps: E
   const fresh: Raw = { id, label: name, icon: "wrench" };
   if (now.model) fresh.model = now.model;
   if (now.thinking && (THINKING_LEVELS as readonly string[]).includes(now.thinking)) fresh.thinking = now.thinking;
-  fresh.subagents = source ? id : OFF_ID;
+  if (source) fresh.subagents = id;
   return run({ ...(source ? { library, copiedFrom: { [id]: source.id } } : {}), session: (list) => [...list, fresh], savedKey: `user:${id}` }, deps);
 }
 
 /**
  * Update {name} (§chat.subagent-profiles/menu): this chat's model and effort, and its mode and
  * add-on modes, into its profile's session half (made, linked, for a library-only profile). Never a
- * helper; never Off, a project's or a shipped profile.
+ * helper; never a project's or a built-in profile.
  */
 export async function updateFromChat(key: string | undefined, now: ChatNow, deps: EditorDeps): Promise<EditorAnswer> {
   const dir = deps.dir ?? agentRoot();
   const rows = await joinedProfiles(deps.cwd, {}, dir);
   const row = key ? pickJoined(rows, key) : null;
-  if (!row || row.kind === "off") return fail(409, "This chat is on Off, which saves nothing.");
-  if (row.group !== "yours") return fail(409, `${row.name} is a file in ${row.kind === "project" ? "the project" : "Sova"}, so it can't be updated here.`);
+  if (!row || row.kind === "off") return fail(409, "This chat's profile isn't here anymore.");
+  if (row.group !== "yours") return fail(409, row.kind === "project" ? `${row.name} is a file in the project, so it can't be updated here.` : `${row.name} is built in, so it can't be updated here. Make It Yours first.`);
   const current = row.session;
   const starts: ProfileStarts | undefined = current
     ? { icon: current.icon, description: current.description, remove: current.remove, grant: current.grant, singleton: current.singleton, limits: current.limits, firstMessage: current.firstMessage, overseerMayStart: current.overseerMayStart, ...(now.mode ? { mode: now.mode } : {}), ...(now.minorModes ? { minorModes: PROFILE_MINOR_MODES.filter((m) => now.minorModes!.includes(m)) } : {}) }

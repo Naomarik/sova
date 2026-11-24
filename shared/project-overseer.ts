@@ -237,8 +237,8 @@ export interface CodingModeNow {
   mode: ProjectCodingMode["mode"];
   minorModes: string[];
   subagents: { id: string; name: string } | null;
-  /** This computer's default profile, the one a coding session started now is on (Off: `{id: "off", name: "Off"}`);
-      absent from an older server. */
+  /** This computer's default profile, the one a coding session started now is on (an older server sent
+      `{id: "off", name: "Off"}` for none); absent from an older server, or when the profiles can't be read. */
   profile?: { id: string; name: string };
 }
 

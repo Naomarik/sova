@@ -137,7 +137,7 @@ describe("saving one of yours", () => {
     };
     assert.deepEqual(await name("x".repeat(49)), ["Profile name can be at most 48 characters.", "name"]);
     assert.deepEqual(await name("  "), ["Profile name can't be empty.", "name"]);
-    assert.deepEqual(await name("off"), [`Profile name can't be "Off", the built-in profile's.`, "name"]);
+    assert.deepEqual(await name("off"), [`Profile name can't be "Off".`, "name"]);
     assert.deepEqual(await name("beta"), ["Another profile has this name.", "name"]);
     assert.deepEqual([read(yoursFile), read(libFile)], before, "a refused name writes nothing");
   });
@@ -151,9 +151,10 @@ describe("saving one of yours", () => {
     assert.equal(read(yoursFile), "{ nope");
   });
 
-  test("a project's or a shipped profile, and Off, aren't changed here", async () => {
-    const r = await saveMine({ key: "sova:default", name: "Off" }, deps);
-    assert.equal(r.ok, false);
+  test("a project's or a built-in profile, or an older build's Off, aren't changed here", async () => {
+    assert.equal((await saveMine({ key: "sova:default", name: "Off" }, deps)).ok, false);
+    const builtin = await saveMine({ key: "sova:claude", name: "Claude" }, deps);
+    assert.deepEqual(builtin.ok ? null : [builtin.status, builtin.error], [409, "Claude isn't one of yours, so it is changed in its file, not here."]);
   });
 });
 
@@ -323,17 +324,13 @@ describe("the default", () => {
     assert.deepEqual([read(libDefaultFile), statSync(libDefaultFile).mtimeMs], before);
   });
 
-  test("Off writes off for the helpers and leaves mode.json and defaults.json byte for byte", async () => {
-    const mode = read(modeFile);
-    const defaults = read(defaultsFile);
-    const times = [statSync(modeFile).mtimeMs, statSync(defaultsFile).mtimeMs];
+  test("there is no Off to choose; a built-in profile chosen writes its id to both files and never \"off\"", async () => {
     const rows = await joinedProfiles();
-    chooseDefaultProfile(pickJoined(rows, "off")!, rows);
-    assert.deepEqual(json(defaultProfileFile), { version: 1, profile: "off" });
-    assert.equal(json<{ default: string }>(libDefaultFile).default, "off");
-    assert.equal(read(modeFile), mode);
-    assert.equal(read(defaultsFile), defaults);
-    assert.deepEqual([statSync(modeFile).mtimeMs, statSync(defaultsFile).mtimeMs], times);
+    assert.equal(pickJoined(rows, "off"), null);
+    const claude = pickJoined(rows, "sova:claude")!;
+    chooseDefaultProfile(claude, rows);
+    assert.deepEqual(json(defaultProfileFile), { version: 1, profile: "claude" });
+    assert.equal(json<{ default: string }>(libDefaultFile).default, "claude");
   });
 
   test("before one is chosen nothing is written, and no profile's save moves it", async () => {
@@ -345,7 +342,7 @@ describe("the default", () => {
 });
 
 describe("from a chat", () => {
-  test("Save Current As Profile copies the chat's helpers; Off saves none", async () => {
+  test("Save Current As Profile copies the chat's helpers, a built-in profile's too; none saves none", async () => {
     const r = await saveCurrentAsProfile("From chat", { model: "openai/gpt-5.5", thinking: "low", helpers: "house" }, deps);
     assert.ok(r.ok, !r.ok ? r.error : "");
     const s = json<Yours>(yoursFile).profiles.at(-1)!;
@@ -353,8 +350,11 @@ describe("from a chat", () => {
     assert.equal(json<Lib>(libFile).profiles.at(-1)!.name, "From chat");
     const lib = read(libFile);
     assert.ok((await saveCurrentAsProfile("Bare chat", { helpers: "off" }, deps)).ok);
-    assert.equal(json<Yours>(yoursFile).profiles.at(-1)!.subagents, "off");
-    assert.equal(read(libFile), lib, "Off copies no helpers");
+    assert.equal(json<Yours>(yoursFile).profiles.at(-1)!.subagents, undefined, "an older Off names no helpers, and \"off\" is never written");
+    assert.equal(read(libFile), lib, "no helpers copied");
+    assert.ok((await saveCurrentAsProfile("From built in", { helpers: "openai" }, deps)).ok);
+    const copy = json<Lib>(libFile).profiles.at(-1)!;
+    assert.deepEqual([copy.id, copy.name], ["from-built-in", "From built in"]);
   });
 
   test("Update {name} saves the chat's model, effort and modes into its profile, never its helpers", async () => {
@@ -364,6 +364,7 @@ describe("from a chat", () => {
     const s = json<Yours>(yoursFile).profiles[0]!;
     assert.deepEqual([s.model, s.thinking, s.mode, s.minorModes, s.subagents], ["zai/glm-5.3", "high", "delegate", ["align"], "house"]);
     assert.equal(read(libFile), lib);
-    assert.equal((await updateFromChat("sova:default", {}, deps)).ok, false, "Off saves nothing");
+    assert.equal((await updateFromChat("sova:default", {}, deps)).ok, false, "an older Off saves nothing");
+    assert.equal((await updateFromChat("sova:openai", {}, deps)).ok, false, "a built-in profile isn't updated here");
   });
 });

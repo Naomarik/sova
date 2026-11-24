@@ -1,8 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { OFF_ID, OFF_KEY, type DefaultProfileInfo, type JoinedProfile } from "../shared/profiles";
+import { OFF_ID, type DefaultProfileInfo, type JoinedProfile } from "../shared/profiles";
 import {
-  loadSubagentProfiles, profilesDefaultOf, readProfilesDefault, writeProfilesDefault,
+  builtinFallback, loadSubagentProfiles, profilesDefaultOf, readProfilesDefault, writeProfilesDefault,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { joinedProfiles, pickJoined } from "./joined-profiles";
 import { readMode, writeMode, type ModePatch } from "./mode-state";
@@ -11,10 +11,11 @@ import { loadDefaults, saveDefaults } from "./web-defaults";
 
 /**
  * This computer's one default profile (§chat.profiles/default): `<state root>/default-profile.json`,
- * `{"version": 1, "profile": <id or "off">}`, never synced. Choosing one also keeps the three older
- * default files written for what the profile sets (mode.json's default, defaults.json, and
- * subagent-profiles-default.json), so pi-config's extensions and an older Sova read the same default.
- * Before one is chosen, the default is read from the older files and nothing is written.
+ * `{"version": 1, "profile": <id>}`, never synced. Choosing one also keeps the three older default files
+ * written for what the profile sets (mode.json's default, defaults.json, and subagent-profiles-default.json),
+ * so pi-config's extensions and an older Sova read the same default. Before one is chosen, the default is
+ * read from the older files, else worked out from the accounts connected here (the built-in Claude, then
+ * OpenAI, then DeepSeek), and nothing is written. An older build's "off" reads as not chosen.
  */
 
 export const DEFAULT_PROFILE_FILE_NAME = "default-profile.json";
@@ -57,34 +58,47 @@ function writeDefaultProfileFile(profile: string, file = defaultProfileFile()): 
 
 /**
  * The default among `rows` (pure). `file`: default-profile.json as read; `libraryDefault`: the id
- * subagent-profiles-default.json resolves to (profilesDefaultOf), used only while no default was chosen.
+ * subagent-profiles-default.json names (null: none, "off", or one that names nothing here), used while no
+ * default was chosen; `fallback`: the built-in profile the connected accounts give, used after that.
+ * `fromAccounts`: the default is that fallback, which nobody chose.
  */
-export function defaultAmong(rows: readonly JoinedProfile[], file: DefaultFileState, libraryDefault: string): { row: JoinedProfile; info: DefaultProfileInfo } {
-  const off = rows.find((r) => r.kind === "off")!;
-  const info = (row: JoinedProfile, chosen: boolean, note?: string) => ({ row, info: { key: row.key, id: row.id, name: row.name, chosen, ...(note ? { note } : {}) } });
-  if (file.state === "ok") {
-    if (file.profile === OFF_ID) return info(off, true);
+export function defaultAmong(rows: readonly JoinedProfile[], file: DefaultFileState, libraryDefault: string | null, fallback: string = "claude"): { row: JoinedProfile; info: DefaultProfileInfo; fromAccounts: boolean } {
+  let fromAccounts = false;
+  const info = (row: JoinedProfile, chosen: boolean, note?: string) => ({ row, fromAccounts, info: { key: row.key, id: row.id, name: row.name, chosen, ...(note ? { note } : {}) } });
+  // Not chosen: the pair linking the saved default helpers (yours first, by name), else that helper profile's
+  // own row (a library-only one, or a built-in one or the row that takes its place), else the fallback's.
+  const derived = (): JoinedProfile => {
+    for (const [id, accounts] of [...(libraryDefault === null ? [] : [[libraryDefault, false] as const]), [fallback, true] as const]) {
+      const linking = rows.filter((r) => r.libraryId === id && r.kind !== "library");
+      const row = linking.find((r) => r.group === "yours") ?? rows.find((r) => r.kind === "library" && r.id === id) ?? pickJoined(rows, id) ?? linking[0];
+      fromAccounts = accounts;
+      if (row) return row;
+    }
+    fromAccounts = true;
+    return rows[0]!;
+  };
+  if (file.state === "ok" && file.profile !== OFF_ID) {
     const row = pickJoined(rows, file.profile);
-    return row ? info(row, true) : info(off, true, `The default, "${file.profile}", isn't a profile here, so new chats start on Off.`);
+    if (row) return info(row, true);
+    const instead = derived();
+    return info(instead, false, `The default, "${file.profile}", isn't a profile here, so new chats start on ${instead.name}.`);
   }
-  if (file.state === "malformed") return info(off, true, `${DEFAULT_PROFILE_FILE_NAME} can't be read (${file.error}), so new chats start on Off.`);
-  if (libraryDefault === OFF_ID) return info(off, false);
-  // Not chosen yet: the pair linking the saved default helpers (the first by name), else that library profile's own row.
-  const linking = rows.filter((r) => r.libraryId === libraryDefault && r.kind !== "library");
-  const yours = linking.find((r) => r.group === "yours");
-  const row = yours ?? rows.find((r) => r.kind === "library" && r.id === libraryDefault) ?? linking[0] ?? off;
-  return info(row, false);
+  if (file.state === "malformed") {
+    const instead = derived();
+    return info(instead, false, `${DEFAULT_PROFILE_FILE_NAME} can't be read (${file.error}), so new chats start on ${instead.name}.`);
+  }
+  return info(derived(), false);
 }
 
 /** The default a session in `cwd` starts on now, and how the listing shows it. */
-export async function resolveDefaultProfile(cwd?: string | null, rows?: readonly JoinedProfile[], dir = agentRoot()): Promise<{ row: JoinedProfile; info: DefaultProfileInfo }> {
+export async function resolveDefaultProfile(cwd?: string | null, rows?: readonly JoinedProfile[], dir = agentRoot()): Promise<{ row: JoinedProfile; info: DefaultProfileInfo; fromAccounts: boolean }> {
   const list = rows ?? (await joinedProfiles(cwd, {}, dir));
-  return defaultAmong(list, readDefaultProfileFile(), profilesDefaultOf(loadSubagentProfiles(dir), readProfilesDefault(dir)).id);
+  const fallback = builtinFallback(dir);
+  return defaultAmong(list, readDefaultProfileFile(), profilesDefaultOf(loadSubagentProfiles(dir), readProfilesDefault(dir), null).id, fallback);
 }
 
 /** What choosing `row` writes to each older default file (pure): absent = that file is left as it is. */
 export function olderDefaultsOf(row: JoinedProfile): { mode?: ModePatch; model?: string; thinking?: string; subagents?: string } {
-  if (row.kind === "off") return { subagents: OFF_ID };
   const s = row.session;
   const mode: ModePatch = {};
   if (s?.mode) mode.mode = s.mode as ModePatch["mode"];
@@ -93,9 +107,10 @@ export function olderDefaultsOf(row: JoinedProfile): { mode?: ModePatch; model?:
     ...(mode.mode || mode.minorModes ? { mode } : {}),
     ...(s?.model ? { model: s.model } : {}),
     ...(s?.thinking ? { thinking: s.thinking } : {}),
-    // Its helpers' id where it has them, "off" where it names Off; a profile with no helpers here (none
-    // linked, or a link whose half isn't on this device) follows the default helpers as they stand.
-    ...(row.library ? { subagents: row.library.id } : s?.subagents === OFF_ID ? { subagents: OFF_ID } : {}),
+    // Its helpers' id where it has them (a built-in one's too, which an older reader takes for a default naming
+    // nothing); a profile with no helpers here (none linked, or a link whose half isn't on this device) follows
+    // the default helpers as they stand. "off" is never written.
+    ...(row.library ? { subagents: row.library.id } : {}),
   };
 }
 
@@ -125,8 +140,7 @@ export function chooseDefaultProfile(row: JoinedProfile, rows: readonly JoinedPr
   if (Object.keys(patch).length) saveDefaults(patch);
   const lib = readProfilesDefault(dir);
   if (older.subagents && !(lib.state === "ok" && lib.value.default === older.subagents)) writeProfilesDefault(dir, { version: 1, default: older.subagents });
-  writeDefaultProfileFile(row.kind === "off" ? OFF_ID : row.id);
+  writeDefaultProfileFile(row.id);
   return { key: row.key, id: row.id, name: row.name, chosen: true };
 }
 
-export { OFF_KEY };

@@ -39,7 +39,9 @@ describe("the profile routes", () => {
   test("GET /api/profiles carries the joined list and the default, read from the older files before one is chosen", async () => {
     const { status, body } = await call("GET", "/api/profiles");
     assert.equal(status, 200);
-    assert.deepEqual(body.joined?.map((r) => [r.key, r.kind]), [["sova:default", "off"], ["user:claude", "pair"], ["library:solo", "library"]]);
+    // The pair named Claude takes the built-in Claude's place; no account is connected here, so no other built-in is listed.
+    assert.deepEqual(body.joined?.map((r) => [r.key, r.kind]), [["user:claude", "pair"], ["library:solo", "library"]]);
+    assert.equal(body.joined?.find((r) => r.key === "user:claude")?.replaces, "sova:claude");
     assert.deepEqual(body.defaultProfile, { key: "user:claude", id: "claude", name: "Claude", chosen: false });
     assert.equal(body.joined?.find((r) => r.isDefault)?.key, "user:claude");
     assert.ok(body.template && !("id" in body.template));
@@ -63,7 +65,9 @@ describe("the profile routes", () => {
     const del = await call("POST", "/api/profiles/mine/delete", { key: "library:solo" });
     assert.deepEqual([del.status, del.body.error], [409, "Make another profile the default first."]);
     const off = await call("PUT", "/api/profiles/default", { key: "off" });
-    assert.equal(off.body.defaultProfile?.key, "sova:default");
+    assert.deepEqual([off.status, off.body.error], [404, "There is no Off profile to make the default."]);
+    assert.equal(JSON.parse(readFileSync(join(stateDir, "default-profile.json"), "utf8")).profile, "solo", "nothing written");
+    assert.equal((await call("PUT", "/api/profiles/default", { key: "user:claude" })).status, 200);
     assert.equal((await call("POST", "/api/profiles/mine/delete", { key: "library:solo" })).status, 200);
   });
 

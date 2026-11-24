@@ -1021,12 +1021,12 @@ export function codingModeNow(): CodingModeNow {
     // An unreadable library: no profile to name.
   }
   const def = defaultTakes();
-  return { mode: m.mode, minorModes: m.minorModes, subagents, profile: def ? { id: def.id, name: def.name } : { id: "off", name: "Off" } };
+  return { mode: m.mode, minorModes: m.minorModes, subagents, ...(def ? { profile: { id: def.id, name: def.name } } : {}) };
 }
 
 /** The prompt's words for it: "on Claude, in normal · spec (this computer's default profile)". */
 export function codingModeNowWords(now = codingModeNow()): string {
-  return `on ${now.profile?.name ?? "Off"}, in ${describeCodingMode(now)} (this computer's default profile)`;
+  return `on ${now.profile?.name ?? "this computer's default profile"}, in ${describeCodingMode(now)}${now.profile ? " (this computer's default profile)" : ""}`;
 }
 
 /** The Overseer's mode request on a start (POST …/items/code): its mode, or a 400 before anything is taken. */

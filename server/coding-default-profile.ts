@@ -1,8 +1,9 @@
 import { DEFAULT_PROFILE, profileKey, type JoinedProfile, type ListedProfile } from "../shared/profiles";
-import { loadSubagentProfiles, profilesDefaultOf, readProfilesDefault } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { builtinFallback, loadSubagentProfiles, profilesDefaultOf, readProfilesDefault } from "../pi-config/extensions/subagents/subagent-profiles.ts";
+import { BUILTIN_PROFILE_IDS, readConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import { buildJoined, findJoined } from "./joined-profiles";
 import { defaultAmong, readDefaultProfileFile } from "./default-profile";
-import { readHidden } from "./profile-sources";
+import { builtinSessionProfile, readHidden } from "./profile-sources";
 import { readProfiles } from "./profiles-store";
 import { agentRoot } from "./state-root";
 
@@ -10,17 +11,27 @@ import { agentRoot } from "./state-root";
  * This computer's default profile as a project's coding sessions take it (§app.project-overseer/coding-mode),
  * read synchronously, for the project overseer's prompt and the project page's line: the joined list of yours and
  * the helper library (a coding session outside every project's own profiles), and the default the same way new
- * chats read it (default-profile.json, else the pair linking the saved default helpers, else Off). A default that
- * names a project's profile reads as Off here, as it does outside its project.
+ * chats read it (default-profile.json, else the pair linking the saved default helpers, else the built-in profile the
+ * connected accounts give). A default that names a project's profile reads as not chosen here, as it does outside its
+ * project.
  */
 export function codingDefaultProfile(dir = agentRoot()): JoinedProfile {
   const read = readProfiles();
   const yours: ListedProfile[] = read.ok ? read.file.profiles.map((p) => ({ ...p, source: "user" as const, key: profileKey({ source: "user", id: p.id }) })) : [];
   const off: ListedProfile = { ...DEFAULT_PROFILE, source: "sova", key: profileKey({ source: "sova", id: DEFAULT_PROFILE.id }) };
   const library = loadSubagentProfiles(dir);
-  const rows = buildJoined({ sources: { builtins: [off], yours, project: { state: "none", profiles: [] } as never }, library, hidden: readHidden() });
-  return defaultAmong(rows, readDefaultProfileFile(), profilesDefaultOf(library, readProfilesDefault(dir)).id).row;
+  const builtins = [off, ...BUILTIN_PROFILE_IDS.filter((id) => !yours.some((y) => y.id === id)).map((id) => ({ ...builtinSessionProfile(id), source: "sova" as const, key: profileKey({ source: "sova", id }) }))];
+  const rows = buildJoined({ sources: { builtins, yours, project: { state: "none", profiles: [] } as never }, library, hidden: readHidden(), connected: readConnectedAccounts(dir) });
+  const fallback = builtinFallback(dir);
+  const d = defaultAmong(rows, readDefaultProfileFile(), profilesDefaultOf(library, readProfilesDefault(dir), null).id, fallback);
+  return d.fromAccounts ? helpersOnly(d.row) : d.row;
 }
+
+/** A default nobody chose (the built-in one the accounts give): a coding session takes only its helpers, as a new chat does. */
+const helpersOnly = (row: JoinedProfile): JoinedProfile => {
+  const { session: _session, ...rest } = row;
+  return rest;
+};
 
 /** What a coding session takes from a profile (§app.project-overseer/coding-mode): its mode and add-ons, its This
     chat model and effort, and its helpers' id. Never its tools, powers, One at a time or first message: a coding
@@ -32,7 +43,7 @@ export interface CodingTakes {
   minorModes?: string[];
   model?: string;
   thinking?: string;
-  /** The library id, or "off"; absent: the session follows this computer's default helpers. */
+  /** The library or built-in helper profile's id; absent: the session follows this computer's default helpers. */
   subagents?: string;
   /** Its session half, when it grants a session power: a named start writes it whole (by the Overseer). */
   grants?: { source: string; id: string };
@@ -47,7 +58,7 @@ export function codingTakesOf(row: JoinedProfile): CodingTakes {
     ...(s?.minorModes ? { minorModes: [...s.minorModes] } : {}),
     ...(s?.model ? { model: s.model } : {}),
     ...(s?.thinking ? { thinking: s.thinking } : {}),
-    ...(row.kind === "off" ? { subagents: "off" } : row.libraryId ? { subagents: row.libraryId } : {}),
+    ...(row.libraryId ? { subagents: row.libraryId } : {}),
     ...(s && s.grant.length ? { grants: { source: s.source, id: s.id } } : {}),
   };
 }

@@ -33,6 +33,9 @@ export interface CompressedChat {
   /** kind "home": the compressed home, and the home folder it was. */
   archive?: string;
   home?: string;
+  /** kind "home": the compressed file's own sha256 and size, checked before anything unpacks it (rollback). */
+  archiveSha256?: string;
+  archiveSize?: number;
   /** kind "files": the chat's own conversation and its helpers'. */
   files?: CompressedFile[];
 }

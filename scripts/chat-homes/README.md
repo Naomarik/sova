@@ -29,6 +29,10 @@ Writes `<out>/<timestamp>/` (default `$XDG_STATE_HOME/sova/backups`, else
 
 It prints the folder. Each archive is listed back after it is written.
 
+**A backup holds your logins and keys** (`auth.json`, the Claude Code and model logins in the agent
+dir) as well as every conversation. Keep it on this machine: never copy it to another device, a
+shared folder or a cloud drive, and never attach it to a report or a chat.
+
 ## Rollback
 
 ```sh
@@ -39,8 +43,8 @@ Puts the install back in master's layout, keeping every chat, the ones made on t
 
 1. takes a backup first (as above), unless `--no-backup`;
 2. undoes archive compression: each `<file>.jsonl.gz` back to `<file>.jsonl` and each compressed
-   home (`<homes>/<id>.tar.gz`) unpacked into its folder, every file checked against the sha256
-   recorded when it was compressed (`<agent dir>/sova/compressed-sessions.json`, and each home's
+   home (`<homes>/<id>.tar.gz`) unpacked into its folder, every file, and each compressed home's
+   file before it is unpacked, checked against the sha256 recorded when it was compressed (`<agent dir>/sova/compressed-sessions.json`, and each home's
    `<id>.compressed.json` when that store is gone);
 3. moves each homed chat's conversations, its workers' and team members' included, into
    `<agent dir>/sessions/--<cwd>--/` by each file's own header `cwd`, beside the chats already there;
@@ -51,7 +55,12 @@ Puts the install back in master's layout, keeping every chat, the ones made on t
    shared folder to master's places, and rewrites every path that named the home (in the moved
    conversations, worker records, wake nudges and Sova's other JSON stores) to the new place; worker
    records lose `SOVA_CHAT_HOME`;
-6. moves each emptied home to `<homes>/.rolled-back/<id>`. Nothing is deleted.
+6. moves each emptied home to `<homes>/.rolled-back/<id>` (and each compressed home's file beside
+   it). Nothing is deleted.
+
+Before the first move it writes every move and path rewrite to `<homes>/.rollback-journal.json`. A
+rollback cut short (^C, a full disk) can simply be run again: it finishes the moves and rewrites the
+paths of everything the first run moved too, then retires the journal.
 
 `--dry-run` says what it would do and changes nothing. A problem (a compressed file that is missing
 or doesn't match) is printed as `PROBLEM:`, that chat is left as it was, and the exit code is 2.

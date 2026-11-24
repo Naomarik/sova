@@ -57,16 +57,18 @@ async function compressHome(id: string, row: SessionSummary, by: CompressedChat[
   const home = chatHome(id);
   const archive = join(homesRoot(), `${id}.tar.gz`);
   const tmp = `${archive}.${process.pid}.tmp`;
+  let sum: { sha256: string; size: number };
   try {
     const want = await writeTarGz(home, tmp);
     const got = await readTarGz(tmp);
     if (!sameEntries(want, got)) throw new Error("the compressed home doesn't read back as the home");
+    sum = await sha256Of(tmp);
     renameSync(tmp, archive);
   } catch (err) {
     rmQuiet(tmp);
     throw err;
   }
-  const entry: CompressedChat = { id, kind: "home", at: new Date().toISOString(), by, row: keptRow(row), archive, home };
+  const entry: CompressedChat = { id, kind: "home", at: new Date().toISOString(), by, row: keptRow(row), archive, home, archiveSha256: sum.sha256, archiveSize: statSync(archive).size };
   putCompressed(entry);
   // Forgotten first: a store write in flight finds no home and never makes part of it again.
   forgetHome(id);

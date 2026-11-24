@@ -138,13 +138,32 @@ async function uncompress({ state, homes, dry, report }) {
         report.uncompressed.push(home);
         continue;
       }
+      // The compressed file is checked against the sha256 recorded when it was made, before anything unpacks it.
+      if (e.archiveSha256 && (await sha256File(archive)) !== e.archiveSha256) {
+        report.problems.push(`${archive} doesn't match what was compressed; left as it is`);
+        continue;
+      }
       const staging = join(homes, `.rollback-${e.id}`);
       rmSync(staging, { recursive: true, force: true });
       mkdirSync(staging, { recursive: true });
-      tar(["-xzf", archive, "-C", staging]);
+      try {
+        tar(["-xzf", archive, "-C", staging]);
+      } catch (err) {
+        rmSync(staging, { recursive: true, force: true });
+        report.problems.push(`${archive} couldn't be unpacked (${String(err?.stderr ?? err?.message ?? err).trim().split("\n")[0]}); left as it is`);
+        continue;
+      }
+      if (!exists(join(staging, "home.json")) && !exists(join(staging, "sessions"))) {
+        rmSync(staging, { recursive: true, force: true });
+        report.problems.push(`${archive} unpacked to no home; left as it is`);
+        continue;
+      }
       renameSync(staging, home);
-      rmSync(archive);
-      rmSync(join(homes, `${e.id}.compressed.json`), { force: true });
+      // The compressed file is kept aside, never deleted.
+      mkdirSync(join(homes, ".rolled-back"), { recursive: true });
+      renameSync(archive, join(homes, ".rolled-back", `${e.id}.tar.gz`));
+      const side = join(homes, `${e.id}.compressed.json`);
+      if (exists(side)) renameSync(side, join(homes, ".rolled-back", `${e.id}.compressed.json`));
       report.uncompressed.push(home);
     }
   }
@@ -255,63 +274,102 @@ function headerOf(file) {
   }
 }
 
-async function unhome({ agent, state, homes, shared, dry, report }) {
+/**
+ * Every move a rollback makes, and every path it rewrites, written down before the first move
+ * (`<homes>/.rollback-journal.json`): a run cut short (^C, a full disk) and run again still rewrites
+ * the paths of what the first run already moved. Retired only once the rewrite is done.
+ */
+const journalFile = (homes) => join(homes, ".rollback-journal.json");
+
+function loadJournal(homes) {
+  const j = readJson(journalFile(homes), null);
+  return j && j.v === 1 && Array.isArray(j.paths) ? j : { v: 1, paths: [], moves: [], workers: [], homes: [] };
+}
+
+/** What one home's rollback does: its conversations' moves and every path into it, read from the home as it is. */
+function planHome({ agent, state, homes, shared, id, report }) {
+  const home = join(homes, id);
+  const moves = [];
+  const paths = [];
+  const sessions = join(home, "sessions");
+  if (exists(sessions))
+    for (const n of readdirSync(sessions)) {
+      if (!n.endsWith(".jsonl")) continue;
+      const from = join(sessions, n);
+      const h = headerOf(from);
+      if (!h?.cwd) {
+        report.problems.push(`${from} has no readable session header; left in its home`);
+        continue;
+      }
+      const to = join(cwdSessionsDir(agent, h.cwd), n);
+      moves.push([from, to]);
+      paths.push([from, to]);
+    }
+  // Every place a path into the home may name (worker records, wake nudges, conversations' image links).
+  paths.push([join(home, "shared"), join(shared, id)]);
+  paths.push([`${join(home, "chat", "attachments")}/`, `${join(state, "attachments", id)}/`]);
+  paths.push([`${join(home, "chat", "memory")}/`, `${join(state, "memory")}/`]);
+  if (exists(join(home, "teams"))) for (const lead of readdirSync(join(home, "teams"))) paths.push([join(home, "teams", lead), join(state, "teams", lead, "mailbox")]);
+  const workers = exists(join(home, "workers")) ? readdirSync(join(home, "workers")).filter((w) => w.endsWith(".json")).map((w) => join(state, "chats", "workers", w)) : [];
+  return { moves, paths, workers };
+}
+
+async function unhome({ agent, state, homes, shared, dry, report, hooks = {} }) {
   if (!exists(homes)) return;
-  const pathMap = new Map();
-  const moved = [];
-  const workerFiles = [];
   const ids = readdirSync(homes, { withFileTypes: true })
     .filter((e) => e.isDirectory() && !e.name.startsWith("."))
     .map((e) => e.name)
     .filter((id) => exists(join(homes, id, "home.json")));
+  // 1. The plan of every home, added to what an earlier run wrote down, saved before anything moves.
+  const journal = loadJournal(homes);
+  const seenPath = new Set(journal.paths.map(([f]) => f));
+  const addUnique = (list, items, key = (x) => x) => {
+    const have = new Set(list.map(key));
+    for (const x of items) if (!have.has(key(x))) list.push(x);
+  };
+  for (const id of ids) {
+    const plan = planHome({ agent, state, homes, shared, id, report });
+    for (const pair of plan.paths) if (!seenPath.has(pair[0])) {
+      journal.paths.push(pair);
+      seenPath.add(pair[0]);
+    }
+    addUnique(journal.moves, plan.moves, ([f]) => f);
+    addUnique(journal.workers, plan.workers);
+    addUnique(journal.homes, [id]);
+  }
+  if (dry) {
+    for (const [, to] of journal.moves) report.sessions.push(to);
+    report.homes.push(...ids);
+    for (const id of ids) for (const doc of ["meta", "seen", "draft", "signals"]) mergeDoc(state, readJson(join(homes, id, "chat", `${doc}.json`), null), true, report);
+    return;
+  }
+  if (journal.moves.length || journal.homes.length) writeJson(journalFile(homes), journal);
+  // 2. The moves (one already made by an earlier run is passed over) and the records.
+  for (const [from, to] of journal.moves) {
+    if (exists(from)) move(from, to);
+    if (exists(to)) report.sessions.push(to);
+  }
+  hooks.afterMoves?.();
   for (const id of ids) {
     const home = join(homes, id);
-    // Conversations: each to its own cwd's folder, under its own name.
-    const sessions = join(home, "sessions");
-    if (exists(sessions))
-      for (const n of readdirSync(sessions)) {
-        if (!n.endsWith(".jsonl")) continue;
-        const from = join(sessions, n);
-        const h = headerOf(from);
-        if (!h?.cwd) {
-          report.problems.push(`${from} has no readable session header; left in its home`);
-          continue;
-        }
-        const to = join(cwdSessionsDir(agent, h.cwd), n);
-        pathMap.set(from, to);
-        if (dry) report.sessions.push(to);
-        else {
-          move(from, to);
-          moved.push(to);
-          report.sessions.push(to);
-        }
-      }
-    // Every place a path into the home may name (worker records, wake nudges, conversations' image links).
-    pathMap.set(join(home, "shared"), join(shared, id));
-    pathMap.set(`${join(home, "chat", "attachments")}/`, `${join(state, "attachments", id)}/`);
-    pathMap.set(`${join(home, "chat", "memory")}/`, `${join(state, "memory")}/`);
-    if (exists(join(home, "teams"))) for (const lead of readdirSync(join(home, "teams"))) pathMap.set(join(home, "teams", lead), join(state, "teams", lead, "mailbox"));
-    // Records.
-    for (const doc of ["meta", "seen", "draft", "signals"]) mergeDoc(state, readJson(join(home, "chat", `${doc}.json`), null), dry, report);
-    if (!dry) {
-      const chat = join(home, "chat");
-      mergeInto(join(chat, "attachments"), join(state, "attachments", id), report);
-      mergeInto(join(chat, "memory"), join(state, "memory"), report);
-      mergeInto(join(chat, "offers"), join(state, "session-offers"), report);
-      mergeInto(join(chat, "cards"), join(state, "session-cards"), report);
-      if (exists(join(home, "workers"))) for (const w of readdirSync(join(home, "workers"))) if (w.endsWith(".json")) workerFiles.push(join(state, "chats", "workers", w));
-      mergeInto(join(home, "workers"), join(state, "chats", "workers"), report);
-      if (exists(join(home, "teams")))
-        for (const lead of readdirSync(join(home, "teams"))) mergeInto(join(home, "teams", lead), join(state, "teams", lead, "mailbox"), report);
-      mergeInto(join(home, "wakes"), join(state, "wake-nudges"), report);
-      mergeInto(join(home, "shared"), join(shared, id), report);
-    }
-    report.homes.push(id);
+    for (const doc of ["meta", "seen", "draft", "signals"]) mergeDoc(state, readJson(join(home, "chat", `${doc}.json`), null), false, report);
+    const chat = join(home, "chat");
+    mergeInto(join(chat, "attachments"), join(state, "attachments", id), report);
+    mergeInto(join(chat, "memory"), join(state, "memory"), report);
+    mergeInto(join(chat, "offers"), join(state, "session-offers"), report);
+    mergeInto(join(chat, "cards"), join(state, "session-cards"), report);
+    mergeInto(join(home, "workers"), join(state, "chats", "workers"), report);
+    if (exists(join(home, "teams")))
+      for (const lead of readdirSync(join(home, "teams"))) mergeInto(join(home, "teams", lead), join(state, "teams", lead, "mailbox"), report);
+    mergeInto(join(home, "wakes"), join(state, "wake-nudges"), report);
+    mergeInto(join(home, "shared"), join(shared, id), report);
+    hooks.afterHome?.(id);
   }
-  if (dry) return;
-  // Every path that named a home's conversation now names its new place: in the conversations
-  // (a worker's completion names its file), the worker records and Sova's other stores.
-  const rewrite = [...moved];
+  report.homes.push(...journal.homes);
+  // 3. Every path that named a home now names its new place, from the whole journal: in the moved
+  // conversations (a worker's completion names its file), the worker records and Sova's other stores.
+  const pathMap = new Map(journal.paths);
+  const rewrite = journal.moves.map(([, to]) => to).filter((to) => exists(to));
   const walk = (d, depth) => {
     if (!exists(d) || depth > 3) return;
     for (const e of readdirSync(d, { withFileTypes: true })) {
@@ -323,12 +381,13 @@ async function unhome({ agent, state, homes, shared, dry, report }) {
   };
   walk(state, 0);
   for (const f of rewrite) if (rewritePaths(f, pathMap)) report.rewritten++;
-  for (const f of workerFiles) unhomeWorkerRecord(f);
-  // The emptied homes are kept aside, never deleted.
-  for (const id of report.homes) {
+  for (const f of journal.workers) if (exists(f)) unhomeWorkerRecord(f);
+  // 4. The emptied homes are kept aside, never deleted; then the journal is retired.
+  for (const id of journal.homes) {
     const home = join(homes, id);
     if (exists(home)) move(home, join(homes, ".rolled-back", id));
   }
+  if (exists(journalFile(homes))) renameSync(journalFile(homes), join(homes, `.rollback-journal.done-${Date.now()}.json`));
 }
 
 // ---- --from-backup ------------------------------------------------------------------------------
@@ -363,7 +422,7 @@ async function restore(from, { dry, log }) {
 
 // ---- main ---------------------------------------------------------------------------------------
 
-export async function rollback({ dryRun = false, noBackup = false, backupOut, fromBackup, env = process.env, log = console.log } = {}) {
+export async function rollback({ dryRun = false, noBackup = false, backupOut, fromBackup, env = process.env, log = console.log, hooks } = {}) {
   const agent = agentDir(env);
   const running = [...liveProcesses(agent).map((r) => `pi (pid ${r.pid})`), ...(await runningSova(agent))];
   if (running.length) throw new Error(`Still running on ${agent}: ${running.join(", ")}. Stop it first.`);
@@ -377,7 +436,7 @@ export async function rollback({ dryRun = false, noBackup = false, backupOut, fr
   const shared = sharedBase(env);
   const report = { uncompressed: [], sessions: [], homes: [], records: new Set(), rewritten: 0, kept: [], problems: [] };
   await uncompress({ state, homes, dry: dryRun, report });
-  await unhome({ agent, state, homes, shared, dry: dryRun, report });
+  await unhome({ agent, state, homes, shared, dry: dryRun, report, hooks });
   const did = dryRun ? "Would" : "Done:";
   log(`${did} uncompress ${report.uncompressed.length} chats, move ${report.sessions.length} conversations out of ${report.homes.length} homes, merge records into ${[...report.records].join(", ") || "no stores"}${dryRun ? "" : `, rewrite paths in ${report.rewritten} files`}.`);
   for (const k of report.kept) log(`kept as it was: ${k}`);

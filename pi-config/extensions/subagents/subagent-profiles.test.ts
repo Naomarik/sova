@@ -356,7 +356,7 @@ test("seedReviewer: the default goes only to profiles without the key; None and 
 	assert.ok(after.state === "ok");
 	const [bare, none, own] = after.value.profiles;
 	assert.deepEqual(bare!.reviewer, defaultReviewer());
-	assert.deepEqual(defaultReviewer(), { primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" } });
+	assert.deepEqual(defaultReviewer(), { primary: { backend: "pi", model: "openai-codex/gpt-6.2-sol", effort: "high" }, fallback: { backend: "claude-code", model: "claude-opus-5-5", effort: "high" } });
 	assert.equal(none!.reviewer, null, "an explicit None is never overwritten");
 	assert.deepEqual(own!.reviewer, mine, "an existing route is never overwritten");
 	const bytes = fs.readFileSync(subagentProfilesPath(dir), "utf8");

@@ -402,7 +402,7 @@ export function writeProfilesDefault(agentDir: string, value: unknown): Subagent
 /** The reviewer the seeding writes: Sol on pi, with Claude Code's Opus as its fallback. */
 export function defaultReviewer(): ReviewerRoute {
 	return {
-		primary: { backend: "pi", model: "openai-codex/gpt-6.1-sol", effort: "high" },
+		primary: { backend: "pi", model: "openai-codex/gpt-6.2-sol", effort: "high" },
 		fallback: { backend: "claude-code", model: latestClaude("opus").id, effort: "high" },
 	};
 }

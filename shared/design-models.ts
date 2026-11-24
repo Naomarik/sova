@@ -82,7 +82,7 @@ export function designInGroup(ref: string, word: string): boolean {
  */
 export const DESIGN_MODEL_RANK: Readonly<Record<string, readonly string[]>> = {
   claude: CLAUDE_MODELS.map((m) => m.id),
-  gpt: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.5", "gpt-5.6-terra", "gpt-6-luna", "gpt-5.6-luna"],
+  gpt: ["gpt-6-astra", "gpt-6.2-sol", "gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol", "gpt-5.5", "gpt-5.6-terra", "gpt-6-luna", "gpt-5.6-luna"],
   zai: ["glm-5.3", "glm-5.2", "glm-5.3-highspeed", "glm-5.2-highspeed", "glm-5-turbo", "glm-5.3-flash", "glm-4.7"],
   deepseek: ["deepseek-v4-pro", "deepseek-flash"],
   "ollama-cloud": [

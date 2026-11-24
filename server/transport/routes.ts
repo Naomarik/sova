@@ -278,8 +278,10 @@ export function startRefusal(path: string): string | null {
 /** A chat that arrived on a device it once moved away from: it runs here again, so its old Moved row's marks go
     (moved away, and archived: a Moved row is in the Archive, a compressed one too, and the arrived chat isn't). */
 export function cameBack(id: string): void {
-  if (movedOf(id)) (unmarkMoved(id), log(`${id}: came back here; its old Moved mark is cleared`));
+  if (!movedOf(id)) return; // a first arrival keeps the marks it came with
+  unmarkMoved(id);
   if (isArchived(id)) setArchived(id, false);
+  log(`${id}: came back here; its old Moved row's marks are cleared`);
 }
 
 export function mountTransport(app: Hono, mesh: Mesh): void {

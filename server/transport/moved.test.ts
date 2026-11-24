@@ -234,3 +234,15 @@ test("coming home where its old copy was compressed: that copy is moved aside, k
   assert.ok(existsSync(`${aside}.compressed.json`));
   assert.ok(!existsSync(archive));
 });
+
+test("a first arrival of a chat archived where it came from keeps its archive mark: only an old Moved row's is cleared", async () => {
+  resetMovedMemo();
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const { isArchived, setArchived } = await import("../archived-sessions");
+  const { cameBack } = await import("./routes");
+  const id = "0199aaaa-0000-7000-8000-000000000010";
+  ensureChatHome(id);
+  setArchived(id, true);
+  cameBack(id);
+  assert.ok(isArchived(id), "never moved away from here: the user's own choice stays");
+});

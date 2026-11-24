@@ -83,6 +83,7 @@ Paths in "Where" are under `server/`.
 | P47 no-idle-warming | monkey-patch | `warmOnlyWhileStreaming` (harness/pi/cache-warming.ts), `servicesForCwd` (harness/pi/open.ts) | `SettingsManager.getCacheWarmingMode`, `CacheWarmer.onAgentSettled`, `AgentSession.cacheWarmingStatus`, `createAgentSession`, `SETTINGS_DEFAULTS.cacheWarming` | pi takes a cache-warming mode per session, or Sova decides idle warming with a rule of its own (never for a worker) |
 | P48 auth-lock-path | semantic | `PiAuthStore.lockSpecs` (sync/logins-stores.ts), `lockDirOf` (sync/logins-stores.ts), `PiAuthStore.writeTarget` (sync/logins-stores.ts) | `FileAuthStorageBackend.acquireLockSyncWithRetry`, `FileAuthStorageBackend.acquireLockAsync`, `AuthStorage.modify`, `proper-lockfile realpath` | pi exports a credential write under its own lock; the given path's lock goes once no pi through 1.5.0 writes here (every chat reloaded, the terminal on 1.5.1 or later) |
 | P49 session-id-in-file-name | semantic | `idOf` (sessions-index.ts), `mintSessionId` (harness/pi/state.ts), `forkSessionFile` (harness/pi/fork.ts) | `SessionManager.create`, `SessionManager.forkFrom`, `SessionManager.inMemory`, `SessionManager.getSessionId` | never while Sova reads a session's id from its file name; a manifest-per-conversation would retire it |
+| P50 relocated-session-file | semantic | `relocateConversation` (harness/pi/relocate.ts), `relocateHome` (transport/relocate.ts) | `SessionManager.open`, `SessionManager.getSessionId`, `SessionManager.getCwd`, the `session` header's `cwd`, `id` and `parentSession` | pi offers a way to reopen a session in another folder (and under another id) without editing its file |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -360,6 +361,12 @@ Canary: `P48 auth-lock-path: pi locks auth.json on the file it resolves to, so o
 A session's id is read from its file name, the part after the last `_` of `<timestamp>_<id>.jsonl` (about 80 readers, sessions-index `idOf`), so a chat home's flat `sessions/` folder holds the lead and every helper under pi's own names. `SessionManager.create(cwd, dir, {id})` and `forkFrom(src, cwd, dir)` name the file that way in the folder given, and an in-memory manager mints the same kind of id before any file exists (`mintSessionId`), so a chat's id names its home first.
 
 Canary: `P49 session-id-in-file-name: create, an id minted in memory, and forkFrom name the file <timestamp>_<id>.jsonl in the folder given, the id being the header's, and touch no other folder`.
+
+### P50 relocated-session-file
+
+A conversation that moves to another device is rewritten outside pi (`relocateConversation`): its `session` header's `cwd` and `parentSession` (a Copy's `id` too, with the file renamed to `<timestamp>_<new id>.jsonl`) and the `data` of its `custom` entries, every other line kept byte for byte. pi then opens the file as it is: `SessionManager.open` takes the header's id and cwd as the session's, and the branch's entries are the same.
+
+Canary: `P50 relocated-session-file: a file whose header cwd and id were rewritten outside pi, renamed to the new id, opens with SessionManager.open under the new id and cwd, its branch intact`.
 
 ### T1 scripted-model (test-only)
 

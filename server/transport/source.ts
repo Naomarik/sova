@@ -12,6 +12,7 @@ import { agentRoot, stateRoot } from "../state-root";
 import { chatHome, hasHome } from "../chat-homes/root";
 import { git, type LooseFile, LARGE_FILE, looseBytes, surveyWorktree, type WorktreeSurvey } from "./git-snapshot";
 import { bringHelpersToRest, knob, previewExtras } from "./hooks";
+import { movedOf } from "./moved";
 import { buildPackage } from "./package";
 import { activeTransportOf, createTransport, logName, newTicket, newTid, readTransport, stepDone, type TransportRecord, updateTransport } from "./store";
 import type { OfferBody, OfferTree, StatusBody } from "./wire";
@@ -29,6 +30,8 @@ export interface ChatFacts {
   /** The kind that refuses it, in the dialog's words ("{kind} can't be transported."), or null. */
   specialKind: string | null;
   inTerminal: boolean;
+  /** Archive compression packed it (§app.session-list/archive-compression). */
+  compressed?: boolean;
 }
 
 export interface PeerFacts {
@@ -81,6 +84,8 @@ export const REFUSALS = {
   already: "This chat is already being transported.",
   kind: (k: string) => `${k} can't be transported.`,
   terminal: "A chat open in a terminal can't be transported.",
+  moved: (d: string) => `This chat moved to ${d}; it runs there now. Transport it from there.`,
+  compressed: "A compressed chat can't be transported.",
 };
 
 export interface Trees {
@@ -140,6 +145,9 @@ const stripCredentials = (url: string): string => url.replace(/^([a-z][a-z0-9+.-
 
 /** Why chat `c` can't be transported now (before any device is picked), or null. */
 async function chatRefusal(c: ChatFacts, t: Trees): Promise<string | null> {
+  const moved = movedOf(c.id);
+  if (moved) return REFUSALS.moved(moved.to);
+  if (c.compressed) return REFUSALS.compressed;
   if (c.specialKind) return REFUSALS.kind(c.specialKind);
   if (c.inTerminal) return REFUSALS.terminal;
   if (!hasHome(c.id)) return REFUSALS.noHome;

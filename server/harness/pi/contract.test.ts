@@ -1570,6 +1570,31 @@ describe("pi contract", () => {
     assert.deepEqual(readdirSync(home), [file.slice(home.length + 1)], "the source's folder holds only the source");
   });
 
+  test("P50 relocated-session-file: a file whose header cwd and id were rewritten outside pi, renamed to the new id, opens with SessionManager.open under the new id and cwd, its branch intact", async () => {
+    const { relocateConversation } = await import("./relocate");
+    const from = join(dir, "p50-from");
+    const to = join(dir, "p50-to");
+    mkdirSync(from, { recursive: true });
+    mkdirSync(to, { recursive: true });
+    const made = SessionManager.create(from, join(dir, "p50"));
+    const file = made.getSessionFile()!;
+    const oldId = made.getSessionId();
+    const msg = { type: "message", id: "a1", parentId: null, timestamp: new Date().toISOString(), message: { role: "user", content: `hi from ${from}`, timestamp: 1 } };
+    writeFileSync(file, `${JSON.stringify(made.getHeader())}\n${JSON.stringify(msg)}\n`);
+    const newId = "0199aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee";
+    const next = relocateConversation(readFileSync(file, "utf8"), [[from, to]], { [oldId]: newId });
+    assert.ok(next, "the header changed");
+    const moved = file.replace(oldId, newId);
+    writeFileSync(moved, next!);
+    rmSync(file);
+    const opened = SessionManager.open(moved);
+    assert.equal(opened.getSessionId(), newId, "the header's id is the session's");
+    assert.equal(opened.getCwd(), to, "the header's cwd is the session's");
+    const branch = opened.getBranch();
+    assert.deepEqual(branch.map((e) => e.id), ["a1"], "the branch is the same");
+    assert.equal((branch[0] as { message?: { content?: unknown } }).message?.content, `hi from ${from}`, "what was said keeps its words");
+  });
+
   test("P30 mcp-snapshot-transport: a transport answering initialize and tools/list connects at session_start; pi declares its tools in the first request, reads no mcp.json and sends a call to send", async () => {
     const sent: { method?: string }[] = [];
     let built = 0;

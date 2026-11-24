@@ -6,7 +6,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync } from "node:fs";
 import { rename } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { ENTRY_FINAL } from "../../shared/merge-queue";
@@ -30,7 +30,7 @@ import * as dest from "./destination";
 import { git } from "./git-snapshot";
 import { isTransportAgent, needsAnswer, setAfterArrival, setBringHelpersToRest, setInterruptWaiting, setIsTransportAgent, setNeedsAnswer, setPrepareDestination, setPreviewExtras, interruptWaiting, releasePause, type ProjectRef } from "./hooks";
 import { markMoved } from "./moved";
-import type { PackageManifest } from "./package";
+import { compressFolder, type PackageManifest } from "./package";
 import { cancelTransport, previewTransport, REFUSALS, resumeSources, retryTransport, servedPackage, setSourceDeps, startTransport } from "./source";
 import { listTransports, publicView, readTransport, type TransportRecord, updateTransport } from "./store";
 import { PROOF_HEADER, TICKET_HEADER } from "./wire";
@@ -79,20 +79,24 @@ async function moved(r: TransportRecord): Promise<void> {
     mkdirSync(join(home, "transport"), { recursive: true, mode: 0o700 });
     await rename(spool, join(home, "transport", `${r.tid}.tar.zst`)).catch((err) => log(`${r.tid}: package not kept in the safety copy: ${err.message}`));
   }
-  // The chat's own worktrees go, so the branch can't be landed from two devices; a main checkout (the
-  // project itself) and a tree another chat made stay. One that changed since it was packed stays too.
+  // The chat's own worktrees go, so the branch can't be landed from two devices, but never before the folder is
+  // in the safety copy whole (ignored files, build output, what was left unticked or written since): nothing is
+  // deleted that isn't kept. A main checkout (the project itself) and a tree another chat made stay as they are.
   const manifestTrees = new Map((ext.packedTrees ?? []).map((t) => [t.path, t]));
   for (const p of ext.ownedTrees ?? []) {
     const t = manifestTrees.get(p);
     if (!t || t.main || !existsSync(p)) continue;
-    const status = await git(p, ["status", "--porcelain=v1", "-z", "-uno"]);
-    const want = ((r.ext ?? {}) as { statusOf?: Record<string, string> }).statusOf?.[p];
-    if (want && digest(status.stdout) !== want) {
-      log(`${r.tid}: ${p} changed since it was packed; it stays`);
+    const kept = join(home, "transport", `${r.tid}-code-${t.name}.tar.zst`);
+    try {
+      mkdirSync(join(home, "transport"), { recursive: true, mode: 0o700 });
+      const c = await compressFolder(p, kept);
+      log(`${r.tid}: ${p} kept in the safety copy (${c.entries} entries, ${Math.round(c.size / 1024)} KB)`);
+    } catch (err) {
+      log(`${r.tid}: ${p} stays: it couldn't be kept whole (${err instanceof Error ? err.message : String(err)})`);
       continue;
     }
     const common = (await git(p, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim();
-    const rm = await git(common || p, ["worktree", "remove", "--force", p]);
+    const rm = await git(common ? dirname(common) : p, ["worktree", "remove", "--force", p]);
     if (rm.code !== 0) log(`${r.tid}: ${p} was not removed: ${rm.stderr.trim()}`);
   }
   emitChatNews({ name: "chat.removed", chat: r.chatId, home });
@@ -109,7 +113,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     updateNeeded: mesh.updateNeeded,
     chat: async (path) => {
       const s = await getSessionSummary(path);
-      return s ? { id: s.id, path: s.path, title: s.title || s.id, cwd: s.cwd, specialKind: specialKind(s), inTerminal: !!s.live } : null;
+      return s ? { id: s.id, path: s.path, title: s.title || s.id, cwd: s.cwd, specialKind: specialKind(s), inTerminal: !!s.live, ...(s.compressed ? { compressed: true } : {}) } : null;
     },
     trackedTrees: async (path) => {
       const s = await getSessionSummary(path);
@@ -153,8 +157,6 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     adopt: (homeId) => {
       const n = adoptArrivedHome(homeId);
       log(`home ${homeId} arrived: ${n} helper records tracked`);
-      sessionsChanged();
-      emitChatNews({ name: "chat.created", chat: homeId, home: chatHome(homeId) });
     },
     openWithNote: async (path, text) => {
       const h = await acquireChatHandle(path);

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createZstdCompress } from "node:zlib";
 import { type LooseFile, packWorktrees, type WorktreeMeta, type WorktreeSurvey } from "./git-snapshot";
-import { type TarEntry, writeTar } from "./tar";
+import { listTar, type TarEntry, writeTar } from "./tar";
 
 export const PACKAGE_VERSION = 1;
 
@@ -30,8 +30,9 @@ export interface PackageManifest {
   wrapped: string[];
 }
 
-/** Files of a home never sent: the unsent draft stays with the person who typed it. */
-const NOT_SENT = new Set(["chat/draft.json"]);
+/** Files of a home never sent: the unsent draft stays with the person who typed it, and an earlier
+    transport's safety copy (`transport/`) stays on the device it was left on. */
+const NOT_SENT = new Set(["chat/draft.json", "transport"]);
 
 async function sha256Prefix(file: string, size: number): Promise<string> {
   const h = createHash("sha256");
@@ -185,4 +186,42 @@ export async function verifyHome(staged: string, manifest: PackageManifest): Pro
     if (have !== want) return `${rel} didn't arrive exactly`;
   }
   return null;
+}
+
+/**
+ * A whole folder, as it is (ignored files, build output and dependencies included, links kept as links),
+ * compressed into `out` (§app.transport/moved-row: the old code folder goes into the safety copy). The
+ * archive's members are read back and matched against the walk before it is kept: only then may the
+ * caller remove the folder. Throws when it can't vouch for every entry.
+ */
+export async function compressFolder(dir: string, out: string): Promise<{ entries: number; size: number }> {
+  const base = dir.split("/").filter(Boolean).at(-1) ?? "folder";
+  const entries: TarEntry[] = [];
+  const walk = async (rel: string): Promise<void> => {
+    const abs = rel ? join(dir, rel) : dir;
+    for (const n of (await readdir(abs)).sort()) {
+      const r = rel ? `${rel}/${n}` : n;
+      const st = await lstat(join(dir, r));
+      const mtime = Math.floor(st.mtimeMs / 1000);
+      const name = `${base}/${r}`;
+      if (st.isSymbolicLink()) entries.push({ name, type: "symlink", target: await readlink(join(dir, r)), mode: 0o777, mtime });
+      else if (st.isDirectory()) {
+        entries.push({ name, type: "dir", mode: st.mode & 0o777, mtime });
+        await walk(r);
+      } else if (st.isFile()) entries.push({ name, type: "file", mode: st.mode & 0o777, mtime, size: st.size, from: join(dir, r) });
+      else throw new Error(`${join(dir, r)} is neither a file, a folder nor a link, so it can't be kept`);
+    }
+  };
+  await walk("");
+  const tmp = `${out}.tar`;
+  await writeTar(tmp, entries);
+  try {
+    const got = (await listTar(tmp)).map((m) => m.name.replace(/\/$/, ""));
+    const want = entries.map((e) => e.name);
+    if (got.length !== want.length || got.some((n, i) => n !== want[i])) throw new Error(`the archive of ${dir} doesn't hold every entry`);
+    await pipeline(createReadStream(tmp), createZstdCompress(), createWriteStream(out, { mode: 0o600 }));
+    return { entries: entries.length, size: (await stat(out)).size };
+  } finally {
+    await rm(tmp, { force: true });
+  }
 }

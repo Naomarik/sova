@@ -7,6 +7,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { HOME_FILE } from "../chat-homes/root";
 import { mapDeep, type PathMap, relocateConversation } from "../harness/pi/relocate";
 
 export type { PathMap } from "../harness/pi/relocate";
@@ -105,6 +106,6 @@ export async function relocateHome(home: string, r: Relocation): Promise<Relocat
         out.records++;
       }
     }
-  for (const f of ["manifest.json", "index.json"]) if (existsSync(join(home, f)) && (await rewriteJson(join(home, f), r))) out.records++;
+  for (const f of [HOME_FILE, "index.json"]) if (existsSync(join(home, f)) && (await rewriteJson(join(home, f), r))) out.records++;
   return out;
 }

@@ -12,7 +12,8 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { checkDest, Pulls, TransferError } from "../mesh/links-transfer";
 import { tarMembers } from "../mesh/tar-list";
 import { stateRoot, agentRoot } from "../state-root";
-import { chatHome, hasHome, homesRoot } from "../chat-homes/root";
+import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
+import { registerArrivedHome } from "../chat-homes/place";
 import { dropStages, git, havesOf, publishTrees, rebuildWorktrees, SnapshotError, type StagedTree } from "./git-snapshot";
 import { afterArrival, knob, prepareDestination, type PrepareRequest } from "./hooks";
 import { verifyHome, type PackageManifest } from "./package";
@@ -283,7 +284,7 @@ function sourceMainOf(m: PackageManifest, o: OfferExt): string | null {
 
 /** The home's manifest names this state root (or the home isn't listed here) and, for a Copy, its new id. */
 async function fixManifest(home: string, id: string, mode: "move" | "copy"): Promise<void> {
-  const f = join(home, "manifest.json");
+  const f = join(home, HOME_FILE);
   if (!existsSync(f)) return;
   const m = JSON.parse(await readFile(f, "utf8")) as Record<string, unknown>;
   m.id = id;
@@ -326,7 +327,8 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
         if (existsSync(home)) throw new Error("This device already has a chat with that id.");
         await rename(staged, home);
       }
-      if (!hasHome(r.arrivedId)) throw new Error("The arrived home isn't this device's (its manifest).");
+      // Listed (its home.json names this state root), the list bumped, chat.created said; then its helpers tracked.
+      if (!registerArrivedHome(r.arrivedId)) throw new Error("The arrived home isn't this device's (its home.json).");
       need().adopt(r.arrivedId);
       await knob(tid, "published");
       stepDone(tid, "published");

@@ -695,6 +695,20 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "never while Sova reads a session's id from its file name; a manifest-per-conversation would retire it",
   },
   {
+    id: "P50",
+    name: "relocated-session-file",
+    kind: "semantic",
+    relies:
+      "A conversation that moves to another device is rewritten outside pi (`relocateConversation`): its `session` header's `cwd` and `parentSession` (a Copy's `id` too, with the file renamed to `<timestamp>_<new id>.jsonl`) and the `data` of its `custom` entries, every other line kept byte for byte. pi then opens the file as it is: `SessionManager.open` takes the header's id and cwd as the session's, and the branch's entries are the same.",
+    pi: ["SessionManager.open", "SessionManager.getSessionId", "SessionManager.getCwd"],
+    where: [
+      { file: "server/harness/pi/relocate.ts", symbol: "relocateConversation" },
+      { file: "server/transport/relocate.ts", symbol: "relocateHome" },
+    ],
+    canary: 'P50 relocated-session-file: a file whose header cwd and id were rewritten outside pi, renamed to the new id, opens with SessionManager.open under the new id and cwd, its branch intact',
+    retireWhen: "pi offers a way to reopen a session in another folder (and under another id) without editing its file",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

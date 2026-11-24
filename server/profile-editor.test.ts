@@ -163,6 +163,27 @@ describe("saving one of yours", () => {
   });
 });
 
+describe("the seeded starter (my-setup), shown as Claude", () => {
+  test("its first Settings save writes the name Claude, keeping the id my-setup and its models", async () => {
+    const starter = sp.legacyProfile(agentDir, "my-setup", "My setup");
+    sp.writeSubagentProfiles(agentDir, { version: 1, profiles: [starter] });
+    sp.writeProfilesDefault(agentDir, { version: 1, default: "my-setup" });
+    writeFileSync(yoursFile, JSON.stringify({ version: 1, profiles: [] }));
+    const row = pickJoined(await joinedProfiles(), "library:my-setup")!;
+    assert.deepEqual([row.key, row.name, row.replaces], ["library:my-setup", "Claude", "sova:claude"], "shown as Claude, nothing written yet");
+    assert.equal(json<Lib>(libFile).profiles[0]!.name, "My setup");
+    // The editor sends the name it shows and the helpers as they are (Save Changes after any edit to this row).
+    const r = await saveMine({ key: row.key, name: row.name, helpers: helpers(starter as never) as never }, deps);
+    assert.ok(r.ok, !r.ok ? r.error : "");
+    const saved = json<Lib>(libFile).profiles;
+    assert.deepEqual(saved.map((p) => [p.id, p.name]), [["my-setup", "Claude"]], "the name Claude, the same id");
+    assert.deepEqual(helpers(saved[0] as never), helpers(starter as never), "its models as they were");
+    assert.equal(json<{ default: string }>(libDefaultFile).default, "my-setup", "the default still names it");
+    const after = pickJoined(await joinedProfiles(), "library:my-setup")!;
+    assert.deepEqual([after.name, after.replaces], ["Claude", "sova:claude"], "still the row taking Claude's place");
+  });
+});
+
 describe("a saved Members value (retired, kept for older hosts)", () => {
   const value = { backend: "pi", model: "zai/glm-5.3", effort: "low" };
   const lib = (id: string) => json<Lib>(libFile).profiles.find((p) => p.id === id)!;

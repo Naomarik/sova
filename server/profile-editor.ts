@@ -189,8 +189,10 @@ export async function saveMine(req: ProfileSaveRequest, deps: EditorDeps): Promi
     // The retired Members value is no part of an edit: it stays what the library holds.
     const edited = req.helpers && { ...clone(req.helpers), members: cur.members };
     if (edited && !same(helpersOf(cur), edited)) (library.profiles[i] = { id: cur.id, name: cur.name, ...edited } as SubagentProfile), (libChanged = true);
-    // One name for both halves; a half another profile shares keeps its own.
-    if (renamed && !row.alsoUsedBy?.length && library.profiles[i]!.name !== name) (library.profiles[i] = { ...library.profiles[i]!, name }), (libChanged = true);
+    // One name for both halves; a half another profile shares keeps its own. A library row shown under another name
+    // than its file's (the seeded starter, shown as Claude) gets the name it is shown under at its first save.
+    const shownAs = row.kind === "library" && cur.name !== row.name;
+    if ((renamed || shownAs) && !row.alsoUsedBy?.length && library.profiles[i]!.name !== name) (library.profiles[i] = { ...library.profiles[i]!, name }), (libChanged = true);
   } else if (req.helpers) {
     // Its helpers weren't here (a link whose half hasn't arrived) or it had none: the half is made now, linked.
     if (!libId || ids.has(libId)) libId = idFor(name, ids);

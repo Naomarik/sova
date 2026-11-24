@@ -162,7 +162,7 @@ test("a chat from before login ids keeps labelled entries; a new one names login
 	const resetsAt = Math.floor(Date.now() / 1000) + 3600;
 	const s = setup(t, (login) => login === A ? LIMIT(resetsAt) : ANSWER("hello from B"));
 	await collect(s.bridge.runTurn(request([user("hi")])));
-	assert.deepEqual(s.entries[0], { v: 1, login: A });
+	assert.deepEqual(s.entries[0], { v: 1, login: A, device: "local" }, "ids and this device's registry id only");
 	assert.deepEqual([s.entries[1]!.label, s.entries[1]!.fromLabel, s.entries[1]!.text], [undefined, undefined, undefined]);
 	assert.equal(s.entries[1]!.window, "five_hour");
 
@@ -277,6 +277,24 @@ test("the pool: a recorded login that is gone (held elsewhere, removed) moves th
 	updateAccounts(r.agentDir, (a) => { a.logins = a.logins.filter((l) => l.id !== A); a.devices.local!.order = [B, "default"]; });
 	await collect(r.bridge.runTurn(request([user("hi")])));
 	assert.deepEqual(r.entries.map((e) => [e.login, e.from, e.fromLabel, e.reason, e.cause, e.note]), [[B, A, undefined, "moved", "removed", `Claude: switched ${A} → b@example.com (${A} was removed)`]]);
+});
+
+test("a chat that moved here from another device: its login held there is \"not usable on this device\", never \"left\"", { timeout: 8000 }, async (t) => {
+	const s = setup(t, () => ANSWER("ok"), {}, true);
+	// Its newest entry was written on vps, which still holds A.
+	s.bridge.setSessionLogin("pi-session-1", A, (entry, note) => s.entries.push(seen(entry, note)), false, "vps");
+	updateAccounts(s.agentDir, (a) => { a.logins.find((l) => l.id === A)!.device = "vps"; });
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), B);
+	assert.deepEqual(s.entries.map((e) => [e.login, e.from, e.reason, e.cause, e.device, e.note]),
+		[[B, A, "moved", "unusable", "local", "Claude: switched a@example.com → b@example.com (a@example.com is not usable on this device)"]]);
+
+	// Written here (or saying no device): as before, it left this device.
+	const r = setup(t, () => ANSWER("ok"), {}, true);
+	r.bridge.setSessionLogin("pi-session-1", A, (entry, note) => r.entries.push(seen(entry, note)), false, "local");
+	updateAccounts(r.agentDir, (a) => { a.logins.find((l) => l.id === A)!.device = "vps"; });
+	await collect(r.bridge.runTurn(request([user("hi")])));
+	assert.deepEqual(r.entries.map((e) => [e.cause, e.device]), [["left", "local"]]);
 });
 
 // ---- A pick in the composer (§app.claude-logins/switch-login) ------------------------------------

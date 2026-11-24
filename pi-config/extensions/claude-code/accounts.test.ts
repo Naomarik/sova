@@ -14,7 +14,7 @@ import {
 	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount, OWN_PROJECTS_DIR_NAME, OWN_DEFAULT_DIR_NAME, ownDefaultTarget, DEFAULT_LOGIN_ID,
 	loginDir, loginEntryFor, manualSwitchText, parseAccounts, poolAgentPath, readWants, wantsDir, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
-	claudeConfigDirEnv, credentialsMtime, causeText, legacyLoginEntries, loginNoteText, UNKNOWN_LOGIN_NAME,
+	claudeConfigDirEnv, credentialsMtime, causeText, legacyLoginEntries, loginNoteText, recordedLoginDevice, UNKNOWN_LOGIN_NAME,
 	PICKS_DIR_NAME, clearLoginPick, markLeaving, movedText, readLoginPicks, writeLoginPick,
 	LOGIN_CONTEXT_ENV, loginContextFromEnv, orderWithContext, parseLoginContext, preferenceText, type ClaudeLoginContext,
 } from "./accounts.ts";
@@ -412,6 +412,14 @@ test("notices and the session entry", () => {
 	assert.equal(legacyLoginEntries([old]), true);
 	assert.equal(legacyLoginEntries([{ type: "custom", customType: "claude-login", data: { v: 1, login: A } }]), false);
 	assert.equal(legacyLoginEntries([]), false);
+	// The device that wrote it (§app.claude-logins/login-moved): its registry id, on new entries only.
+	assert.deepEqual(loginEntryFor(to, undefined, { device: "desk" }), { v: 1, login: B, device: "desk" });
+	assert.equal(loginEntryFor(to, { from, to, text: "t" }, { device: "desk" }).device, "desk");
+	assert.equal(loginEntryFor(to, { from, to, text: "t" }, { labels: true, device: "desk" }).device, undefined, "an older chat's entry keeps today's shape");
+	const entryOf = (data: unknown) => ({ type: "custom", customType: "claude-login", data });
+	assert.equal(recordedLoginDevice([entryOf({ v: 1, login: A, device: "vps" }), entryOf({ v: 1, login: B, device: "desk" })]), "desk", "the newest entry's");
+	assert.equal(recordedLoginDevice([entryOf({ v: 1, login: A, device: "vps" }), entryOf({ v: 1, login: B })]), undefined, "the newest says none: as before");
+	assert.equal(recordedLoginDevice([]), undefined);
 	// A fork or copy of an older chat carries the source's labelled entries with their earlier times: it is new.
 	const at = (timestamp: string) => ({ ...old, timestamp });
 	assert.equal(legacyLoginEntries([at("2026-11-01T10:00:00.000Z")], "2026-11-24T12:00:00.000Z"), false, "a fork of an older chat writes ids only");

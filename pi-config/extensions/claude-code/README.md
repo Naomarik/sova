@@ -61,8 +61,11 @@ Claude Code worker's included, and model discovery) runs on one Claude login, ch
   A chat session keeps the login it recorded in its `claude-login` entry while
   that login is usable.
 - **The `claude-login` entry names logins by id.** A session's entries are
-  `{v: 1, login, from?, reason?, resetsAt?, window?, cause?, project?}`: no email,
-  label or notice text, so a conversation file carries no account's email.
+  `{v: 1, login, from?, reason?, resetsAt?, window?, cause?, project?, device?}`: no email,
+  label or notice text, so a conversation file carries no account's email. `device`
+  is the writing device's registry id (`thisDeviceId`): when a chat's newest entry
+  is another device's (the chat moved here), a login that left, was removed or
+  returned to the keeper is worded `is not usable on this device` (cause `unusable`).
   `reason` is `limit`, `auth`, `manual` (a pick) or `moved`; a `moved` entry's
   `cause` is `left`, `keeper`, `removed`, `off`, `limited` (until `resetsAt`),
   `auth` or `unusable`. Each reader words the notice itself from its own logins

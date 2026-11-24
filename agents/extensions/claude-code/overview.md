@@ -93,9 +93,10 @@ never run while the mesh is on. `accounts.ts` owns the marks every spawn honours
   only?}`, written and waited on by `acquire`, `failoverAsync`, and `take` (a composer pick naming one login).
 - The agent heartbeat `<agent dir>/claude-pool/agent.json` `{v: 1, pid, at, device}`.
 
-**The session's `claude-login` custom entry** `{v: 1, login, from?, reason?, resetsAt?, window?, cause?, project?}`
+**The session's `claude-login` custom entry** `{v: 1, login, from?, reason?, resetsAt?, window?, cause?, project?, device?}`
 (§app.claude-logins/login-ids): `reason` is `limit`, `auth`, `manual` (the user's pick) or `moved` (its login
-stopped being usable here, `cause` saying why). It names logins by id only; a session from before login ids
+stopped being usable here, `cause` saying why; `device` is the writing device's registry id, so a chat that moved
+here says its login "is not usable on this device"). It names logins by id only; a session from before login ids
 (`legacyLoginEntries`: it holds an entry with `label`) keeps writing `{v: 1, login, label, from?, fromLabel?,
 reason?, resetsAt?, text?}`. The provider writes it. Sova reads it and renders one with `from` as a note row:
 an older entry's `text` as written, else worded on this device by `loginNoteText` (`server/claude-login-names.ts`,

@@ -1433,6 +1433,9 @@ export interface ClaudeLoginEntry {
 	cause?: LoginGoneCause;
 	/** `moved` off the project's or organization's login (`from`): whose it is. */
 	project?: { source: "project" | "org"; name?: string };
+	/** The registry id of the device that wrote it (thisDeviceId; never a name or email). A chat whose newest entry
+	    another device wrote (it moved here) says its login "is not usable on this device", not that it left. */
+	device?: string;
 	/** Older chats only: the notice, as the chat shows it. Newer entries are worded where shown (loginNoteText). */
 	text?: string;
 }
@@ -1441,7 +1444,7 @@ export interface ClaudeLoginEntry {
  * logins by id only (§app.claude-logins/login-ids); `labels`: the session is from before login ids
  * (legacyLoginEntries), so its entries keep today's labels and text.
  */
-export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch, opts: { labels?: boolean } = {}): ClaudeLoginEntry {
+export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch, opts: { labels?: boolean; device?: string } = {}): ClaudeLoginEntry {
 	if (opts.labels) return {
 		v: 1, login: to.id, label: to.label,
 		...(change ? {
@@ -1450,7 +1453,8 @@ export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch,
 			text: change.text,
 		} : {}),
 	};
-	if (!change) return { v: 1, login: to.id };
+	const device = opts.device ? { device: opts.device } : {};
+	if (!change) return { v: 1, login: to.id, ...device };
 	const resetsAt = change.failure ? change.failure.resetsAt : change.cause === "limited" ? change.until : undefined;
 	return {
 		v: 1, login: to.id, from: change.from.id, reason: change.failure?.kind ?? change.reason ?? "manual",
@@ -1458,7 +1462,17 @@ export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch,
 		...(change.failure?.window ? { window: change.failure.window } : {}),
 		...(change.reason === "moved" ? { cause: change.cause ?? "unusable" } : {}),
 		...(change.reason === "moved" && change.prefer ? { project: { source: change.prefer.source, ...(change.prefer.name ? { name: change.prefer.name } : {}) } } : {}),
+		...device,
 	};
+}
+/** The device that wrote the newest `claude-login` entry among `entries` (oldest first), when it says (§app.claude-logins/login-moved). */
+export function recordedLoginDevice(entries: readonly unknown[]): string | undefined {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const e = entries[i] as { type?: unknown; customType?: unknown; data?: any };
+		if (e?.type === "custom" && e.customType === CLAUDE_LOGIN_ENTRY && typeof e.data?.login === "string")
+			return typeof e.data.device === "string" && e.data.device ? e.data.device : undefined;
+	}
+	return undefined;
 }
 /**
  * Whether a session is from before login ids (§app.claude-logins/login-ids): this session itself

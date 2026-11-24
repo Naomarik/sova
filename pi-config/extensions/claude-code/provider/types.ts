@@ -112,9 +112,10 @@ export interface ClaudeSessionBridge {
 	 * The login a pi session last recorded (its newest `claude-login` entry; undefined = `default`),
 	 * and where the bridge reports a change of login, as the entry to append (accounts.ts) and, on a
 	 * switch, its notice as this device words it. `labels`: the session is from before login ids
-	 * (accounts.ts legacyLoginEntries), so its entries keep labels and text.
+	 * (accounts.ts legacyLoginEntries), so its entries keep labels and text. `recordedDevice`: the device that wrote
+	 * the newest entry (accounts.ts recordedLoginDevice), so a chat that moved here words its note for that.
 	 */
-	setSessionLogin?(sessionId: string, recorded: string | undefined, onChange: (entry: import("../accounts.ts").ClaudeLoginEntry, note?: string) => void, labels?: boolean): void;
+	setSessionLogin?(sessionId: string, recorded: string | undefined, onChange: (entry: import("../accounts.ts").ClaudeLoginEntry, note?: string) => void, labels?: boolean, recordedDevice?: string): void;
 	/**
 	 * Move a session to the login the user picked (`/claude-login`); absent on a bridge built by
 	 * older code (it is a process-wide singleton), which a restart replaces.

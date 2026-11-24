@@ -33,7 +33,7 @@ import {
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
 } from "../transport.ts";
 import {
-	loginEntryFor, manualSwitchText, movedText, preferenceText, switchText,
+	causeText, loginEntryFor, manualSwitchText, movedText, preferenceText, switchText,
 	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginContext, type ClaudeLoginEntry, type ClaudeLoginSwitch, type LoginGoneCause, type LoginUser,
 } from "../accounts.ts";
 import type { ImageContent, Message, Tool } from "@earendil-works/pi-ai";
@@ -256,6 +256,8 @@ export const defaultResumeDir = (env: NodeJS.ProcessEnv = process.env): string =
 
 /** What the bridge needs of the host's logins; accounts.ts ClaudeLogins is the real one. */
 export interface ClaudeLoginSource {
+	/** This device's registry id (accounts.ts thisDeviceId), which a new chat's entries record. */
+	readonly device?: string;
 	select(current?: string, ctx?: ClaudeLoginContext): ClaudeLoginChoice;
 	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure, ctx?: ClaudeLoginContext): ClaudeLoginChoice | undefined;
 	recordFailure(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): void;
@@ -282,6 +284,8 @@ interface SessionLoginHooks {
 	recorded?: string;
 	/** The session is from before login ids: its entries keep labels and text (accounts.ts legacyLoginEntries). */
 	labels?: boolean;
+	/** The device that wrote the session's newest entry, when it says (accounts.ts recordedLoginDevice). */
+	recordedDevice?: string;
 	/** `note`: the switch's notice as this device words it (a TUI shows it); never stored in a new chat's entry. */
 	onChange?: (entry: ClaudeLoginEntry, note?: string) => void;
 }
@@ -1650,9 +1654,24 @@ class CliSession {
 		// Never a silent change: the note names the login the session left and why.
 		try { gone = logins.absence?.(current) ?? gone; } catch { /* the first answer stands */ }
 		const from: ClaudeLoginChoice = this.lastLogin?.id === current ? this.lastLogin : { id: current, label: gone?.label ?? current, env: {} };
-		const cause = gone?.cause ?? "is not usable on this device";
-		debugLog({ event: "login-switch", session: this.piSessionId, from: current, to: to.id, kind: "moved" });
-		this.announce(to, { from, to, reason: "moved", cause: gone?.code ?? "unusable", ...(gone?.until !== undefined ? { until: gone.until } : {}), text: movedText(from, to, cause) });
+		// A chat that moved here from another device (its newest entry is that device's) never had this login here:
+		// it didn't leave, wasn't removed or returned from here, it just isn't usable on this device (§app.claude-logins/login-moved).
+		const arrived = this.recordedElsewhere() && (gone?.code === "left" || gone?.code === "removed" || gone?.code === "keeper");
+		const code = arrived ? "unusable" : gone?.code ?? "unusable";
+		const cause = arrived ? causeText("unusable") : gone?.cause ?? "is not usable on this device";
+		debugLog({ event: "login-switch", session: this.piSessionId, from: current, to: to.id, kind: "moved", ...(arrived ? { arrived: true } : {}) });
+		this.announce(to, { from, to, reason: "moved", cause: code, ...(!arrived && gone?.until !== undefined ? { until: gone.until } : {}), text: movedText(from, to, cause) });
+	}
+
+	/** This device's registry id, or undefined when the login source doesn't say. */
+	private thisDevice(): string | undefined {
+		try { return this.options.logins?.device || undefined; } catch { return undefined; }
+	}
+	/** Whether the session's newest entry was written on another device (the chat moved here since). */
+	private recordedElsewhere(): boolean {
+		const was = this.loginHooks()?.recordedDevice;
+		const here = this.thisDevice();
+		return !!was && !!here && was !== here;
 	}
 
 	/** The login context this process was handed (SessionBridgeOptions.loginContext), read per choice. */
@@ -1701,8 +1720,9 @@ class CliSession {
 		} catch { /* the mark is plumbing */ }
 		const hooks = this.loginHooks();
 		// A child built later for this session (after an idle reap) starts from what was recorded last.
-		if (hooks) hooks.recorded = to.id;
-		try { hooks?.onChange?.(loginEntryFor(to, change, { labels: hooks.labels }), change?.text); } catch { /* the record is plumbing */ }
+		const device = this.thisDevice();
+		if (hooks) { hooks.recorded = to.id; hooks.recordedDevice = device; }
+		try { hooks?.onChange?.(loginEntryFor(to, change, { labels: hooks.labels, ...(device ? { device } : {}) }), change?.text); } catch { /* the record is plumbing */ }
 	}
 
 	/**
@@ -2195,9 +2215,9 @@ export class SessionBridge implements ClaudeSessionBridge {
 	 * Record the login a pi session last ran on (its newest `claude-login` entry) and where a
 	 * change is reported. Called from the extension's session_start handler.
 	 */
-	setSessionLogin(sessionId: string, recorded: string | undefined, onChange: (entry: ClaudeLoginEntry, note?: string) => void, labels?: boolean): void {
+	setSessionLogin(sessionId: string, recorded: string | undefined, onChange: (entry: ClaudeLoginEntry, note?: string) => void, labels?: boolean, recordedDevice?: string): void {
 		if (!sessionId) return;
-		this.logins.set(sessionId, { recorded, onChange, ...(labels ? { labels } : {}) });
+		this.logins.set(sessionId, { recorded, onChange, ...(labels ? { labels } : {}), ...(recordedDevice ? { recordedDevice } : {}) });
 	}
 
 	/**
@@ -2221,8 +2241,11 @@ export class SessionBridge implements ClaudeSessionBridge {
 			logins?.markPick?.(to.id, sessionId);
 		} catch { /* the mark is plumbing */ }
 		hooks.recorded = to.id;
+		let device: string | undefined;
+		try { device = logins?.device || undefined; } catch { device = undefined; }
+		hooks.recordedDevice = device;
 		const change = { from, to, text: manualSwitchText(from, to) };
-		try { hooks.onChange?.(loginEntryFor(to, change, { labels: hooks.labels }), change.text); } catch { /* the record is plumbing */ }
+		try { hooks.onChange?.(loginEntryFor(to, change, { labels: hooks.labels, ...(device ? { device } : {}) }), change.text); } catch { /* the record is plumbing */ }
 		return "switched";
 	}
 

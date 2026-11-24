@@ -17,7 +17,7 @@ import type { ExtensionAPI, ProviderModelConfig } from "@earendil-works/pi-codin
 import type { ThinkingLevelMap } from "@earendil-works/pi-ai";
 import { claudeContextWindow, claudeModel, claudeName, claudeRegistered, isClaudeIdShape, resolveClaude } from "../catalog.ts";
 import { claudeStateRoot, loadClaudeModels, watchClaudeModelsFile } from "../catalog-store.ts";
-import { CLAUDE_LOGIN_ENTRY, hostLogins, legacyLoginEntries, loginContextFromEnv, recordedLogin } from "../accounts.ts";
+import { CLAUDE_LOGIN_ENTRY, hostLogins, legacyLoginEntries, loginContextFromEnv, recordedLogin, recordedLoginDevice } from "../accounts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
 import { CLAUDE_LOGIN_COMMAND, pickChatLogin } from "./login-command.ts";
 import { getSessionBridge } from "./session-bridge.ts";
@@ -183,7 +183,7 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 				// A failover warns; the user's own pick is its note row only.
 				const text = note ?? entry.text;
 				if (text && entry.from !== undefined && entry.reason !== "manual") { try { ctx?.ui?.notify?.(text, "warning"); } catch { /* no UI */ } }
-			}, isLegacyLoginSession(branch, ctx));
+			}, isLegacyLoginSession(branch, ctx), recordedLoginDevice(branch));
 		}
 		noteExtraModel(pi.getFlag(CLAUDE_MODEL_FLAG));
 		const state = registration();

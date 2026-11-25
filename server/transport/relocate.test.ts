@@ -93,3 +93,52 @@ test("a Copy: each conversation, record and file name takes its new id", async (
   assert.equal(w.parent.sessionId, "N1");
   assert.equal(JSON.parse(readFileSync(join(h, "sessions", "t_N1.jsonl"), "utf8").split("\n")[0]!).id, "N1");
 });
+
+test("a Copy's home holds no file or record keyed by a source id: cards, offers, wakes, usage, workers, meta and index take the new ids", async () => {
+  const LEAD = "01a2100b-51be-7340-bf19-6df207807226";
+  const HELPER = "01a2100b-6c03-7340-bf19-6df4c009b105";
+  const ids = { [LEAD]: "f96f0d22-9656-4343-9d19-48d52ae5ec52", [HELPER]: "73ac762b-59c5-4b0c-9644-b40609db3332" };
+  const h = join(root, "copy-keys");
+  const put = (rel: string, text: string) => {
+    mkdirSync(join(h, rel, ".."), { recursive: true });
+    writeFileSync(join(h, rel), text);
+  };
+  const own = (id: string) => `${JSON.stringify({ v: 1, sessionId: id, path: `${OLD_HOME}/sessions/t_${id}.jsonl`, cards: [] }, null, 2)}\n`;
+  put(`sessions/t_${LEAD}.jsonl`, `${JSON.stringify({ type: "session", version: 3, id: LEAD, timestamp: "t", cwd: OLD_TREE })}\n`);
+  put(`sessions/t_${HELPER}.jsonl`, `${JSON.stringify({ type: "session", version: 3, id: HELPER, timestamp: "t", cwd: OLD_TREE, parentSession: `${OLD_HOME}/sessions/t_${LEAD}.jsonl` })}\n`);
+  put(`chat/cards/${LEAD}.json`, own(LEAD));
+  put(`chat/offers/${LEAD}.json`, own(LEAD));
+  put("chat/meta.json", `${JSON.stringify({ version: 1, id: LEAD, "web-sessions.json": [LEAD] })}\n`);
+  put("chat/seen.json", JSON.stringify({ version: 1, id: LEAD, "seen.json": { [LEAD]: 1 } }));
+  put(`workers/${HELPER}.json`, `${JSON.stringify({ v: 1, chatId: HELPER, parent: { sessionId: LEAD, path: `${OLD_HOME}/sessions/t_${LEAD}.jsonl` } })}\n`);
+  put(`wakes/cancelled/${LEAD}`, "1795565637371\n");
+  put(`wakes/cancelled/${HELPER}`, "1795565637368\n");
+  put(`usage/${LEAD}/labels.jsonl`, `${JSON.stringify({ sid: LEAD, label: "x" })}\n`);
+  put(`usage/${LEAD}/totals.json`, JSON.stringify({ sid: LEAD }));
+  put("index.json", JSON.stringify({ v: 1, layout: 1, chat: LEAD }));
+  // What the chat and its helpers wrote in the shared folder is theirs, as named.
+  put(`shared/notes-${LEAD}.md`, "mine");
+  await relocateHome(h, { map, ids, code: CODE, broad });
+  const all: string[] = [];
+  const walk = (rel: string) => {
+    for (const e of readdirSync(join(h, rel), { withFileTypes: true })) {
+      const p = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(p);
+      else all.push(p);
+    }
+  };
+  walk("");
+  const records = all.filter((p) => !p.startsWith("shared/"));
+  for (const old of [LEAD, HELPER]) {
+    assert.deepEqual(records.filter((p) => p.includes(old)), [], `no file is named by ${old}`);
+    assert.deepEqual(records.filter((p) => readFileSync(join(h, p), "utf8").includes(old)), [], `no record names ${old}`);
+  }
+  assert.ok(all.includes(`chat/cards/${ids[LEAD]}.json`) && all.includes(`chat/offers/${ids[LEAD]}.json`));
+  assert.ok(all.includes(`wakes/cancelled/${ids[HELPER]}`) && all.includes(`usage/${ids[LEAD]}/labels.jsonl`));
+  assert.equal(JSON.parse(readFileSync(join(h, "chat", "cards", `${ids[LEAD]}.json`), "utf8")).sessionId, ids[LEAD]);
+  assert.ok(all.includes(`shared/notes-${LEAD}.md`), "the shared folder's files keep their names");
+  // A rerun renames nothing more; a new-id file already there wins over an old-id one left beside it.
+  put(`chat/cards/${LEAD}.json`, own(LEAD));
+  await relocateHome(h, { map, ids, code: CODE, broad });
+  assert.deepEqual(readdirSync(join(h, "chat", "cards")), [`${ids[LEAD]}.json`]);
+});

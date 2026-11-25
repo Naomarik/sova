@@ -5,7 +5,7 @@
 // team's and wakes' records likewise. A Copy also gives every conversation of the chat a new id
 // (`ids`), so it is a chat of its own wherever it lands, its original's device included.
 import { existsSync } from "node:fs";
-import { readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { HOME_FILE } from "../chat-homes/root";
 import { mapDeep, type PathMap, relocateConversation } from "../harness/pi/relocate";
@@ -94,8 +94,8 @@ export async function relocateHome(home: string, r: Relocation): Promise<Relocat
     const name = renamed(f.slice(f.lastIndexOf("/") + 1), ids);
     if (!f.endsWith(`/${name}`)) await rename(f, join(home, "workers", name));
   }
-  // The team's records and the wakes; the chat's own records (its draft never travels).
-  for (const dir of ["teams", "wakes", "chat"]) for (const f of await files(join(home, dir), ".json")) if (await rewriteJson(f, r)) out.records++;
+  // The team's records, the wakes, the chat's own records (its draft never travels) and its usage.
+  for (const dir of ["teams", "wakes", "chat", "usage"]) for (const f of await files(join(home, dir), ".json")) if (await rewriteJson(f, r)) out.records++;
   // A Copy's mailboxes name its members' sessions: their ids follow (messages keep their words otherwise).
   if (Object.keys(ids).length)
     for (const f of await files(join(home, "teams"), ".jsonl")) {
@@ -106,6 +106,54 @@ export async function relocateHome(home: string, r: Relocation): Promise<Relocat
         out.records++;
       }
     }
+  if (Object.keys(ids).length) {
+    // Its usage labels name their sessions as the mailboxes do.
+    for (const f of await files(join(home, "usage"), ".jsonl")) {
+      const text = await readFile(f, "utf8");
+      const next = renamed(text, ids);
+      if (next !== text) {
+        await writeFile(f, next, { mode: 0o600 });
+        out.records++;
+      }
+    }
+    // Every per-chat file or folder named by an old id (chat/cards/<id>.json, chat/offers/<id>.json, wakes/cancelled/<id>,
+    // usage/<id>/…) takes the new one, so nothing in a Copy's home is its original's by name.
+    out.records += await renameByIds(home, ids);
+  }
   for (const f of [HOME_FILE, "index.json"]) if (existsSync(join(home, f)) && (await rewriteJson(join(home, f), r))) out.records++;
   return out;
+}
+
+/** Folders left as they are: the conversations (renamed above, by their own rule) and the shared folder (the chat's
+    and its helpers' working files, named by whoever wrote them). */
+const KEEP_NAMES = new Set(["sessions", "shared"]);
+
+/**
+ * Rename each file and folder under `dir` whose name holds an old id to the new one, deepest first. Where the new name
+ * is already taken, a folder's entries move into it and a file already there stays (the old one goes): it is the newer
+ * record of the same chat. Returns how many were renamed.
+ */
+async function renameByIds(dir: string, ids: Readonly<Record<string, string>>, top = true): Promise<number> {
+  let n = 0;
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  for (const e of entries) {
+    if (top && KEEP_NAMES.has(e.name)) continue;
+    const from = join(dir, e.name);
+    if (e.isDirectory()) n += await renameByIds(from, ids, false);
+    const name = renamed(e.name, ids);
+    if (name === e.name) continue;
+    const to = join(dir, name);
+    if (!existsSync(to)) await rename(from, to);
+    else if (e.isDirectory()) {
+      for (const c of await readdir(from)) if (!existsSync(join(to, c))) await rename(join(from, c), join(to, c));
+      await rm(from, { recursive: true, force: true });
+    } else await rm(from, { force: true });
+    n++;
+  }
+  return n;
 }

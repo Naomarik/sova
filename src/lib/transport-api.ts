@@ -31,6 +31,16 @@ export interface TransportAgentView {
   downloads?: { id: string; items: { tool: string; version: string; host: string }[]; why?: string; state: "asked" | "allowed" };
   /** Commands needing administrator rights, for you to run yourself; asked until your Done. */
   admin?: { id: string; command: string; why?: string; state: "asked" | "done" }[];
+  /** Files the project needs that live outside it on the device the chat came from (`from`), as `~/…` in its home and
+      here; asked until your Bring From (brought, or kept when one was already here) or I Placed It Myself. */
+  outside?: { id: string; path: string; folder: string; why?: string; from: string; state: "asked" | "brought" | "kept" | "placed" }[];
+}
+
+/** The arrived chat's running copy (§app.transport/agent "Ready means the app runs"): `waiting` until the rest here is
+    set up, `none` when the project has no running-copy definition (no copy was started). */
+export interface TransportCopyView {
+  state: "waiting" | "starting" | "running" | "failed" | "none";
+  copies: { name: string; ok: boolean; detail: string; entry?: { endpoint: string; port: number; path: string } }[];
 }
 
 export interface TransportView {
@@ -55,6 +65,8 @@ export interface TransportView {
     hostAsk?: { name: string; value: string }[];
     /** Here, after arrival: why the agent couldn't start (this device can't confine it). */
     agentBlocked?: string;
+    /** Here, after arrival: the chat's running copy, which its card links to once it runs. */
+    copy?: TransportCopyView;
   };
 }
 
@@ -84,6 +96,14 @@ export const allowTransportDownloads = (tid: string, plan: string) =>
 /** The card's Done (your click): you ran the command the agent can't run itself. */
 export const transportAdminDone = (tid: string, step: string) =>
   call<{ ok: boolean; agent?: TransportAgentView }>(`/api/transport/${encodeURIComponent(tid)}/admin-done`, { method: "POST", body: JSON.stringify({ step }) });
+
+/** The card's Bring From {device} (your click): that one file, from the device it lives on, to the same path here. */
+export const bringTransportFile = (tid: string, file: string) =>
+  call<{ ok: boolean; agent?: TransportAgentView }>(`/api/transport/${encodeURIComponent(tid)}/bring-file`, { method: "POST", body: JSON.stringify({ file }) });
+
+/** The card's I Placed It Myself (your click): you put the file there yourself. */
+export const transportFilePlaced = (tid: string, file: string) =>
+  call<{ ok: boolean; agent?: TransportAgentView }>(`/api/transport/${encodeURIComponent(tid)}/placed-file`, { method: "POST", body: JSON.stringify({ file }) });
 
 export const transportAct = (tid: string, act: "retry" | "cancel" | "interrupt") => call<{ ok: boolean }>(`/api/transport/${encodeURIComponent(tid)}/${act}`, { method: "POST", body: "{}" });
 

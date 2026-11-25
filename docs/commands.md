@@ -13,10 +13,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 695 |
-| Routes a catalogue entry points at | 241 |
-| Catalogue entries | 315 |
-| Class: Peer protocol | 51 |
+| Routes registered | 700 |
+| Routes a catalogue entry points at | 243 |
+| Catalogue entries | 317 |
+| Class: Peer protocol | 54 |
 | Class: Auth | 8 |
 | Class: Share pages | 0 |
 | Class: Extension proxy | 5 |
@@ -356,6 +356,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `transport.host-values` | Save Host Values | changes | `POST /api/transport/:tid/host-values` | full |
 | `transport.allow-downloads` | Allow Downloads | changes | `POST /api/transport/:tid/allow-downloads` | full |
 | `transport.admin-done` | Done (Command Run) | changes | `POST /api/transport/:tid/admin-done` | full |
+| `transport.bring-file` | Bring From Device | changes | `POST /api/transport/:tid/bring-file` | full |
+| `transport.placed-file` | I Placed It Myself | changes | `POST /api/transport/:tid/placed-file` | full |
 
 ## Pending routes
 
@@ -389,7 +391,7 @@ class, leaves it, and a new route never joins it.
 
 ## Not-a-command classes
 
-### Peer protocol (51)
+### Peer protocol (54)
 
 Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer listener's door, never the operator's actions.
 
@@ -435,10 +437,13 @@ Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer li
 | `GET /api/peer/transport/:tid` | sessions |
 | `POST /api/peer/transport/:tid/admin-done` | sessions |
 | `POST /api/peer/transport/:tid/allow-downloads` | sessions |
+| `POST /api/peer/transport/:tid/bring-file` | sessions |
 | `POST /api/peer/transport/:tid/cancel` | sessions |
 | `POST /api/peer/transport/:tid/commit` | sessions |
 | `POST /api/peer/transport/:tid/move-back` | sessions |
+| `POST /api/peer/transport/:tid/outside-file` | sessions |
 | `GET /api/peer/transport/:tid/package` | ticket |
+| `POST /api/peer/transport/:tid/placed-file` | sessions |
 | `POST /api/peer/transport/:tid/ready` | sessions |
 | `POST /api/peer/transport/:tid/retry` | sessions |
 | `GET /api/peer/transport/hello` | sessions |
@@ -1156,10 +1161,12 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/transport/:tid/admin-done` | full | `transport.admin-done` |
 | `POST /api/transport/:tid/allow-downloads` | full | `transport.allow-downloads` |
 | `GET /api/transport/:tid/back` | full | `transport.back` |
+| `POST /api/transport/:tid/bring-file` | full | `transport.bring-file` |
 | `POST /api/transport/:tid/cancel` | full | `transport.cancel` |
 | `POST /api/transport/:tid/host-values` | full | `transport.host-values` |
 | `POST /api/transport/:tid/interrupt` | full | `transport.interrupt` |
 | `POST /api/transport/:tid/move-back` | full | `transport.move-back` |
+| `POST /api/transport/:tid/placed-file` | full | `transport.placed-file` |
 | `POST /api/transport/:tid/retry` | full | `transport.retry` |
 | `GET /api/transport/preview` | full | `transport.preview` |
 | `POST /api/updates/restart` | full | `server.restart` |

@@ -140,3 +140,48 @@ test("after arrival: the project is registered with the carried settings, the ca
   assert.deepEqual((readTransport(tid)!.ext as { hostAsk?: unknown }).hostAsk, []);
   setAfterArrival(null);
 });
+
+test("after arrival: the running copies the source stopped at the switch are asked for, each on its tree here with its services; one whose tree didn't arrive is left out", async () => {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const dest = await import("./destination");
+  const id = "0199aaaa-0000-7000-8000-0000000000c3";
+  const tid = "tr_copies01";
+  const home = ensureChatHome(id);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  writeFileSync(join(home, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`), `${JSON.stringify({ type: "session", id })}\n`);
+  createTransport({
+    tid, side: "destination", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "desk", peerLabel: "Desk", path: "", folder: "/home/v/.worktrees/motors-feat", state: "switching", arrivedId: id,
+    steps: { offered: "t", prepared: "t", pulled: "t", staged: "t", verified: "t", decided: "t", published: "t" },
+    ext: {
+      offer: { trees: [{ name: "motors-feat", branch: "feat/x", main: false, rel: "" }, { name: "motors-api", branch: "api", main: false, rel: ".worktrees/motors-api" }], repoRel: "motors", project: { remotes: [], roots: [ROOT] } },
+      targets: { "motors-feat": "/home/v/.worktrees/motors-feat", "motors-api": "/home/v/.worktrees/motors-api" },
+    },
+  });
+  const asked: PrepareRequest[] = [];
+  setAfterArrival((req) => void asked.push(req));
+  dest.setDestinationDeps({
+    peerFetch: async () => new Response("{}"),
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack: () => {},
+    openWithNote: async (p, text) => appendFileSync(p, `${JSON.stringify({ type: "custom_message", customType: "sova-transport-arrival", content: text })}\n`),
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+  });
+  const running = [
+    { tree: "motors-feat", name: "feat/x", services: ["web", "worker"] },
+    { tree: "motors-api", name: "api", services: ["api"] },
+    { tree: "gone", name: "gone", services: ["web"] },
+    { tree: "__proto__", name: "x", services: [] },
+  ];
+  const res = await dest.commit({ id: "desk" }, tid, { stopped: { jobs: [], copies: ["feat/x", "api"] }, running });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(asked[0]!.copies, [
+    { tree: "/home/v/.worktrees/motors-feat", name: "feat/x", services: ["web", "worker"] },
+    { tree: "/home/v/.worktrees/motors-api", name: "api", services: ["api"] },
+  ]);
+  assert.equal(asked[0]!.ownTree, "/home/v/.worktrees/motors-feat", "with none, the chat's own tree's copy");
+  assert.equal(asked[0]!.ownName, "feat/x");
+  setAfterArrival(null);
+});

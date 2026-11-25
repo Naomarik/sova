@@ -102,6 +102,8 @@ export interface AgentView {
   downloads?: { id: string; items: { tool: string; version: string; host: string }[]; why?: string; state: "asked" | "allowed" };
   /** Commands needing administrator rights it asked you to run yourself. */
   admin?: { id: string; command: string; why?: string; state: "asked" | "done" }[];
+  /** Files outside the project on the device the chat came from it asked you to bring or place (§app.transport/agent). */
+  outside?: { id: string; path: string; folder: string; why?: string; from: string; state: "asked" | "brought" | "kept" | "placed" }[];
 }
 
 const str = (v: unknown, max: number): string => (typeof v === "string" ? v.slice(0, max) : "");
@@ -128,6 +130,18 @@ export const agentViewOf = (a: AgentView): AgentView => {
       : {}),
     ...(Array.isArray(a.admin) && a.admin.length
       ? { admin: a.admin.slice(-16).map((s) => ({ id: str(s?.id, 40), command: str(s?.command, 1000), ...(s?.why ? { why: str(s.why, 300) } : {}), state: s?.state === "done" ? ("done" as const) : ("asked" as const) })) }
+      : {}),
+    ...(Array.isArray(a.outside) && a.outside.length
+      ? {
+          outside: a.outside.slice(-16).map((f) => ({
+            id: str(f?.id, 40),
+            path: str(f?.path, 1100),
+            folder: str(f?.folder, 1100),
+            ...(f?.why ? { why: str(f.why, 300) } : {}),
+            from: str(f?.from, 200),
+            state: f?.state === "brought" || f?.state === "kept" || f?.state === "placed" ? f.state : ("asked" as const),
+          })),
+        }
       : {}),
   };
 };

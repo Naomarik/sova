@@ -32,6 +32,11 @@ export interface PrepareRequest {
   fromSource?: boolean;
   /** The chat's worktrees' folders here (absolute): the agent's tools may write them once they are there. */
   trees?: string[];
+  /** After arrival: the running copies the source ran for the chat, each on its tree here (agent.ts CopyPlan). */
+  copies?: { tree: string; name: string; services?: string[] }[];
+  /** After arrival: the chat's own tree here and its copy's name (its branch): its copy when the source ran none. */
+  ownTree?: string;
+  ownName?: string;
 }
 
 export type Prepared = { ready: true } | { needsYou: string };

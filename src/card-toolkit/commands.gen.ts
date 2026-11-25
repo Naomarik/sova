@@ -317,7 +317,9 @@ export type CommandId =
   | "transport.move-back"
   | "transport.host-values"
   | "transport.allow-downloads"
-  | "transport.admin-done";
+  | "transport.admin-done"
+  | "transport.bring-file"
+  | "transport.placed-file";
 
 /** Each command's params, as its catalogue entry declares them. */
 export interface CommandParams {
@@ -5110,6 +5112,20 @@ export interface CommandParams {
     /** The command's id (ad_…), as the card shows it */
     "step": string;
   };
+  /** Only your click on a device's page: copy the one file the Transport agent's card names from the device the chat came from to the same path in this home, once, never over a file already there. (changes something; needs the card's owner trusted) */
+  "transport.bring-file": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** The file's id (of_…), as the card shows it */
+    "file": string;
+  };
+  /** Only your click on a device's page: tell the Transport agent you put the file its card names in place yourself. (changes something; needs the card's owner trusted) */
+  "transport.placed-file": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** The file's id (of_…), as the card shows it */
+    "file": string;
+  };
 }
 
 /** Whether each command only looks or changes something; a view runs either only once its owner is trusted. */
@@ -5429,4 +5445,6 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "transport.host-values": "changes",
   "transport.allow-downloads": "changes",
   "transport.admin-done": "changes",
+  "transport.bring-file": "changes",
+  "transport.placed-file": "changes",
 };

@@ -315,7 +315,9 @@
     "transport.move-back",
     "transport.host-values",
     "transport.allow-downloads",
-    "transport.admin-done"
+    "transport.admin-done",
+    "transport.bring-file",
+    "transport.placed-file"
   ],
   "retired": [
     "settings.agents.get",

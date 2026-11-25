@@ -31,14 +31,33 @@ export interface AdminStep {
   doneAt?: number;
 }
 
+/** A file the project needs that lives outside the project on the device the chat came from (outside-file.ts):
+    `asked` until your Bring From {device} (`brought`, or `kept` when a file was already at that path here) or your
+    I Placed It Myself (`placed`). */
+export interface OutsideFile {
+  id: string;
+  /** In that device's home, as `~/…`; it goes to the same path in this device's home. */
+  path: string;
+  /** Its folder there (and here), as `~/…`. */
+  folder: string;
+  why?: string;
+  /** The device it lives on, by name. */
+  from: string;
+  state: "asked" | "brought" | "kept" | "placed";
+  at: number;
+  doneAt?: number;
+}
+
 /** The asks an agent's record carries (AgentState's). */
 export interface AgentAsks {
   downloads?: DownloadPlan;
   admin?: AdminStep[];
+  outside?: OutsideFile[];
 }
 
 export const MAX_DOWNLOADS = 16;
 export const MAX_ADMIN_STEPS = 8;
+export const MAX_OUTSIDE_FILES = 8;
 const MAX_TEXT = 300;
 const MAX_COMMAND = 1_000;
 
@@ -99,13 +118,13 @@ export function widenedScope(scope: AgentScope, base: readonly string[], hosts: 
   return { ...scope, proxyAllow: [...new Set([...from, ...hosts])] };
 }
 
-/** What still waits on you: a download list not allowed, each command not done. Pure. */
-export function waitingAsks(a: AgentAsks): { downloads: DownloadPlan | null; admin: AdminStep[] } {
-  return { downloads: a.downloads?.state === "asked" ? a.downloads : null, admin: (a.admin ?? []).filter((s) => s.state === "asked") };
+/** What still waits on you: a download list not allowed, each command not done, each outside file not there. Pure. */
+export function waitingAsks(a: AgentAsks): { downloads: DownloadPlan | null; admin: AdminStep[]; outside: OutsideFile[] } {
+  return { downloads: a.downloads?.state === "asked" ? a.downloads : null, admin: (a.admin ?? []).filter((s) => s.state === "asked"), outside: (a.outside ?? []).filter((f) => f.state === "asked") };
 }
 export const hasWaitingAsk = (a: AgentAsks): boolean => {
   const w = waitingAsks(a);
-  return !!w.downloads || w.admin.length > 0;
+  return !!w.downloads || w.admin.length > 0 || w.outside.length > 0;
 };
 
 /** The waiting asks as the card's "what is missing" lines (never a check of the project). Pure. */
@@ -114,6 +133,7 @@ export function waitingLines(a: AgentAsks): string[] {
   return [
     ...(w.downloads ? [`Waiting for you to allow downloads from ${hostsOf(w.downloads.items).join(", ")}`] : []),
     ...w.admin.map((s) => `Waiting for you to run: ${s.command}`),
+    ...w.outside.map((f) => `Waiting for ${f.path} from ${f.from}`),
   ];
 }
 
@@ -135,6 +155,17 @@ export const downloadsAllowed = (items: readonly DownloadItem[]): string =>
     "",
     "Download exactly these and carry on with the setup. Anything from another site needs a new list (transport_setup downloads); then end your turn.",
   ].join("\n");
+
+/** The tool's answer to an outside file. Pure. */
+export const outsideAsked = (f: Pick<OutsideFile, "path" | "from">): string =>
+  `The Transport card asks the user for ${f.path}: Bring From ${f.from} copies that one file here, to the same path in this device's home, or they place it themselves. Never read ${f.from} yourself, and don't create the file. End your turn now; you'll be told when it is there.`;
+
+/** What the agent hears once the file is here (or was already). Pure. */
+export function outsideDone(f: Pick<OutsideFile, "path" | "from">, how: "brought" | "kept" | "placed", at: string): string {
+  if (how === "kept") return `The user pressed Bring From ${f.from} for ${f.path}, but a file was already at ${at} on this device, so it was kept as it is and nothing was brought. Check that it is the one the project needs (ask the user with align if not, never overwrite it), then carry on with the setup and end your turn.`;
+  if (how === "placed") return `The user says they placed ${f.path} themselves, at ${at} on this device. Check that it is there and carry on with the setup, then end your turn.`;
+  return `The user brought ${f.path} from ${f.from}: it is at ${at} on this device now, readable only by the user. Carry on with the setup, then end your turn.`;
+}
 
 /** What the agent hears once you ran its command. Pure. */
 export const adminDone = (command: string): string => `The user says they ran this themselves on this device: ${command}\nCheck that it took effect and carry on with the setup, then end your turn.`;

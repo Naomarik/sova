@@ -2,7 +2,7 @@
 // (server/transport/safe-transport.ts): this server's routes, chats, workers, models, project
 // doctor and mesh links, and the set transport-core registers with its hooks (transportHelpers).
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { delimiter, join } from "node:path";
 import type { Hono } from "hono";
@@ -14,7 +14,10 @@ import { inheritedEnv } from "../project-services/env-allow";
 import { hostVars as hostVarsOf, hostVarsFile } from "../project-services/store";
 import { agentRoot, stateRoot } from "../state-root";
 import { canonicalize, loadPolicyFile, loadProjectTightening, policyFilePath } from "../../pi-config/extensions/sandbox/policy.ts";
-import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, agentTurnEnded, allowDownloads, askAdmin, askDownloads, isTransportAgent, markAdminDone, markAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames } from "./agent";
+import { CONTRACT_FILE, parseDefinition } from "../../shared/project-contract";
+import { backendFor } from "../../pi-config/extensions/sandbox/backend.ts";
+import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, agentTurnEnded, allowDownloads, askAdmin, askDownloads, askOutsideFile, bringOutsideFile, copyLogs, isTransportAgent, markAdminDone, markAgent, needsAnswer, placedOutsideFile, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames, startCopy } from "./agent";
+import type { CopyDeps } from "./arrival-copy";
 import type { AgentScope } from "./agent-scope";
 import { remoteReachable } from "./git-snapshot";
 import type { SetupDef } from "./setup-def";
@@ -124,6 +127,64 @@ export function sandboxNetworkBase(folder: string): string[] | null {
   }
 }
 
+/** The sandbox's hidden list on this device (absolute): its backend's own defaults (~/.ssh, ~/.aws, ~/.gnupg, browser
+    profiles, credential files…) and the policy file's `hidden`. A file there never travels (outside-file.ts). */
+export function sandboxHiddenPaths(home = homedir()): string[] {
+  const out: string[] = [];
+  try {
+    out.push(...backendFor().platformDefaults({ home, agentDir: agentRoot() }).hidden);
+  } catch {
+    // no backend here: the policy file's own list still holds
+  }
+  try {
+    const loaded = loadPolicyFile(policyFilePath(agentRoot()));
+    if (loaded.ok) out.push(...((loaded.value as { hidden?: string[] }).hidden ?? []).map((h) => (h === "~" || h.startsWith("~/") ? join(home, h.slice(2)) : h)));
+  } catch {
+    // unreadable: the backend's defaults hold
+  }
+  // Never empty: the lines every backend hides, should none be readable here.
+  for (const h of [".ssh", ".gnupg", ".aws", ".docker", ".kube", ".azure", ".password-store", ".netrc", ".git-credentials", ".npmrc", ".pypirc"]) out.push(join(home, h));
+  return [...new Set(out)];
+}
+
+/** The project's definition at a checkout, as the arrived copy needs it; null when there is none (or it isn't valid). */
+function definitionAt(tree: string): { open: { endpoint: string; path: string } | null } | null {
+  const file = join(tree, CONTRACT_FILE);
+  if (!existsSync(file)) return null;
+  try {
+    const def = parseDefinition(readFileSync(file, "utf8"));
+    return { open: def.open ? { endpoint: def.open.endpoint, path: def.open.path } : null };
+  } catch {
+    return null;
+  }
+}
+
+/** The arrived chat's running copy, through this server's project services, as your Move's click: up waits until each
+    service is ready (the engine's own readiness), logs read a service's journal or a step's hook unit. */
+export const liveCopyDeps: CopyDeps = {
+  copyUp: async (tree, services) => {
+    const { projectEngine } = await import("../project-services/routes");
+    const r = await projectEngine().run("up", { checkout: tree, ...(services?.length ? { services } : {}) }, { kind: "operator", notPage: true });
+    return {
+      ok: r.ok,
+      instance: r.instance,
+      services: r.services.map((x) => ({ name: x.name, scope: x.scope, state: x.state, ports: x.ports, ...(x.detail ? { detail: x.detail } : {}) })),
+      steps: r.steps.map((x) => ({ id: x.id, kind: x.kind, result: x.result, ...(x.detail ? { detail: x.detail } : {}) })),
+      ...(r.error ? { error: { code: r.error.code, message: r.error.message, ...(r.error.step ? { step: r.error.step } : {}), ...(r.error.service ? { service: r.error.service } : {}) } } : {}),
+    };
+  },
+  copyDef: definitionAt,
+  entryAnswers: async (port, path) => (await (await import("../project-services/conform")).entryAnswers(port, path)).status,
+  logs: async (instance, what, lines) => {
+    const { projectEngine } = await import("../project-services/routes");
+    const engine = projectEngine();
+    if (what.step) return (await engine.driver.logs(engine.hookUnitOf(instance, what.step), lines)).map((l) => l.text);
+    const r = await engine.run("logs", { instance, ...(what.service ? { services: [what.service] } : {}), lines }, { kind: "operator", notPage: true });
+    if (!r.ok) return [`(the log couldn't be read: ${r.error?.message ?? "failed"})`];
+    return (r.lines ?? []).map((l) => `${l.service}: ${l.text}`);
+  },
+};
+
 /** Whether this device has a Claude login Claude Code can run on now: one in this device's order that is enabled,
     not limited or needing sign-in, not leaving, and signed in (credentials there, or in the macOS keychain). */
 export function claudeLoginUsable(agentDir: string): boolean {
@@ -151,7 +212,11 @@ export async function confineProbe(scope: AgentScope): Promise<string | null> {
   return null;
 }
 
-export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void, onBlocked?: (tid: string, reason: string) => void): AgentDeps {
+/** What routes.ts adds to the live deps: the running copy's view for the card, and the read of a file on the device a
+    transport came from (its peer call, your click proven over it). */
+export type AgentWireExtras = Pick<AgentDeps, "onCopy" | "fetchOutside">;
+
+export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void, onBlocked?: (tid: string, reason: string) => void, extras: AgentWireExtras = {}): AgentDeps {
   return {
     stateRoot,
     home: () => homedir(),
@@ -235,6 +300,9 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
     },
     ...(onAgent ? { onAgent } : {}),
     ...(onBlocked ? { onBlocked } : {}),
+    copy: liveCopyDeps,
+    hiddenPaths: () => sandboxHiddenPaths(),
+    ...extras,
     sleep,
     now: () => Date.now(),
   };
@@ -267,8 +335,8 @@ export function liveSafeDeps(): SafeDeps {
 /** What transport-core registers with its hooks (setPrepareDestination, setBringHelpersToRest,
     setAfterArrival, setNeedsAnswer, setPreviewExtras), bound to this server's live deps. `onAgent`:
     its updateTransport(tid, {ext: {agent}}), so the transport's view shows its agent. */
-export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void, onBlocked?: (tid: string, reason: string) => void) {
-  const agentDeps = liveAgentDeps(app, onAgent, onBlocked);
+export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void, onBlocked?: (tid: string, reason: string) => void, extras: AgentWireExtras = {}) {
+  const agentDeps = liveAgentDeps(app, onAgent, onBlocked, extras);
   const safeDeps = liveSafeDeps();
   // Every turn of an arrived Transport agent's chat that ends reads its setup checks again (a message you typed into
   // it included); off the event, since listeners run inside it.
@@ -294,10 +362,25 @@ export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: str
     /** The dialog's Busy helpers: those of the chat working now. */
     busyHelpers: async (chatId: string) => busyOf(await safeDeps.helpers(chatId)).map((h) => ({ id: h.chatId, name: h.name })),
     isTransportAgent: (sessionId: string) => isTransportAgent(stateRoot(), sessionId),
-    /** transport_setup's run: the agent's asks, put on its card (agent.ts askDownloads / askAdmin). */
-    setupRun: (sessionId: string, params: Record<string, unknown>) => (params.op === "downloads" ? askDownloads(agentDeps, sessionId, params) : params.op === "admin" ? askAdmin(agentDeps, sessionId, params) : { ok: false as const, error: "op must be downloads or admin." }),
-    /** Your Allow and Done on the card, here where the agent works (routes.ts, only on your click). */
+    /** transport_setup's run: the agent's asks, put on its card, and the arrived running copy (agent.ts). */
+    setupRun: (sessionId: string, params: Record<string, unknown>) =>
+      params.op === "downloads"
+        ? askDownloads(agentDeps, sessionId, params)
+        : params.op === "admin"
+          ? askAdmin(agentDeps, sessionId, params)
+          : params.op === "outside_file"
+            ? askOutsideFile(agentDeps, sessionId, params)
+            : params.op === "start_copy"
+              ? startCopy(agentDeps, sessionId)
+              : params.op === "copy_logs"
+                ? copyLogs(agentDeps, sessionId, params)
+                : { ok: false as const, error: "op must be downloads, admin, outside_file, start_copy or copy_logs." },
+    /** Your Allow, Done, Bring From and I Placed It Myself on the card, here where the agent works (routes.ts, only on your click). */
     allowDownloads: (tid: string, plan: unknown) => allowDownloads(agentDeps, tid, plan),
     adminDone: (tid: string, step: unknown) => markAdminDone(agentDeps, tid, step),
+    bringFile: (tid: string, file: unknown) => bringOutsideFile(agentDeps, tid, file),
+    placedFile: (tid: string, file: unknown) => placedOutsideFile(agentDeps, tid, file),
+    /** This device's sandbox hidden list: the device a transport came from reads no file there. */
+    hiddenPaths: () => sandboxHiddenPaths(),
   };
 }

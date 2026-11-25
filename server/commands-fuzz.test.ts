@@ -298,6 +298,8 @@ const VALIDATE_ONLY: Record<string, string> = {
   "transport.host-values": "acts on an arrived transport's record and this device's host.json; server/transport/arrival-agent.test.ts covers it",
   "transport.allow-downloads": "acts on a Transport agent's sandbox scope and chat, or across two devices of a mesh; server/transport/agent-asks.test.ts covers it",
   "transport.admin-done": "acts on a Transport agent's chat, or across two devices of a mesh; server/transport/agent-asks.test.ts covers it",
+  "transport.bring-file": "reads a file on the device a transport came from, across two devices of a mesh; server/transport/outside-file.test.ts covers it",
+  "transport.placed-file": "acts on a Transport agent's chat after arrival; server/transport/outside-file.test.ts covers it",
   "session.approval.set": "acquires a chat handle, which starts the chat's process (server/approval-in-chat.ts's own tests drive it)",
   "session.configure": "acquires a chat handle, which starts the chat's process",
   "session.mode.set": "acquires a chat handle, which starts the chat's process",

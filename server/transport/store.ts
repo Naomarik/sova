@@ -24,6 +24,13 @@ export type TransportState =
 export const STEPS = ["offered", "prepared", "stopped", "packed", "pulled", "staged", "verified", "decided", "published", "opened", "confirmed"] as const;
 export type Step = (typeof STEPS)[number];
 
+/** A running copy the source ran for the chat: its tree (by name in the package), its name, the services wanted running. */
+export interface RunningCopy {
+  tree: string;
+  name: string;
+  services: string[];
+}
+
 export interface TransportRecord {
   v: 1;
   tid: string;
@@ -58,8 +65,9 @@ export interface TransportRecord {
   haves?: string[];
   /** Source: the switch was decided (the commit sent, or about to be): the chat doesn't run here again unless the destination says it has nothing. */
   decided?: boolean;
-  /** Source: what a Move stopped at the switch, named for the chat there. */
-  stopped?: { jobs: string[]; copies: string[] };
+  /** Source: what a Move stopped at the switch, named for the chat there; `running`: each stopped copy's tree (by its
+      name in the package) and the services that ran in it, which the destination starts again. */
+  stopped?: { jobs: string[]; copies: string[]; running?: RunningCopy[] };
   /** Worker ids interrupted, or wrapped up, at the switch. */
   interrupted?: string[];
   wrapped?: string[];

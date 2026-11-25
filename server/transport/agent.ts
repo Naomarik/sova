@@ -18,8 +18,10 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { ONBOARD_THINKING, onboardModels } from "../projects/onboard";
-import { adminAsked, adminDone, type AgentAsks, cleanCommand, cleanDownloads, cleanWhy, downloadsAllowed, downloadsAsked, hasWaitingAsk, hostsOf, MAX_ADMIN_STEPS, widenedScope } from "./agent-asks";
-import { agentArrivedMissing, agentBrief, agentPrivateValues, agentStillMissing } from "./agent-prompt";
+import { adminAsked, adminDone, type AgentAsks, cleanCommand, cleanDownloads, cleanWhy, downloadsAllowed, downloadsAsked, hasWaitingAsk, hostsOf, MAX_ADMIN_STEPS, MAX_OUTSIDE_FILES, type OutsideFile, outsideAsked, outsideDone, widenedScope } from "./agent-asks";
+import { agentArrivedMissing, agentBrief, agentCopyFailed, agentPrivateValues, agentStillMissing } from "./agent-prompt";
+import { type CopyDeps, copyChecks, type CopyPlan, copyPlan, type CopyReading, copyStartText, type CopyView, copyViewOf, copyWaiting, oneAtATime, readCopy } from "./arrival-copy";
+import { cleanOutsidePath, outsideRefusal, outsideShown, writeOutside } from "./outside-file";
 import { type AgentScope, agentScope, preparedFile, toolDirsToMake } from "./agent-scope";
 import { lacksRepo, projectComesFrom, withoutCredentials } from "./git-snapshot";
 import { miseTools, readSetupDef, type SetupDef } from "./setup-def";
@@ -61,6 +63,12 @@ export interface PrepareRequest {
   fromSource?: boolean;
   /** The chat's worktrees' folders on this device (absolute): writable for the agent once they are there. */
   trees?: string[];
+  /** After arrival: the running copies the source ran for the chat (the ones its switch stopped, or a Copy's running
+      ones), each on its tree here; none: the project's own copy of the chat's tree (`ownTree`). */
+  copies?: CopyPlan[];
+  /** After arrival: the chat's own tree here, and its name as Running Copies names it (its branch). */
+  ownTree?: string;
+  ownName?: string;
 }
 export type PrepareResult = { ready: true } | { needsYou: string };
 
@@ -135,6 +143,16 @@ export interface AgentDeps {
   onBlocked?(tid: string, reason: string): void;
   /** Close an idle agent's chat so its next open takes its new scope. */
   reopen?(path: string): Promise<void>;
+  /** The running copy after arrival (§app.transport/agent "Ready means the app runs"), through this server's project
+      services; absent: no copy is started and the checks decide alone. */
+  copy?: CopyDeps;
+  /** The transport's running copy, for its card (its `ext.copy`). */
+  onCopy?(tid: string, v: CopyView): void;
+  /** Read `rel` (a file in that device's home) on the device transport `tid` came from: only on your click on the card,
+      which this server proves to that device over that very request. */
+  fetchOutside?(tid: string, rel: string): Promise<{ ok: true; bytes: Buffer } | { ok: false; error: string }>;
+  /** This device's sandbox hidden list (absolute paths): a file there is never asked for, brought or written. */
+  hiddenPaths?(): string[];
   sleep(ms: number): Promise<void>;
   now(): number;
 }
@@ -352,6 +370,16 @@ interface ArrivalRecord {
   sourceValues: string[];
   handed: string[];
   source: string;
+  /** The running copies to start here (none: no definition here, or no copy wired). */
+  copies?: CopyPlan[];
+  /** When they all ran and their entry pages answered: later readings never start them again. */
+  copyReadyAt?: number;
+  /** Each copy's instance, by name, once up made it (copy_logs reads it). */
+  instances?: Record<string, string>;
+  /** The copy failures the agent was told of, in order (each said once; at most MAX_COPY_TELLS). */
+  copyTold?: string[];
+  /** The chat's worktrees here: a file they hold travelled with the code, never asked for as an outside file. */
+  trees?: string[];
 }
 
 /** `<stateRoot>/transport-agent.json`: beside the transport records' folder, never in it (agent-scope.ts names it). */
@@ -576,7 +604,7 @@ export const unconfinedRefusal = (device: string, why: string) => `${device} can
 /** Start the transport's agent: its chat here, on its model, briefed with `checks`, linked to the chat on the source,
     its tools confined from their first call to the project's folder, the chat's worktrees and the tool folders installs
     fill (agent-scope.ts). When this device can't confine it, nothing starts. */
-async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: AgentDeps, arrived = false): Promise<AgentState | { needsYou: string }> {
+async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: AgentDeps, arrived = false, copies?: string[]): Promise<AgentState | { needsYou: string }> {
   const root = deps.stateRoot();
   const title = `Transport: ${req.title}`;
   const choice = agentModel(req.model, await deps.offeredModels(), { claudeUsable: deps.claudeUsable(), ...(req.chatModel ? { chatModel: req.chatModel } : {}) });
@@ -608,6 +636,7 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     arrived,
     ...(req.fromSource ? { arrivedProject: true } : {}),
     home: deps.home(),
+    ...(copies?.length ? { copies } : {}),
   });
   const chat = await deps.startChat({ cwd: folder, title, prompt, model: choice.model, thinking: choice.thinking, tid: req.tid, scope });
   markAgent(root, chat.id, req.tid, deps.now(), scope);
@@ -635,7 +664,8 @@ const settling = new Map<string, number>();
 const settleKey = (root: string, tid: string) => `${resolve(root)}\0${tid}`;
 
 /** Whether you answered something the agent asked (Allow, Done) at or after `t`. Pure. */
-const answeredSince = (a: AgentAsks, t: number): boolean => (a.downloads?.allowedAt ?? -Infinity) >= t || (a.admin ?? []).some((s) => (s.doneAt ?? -Infinity) >= t);
+const answeredSince = (a: AgentAsks, t: number): boolean =>
+  (a.downloads?.allowedAt ?? -Infinity) >= t || (a.admin ?? []).some((s) => (s.doneAt ?? -Infinity) >= t) || (a.outside ?? []).some((f) => (f.doneAt ?? -Infinity) >= t);
 
 /**
  * Wait until the agent's turn has ended with nothing it asked you still waiting: while a download list or a command
@@ -690,6 +720,7 @@ async function turnEnded(path: string, deps: Pick<AgentDeps, "busy" | "sleep" | 
 export function settingUpNames(checks: readonly AgentCheck[]): string[] {
   const name = (c: AgentCheck): string => {
     if (c.id.startsWith("private:")) return basename(c.id.slice("private:".length));
+    if (c.id.startsWith("copy:")) return "its running copy";
     const m = /^(?:tool|deps|doctor:program|doctor:host|doctor:data):(.+)$/.exec(c.id);
     return m ? m[1]! : c.id.replace(/^doctor:/, "");
   };
@@ -730,9 +761,12 @@ export function sourceValuesIn(files: readonly string[], values: readonly string
  * paths go to the transport's agent to point at this one, started now when the device was already
  * prepared and none ran. When the project came with the chat (`fromSource`), its setup checks run
  * now too, and what they find missing (tools, dependencies, its doctor) goes to the agent with them;
- * all green, the project is recorded as prepared. Nothing missing: nothing is sent. Returns the files
- * handed over. `onStarted` hears what the agent was handed once it has it (before its turn ends): the
- * transport says the setup is under way.
+ * all green, the project is recorded as prepared. Then Ready means the app runs (§app.transport/agent):
+ * with nothing else missing, the running copy starts now (the source's, else the chat's own tree's;
+ * none without a definition here), and a copy that doesn't run or whose entry page doesn't answer goes
+ * to the agent too; otherwise it starts at the reading after the agent's turn. Nothing missing and the
+ * copy running: nothing is sent. Returns the files handed over. `onStarted` hears what is under way once
+ * it is (the agent has it, or the copy is starting): the transport says the setup is under way.
  */
 export async function afterArrival(asked: PrepareRequest & { privateFiles: string[]; sourceValues: string[] }, deps: AgentDeps, opts: { onStarted?(checks: AgentCheck[]): void } = {}): Promise<string[]> {
   const req = { ...asked, project: cleanProject(asked.project, deps.home()) };
@@ -740,8 +774,24 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
   const hits = sourceValuesIn(req.privateFiles, req.sourceValues);
   const setup = req.fromSource ? agentMissing(await preflight(req.project, deps)) : [];
   if (req.fromSource && !setup.length) markPrepared(deps.stateRoot(), req.project, req.tid, deps.now());
-  if (!hits.length && !setup.length) return [];
   const source = req.sourceLabel ?? req.sourcePeer;
+  const plan = deps.copy ? copyPlan(req.copies ?? [], resolve(req.ownTree ?? req.trees?.[0] ?? req.project.path), deps.copy, req.ownName) : [];
+  // What its checks are read from, again after each turn of the agent's: the copies among them.
+  const f = readPrepared(deps.stateRoot());
+  (f.arrivals ??= {})[req.tid] = { project: req.project, privateFiles: req.privateFiles, sourceValues: req.sourceValues, handed: hits.map((h) => h.file), source, copies: plan, trees: req.trees ?? [] };
+  writePrepared(deps.stateRoot(), f);
+  if (deps.copy) emitCopy(deps, req.tid, plan.length ? { state: setup.length || hits.length ? "waiting" : "starting", copies: [], at: deps.now() } : { state: "none", copies: [], at: deps.now() });
+  let copyFailed: AgentCheck[] = [];
+  if (!hits.length && !setup.length) {
+    if (!plan.length) return [];
+    // Nothing for an agent: the copy starts now, and the transport says it is under way meanwhile.
+    opts.onStarted?.(copyWaiting(plan));
+    const readings = await readCopies(req.tid, plan, deps);
+    if (readings.every((r) => r.ok)) return [];
+    copyFailed = copyChecks(readings);
+  }
+  // The copies wait for what else is missing here: started at the reading after the agent's turn.
+  const copyNow = copyFailed.length ? copyFailed : copyWaiting(plan);
   let agent = agentOf(deps.stateRoot(), req.tid);
   if (agent) {
     // It started before the chat's worktrees were here: its next open confines it to them too (a running chat keeps the
@@ -760,25 +810,68 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
       markAgent(deps.stateRoot(), agent.sessionId, req.tid, deps.now(), scope);
       if (!deps.busy(agent.path)) await deps.reopen?.(agent.path).catch(() => undefined);
     }
-    await deps.tell(agent.path, [...(setup.length ? [agentArrivedMissing(source, setup)] : []), ...(hits.length ? [agentPrivateValues(source, hits)] : [])].join("\n\n"));
-    agent = { ...agent, state: "working", checks: [...setup, ...privateChecks(source, hits)] };
+    await deps.tell(
+      agent.path,
+      [...(setup.length ? [agentArrivedMissing(source, setup)] : []), ...(hits.length ? [agentPrivateValues(source, hits)] : []), ...(copyFailed.length ? [agentCopyFailed(source, copyFailed)] : [])].join("\n\n"),
+    );
+    if (copyFailed.length) noteCopyTold(deps, req.tid, copyFailed);
+    agent = { ...agent, state: "working", checks: [...setup, ...privateChecks(source, hits), ...copyNow] };
     saveAgent(deps, req.tid, agent);
   } else {
-    const started = await startAgent(req, [...setup, ...privateChecks(source, hits)], deps, true);
+    const started = await startAgent(req, [...setup, ...privateChecks(source, hits), ...copyNow], deps, true, plan.map((p) => p.name));
     if ("needsYou" in started) {
       // After arrival there is no transport step to hold: its card in the arrived chat says why nothing started.
       deps.onBlocked?.(req.tid, started.needsYou);
       return [];
     }
+    if (copyFailed.length) noteCopyTold(deps, req.tid, copyFailed);
     agent = started;
   }
-  // What its checks are read from, again after any answer on its card hands it a turn once this wait has ended.
-  const f = readPrepared(deps.stateRoot());
-  (f.arrivals ??= {})[req.tid] = { project: req.project, privateFiles: req.privateFiles, sourceValues: req.sourceValues, handed: hits.map((h) => h.file), source };
-  writePrepared(deps.stateRoot(), f);
   opts.onStarted?.(agent.checks);
   await arrivalChecked(req.tid, deps);
   return hits.map((h) => h.file);
+}
+
+/** How many copy failures the agent is told of on its own (a new failure each): past that, it waits for you. */
+export const MAX_COPY_TELLS = 3;
+
+const emitCopy = (deps: Pick<AgentDeps, "onCopy">, tid: string, v: CopyView): void => {
+  try {
+    deps.onCopy?.(tid, v);
+  } catch {
+    // the card's view only
+  }
+};
+
+function noteCopyTold(deps: Pick<AgentDeps, "stateRoot">, tid: string, failed: AgentCheck[]): void {
+  const f = readPrepared(deps.stateRoot());
+  const r = f.arrivals?.[tid];
+  if (!r) return;
+  r.copyTold = [...(r.copyTold ?? []), failed.filter((c) => !c.ok).map((c) => c.detail).join("\n")];
+  writePrepared(deps.stateRoot(), f);
+}
+
+/**
+ * The arrival's running copies started (or kept: up leaves what runs alone) and read, one start at a time per
+ * transport, the agent's own start_copy included: each service ready, then its entry page. The card hears it.
+ */
+function readCopies(tid: string, plan: readonly CopyPlan[], deps: AgentDeps): Promise<CopyReading[]> {
+  const copy = deps.copy;
+  if (!copy || !plan.length) return Promise.resolve([]);
+  return oneAtATime(settleKey(deps.stateRoot(), tid), async () => {
+    emitCopy(deps, tid, { state: "starting", copies: [], at: deps.now() });
+    const out: CopyReading[] = [];
+    for (const p of plan) out.push(await readCopy(p, copy));
+    const f = readPrepared(deps.stateRoot());
+    const r = f.arrivals?.[tid];
+    if (r) {
+      for (const x of out) if (x.instance) (r.instances ??= {})[x.name] = x.instance;
+      if (out.every((x) => x.ok)) r.copyReadyAt ??= deps.now();
+      writePrepared(deps.stateRoot(), f);
+    }
+    emitCopy(deps, tid, copyViewOf(out, deps.now()));
+    return out;
+  });
 }
 
 const privateChecks = (source: string, found: { file: string; found: string[] }[]): AgentCheck[] =>
@@ -847,9 +940,33 @@ async function arrivalReadOnce(tid: string, deps: AgentDeps): Promise<void> {
   const left = sourceValuesIn(r.privateFiles, r.sourceValues);
   const stillSetup = agentMissing(await preflight(r.project, deps));
   if (!stillSetup.length) markPrepared(root, r.project, tid, deps.now());
+  // Ready means the app runs: once the rest passes, the copy is started (up keeps what runs) and its entry page read.
+  // Once it has run, a reading never starts it again: whatever stops it later is yours.
+  let copy: AgentCheck[] = [];
+  const plan = r.copies ?? [];
+  if (plan.length) {
+    if (stillSetup.length || left.length) copy = copyWaiting(plan);
+    else if (r.copyReadyAt) copy = plan.map((p) => ({ id: `copy:${p.name}`, ok: true, detail: `Its running copy ${p.name} runs here` }));
+    else {
+      copy = copyChecks(await readCopies(tid, plan, deps));
+      const failed = copy.filter((c) => !c.ok);
+      const said = failed.map((c) => c.detail).join("\n");
+      const told = readPrepared(root).arrivals?.[tid]?.copyTold ?? [];
+      agent = agentOf(root, tid) ?? agent;
+      // A new failure goes to the agent (it isn't running a turn and waits on nothing of yours): each said once.
+      if (failed.length && !told.includes(said) && told.length < MAX_COPY_TELLS && !deps.busy(agent.path) && !hasWaitingAsk(agent)) {
+        noteCopyTold(deps, tid, failed);
+        await deps.tell(agent.path, agentCopyFailed(r.source, failed)).catch(() => undefined);
+      }
+    }
+  }
   agent = agentOf(root, tid) ?? agent;
-  const done = !left.length && readyNow(stillSetup, agent);
-  saveAgent(deps, tid, { ...agent, state: done ? "ready" : "needs-you", checks: [...stillSetup, ...(left.length ? privateChecks(r.source, left) : r.handed.map((file) => ({ id: `private:${file}`, ok: true, detail: `${file} points at this computer` })))] });
+  const done = !left.length && readyNow([...stillSetup, ...copy], agent);
+  saveAgent(deps, tid, {
+    ...agent,
+    state: done ? "ready" : "needs-you",
+    checks: [...stillSetup, ...(left.length ? privateChecks(r.source, left) : r.handed.map((file) => ({ id: `private:${file}`, ok: true, detail: `${file} points at this computer` }))), ...copy],
+  });
 }
 
 // ---- what it asks you on its card ---------------------------------------------------------------
@@ -956,4 +1073,131 @@ export async function markAdminDone(deps: AgentDeps, tid: string, stepId: unknow
   const next: AgentState = { ...a, state: "working", admin: (a.admin ?? []).map((s) => (s.id === step.id ? { ...s, state: "done" as const, doneAt: deps.now() } : s)) };
   saveAgent(deps, tid, next);
   return { ok: true, agent: next, ...handOnChecked(deps, tid, a.path, adminDone(step.command), false) };
+}
+
+// ---- the running copy, from the agent's tool ------------------------------------------------------
+
+/** The arrival the agent chat `sessionId` works on, with its transport, or why there is none. */
+function ownArrival(root: string, sessionId: string): { tid: string; a: AgentState; r: ArrivalRecord } | { error: string } {
+  const own = ownAgent(root, sessionId);
+  if ("error" in own) return own;
+  const r = readPrepared(root).arrivals?.[own.tid];
+  if (!r) return { error: "The chat hasn't arrived on this device yet: there is no running copy to start." };
+  return { ...own, r };
+}
+
+/**
+ * transport_setup start_copy: the arrival's running copies started again now (one start at a time per transport, so a
+ * reading already starting them is waited for), each service ready, then its entry page. What it finds is the agent's
+ * answer; whether the transport is Ready is still the reading after its turn.
+ */
+export async function startCopy(deps: AgentDeps, sessionId: string): Promise<AskAnswer> {
+  const own = ownArrival(deps.stateRoot(), sessionId);
+  if ("error" in own) return { ok: false, error: own.error };
+  if (!deps.copy || !own.r.copies?.length) return { ok: false, error: "This project has no running-copy definition here (.sova/project.json), so there is no copy to start." };
+  const readings = await readCopies(own.tid, own.r.copies, deps);
+  return { ok: true, text: copyStartText(readings) };
+}
+
+const LOG_NAME = /^[A-Za-z0-9][\w.:-]{0,63}$/;
+
+/** transport_setup copy_logs: a copy's service log, or a setup or data step's, newest last. Reads only. */
+export async function copyLogs(deps: AgentDeps, sessionId: string, input: { copy?: unknown; service?: unknown; step?: unknown; lines?: unknown }): Promise<AskAnswer> {
+  const own = ownArrival(deps.stateRoot(), sessionId);
+  if ("error" in own) return { ok: false, error: own.error };
+  if (!deps.copy || !own.r.copies?.length) return { ok: false, error: "This project has no running-copy definition here, so there are no copy logs." };
+  const names = own.r.copies.map((p) => p.name);
+  const name = typeof input.copy === "string" && input.copy ? input.copy : names[0]!;
+  if (!names.includes(name)) return { ok: false, error: `copy must be one of ${names.join(", ")}.` };
+  const instance = own.r.instances?.[name];
+  if (!instance) return { ok: false, error: `${name} hasn't been started here yet: start it (start_copy), then read its logs.` };
+  const what: { service?: string; step?: string } = {};
+  for (const k of ["service", "step"] as const) {
+    const v = input[k];
+    if (v === undefined) continue;
+    if (typeof v !== "string" || !LOG_NAME.test(v)) return { ok: false, error: `${k} must be a service's or step's name, as the failure names it.` };
+    what[k] = v;
+  }
+  if (what.service && what.step) return { ok: false, error: "Name a service or a step, not both." };
+  const lines = typeof input.lines === "number" && Number.isInteger(input.lines) ? Math.min(Math.max(input.lines, 1), 200) : 80;
+  const got = await deps.copy.logs(instance, what, lines).catch((e: unknown) => [`(the log couldn't be read: ${e instanceof Error ? e.message : String(e)})`]);
+  const of = what.step ? `step ${what.step}` : what.service ? `service ${what.service}` : "every service";
+  return { ok: true, text: got.length ? [`${name}, ${of}, last ${got.length} line(s):`, ...got].join("\n") : `${name}, ${of}: no log lines yet.` };
+}
+
+// ---- a file outside the project, from the device the chat came from ----------------------------
+
+/**
+ * transport_setup outside_file: a file the project needs that lives outside the project on the device the chat came
+ * from, put on the card for your Bring From {device} or your own placing. Nothing is read anywhere here: only your
+ * click reads that one file there. Refused: a path outside that device's home, in the sandbox's hidden list or Sova's
+ * own folders, or one the chat's code already carries (it travelled with it).
+ */
+export function askOutsideFile(deps: AskDeps & Pick<AgentDeps, "home" | "protectedRoots" | "hiddenPaths">, sessionId: string, input: { path?: unknown; why?: unknown }): AskAnswer {
+  const own = ownAgent(deps.stateRoot(), sessionId);
+  if ("error" in own) return { ok: false, error: own.error };
+  const arrival = readPrepared(deps.stateRoot()).arrivals?.[own.tid];
+  const p = cleanOutsidePath(input.path);
+  if ("error" in p) return { ok: false, error: p.error };
+  const here = join(deps.home(), p.rel);
+  const hiddenHere = deps.hiddenPaths?.() ?? [];
+  // The hidden list as names under the home (~/.ssh…): the same on the device the chat came from.
+  const why = outsideRefusal(here, deps.home(), hiddenHere, deps.protectedRoots());
+  if (why) return { ok: false, error: `${why}. Ask the user with align if the project really needs it.` };
+  const code = [resolve(arrival?.project.path ?? ""), ...(arrival?.trees ?? [])].filter((t) => t && t !== "/");
+  if (code.some((t) => within(here, t))) return { ok: false, error: `~/${p.rel} is inside the project or the chat's worktrees here: it travels with the code, so it isn't an outside file.` };
+  const asked = own.a.outside ?? [];
+  const shown = outsideShown(p.rel);
+  if (asked.some((x) => x.state === "asked" && x.path === shown.path)) return { ok: true, text: outsideAsked({ path: shown.path, from: asked.find((x) => x.path === shown.path)!.from }) };
+  if (asked.filter((x) => x.state === "asked").length >= MAX_OUTSIDE_FILES) return { ok: false, error: `${MAX_OUTSIDE_FILES} files already wait for the user: end your turn.` };
+  const from = arrival?.source ?? "the device the chat came from";
+  const w = cleanWhy(input.why);
+  const file: OutsideFile = { id: newId("of"), ...shown, ...(w ? { why: w } : {}), from, state: "asked", at: deps.now() };
+  saveAgent(deps, own.tid, { ...own.a, state: "needs-you", outside: [...asked, file].slice(-MAX_OUTSIDE_FILES * 2) });
+  return { ok: true, text: outsideAsked(file) };
+}
+
+/** The file's path relative to the home, from its `~/…` path. */
+const relOf = (f: OutsideFile): string => f.path.slice(2);
+
+/**
+ * Your Bring From {device} on the card (only the route your click reaches calls it): the device it lives on reads that
+ * one file, once, and it is written to the same path in this device's home; a file already there is kept and nothing
+ * is brought. The agent is told either way.
+ */
+export async function bringOutsideFile(deps: AgentDeps, tid: string, fileId: unknown): Promise<Answered> {
+  const a = agentOf(deps.stateRoot(), tid);
+  if (!a) return { ok: false, status: 404, error: "This transport has no Transport agent here." };
+  const f = (a.outside ?? []).find((x) => x.id === fileId);
+  if (!f) return { ok: false, status: 409, error: "That file isn't one the agent asked for." };
+  if (f.state !== "asked") return answered(a);
+  const rel = relOf(f);
+  const at = join(deps.home(), rel);
+  const hidden = deps.hiddenPaths?.() ?? [];
+  const settle = (how: "brought" | "kept"): Answered => {
+    const now = agentOf(deps.stateRoot(), tid) ?? a;
+    const next: AgentState = { ...now, state: "working", outside: (now.outside ?? []).map((x) => (x.id === f.id ? { ...x, state: how, doneAt: deps.now() } : x)) };
+    saveAgent(deps, tid, next);
+    return { ok: true, agent: next, ...handOnChecked(deps, tid, a.path, outsideDone(f, how, at), false) };
+  };
+  // Already here: kept as it is, nothing read there.
+  if (existsSync(at)) return settle("kept");
+  if (!deps.fetchOutside) return { ok: false, status: 500, error: "This server can't reach the device the chat came from for it." };
+  const got = await deps.fetchOutside(tid, rel).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }));
+  if (!got.ok) return { ok: false, status: 409, error: `${f.path} wasn't brought: ${got.error.replace(/\.$/, "")}. Nothing was written here.` };
+  const put = writeOutside(rel, deps.home(), got.bytes, hidden, deps.protectedRoots());
+  if ("error" in put) return { ok: false, status: 409, error: `${f.path} wasn't written: ${put.error.replace(/\.$/, "")}.` };
+  return settle("written" in put ? "brought" : "kept");
+}
+
+/** Your I Placed It Myself on the card: you put the file there; the agent is told to check it and go on. */
+export async function placedOutsideFile(deps: AgentDeps, tid: string, fileId: unknown): Promise<Answered> {
+  const a = agentOf(deps.stateRoot(), tid);
+  if (!a) return { ok: false, status: 404, error: "This transport has no Transport agent here." };
+  const f = (a.outside ?? []).find((x) => x.id === fileId);
+  if (!f) return { ok: false, status: 409, error: "That file isn't one the agent asked for." };
+  if (f.state !== "asked") return answered(a);
+  const next: AgentState = { ...a, state: "working", outside: (a.outside ?? []).map((x) => (x.id === f.id ? { ...x, state: "placed" as const, doneAt: deps.now() } : x)) };
+  saveAgent(deps, tid, next);
+  return { ok: true, agent: next, ...handOnChecked(deps, tid, a.path, outsideDone(f, "placed", join(deps.home(), relOf(f))), false) };
 }

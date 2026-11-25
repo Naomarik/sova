@@ -439,7 +439,7 @@ async function fixManifest(home: string, id: string, mode: "move" | "copy"): Pro
 }
 
 /** The source's commit (POST …/commit): publish, open the chat, tell it what moved. Idempotent. */
-export async function commit(from: { id: string }, tid: string, body: { stopped?: { jobs: string[]; copies: string[] }; interrupted?: string[]; wrapped?: string[] }): Promise<{ status: number; body: unknown }> {
+export async function commit(from: { id: string }, tid: string, body: { stopped?: { jobs: string[]; copies: string[] }; running?: unknown; interrupted?: string[]; wrapped?: string[] }): Promise<{ status: number; body: unknown }> {
   const r = readTransport(tid);
   if (!r || r.side !== "destination" || r.peer !== from.id) return ok({ error: "No such transport" }, 404);
   if (r.steps.opened) return ok({ ok: true, again: true, arrivedId: r.arrivedId });
@@ -506,10 +506,16 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     if (asks.length || hostAsksOfRecord(readTransport(tid)!).length) updateTransport(tid, { ext: { hostAsk: asks } });
     // What is left to set up here goes to the Transport agent now (its turn goes on by itself): what it took on is
     // said to the source, and its card is in the chat (once: a card that travelled with the chat stays the one).
+    // Ready means the app runs: the copies the source ran for the chat (the services its switch stopped), each on its
+    // tree here, else the project's own copy of the chat's tree.
+    const own = ownFirst(offerOf(r).trees)[0];
     const setup = await afterArrival({
       ...requestOf(r, fromSourceOf(r), (await need().titleOf?.(file).catch(() => null)) || r.title),
       privateFiles: done.privateFiles ?? [],
       sourceValues: done.sourceValues ?? [],
+      copies: copiesHere(body?.running, done.targets ?? {}),
+      ownTree: r.folder,
+      ...(own?.branch ? { ownName: (readTransport(tid)?.renamed ?? []).find((x) => x.from === own.branch)?.to ?? own.branch } : {}),
     });
     await putAgentCard(tid, file);
     // Its size once the notes are in: any later growth is a turn here, and Move Back is gone (§app.transport/moved-row).
@@ -525,6 +531,21 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     needsYou(tid, msg);
     return ok({ error: msg }, 500);
   }
+}
+
+/** The source's running copies (its commit's `running`: each tree by its name in the package, the copy's name and the
+    services that ran), each on its tree here; one whose tree didn't arrive is left out. Checked, never trusted. */
+export function copiesHere(raw: unknown, targets: Record<string, string>): { tree: string; name: string; services?: string[] }[] {
+  if (!Array.isArray(raw)) return [];
+  const name = (v: unknown) => (typeof v === "string" && /^[\w./@+-]{1,200}$/.test(v) ? v : null);
+  return raw.slice(0, 20).flatMap((x) => {
+    const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
+    const tree = typeof o.tree === "string" ? targets[o.tree] : undefined;
+    const n = name(o.name);
+    if (!tree || !n || !Object.hasOwn(targets, o.tree as string)) return [];
+    const services = Array.isArray(o.services) ? o.services.filter((v): v is string => typeof v === "string" && /^[a-z][a-z0-9-]{0,62}$/i.test(v)).slice(0, 32) : [];
+    return [{ tree, name: n, ...(services.length ? { services } : {}) }];
+  });
 }
 
 /** The transport's agent as its record keeps it (`ext.agent`, the onAgent hook's), or null. */
@@ -545,11 +566,20 @@ async function putAgentCard(tid: string, file: string): Promise<void> {
   const working = !!a && a.state !== "ready";
   const blocked = typeof ((r.ext ?? {}) as { agentBlocked?: string }).agentBlocked === "string";
   const asks = hostAsksOfRecord(r).length;
-  if (!working && !blocked && !asks) return;
+  // The running copy starting here (§app.transport/agent "Ready means the app runs"): its card links to it once it runs.
+  const copy = ((r.ext ?? {}) as { copy?: { state?: string } }).copy;
+  const copying = !!copy && copy.state !== "none";
+  if (!working && !blocked && !asks && !copying) return;
   if (hasAgentCard(await readFile(file, "utf8").catch(() => ""), tid)) return;
   const device = a?.device ?? "this device";
   const title = a?.title ?? `Transport: ${r.title}`;
-  const text = working ? `The Transport agent "${title}" is setting up this project on ${device}.` : blocked ? `The Transport agent couldn't start on ${device}.` : `This project needs ${asks === 1 ? "1 host value" : `${asks} host values`} set on ${device}.`;
+  const text = working
+    ? `The Transport agent "${title}" is setting up this project on ${device}.`
+    : blocked
+      ? `The Transport agent couldn't start on ${device}.`
+      : asks
+        ? `This project needs ${asks === 1 ? "1 host value" : `${asks} host values`} set on ${device}.`
+        : `This project's running copy is starting on ${device}.`;
   await need()
     .noteAgentCard!(file, text, { tid, title, device })
     .catch((err: unknown) => log(`${tid}: its agent's card wasn't put in the chat: ${err instanceof Error ? err.message : String(err)}`));

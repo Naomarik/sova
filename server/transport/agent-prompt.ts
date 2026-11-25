@@ -26,6 +26,8 @@ export interface BriefFacts {
   home?: string;
   /** The project came with the chat from the source (this device couldn't clone it): it is in place, never cloned. */
   arrivedProject?: boolean;
+  /** After arrival: the running copies Sova starts here once the rest is set up (by name); absent: none (no definition). */
+  copies?: string[];
 }
 
 const line = (c: AgentCheck) => `- ${c.id}: ${c.detail}`;
@@ -65,6 +67,16 @@ export function agentBrief(f: BriefFacts): string {
     "## Downloads from other sites",
     "When an install needs a site the proxy refuses (a toolchain's own download site, such as nodejs.org for node or corretto.aws for java, or mise's version list), don't retry it, look for a mirror or a copy elsewhere, or switch tools. Call `transport_setup` with `op: \"downloads\"`, listing each tool, the exact version it gets and the host it downloads from (one plain host name each, every host the download goes to), then end your turn. Sova shows the list on the Transport card; nothing is reachable until the user allows it, and you are told when they have. Then download exactly what you listed.",
     "",
+    "## A file outside the project on " + f.source,
+    `When the project needs a file that lives outside the project on ${f.source} (a config or key file in the user's home there, such as ~/.config/<tool>/settings.json), never try to reach ${f.source} and never invent the file. Call \`transport_setup\` with \`op: "outside_file"\`, its \`path\` in that device's home as ~/… and \`why\`, then end your turn. The Transport card offers the user to bring that one file here (to the same path in this device's home) or to place it themselves; you are told when it is there. Never ask for anything in the user's private settings (~/.ssh, ~/.aws, ~/.gnupg and the like): those never travel.`,
+    ...(f.copies?.length
+      ? [
+          "",
+          "## Ready means the app runs",
+          `Once the rest here is set up, Sova starts the project's running copy here (${f.copies.join(", ")}), the services ${f.source} ran for it, waits for each to be ready and opens its entry page. The transport is Ready only once that works; Sova, not you, reads it when your turn ends. When it fails you are told what failed. Then read its logs with \`transport_setup\` \`op: "copy_logs"\` (a \`service\`, or a setup or data \`step\`, as the failure names it) and its setup and data steps in .sova/project.json, work out why (a missing tool, package, file or setting), fix what is inside your folders, ask on the card for the rest (downloads, admin, outside_file), then start it again with \`op: "start_copy"\` and end your turn. The copy keeps running afterwards: never stop it, reset it or delete its data, and never start its services by hand. Its data starts as the project's own empty or seeded data: data never travels.`,
+        ]
+      : []),
+    "",
     "## What you may do alone",
     `Inside those folders: ${f.arrivedProject ? "" : "clone the repository into its folder, "}install its dependencies and tool versions (a version manager, a toolchain, the package manager its lockfile names), run its setup, build and tests, and edit its private files (the local config git ignores) so they hold this computer's values: database strings, paths and ports. With a \`.sova/project.json\`, use \`project_verbs\` (doctor, create, up, test) rather than starting anything by hand.`,
     "",
@@ -100,6 +112,17 @@ export function agentArrivedMissing(source: string, checks: AgentCheck[]): strin
     ...checks.filter((c) => !c.ok).map(line),
     "",
     "Fix these, or ask the user what you need, then end your turn.",
+  ].join("\n");
+}
+
+/** After arrival: the running copy didn't start, or its entry page doesn't answer (§app.transport/agent "Ready means the
+    app runs"). Pure. */
+export function agentCopyFailed(source: string, checks: AgentCheck[]): string {
+  return [
+    "Sova started the project's running copy here, and it isn't running yet:",
+    ...checks.filter((c) => !c.ok).map(line),
+    "",
+    `Find out why: read its logs with transport_setup {op: "copy_logs"} (the service or step named above) and its setup and data steps in .sova/project.json. It is often a missing tool, package, file or setting. Fix what is inside your folders; ask on the card for the rest (downloads, admin, or outside_file for a file that lives outside the project on ${source}). Then start it again with transport_setup {op: "start_copy"} and end your turn. Never stop it, reset it or delete its data.`,
   ].join("\n");
 }
 

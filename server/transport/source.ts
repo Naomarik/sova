@@ -4,7 +4,7 @@
 // rest), says the package is ready, and once the destination has verified it, burns the ticket and
 // sends the one commit. Only the destination's answer that the chat opened there moves it; until
 // then the chat is this device's. A Move leaves a Moved row and a safety copy here.
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -16,7 +16,7 @@ import { movedOf } from "./moved";
 import { buildPackage } from "./package";
 import { readSetupDef, type SetupDef } from "./setup-def";
 import { type CarriedSettings, hostCarry } from "./project-carry";
-import { activeTransportOf, createTransport, logName, newTicket, newTid, readTransport, stepDone, type TransportRecord, updateTransport } from "./store";
+import { activeTransportOf, createTransport, logName, newTicket, newTid, readTransport, type RunningCopy, stepDone, type TransportRecord, updateTransport } from "./store";
 import type { AgentView, OfferBody, OfferTree, StatusBody } from "./wire";
 import { agentViewOf, peerPath, PROOF_HEADER } from "./wire";
 
@@ -66,8 +66,9 @@ export interface SourceDeps {
   stopJobs(chatIds: string[]): Promise<string[]>;
   /** The chat's background jobs and its helpers', by name (the dialog's Stays here). */
   jobs(chatId: string): string[];
-  /** The running copies (project-services instances) on these worktrees: id and name (the dialog's Stays here). */
-  copies(treePaths: string[]): { id: string; name: string }[];
+  /** The running copies (project-services instances) on these worktrees: id and name (the dialog's Stays here), and
+      the checkout each runs and the services wanted running in it (what the destination starts again). */
+  copies(treePaths: string[]): { id: string; name: string; checkout?: string; services?: string[] }[];
   /** Stop these running copies (a Move's switch, the ones your click saw): the names of those stopped. */
   stopCopies(ids: string[]): Promise<string[]>;
   /** The chat's usage and time records, cut from this device's stores for the package (null: none to carry). */
@@ -496,7 +497,8 @@ async function step(r: TransportRecord): Promise<"wait" | "again" | "stop"> {
     }
     const cur = readTransport(r.tid)!;
     // Decided: an unreachable destination is asked again at the next contact, never a failure here.
-    const res = await post(cur, peerPath.commit(r.tid), { stopped: cur.stopped ?? { jobs: [], copies: [] }, interrupted: cur.interrupted ?? [], wrapped: cur.wrapped ?? [] }).catch(() => null);
+    const running = cur.stopped?.running ?? ((cur.ext ?? {}) as { running?: RunningCopy[] }).running ?? [];
+    const res = await post(cur, peerPath.commit(r.tid), { stopped: cur.stopped ?? { jobs: [], copies: [] }, running, interrupted: cur.interrupted ?? [], wrapped: cur.wrapped ?? [] }).catch(() => null);
     if (!res) return "wait";
     if (!res.ok) return res.status >= 500 ? "wait" : (needsYou(r.tid, String(res.body.error ?? `${r.peerLabel} answered ${res.status}`)), "stop");
     return "again";
@@ -531,6 +533,27 @@ async function unchangedSincePack(r: TransportRecord): Promise<boolean> {
   return Object.keys(now).length === Object.keys(was).length && Object.entries(now).every(([k, v]) => was[k] === v);
 }
 
+const realOf = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
+
+/** The running copies on the chat's trees (only `ids` when given), each by the tree it runs, its name and the services
+    wanted running in it: what the destination starts again once the chat is there. */
+export function runningOn(d: Pick<SourceDeps, "copies">, trees: readonly { name: string; path: string }[], ids: ReadonlySet<string> | null): RunningCopy[] {
+  const byPath = new Map(trees.map((t) => [realOf(t.path), t.name]));
+  return d
+    .copies(trees.map((t) => t.path))
+    .filter((x) => ids === null || ids.has(x.id))
+    .flatMap((x) => {
+      const tree = x.checkout ? byPath.get(realOf(x.checkout)) : undefined;
+      return tree ? [{ tree, name: x.name, services: [...(x.services ?? [])] }] : [];
+    });
+}
+
 /** A Move's switch, then the package (a Copy packs as it is). */
 async function pack(r: TransportRecord): Promise<void> {
   const d = need();
@@ -558,10 +581,17 @@ async function pack(r: TransportRecord): Promise<void> {
     // Deepest first: a helper's helpers stop before it.
     for (const h of [...helpers].reverse()) await d.park(h.chatId);
     const jobs = await d.stopJobs([c.id, ...helpers.map((h) => h.chatId)]);
+    // Which services ran on which tree, read before they stop: the destination starts the same ones (§app.transport/agent).
+    const before = runningOn(d, (await chatTrees(c)).trees, new Set(r.choices?.copies ?? []));
     const copies = await d.stopCopies(r.choices?.copies ?? []);
+    const running = before.filter((x) => copies.includes(x.name));
     await d.closeChat(c.path, `This chat is moving to ${r.peerLabel}.`);
     await knob(r.tid, "stopped");
-    stepDone(r.tid, "stopped", { stopped: { jobs, copies }, interrupted, wrapped });
+    stepDone(r.tid, "stopped", { stopped: { jobs, copies, ...(running.length ? { running } : {}) }, interrupted, wrapped });
+  } else {
+    // A Copy stops nothing here: what runs for the chat now is what the copy there starts too.
+    const running = runningOn(d, (await chatTrees(c)).trees, null);
+    if (running.length) updateTransport(r.tid, { ext: { running } });
   }
   updateTransport(r.tid, { state: "packing" });
   const t = await chatTrees(c);

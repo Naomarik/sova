@@ -468,6 +468,8 @@
    "transport.host-values": "computers",
    "transport.allow-downloads": "computers",
    "transport.admin-done": "computers",
+   "transport.bring-file": "computers",
+   "transport.placed-file": "computers",
    "session.draft.get": "scripts",
    "session.draft.set": "scripts",
    "session.shell.output": "scripts",

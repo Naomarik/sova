@@ -5,6 +5,7 @@
 // ticket itself (§mesh.peers/transport-ticket), comparing in constant time and never logging it.
 import { createHash, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { rename, rm as rmAsync } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Context, Hono } from "hono";
@@ -28,7 +29,7 @@ import { hostVars, readRegistry, setHostVars } from "../project-services/store";
 import { carriedSettingsOf, type CarryDeps, registerArrived } from "./project-carry";
 import { resolveSessionPath } from "../paths";
 import { archiveSession, cleanupSessions, getSessionSummary, listSessions, markArchived } from "../sessions-index";
-import { stateRoot } from "../state-root";
+import { agentRoot, stateRoot } from "../state-root";
 import { cutChatUsage, importChatUsage } from "../usage-export";
 import { worktreesOf } from "../worktrees-state";
 import * as dest from "./destination";
@@ -43,6 +44,7 @@ import { cancelTransport, previewTransport, REFUSALS, resumeSources, retryTransp
 import { activeTransportOf, listTransports, publicView, readTransport, type TransportRecord, updateTransport } from "./store";
 import { type AgentView, agentViewOf, peerPath, PROOF_HEADER, TICKET_HEADER } from "./wire";
 import { setTransportSetupRun } from "./agent-tool";
+import { serveOutsideFile } from "./outside-file";
 
 const small = bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
@@ -239,7 +241,7 @@ async function compressOldSafetyCopies(): Promise<void> {
 /** Why a query or body has a key the route doesn't take, or null. */
 /** The running copies (instances wanting a service running) on these worktrees, named as Running Copies names
     them: the branch, else the folder. A project's main copy (slot 0) isn't the chat's to stop: it stays. */
-function runningCopiesOn(paths: string[] | null): { id: string; name: string }[] {
+function runningCopiesOn(paths: string[] | null): { id: string; name: string; checkout: string; services: string[] }[] {
   const at = new Set((paths ?? []).map((p) => {
     try {
       return realpathSync(p);
@@ -250,7 +252,7 @@ function runningCopiesOn(paths: string[] | null): { id: string; name: string }[]
   try {
     return readRegistry()
       .instances.filter((i) => i.slot !== 0 && (paths === null || at.has(i.checkout)) && Object.values(i.desired ?? {}).includes("running"))
-      .map((i) => ({ id: i.id, name: i.branch ?? basename(i.checkout) }));
+      .map((i) => ({ id: i.id, name: i.branch ?? basename(i.checkout), checkout: i.checkout, services: Object.entries(i.desired ?? {}).filter(([, v]) => v === "running").map(([k]) => k) }));
   } catch {
     return [];
   }
@@ -373,23 +375,39 @@ async function liveCarryDeps(): Promise<CarryDeps> {
   };
 }
 
-/** What the card asks you, answered where the agent works (agent.ts allowDownloads / markAdminDone, from agent-wire). */
+/** What the card asks you, answered where the agent works (agent.ts allowDownloads / markAdminDone / bringOutsideFile /
+    placedOutsideFile, from agent-wire). */
+type AskKind = "downloads" | "admin" | "bring" | "placed";
 type AskAnswerFn = (tid: string, id: unknown) => Promise<{ ok: true; agent: AgentView; handed: Promise<void>; checked?: Promise<void> } | { ok: false; status: 404 | 409 | 500; error: string }>;
-const askAnswers: { downloads: AskAnswerFn | null; admin: AskAnswerFn | null } = { downloads: null, admin: null };
+const askAnswers: Record<AskKind, AskAnswerFn | null> = { downloads: null, admin: null, bring: null, placed: null };
+/** This device's sandbox hidden list (agent-wire's), once wired: a file there is never read for another device. */
+let hiddenHere: (() => string[]) | null = null;
 
-/** Why `id` isn't a download list's id (dl_…) or a command's (ad_…), or null. */
-function askIdRefusal(kind: "downloads" | "admin", id: unknown): string | null {
-  const [key, what, pattern] = kind === "downloads" ? (["plan", "download list", /^dl_[0-9a-f]{12}$/] as const) : (["step", "command", /^ad_[0-9a-f]{12}$/] as const);
-  if (typeof id !== "string") return `${key} must be a string: the ${what}'s id.`;
-  return pattern.test(id) ? null : `${JSON.stringify(id.slice(0, 40))} isn't a ${what}'s id (${kind === "downloads" ? "dl_" : "ad_"} and 12 hex digits).`;
+/** Each answer's route, its body key, the id it takes and the peer path a click on the other device's page reaches. */
+const ASK_ROUTES = [
+  { verb: "allow-downloads", kind: "downloads", key: "plan", what: "download list", prefix: "dl_" },
+  { verb: "admin-done", kind: "admin", key: "step", what: "command", prefix: "ad_" },
+  { verb: "bring-file", kind: "bring", key: "file", what: "file", prefix: "of_" },
+  { verb: "placed-file", kind: "placed", key: "file", what: "file", prefix: "of_" },
+] as const;
+const askRoute = (kind: AskKind) => ASK_ROUTES.find((x) => x.kind === kind)!;
+
+/** Why `id` isn't the id of what `kind` answers (dl_…, ad_…, of_… and 12 hex digits), or null. */
+function askIdRefusal(kind: AskKind, id: unknown): string | null {
+  const r = askRoute(kind);
+  if (typeof id !== "string") return `${r.key} must be a string: the ${r.what}'s id.`;
+  return new RegExp(`^${r.prefix}[0-9a-f]{12}$`).test(id) ? null : `${JSON.stringify(id.slice(0, 40))} isn't a ${r.what}'s id (${r.prefix} and 12 hex digits).`;
 }
 
+const ASK_LOG: Record<AskKind, string> = { downloads: "downloads allowed", admin: "a command run", bring: "a file brought from the other device", placed: "a file placed" };
+
 /**
- * Your Allow Downloads or Done on the Transport card (§app.transport/agent), after the page-only check: on the device the
- * agent works on it is answered here; on the device the chat comes from it goes to that device with your click proven
- * over that very request (as Move Back's is), and the card's view of the agent takes its answer.
+ * Your Allow Downloads, Done, Bring From or I Placed It Myself on the Transport card (§app.transport/agent), after the
+ * page-only check: on the device the agent works on it is answered here; on the device the chat comes from it goes to
+ * that device with your click proven over that very request (as Move Back's is), and the card's view of the agent takes
+ * its answer.
  */
-async function answerAsk(kind: "downloads" | "admin", r: TransportRecord, id: unknown, mesh: Pick<Mesh, "peerFetch">): Promise<{ status: number; body: Record<string, unknown> }> {
+async function answerAsk(kind: AskKind, r: TransportRecord, id: unknown, mesh: Pick<Mesh, "peerFetch">): Promise<{ status: number; body: Record<string, unknown> }> {
   const bad = askIdRefusal(kind, id);
   if (bad) return { status: 400, body: { error: bad } };
   if (r.side === "destination") {
@@ -399,12 +417,13 @@ async function answerAsk(kind: "downloads" | "admin", r: TransportRecord, id: un
     if (!res.ok) return { status: res.status, body: { error: res.error } };
     void res.handed.catch((err: unknown) => log(`${r.tid}: the agent wasn't told: ${err instanceof Error ? err.message : String(err)}`));
     void res.checked?.catch((err: unknown) => log(`${r.tid}: the checks after the agent's turn didn't run: ${err instanceof Error ? err.message : String(err)}`));
-    log(`${r.tid}: ${kind === "downloads" ? "downloads allowed" : "a command run"} by your click`);
+    log(`${r.tid}: ${ASK_LOG[kind]} by your click`);
     return { status: 200, body: { ok: true, agent: agentViewOf(res.agent) } };
   }
-  const body = JSON.stringify(kind === "downloads" ? { plan: id } : { step: id });
-  const path = kind === "downloads" ? peerPath.allowDownloads(r.tid) : peerPath.adminDone(r.tid);
-  const res = await mesh.peerFetch(r.peer, path, { method: "POST", headers: { "content-type": "application/json", [PROOF_HEADER]: mintClickProof(r.peer, body) }, body, signal: AbortSignal.timeout(30_000) }).catch(() => null);
+  const route = askRoute(kind);
+  const body = JSON.stringify({ [route.key]: id });
+  const path = `/api/peer/transport/${r.tid}/${route.verb}`;
+  const res = await mesh.peerFetch(r.peer, path, { method: "POST", headers: { "content-type": "application/json", [PROOF_HEADER]: mintClickProof(r.peer, body) }, body, signal: AbortSignal.timeout(60_000) }).catch(() => null);
   if (!res) return { status: 409, body: { error: REFUSALS.offline(r.peerLabel) } };
   const j = ((await res.json().catch(() => null)) ?? {}) as { error?: string; agent?: AgentView };
   if (!res.ok) return { status: res.status === 403 ? 403 : 409, body: { error: j.error ?? `${r.peerLabel} answered ${res.status}` } };
@@ -523,6 +542,20 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
           log(`${tid}: ${reason}`);
           updateTransport(tid, { ext: { agentBlocked: reason } });
         },
+        {
+          onCopy: (tid, v) => void updateTransport(tid, { ext: { copy: v } }),
+          // Only after your click on the card reached this device: proven to the device the file lives on over this very request.
+          fetchOutside: async (tid, rel) => {
+            const r = readTransport(tid);
+            if (!r || r.side !== "destination") return { ok: false, error: "no such transport here" };
+            const body = JSON.stringify({ path: `~/${rel}` });
+            const res = await mesh.peerFetch(r.peer, `/api/peer/transport/${tid}/outside-file`, { method: "POST", headers: { "content-type": "application/json", [PROOF_HEADER]: mintClickProof(r.peer, body) }, body, signal: AbortSignal.timeout(60_000) }).catch(() => null);
+            if (!res) return { ok: false, error: REFUSALS.offline(r.peerLabel) };
+            const j = ((await res.json().catch(() => null)) ?? {}) as { error?: string; data?: string };
+            if (!res.ok || typeof j.data !== "string") return { ok: false, error: j.error ?? `${r.peerLabel} answered ${res.status}` };
+            return { ok: true, bytes: Buffer.from(j.data, "base64") };
+          },
+        },
       );
       // Their worktree branch is a name; a detached HEAD's is "".
       const named = <T extends { worktrees: { name: string; branch: string | null }[] }>(req: T) => ({ ...req, worktrees: req.worktrees.map((w) => ({ ...w, branch: w.branch ?? "" })) });
@@ -536,6 +569,9 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       setTransportSetupRun(h.setupRun);
       askAnswers.downloads = h.allowDownloads;
       askAnswers.admin = h.adminDone;
+      askAnswers.bring = h.bringFile;
+      askAnswers.placed = h.placedFile;
+      hiddenHere = h.hiddenPaths;
     })
     .catch((err) => log(`no Transport agent in this build: ${err instanceof Error ? err.message : String(err)}`));
 
@@ -639,8 +675,8 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     return res.ok ? c.json({ ok: true, left: res.left }) : c.json({ error: res.error }, res.status);
   });
 
-  // The Transport card's Allow Downloads and Done (§app.transport/agent): only your click on a device's page.
-  for (const [verb, kind, key] of [["allow-downloads", "downloads", "plan"], ["admin-done", "admin", "step"]] as const)
+  // The Transport card's Allow Downloads, Done, Bring From and I Placed It Myself (§app.transport/agent): only your click on a device's page.
+  for (const { verb, kind, key } of ASK_ROUTES)
     app.post(`/api/transport/:tid/${verb}`, small, async (c) => {
       if (!local(c)) return notFound(c);
       const refused = pageOnlyRefusal(c, YOUR_CLICK);
@@ -681,8 +717,8 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     return c.json(r.body as object, r.status as 200);
   });
 
-  // Allow Downloads and Done pressed on the page of the device the chat comes from: that click proven back, then answered here.
-  for (const [verb, kind, key] of [["allow-downloads", "downloads", "plan"], ["admin-done", "admin", "step"]] as const)
+  // The card's answers pressed on the page of the device the chat comes from: that click proven back, then answered here.
+  for (const { verb, kind, key } of ASK_ROUTES)
     app.post(`/api/peer/transport/:tid/${verb}`, small, async (c) => {
       const caller = mesh.requestPeer(c);
       if (!caller) return notFound(c);
@@ -700,6 +736,24 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       const res = await answerAsk(kind, r, body?.[key], mesh);
       return c.json(res.body, res.status as 200);
     });
+
+  // The one file the agent on that device named, read here only once your click on its card there is proven back.
+  app.post("/api/peer/transport/:tid/outside-file", small, async (c) => {
+    const caller = mesh.requestPeer(c);
+    if (!caller) return notFound(c);
+    const raw = await c.req.text();
+    const proof = c.req.header(PROOF_HEADER) ?? "";
+    if (!proof || !(await clickProvenBy(caller.id, proof, raw))) return c.json({ error: "Only your click on the Transport card brings a file from this device. Nothing was read." }, 403);
+    let body: { path?: unknown } | null = null;
+    try {
+      body = JSON.parse(raw) as { path?: unknown };
+    } catch {
+      return c.json({ error: "Bad request" }, 400);
+    }
+    if (!hiddenHere) return c.json({ error: "This device can't read its sandbox's hidden list now, so nothing was read." }, 409);
+    const res = serveOutsideFile(c.req.param("tid"), caller.id, body?.path, { home: homedir(), hidden: hiddenHere(), refused: [stateRoot(), agentRoot(), homesRoot()] });
+    return c.json(res.body, res.status as 200);
+  });
 
   app.get("/api/peer/transport/hello", (c) => (mesh.requestPeer(c) ? c.json({ ok: true }) : notFound(c)));
 

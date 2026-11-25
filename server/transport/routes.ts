@@ -555,6 +555,8 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
             if (!res.ok || typeof j.data !== "string") return { ok: false, error: j.error ?? `${r.peerLabel} answered ${res.status}` };
             return { ok: true, bytes: Buffer.from(j.data, "base64") };
           },
+          // The agent's last fix, read from its chat's own entries (a restart after a failure takes what ran before it).
+          lastFixAt: async (path) => m.lastFixOf(await readBranch(path)),
         },
       );
       // Their worktree branch is a name; a detached HEAD's is "".

@@ -40,6 +40,8 @@ export interface CopyReading {
   /** What failed: a setup or data step's id, or a service's name (copy_logs reads it). */
   step?: string;
   service?: string;
+  /** The copy's own (checkout) services up answered for. */
+  services?: string[];
 }
 
 /** The transport's running copy as its card shows it. `waiting`: it starts once the rest here is set up; `none`: the
@@ -60,6 +62,27 @@ export interface CopyDeps {
   entryAnswers(port: number, path: string): Promise<number | null>;
   /** The copy's log: a service's, or a setup or data step's, oldest first. */
   logs(instance: string, what: { service?: string; step?: string }, lines: number): Promise<string[]>;
+  /** Each service of the copy `instance` as it is now (the engine's status); null: unreadable. */
+  copyStatus?(instance: string): Promise<{ name: string; scope: string; state: string }[] | null>;
+  /** Stop just these services of the copy `instance` (the engine's down of them; its data kept). */
+  copyDown?(instance: string, services: string[]): Promise<void>;
+}
+
+/** A service that isn't running well: its next start must be a fresh one, never a bare up of what it has. */
+const UNWELL = new Set(["failed", "degraded", "starting"]);
+
+/**
+ * Which of a copy's services a start again after a failure stops first (then up starts them fresh): its own (checkout)
+ * services that are failed, degraded or still starting, and every one of them running since before the agent's last
+ * fix (`started`: when each was last started, `fixAt`: the agent's last tool call that could change something, null
+ * when none is known). A healthy service started after that fix, a stopped one (up starts it anyway) and a shared one
+ * are left as they are. Pure.
+ */
+export function restartOf(services: readonly { name: string; scope: string; state: string }[], started: Readonly<Record<string, number>>, fixAt: number | null): string[] {
+  return services
+    .filter((s) => s.scope === "checkout" && s.state !== "stopped")
+    .filter((s) => UNWELL.has(s.state) || (fixAt !== null && (started[s.name] ?? 0) < fixAt))
+    .map((s) => s.name);
 }
 
 /** An HTTP success: 2xx, or a redirect (a sign-in page's). Pure. */
@@ -88,7 +111,8 @@ export async function readCopy(p: CopyPlan, deps: CopyDeps): Promise<CopyReading
   } catch (err) {
     return { ...base, ok: false, detail: `Its running copy ${p.name} didn't start: ${cut(err instanceof Error ? err.message : String(err))}` };
   }
-  const instance = r.instance ? { instance: r.instance } : {};
+  const own = r.services.filter((s) => s.scope === "checkout").map((s) => s.name);
+  const instance = { ...(r.instance ? { instance: r.instance } : {}), ...(own.length ? { services: own } : {}) };
   if (!r.ok) {
     const e = r.error;
     const failed = r.steps.find((s) => s.result === "failed");
@@ -153,5 +177,10 @@ export function copyStartText(readings: readonly CopyReading[]): string {
   const lines = readings.map((r) => `- ${r.name}: ${r.ok ? "running" : "not running"}. ${r.detail}${r.ok ? "" : r.step ? ` (read it with copy_logs, step ${r.step})` : r.service ? ` (read it with copy_logs, service ${r.service})` : ""}`);
   return readings.every((r) => r.ok)
     ? ["The running copy is up and its entry page answers:", ...lines, "", "Leave it running. End your turn: Sova reads it again then."].join("\n")
-    : ["The running copy isn't running yet:", ...lines, "", "Find out why (copy_logs), fix what is inside your folders, ask on the card for the rest, then start it again."].join("\n");
+    : [
+        "The running copy isn't running yet:",
+        ...lines,
+        "",
+        "Find out why (copy_logs), fix what is inside your folders, ask on the card for the rest, then start it again with start_copy: it starts what failed, and what ran before your fix, fresh. Never run the project's servers, builds or watchers yourself.",
+      ].join("\n");
 }

@@ -19,6 +19,12 @@ export function openAppHref(at: { ready: boolean; copy: CopyRead | null | undefi
   return e ? entryHref(at.host, e) : null;
 }
 
+/**
+ * What follows a line about an answer you gave (downloads allowed, a command run, a file brought or placed): "The agent
+ * carries on." only while the card reads Working; at Ready or Needs you nothing follows it. Pure.
+ */
+export const carriesOn = (state: "working" | "ready" | "needs-you"): string => (state === "working" ? " The agent carries on." : "");
+
 export type TransportCardAction =
   | { kind: "allow"; id: string; label: string; primary: boolean }
   | { kind: "done"; id: string; label: string; primary: boolean }

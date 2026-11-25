@@ -16,7 +16,7 @@ export const TRANSPORT_SETUP_DESCRIPTION =
   "admin {command, why}: a command that needs administrator rights (sudo, system packages, services), which you never run: the user runs it themselves and presses Done. Only for those: a folder or file outside your sandbox that needs no administrator rights is asked with align, never as an admin command. " +
   "outside_file {path, why}: a file the project needs that lives outside the project on the device the chat came from, in the user's home there (path as ~/…); the user brings that one file here (the same path in this home) or places it themselves. Never the private settings (~/.ssh, ~/.aws, ~/.gnupg and the like). " +
   "After any of those, end your turn: you are told when the user has answered. " +
-  "start_copy {}: after arrival, Sova starts the project's running copy here again (its services the other device ran, each waited ready) and opens its entry page; it answers what runs and what failed. " +
+  "start_copy {}: after arrival, Sova starts the project's running copy here again (its services the other device ran, each waited ready) and opens its entry page; it answers what runs and what failed. It refuses while a setup check still fails (finish every install first), and after a failed start it starts fresh each service that failed and each one running since before your last fix. Never run the project's servers, builds or watchers yourself (a build run by hand leaves output the copy takes for its own): start_copy starts them, copy_logs shows their output. " +
   "copy_logs {copy?, service? | step?, lines?}: the running copy's log, a service's or a failed setup or data step's.";
 
 export const TRANSPORT_SETUP_PARAMETERS = {

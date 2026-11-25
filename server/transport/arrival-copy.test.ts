@@ -9,8 +9,9 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { onboardModels } from "../projects/onboard";
-import { afterArrival, agentOf, agentTurnEnded, type AgentDeps, copyLogs, type PrepareRequest, startCopy } from "./agent";
-import { type CopyDeps, type CopyUp, type CopyView, entryOk, oneAtATime } from "./arrival-copy";
+import type { HEntry } from "../../shared/harness";
+import { afterArrival, agentOf, agentTurnEnded, type AgentDeps, copyLogs, lastFixOf, type PrepareRequest, startCopy } from "./agent";
+import { type CopyDeps, type CopyUp, type CopyView, entryOk, oneAtATime, restartOf } from "./arrival-copy";
 import { runningOn } from "./source";
 
 after(dropScratchAgentDir);
@@ -235,6 +236,114 @@ test("the agent's start_copy and copy_logs: through the server, one copy start a
   assert.ok(logs.ok && logs.text.includes("log of web"));
   assert.equal((await copyLogs(d.deps, sid, { service: "web; rm -rf /" })).ok, false);
   assert.equal((await startCopy(d.deps, "someone-else")).ok, false, "only the transport's agent");
+});
+
+test("start_copy never starts the copy while a setup check fails (an install still under way): it says what is left", async () => {
+  const root = scratchRoot("transport-copy-");
+  const e = engine();
+  let installed = false;
+  const d = device(root, e, { which: async (ps) => new Set(installed ? ps : ps.filter((p) => p !== "cargo")) });
+  const req = request(root, "tr_copy007");
+  writeFileSync(join(req.project.path, "Cargo.toml"), "");
+  await afterArrival(req, d.deps);
+  const sid = agentOf(join(root, "state"), req.tid)!.sessionId;
+  const r = await startCopy(d.deps, sid);
+  assert.equal(r.ok, false);
+  assert.match(!r.ok ? r.error : "", /Not started[\s\S]*cargo/);
+  assert.equal(e.calls.length, 0, "nothing was started");
+  installed = true;
+  const ok = await startCopy(d.deps, sid);
+  assert.ok(ok.ok && ok.text.includes("is up"));
+  assert.equal(e.calls.length, 1);
+});
+
+test("an arrival whose agent is mid-turn (installing) starts the copy only at the reading after that turn", async () => {
+  const root = scratchRoot("transport-copy-");
+  const e = engine();
+  const state = join(root, "state");
+  // The agent prepared this device before the chat came and still runs a turn as it arrives.
+  let running = true;
+  const d = device(root, e, { busy: () => running });
+  const req = { ...request(root, "tr_copy008"), fromSource: false };
+  mkdirSync(state, { recursive: true });
+  writeFileSync(
+    join(state, "transport-agent.json"),
+    JSON.stringify({ v: 1, projects: {}, agents: { "agent-1": { tid: req.tid, at: 1 } }, byTransport: { [req.tid]: { sessionId: "agent-1", path: join(root, "agent-1.jsonl"), title: "Transport: Motors", device: "laptop-b", model: "x", state: "working", checks: [], startedAt: 1 } } }),
+  );
+  const done = afterArrival(req, d.deps);
+  for (let i = 0; i < 20; i++) await tick();
+  assert.equal(e.calls.length, 0, "not while its turn runs");
+  assert.equal(d.views[0]?.state, "waiting");
+  running = false;
+  await done;
+  assert.equal(e.calls.length, 1, "its turn ended: the copy starts");
+  assert.equal(agentOf(state, req.tid)!.state, "ready");
+});
+
+/** An engine whose copy has three services: web and worker its own, db shared; each one's state as status reads it. */
+function stateful(e: Engine, states: Record<string, string>, downs: string[][]): CopyDeps {
+  const base = copyDeps(e);
+  const svc = (): CopyUp["services"] => [
+    { name: "web", scope: "checkout", state: states.web!, ports: { http: 4100 } },
+    { name: "worker", scope: "checkout", state: states.worker!, ports: {} },
+    { name: "db", scope: "shared", state: states.db!, ports: {} },
+  ];
+  return {
+    ...base,
+    copyUp: async (tree, services) => {
+      e.calls.push({ tree, ...(services ? { services } : {}) });
+      return states.web === "failed"
+        ? { ok: false, instance: "inst-1", services: svc(), steps: [], error: { code: "start-failed", message: "web was not ready within 600s", service: "web" } }
+        : { ok: true, instance: "inst-1", services: svc(), steps: [] };
+    },
+    copyStatus: async () => svc(),
+    copyDown: async (_i, names) => void downs.push(names),
+  };
+}
+
+test("a start after a failure stops and starts fresh only what failed and what ran since before the agent's last fix; data is never reset", async () => {
+  const root = scratchRoot("transport-copy-");
+  const e = engine();
+  const states: Record<string, string> = { web: "failed", worker: "ready", db: "degraded" };
+  const downs: string[][] = [];
+  let fixAt: number | null = null;
+  const d = device(root, e, { copy: stateful(e, states, downs), lastFixAt: async () => fixAt });
+  const req = request(root, "tr_copy009");
+  await afterArrival(req, d.deps);
+  // The first start is a plain up; the reading after the agent's turn is a start after a failure. No fix of the agent's
+  // is known: only the failed service is stopped, then up; the healthy worker and the shared db stay as they are.
+  assert.equal(e.calls.length, 2);
+  assert.deepEqual(downs, [["web"]]);
+  const a = agentOf(join(root, "state"), req.tid)!;
+  await startCopy(d.deps, a.sessionId);
+  assert.deepEqual(downs, [["web"], ["web"]], "the agent's start_copy likewise");
+  // It fixed something after the worker started: the worker ran on what came before the fix, so it starts fresh too.
+  fixAt = Number.MAX_SAFE_INTEGER;
+  await startCopy(d.deps, a.sessionId);
+  assert.deepEqual(downs.at(-1), ["web", "worker"]);
+  // Fixed, and nothing changed since: web degraded still restarts, worker started after the fix is left alone.
+  fixAt = 0;
+  states.web = "degraded";
+  await agentTurnEnded(d.deps, a.path);
+  assert.deepEqual(downs.at(-1), ["web"]);
+  assert.equal(agentOf(join(root, "state"), req.tid)!.state, "ready");
+  // Once it ran, a start is a plain up again: nothing is stopped.
+  const n = downs.length;
+  await startCopy(d.deps, a.sessionId);
+  assert.equal(downs.length, n);
+});
+
+test("which services a fresh start stops, and the agent's last fix from its chat", () => {
+  const s = (name: string, state: string, scope = "checkout") => ({ name, scope, state });
+  const all = [s("a", "failed"), s("b", "degraded"), s("c", "starting"), s("d", "ready"), s("e", "ready"), s("f", "stopped"), s("g", "failed", "shared")];
+  assert.deepEqual(restartOf(all, { d: 10, e: 30 }, null), ["a", "b", "c"]);
+  assert.deepEqual(restartOf(all, { d: 10, e: 30 }, 20), ["a", "b", "c", "d"]);
+  assert.deepEqual(restartOf(all, {}, 20), ["a", "b", "c", "d", "e"], "a start not recorded counts as before the fix");
+  const call = (name: string, at: string): HEntry => ({ id: null, parentId: null, at, kind: "assistant", blocks: [{ type: "toolCall", id: name, name, arguments: {} }] });
+  const at = (iso: string) => Date.parse(iso);
+  assert.equal(lastFixOf([call("bash", "2026-11-25T21:43:30Z"), call("read", "2026-11-25T21:46:00Z"), call("transport_setup", "2026-11-25T21:47:31Z")]), at("2026-11-25T21:43:30Z"));
+  assert.equal(lastFixOf([call("edit", "2026-11-25T21:00:00Z"), call("write", "2026-11-25T21:10:00Z")]), at("2026-11-25T21:10:00Z"));
+  assert.equal(lastFixOf([call("grep", "2026-11-25T21:00:00Z")]), null);
 });
 
 test("an HTTP success is 2xx or a redirect; one key's calls run one after another", async () => {

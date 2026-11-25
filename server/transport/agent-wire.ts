@@ -23,6 +23,9 @@ import { remoteReachable } from "./git-snapshot";
 import type { SetupDef } from "./setup-def";
 import { bringHelpersToRest, busyOf, type HelperView, interruptWaiting, type SafeDeps } from "./safe-transport";
 
+/** The agent's last fix from its chat's entries (routes.ts reads them). */
+export { lastFixOf } from "./agent";
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Where a user's own installs put programs the server's PATH may lack (version managers, toolchains,
@@ -183,6 +186,16 @@ export const liveCopyDeps: CopyDeps = {
     if (!r.ok) return [`(the log couldn't be read: ${r.error?.message ?? "failed"})`];
     return (r.lines ?? []).map((l) => `${l.service}: ${l.text}`);
   },
+  copyStatus: async (instance) => {
+    const { projectEngine } = await import("../project-services/routes");
+    const r = await projectEngine().run("status", { instance }, { kind: "operator", notPage: true });
+    return r.ok ? r.services.map((x) => ({ name: x.name, scope: x.scope, state: x.state })) : null;
+  },
+  copyDown: async (instance, services) => {
+    const { projectEngine } = await import("../project-services/routes");
+    const r = await projectEngine().run("down", { instance, services }, { kind: "operator", notPage: true });
+    if (!r.ok) throw new Error(r.error?.message ?? "down failed");
+  },
 };
 
 /** Whether this device has a Claude login Claude Code can run on now: one in this device's order that is enabled,
@@ -214,7 +227,7 @@ export async function confineProbe(scope: AgentScope): Promise<string | null> {
 
 /** What routes.ts adds to the live deps: the running copy's view for the card, and the read of a file on the device a
     transport came from (its peer call, your click proven over it). */
-export type AgentWireExtras = Pick<AgentDeps, "onCopy" | "fetchOutside">;
+export type AgentWireExtras = Pick<AgentDeps, "onCopy" | "fetchOutside" | "lastFixAt">;
 
 export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void, onBlocked?: (tid: string, reason: string) => void, extras: AgentWireExtras = {}): AgentDeps {
   return {

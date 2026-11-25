@@ -2,7 +2,7 @@ import { createSignal, createUniqueId, For, onCleanup, onMount, Show } from "sol
 import type { TransportAgentNote } from "../../shared/transport-agent-card";
 import { sessionHrefOn } from "../lib/mesh";
 import { allowTransportDownloads, bringTransportFile, saveTransportHostValues, transportAdminDone, transportFilePlaced, type TransportView, transportOf } from "../lib/transport-api";
-import { openAppHref, transportCardActions } from "../lib/transport-card-actions";
+import { carriesOn, openAppHref, transportCardActions } from "../lib/transport-card-actions";
 import { copyText } from "../lib/ui-state";
 import { TextField } from "./form";
 import { Chip, CopyButton } from "./ui";
@@ -107,6 +107,8 @@ export function TransportAgentCard(props: { card: TransportAgentNote }) {
     return c.state === "running" ? "ready" : c.state === "failed" ? "needs-you" : "working";
   };
   const ready = () => (agent() ? shown(agent()!.state) === "ready" : copyState() === "ready");
+  /** "The agent carries on." after an answer you gave, only while it works. */
+  const on = () => carriesOn(agent() ? shown(agent()!.state) : "ready");
   const running = () => (copy()?.state === "running" ? copy()!.copies : []);
   /** Open App: the running copy's entry page, on the host this page was opened from, once the card reads Ready. */
   const app = () => openAppHref({ ready: ready(), copy: copy(), host: location.hostname });
@@ -189,7 +191,7 @@ export function TransportAgentCard(props: { card: TransportAgentNote }) {
           {(d) => (
             <Show
               when={d().state === "asked"}
-              fallback={<p class="transport-agent-card-line text-caption">Allowed from <span class="text-mono">{hostsText(d().items)}</span>. The agent carries on.</p>}
+              fallback={<p class="transport-agent-card-line text-caption">Allowed from <span class="text-mono">{hostsText(d().items)}</span>.{on()}</p>}
             >
               <div class="transport-agent-card-ask">
                 <p class="transport-agent-card-line text-caption">
@@ -229,7 +231,7 @@ export function TransportAgentCard(props: { card: TransportAgentNote }) {
           )}
         </For>
         <Show when={lastDone()}>
-          <p class="transport-agent-card-line text-caption">You ran it. The agent carries on.</p>
+          <p class="transport-agent-card-line text-caption">You ran it.{on()}</p>
         </Show>
         <For each={askedFiles()}>
           {(f, i) => (
@@ -254,15 +256,15 @@ export function TransportAgentCard(props: { card: TransportAgentNote }) {
             <p class="transport-agent-card-line text-caption">
               {f().state === "kept" ? (
                 <>
-                  <span class="text-mono">{f().path}</span> was already on {device()}, so it was kept and nothing was brought. The agent carries on.
+                  <span class="text-mono">{f().path}</span> was already on {device()}, so it was kept and nothing was brought.{on()}
                 </>
               ) : f().state === "placed" ? (
                 <>
-                  You placed <span class="text-mono">{f().path}</span>. The agent carries on.
+                  You placed <span class="text-mono">{f().path}</span>.{on()}
                 </>
               ) : (
                 <>
-                  Brought <span class="text-mono">{f().path}</span> from {f().from}. The agent carries on.
+                  Brought <span class="text-mono">{f().path}</span> from {f().from}.{on()}
                 </>
               )}
             </p>

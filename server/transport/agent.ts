@@ -17,10 +17,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import type { HEntry } from "../../shared/harness";
 import { ONBOARD_THINKING, onboardModels } from "../projects/onboard";
 import { adminAsked, adminDone, type AgentAsks, cleanCommand, cleanDownloads, cleanWhy, downloadsAllowed, downloadsAsked, hasWaitingAsk, hostsOf, MAX_ADMIN_STEPS, MAX_OUTSIDE_FILES, type OutsideFile, outsideAsked, outsideDone, widenedScope } from "./agent-asks";
 import { agentArrivedMissing, agentBrief, agentCopyFailed, agentPrivateValues, agentStillMissing } from "./agent-prompt";
-import { type CopyDeps, copyChecks, type CopyPlan, copyPlan, type CopyReading, copyStartText, type CopyView, copyViewOf, copyWaiting, oneAtATime, readCopy } from "./arrival-copy";
+import { type CopyDeps, copyChecks, type CopyPlan, copyPlan, type CopyReading, copyStartText, type CopyView, copyViewOf, copyWaiting, oneAtATime, readCopy, restartOf } from "./arrival-copy";
 import { cleanOutsidePath, outsideRefusal, outsideShown, writeOutside } from "./outside-file";
 import { type AgentScope, agentScope, preparedFile, toolDirsToMake } from "./agent-scope";
 import { lacksRepo, projectComesFrom, withoutCredentials } from "./git-snapshot";
@@ -148,6 +149,9 @@ export interface AgentDeps {
   copy?: CopyDeps;
   /** The transport's running copy, for its card (its `ext.copy`). */
   onCopy?(tid: string, v: CopyView): void;
+  /** When the agent's chat at `path` last made a tool call that could change something (anything but reading files and
+      its transport_setup asks); null: none, or unreadable. Absent: never known, so only failed services restart. */
+  lastFixAt?(path: string): Promise<number | null>;
   /** Read `rel` (a file in that device's home) on the device transport `tid` came from: only on your click on the card,
       which this server proves to that device over that very request. */
   fetchOutside?(tid: string, rel: string): Promise<{ ok: true; bytes: Buffer } | { ok: false; error: string }>;
@@ -378,6 +382,10 @@ interface ArrivalRecord {
   instances?: Record<string, string>;
   /** The copy failures the agent was told of, in order (each said once; at most MAX_COPY_TELLS). */
   copyTold?: string[];
+  /** When the last start of the copies failed (cleared once they run): the next start is a fresh one (restartOf). */
+  copyFailedAt?: number;
+  /** When each copy's services were last started here, by copy name then service. */
+  copyStarted?: Record<string, Record<string, number>>;
   /** The chat's worktrees here: a file they hold travelled with the code, never asked for as an outside file. */
   trees?: string[];
 }
@@ -780,9 +788,12 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
   const f = readPrepared(deps.stateRoot());
   (f.arrivals ??= {})[req.tid] = { project: req.project, privateFiles: req.privateFiles, sourceValues: req.sourceValues, handed: hits.map((h) => h.file), source, copies: plan, trees: req.trees ?? [] };
   writePrepared(deps.stateRoot(), f);
-  if (deps.copy) emitCopy(deps, req.tid, plan.length ? { state: setup.length || hits.length ? "waiting" : "starting", copies: [], at: deps.now() } : { state: "none", copies: [], at: deps.now() });
+  // An agent already here and running a turn (installing, say) is let finish: the copy starts at the reading after it.
+  const had = agentOf(deps.stateRoot(), req.tid);
+  const busyNow = plan.length > 0 && !!had && deps.busy(had.path);
+  if (deps.copy) emitCopy(deps, req.tid, plan.length ? { state: setup.length || hits.length || busyNow ? "waiting" : "starting", copies: [], at: deps.now() } : { state: "none", copies: [], at: deps.now() });
   let copyFailed: AgentCheck[] = [];
-  if (!hits.length && !setup.length) {
+  if (!hits.length && !setup.length && !busyNow) {
     if (!plan.length) return [];
     // Nothing for an agent: the copy starts now, and the transport says it is under way meanwhile.
     opts.onStarted?.(copyWaiting(plan));
@@ -810,10 +821,8 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
       markAgent(deps.stateRoot(), agent.sessionId, req.tid, deps.now(), scope);
       if (!deps.busy(agent.path)) await deps.reopen?.(agent.path).catch(() => undefined);
     }
-    await deps.tell(
-      agent.path,
-      [...(setup.length ? [agentArrivedMissing(source, setup)] : []), ...(hits.length ? [agentPrivateValues(source, hits)] : []), ...(copyFailed.length ? [agentCopyFailed(source, copyFailed)] : [])].join("\n\n"),
-    );
+    const said = [...(setup.length ? [agentArrivedMissing(source, setup)] : []), ...(hits.length ? [agentPrivateValues(source, hits)] : []), ...(copyFailed.length ? [agentCopyFailed(source, copyFailed)] : [])].join("\n\n");
+    if (said) await deps.tell(agent.path, said);
     if (copyFailed.length) noteCopyTold(deps, req.tid, copyFailed);
     agent = { ...agent, state: "working", checks: [...setup, ...privateChecks(source, hits), ...copyNow] };
     saveAgent(deps, req.tid, agent);
@@ -853,21 +862,46 @@ function noteCopyTold(deps: Pick<AgentDeps, "stateRoot">, tid: string, failed: A
 
 /**
  * The arrival's running copies started (or kept: up leaves what runs alone) and read, one start at a time per
- * transport, the agent's own start_copy included: each service ready, then its entry page. The card hears it.
+ * transport, the agent's own start_copy included: each service ready, then its entry page. A start after a failed one
+ * is a fresh one: the services restartOf names (failed, degraded or still starting, and those running since before the
+ * agent's last fix) are stopped first, then up starts them anew; the rest are left running and no data is reset. The
+ * card hears it.
  */
 function readCopies(tid: string, plan: readonly CopyPlan[], deps: AgentDeps): Promise<CopyReading[]> {
   const copy = deps.copy;
   if (!copy || !plan.length) return Promise.resolve([]);
   return oneAtATime(settleKey(deps.stateRoot(), tid), async () => {
     emitCopy(deps, tid, { state: "starting", copies: [], at: deps.now() });
+    const root = deps.stateRoot();
+    const before = readPrepared(root).arrivals?.[tid];
+    const agent = agentOf(root, tid);
+    const fixAt = before?.copyFailedAt && agent && deps.lastFixAt ? await deps.lastFixAt(agent.path).catch(() => null) : null;
+    const at = deps.now();
     const out: CopyReading[] = [];
-    for (const p of plan) out.push(await readCopy(p, copy));
-    const f = readPrepared(deps.stateRoot());
+    const fresh: Record<string, string[]> = {};
+    for (const p of plan) {
+      const instance = before?.instances?.[p.name];
+      if (before?.copyFailedAt && instance && copy.copyStatus && copy.copyDown) {
+        const now = await copy.copyStatus(instance).catch(() => null);
+        const again = now ? restartOf(now, before.copyStarted?.[p.name] ?? {}, fixAt) : [];
+        if (again.length) await copy.copyDown(instance, again).catch(() => undefined);
+        fresh[p.name] = [...again, ...(now ?? []).filter((s) => s.scope === "checkout" && s.state === "stopped").map((s) => s.name)];
+      }
+      out.push(await readCopy(p, copy));
+    }
+    const f = readPrepared(root);
     const r = f.arrivals?.[tid];
     if (r) {
-      for (const x of out) if (x.instance) (r.instances ??= {})[x.name] = x.instance;
-      if (out.every((x) => x.ok)) r.copyReadyAt ??= deps.now();
-      writePrepared(deps.stateRoot(), f);
+      for (const x of out) {
+        if (x.instance) (r.instances ??= {})[x.name] = x.instance;
+        const started = ((r.copyStarted ??= {})[x.name] ??= {});
+        for (const s of x.services ?? []) if (started[s] === undefined || fresh[x.name]?.includes(s)) started[s] = at;
+      }
+      if (out.every((x) => x.ok)) {
+        r.copyReadyAt ??= deps.now();
+        delete r.copyFailedAt;
+      } else r.copyFailedAt = deps.now();
+      writePrepared(root, f);
     }
     emitCopy(deps, tid, copyViewOf(out, deps.now()));
     return out;
@@ -1088,15 +1122,40 @@ function ownArrival(root: string, sessionId: string): { tid: string; a: AgentSta
 
 /**
  * transport_setup start_copy: the arrival's running copies started again now (one start at a time per transport, so a
- * reading already starting them is waited for), each service ready, then its entry page. What it finds is the agent's
- * answer; whether the transport is Ready is still the reading after its turn.
+ * reading already starting them is waited for), each service ready, then its entry page; after a failed start, the
+ * services restartOf names start fresh. Never while the setup checks still find something missing (tools, dependencies,
+ * its doctor, a private file still holding the other computer's values): nothing starts, and the answer says what is
+ * left. What it finds is the agent's answer; whether the transport is Ready is still the reading after its turn.
  */
 export async function startCopy(deps: AgentDeps, sessionId: string): Promise<AskAnswer> {
   const own = ownArrival(deps.stateRoot(), sessionId);
   if ("error" in own) return { ok: false, error: own.error };
   if (!deps.copy || !own.r.copies?.length) return { ok: false, error: "This project has no running-copy definition here (.sova/project.json), so there is no copy to start." };
+  const missing = [...agentMissing(await preflight(own.r.project, deps)), ...privateChecks(own.r.source, sourceValuesIn(own.r.privateFiles, own.r.sourceValues))].filter((c) => !c.ok);
+  if (missing.length)
+    return {
+      ok: false,
+      error: ["Not started: the running copy starts only once the setup checks pass here, and these still fail:", ...missing.map((c) => `- ${c.id}: ${c.detail}`), "", "Finish them first (every install done), then start_copy."].join("\n"),
+    };
   const readings = await readCopies(own.tid, own.r.copies, deps);
   return { ok: true, text: copyStartText(readings) };
+}
+
+/** The agent's tools that change nothing here: reading files, and asking or starting through transport_setup. */
+const READS_ONLY = new Set(["read", "grep", "find", "ls", "transport_setup", "link_send", "align", "spec"]);
+
+/** When the agent last made a tool call that could change something (a command, an edit, a write: its last fix), from
+    its chat's entries; null when it made none. Pure. */
+export function lastFixOf(entries: readonly HEntry[]): number | null {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i]!;
+    if (e.kind !== "assistant" || !e.at) continue;
+    if (e.blocks.some((b) => b.type === "toolCall" && !READS_ONLY.has(b.name))) {
+      const t = Date.parse(e.at);
+      if (Number.isFinite(t)) return t;
+    }
+  }
+  return null;
 }
 
 const LOG_NAME = /^[A-Za-z0-9][\w.:-]{0,63}$/;

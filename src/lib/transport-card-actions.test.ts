@@ -2,7 +2,7 @@
 // and its one primary, over every state the card has.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { openAppHref, transportCardActions } from "./transport-card-actions";
+import { carriesOn, openAppHref, transportCardActions } from "./transport-card-actions";
 
 type At = Parameters<typeof transportCardActions>[0];
 const none: At = { downloads: null, commands: [], hostValues: false, href: null };
@@ -55,5 +55,12 @@ describe("Open App and the outside file", () => {
     assert.equal(new Set(labels).size, labels.length);
     const acts = transportCardActions({ ...none, files: [{ id: "of_1", from: "Desk" }] });
     assert.deepEqual(acts.map((a) => ("id" in a ? `${a.kind}:${a.id}` : a.kind)), ["bring:of_1", "placed:of_1"]);
+  });
+});
+
+describe("after an answer you gave", () => {
+  test("\"The agent carries on.\" follows it only while the card reads Working: never at Ready or Needs you", () => {
+    assert.equal(carriesOn("working"), " The agent carries on.");
+    for (const st of ["ready", "needs-you"] as const) assert.doesNotMatch(`Allowed from nodejs.org.${carriesOn(st)}`, /carries on/);
   });
 });

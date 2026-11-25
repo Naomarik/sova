@@ -4,6 +4,10 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.18.1 — 2026-11-25
+
+Fixes: profiles never say "Off" and show no built-in profile while no account is connected; project cards draw one Copies pip per copy the limit allows.
+
 ## v0.18.0 — 2026-11-23
 
 Release notes inside Sova, a merge queue that explains itself, a Private names and secrets check on

@@ -12,7 +12,7 @@ import { hostAllowed } from "../../pi-config/extensions/sandbox/proxy.ts";
 import { parseParentScope } from "../../pi-config/extensions/sandbox/policy.ts";
 import { type AgentScope, agentLaunchFlags, agentTidOf, preparedFile } from "./agent-scope";
 import { cleanDownloads, downloadsAllowed } from "./agent-asks";
-import { type AgentCheck, type AgentDeps, agentOf, allowDownloads, askAdmin, askDownloads, markAdminDone, preflight, preparedAt, prepareDestination, type PrepareRequest, readyNow } from "./agent";
+import { afterArrival, type AgentCheck, type AgentDeps, agentOf, allowDownloads, askAdmin, askDownloads, markAdminDone, preflight, preparedAt, prepareDestination, type PrepareRequest, readyNow } from "./agent";
 import { agentViewOf } from "./wire";
 
 after(dropScratchAgentDir);
@@ -155,6 +155,78 @@ test("a download list widens nothing before your Allow; Allow widens the agent's
   assert.equal(d.told.at(-1), downloadsAllowed(ITEMS));
   assert.deepEqual(await prepared, { ready: true });
   assert.equal(agentOf(join(root, "state"), req.tid)?.state, "ready");
+});
+
+test("after arrival, your Allow before the asking turn has ended: the turn it hands on is waited for, and the tool it installs there clears", async () => {
+  const root = scratchRoot("transport-asks-");
+  const req = request(root);
+  project(req.project.path);
+  mkdirSync(join(req.project.path, "node_modules"), { recursive: true });
+  const state = join(root, "state");
+  let installed = false;
+  let phase: "asking" | "allowed" | "installing" | "idle" = "asking";
+  let installTurn = 0;
+  let allowing: Promise<unknown> | null = null;
+  const d = device(root, {
+    // node isn't at its pinned version until the turn after the Allow installs it.
+    toolResolves: async (t) => t !== "node" || installed,
+    busy: () => {
+      if (phase === "asking") {
+        // Its first turn lists node's site, and you press Allow while that turn is still running.
+        const a = agentOf(state, req.tid);
+        if (a && !a.downloads) {
+          assert.ok(askDownloads(d.deps, a.sessionId, { items: ITEMS.slice(0, 1) }).ok);
+          allowing = allowDownloads(d.deps, req.tid, agentOf(state, req.tid)!.downloads!.id);
+          phase = "allowed";
+        }
+        return true;
+      }
+      if (phase === "allowed") {
+        if (agentOf(state, req.tid)?.downloads?.state !== "allowed") return true;
+        // The asking turn ends just after your Allow.
+        if (d.told.some((t) => t.startsWith("The user allowed"))) phase = "installing";
+        return false;
+      }
+      if (phase === "installing") {
+        if (++installTurn < 3) return true;
+        installed = true;
+        phase = "idle";
+      }
+      return false;
+    },
+  });
+  await afterArrival({ ...req, fromSource: true, privateFiles: [], sourceValues: [] }, d.deps);
+  await allowing;
+  assert.ok(installed, "its install turn ran before the checks were read");
+  const a = agentOf(state, req.tid)!;
+  assert.deepEqual(a.checks.filter((c) => !c.ok), [], "node, installed by that turn, no longer reads missing");
+  assert.equal(a.state, "ready");
+  assert.ok(preparedAt(state, req.project) !== null);
+});
+
+test("after arrival, an answer once its wait has ended (it read Needs you): the checks are read again after the turn it hands on, and a tool installed there clears", async () => {
+  const root = scratchRoot("transport-asks-");
+  const req = request(root);
+  project(req.project.path);
+  mkdirSync(join(req.project.path, "node_modules"), { recursive: true });
+  const state = join(root, "state");
+  let installed = false;
+  const d = device(root, { toolResolves: async (t) => t !== "node" || installed });
+  await afterArrival({ ...req, fromSource: true, privateFiles: [], sourceValues: [] }, d.deps);
+  assert.equal(agentOf(state, req.tid)?.state, "needs-you");
+  // Later (a message of yours reached it) it asks you to run a command, and you press Done: its turn installs node.
+  assert.ok(askAdmin(d.deps, agentOf(state, req.tid)!.sessionId, { command: "sudo apt-get install -y gnupg" }).ok);
+  const step = agentOf(state, req.tid)!.admin![0]!;
+  let turn = 0;
+  d.deps.busy = () => (d.told.some((t) => t.includes("sudo apt-get install -y gnupg")) && turn < 3 ? (++turn === 3 ? ((installed = true), false) : true) : false);
+  const done = await markAdminDone(d.deps, req.tid, step.id);
+  assert.ok(done.ok);
+  await done.handed;
+  await done.checked;
+  assert.ok(installed);
+  const a = agentOf(state, req.tid)!;
+  assert.deepEqual(a.checks.filter((c) => !c.ok), []);
+  assert.equal(a.state, "ready");
 });
 
 test("a listed site is one plain public host: wildcards, addresses, schemes, ports and local names are refused, and nothing is put on the card", () => {

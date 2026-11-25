@@ -11,7 +11,7 @@ export const TRANSPORT_SETUP_TOOL = "transport_setup";
 export const TRANSPORT_SETUP_DESCRIPTION =
   "Ask the user, on the Transport card, for what your sandbox can't do. " +
   'downloads {items: [{tool, version, host}], why}: the tools you need from sites the network refuses, each with the exact version and the one host it downloads from (a plain host name like nodejs.org; list every host the download goes to). Nothing is reachable until the user presses Allow Downloads; then exactly those hosts are. ' +
-  "admin {command, why}: a command that needs administrator rights (sudo, system packages, services), which you never run: the user runs it themselves and presses Done. " +
+  "admin {command, why}: a command that needs administrator rights (sudo, system packages, services), which you never run: the user runs it themselves and presses Done. Only for those: a folder or file outside your sandbox that needs no administrator rights is asked with align, never as an admin command. " +
   "After either, end your turn: you are told when the user has answered.";
 
 export const TRANSPORT_SETUP_PARAMETERS = {

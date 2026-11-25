@@ -374,7 +374,7 @@ async function liveCarryDeps(): Promise<CarryDeps> {
 }
 
 /** What the card asks you, answered where the agent works (agent.ts allowDownloads / markAdminDone, from agent-wire). */
-type AskAnswerFn = (tid: string, id: unknown) => Promise<{ ok: true; agent: AgentView; handed: Promise<void> } | { ok: false; status: 404 | 409 | 500; error: string }>;
+type AskAnswerFn = (tid: string, id: unknown) => Promise<{ ok: true; agent: AgentView; handed: Promise<void>; checked?: Promise<void> } | { ok: false; status: 404 | 409 | 500; error: string }>;
 const askAnswers: { downloads: AskAnswerFn | null; admin: AskAnswerFn | null } = { downloads: null, admin: null };
 
 /** Why `id` isn't a download list's id (dl_…) or a command's (ad_…), or null. */
@@ -398,6 +398,7 @@ async function answerAsk(kind: "downloads" | "admin", r: TransportRecord, id: un
     const res = await fn(r.tid, id);
     if (!res.ok) return { status: res.status, body: { error: res.error } };
     void res.handed.catch((err: unknown) => log(`${r.tid}: the agent wasn't told: ${err instanceof Error ? err.message : String(err)}`));
+    void res.checked?.catch((err: unknown) => log(`${r.tid}: the checks after the agent's turn didn't run: ${err instanceof Error ? err.message : String(err)}`));
     log(`${r.tid}: ${kind === "downloads" ? "downloads allowed" : "a command run"} by your click`);
     return { status: 200, body: { ok: true, agent: agentViewOf(res.agent) } };
   }

@@ -2,13 +2,13 @@
 // show missing, once per device, its model, and the private files still holding the source's paths.
 import { dropScratchAgentDir } from "../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { onboardModels } from "../projects/onboard";
 import { agentBrief } from "./agent-prompt";
-import { type AgentScope, agentLaunchFlags } from "./agent-scope";
+import { type AgentScope, agentLaunchFlags, agentScope, toolDirsToMake } from "./agent-scope";
 import { parseParentScope } from "../../pi-config/extensions/sandbox/policy.ts";
 import { type AgentDeps, preparedAt as preparedAtOf, agentModel, agentModelChoices, strongestRunnable, cleanRemote, needsAnswer, agentOf, afterArrival, isTransportAgent, prepareDestination, preflight, type PrepareRequest, projectNeeds, sameRemote, sourceValuesIn } from "./agent";
 
@@ -308,6 +308,36 @@ test("the agent runs confined: its scope writes only the project's folder, the a
   assert.equal(agentLaunchFlags(d.deps.stateRoot(), "someone-else"), null, "an ordinary chat gets nothing");
   assert.match(d.started[0]!.prompt, /You can write only in /);
   assert.match(d.started[0]!.prompt, /Never set the project's host values/);
+});
+
+test("the Clojure CLI's config folder is a tool folder: made for a project that runs the CLI and writable then, the rest of ~/.config not; the brief asks anything else outside its folders as a plain request, never as an admin command", async () => {
+  const root = scratchRoot("transport-agent-");
+  const req = request(root);
+  mkdirSync(req.project.path, { recursive: true });
+  writeFileSync(join(req.project.path, "deps.edn"), "{}");
+  mkdirSync(join(root, ".config", "mise"), { recursive: true });
+  const d = device(root, { which: async (ps) => new Set(ps.filter((p) => p !== "clojure")), configHome: () => join(root, ".config") });
+  await afterArrival({ ...req, fromSource: true, privateFiles: [], sourceValues: [] }, d.deps);
+  const scope = d.started[0]!.scope;
+  assert.ok(existsSync(join(root, ".config", "clojure")), "made before its scope was read");
+  assert.ok(scope.writable.includes(join(root, ".config", "clojure")));
+  for (const ro of [join(root, ".config"), join(root, ".config", "mise")]) assert.ok(!scope.writable.includes(ro), `${ro} stays read-only`);
+  assert.ok(!existsSync(join(root, ".clojure")), "with XDG_CONFIG_HOME set, ~/.clojure isn't the CLI's and isn't made");
+  assert.deepEqual(parseParentScope(JSON.stringify(scope)).ok, true);
+  const brief = d.started[0]!.prompt;
+  assert.ok(brief.split("\n").some((l) => l.includes("You can write only in") && l.includes(join(root, ".config", "clojure"))), "its brief names the folder as writable");
+  assert.match(brief, /`op: "admin"` is only for a command that needs administrator rights/);
+  assert.match(brief, /a folder or file in the user's home your sandbox can't write, such as a tool's config folder\) is a plain request: ask the user with align/);
+  // Each place the CLI keeps its config, by the environment; a project without a deps.edn has none made.
+  const has = (f: string) => f === "deps.edn";
+  assert.deepEqual(toolDirsToMake("/h", has), ["/h/.local/share/mise", "/h/.local/bin", "/h/.clojure"]);
+  assert.deepEqual(toolDirsToMake("/h", has, "/h/.config"), ["/h/.local/share/mise", "/h/.local/bin", "/h/.config/clojure"]);
+  assert.deepEqual(toolDirsToMake("/h", has, "/elsewhere/config"), ["/h/.local/share/mise", "/h/.local/bin"], "outside the home: not a tool folder of its scope");
+  assert.deepEqual(toolDirsToMake("/h", () => false, "/h/.config"), ["/h/.local/share/mise", "/h/.local/bin"]);
+  // Either place, when there, is writable like every tool folder; neither when missing.
+  const at = (...there: string[]) => agentScope({ folder: "/h/p", home: "/h", exists: (p) => there.includes(p) }).writable;
+  assert.deepEqual(at("/h/.clojure", "/h/.config/clojure"), ["/h/p", "/h/.clojure", "/h/.config/clojure"]);
+  assert.deepEqual(at(), ["/h/p"]);
 });
 
 test("no confinement on this device: no agent starts, the transport waits as Needs you with the reason, and nothing is left made", async () => {

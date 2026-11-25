@@ -10,6 +10,7 @@ import { acquireChatHandle, isSessionBusy } from "../chat-handle";
 import { meshSelf } from "../mesh";
 import { homesRoot } from "../chat-homes/root";
 import { ClaudeLogins, credentialsMtime, loginEnabled, readAccountsState } from "../../pi-config/extensions/claude-code/accounts.ts";
+import { inheritedEnv } from "../project-services/env-allow";
 import { hostVars as hostVarsOf, hostVarsFile } from "../project-services/store";
 import { agentRoot, stateRoot } from "../state-root";
 import { canonicalize, loadPolicyFile, loadProjectTightening, policyFilePath } from "../../pi-config/extensions/sandbox/policy.ts";
@@ -97,8 +98,10 @@ function miseBinary(env: NodeJS.ProcessEnv = process.env, home = homedir()): str
 }
 
 /** Whether `tool`, pinned in the project's mise file at `folder`, is installed at that version: `mise where`, which
-    installs nothing and runs none of the project's commands (the folder's config trusted for this one read). */
-export function miseToolResolves(tool: string, folder: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+    installs nothing and runs none of the project's commands (the folder's config trusted for this one read). It runs in
+    the environment the project's services get (env-allow.ts: the XDG homes and mise's own settings), so it reads the
+    toolchain they will use. */
+export function miseToolResolves(tool: string, folder: string, env: NodeJS.ProcessEnv = inheritedEnv(process.env)): Promise<boolean> {
   const mise = miseBinary(env);
   if (!mise || !/^[A-Za-z0-9][\w.+-]{0,63}$/.test(tool)) return Promise.resolve(false);
   return new Promise((done) => {
@@ -162,6 +165,7 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
     },
     reachable: (url) => remoteReachable(url),
     toolResolves: (tool, folder) => miseToolResolves(tool, folder),
+    configHome: () => process.env.XDG_CONFIG_HOME,
     networkBase: (folder) => sandboxNetworkBase(folder),
     doctor: async (folder): Promise<AgentCheck[] | null> => {
       const { projectEngine } = await import("../project-services/routes");

@@ -20,11 +20,26 @@ export interface AgentScope {
   proxyAllow?: string[];
 }
 
-/** The tool folders under the user's home an install fills (version managers, toolchains, user programs, git deps),
-    writable when they exist. The caches and mise's and pnpm's state are the sandbox's private copies already. */
-export const TOOL_DIRS = [".local/share/mise", ".local/bin", ".gitlibs", ".cargo", ".rustup", "go", ".bun", ".deno", ".volta", ".asdf"] as const;
+/** The tool folders under the user's home an install fills (version managers, toolchains, user programs, git deps, the
+    Clojure CLI's own config folder in either of its places), writable when they exist. The caches and mise's and
+    pnpm's state are the sandbox's private copies already; mise writes nothing of its own under ~/.config for an
+    install, so that stays read-only. */
+export const TOOL_DIRS = [".local/share/mise", ".local/bin", ".gitlibs", ".cargo", ".rustup", "go", ".bun", ".deno", ".volta", ".asdf", ".clojure", ".config/clojure"] as const;
 /** Made when missing, so a first install has somewhere to go: mise's installs and the user's own bin folder. */
 export const MADE_TOOL_DIRS = [".local/share/mise", ".local/bin"] as const;
+
+/** The Clojure CLI's config folder for the user (CLJ_CONFIG's default, which its first run fills with deps.edn and
+    tools/): `$XDG_CONFIG_HOME/clojure` when that is set, else `~/.clojure`. Pure. */
+export const clojureConfigDir = (home: string, xdgConfigHome?: string): string => (xdgConfigHome?.startsWith("/") ? join(xdgConfigHome, "clojure") : join(home, ".clojure"));
+
+/** The tool folders made when missing before the agent's scope is read (absolute): MADE_TOOL_DIRS, and the Clojure CLI's
+    config folder when the project runs the CLI (a deps.edn) and that folder is one of TOOL_DIRS. Pure. */
+export function toolDirsToMake(home: string, projectHas: (file: string) => boolean, xdgConfigHome?: string): string[] {
+  const out = MADE_TOOL_DIRS.map((d) => join(home, d));
+  const clj = clojureConfigDir(home, xdgConfigHome);
+  if (projectHas("deps.edn") && TOOL_DIRS.some((d) => resolve(join(home, d)) === resolve(clj))) out.push(clj);
+  return out;
+}
 
 const within = (child: string, parent: string): boolean => {
   const c = resolve(child);

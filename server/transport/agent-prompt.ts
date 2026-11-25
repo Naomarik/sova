@@ -74,6 +74,8 @@ export function agentBrief(f: BriefFacts): string {
     "## What you ask first",
     "Never run sudo or anything else that needs administrator rights (system packages, system services): your sandbox has none. Call `transport_setup` with `op: \"admin\"` and the exact command for the user to run themselves on this device (one command per call, with why), then end your turn; you are told when they have run it.",
     "",
+    "`op: \"admin\"` is only for a command that needs administrator rights. Anything else outside where you can write (a folder or file in the user's home your sandbox can't write, such as a tool's config folder) is a plain request: ask the user with align what you need there and why, then end your turn; never put it on the card as a command to run.",
+    "",
     "Ask the user (with align, then end your turn) before anything that costs money, a secret you can't find (never invent one; ask where it is), and deleting or overwriting anything already on this device (a folder at that path, a database, a config file). Never commit, push, merge or switch branches.",
     ...(f.sovaFolders?.length
       ? ["", `Never write into Sova's own folders (${f.sovaFolders.join(", ")}): to put a tool on the PATH, use the user's own bin folder or shell profile, never Sova's.`]

@@ -20,7 +20,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { ONBOARD_THINKING, onboardModels } from "../projects/onboard";
 import { adminAsked, adminDone, type AgentAsks, cleanCommand, cleanDownloads, cleanWhy, downloadsAllowed, downloadsAsked, hasWaitingAsk, hostsOf, MAX_ADMIN_STEPS, widenedScope } from "./agent-asks";
 import { agentArrivedMissing, agentBrief, agentPrivateValues, agentStillMissing } from "./agent-prompt";
-import { type AgentScope, agentScope, MADE_TOOL_DIRS, preparedFile } from "./agent-scope";
+import { type AgentScope, agentScope, preparedFile, toolDirsToMake } from "./agent-scope";
 import { lacksRepo, projectComesFrom, withoutCredentials } from "./git-snapshot";
 import { miseTools, readSetupDef, type SetupDef } from "./setup-def";
 
@@ -103,6 +103,9 @@ export interface AgentDeps {
   /** The sites the sandbox's network reaches for a chat in `folder` before any list is allowed (the policy file's
       allowlist, tightened by the project's own file); null: unreadable, so nothing is widened. */
   networkBase?(folder: string): string[] | null;
+  /** The user's XDG config folder here (`$XDG_CONFIG_HOME`), where a tool such as the Clojure CLI keeps its config;
+      absent or undefined: unset. */
+  configHome?(): string | undefined;
   /** The names of the host values this device holds for the project at `folder` (its host overlay); read only. */
   hostValues?(folder: string): Set<string>;
   /** The model refs this device's picker lists; null: unreadable. */
@@ -336,6 +339,19 @@ interface PreparedFile {
   agents: Record<string, { tid: string; at: number; scope?: AgentScope }>;
   /** Each transport's agent, by transport id. */
   byTransport?: Record<string, AgentState>;
+  /** Each arrival an agent works on, by transport id (afterArrival keeps it): what its checks are read again from once
+      the turn an answer on its card handed on has ended. */
+  arrivals?: Record<string, ArrivalRecord>;
+}
+
+/** What an arrival's checks read: the arrived project, the private files it carried and the source's values they may
+    still hold, the files it handed the agent, and the source's name for the checks' lines. */
+interface ArrivalRecord {
+  project: ProjectRef;
+  privateFiles: string[];
+  sourceValues: string[];
+  handed: string[];
+  source: string;
 }
 
 /** `<stateRoot>/transport-agent.json`: beside the transport records' folder, never in it (agent-scope.ts names it). */
@@ -570,7 +586,7 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
   const folder = resolve(req.project.path);
   const made = !existsSync(folder);
   mkdirSync(folder, { recursive: true });
-  for (const d of MADE_TOOL_DIRS) mkdirSync(join(deps.home(), d), { recursive: true });
+  makeToolDirs(folder, deps);
   const scope = agentScope({ folder, trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden() });
   const unconfined = await deps.confine(scope).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
   if (unconfined) {
@@ -604,27 +620,54 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
   return agent;
 }
 
+/** The tool folders a first install of the project at `folder` writes, made when missing (agent-scope.ts toolDirsToMake). */
+const makeToolDirs = (folder: string, deps: Pick<AgentDeps, "home" | "configHome">): void => {
+  for (const d of toolDirsToMake(deps.home(), (f) => existsSync(join(folder, f)), deps.configHome?.())) mkdirSync(d, { recursive: true });
+};
+
 /** Ready only when it is (§app.transport/agent "Ready only when it is"): every check but the host values passes, and
     nothing the agent asked you (a download list, a command to run) still waits. Pure. */
 export const readyNow = (checks: AgentCheck[], a: AgentAsks | null): boolean => !agentMissing(checks).length && !(a && hasWaitingAsk(a));
 
+/** The transports (by state root and id) whose agent's turns a prepare or an arrival waits on now: an answer on the
+    card then needs no re-check of its own, that wait reads the checks after the turn it hands on. */
+const settling = new Map<string, number>();
+const settleKey = (root: string, tid: string) => `${resolve(root)}\0${tid}`;
+
+/** Whether you answered something the agent asked (Allow, Done) at or after `t`. Pure. */
+const answeredSince = (a: AgentAsks, t: number): boolean => (a.downloads?.allowedAt ?? -Infinity) >= t || (a.admin ?? []).some((s) => (s.doneAt ?? -Infinity) >= t);
+
 /**
  * Wait until the agent's turn has ended with nothing it asked you still waiting: while a download list or a command
  * waits on your click it reads Needs you, and once you answer (the answer tells it to go on) its next turn is waited
- * for in turn. `signal` (a Cancel) stops the wait.
+ * for in turn, also when you answered before the turn that asked had ended. `signal` (a Cancel) stops the wait.
  */
 async function settled(tid: string, path: string, deps: AgentDeps, signal?: AbortSignal): Promise<void> {
-  for (;;) {
-    await turnEnded(path, deps, signal);
-    const a = agentOf(deps.stateRoot(), tid);
-    if (!a || !hasWaitingAsk(a)) return;
-    if (a.state !== "needs-you") saveAgent(deps, tid, { ...a, state: "needs-you" });
+  const key = settleKey(deps.stateRoot(), tid);
+  settling.set(key, (settling.get(key) ?? 0) + 1);
+  try {
     for (;;) {
-      signal?.throwIfAborted();
-      const now = agentOf(deps.stateRoot(), tid);
-      if (!now || !hasWaitingAsk(now)) break;
-      await deps.sleep(AGENT_POLL_MS);
+      const since = deps.now();
+      await turnEnded(path, deps, signal);
+      const a = agentOf(deps.stateRoot(), tid);
+      if (!a) return;
+      if (!hasWaitingAsk(a)) {
+        // Answered while that turn still ran: the answer is handed on once it ends, so that next turn is waited for.
+        if (answeredSince(a, since)) continue;
+        return;
+      }
+      if (a.state !== "needs-you") saveAgent(deps, tid, { ...a, state: "needs-you" });
+      for (;;) {
+        signal?.throwIfAborted();
+        const now = agentOf(deps.stateRoot(), tid);
+        if (!now || !hasWaitingAsk(now)) break;
+        await deps.sleep(AGENT_POLL_MS);
+      }
     }
+  } finally {
+    const n = (settling.get(key) ?? 1) - 1;
+    if (n > 0) settling.set(key, n);
+    else settling.delete(key);
   }
 }
 
@@ -699,13 +742,13 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
   if (req.fromSource && !setup.length) markPrepared(deps.stateRoot(), req.project, req.tid, deps.now());
   if (!hits.length && !setup.length) return [];
   const source = req.sourceLabel ?? req.sourcePeer;
-  const checksOf = (found: typeof hits): AgentCheck[] =>
-    found.map((h) => ({ id: `private:${h.file}`, ok: false, detail: `${h.file} still holds ${source}'s ${h.found.join(", ")}: point it at this computer` }));
   let agent = agentOf(deps.stateRoot(), req.tid);
   if (agent) {
     // It started before the chat's worktrees were here: its next open confines it to them too (a running chat keeps the
     // scope it opened with, so an idle one is closed and reopens on the message below).
     const was = readPrepared(deps.stateRoot()).agents[agent.sessionId]?.scope;
+    // The project is here now: the tool folders its first install writes are made (the Clojure CLI's config, for one).
+    makeToolDirs(resolve(req.project.path), deps);
     // The sites you allowed it stay allowed.
     const scope: AgentScope = { ...agentScope({ folder: resolve(req.project.path), trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden() }), ...(was?.proxyAllow ? { proxyAllow: was.proxyAllow } : {}) };
     if (!was || scope.writable.some((w) => !was.writable.includes(w))) {
@@ -718,10 +761,10 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
       if (!deps.busy(agent.path)) await deps.reopen?.(agent.path).catch(() => undefined);
     }
     await deps.tell(agent.path, [...(setup.length ? [agentArrivedMissing(source, setup)] : []), ...(hits.length ? [agentPrivateValues(source, hits)] : [])].join("\n\n"));
-    agent = { ...agent, state: "working", checks: [...setup, ...checksOf(hits)] };
+    agent = { ...agent, state: "working", checks: [...setup, ...privateChecks(source, hits)] };
     saveAgent(deps, req.tid, agent);
   } else {
-    const started = await startAgent(req, [...setup, ...checksOf(hits)], deps, true);
+    const started = await startAgent(req, [...setup, ...privateChecks(source, hits)], deps, true);
     if ("needsYou" in started) {
       // After arrival there is no transport step to hold: its card in the arrived chat says why nothing started.
       deps.onBlocked?.(req.tid, started.needsYou);
@@ -729,17 +772,35 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
     }
     agent = started;
   }
+  // What its checks are read from, again after any answer on its card hands it a turn once this wait has ended.
+  const f = readPrepared(deps.stateRoot());
+  (f.arrivals ??= {})[req.tid] = { project: req.project, privateFiles: req.privateFiles, sourceValues: req.sourceValues, handed: hits.map((h) => h.file), source };
+  writePrepared(deps.stateRoot(), f);
   opts.onStarted?.(agent.checks);
-  // Its turn ends (and whatever it asked you is answered): the checks and files are read again, and what it left is the
-  // transport's to show (ready, or Needs you). The setup checks run whatever it was handed: Ready says the project is.
-  await settled(req.tid, agent.path, deps);
-  const left = sourceValuesIn(req.privateFiles, req.sourceValues);
-  const stillSetup = agentMissing(await preflight(req.project, deps));
-  if (!stillSetup.length) markPrepared(deps.stateRoot(), req.project, req.tid, deps.now());
-  agent = agentOf(deps.stateRoot(), req.tid) ?? agent;
-  const done = !left.length && readyNow(stillSetup, agent);
-  saveAgent(deps, req.tid, { ...agent, state: done ? "ready" : "needs-you", checks: [...stillSetup, ...(left.length ? checksOf(left) : hits.map((h) => ({ id: `private:${h.file}`, ok: true, detail: `${h.file} points at this computer` })))] });
+  await arrivalChecked(req.tid, deps);
   return hits.map((h) => h.file);
+}
+
+const privateChecks = (source: string, found: { file: string; found: string[] }[]): AgentCheck[] =>
+  found.map((h) => ({ id: `private:${h.file}`, ok: false, detail: `${h.file} still holds ${source}'s ${h.found.join(", ")}: point it at this computer` }));
+
+/**
+ * Once the arrival's agent's turn ends (and whatever it asked you is answered): the checks and files are read again, and
+ * what it left is the transport's to show (ready, or Needs you). The setup checks run whatever it was handed: Ready says
+ * the project is. Nothing recorded for `tid`'s arrival, or no agent: nothing to read.
+ */
+async function arrivalChecked(tid: string, deps: AgentDeps): Promise<void> {
+  const root = deps.stateRoot();
+  const r = readPrepared(root).arrivals?.[tid];
+  let agent = agentOf(root, tid);
+  if (!r || !agent) return;
+  await settled(tid, agent.path, deps);
+  const left = sourceValuesIn(r.privateFiles, r.sourceValues);
+  const stillSetup = agentMissing(await preflight(r.project, deps));
+  if (!stillSetup.length) markPrepared(root, r.project, tid, deps.now());
+  agent = agentOf(root, tid) ?? agent;
+  const done = !left.length && readyNow(stillSetup, agent);
+  saveAgent(deps, tid, { ...agent, state: done ? "ready" : "needs-you", checks: [...stillSetup, ...(left.length ? privateChecks(r.source, left) : r.handed.map((file) => ({ id: `private:${file}`, ok: true, detail: `${file} points at this computer` })))] });
 }
 
 // ---- what it asks you on its card ---------------------------------------------------------------
@@ -786,7 +847,10 @@ export function askAdmin(deps: AskDeps, sessionId: string, input: { command?: un
   return { ok: true, text: adminAsked(c.command) };
 }
 
-type Answered = { ok: true; agent: AgentState; handed: Promise<void> } | { ok: false; status: 404 | 409 | 500; error: string };
+/** `handed`: the agent has been told. `checked`: the checks were read again after the turn that hands it (at once when a
+    prepare or an arrival already waits on its turns, since that wait reads them). */
+type Answered = { ok: true; agent: AgentState; handed: Promise<void>; checked: Promise<void> } | { ok: false; status: 404 | 409 | 500; error: string };
+const answered = (agent: AgentState): Answered => ({ ok: true, agent, handed: Promise.resolve(), checked: Promise.resolve() });
 
 /** Once it is idle: reopened (its next open takes its new scope) when `reopen`, then told `text`. */
 async function handOn(deps: AgentDeps, path: string, text: string, reopen: boolean): Promise<void> {
@@ -794,6 +858,18 @@ async function handOn(deps: AgentDeps, path: string, text: string, reopen: boole
   while (deps.busy(path) && deps.now() < until) await deps.sleep(AGENT_POLL_MS);
   if (reopen) await deps.reopen?.(path).catch(() => undefined);
   await deps.tell(path, text);
+}
+
+/** The answer handed on, then, when no prepare or arrival waits on the agent's turns any more (it ended at Needs you
+    before you answered), an arrival's checks read again once that turn ends: a tool it then installed clears. */
+function handOnChecked(deps: AgentDeps, tid: string, path: string, text: string, reopen: boolean): { handed: Promise<void>; checked: Promise<void> } {
+  const handed = handOn(deps, path, text, reopen);
+  // Not told (its `handed` says why): no turn of it to wait for.
+  const checked = handed.then(
+    () => (settling.has(settleKey(deps.stateRoot(), tid)) ? undefined : arrivalChecked(tid, deps)),
+    () => undefined,
+  );
+  return { handed, checked };
 }
 
 /**
@@ -807,7 +883,7 @@ export async function allowDownloads(deps: AgentDeps, tid: string, planId: unkno
   if (!a) return { ok: false, status: 404, error: "This transport has no Transport agent here." };
   const plan = a.downloads;
   if (!plan || plan.id !== planId) return { ok: false, status: 409, error: "That download list isn't the agent's current one. Nothing was allowed." };
-  if (plan.state === "allowed") return { ok: true, agent: a, handed: Promise.resolve() };
+  if (plan.state === "allowed") return answered(a);
   const scope = readPrepared(root).agents[a.sessionId]?.scope;
   const base = deps.networkBase?.(scope?.workspaceRoot ?? "") ?? null;
   if (!scope || (!scope.proxyAllow && !base)) return { ok: false, status: 500, error: "This device's sandbox network list can't be read, so nothing was allowed." };
@@ -818,7 +894,7 @@ export async function allowDownloads(deps: AgentDeps, tid: string, planId: unkno
   markAgent(root, a.sessionId, tid, deps.now(), widened);
   const next: AgentState = { ...a, state: "working", downloads: { ...plan, state: "allowed", allowedAt: deps.now() } };
   saveAgent(deps, tid, next);
-  return { ok: true, agent: next, handed: handOn(deps, a.path, downloadsAllowed(plan.items), true) };
+  return { ok: true, agent: next, ...handOnChecked(deps, tid, a.path, downloadsAllowed(plan.items), true) };
 }
 
 /** Your Done on the card: you ran the command yourself; the agent is told to go on. Nothing is run here. */
@@ -827,8 +903,8 @@ export async function markAdminDone(deps: AgentDeps, tid: string, stepId: unknow
   if (!a) return { ok: false, status: 404, error: "This transport has no Transport agent here." };
   const step = (a.admin ?? []).find((s) => s.id === stepId);
   if (!step) return { ok: false, status: 409, error: "That command isn't one the agent asked you to run." };
-  if (step.state === "done") return { ok: true, agent: a, handed: Promise.resolve() };
+  if (step.state === "done") return answered(a);
   const next: AgentState = { ...a, state: "working", admin: (a.admin ?? []).map((s) => (s.id === step.id ? { ...s, state: "done" as const, doneAt: deps.now() } : s)) };
   saveAgent(deps, tid, next);
-  return { ok: true, agent: next, handed: handOn(deps, a.path, adminDone(step.command), false) };
+  return { ok: true, agent: next, ...handOnChecked(deps, tid, a.path, adminDone(step.command), false) };
 }

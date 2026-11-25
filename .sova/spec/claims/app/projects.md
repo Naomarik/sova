@@ -172,19 +172,27 @@ and a chat in any of them is one press away.
     (§chat.worktrees/retirement): `{retired} retired · {held} held`, the retired ones those of the last 7
     days, as a new session's line counts them, either part left out at 0, opening the same tab. While
     retirement is off it counts none held, so the line shows only what already retired.
-  - **Copies**: one pip per usable place of this project (the slots of 1 to 16 its port numbering
-    can use, §app.project-services/instances, so normally 16; a place the numbering rules out is
-    never drawn), and a figure. The pips are grouped, not in slot order: running first, then
-    stopped, then used elsewhere, then free (what each counts: §app.projects/home-glance). Each look
-    differs in shape as well as color: running solid, stopped half-filled, used elsewhere narrow,
-    free hollow; a place that was not checked (a host with no list of listening ports,
-    §app.projects/home-glance) is hollow with a dashed outline, drawn where the free ones would be,
-    never as free. The main checkout's slot 0, conformance's scratch copies and any record outside
-    the usable slots are never drawn.
+  - **Copies**: one pip per copy the project may run at once (its copy limit in force on this
+    host, §app.project-services/instances, at most 16), not one per usable place, and a figure. The
+    card maps the places' states (§app.projects/home-glance) onto that limit, {r} being the limit's
+    own count of running copies (the figure's): it draws max({cap}, {r}) pips, {r} of them running;
+    the room left, max(0, {cap} − {r}), is filled first by stopped pips, at most as many as the
+    project's stopped copies; what is left of the room is open. While the free places are known, as
+    many open pips as there are free places (at most all of them) are free and the rest are used
+    elsewhere; on a host with no list of listening ports every open pip is not checked. So a hollow
+    pip always means a copy can really start there. Stopped copies beyond the room are counted only
+    in the hover. The pips are grouped: running first, then stopped, then used elsewhere, then free
+    or not checked. Each look differs in shape as well as color: running solid, stopped
+    half-filled, used elsewhere a box of the same width with an amber bar inside, free hollow, not
+    checked hollow with a dashed outline (never drawn as free). Every pip is the same size, about
+    8×10px with a 2px gap; on the narrowest cards a long strip shrinks its pips (down to about
+    4px wide) rather than wrapping or cutting the row's label. The main checkout's slot 0,
+    conformance's scratch copies and any record outside the usable slots are never drawn as stopped
+    or open. A change to the limit changes the strip at the next refresh.
     - **The figure** reads `{r} running`, or `{r} at limit` once {r} has reached the limit in force.
       {r}, here and in the hover, is the copy limit's own count of running copies, the one a start
       is refused by (§app.project-services/instances), so the figure is true whenever the limit
-      refuses: a running record outside the usable slots counts in it though no pip draws it.
+      refuses: a running record outside the usable slots counts in it, and so has a running pip.
       `0 running` while none runs.
     - **Hover** on the row gives `{r} running, {s} stopped but holding a place, {e} used elsewhere,
       {f} free. Up to {cap} can run at once.` While any place is used elsewhere it adds `Used

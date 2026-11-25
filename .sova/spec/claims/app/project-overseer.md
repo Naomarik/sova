@@ -769,7 +769,7 @@ user row.
   it, and `overseer.json` holds none (an older file's `codingMode` is ignored, and dropped at the
   file's next write). A `PATCH …/overseer` naming `codingMode`, `null` included, is refused (400)
   and writes nothing: "Projects have no coding mode: coding sessions start on this computer's
-  default profile. Make Default in Settings → Profiles, or in a chat's mode menu, changes it."
+  default profile. Make Default in Settings → Profiles changes it."
 - **Unnamed, this computer's default.** A coding session started with no profile or mode named
   starts on this computer's default profile (§chat.profiles/default, read when the session starts),
   with no other profile picked,

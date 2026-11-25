@@ -480,7 +480,12 @@
     "evidence": "reviewed",
     "code": [
       "site/src/content/docs/modes/memory.md"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
+    }
   },
   "§site.docs/merge-queue": {
     "kind": "behavior",
@@ -575,8 +580,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-13T05:15Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§site.docs/needs-you": {
@@ -888,9 +893,9 @@
       "site/src/content/docs/subagent-profiles.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-24T13:41Z",
-      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§site.docs/teams": {

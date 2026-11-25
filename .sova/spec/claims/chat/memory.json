@@ -20,7 +20,12 @@
       "src/lib/api.ts",
       "server/automation-session.ts",
       "src/components/ModeMenu.tsx"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
+    }
   },
   "§chat.memory/full-ids": {
     "kind": "behavior",
@@ -401,8 +406,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T09:35Z",
-      "source": "pi-session:01a1c9c0-9d0b-7601-9d6d-7dfaeea30a3a#9199d10f"
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   }
 }

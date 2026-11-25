@@ -287,8 +287,9 @@ A script can still switch a chat, by `POST /api/mode` or a chat socket of its ow
 default and no other chat's starter can name it.
 
 - **Update {name}** in a Create chat saves the chat's last normal or Delegate choice, with its
-  minor modes, into its profile (§chat.mode-menu/menu); **Make {name} the Default** makes its profile
-  the default, never Create, and saves the chat's strict flag; minor modes come from the profile. A chat that has been in no other mode saves normal.
+  minor modes, into its profile (§chat.mode-menu/menu), never Create; it is offered by comparing
+  that choice, not Create, with what a new chat on the profile starts with. A chat that has been in
+  no other mode saves normal.
 - **Each of these refuses, and none falls back:** a default naming Create in `POST /api/mode` with no
   `?path=`; a profile whose `mode` is `create` (the file doesn't parse, with the reason); a playbook
   or schedule through such a profile; an automation's `settings.mode`; the Overseer's

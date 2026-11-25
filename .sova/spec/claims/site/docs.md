@@ -49,7 +49,10 @@ them, a project's own modes as one row), and links to the feature, extending and
 
 The major and minor modes side by side, the three major modes in the mode menu's words, switching
 them per chat from the composer's mode menu,
-the default for new sessions (memory's type with it; never Create, which is chosen per chat),
+saving a chat's modes for new chats with the menu's Update {name}, offered whenever it would change
+something, on a built-in profile too (it becomes yours), with the foot saying what new chats start
+with after the press, and that the default profile is chosen in Settings → Profiles, not in the
+menu (new chats' memory type and strict flag stay `mode.json`'s; never Create, which is chosen per chat),
 strict, how replies read in every chat you talk to, whatever its modes (a short summary; a quick question's
 answer in a line or two and nothing more, anything bigger the full report after it; nothing folded; a mode's own shape wins, workers, a project's assistant, a hand-off, the merge queue's own chats and a release's chat keep theirs, a playbook
 run follows its playbook's report where it sets one; §chat.mode-menu/reply-shape),
@@ -107,8 +110,9 @@ gets, else they run on the chat's own model). How a new chat starts on this comp
 profile, how a chat switches its profile after a usage limit, or any time, all at once (its Models part), what "(edited)"
 means, editing profiles in Settings → Profiles (there is no Subagents tab; the This chat chip, the
 Jump to row, Teams on the chat's own model), the built-in Claude, OpenAI and DeepSeek profiles (a
-**Built in** section with their routes, listed only where their account is connected, Make It
-Yours), and the default until you choose one, which follows the connected accounts (Claude, else
+**Built in** section with their routes, listed only where their account is connected, editable in
+place: your first saved change makes one yours, frozen, with a Yours chip and Reset to Built-in),
+and the default until you choose one, which follows the connected accounts (Claude, else
 OpenAI, else DeepSeek). There is no Off: no helpers means turning Delegate off. A profile never
 turns on a project mode. The page sits in the Features group, not under Modes: a profile is not a
 mode.
@@ -270,7 +274,7 @@ cache), and the Claude Code models.
 
 The memory minor mode: what it does and that the transcript never changes, turning it on from the
 mode menu, the two types (UniiChat, credited to Victor Taelin with a link to his design, and
-zoomable compaction), the Memory type panel and Save as default, the `zoom` and `date` tools,
+zoomable compaction), the Memory type panel (new chats' type is `mode.json`'s; the mode menu no longer saves it), the `zoom` and `date` tools,
 updating, preparing and problems, rewind and fork, the Session pane's Memory outline, Settings →
 Memory with each type's summary size and its help, where memory can't be on (the terminal, workers, coding sessions, session
 profiles), and the overseers' own switches, on by default.

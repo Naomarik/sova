@@ -14,9 +14,10 @@ import { git, historyBytes, type LooseFile, LARGE_FILE, looseBytes, surveyWorktr
 import { bringHelpersToRest, knob, previewExtras } from "./hooks";
 import { movedOf } from "./moved";
 import { buildPackage } from "./package";
+import { readSetupDef, type SetupDef } from "./setup-def";
 import { activeTransportOf, createTransport, logName, newTicket, newTid, readTransport, stepDone, type TransportRecord, updateTransport } from "./store";
-import type { OfferBody, OfferTree, StatusBody } from "./wire";
-import { peerPath, PROOF_HEADER } from "./wire";
+import type { AgentView, OfferBody, OfferTree, StatusBody } from "./wire";
+import { agentViewOf, peerPath, PROOF_HEADER } from "./wire";
 
 const log = (line: string) => console.log(`[transport] ${line}`);
 const spoolDir = () => join(stateRoot(), "transport", "spool");
@@ -72,6 +73,8 @@ export interface SourceDeps {
   usageCut(chatId: string, helpers: readonly string[]): Promise<Buffer | null>;
   /** After the destination confirmed: the Moved row, the safety copy, the old code folders. */
   moved(r: TransportRecord): Promise<void>;
+  /** Put the Transport agent's card in the chat here (a note that starts no turn). */
+  noteAgentCard?(path: string, text: string, card: { tid: string; title: string; device: string }): Promise<boolean>;
 }
 
 let deps: SourceDeps | null = null;
@@ -137,6 +140,8 @@ export interface Preview {
   needs: string[];
   /** That device lacks the project and can't clone it: it comes from this device, about this many bytes of history. */
   projectFromHere?: { bytes: number };
+  /** With the project from here: what its setup definition says that device lacks, set up after it arrives. */
+  afterArrival?: string[];
   agentModels: string[];
   agentModelDefault: string | null;
 }
@@ -192,6 +197,7 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
   const devices: Preview["devices"] = [];
   let needs: string[] = [];
   let fromHere = false;
+  let after: string[] = [];
   let agentModels: string[] = [];
   let agentModelDefault: string | null = null;
   for (const p of peers) {
@@ -203,11 +209,12 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
     devices.push({ id: p.id, label: p.label, state: d.state });
     if (peerId && d.state === "ready") {
       try {
-        const res = await need().peerFetch(p.id, "/api/peer/transport/needs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...projectRef(c, t, await projectFolderFor(c, t)), ...(c.model ? { chatModel: c.model } : {}) }), signal: AbortSignal.timeout(10_000) });
+        const res = await need().peerFetch(p.id, "/api/peer/transport/needs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...projectRef(c, t, await projectFolderFor(c, t)), ...(c.model ? { chatModel: c.model } : {}), ...setupOf(c, t) }), signal: AbortSignal.timeout(10_000) });
         if (res.ok) {
-          const a = (await res.json()) as { needs?: string[]; models?: string[]; modelDefault?: string | null; fromSource?: boolean };
+          const a = (await res.json()) as { needs?: string[]; models?: string[]; modelDefault?: string | null; fromSource?: boolean; afterArrival?: string[] };
           needs = a.needs ?? [];
           fromHere = a.fromSource === true;
+          after = Array.isArray(a.afterArrival) ? a.afterArrival.filter((x) => typeof x === "string").slice(0, 40) : [];
           agentModels = a.models ?? [];
           agentModelDefault = a.modelDefault ?? null;
         }
@@ -246,6 +253,7 @@ export async function previewTransport(path: string, peerId?: string): Promise<P
     busyHelpers: extras.busyHelpers,
     needs,
     ...(fromHere ? { projectFromHere: { bytes: await historyBytes(t.trees).catch(() => 0) } } : {}),
+    ...(fromHere && after.length ? { afterArrival: after } : {}),
     agentModels,
     agentModelDefault,
   };
@@ -269,6 +277,13 @@ async function projectFolderFor(c: ChatFacts, t: Trees): Promise<string> {
   const repo = dirname(common);
   const rel = relative(homedir(), repo);
   return rel.startsWith("..") ? repo : `~/${rel}`;
+}
+
+/** The project's own setup definition, read here from the chat's tree (read only), for that device to check against
+    itself before the project is there (§app.transport/dialog). */
+function setupOf(c: ChatFacts, t: Trees): { setup?: SetupDef } {
+  const def = readSetupDef(t.own?.path ?? t.trees[0]?.path ?? c.cwd);
+  return def ? { setup: def } : {};
 }
 
 function projectRef(c: ChatFacts, t: Trees, folder: string): { remotes: string[]; firstCommit?: string; path: string } {
@@ -436,6 +451,7 @@ async function step(r: TransportRecord): Promise<"wait" | "again" | "stop"> {
     const sent = await sendOffer(r.tid);
     return sent.ok ? "wait" : (needsYou(r.tid, sent.error), "stop");
   }
+  if (s.agent) await followAgent(r, s.agent);
   if (s.state === "needs-you") return needsYou(r.tid, s.needsYou ?? "it stopped there"), "stop";
   if (s.steps.opened) return finish(r, s);
   if (s.steps.verified) {
@@ -552,6 +568,24 @@ async function pack(r: TransportRecord): Promise<void> {
   log(`${logName(r)}: packed ${Math.round(packed.size / 1024)} KB`);
 }
 
+/**
+ * The Transport agent there, as that device reports it: kept on the record (the agent's card here reads it) and,
+ * the first time, its card put in the chat (§app.transport/agent), only before the switch stops the chat: a card
+ * put then would change what was packed.
+ */
+async function followAgent(r: TransportRecord, a: AgentView): Promise<void> {
+  const ext = (r.ext ?? {}) as { agentCard?: string; agent?: AgentView };
+  const view = agentViewOf(a);
+  if (JSON.stringify(ext.agent) !== JSON.stringify(view)) updateTransport(r.tid, { ext: { agent: view } });
+  if (ext.agentCard === a.sessionId || r.steps.stopped || r.decided || r.steps.packed || !need().noteAgentCard) return;
+  const device = a.device ?? r.peerLabel;
+  // Mid-turn the chat takes no note: the next look puts it in.
+  const put = await need()
+    .noteAgentCard!(r.path, `The Transport agent "${a.title}" is getting ${device} ready for this chat.`, { tid: r.tid, title: a.title, device })
+    .catch((err: unknown) => (log(`${r.tid}: its agent's card wasn't put in the chat: ${err instanceof Error ? err.message : String(err)}`), false));
+  if (put) updateTransport(r.tid, { ext: { agentCard: a.sessionId } });
+}
+
 /** The destination said the chat opened there: the Move is done here (the Copy too). */
 async function finish(r: TransportRecord, s: StatusBody): Promise<"stop"> {
   if (!r.decided) updateTransport(r.tid, { ticket: undefined, ticketBurnt: true, decided: true });
@@ -559,7 +593,9 @@ async function finish(r: TransportRecord, s: StatusBody): Promise<"stop"> {
     if (s.path) updateTransport(r.tid, { ext: { arrivedPath: s.path }, ...(s.arrivedId ? { arrivedId: s.arrivedId } : {}) });
     await need().moved(readTransport(r.tid)!);
   }
-  stepDone(r.tid, "confirmed", { state: "done", ...(s.arrivedId ? { arrivedId: s.arrivedId } : {}), ...(s.renamed ? { renamed: s.renamed } : {}), ...(s.path ? { ext: { arrivedPath: s.path } } : {}) });
+  // What the Transport agent sets up there after arrival: the done line says so (§design.copy-deck/transport).
+  const settingUp = Array.isArray(s.settingUp) ? s.settingUp.filter((x) => typeof x === "string").slice(0, 20) : [];
+  stepDone(r.tid, "confirmed", { state: "done", ...(s.arrivedId ? { arrivedId: s.arrivedId } : {}), ...(s.renamed ? { renamed: s.renamed } : {}), ...(s.path || settingUp.length ? { ext: { ...(s.path ? { arrivedPath: s.path } : {}), ...(settingUp.length ? { settingUp } : {}) } } : {}) });
   log(`${logName(r)}: ${r.mode === "move" ? "moved" : "copied"} to ${r.peerLabel}`);
   return "stop";
 }

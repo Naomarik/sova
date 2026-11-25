@@ -9,6 +9,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSy
 import { readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { TRANSPORT_AGENT_NOTE, type TransportAgentNote } from "../../shared/transport-agent-card";
 import { Pulls, TransferError } from "../mesh/links-transfer";
 import { tarMembers } from "../mesh/tar-list";
 import { stateRoot, agentRoot } from "../state-root";
@@ -23,7 +24,7 @@ import { verifyHome, type PackageManifest } from "./package";
 import { findConversation, relocateHome, sessionIdOfName } from "./relocate";
 import { createTransport, logName, readTransport, stepDone, type TransportRecord, updateTransport } from "./store";
 import { checkMembers } from "./tar";
-import { type OfferBody, peerPath, type ReadyBody, type StatusBody, TICKET_HEADER } from "./wire";
+import { type AgentView, agentViewOf, type OfferBody, peerPath, type ReadyBody, type StatusBody, TICKET_HEADER } from "./wire";
 
 const log = (line: string) => console.log(`[transport] ${line}`);
 
@@ -47,7 +48,20 @@ export interface DestinationDeps {
   helperNote(device: string, interrupted: boolean): string;
   /** Bring a moved chat's usage cut in, apart from this device's own records: what it counted. */
   importUsage(bytes: Buffer, from: string): Record<string, number>;
+  /** The arrived chat's title here (its own, carried in its home); null: unknown. */
+  titleOf?(path: string): Promise<string | null>;
+  /** Put the Transport agent's card in the arrived chat (a note that starts no turn). */
+  noteAgentCard?(path: string, text: string, card: AgentCardNote): Promise<boolean>;
 }
+
+/** The Transport agent's card in a chat (§app.transport/agent): the transport it reads, the agent's title and device. */
+export type AgentCardNote = TransportAgentNote;
+
+/** The note type of the Transport agent's card (server/transcript.ts draws it). */
+export const AGENT_CARD_NOTE = TRANSPORT_AGENT_NOTE;
+
+/** Whether conversation `text` already holds transport `tid`'s agent card (it travelled with the chat, or was put once). */
+export const hasAgentCard = (text: string, tid: string): boolean => text.split("\n").some((l) => l.includes(`"${AGENT_CARD_NOTE}"`) && l.includes(`"${tid}"`));
 
 let deps: DestinationDeps | null = null;
 export const setDestinationDeps = (d: DestinationDeps): void => void (deps = d);
@@ -176,6 +190,25 @@ const controllers = new Map<string, AbortController>();
 
 const fromSourceOf = (r: TransportRecord): boolean => !!((r.ext ?? {}) as { fromSource?: boolean }).fromSource;
 
+/** What the Transport agent is asked for transport `r`, before arrival and after it alike: the same project (its
+    remotes, its root commit and its folder here), so the checks after arrival know the repository it made as this
+    project's even with no remote recorded. */
+function requestOf(r: TransportRecord, fromSource: boolean, title = r.title): PrepareRequest {
+  const o = offerOf(r);
+  return {
+    tid: r.tid,
+    sourcePeer: r.peer,
+    sourceLabel: r.peerLabel,
+    sourceChatId: r.sourceChatId,
+    title,
+    project: { remotes: o.project.remotes, ...(o.project.roots[0] ? { firstCommit: o.project.roots[0] } : {}), path: repoPathOf(r) ?? r.folder },
+    worktrees: ownFirst(o.trees).map((t) => ({ name: t.name, branch: t.branch, ...(typeof t.head === "string" && /^[0-9a-f]{40,64}$/.test(t.head) ? { head: t.head } : {}) })),
+    ...(o.model ? { model: o.model } : {}),
+    ...(o.chatModel ? { chatModel: o.chatModel } : {}),
+    ...(fromSource ? { fromSource: true } : {}),
+  };
+}
+
 /**
  * Whether the project comes from the source (§app.transport/package): this device lacks the repository at its folder
  * and can't get it by clone: no remote is recorded, none answers from here, or a Retry finds it still missing after
@@ -200,19 +233,7 @@ async function prepare(tid: string): Promise<void> {
     const fromSource = await projectFromSource(r, repo ?? r.folder);
     if (fromSource !== fromSourceOf(r)) updateTransport(tid, { ext: { fromSource } });
     if (fromSource) log(`${tid}: the project comes from ${r.peerLabel}: it isn't here and can't be cloned here`);
-    const req: PrepareRequest = {
-      tid,
-      sourcePeer: r.peer,
-      sourceLabel: r.peerLabel,
-      sourceChatId: r.sourceChatId,
-      title: r.title,
-      project: { remotes: o.project.remotes, ...(o.project.roots[0] ? { firstCommit: o.project.roots[0] } : {}), path: repo ?? r.folder },
-      worktrees: ownFirst(o.trees).map((t) => ({ name: t.name, branch: t.branch, ...(typeof t.head === "string" && /^[0-9a-f]{40,64}$/.test(t.head) ? { head: t.head } : {}) })),
-      ...(o.model ? { model: o.model } : {}),
-      ...(o.chatModel ? { chatModel: o.chatModel } : {}),
-      ...(fromSource ? { fromSource: true } : {}),
-    };
-    const p = await prepareDestination(req, { signal: ctl.signal });
+    const p = await prepareDestination(requestOf(r, fromSource), { signal: ctl.signal });
     if ("needsYou" in p) return void needsYou(tid, p.needsYou);
     // From the source: nothing is made here before arrival, which builds the repository from the package.
     if (repo && !fromSource) {
@@ -437,34 +458,45 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     const said = Buffer.from(text).subarray(from).toString("utf8").split("\n").some((l) => l.includes('"sova-transport-arrival"') && l.includes(JSON.stringify(note).slice(1, -1)));
     if (!said) await need().openWithNote(file, note);
     await knob(tid, "opened");
-    // Its size once the note is in: any later growth is a turn here, and Move Back is gone (§app.transport/moved-row).
-    stepDone(tid, "opened", { state: "done", ext: { openedPrint: await fingerprint(readTransport(tid)!) } });
+    // What is left to set up here goes to the Transport agent now (its turn goes on by itself): what it took on is
+    // said to the source, and its card is in the chat (once: a card that travelled with the chat stays the one).
+    const setup = await afterArrival({
+      ...requestOf(r, fromSourceOf(r), (await need().titleOf?.(file).catch(() => null)) || r.title),
+      privateFiles: done.privateFiles ?? [],
+      sourceValues: done.sourceValues ?? [],
+    });
+    await putAgentCard(tid, file);
+    // Its size once the notes are in: any later growth is a turn here, and Move Back is gone (§app.transport/moved-row).
+    stepDone(tid, "opened", { state: "done", ext: { openedPrint: await fingerprint(readTransport(tid)!), ...(setup.length ? { settingUp: setup } : {}) } });
     // A moved team carries on: each helper that was working is told it moved; an idle one stays idle.
     if (r.mode === "move")
       for (const [list, interrupted] of [[body?.interrupted ?? [], true], [body?.wrapped ?? [], false]] as const)
         for (const chatId of list) await need().tellHelper(chatId, need().helperNote(r.peerLabel, interrupted), `${tid}:moved:${chatId}`).catch((err) => log(`${tid}: ${chatId} wasn't told it moved: ${err instanceof Error ? err.message : String(err)}`));
-    const o = offerOf(r);
-    afterArrival({
-      tid,
-      sourcePeer: r.peer,
-      sourceLabel: r.peerLabel,
-      sourceChatId: r.sourceChatId,
-      title: r.title,
-      project: { remotes: o.project.remotes, path: repoPathOf(r) ?? r.folder },
-      worktrees: ownFirst(o.trees).map((t) => ({ name: t.name, branch: t.branch, ...(typeof t.head === "string" && /^[0-9a-f]{40,64}$/.test(t.head) ? { head: t.head } : {}) })),
-      ...(o.model ? { model: o.model } : {}),
-      ...(o.chatModel ? { chatModel: o.chatModel } : {}),
-      ...(fromSourceOf(r) ? { fromSource: true } : {}),
-      privateFiles: done.privateFiles ?? [],
-      sourceValues: done.sourceValues ?? [],
-    });
-    log(`${logName(r)}: arrived as ${r.arrivedId}`);
-    return ok({ ok: true, arrivedId: r.arrivedId });
+    log(`${logName(r)}: arrived as ${r.arrivedId}${setup.length ? `; setting up ${setup.join(", ")}` : ""}`);
+    return ok({ ok: true, arrivedId: r.arrivedId, ...(setup.length ? { settingUp: setup } : {}) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     needsYou(tid, msg);
     return ok({ error: msg }, 500);
   }
+}
+
+/** The transport's agent as its record keeps it (`ext.agent`, the onAgent hook's), or null. */
+const agentOfRecord = (r: TransportRecord): AgentView | null => {
+  const a = ((r.ext ?? {}) as { agent?: AgentView }).agent;
+  return a && typeof a.sessionId === "string" && typeof a.path === "string" ? a : null;
+};
+
+/** After arrival: the agent working here for transport `tid` gets its card in the arrived chat `file`, unless one is there. */
+async function putAgentCard(tid: string, file: string): Promise<void> {
+  const r = readTransport(tid);
+  const a = r ? agentOfRecord(r) : null;
+  if (!r || !a || a.state === "ready" || !need().noteAgentCard) return;
+  if (hasAgentCard(await readFile(file, "utf8").catch(() => ""), tid)) return;
+  const device = a.device ?? "this device";
+  await need()
+    .noteAgentCard!(file, `The Transport agent "${a.title}" is setting up this project on ${device}.`, { tid, title: a.title, device })
+    .catch((err: unknown) => log(`${tid}: its agent's card wasn't put in the chat: ${err instanceof Error ? err.message : String(err)}`));
 }
 
 /** How far it is (GET …/:tid). */
@@ -476,6 +508,8 @@ export async function statusOf(from: { id: string }, tid: string): Promise<Statu
     state: r.state,
     steps: r.steps as Record<string, string>,
     ...(r.steps.prepared ? { haves: r.haves ?? [], ...(fromSourceOf(r) ? { fromSource: true } : {}) } : {}),
+    ...(agentOfRecord(r) ? { agent: agentViewOf(agentOfRecord(r)!) } : {}),
+    ...(((r.ext ?? {}) as { settingUp?: string[] }).settingUp?.length ? { settingUp: ((r.ext ?? {}) as { settingUp: string[] }).settingUp } : {}),
     ...(r.needsYou ? { needsYou: r.needsYou.reason } : {}),
     ...(r.received !== undefined ? { received: r.received } : {}),
     ...(r.arrivedId ? { arrivedId: r.arrivedId } : {}),

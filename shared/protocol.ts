@@ -16,6 +16,7 @@ import type { OverseerCard } from "./overseer-card";
 import type { PlaybookSpec } from "./playbook-format";
 import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 import type { OwnerRequestCard } from "./project-assistant";
+import type { TransportAgentNote } from "./transport-agent-card";
 import type { CardInfo } from "./transcript-cards";
 import type { ChatProfileState } from "./profile-switch";
 export type { ChatProfileState, ProfileSwitchResult, ProfileSwitchTarget } from "./profile-switch";
@@ -488,6 +489,9 @@ export interface TranscriptItem {
   /** kind "info" only: an owner request Start Chat put in the chat as a note (§app.project-assistant/request-chat),
       drawn as its card; `text` is the note the model read. */
   ownerRequest?: OwnerRequestCard;
+  /** kind "info" only: the Transport agent's card note (§app.transport/agent), drawn as its card, which reads the
+      agent live by its transport; `text` is the note the model read. */
+  transportAgent?: TransportAgentNote;
   /** kind "align" only: the `align` tool result's `details`, checked by the extension's own
       `normalizeAlignDetails` (pi-config/extensions/mode/align.ts, §chat.alignment/state): the
       touched document's snapshot after the call, or an exemption. `toolCallId` pairs it with its

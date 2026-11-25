@@ -13,6 +13,8 @@ export interface TransportPreview {
   needs: string[];
   /** That device lacks the project and can't clone it: it comes from this device, about this many bytes of history. */
   projectFromHere?: { bytes: number };
+  /** With the project from here: what its setup definition says that device lacks, set up after it arrives. */
+  afterArrival?: string[];
   agentModels: string[];
   agentModelDefault: string | null;
 }
@@ -29,7 +31,13 @@ export interface TransportView {
   needsYou?: { reason: string };
   pkg?: { size: number };
   received?: number;
-  ext?: { waiting?: number };
+  ext?: {
+    waiting?: number;
+    /** The Transport agent, as this device knows it (the source keeps what the destination reports). */
+    agent?: { sessionId: string; path: string; title: string; device?: string; state: "working" | "ready" | "needs-you"; checks: { id: string; ok: boolean; detail: string }[] };
+    /** What the agent sets up there after arrival (short names): done reads "…; setting up … there". */
+    settingUp?: string[];
+  };
 }
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {

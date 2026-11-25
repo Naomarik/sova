@@ -48,6 +48,7 @@ import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { mergeInfoOf, WORKTREE_MERGE_MESSAGE } from "./worktrees-state";
 import { OWNER_REQUEST_NOTE, ownerRequestCardOf } from "../shared/project-assistant";
+import { TRANSPORT_AGENT_NOTE, transportAgentNoteOf } from "../shared/transport-agent-card";
 import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 import { claudeLoginNote } from "./claude-login-names";
 // The folded tool card's own readers (src/lib/message.ts, src/lib/tool-diff-stats.ts, both DOM- and
@@ -821,6 +822,15 @@ function entryRows(h: HEntry, fallbackId: string, state?: { model?: string; stop
         if (card) {
           const it = item(id, "info", h, contentText(h.content));
           it.ownerRequest = card;
+          return [it];
+        }
+      }
+      // The Transport agent's card (§app.transport/agent): it reads the agent live by its transport.
+      if (h.noteType === TRANSPORT_AGENT_NOTE) {
+        const card = transportAgentNoteOf(h.details);
+        if (card) {
+          const it = item(id, "info", h, contentText(h.content));
+          it.transportAgent = card;
           return [it];
         }
       }

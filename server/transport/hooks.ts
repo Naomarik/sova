@@ -3,6 +3,7 @@
 // neither: the destination is ready at once, and at a Move's switch working helpers are interrupted.
 // And the lab's knobs: SOVA_TRANSPORT_KILL_AT=<step> ends this server at that step, and
 // SOVA_TRANSPORT_PAUSE_AT=<step> waits there until the transport is retried.
+import type { SetupDef } from "./setup-def";
 import type { Step } from "./store";
 
 export interface ProjectRef {
@@ -47,6 +48,8 @@ export interface NeedsAnswer {
   preparedAt: number | null;
   /** This device lacks the repository and can't clone it: the project comes from the source. */
   fromSource?: boolean;
+  /** With the project from the source: what its setup definition says this device still lacks, set up after arrival. */
+  afterArrival?: string[];
 }
 
 export interface PreviewExtras {
@@ -55,8 +58,9 @@ export interface PreviewExtras {
 
 type PrepareFn = (req: PrepareRequest, o: { signal: AbortSignal }) => Promise<Prepared>;
 type RestFn = (chatId: string, mode: "safe" | "interrupt", onProgress: (waiting: number) => void, o: { signal: AbortSignal }) => Promise<RestResult>;
-type AfterFn = (req: PrepareRequest & { privateFiles: string[]; sourceValues: string[] }) => void | Promise<void>;
-type NeedsFn = (project: ProjectRef, opts?: { chatModel?: string }) => Promise<NeedsAnswer>;
+/** Resolves with what the agent sets up there by short names once it has it ([]: nothing to set up). */
+type AfterFn = (req: PrepareRequest & { privateFiles: string[]; sourceValues: string[] }) => void | string[] | Promise<void | string[]>;
+type NeedsFn = (project: ProjectRef, opts?: { chatModel?: string; setup?: SetupDef | null }) => Promise<NeedsAnswer>;
 type ExtrasFn = (chatId: string) => Promise<PreviewExtras> | PreviewExtras;
 type InterruptFn = (chatId: string) => boolean;
 type IsAgentFn = (sessionId: string) => boolean;
@@ -80,7 +84,7 @@ export const setInterruptWaiting = (fn: InterruptFn | null): void => void (hooks
 export const setIsTransportAgent = (fn: IsAgentFn | null): void => void (hooks.isAgent = fn);
 
 export const prepareDestination = (req: PrepareRequest, o: { signal: AbortSignal }): Promise<Prepared> => (hooks.prepare ? hooks.prepare(req, o) : Promise.resolve({ ready: true }));
-export const needsAnswer = (project: ProjectRef, opts: { chatModel?: string } = {}): Promise<NeedsAnswer> =>
+export const needsAnswer = (project: ProjectRef, opts: { chatModel?: string; setup?: SetupDef | null } = {}): Promise<NeedsAnswer> =>
   hooks.needs ? hooks.needs(project, opts) : Promise.resolve({ needs: [], models: [], modelDefault: null, preparedAt: null });
 export const previewExtras = async (chatId: string): Promise<PreviewExtras> => (hooks.extras ? hooks.extras(chatId) : { busyHelpers: [] });
 export const interruptWaiting = (chatId: string): boolean => hooks.interrupt?.(chatId) ?? false;
@@ -89,11 +93,26 @@ export const hasRestHook = (): boolean => hooks.rest !== null;
 export function bringHelpersToRest(...a: Parameters<RestFn>): Promise<RestResult> | null {
   return hooks.rest ? hooks.rest(...a) : null;
 }
-export function afterArrival(req: Parameters<AfterFn>[0]): void {
-  if (!hooks.after) return;
-  void Promise.resolve()
+/** How long the arrival waits to hear what is being set up there before it answers without it. */
+export const SETTING_UP_WAIT_MS = 20_000;
+
+/** After arrival: hand the Transport agent what is left. Resolves with what it sets up there (short names) once it
+    has it, [] when nothing is, or [] after `waitMs` while it goes on by itself. Never throws. */
+export function afterArrival(req: Parameters<AfterFn>[0], waitMs = SETTING_UP_WAIT_MS): Promise<string[]> {
+  if (!hooks.after) return Promise.resolve([]);
+  const run = Promise.resolve()
     .then(() => hooks.after!(req))
-    .catch((err) => console.error(`[transport] ${req.tid}: after arrival: ${err instanceof Error ? err.message : String(err)}`));
+    .then((x) => (Array.isArray(x) ? x : []))
+    .catch((err: unknown) => {
+      console.error(`[transport] ${req.tid}: after arrival: ${err instanceof Error ? err.message : String(err)}`);
+      return [] as string[];
+    });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<string[]>((ok) => {
+    timer = setTimeout(() => ok([]), waitMs);
+    timer.unref?.();
+  });
+  return Promise.race([run, late]).finally(() => clearTimeout(timer));
 }
 
 // ---- the lab's knobs ----------------------------------------------------------------------------

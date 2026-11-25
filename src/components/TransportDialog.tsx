@@ -16,6 +16,9 @@ const MODES: readonly { id: Mode; label: string; line: string }[] = [
   { id: "copy", label: "Copy", line: "Leaves this chat here as it is." },
 ];
 
+/** "a", "a and b", "a, b and 2 more". */
+const listWords = (xs: readonly string[]): string => (xs.length <= 2 ? xs.join(" and ") : `${xs.slice(0, 2).join(", ")} and ${xs.length - 2} more`);
+
 const STATE_WORDS = (t: TransportView, size: number | undefined): string => {
   switch (t.state) {
     case "preparing":
@@ -29,8 +32,12 @@ const STATE_WORDS = (t: TransportView, size: number | undefined): string => {
       return "Checking what arrived…";
     case "switching":
       return "Switching…";
-    case "done":
-      return t.mode === "move" ? `Moved to ${t.peerLabel}.` : `Copied to ${t.peerLabel}.`;
+    case "done": {
+      // The Transport agent goes on there after arrival: done says what it is still setting up.
+      const setting = t.ext?.settingUp ?? [];
+      const did = t.mode === "move" ? "Moved" : "Copied";
+      return setting.length ? `${did} to ${t.peerLabel}; setting up ${listWords(setting)} there…` : `${did} to ${t.peerLabel}.`;
+    }
     case "needs-you":
       return t.needsYou?.reason ?? `Transport to ${t.peerLabel} stopped. The chat carries on here.`;
     case "cancelled":
@@ -267,7 +274,7 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
                         </Show>
                       </ul>
                     </section>
-                    <TransportDeviceNeeds needs={v().needs} fromHere={v().projectFromHere ? sizeText(v().projectFromHere!.bytes) : null} models={v().agentModels} model={model()} onModel={setModel} />
+                    <TransportDeviceNeeds needs={v().needs} fromHere={v().projectFromHere ? sizeText(v().projectFromHere!.bytes) : null} afterArrival={v().afterArrival ?? []} models={v().agentModels} model={model()} onModel={setModel} />
                     <Show when={mode() === "move"}>
                       <TransportBusyHelpers helpers={v().busyHelpers} choice={busy()} onChoice={setBusy} />
                     </Show>

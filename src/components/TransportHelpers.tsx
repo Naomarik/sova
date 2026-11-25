@@ -9,10 +9,12 @@ import { Choice, Select } from "./form";
 export type BusyChoice = "safe" | "interrupt";
 
 /** "That device still needs" and the agent's model: the project when it comes from this device (`fromHere`, its size),
-    then each missing check; nothing shown when that device needs nothing. */
-export function TransportDeviceNeeds(props: { needs: readonly string[]; fromHere?: string | null; models: readonly string[]; model: string | null; onModel(ref: string): void; disabled?: boolean }) {
+    then each missing check, then what the project's setup definition says is set up once it has arrived
+    (`afterArrival`); nothing shown when that device needs nothing. */
+export function TransportDeviceNeeds(props: { needs: readonly string[]; fromHere?: string | null; afterArrival?: readonly string[]; models: readonly string[]; model: string | null; onModel(ref: string): void; disabled?: boolean }) {
+  const after = () => props.afterArrival ?? [];
   return (
-    <Show when={props.needs.length > 0 || !!props.fromHere}>
+    <Show when={props.needs.length > 0 || !!props.fromHere || after().length > 0}>
       <section class="card stack" aria-labelledby="transport-needs-title" style={{ padding: "var(--space-3)" }}>
         <h3 class="card-title" id="transport-needs-title">
           That device still needs
@@ -20,6 +22,14 @@ export function TransportDeviceNeeds(props: { needs: readonly string[]; fromHere
         <ul class="text-caption">
           <Show when={props.fromHere}>{(size) => <li>The project comes from this device: its history and branches · {size()}</li>}</Show>
           <For each={props.needs}>{(n) => <li>{n}</li>}</For>
+          <Show when={after().length > 0}>
+            <li>
+              After it arrives:
+              <ul>
+                <For each={after()}>{(n) => <li>{n}</li>}</For>
+              </ul>
+            </li>
+          </Show>
         </ul>
         <Select label="Model" value={props.model ?? ""} disabled={props.disabled || !props.models.length} options={props.models.map((m) => ({ value: m, label: modelLabel(m) ?? m }))} onChange={(v) => props.onModel(v)} />
       </section>

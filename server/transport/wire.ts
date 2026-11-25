@@ -71,7 +71,31 @@ export interface StatusBody {
   movedBack?: boolean;
   /** The chat's conversation there, once it opened. */
   path?: string;
+  /** The Transport agent there, once one started: what its card in the chat shows. */
+  agent?: AgentView;
+  /** What the agent sets up there after arrival (short names): the done line says the setup is under way. */
+  settingUp?: string[];
 }
+
+/** The Transport agent as its card shows it (§app.transport/agent): its chat there, state and the checks' findings. */
+export interface AgentView {
+  sessionId: string;
+  path: string;
+  title: string;
+  device?: string;
+  state: "working" | "ready" | "needs-you";
+  checks: { id: string; ok: boolean; detail: string }[];
+}
+
+/** An agent's record, cut to what its card shows (never its link or model). Pure. */
+export const agentViewOf = (a: AgentView): AgentView => ({
+  sessionId: a.sessionId,
+  path: a.path,
+  title: a.title,
+  ...(a.device ? { device: a.device } : {}),
+  state: a.state,
+  checks: (a.checks ?? []).slice(0, 40).map((c) => ({ id: c.id, ok: c.ok, detail: c.detail })),
+});
 
 export interface ReadyBody {
   sha256: string;

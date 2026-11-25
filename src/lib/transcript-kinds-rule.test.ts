@@ -59,6 +59,7 @@ const MOVED: Record<string, string[]> = {
   tour: ["TourCard"],
   design: ["DesignCard"],
   "owner-request": ["OwnerRequestNote"],
+  "transport-agent": ["TransportAgentCard"],
   "handoff-run": ["HandoffRunRow"],
   "mcp-note": ["McpNoteRow"],
   "approval-pending": ["ApprovalPendingRow"],

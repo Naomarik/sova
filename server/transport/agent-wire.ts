@@ -10,9 +10,11 @@ import { acquireChatHandle, isSessionBusy } from "../chat-handle";
 import { meshSelf } from "../mesh";
 import { homesRoot } from "../chat-homes/root";
 import { ClaudeLogins, credentialsMtime, loginEnabled, readAccountsState } from "../../pi-config/extensions/claude-code/accounts.ts";
+import { hostVars as hostVarsOf } from "../project-services/store";
 import { agentRoot, stateRoot } from "../state-root";
-import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, isTransportAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef } from "./agent";
+import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, isTransportAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames } from "./agent";
 import { remoteReachable } from "./git-snapshot";
+import type { SetupDef } from "./setup-def";
 import { bringHelpersToRest, busyOf, type HelperView, interruptWaiting, type SafeDeps } from "./safe-transport";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -119,6 +121,13 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
       const r = await projectEngine().run("doctor", { project: folder }, { kind: "system", id: "transport-agent" });
       return (r as { checks?: AgentCheck[] }).checks ?? null;
     },
+    hostValues: (folder) => {
+      try {
+        return new Set(Object.keys(hostVarsOf(folder)));
+      } catch {
+        return new Set<string>();
+      }
+    },
     claudeUsable: () => claudeLoginUsable(agentRoot()),
     offeredModels: async () => {
       try {
@@ -193,11 +202,18 @@ export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: str
   const safeDeps = liveSafeDeps();
   return {
     prepareDestination: (req: PrepareRequest, opts: { signal?: AbortSignal } = {}) => prepareDestination(req, agentDeps, opts),
-    afterArrival: (req: Parameters<typeof afterArrival>[0]) => afterArrival(req, agentDeps).catch((err: unknown) => {
-      console.log(`[transport-agent] after arrival of ${req.tid}: ${err instanceof Error ? err.message : String(err)}`);
-      return [] as string[];
-    }),
-    needsAnswer: (project: ProjectRef, opts: { chatModel?: string } = {}) => needsAnswer(project, agentDeps, opts),
+    /** Resolves with what the agent sets up (short names) as soon as it has it; its turn goes on by itself. */
+    afterArrival: (req: Parameters<typeof afterArrival>[0]) =>
+      new Promise<string[]>((ok) => {
+        afterArrival(req, agentDeps, { onStarted: (checks) => ok(settingUpNames(checks)) }).then(
+          () => ok([]),
+          (err: unknown) => {
+            console.log(`[transport-agent] after arrival of ${req.tid}: ${err instanceof Error ? err.message : String(err)}`);
+            ok([]);
+          },
+        );
+      }),
+    needsAnswer: (project: ProjectRef, opts: { chatModel?: string; setup?: SetupDef | null } = {}) => needsAnswer(project, agentDeps, opts),
     bringHelpersToRest: (chatId: string, mode: "safe" | "interrupt", onProgress: (working: number) => void, opts: { signal?: AbortSignal } = {}) => bringHelpersToRest(chatId, mode, onProgress, safeDeps, opts),
     interruptWaiting,
     /** The dialog's Busy helpers: those of the chat working now. */

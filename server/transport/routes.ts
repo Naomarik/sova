@@ -34,6 +34,8 @@ import { stateRoot } from "../state-root";
 import { cutChatUsage, importChatUsage } from "../usage-export";
 import { worktreesOf } from "../worktrees-state";
 import * as dest from "./destination";
+import { AGENT_CARD_NOTE } from "./destination";
+import { cleanSetupDef } from "./setup-def";
 import { git, publishTrees, rebuildWorktrees } from "./git-snapshot";
 import { isTransportAgent, needsAnswer, setAfterArrival, setBringHelpersToRest, setInterruptWaiting, setIsTransportAgent, setNeedsAnswer, setPrepareDestination, setPreviewExtras, interruptWaiting, releasePause, type ProjectRef } from "./hooks";
 import { allMoved, markMoved, MOVE_BACK_MS, movedOf, unmarkMoved } from "./moved";
@@ -385,6 +387,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     },
     usageCut: (chatId, helpers) => cutChatUsage(chatId, helpers),
     moved,
+    noteAgentCard: async (path, text, card) => (await acquireChatHandle(path)).appendNote(AGENT_CARD_NOTE, text, card),
   });
 
   dest.setDestinationDeps({
@@ -417,6 +420,8 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
         : `This chat moved from ${device}. Folders and ports may differ here. Continue where you left off.`,
     cameBack,
     importUsage: (bytes, from) => ({ ...importChatUsage(bytes, { from }) }),
+    titleOf: async (path) => (await getSessionSummary(path))?.title || null,
+    noteAgentCard: async (path, text, card) => (await acquireChatHandle(path)).appendNote(AGENT_CARD_NOTE, text, card),
   });
 
   // The Transport agent and Safe Transport, when this build has them (server/transport/agent-wire.ts).
@@ -426,7 +431,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       // Their worktree branch is a name; a detached HEAD's is "".
       const named = <T extends { worktrees: { name: string; branch: string | null }[] }>(req: T) => ({ ...req, worktrees: req.worktrees.map((w) => ({ ...w, branch: w.branch ?? "" })) });
       setPrepareDestination((req, o) => h.prepareDestination(named(req), o));
-      setAfterArrival((req) => void h.afterArrival(named(req)));
+      setAfterArrival((req) => h.afterArrival(named(req)));
       setNeedsAnswer((p, opts) => h.needsAnswer(p, opts));
       setBringHelpersToRest((chatId, mode, onProgress, o) => h.bringHelpersToRest(chatId, mode, onProgress, o));
       setInterruptWaiting((chatId) => h.interruptWaiting(chatId));
@@ -556,7 +561,9 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     if (!p || typeof p.path !== "string") return c.json({ error: "Bad project" }, 400);
     // Read only: what this device lacks for that project (nothing is made or started here).
     const chatModel = (p as { chatModel?: unknown }).chatModel;
-    return c.json(await needsAnswer({ remotes: Array.isArray(p.remotes) ? p.remotes.map(String) : [], ...(typeof p.firstCommit === "string" ? { firstCommit: p.firstCommit } : {}), path: p.path }, typeof chatModel === "string" && chatModel.length < 200 ? { chatModel } : {}));
+    // The project's own setup definition as that device read it: plain names only, checked here, never run.
+    const setup = cleanSetupDef((p as { setup?: unknown }).setup);
+    return c.json(await needsAnswer({ remotes: Array.isArray(p.remotes) ? p.remotes.map(String) : [], ...(typeof p.firstCommit === "string" ? { firstCommit: p.firstCommit } : {}), path: p.path }, { ...(typeof chatModel === "string" && chatModel.length < 200 ? { chatModel } : {}), ...(setup ? { setup } : {}) }));
   });
 
   app.post("/api/peer/transport/offer", small, async (c) => {

@@ -240,3 +240,35 @@ test("the project from the source: no agent before arrival, an earlier one's lin
   assert.deepEqual(tried.ended, ["lk_1"]);
   assert.equal(tried.started.length, 1);
 });
+
+test("the project from the source: the dialog lists what its own setup definition says this device lacks, after it arrives, running none of the project's commands", async () => {
+  const { readSetupDef } = await import("./setup-def");
+  const root = scratchRoot("transport-agent-");
+  // The source's checkout: its definition runs mise and pnpm and declares a host value; its mise.toml names java.
+  const src = join(root, "src");
+  mkdirSync(join(src, ".sova"), { recursive: true });
+  writeFileSync(join(src, "package.json"), "{}");
+  writeFileSync(join(src, "pnpm-lock.yaml"), "");
+  writeFileSync(join(src, "mise.toml"), '[tools]\njava = "21"\n"npm:x" = "1"\n[env]\nFOO = "1"\n');
+  writeFileSync(join(src, ".sova", "project.json"), JSON.stringify({ version: 1, host: ["DATABASE_URL", "PORT_BASE"], setup: [{ id: "trust", run: ["mise", "trust"] }], services: { web: { cmd: ["pnpm", "dev"] } } }));
+  const setup = readSetupDef(src)!;
+  assert.deepEqual(setup.programs, ["mise", "pnpm", "java"]);
+  assert.deepEqual(setup.host, ["DATABASE_URL", "PORT_BASE"]);
+  const ran: string[] = [];
+  const d = device(root, {
+    reachable: async () => false,
+    which: async (ps) => new Set(ps.filter((p) => p !== "java" && p !== "mise")),
+    hostValues: () => new Set(["PORT_BASE"]),
+    doctor: async () => (ran.push("doctor"), null),
+    git: async (args) => (ran.push(`git ${args[0]}`), { code: 1, stdout: "" }),
+    startChat: async () => Promise.reject(new Error("no agent before arrival")),
+  });
+  const a = await needsAnswer({ remotes: [REMOTE], path: join(root, "there", "motors") }, d.deps, { setup });
+  assert.equal(a.fromSource, true);
+  assert.deepEqual(a.needs, []);
+  assert.deepEqual(a.afterArrival, ["mise isn't installed for this user", "java isn't installed for this user", "node_modules is missing: pnpm install", "host value DATABASE_URL isn't set on this device"]);
+  assert.deepEqual(ran, [], "no doctor, no git in the project: the folder isn't there and nothing of the project runs");
+  // A project that can be cloned there lists the clone, never an after-arrival list.
+  const near = await needsAnswer({ remotes: [REMOTE], path: join(root, "there", "motors") }, device(root, { reachable: async () => true }).deps, { setup });
+  assert.equal(near.afterArrival, undefined);
+});

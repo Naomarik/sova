@@ -407,9 +407,23 @@ export async function editSetup(sessionId: string, runId: string | undefined, de
   // Past Setup, Sova itself tells the Creative Director, so the main chat passes no skills on in words.
   const change = skillsChange(was, run);
   let told = "";
-  if (was.phase !== "setup" && change.added.length + change.removed.length && deps.skillsChanged) {
+  let current = run;
+  if (was.phase !== "setup" && change.added.length + change.removed.length) {
     const what = [change.added.length ? `added ${change.added.map((k) => k.name).join(", ")}` : "", change.removed.length ? `took off ${change.removed.join(", ")}` : ""].filter(Boolean).join(" and ");
-    told = (await deps.skillsChanged(run.id, change)) ? `Sova told the Creative Director that the user ${what}; don't pass it on with tell.` : "";
+    if (deps.skillsChanged && (await deps.skillsChanged(run.id, change))) told = `Sova told the Creative Director that the user ${what}; don't pass it on with tell.`;
+    else {
+      // No turn is coming to take the change in: Start says the Creative Director hasn't written the prompt rather than
+      // waiting for ever (as a wake that fails does).
+      current = changeDesigns(sessionId, (s) => {
+        const r = s.runs.find((x) => x.id === run.id)!;
+        if (r.brief?.writing && !r.brief.writing.stalled && r.brief.startedRev === undefined) {
+          r.brief.writing.stalled = true;
+          r.brief.rev++;
+        }
+        return structuredClone(r);
+      });
+      told = `The Creative Director couldn't be told that the user ${what}: pass it on with op tell.`;
+    }
   }
-  return { run, text: [setupSummary(sessionId, run), told, all.length ? `Not changed:\n${all.map((n) => `- ${n}`).join("\n")}` : ""].filter(Boolean).join("\n\n") };
+  return { run: current, text: [setupSummary(sessionId, current), told, all.length ? `Not changed:\n${all.map((n) => `- ${n}`).join("\n")}` : ""].filter(Boolean).join("\n\n") };
 }

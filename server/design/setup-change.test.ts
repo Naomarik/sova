@@ -288,7 +288,7 @@ test("past Setup a skill not found leaves the run and its brief as they were", a
   assert.deepEqual(c.now(), before, "nothing recorded, the brief's version unmoved");
 });
 
-test("a skill added with the brief open joins the Creative Director's pick, the estimate moves, and Start waits for its turn", async () => {
+test("a skill added with the brief open joins the Creative Director's pick, the estimate moves, and Start can't go on the brief as it was", async () => {
   const c = chat({ phase: "brief", skills: [await kit("brand"), await kit("playwright")], brief: openBrief({ skills: ["brand"] }) });
   const tokens = await kit("tokens", "x".repeat(40_000));
   const { designerSkills, designBriefBlock } = await import("../../shared/design");
@@ -297,8 +297,10 @@ test("a skill added with the brief open joins the Creative Director's pick, the 
   const run = c.now();
   assert.deepEqual(designerSkills(run).map((k) => k.name), ["brand", "tokens"], "added late, it goes to the designers by default; the one left out stays out");
   assert.notEqual(run.brief!.estimateUsd, 123, "what each designer reads is in the estimate");
-  assert.equal(designBriefBlock(run)?.label, "Writing the Full Prompt", "Start waits for the Creative Director's next turn");
-  assert.deepEqual(run.brief!.writing, { cause: "told" });
+  // This chat has no Creative Director to tell, so the brief says it hasn't written the prompt (with one, Start waits
+  // for its turn: coordinator.test.ts).
+  assert.equal(run.brief!.writing?.cause, "told", "the change is news the Full Prompt has to take in");
+  assert.notEqual(designBriefBlock(run), null, "Start can't go on the brief as it was");
 });
 
 test("a skill taken off leaves the pick (none when the run has no skills left); with the user's own Full Prompt the brief asks Keep My Prompt or Rewrite It", async () => {
@@ -310,4 +312,19 @@ test("a skill taken off leaves the pick (none when the run has no skills left); 
   await c.call({ op: "edit", removeSkills: ["brand"] });
   assert.equal(c.now().skills, undefined);
   assert.equal(c.now().brief!.skills, undefined, "no skills left: no pick");
+});
+
+test("a skills change the Creative Director can't be told of leaves Start saying it hasn't written the prompt, never waiting for ever, and the reply says so", async () => {
+  const { editSetup } = await import("./setup-change");
+  const { designBriefBlock } = await import("../../shared/design");
+  const x = await kit("x");
+  const ports = [{ skillsChanged: async () => false }, {}];
+  for (const port of ports) {
+    const c = chat({ phase: "brief", brief: openBrief() });
+    const out = await editSetup(c.sessionId, c.run.id, { skills: ["x"] }, { addImages: async () => ({ names: [], refused: [] }), findSkills: async () => ({ skills: [x], missing: [] }), runs: () => [c.now()], ...port });
+    assert.equal(c.now().brief!.writing?.stalled, true, port.skillsChanged ? "told nobody" : "no port to tell it");
+    assert.equal(designBriefBlock(c.now())?.code, "stalled");
+    assert.match(out.text, /The Creative Director couldn't be told that the user added x: pass it on with op tell\./);
+    assert.doesNotMatch(out.text, /Sova told the Creative Director/);
+  }
 });

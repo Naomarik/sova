@@ -18,7 +18,7 @@ import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
 import { registerArrivedHome } from "../chat-homes/place";
 import { homeArrived } from "../chat-homes/records";
 import { compressedChats, dropCompressed, sidecarOf } from "../archive-compress/store";
-import { dropStages, git, havesOf, type KeptFile, lacksRepo, projectComesFrom, publishTrees, rebuildWorktrees, SnapshotError, type StagedTree, withoutCredentials } from "./git-snapshot";
+import { dropStages, git, havesOf, type KeptFile, lacksRepo, projectComesFrom, publishTrees, rebuildWorktrees, remoteReachable, SnapshotError, type StagedTree, withoutCredentials } from "./git-snapshot";
 import { afterArrival, knob, prepareDestination, type PrepareRequest } from "./hooks";
 import { verifyHome, type PackageManifest } from "./package";
 import { findConversation, relocateHome, sessionIdOfName } from "./relocate";
@@ -213,6 +213,17 @@ function repoPathOf(r: TransportRecord): string | null {
 const controllers = new Map<string, AbortController>();
 
 const fromSourceOf = (r: TransportRecord): boolean => !!((r.ext ?? {}) as { fromSource?: boolean }).fromSource;
+const subsFetchOf = (r: TransportRecord): string[] => ((r.ext ?? {}) as { subsFetch?: string[] }).subsFetch ?? [];
+
+/** The offered submodules whose remotes answer from here, asking for nothing (each at once, so within one wait): for
+    those only what their remotes lack travels; every other one comes with its history (§app.transport/package). */
+async function fetchableSubmodules(r: TransportRecord): Promise<string[]> {
+  const subs = offerOf(r).project.submodules;
+  if (!Array.isArray(subs)) return [];
+  const list = subs.filter((s) => s && typeof s.key === "string" && typeof s.url === "string" && s.url).slice(0, 64);
+  const ok = await Promise.all(list.map((s) => remoteReachable(withoutCredentials(s.url)).catch(() => false)));
+  return list.filter((_, i) => ok[i]).map((s) => s.key);
+}
 
 /** What the Transport agent is asked for transport `r`, before arrival and after it alike: the same project (its
     remotes, its root commit and its folder here), so the checks after arrival know the repository it made as this
@@ -271,8 +282,10 @@ async function prepare(tid: string): Promise<void> {
         await git(repo, ["init", "-q"]);
       }
     }
+    const subsFetch = await fetchableSubmodules(r);
+    if (subsFetch.length) log(`${tid}: ${subsFetch.length} submodule(s) come by their remotes here`);
     await knob(tid, "prepared");
-    stepDone(tid, "prepared", { haves: repo && !fromSource ? await havesOf(repo) : [], state: "preparing" });
+    stepDone(tid, "prepared", { haves: repo && !fromSource ? await havesOf(repo) : [], state: "preparing", ext: { subsFetch } });
   } catch (err) {
     needsYou(tid, err instanceof Error ? err.message : String(err));
   } finally {
@@ -381,7 +394,8 @@ async function arrive(tid: string): Promise<void> {
     stepDone(tid, "verified", { ext: { sourceValues }, state: "switching", arrivedId, renamed: staged.filter((s) => s.renamedFrom).map((s) => ({ from: s.renamedFrom!, to: s.branch! })) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (err instanceof SnapshotError && err.reason === "needs-base") updateTransport(tid, { haves: [] });
+    // A package built on commits not here: the next one carries them (a submodule's remote too: its history).
+    if (err instanceof SnapshotError && err.reason === "needs-base") updateTransport(tid, { haves: [], ext: { subsFetch: [] } });
     needsYou(tid, msg);
   } finally {
     arriving.delete(tid);
@@ -475,7 +489,9 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     const renamedNotes = (readTransport(tid)?.renamed ?? []).map((x) => ` Its branch was ${x.from} there; that name was taken, so it is ${x.to}.`).join("");
     const done = (readTransport(tid)?.ext ?? {}) as { kept?: KeptFile[]; privateFiles?: string[]; sourceValues?: string[]; targets?: Record<string, string> };
     const keptNotes = (done.kept ?? []).map((k) => ` ${k.tree}/${k.path} was already here and differs, so it was kept; the one from ${r.peerLabel} is ${k.tree}/${k.beside}.`).join("");
-    const note = `${r.mode === "move" ? "Moved" : "Copied"} from ${r.peerLabel}.${stopped.length ? ` Stopped there: ${stopped.join(", ")}.` : ""}${renamedNotes}${keptNotes}`;
+    const bare = (((r.ext ?? {}) as { staged?: StagedTree[] }).staged ?? []).flatMap((t) => (t.uninitialised ?? []).map((k) => `${t.name}/${k}`));
+    const bareNotes = bare.length ? ` ${bare.length === 1 ? `Its submodule ${bare[0]} wasn't` : `Its submodules ${bare.join(", ")} weren't`} checked out on ${r.peerLabel}, so ${bare.length === 1 ? "it" : "they"} arrived as ${bare.length === 1 ? "its commit's link" : "their commits' links"} only, not checked out here either.` : "";
+    const note = `${r.mode === "move" ? "Moved" : "Copied"} from ${r.peerLabel}.${stopped.length ? ` Stopped there: ${stopped.join(", ")}.` : ""}${renamedNotes}${keptNotes}${bareNotes}`;
     // Once only: a run that died after writing it (before "opened") finds it there.
     // Looked for only past where the conversation ended before this transport's first try (an earlier Move's note may read the same).
     const text = await readFile(file, "utf8").catch(() => "");
@@ -574,7 +590,7 @@ export async function statusOf(from: { id: string }, tid: string): Promise<Statu
     tid,
     state: r.state,
     steps: r.steps as Record<string, string>,
-    ...(r.steps.prepared ? { haves: r.haves ?? [], ...(fromSourceOf(r) ? { fromSource: true } : {}) } : {}),
+    ...(r.steps.prepared ? { haves: r.haves ?? [], ...(fromSourceOf(r) ? { fromSource: true } : {}), ...(subsFetchOf(r).length ? { subsFetch: subsFetchOf(r) } : {}) } : {}),
     ...(agentOfRecord(r) ? { agent: agentViewOf(agentOfRecord(r)!) } : {}),
     ...(((r.ext ?? {}) as { settingUp?: string[] }).settingUp?.length ? { settingUp: ((r.ext ?? {}) as { settingUp: string[] }).settingUp } : {}),
     ...(r.needsYou ? { needsYou: r.needsYou.reason } : {}),

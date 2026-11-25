@@ -142,6 +142,8 @@ export async function buildPackage(o: {
   usage?: Buffer | null;
   /** The repository itself travels: its default branch and the worktrees' branches, with their history. */
   repo?: boolean;
+  /** The submodules (by key) whose remotes the destination reached: the rest travel with their history. */
+  subsFetch?: readonly string[];
 }): Promise<Packed> {
   const work = join(o.spool, `${o.tid}.work`);
   await rm(work, { recursive: true, force: true });
@@ -149,7 +151,7 @@ export async function buildPackage(o: {
   let metas: WorktreeMeta[] = [];
   let repo: RepoMeta | undefined;
   if (o.trees.length) {
-    const packed = await packWorktrees({ tid: o.tid, trees: o.trees, haves: o.repo ? [] : o.haves, outDir: codeDir, ...(o.skip ? { skip: o.skip } : {}), ...(o.repo ? { repo: true } : {}) });
+    const packed = await packWorktrees({ tid: o.tid, trees: o.trees, haves: o.repo ? [] : o.haves, outDir: codeDir, ...(o.skip ? { skip: o.skip } : {}), ...(o.repo ? { repo: true } : {}), fetchable: o.subsFetch ?? [] });
     metas = packed.metas;
     repo = packed.repo;
   }

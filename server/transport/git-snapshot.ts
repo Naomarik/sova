@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, lstatSync, readdirSync } from "node:fs";
 import { copyFile, cp, lstat, mkdir, readdir, readFile, readlink, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { checkMembers, entryOf, listTar, type TarEntry, writeTar } from "./tar";
 
 // ---- git ------------------------------------------------------------------------------------------
@@ -43,7 +43,9 @@ export function git(cwd: string, args: readonly string[], o: { env?: Record<stri
   return new Promise((done) => {
     const child = execFile(
       "git",
-      ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", ...args],
+      // Submodules are built one by one here: git never recurses into them by itself (a fetch on demand from their
+      // remotes, a read-tree into them under a user's submodule.recurse).
+      ["-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "submodule.recurse=false", "-c", "fetch.recurseSubmodules=false", ...args],
       { cwd, env: gitEnv(o.env ?? {}), timeout: GIT_LONG_MS, killSignal: "SIGKILL", maxBuffer: GIT_BUFFER, encoding: "utf8" },
       (err, stdout, stderr) => {
         if (!err) return done({ code: 0, stdout, stderr });
@@ -72,18 +74,55 @@ export const REACH_MS = 6_000;
  */
 export function remoteReachable(url: string, ms = REACH_MS): Promise<boolean> {
   const u = url.trim();
-  if (!u || u.startsWith("-") || /^[a-z0-9+.-]+::/i.test(u)) return Promise.resolve(false);
-  const env: NodeJS.ProcessEnv = {
-    ...gitEnv({}),
-    GIT_ASKPASS: "true",
-    SSH_ASKPASS: "true",
-    SSH_ASKPASS_REQUIRE: "never",
-    GCM_INTERACTIVE: "never",
-    GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=5",
-  };
+  if (!plainRemote(u)) return Promise.resolve(false);
   return new Promise((done) => {
-    execFile("git", ["-c", "protocol.ext.allow=never", "-c", "credential.interactive=never", "ls-remote", u, "HEAD"], { cwd: "/", env, timeout: ms, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (err) => done(!err));
+    execFile("git", [...PROMPT_FREE_ARGS, "ls-remote", u, "HEAD"], { cwd: "/", env: gitEnv(PROMPT_FREE), timeout: ms, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (err) => done(!err));
   });
+}
+
+/** A URL git may be asked to read: never one that runs a command (`ext::`, `fd::`) or reads as an option. */
+const plainRemote = (u: string): boolean => !!u && !u.startsWith("-") && !/^[a-z0-9+.-]+::/i.test(u);
+
+/** Asking for nothing: no terminal, askpass or credential window; ssh in batch mode. */
+const PROMPT_FREE: Record<string, string> = {
+  GIT_ASKPASS: "true",
+  SSH_ASKPASS: "true",
+  SSH_ASKPASS_REQUIRE: "never",
+  GCM_INTERACTIVE: "never",
+  GIT_SSH_COMMAND: "ssh -o BatchMode=yes -o ConnectTimeout=5",
+};
+const PROMPT_FREE_ARGS = ["-c", "protocol.ext.allow=never", "-c", "credential.interactive=never"];
+
+/**
+ * A submodule's address as `git submodule init` resolves it (git's `relative_url`): a `./` or `../` URL is taken
+ * against `base`, the address of the repository holding it (its recorded remote), each `../` dropping one part of
+ * that address (a `/` part, else an scp-like `host:` part). Never with credentials. "" when a relative URL has no
+ * address to resolve against (git would use this device's own folder, which means nothing on another device).
+ * Pure.
+ */
+export function resolveSubmoduleUrl(url: string, base: string | null): string {
+  const u = url.trim();
+  if (!u) return "";
+  if (!u.startsWith("./") && !u.startsWith("../")) return withoutCredentials(u);
+  let at = base ? withoutCredentials(base).replace(/\/+$/, "") : "";
+  // A relative base (a folder path relative to this device) resolves nowhere there.
+  if (!at || (!/^[a-z][a-z0-9+.-]*:\/\//i.test(at) && !at.startsWith("/") && !/^[^/]+:/.test(at))) return "";
+  let rest = u;
+  let colon = false;
+  for (;;) {
+    if (rest.startsWith("../")) {
+      rest = rest.slice(3);
+      const slash = at.lastIndexOf("/");
+      const scp = at.lastIndexOf(":");
+      if (slash >= 0) at = at.slice(0, slash);
+      else if (scp >= 0) {
+        at = at.slice(0, scp);
+        colon = true;
+      } else return "";
+    } else if (rest.startsWith("./")) rest = rest.slice(2);
+    else break;
+  }
+  return `${at}${colon ? ":" : "/"}${rest}`;
 }
 
 /** Whether `folder` lacks a repository: it isn't there, or is an empty folder. */
@@ -170,6 +209,24 @@ export interface WorktreeSurvey {
   remotes: string[];
   /** Whether it is the repository's main checkout (not a linked worktree). */
   main: boolean;
+  /** Its submodules, each travelling like the project itself (their loose files, scratch and private files are in
+      `loose` and `scratch` above, by their path in this tree). */
+  submodules: SubmoduleSurvey[];
+}
+
+/** One submodule of a tree (§app.transport/edge-cases). */
+export interface SubmoduleSurvey {
+  /** Its name in `.gitmodules` (its path when it has none). */
+  name: string;
+  /** Its path in the tree that holds it, with `/`. */
+  path: string;
+  /** Its path from the worktree being transported (a nested one's: through each submodule above it). */
+  key: string;
+  /** Its address, from `.gitmodules`, a relative one resolved against the holding repository's recorded remote;
+      without credentials; "" when none can be told. */
+  url: string;
+  /** Its own survey when it is checked out here; null when only its gitlink is (never initialised). */
+  tree: WorktreeSurvey | null;
 }
 
 async function gitDirs(path: string): Promise<{ gitDir: string; common: string; top: string }> {
@@ -195,8 +252,6 @@ async function refusalOf(path: string, gitDir: string): Promise<string | null> {
   if (has("rebase-merge") || has("rebase-apply")) return "It has a rebase in progress: finish or remove that first.";
   if (has("CHERRY_PICK_HEAD") || has("REVERT_HEAD")) return "It has a cherry-pick in progress: finish or remove that first.";
   if ((await git(path, ["ls-files", "-u"])).stdout.trim()) return "It has a merge in progress: finish or remove that first.";
-  const staged = await git(path, ["ls-files", "-s", "-z"]);
-  if (nul(staged.stdout).some((l) => l.startsWith("160000 "))) return "It has submodules: finish or remove that first.";
   if ((await git(path, ["rev-parse", "--is-shallow-repository"])).stdout.trim() === "true") return "It is a shallow clone: fetch its whole history first.";
   if ((await git(path, ["config", "--bool", "core.sparseCheckout"])).stdout.trim() === "true") return "It uses a sparse checkout: turn that off first.";
   return null;
@@ -235,8 +290,52 @@ async function walk(root: string, rel: string, out: LooseFile[], kind: LooseFile
   return total;
 }
 
+/** The address a repository's relative submodule URLs resolve against: its `origin`, else its first remote. */
+async function recordedRemote(top: string): Promise<string | null> {
+  const origin = (await git(top, ["config", "--get", "remote.origin.url"])).stdout.trim();
+  if (origin) return origin;
+  const first = (await git(top, ["config", "--get-regexp", "^remote\\..*\\.url$"])).stdout.split("\n")[0]?.split(" ").slice(1).join(" ").trim();
+  return first || null;
+}
+
+/** The gitlinks of the tree at `top` (from its index), with their names and URLs from its `.gitmodules`. */
+async function gitlinksOf(top: string): Promise<{ path: string; name: string; url: string }[]> {
+  const paths = nul((await git(top, ["ls-files", "-s", "-z"])).stdout)
+    .filter((l) => l.startsWith("160000 "))
+    .map((l) => l.slice(l.indexOf("\t") + 1));
+  if (!paths.length) return [];
+  const byPath = new Map<string, string>();
+  const urls = new Map<string, string>();
+  if (existsSync(join(top, ".gitmodules")))
+    for (const kv of nul((await git(top, ["config", "-z", "-f", ".gitmodules", "--get-regexp", "^submodule\\..*\\.(path|url)$"])).stdout)) {
+      const nl = kv.indexOf("\n");
+      const key = nl < 0 ? kv : kv.slice(0, nl);
+      const value = nl < 0 ? "" : kv.slice(nl + 1);
+      const name = key.slice("submodule.".length, key.lastIndexOf("."));
+      if (key.endsWith(".path")) byPath.set(value, name);
+      else urls.set(name, value);
+    }
+  return [...new Set(paths)].sort().map((p) => {
+    const name = byPath.get(p) ?? p;
+    return { path: p, name, url: urls.get(name) ?? "" };
+  });
+}
+
+/** Whether `dir` is a checked-out repository of its own (an initialised submodule), not the tree above it. */
+async function checkedOut(dir: string): Promise<boolean> {
+  if (!existsSync(join(dir, ".git"))) return false;
+  const top = (await git(dir, ["rev-parse", "--show-toplevel"])).stdout.trim();
+  return !!top && (await realOr(top)) === (await realOr(dir));
+}
+
 /** What one worktree would carry, and whether it can travel. Reads only. */
-export async function surveyWorktree(name: string, path: string): Promise<WorktreeSurvey> {
+export function surveyWorktree(name: string, path: string): Promise<WorktreeSurvey> {
+  return surveyTree(name, path, "", null);
+}
+
+/** A tree's survey; `key` is its path from the transported worktree ("" for that one), `base` the address its
+    relative submodule URLs resolve against when it is a submodule (null: its own recorded remote). */
+async function surveyTree(name: string, path: string, key: string, base: string | null): Promise<WorktreeSurvey> {
   const { gitDir, common, top } = await gitDirs(path);
   const main = (await realOr(gitDir)) === common;
   const head = (await git(path, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim();
@@ -275,12 +374,31 @@ export async function surveyWorktree(name: string, path: string): Promise<Worktr
     }
     if (nested.length) refusal = "It has nested repositories: finish or remove that first.";
   }
-  return { name, path: top, branch, head, refusal, loose, scratch, left, roots, remotes, main };
+  // Each submodule travels like the project (q32): checked out here, its own survey, its files by their path here.
+  const submodules: SubmoduleSurvey[] = [];
+  if (!refusal) {
+    const holder = base ?? (await recordedRemote(top));
+    for (const l of await gitlinksOf(top)) {
+      const dir = join(top, l.path);
+      const subKey = key ? `${key}/${l.path}` : l.path;
+      let url = resolveSubmoduleUrl(l.url, holder);
+      const tree = (await checkedOut(dir)) ? await surveyTree(l.name, dir, subKey, url || null) : null;
+      if (!url && tree?.remotes[0]) url = withoutCredentials(tree.remotes[0]);
+      submodules.push({ name: l.name, path: l.path, key: subKey, url, tree });
+      if (!tree) continue;
+      if (tree.refusal && !refusal) refusal = tree.refusal.replace(/^It (has|is|uses)/, `Its submodule ${subKey} $1`);
+      for (const f of tree.loose) loose.push({ ...f, path: `${l.path}/${f.path}` });
+      for (const d of tree.scratch) scratch.push({ dir: `${l.path}/${d.dir}`, size: d.size });
+      for (const d of tree.left) left.push(`${l.path}/${d}`);
+    }
+  }
+  return { name, path: top, branch, head, refusal, loose, scratch, left, roots, remotes, main, submodules };
 }
 
 // ---- the pack -----------------------------------------------------------------------------------
 
-export interface WorktreeMeta {
+/** A tree's tracked state, as it is rebuilt there: HEAD, the index and the working tree, and its submodules. */
+export interface TrackedMeta {
   name: string;
   branch: string | null;
   head: string;
@@ -291,13 +409,29 @@ export interface WorktreeMeta {
   ita: string[];
   skip: string[];
   assume: string[];
-  /** Every carried loose file: its sha256, or `L <target>` for a link. */
+  /** This repository's own ignore rules (`info/exclude`), carried so a file hidden here is hidden there. */
+  exclude?: string;
+  /** Its submodules, by path (none in a package from before they travelled). */
+  submodules?: SubmoduleMeta[];
+}
+
+export interface WorktreeMeta extends TrackedMeta {
+  /** Every carried loose file (its submodules' too, by their path in this tree): its sha256, or `L <target>` for a link. */
   files: Record<string, string>;
   /** The carried files git ignores that aren't in a scratch folder (the ticked private files). */
   private?: string[];
-  /** This repository's own ignore rules (`info/exclude`), carried so a file hidden here is hidden there. */
-  exclude?: string;
   main: boolean;
+}
+
+/** A submodule as it travels: its gitlink always; when it was checked out, its repository too. */
+export interface SubmoduleMeta {
+  name: string;
+  path: string;
+  key: string;
+  /** Its address there (no credentials; "" when none can be told). */
+  url: string;
+  /** Checked out where it came from: its commits (`<dir>/commits.bundle` in the code folder) and its state. */
+  repo?: TrackedMeta & { dir: string };
 }
 
 /** The transport's refs in the bundle: one per worktree. */
@@ -341,6 +475,11 @@ export async function historyBytes(trees: readonly WorktreeSurvey[]): Promise<nu
   const at = trees[0]!.path;
   const { heads } = await repoBranches(trees);
   const tips = [...new Set([...heads.map(([, s]) => s), ...trees.map((t) => t.head).filter(Boolean)])];
+  return (await objectBytes(at, tips)) + (await submoduleHistoryBytes(trees));
+}
+
+/** About how many bytes the objects reachable from `tips` take in the repository at `at`. */
+async function objectBytes(at: string, tips: readonly string[]): Promise<number> {
   const r = await git(at, ["rev-list", "--objects", "--disk-usage", ...tips]);
   if (r.code === 0 && /^\d+\s*$/.test(r.stdout)) return Number(r.stdout.trim());
   const c = await git(at, ["count-objects", "-v"]);
@@ -348,8 +487,129 @@ export async function historyBytes(trees: readonly WorktreeSurvey[]): Promise<nu
   return (kib("size") + kib("size-pack")) * 1024;
 }
 
+/** About how many bytes the checked-out submodules' histories add when they travel whole (each repository once). */
+export async function submoduleHistoryBytes(trees: readonly WorktreeSurvey[]): Promise<number> {
+  const seen = new Set<string>();
+  let n = 0;
+  const each = async (subs: readonly SubmoduleSurvey[]): Promise<void> => {
+    for (const s of subs) {
+      if (!s.tree) continue;
+      const { common } = await gitDirs(s.tree.path);
+      if (!seen.has(common)) {
+        seen.add(common);
+        n += await objectBytes(s.tree.path, [s.tree.head]);
+      }
+      await each(s.tree.submodules);
+    }
+  };
+  for (const t of trees) await each(t.submodules);
+  return n;
+}
+
+/** Every submodule of `trees` (nested ones too) with its key and address: what the destination checks it can fetch. */
+export function submodulesOf(trees: readonly WorktreeSurvey[]): { key: string; url: string }[] {
+  const out = new Map<string, string>();
+  const each = (subs: readonly SubmoduleSurvey[]): void => {
+    for (const s of subs) {
+      if (!out.has(s.key)) out.set(s.key, s.url);
+      if (s.tree) each(s.tree.submodules);
+    }
+  };
+  for (const t of trees) each(t.submodules);
+  return [...out].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([key, url]) => ({ key, url }));
+}
+
 async function statusSha(path: string): Promise<string> {
   return sha256(await ok(path, ["status", "--porcelain=v1", "-z", "-uno"], "Reading the status"));
+}
+
+/**
+ * A tree's HEAD, index and working tree as two commits on top of HEAD (index, then working tree), made in the scratch
+ * store `scratchGit` from a copy of its index (`tmpIndex`): nothing of the tree changes. The index flags that hide
+ * files from `add -u` and from the status are carried as lists and cleared in the copy.
+ */
+async function snapshotOf(t: WorktreeSurvey, scratchGit: string, tmpIndex: string): Promise<{ ct: string; ita: string[]; skip: string[]; assume: string[] }> {
+  const { gitDir, common } = await gitDirs(t.path);
+  if (existsSync(join(gitDir, "index"))) await copyFile(join(gitDir, "index"), tmpIndex);
+  else await rm(tmpIndex, { force: true });
+  const env = { ...SNAP_ENV, GIT_OBJECT_DIRECTORY: join(scratchGit, "objects"), GIT_ALTERNATE_OBJECT_DIRECTORIES: join(common, "objects"), GIT_INDEX_FILE: tmpIndex };
+  try {
+    const indexTree = (await ok(t.path, ["write-tree"], "Reading the index", { env })).trim();
+    const flags = (await ok(t.path, ["ls-files", "-v", "-z"], "Reading index flags")).split("\0").filter(Boolean);
+    const skip = flags.filter((l) => l.startsWith("S ") || l.startsWith("s ")).map((l) => l.slice(2));
+    const assume = flags.filter((l) => /^[a-z] /.test(l)).map((l) => l.slice(2));
+    const ita = nul(await ok(t.path, ["status", "--porcelain=v2", "-z", "-uno"], "Reading the status"))
+      .filter((l) => /^1 \.A /.test(l) && /^0+$/.test(l.split(" ")[7] ?? ""))
+      .map((l) => l.split(" ").slice(8).join(" "));
+    if (skip.length) await ok(t.path, ["update-index", "-z", "--no-skip-worktree", "--stdin"], "Clearing skip-worktree in the copy", { env, input: skip.join("\0") });
+    if (assume.length) await ok(t.path, ["update-index", "-z", "--no-assume-unchanged", "--stdin"], "Clearing assume-unchanged in the copy", { env, input: assume.join("\0") });
+    // A checked-out submodule's gitlink takes its HEAD here, as `add -u` records it.
+    await ok(t.path, ["add", "-u"], "Snapshotting the working tree", { env });
+    const workTree = (await ok(t.path, ["write-tree"], "Snapshotting the working tree", { env })).trim();
+    const ci = (await ok(t.path, ["commit-tree", indexTree, "-p", t.head, "-m", "index"], "Snapshotting the index", { env })).trim();
+    const ct = (await ok(t.path, ["commit-tree", workTree, "-p", ci, "-m", "worktree"], "Snapshotting the working tree", { env })).trim();
+    return { ct, ita, skip, assume };
+  } finally {
+    await rm(tmpIndex, { force: true });
+  }
+}
+
+/** A repository's own ignore rules (`info/exclude`) when they hold any rule. */
+async function excludeOf(common: string): Promise<string | undefined> {
+  try {
+    const ex = await readFile(join(common, "info", "exclude"), "utf8");
+    return ex.split("\n").some((l) => l.trim() && !l.startsWith("#")) ? ex : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Each submodule of a tree (q32): its gitlink always; a checked-out one also its HEAD, index and working tree, snapshot
+ * as the tree's own are, and its commits in `<dir>/modules/<i>/commits.bundle`: only what its remote lacks (by its
+ * remote-tracking refs here) when the destination reached that remote, else its whole history. Its loose files go in
+ * the holding tree's own (they are listed there). Nested submodules the same, inside it.
+ */
+async function packSubmodules(subs: readonly SubmoduleSurvey[], o: { tid: string; outDir: string; dir: string; fetchable: ReadonlySet<string>; n: { n: number } }): Promise<SubmoduleMeta[]> {
+  const out: SubmoduleMeta[] = [];
+  for (const [i, s] of [...subs].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)).entries()) {
+    const base: SubmoduleMeta = { name: s.name, path: s.path, key: s.key, url: s.url };
+    if (!s.tree) {
+      out.push(base);
+      continue;
+    }
+    const t = s.tree;
+    const dir = `${o.dir}/modules/${i}`;
+    const abs = join(o.outDir, dir);
+    await mkdir(abs, { recursive: true, mode: 0o700 });
+    const { common } = await gitDirs(t.path);
+    const scratchGit = join(o.outDir, `.sub-${o.n.n++}.git`);
+    await rm(scratchGit, { recursive: true, force: true });
+    await ok(o.outDir, ["init", "-q", "--bare", scratchGit], "Making the scratch store");
+    await writeFile(join(scratchGit, "objects", "info", "alternates"), `${join(common, "objects")}\n`);
+    try {
+      const { ct, ita, skip, assume } = await snapshotOf(t, scratchGit, join(o.outDir, `.index.sub-${o.n.n}`));
+      const ref = refOf(o.tid, "snap");
+      await ok(o.outDir, ["--git-dir", scratchGit, "update-ref", ref, ct], "Recording the snapshot");
+      const nots: string[] = [];
+      if (o.fetchable.has(s.key) && s.url)
+        for (const h of new Set((await git(t.path, ["for-each-ref", "--format=%(objectname)", "refs/remotes"])).stdout.split("\n").filter(Boolean)))
+          if ((await git(o.outDir, ["--git-dir", scratchGit, "cat-file", "-e", `${h}^{commit}`])).code === 0) nots.push(`^${h}`);
+      const bundle = join(abs, "commits.bundle");
+      let made = await git(o.outDir, ["--git-dir", scratchGit, "bundle", "create", "-q", bundle, ref, ...nots]);
+      if (made.code !== 0 && nots.length) made = await git(o.outDir, ["--git-dir", scratchGit, "bundle", "create", "-q", bundle, ref]);
+      if (made.code !== 0) throw new SnapshotError("git", `Making the bundle of submodule ${s.key}: ${made.stderr.trim()}`);
+      const exclude = await excludeOf(common);
+      const nested = await packSubmodules(t.submodules, { ...o, dir });
+      out.push({
+        ...base,
+        repo: { dir, name: s.name, branch: t.branch, head: t.head, snap: ct, statusSha: await statusSha(t.path), ita, skip, assume, ...(exclude ? { exclude } : {}), ...(nested.length ? { submodules: nested } : {}) },
+      });
+    } finally {
+      await rm(scratchGit, { recursive: true, force: true });
+    }
+  }
+  return out;
 }
 
 /**
@@ -367,6 +627,9 @@ export async function packWorktrees(o: {
   /** The destination lacks the repository and can't clone it: the bundle carries its default branch and the
       worktrees' branches too, with their whole history. */
   repo?: boolean;
+  /** The submodules (by key) whose remotes the destination reached: only what those remotes lack travels for them;
+      every other checked-out submodule travels with its history. */
+  fetchable?: readonly string[];
 }): Promise<{ metas: WorktreeMeta[]; bundle: string; repo?: RepoMeta }> {
   if (!o.trees.length) throw new SnapshotError("refused", "No worktree to pack.");
   for (const t of o.trees) if (t.refusal) throw new SnapshotError("refused", t.refusal);
@@ -378,31 +641,14 @@ export async function packWorktrees(o: {
   await writeFile(join(scratchGit, "objects", "info", "alternates"), `${join(common, "objects")}\n`);
   const metas: WorktreeMeta[] = [];
   const refs: string[] = [];
+  const counter = { n: 0 };
   try {
     for (const t of o.trees) {
-      const { gitDir } = await gitDirs(t.path);
       const wo = join(o.outDir, t.name);
       await mkdir(wo, { recursive: true, mode: 0o700 });
-      const tmpIndex = join(o.outDir, `.index.${t.name}`);
-      if (existsSync(join(gitDir, "index"))) await copyFile(join(gitDir, "index"), tmpIndex);
-      else await rm(tmpIndex, { force: true });
-      const env = { ...SNAP_ENV, GIT_OBJECT_DIRECTORY: join(scratchGit, "objects"), GIT_ALTERNATE_OBJECT_DIRECTORIES: join(common, "objects"), GIT_INDEX_FILE: tmpIndex };
-      const indexTree = (await ok(t.path, ["write-tree"], "Reading the index", { env })).trim();
-      // Index flags that hide files from `add -u` and from the status: carried as lists, cleared in the copy.
-      const flags = (await ok(t.path, ["ls-files", "-v", "-z"], "Reading index flags")).split("\0").filter(Boolean);
-      const skip = flags.filter((l) => l.startsWith("S ") || l.startsWith("s ")).map((l) => l.slice(2));
-      const assume = flags.filter((l) => /^[a-z] /.test(l)).map((l) => l.slice(2));
-      const ita = nul(await ok(t.path, ["status", "--porcelain=v2", "-z", "-uno"], "Reading the status"))
-        .filter((l) => /^1 \.A /.test(l) && /^0+$/.test(l.split(" ")[7] ?? ""))
-        .map((l) => l.split(" ").slice(8).join(" "));
-      if (skip.length) await ok(t.path, ["update-index", "-z", "--no-skip-worktree", "--stdin"], "Clearing skip-worktree in the copy", { env, input: skip.join("\0") });
-      if (assume.length) await ok(t.path, ["update-index", "-z", "--no-assume-unchanged", "--stdin"], "Clearing assume-unchanged in the copy", { env, input: assume.join("\0") });
-      await ok(t.path, ["add", "-u"], "Snapshotting the working tree", { env });
-      const workTree = (await ok(t.path, ["write-tree"], "Snapshotting the working tree", { env })).trim();
-      const ci = (await ok(t.path, ["commit-tree", indexTree, "-p", t.head, "-m", "index"], "Snapshotting the index", { env })).trim();
-      const ct = (await ok(t.path, ["commit-tree", workTree, "-p", ci, "-m", "worktree"], "Snapshotting the working tree", { env })).trim();
-      await rm(tmpIndex, { force: true });
+      const { ct, ita, skip, assume } = await snapshotOf(t, scratchGit, join(o.outDir, `.index.${t.name}`));
       await ok(o.outDir, ["--git-dir", scratchGit, "update-ref", refOf(o.tid, t.name), ct], "Recording the snapshot");
+      const submodules = await packSubmodules(t.submodules, { tid: o.tid, outDir: o.outDir, dir: t.name, fetchable: new Set(o.fetchable ?? []), n: counter });
       refs.push(refOf(o.tid, t.name));
       // The loose files, by tar: full modes and links (git keeps only the executable bit).
       const files: Record<string, string> = {};
@@ -426,14 +672,8 @@ export async function packWorktrees(o: {
         if (f.kind === "private") privates.push(f.path);
       }
       await writeTar(join(wo, "loose.tar"), entries);
-      let exclude: string | undefined;
-      try {
-        const ex = await readFile(join(common, "info", "exclude"), "utf8");
-        if (ex.split("\n").some((l) => l.trim() && !l.startsWith("#"))) exclude = ex;
-      } catch {
-        // no exclude file
-      }
-      const meta: WorktreeMeta = { name: t.name, branch: t.branch, head: t.head, snap: ct, statusSha: await statusSha(t.path), ita, skip, assume, files, ...(privates.length ? { private: privates } : {}), ...(exclude ? { exclude } : {}), main: t.main };
+      const exclude = await excludeOf(common);
+      const meta: WorktreeMeta = { name: t.name, branch: t.branch, head: t.head, snap: ct, statusSha: await statusSha(t.path), ita, skip, assume, files, ...(privates.length ? { private: privates } : {}), ...(exclude ? { exclude } : {}), ...(submodules.length ? { submodules } : {}), main: t.main };
       await writeFile(join(wo, "worktree.json"), `${JSON.stringify(meta)}\n`, { mode: 0o600 });
       metas.push(meta);
     }
@@ -482,12 +722,16 @@ export interface StagedTree {
   baseHead?: string;
   /** The base folder was made for this transport (it didn't exist when the offer came). */
   ours?: boolean;
+  /** The package's code folder: a base folder's submodules are built from it at publish. */
+  code?: string;
+  /** Its submodules that weren't checked out where it came from: each arrives as its gitlink only (by key). */
+  uninitialised?: string[];
 }
 
 const stageOf = (target: string, tid: string) => join(dirname(target), `.incoming-${tid}-${basename(target)}`);
 
 /** Whether `target` already holds exactly this worktree (a retry after publish). */
-async function holds(target: string, meta: WorktreeMeta): Promise<boolean> {
+async function holds(target: string, meta: TrackedMeta): Promise<boolean> {
   if (!existsSync(join(target, ".git"))) return false;
   const head = (await git(target, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim();
   if (head !== meta.head || (await statusSha(target).catch(() => "")) !== meta.statusSha) return false;
@@ -540,7 +784,7 @@ async function baseOf(target: string, meta: WorktreeMeta, ours: boolean, tid: st
 }
 
 /** Files the snapshot adds since `from` that a file there already stands on (writing the changes would replace it). */
-async function inTheWay(target: string, meta: WorktreeMeta, from: string): Promise<string[]> {
+async function inTheWay(target: string, meta: { snap: string }, from: string): Promise<string[]> {
   const added = nul(await ok(target, ["diff", "--name-only", "-z", "--no-renames", "--diff-filter=A", from, `${meta.snap}^{tree}`], "Reading the changes"));
   const out = new Set<string>();
   const kind = (rel: string) => lstat(join(target, rel)).then((st) => (st.isDirectory() ? "dir" : "other"), () => "none");
@@ -575,7 +819,7 @@ async function baseTree(repo: string, codeDir: string, meta: WorktreeMeta, targe
   }
   const way = await inTheWay(target, meta, head);
   if (way.length) throw new SnapshotError("taken", `${target} already has ${way.slice(0, 3).join(", ")}${way.length > 3 ? ` and ${way.length - 3} more` : ""}, which the chat's code adds; nothing was replaced. Move ${way.length === 1 ? "it" : "them"} away or pick another folder.`);
-  return { ...(await heldTree(codeDir, meta, target)), base: meta, baseHead: head, branch: base.branch, ...(base.renamedFrom ? { renamedFrom: base.renamedFrom } : {}), ...(ours ? { ours: true } : {}) };
+  return { ...(await heldTree(codeDir, meta, target)), base: meta, baseHead: head, branch: base.branch, ...(base.renamedFrom ? { renamedFrom: base.renamedFrom } : {}), ...(ours ? { ours: true } : {}), ...(meta.submodules?.some((s) => s.repo) ? { code: codeDir } : {}) };
 }
 
 /** At publish: a base folder takes the chat's commit, branch and unfinished changes (working tree, index, flags). */
@@ -594,6 +838,7 @@ async function applyBase(t: StagedTree): Promise<void> {
   if (meta.ita.length) await ok(t.target, ["add", "-N", "--pathspec-from-file=-", "--pathspec-file-nul"], "Marking intent-to-add", { input: meta.ita.join("\0") });
   if (meta.assume.length) await ok(t.target, ["update-index", "-z", "--assume-unchanged", "--stdin"], "Marking assume-unchanged", { input: meta.assume.join("\0") });
   if (meta.skip.length) await ok(t.target, ["update-index", "-z", "--skip-worktree", "--stdin"], "Marking skip-worktree", { input: meta.skip.join("\0") });
+  for (const sm of meta.submodules ?? []) if (sm.repo && t.code) await buildSubmodule(t.target, t.code, sm);
   await git(t.target, ["update-index", "-q", "--refresh"]);
   if ((await statusSha(t.target)) !== meta.statusSha) throw new SnapshotError("mismatch", `${meta.name} didn't take its changes exactly there.`);
 }
@@ -645,12 +890,15 @@ async function putLoose(t: StagedTree, from: string, kept: KeptFile[]): Promise<
     for (let i = 2; (await shaOf(join(t.target, beside))) !== "missing" && (await shaOf(join(t.target, beside))) !== want; i++) beside = `${p}.${tag}-${i}`;
     if ((await shaOf(join(t.target, beside))) === "missing") await placeLoose(src, join(t.target, beside));
     // A private file's arrived copy stays as hidden from git as the file it sits beside (never committed by mistake).
-    if (t.private?.includes(p) && (await git(t.target, ["check-ignore", "-q", "--no-index", beside])).code !== 0) {
-      const { common } = await gitDirs(t.target);
+    // A submodule's file: the repository holding it is the submodule's, and so are its ignore rules.
+    const holder = t.private?.includes(p) ? (await git(dirname(join(t.target, beside)), ["rev-parse", "--show-toplevel"])).stdout.trim() || t.target : t.target;
+    const rel = relative(await realOr(holder), join(await realOr(dirname(join(t.target, beside))), basename(beside)));
+    if (t.private?.includes(p) && (await git(holder, ["check-ignore", "-q", "--no-index", rel])).code !== 0) {
+      const { common } = await gitDirs(holder);
       await mkdir(join(common, "info"), { recursive: true });
       const file = join(common, "info", "exclude");
       const have = await readFile(file, "utf8").catch(() => "");
-      const line = `/${beside.replace(/([*?[\]\\!#])/g, "\\$1")}`;
+      const line = `/${rel.replace(/([*?[\]\\!#])/g, "\\$1")}`;
       if (!have.split("\n").includes(line)) await writeFile(file, `${have}${have && !have.endsWith("\n") ? "\n" : ""}${line}\n`);
     }
     kept.push({ tree: t.name, path: p, beside });
@@ -807,10 +1055,18 @@ async function rebuildOne(repo: string | null, codeDir: string, tid: string, met
 }
 
 async function finishStage(stage: string, wo: string, meta: WorktreeMeta): Promise<void> {
-  // index = working tree = the source's working tree; then index = the source's index, files untouched.
+  await writeTracked(stage, dirname(wo), meta);
+  // The loose files after the submodules: theirs go inside them.
+  await extractTar(join(wo, "loose.tar"), stage);
+  await verify(stage, meta);
+}
+
+/** A tree's tracked state written at `stage`: index = working tree = the source's working tree, then index = the
+    source's index (files untouched); its submodules built inside; its own ignore rules and index flags as there. */
+async function writeTracked(stage: string, codeDir: string, meta: TrackedMeta): Promise<void> {
   await ok(stage, ["read-tree", "--reset", "-u", `${meta.snap}^{tree}`], "Writing the working tree");
   await ok(stage, ["read-tree", "-m", `${meta.snap}^{tree}`, `${meta.snap}^^{tree}`], "Writing the index");
-  await extractTar(join(wo, "loose.tar"), stage);
+  for (const sm of meta.submodules ?? []) await buildSubmodule(stage, codeDir, sm);
   if (meta.exclude) {
     const { common } = await gitDirs(stage);
     await mkdir(join(common, "info"), { recursive: true });
@@ -822,7 +1078,118 @@ async function finishStage(stage: string, wo: string, meta: WorktreeMeta): Promi
   if (meta.ita.length) await ok(stage, ["add", "-N", "--pathspec-from-file=-", "--pathspec-file-nul"], "Marking intent-to-add", { input: meta.ita.join("\0") });
   if (meta.assume.length) await ok(stage, ["update-index", "-z", "--assume-unchanged", "--stdin"], "Marking assume-unchanged", { input: meta.assume.join("\0") });
   if (meta.skip.length) await ok(stage, ["update-index", "-z", "--skip-worktree", "--stdin"], "Marking skip-worktree", { input: meta.skip.join("\0") });
-  await verify(stage, meta);
+}
+
+// ---- submodules there (q32) -----------------------------------------------------------------------
+
+/** Join a submodule's folder `at` and its repository `mod` as git's own layout does: `at/.git` names `mod`, and
+    `mod`'s `core.worktree` names `at`, each by a relative path. */
+async function connectSubmodule(at: string, mod: string): Promise<void> {
+  const realAt = await realOr(at);
+  const realMod = await realOr(mod);
+  await writeFile(join(at, ".git"), `gitdir: ${relative(realAt, realMod)}\n`);
+  // By its config file: git run on the repository would first go to the folder its config still names.
+  await ok("/", ["config", "--file", join(realMod, "config"), "core.bare", "false"], "Joining the submodule");
+  await ok("/", ["config", "--file", join(realMod, "config"), "core.worktree", relative(realMod, realAt)], "Joining the submodule");
+}
+
+/** A submodule's commits fetched into the repository at `at`: its package's bundle, after what its remote has when
+    the bundle carries only what the remote lacks (fetched asking for nothing). Never with credentials. */
+async function fetchSubmodule(at: string, codeDir: string, sm: SubmoduleMeta): Promise<void> {
+  const r = sm.repo!;
+  const bundle = join(codeDir, r.dir, "commits.bundle");
+  if (sm.url && plainRemote(sm.url) && !(await git(at, ["remote", "get-url", "origin"])).stdout.trim()) await ok(at, ["remote", "add", "origin", sm.url], "Recording the submodule's remote");
+  let v = await git(at, ["bundle", "verify", "-q", bundle]);
+  if (v.code !== 0 && sm.url && plainRemote(sm.url)) {
+    await git(at, [...PROMPT_FREE_ARGS, "fetch", "-q", sm.url, "+refs/heads/*:refs/remotes/origin/*"], { env: PROMPT_FREE });
+    v = await git(at, ["bundle", "verify", "-q", bundle]);
+  }
+  if (v.code !== 0) throw new SnapshotError("needs-base", `The submodule ${sm.key} lacks commits the package builds on, and ${sm.url ? `its remote ${sm.url} didn't give them here` : "it has no remote recorded"}.`);
+  await ok(at, ["fetch", "-q", bundle, "+refs/sova/transport/*:refs/sova/transport/*"], `Fetching the submodule ${sm.key}`);
+}
+
+/** The submodule's HEAD as it was where it came from: detached at its commit, or on its branch (moved there when the
+    name is free or behind it, else the edge-case suffix). */
+async function checkOutSubmodule(at: string, r: TrackedMeta): Promise<void> {
+  if (!r.branch) return void (await ok(at, ["update-ref", "--no-deref", "HEAD", r.head], "Checking out the submodule's commit"));
+  const cur = (await git(at, ["rev-parse", "-q", "--verify", `refs/heads/${r.branch}`])).stdout.trim();
+  const behind = !cur || cur === r.head || (await git(at, ["merge-base", "--is-ancestor", cur, r.head])).code === 0;
+  const name = behind ? r.branch : ((await branchThere(at, r.branch, r.head, "submodule")).branch ?? r.branch);
+  await ok(at, ["update-ref", `refs/heads/${name}`, r.head], "Making the submodule's branch");
+  await ok(at, ["symbolic-ref", "HEAD", `refs/heads/${name}`], "Checking out the submodule's branch");
+}
+
+/** Check a rebuilt submodule against what the source recorded (its HEAD and tracked status), then drop the
+    transport's refs in it. */
+async function verifySubmodule(at: string, sm: SubmoduleMeta): Promise<void> {
+  const r = sm.repo!;
+  await git(at, ["update-index", "-q", "--refresh"]);
+  const head = (await git(at, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim();
+  if (head !== r.head || (await statusSha(at)) !== r.statusSha) {
+    const short = (await git(at, ["status", "--short", "-uno"])).stdout.split("\n").slice(0, 5).join("; ");
+    throw new SnapshotError("mismatch", `The submodule ${sm.key} didn't rebuild exactly (${head !== r.head ? "its commit differs" : `status differs: ${short || "no detail"}`}).`);
+  }
+  const refs = (await git(at, ["for-each-ref", "--format=delete %(refname)", "refs/sova/transport/"])).stdout;
+  if (refs.trim()) await git(at, ["update-ref", "--stdin"], { input: refs });
+}
+
+/**
+ * One submodule of the tree at `top`, as it was where it came from (q32): one never checked out there stays a gitlink
+ * (its empty folder); a checked-out one gets its repository in git's own layout (`<top's git dir>/modules/<name>`),
+ * its commits, its HEAD, its unfinished changes and its own submodules, and is checked like the tree; the holding
+ * repository records its URL and marks it active, as `git submodule init` does, unless it already does. One already
+ * checked out there (a project prepared there) takes the chat's state when it is clean and its commit is the chat's
+ * or behind it; a folder with files of its own is refused, replacing nothing.
+ */
+async function buildSubmodule(top: string, codeDir: string, sm: SubmoduleMeta): Promise<void> {
+  const r = sm.repo;
+  if (!r) return;
+  const at = join(top, sm.path);
+  if (await checkedOut(at)) {
+    if (await holds(at, r)) return;
+    const changed = (await git(at, ["status", "--porcelain=v1", "-uno"])).stdout.trim();
+    if (changed) throw new SnapshotError("taken", `${at} has changes of its own; nothing was replaced. Commit or move them away, or pick another folder.`);
+    const head = (await git(at, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim();
+    await fetchSubmodule(at, codeDir, sm);
+    if (head && head !== r.head && (await git(at, ["merge-base", "--is-ancestor", head, r.head])).code !== 0)
+      throw new SnapshotError("taken", `${at} is at a commit the chat's submodule ${sm.key} doesn't build on; nothing was replaced. Pick another folder.`);
+    const way = head ? await inTheWay(at, r, head) : [];
+    if (way.length) throw new SnapshotError("taken", `${at} already has ${way.slice(0, 3).join(", ")}${way.length > 3 ? ` and ${way.length - 3} more` : ""}, which the chat's submodule adds; nothing was replaced. Move ${way.length === 1 ? "it" : "them"} away or pick another folder.`);
+  } else {
+    await mkdir(at, { recursive: true });
+    if ((await readdir(at)).length) throw new SnapshotError("taken", `${at} already has files where the chat's submodule ${sm.key} goes; nothing was replaced. Move them away or pick another folder.`);
+    const gitDir = await realOr((await ok(top, ["rev-parse", "--absolute-git-dir"], "Reading the repository")).trim());
+    const mod = join(gitDir, "modules", sm.name);
+    await mkdir(mod, { recursive: true });
+    await ok(top, ["init", "-q", "--bare", mod], `Making the submodule ${sm.key}`);
+    await connectSubmodule(at, mod);
+    await fetchSubmodule(at, codeDir, sm);
+  }
+  await checkOutSubmodule(at, r);
+  await writeTracked(at, codeDir, r);
+  await verifySubmodule(at, sm);
+  const has = async (k: string) => (await git(top, ["config", "--get", k])).stdout.trim();
+  if (sm.url && !(await has(`submodule.${sm.name}.url`))) await ok(top, ["config", `submodule.${sm.name}.url`, sm.url], "Recording the submodule's URL");
+  if (!(await has(`submodule.${sm.name}.active`))) await ok(top, ["config", `submodule.${sm.name}.active`, "true"], "Marking the submodule active");
+}
+
+/** After a tree moved (its stage renamed into place), each checked-out submodule joined again to its repository in
+    git's layout, nested ones too. A submodule whose `.git` names another existing repository is left as it is. */
+async function reconnectSubmodules(dir: string): Promise<void> {
+  const links = await gitlinksOf(dir);
+  if (!links.length) return;
+  const gitDir = await realOr((await ok(dir, ["rev-parse", "--absolute-git-dir"], "Reading the repository")).trim());
+  for (const l of links) {
+    const at = join(dir, l.path);
+    const mod = join(gitDir, "modules", l.name);
+    const file = join(at, ".git");
+    if (!existsSync(mod) || !(await lstat(file).then((st) => st.isFile(), () => false))) continue;
+    const named = /^gitdir: (.*)$/m.exec(await readFile(file, "utf8"))?.[1]?.trim() ?? "";
+    const was = named.startsWith("/") ? named : join(at, named);
+    if (existsSync(was) && (await realOr(was)) !== mod) continue;
+    await connectSubmodule(at, mod);
+    await reconnectSubmodules(at);
+  }
 }
 
 /**
@@ -897,7 +1264,17 @@ export async function rebuildWorktrees(o: {
     }
     out.push(await rebuildOne(repo, o.codeDir, o.tid, m, target));
   }
-  return out;
+  // A submodule never checked out where it came from arrives as its gitlink only, and the arrival says so.
+  return out.map((t) => {
+    const m = o.metas.find((x) => x.name === t.name);
+    const left = m ? uninitialisedOf(m) : [];
+    return left.length ? { ...t, uninitialised: left } : t;
+  });
+}
+
+/** The keys of a tree's submodules (nested ones too) that travel as their gitlink only. */
+function uninitialisedOf(meta: TrackedMeta): string[] {
+  return (meta.submodules ?? []).flatMap((s) => (s.repo ? uninitialisedOf(s.repo) : [s.key]));
 }
 
 /** Move each staged tree into its folder (the main checkout first), then drop the transport's refs. A folder that
@@ -936,12 +1313,18 @@ async function publishStages(trees: readonly StagedTree[], tid: string): Promise
   for (const t of trees) {
     if (t.main || t.stage === t.target) continue;
     if (existsSync(t.target)) throw new SnapshotError("taken", `${t.target} exists there now; nothing was removed. Move it away or pick another folder.`);
-    const common = (await gitDirs(t.stage)).common;
+    const { gitDir, common } = await gitDirs(t.stage);
     await mkdir(dirname(t.target), { recursive: true });
-    await ok(dirname(common), ["--git-dir", common, "worktree", "move", t.stage, t.target], `Moving ${t.name} into place`);
+    // git won't move a worktree holding submodules: renamed, then git's records of it repaired.
+    if (existsSync(join(gitDir, "modules"))) {
+      await rename(t.stage, t.target);
+      await ok(dirname(common), ["--git-dir", common, "worktree", "repair", t.target], `Moving ${t.name} into place`);
+    } else await ok(dirname(common), ["--git-dir", common, "worktree", "move", t.stage, t.target], `Moving ${t.name} into place`);
     repo ??= dirname(common);
   }
   if (main) for (const t of trees) if (!t.main) await git(main.target, ["worktree", "repair", t.target]);
+  // Each submodule's repository and folder name each other again where they are now.
+  for (const t of trees) if (t.stage !== t.target) await reconnectSubmodules(t.target);
   const at = repo ?? (trees[0] ? trees[0].target : null);
   if (at) {
     const refs = (await git(at, ["for-each-ref", "--format=delete %(refname)", `refs/sova/transport/${tid}/`])).stdout;

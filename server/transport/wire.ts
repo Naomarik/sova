@@ -43,8 +43,10 @@ export interface OfferBody {
   folder: string;
   /** The repository's main folder there, relative to the folder's parent, when the chat's tree is a linked worktree. */
   repoRel: string | null;
-  /** The repository's remotes (no credentials) and its first commits. */
-  project: { remotes: string[]; roots: string[] };
+  /** The repository's remotes (no credentials) and its first commits; its submodules (nested ones too), each by its
+      path from the chat's tree with its address (relative ones resolved, no credentials), for that device to check
+      which it can fetch. */
+  project: { remotes: string[]; roots: string[]; submodules?: { key: string; url: string }[] };
   trees: OfferTree[];
   sourceLabel: string;
   model?: string;
@@ -66,6 +68,9 @@ export interface StatusBody {
   /** The project comes from this device: the repository isn't there and can't be cloned there, so the package
       carries its branches and history (§app.transport/package). */
   fromSource?: boolean;
+  /** The submodules (by key) whose remotes answered from there: only what those lack travels; every other checked-out
+      submodule travels with its history (§app.transport/package). */
+  subsFetch?: string[];
   needsYou?: string;
   received?: number;
   /** The chat's id there once published. */

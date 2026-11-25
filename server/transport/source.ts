@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { agentRoot, stateRoot } from "../state-root";
 import { chatHome, hasHome } from "../chat-homes/root";
-import { git, historyBytes, type LooseFile, LARGE_FILE, looseBytes, surveyWorktree, type WorktreeSurvey } from "./git-snapshot";
+import { git, historyBytes, type LooseFile, LARGE_FILE, looseBytes, submodulesOf, surveyWorktree, type WorktreeSurvey } from "./git-snapshot";
 import { bringHelpersToRest, knob, previewExtras } from "./hooks";
 import { movedOf } from "./moved";
 import { buildPackage } from "./package";
@@ -402,7 +402,7 @@ async function sendOffer(tid: string): Promise<{ ok: true } | { ok: false; error
     chat: { id: r.chatId, title: r.title },
     folder,
     repoRel: ext.repoRel ?? null,
-    project: { remotes: (own?.remotes ?? []).map(stripCredentials), roots: own?.roots ?? [] },
+    project: { remotes: (own?.remotes ?? []).map(stripCredentials), roots: own?.roots ?? [], ...(t && submodulesOf(t.trees).length ? { submodules: submodulesOf(t.trees) } : {}) },
     trees: ext.offerTrees ?? [],
     sourceLabel: d.selfLabel(),
     ...(r.choices?.agentModel ? { model: r.choices.agentModel } : {}),
@@ -503,7 +503,7 @@ async function step(r: TransportRecord): Promise<"wait" | "again" | "stop"> {
   }
   if (s.steps.prepared && !r.steps.packed) {
     // That device lacks the project and can't clone it: the package carries the repository too.
-    updateTransport(r.tid, { haves: s.haves ?? [], ext: { fromSource: s.fromSource === true } });
+    updateTransport(r.tid, { haves: s.haves ?? [], ext: { fromSource: s.fromSource === true, subsFetch: Array.isArray(s.subsFetch) ? s.subsFetch.filter((k) => typeof k === "string").slice(0, 200) : [] } });
     await pack(readTransport(r.tid)!);
     return "again";
   }
@@ -588,6 +588,7 @@ async function pack(r: TransportRecord): Promise<void> {
     wrapped: cur.wrapped ?? [],
     usage,
     ...(((cur.ext ?? {}) as { fromSource?: boolean }).fromSource ? { repo: true } : {}),
+    subsFetch: ((cur.ext ?? {}) as { subsFetch?: string[] }).subsFetch ?? [],
   });
   await knob(r.tid, "packed");
   stepDone(r.tid, "packed", {

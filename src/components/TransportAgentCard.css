@@ -1,13 +1,18 @@
-/* The Transport agent's card in a chat (components/TransportAgentCard.tsx), laid out as the owner request note. */
-.transport-agent-card { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-1); overflow-wrap: anywhere; }
+/* The Transport agent's card in a chat (components/TransportAgentCard.tsx): a body laid out as the owner request
+   note, then every action in one .card-foot row (answers first, Open Agent Chat last), which wraps as one group. */
+.transport-agent-card { overflow-wrap: anywhere; }
+.transport-agent-card-body { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-1); }
 .transport-agent-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
 .transport-agent-card-title { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .transport-agent-card-name,
 .transport-agent-card-line { margin: 0; }
 .transport-agent-card-list { margin: 0; padding-left: var(--space-5); }
-.transport-agent-card-foot { display: flex; gap: var(--space-2); padding-top: var(--space-1); }
 .transport-agent-card-host { display: grid; gap: var(--space-2); padding-top: var(--space-1); }
 .transport-agent-card-host .field-error { margin: 0; }
 .transport-agent-card-ask { display: grid; gap: var(--space-1); padding-top: var(--space-1); }
 .transport-agent-card-ask .field-error { margin: 0; }
-.transport-agent-card-command { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); color: var(--color-ink); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; font-size: var(--fs-caption); }
+.transport-agent-card-command-n { font-weight: var(--fw-medium); color: var(--color-ink); }
+/* The command and its Copy Command: side by side, the button under the command once the card is too narrow. */
+.transport-agent-card-command-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2); }
+.transport-agent-card-command { flex: 1 1 16rem; min-width: 0; margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); color: var(--color-ink); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; font-size: var(--fs-caption); }
+.transport-agent-card-command-row > .button { flex: none; margin-left: auto; }

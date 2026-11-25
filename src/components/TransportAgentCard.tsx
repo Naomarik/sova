@@ -1,9 +1,11 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, createUniqueId, For, onCleanup, onMount, Show } from "solid-js";
 import type { TransportAgentNote } from "../../shared/transport-agent-card";
 import { sessionHrefOn } from "../lib/mesh";
 import { allowTransportDownloads, saveTransportHostValues, transportAdminDone, type TransportView, transportOf } from "../lib/transport-api";
+import { transportCardActions } from "../lib/transport-card-actions";
+import { copyText } from "../lib/ui-state";
 import { TextField } from "./form";
-import { Chip } from "./ui";
+import { Chip, CopyButton } from "./ui";
 import "./TransportAgentCard.css";
 
 /** How often a working agent's card reads its transport again. */
@@ -24,7 +26,8 @@ const STATE: Record<"working" | "ready" | "needs-you", { word: string; tone: "ac
  * (Save Values writes them here, on your click), and says why the agent couldn't start when this device can't confine it.
  * On either device it shows what the agent asks you: a download list (each tool, its version and its site), which
  * Allow Downloads lets it fetch from exactly those sites, and a command needing administrator rights, which you run
- * yourself and answer with Done. While either waits, the card reads Needs you, never Ready.
+ * yourself (Copy Command beside it) and answer with Done. Every button sits in one row at the card's foot: the answers
+ * first, the first of them primary, then Open Agent Chat. While either waits, the card reads Needs you, never Ready.
  */
 export function TransportAgentCard(props: { card: TransportAgentNote }) {
   const [view, setView] = createSignal<TransportView | null>(null);
@@ -98,109 +101,130 @@ export function TransportAgentCard(props: { card: TransportAgentNote }) {
     const v = view();
     return a && v ? sessionHrefOn(v.side === "source" ? v.peer : null, a.path) : null;
   };
+  const actions = () =>
+    transportCardActions({
+      downloads: downloads()?.state === "asked" ? downloads()!.id : null,
+      commands: askedSteps().map((st) => st.id),
+      hostValues: asks().length > 0,
+      href: href(),
+    });
+  const formId = createUniqueId();
+  const kind = (primary: boolean) => `button button-sm${primary ? " button-primary" : ""}`;
   return (
     <section class="card transport-agent-card" aria-label={`Transport agent on ${device()}`}>
-      <div class="transport-agent-card-head">
-        <span class="transport-agent-card-title">Transport agent on {device()}</span>
-        <Show when={agent()} fallback={<Show when={blocked()}><Chip tone={STATE["needs-you"].tone}>{STATE["needs-you"].word}</Chip></Show>}>
-          {(a) => <Chip tone={STATE[shown(a().state)].tone} live={shown(a().state) === "working"}>{STATE[shown(a().state)].word}</Chip>}
-        </Show>
-      </div>
-      <p class="transport-agent-card-name text-caption text-muted">{agent()?.title ?? props.card.title}</p>
-      <Show when={blocked()}>{(why) => <p class="transport-agent-card-line text-caption">{why()}.</p>}</Show>
-      <Show when={agent()} fallback={<Show when={!blocked() && !asks().length && !saved()}><p class="transport-agent-card-line text-caption">Its progress shows on {device()}.</p></Show>}>
-        {(a) => (
-          <Show when={left().length > 0} fallback={<Show when={!waiting()}><p class="transport-agent-card-line text-caption">{a().state === "ready" ? `${device()} has what this project needs.` : "Checking what's left to set up."}</p></Show>}>
-            <p class="transport-agent-card-line text-caption">{shown(a().state) === "needs-you" ? "Still missing:" : "Setting up:"}</p>
-            <ul class="transport-agent-card-list text-caption">
-              <For each={left()}>{(c) => <li>{c.detail}</li>}</For>
-            </ul>
+      <div class="transport-agent-card-body">
+        <div class="transport-agent-card-head">
+          <span class="transport-agent-card-title">Transport agent on {device()}</span>
+          <Show when={agent()} fallback={<Show when={blocked()}><Chip tone={STATE["needs-you"].tone}>{STATE["needs-you"].word}</Chip></Show>}>
+            {(a) => <Chip tone={STATE[shown(a().state)].tone} live={shown(a().state) === "working"}>{STATE[shown(a().state)].word}</Chip>}
           </Show>
-        )}
-      </Show>
-      <Show when={downloads()}>
-        {(d) => (
-          <Show
-            when={d().state === "asked"}
-            fallback={<p class="transport-agent-card-line text-caption">Allowed from <span class="text-mono">{hostsText(d().items)}</span>. The agent carries on.</p>}
-          >
+        </div>
+        <p class="transport-agent-card-name text-caption text-muted">{agent()?.title ?? props.card.title}</p>
+        <Show when={blocked()}>{(why) => <p class="transport-agent-card-line text-caption">{why()}.</p>}</Show>
+        <Show when={agent()} fallback={<Show when={!blocked() && !asks().length && !saved()}><p class="transport-agent-card-line text-caption">Its progress shows on {device()}.</p></Show>}>
+          {(a) => (
+            <Show when={left().length > 0} fallback={<Show when={!waiting()}><p class="transport-agent-card-line text-caption">{a().state === "ready" ? `${device()} has what this project needs.` : "Checking what's left to set up."}</p></Show>}>
+              <p class="transport-agent-card-line text-caption">{shown(a().state) === "needs-you" ? "Still missing:" : "Setting up:"}</p>
+              <ul class="transport-agent-card-list text-caption">
+                <For each={left()}>{(c) => <li>{c.detail}</li>}</For>
+              </ul>
+            </Show>
+          )}
+        </Show>
+        <Show when={downloads()}>
+          {(d) => (
+            <Show
+              when={d().state === "asked"}
+              fallback={<p class="transport-agent-card-line text-caption">Allowed from <span class="text-mono">{hostsText(d().items)}</span>. The agent carries on.</p>}
+            >
+              <div class="transport-agent-card-ask">
+                <p class="transport-agent-card-line text-caption">
+                  It needs to download {d().items.length === 1 ? "1 tool" : `${d().items.length} tools`} from sites its sandbox doesn't reach. Nothing downloads until you allow it.
+                </p>
+                <ul class="transport-agent-card-list text-caption">
+                  <For each={d().items}>
+                    {(i) => (
+                      <li>
+                        {i.tool} {i.version} <span class="text-muted">from</span> <span class="text-mono">{i.host}</span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+                <Show when={d().why}>{(w) => <p class="transport-agent-card-line text-caption text-muted">{w()}</p>}</Show>
+                <Show when={answerError()?.id === d().id}><p class="field-error">{answerError()!.message}</p></Show>
+              </div>
+            </Show>
+          )}
+        </Show>
+        <For each={askedSteps()}>
+          {(st, i) => (
             <div class="transport-agent-card-ask">
               <p class="transport-agent-card-line text-caption">
-                It needs to download {d().items.length === 1 ? "1 tool" : `${d().items.length} tools`} from sites its sandbox doesn't reach. Nothing downloads until you allow it.
+                <Show when={askedSteps().length > 1}>
+                  <span class="transport-agent-card-command-n">Command {i() + 1}.</span>{" "}
+                </Show>
+                This needs administrator rights, which the agent doesn't have. Run it yourself in a terminal on {device()}:
               </p>
-              <ul class="transport-agent-card-list text-caption">
-                <For each={d().items}>
-                  {(i) => (
-                    <li>
-                      {i.tool} {i.version} <span class="text-muted">from</span> <span class="text-mono">{i.host}</span>
-                    </li>
-                  )}
-                </For>
-              </ul>
-              <Show when={d().why}>{(w) => <p class="transport-agent-card-line text-caption text-muted">{w()}</p>}</Show>
-              <Show when={answerError()?.id === d().id}><p class="field-error">{answerError()!.message}</p></Show>
-              <div class="transport-agent-card-foot">
-                <button class="button button-sm" type="button" disabled={answering() !== null} onClick={() => void answer(d().id, () => allowTransportDownloads(props.card.tid, d().id))}>
-                  Allow Downloads
-                </button>
+              <div class="transport-agent-card-command-row">
+                <pre class="transport-agent-card-command text-mono">{st.command}</pre>
+                <CopyButton label="Copy Command" text={() => st.command} onCopy={(t) => copyText(t, "Copied the command.")} />
               </div>
+              <Show when={st.why}>{(w) => <p class="transport-agent-card-line text-caption text-muted">{w()}</p>}</Show>
+              <Show when={answerError()?.id === st.id}><p class="field-error">{answerError()!.message}</p></Show>
             </div>
-          </Show>
-        )}
-      </Show>
-      <For each={askedSteps()}>
-        {(st) => (
-          <div class="transport-agent-card-ask">
-            <p class="transport-agent-card-line text-caption">This needs administrator rights, which the agent doesn't have. Run it yourself in a terminal on {device()}:</p>
-            <pre class="transport-agent-card-command text-mono">{st.command}</pre>
-            <Show when={st.why}>{(w) => <p class="transport-agent-card-line text-caption text-muted">{w()}</p>}</Show>
-            <Show when={answerError()?.id === st.id}><p class="field-error">{answerError()!.message}</p></Show>
-            <div class="transport-agent-card-foot">
-              <button class="button button-sm" type="button" disabled={answering() !== null} onClick={() => void answer(st.id, () => transportAdminDone(props.card.tid, st.id))}>
-                Done
-              </button>
-            </div>
-          </div>
-        )}
-      </For>
-      <Show when={lastDone()}>
-        <p class="transport-agent-card-line text-caption">You ran it. The agent carries on.</p>
-      </Show>
-      <Show when={asks().length > 0}>
-        <form class="transport-agent-card-host" onSubmit={(e) => void save(e)}>
-          <p class="transport-agent-card-line text-caption">
-            This device doesn't have {asks().length === 1 ? "this host value" : "these host values"} for this project yet. Each holds {view()?.peerLabel ?? "the other device"}'s; keep it or change it.
-          </p>
-          <For each={asks()}>
-            {(a) => (
-              <TextField
-                label={<span class="text-mono">{a.name}</span>}
-                value={valueOf(a.name, a.value)}
-                autocomplete="off"
-                spellcheck={false}
-                onInput={(v) => setEdits({ ...edits(), [a.name]: v })}
-              />
-            )}
+          )}
+        </For>
+        <Show when={lastDone()}>
+          <p class="transport-agent-card-line text-caption">You ran it. The agent carries on.</p>
+        </Show>
+        <Show when={asks().length > 0}>
+          <form id={formId} class="transport-agent-card-host" onSubmit={(e) => void save(e)}>
+            <p class="transport-agent-card-line text-caption">
+              This device doesn't have {asks().length === 1 ? "this host value" : "these host values"} for this project yet. Each holds {view()?.peerLabel ?? "the other device"}'s; keep it or change it.
+            </p>
+            <For each={asks()}>
+              {(a) => (
+                <TextField
+                  label={<span class="text-mono">{a.name}</span>}
+                  value={valueOf(a.name, a.value)}
+                  autocomplete="off"
+                  spellcheck={false}
+                  onInput={(v) => setEdits({ ...edits(), [a.name]: v })}
+                />
+              )}
+            </For>
+            <Show when={saveError()}>{(m) => <p class="field-error">{m()}</p>}</Show>
+          </form>
+        </Show>
+        <Show when={saved() && !asks().length}>
+          <p class="transport-agent-card-line text-caption">Saved on this device.</p>
+        </Show>
+      </div>
+      <Show when={actions().length > 0}>
+        <div class="card-foot transport-agent-card-foot">
+          <For each={actions()}>
+            {(act) => {
+              if (act.kind === "open")
+                return (
+                  <a class="button button-sm" href={act.href}>
+                    {act.label}
+                  </a>
+                );
+              if (act.kind === "save")
+                return (
+                  <button class={kind(act.primary)} type="submit" form={formId} disabled={saving() || !asks().some((x) => valueOf(x.name, x.value))}>
+                    {act.label}
+                  </button>
+                );
+              const run = act.kind === "allow" ? () => allowTransportDownloads(props.card.tid, act.id) : () => transportAdminDone(props.card.tid, act.id);
+              return (
+                <button class={kind(act.primary)} type="button" disabled={answering() !== null} onClick={() => void answer(act.id, run)}>
+                  {act.label}
+                </button>
+              );
+            }}
           </For>
-          <Show when={saveError()}>{(m) => <p class="field-error">{m()}</p>}</Show>
-          <div class="transport-agent-card-foot">
-            <button class="button button-sm" type="submit" disabled={saving() || !asks().some((a) => valueOf(a.name, a.value))}>
-              Save Values
-            </button>
-          </div>
-        </form>
-      </Show>
-      <Show when={saved() && !asks().length}>
-        <p class="transport-agent-card-line text-caption">Saved on this device.</p>
-      </Show>
-      <Show when={href()}>
-        {(h) => (
-          <div class="transport-agent-card-foot">
-            <a class="button button-sm" href={h()}>
-              Open Agent Chat
-            </a>
-          </div>
-        )}
+        </div>
       </Show>
     </section>
   );

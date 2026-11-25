@@ -98,4 +98,8 @@ test("a Move's worktree holding a submodule with unfinished work is kept whole (
   assert.equal(fileHashes(wt), before.files, "every file, the build output and the submodule's included");
   assert.equal(g(sub, "rev-parse", "side"), before.side, "its git data came back too");
   assert.equal(g(sub, "status", "--porcelain=v1"), " M lib.c\n?? new.c\n");
+  const common = g(wt, "rev-parse", "--path-format=absolute", "--git-common-dir").trim();
+  assert.equal(g(wt, "rev-parse", "--absolute-git-dir").trim(), join(common, "worktrees", "proj-wt"), "its records are named for its folder");
+  assert.deepEqual(readdirSync(join(common, "worktrees")).filter((n) => n.includes("incoming")), [], "nothing named for the staging folder");
+  assert.equal(g(src, "worktree", "prune", "--dry-run", "-v"), "");
 });

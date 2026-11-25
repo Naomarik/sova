@@ -3,9 +3,9 @@
 // the folder), each archive read back before anything goes; only then is the worktree removed, so its branch can't be
 // landed from two devices. Move Back puts both back beside what the package rebuilt, replacing nothing.
 import { execFile } from "node:child_process";
-import { createReadStream, createWriteStream, existsSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, realpathSync } from "node:fs";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createZstdDecompress } from "node:zlib";
 import { git, gitlinksOf } from "./git-snapshot";
@@ -93,4 +93,43 @@ export async function restoreKept(keep: string, tid: string, name: string, path:
     await unzstd(data, join(work, `${name}.git.tar`));
     await extractKeeping(join(work, `${name}.git.tar`), gitDir);
   }
+}
+
+/** A chat here that isn't the moved one or its team, and isn't archived: its folder and the worktrees it tracks. */
+export interface TreeUser {
+  id: string;
+  cwd: string;
+  trees: readonly string[];
+}
+
+export interface RetireChoice {
+  name: string;
+  path: string;
+  retire: boolean;
+  /** Why it stays here. */
+  why?: string;
+}
+
+const realOf = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
+const inside = (p: string, tree: string): boolean => p === tree || p.startsWith(`${tree}/`);
+
+/**
+ * Which of a Move's packed worktrees end here (§app.transport/moved-row). Every worktree that travelled is the chat's
+ * code, whoever made it (the chat, its team, a script, you): it is retired, so its branch can't be landed from two
+ * devices. Two stay: the repository's main checkout (the project itself), and a worktree another chat here still
+ * works in (its folder is in it, or it tracks it). Pure but for resolving links in paths.
+ */
+export function treesToRetire(packed: readonly { name: string; path: string; main: boolean }[], users: readonly TreeUser[], real: (p: string) => string = realOf): RetireChoice[] {
+  return packed.map((t) => {
+    if (t.main) return { name: t.name, path: t.path, retire: false, why: "it is the repository's main checkout" };
+    const at = real(t.path);
+    const u = users.find((x) => inside(real(x.cwd), at) || x.trees.some((y) => real(y) === at));
+    return u ? { name: t.name, path: t.path, retire: false, why: `chat ${u.id} still works in it` } : { name: t.name, path: t.path, retire: true };
+  });
 }

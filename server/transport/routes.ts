@@ -27,7 +27,7 @@ import { pageOnlyRefusal } from "../page-only";
 import { hostVars, readRegistry, setHostVars } from "../project-services/store";
 import { carriedSettingsOf, type CarryDeps, registerArrived } from "./project-carry";
 import { resolveSessionPath } from "../paths";
-import { archiveSession, cleanupSessions, getSessionSummary, markArchived } from "../sessions-index";
+import { archiveSession, cleanupSessions, getSessionSummary, listSessions, markArchived } from "../sessions-index";
 import { stateRoot } from "../state-root";
 import { cutChatUsage, importChatUsage } from "../usage-export";
 import { worktreesOf } from "../worktrees-state";
@@ -38,7 +38,7 @@ import { git, publishTrees, rebuildWorktrees } from "./git-snapshot";
 import { isTransportAgent, needsAnswer, setAfterArrival, setBringHelpersToRest, setInterruptWaiting, setIsTransportAgent, setNeedsAnswer, setPrepareDestination, setPreviewExtras, interruptWaiting, releasePause, type ProjectRef } from "./hooks";
 import { allMoved, markMoved, MOVE_BACK_MS, movedOf, unmarkMoved } from "./moved";
 import type { PackageManifest } from "./package";
-import { extractKeeping, keepAndRemoveTree, restoreKept, unzstd } from "./retire";
+import { extractKeeping, keepAndRemoveTree, restoreKept, type TreeUser, treesToRetire, unzstd } from "./retire";
 import { cancelTransport, previewTransport, REFUSALS, resumeSources, retryTransport, servedPackage, setSourceDeps, startTransport } from "./source";
 import { activeTransportOf, listTransports, publicView, readTransport, type TransportRecord, updateTransport } from "./store";
 import { peerPath, PROOF_HEADER, TICKET_HEADER } from "./wire";
@@ -72,9 +72,35 @@ function sameSecret(a: string, b: string): boolean {
 
 type Mesh = Pick<MeshApi, "enabled" | "requestPeer" | "peerFetch" | "peers" | "self" | "updateNeeded">;
 
+/** The chats here (not archived, not moved away, not in `exclude`) that work in one of `trees`: their folder is in it,
+    or, for a chat whose folder is elsewhere in the same repository, its worktree list tracks it. */
+async function liveTreeUsers(trees: readonly string[], exclude: ReadonlySet<string>): Promise<TreeUser[]> {
+  if (!trees.length) return [];
+  const real = (p: string) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return resolve(p);
+    }
+  };
+  const within = (p: string, t: string) => p === t || p.startsWith(`${t}/`);
+  // The repository's every worktree: a chat in one of them may track the packed ones.
+  const repoTrees = new Set<string>(trees.map(real));
+  for (const t of trees) for (const l of (await git(t, ["worktree", "list", "--porcelain"])).stdout.split("\n")) if (l.startsWith("worktree ")) repoTrees.add(real(l.slice(9)));
+  const out: TreeUser[] = [];
+  for (const s of await listSessions()) {
+    if (exclude.has(s.id) || isArchived(s.id) || s.moved || !s.cwd) continue;
+    const cwd = real(s.cwd);
+    if (![...repoTrees].some((t) => within(cwd, t))) continue;
+    const tracked = trees.some((t) => within(cwd, real(t))) ? [] : (worktreesOf((await readBranch(s.path).catch(() => null)) ?? [])?.trees ?? []).filter((x) => x.status === "active").map((x) => x.path);
+    out.push({ id: s.id, cwd: s.cwd, trees: tracked });
+  }
+  return out;
+}
+
 /** Once the destination confirmed a Move: the Moved row, the safety copy, the worktrees here removed. */
 async function moved(r: TransportRecord): Promise<void> {
-  const ext = (r.ext ?? {}) as { ownedTrees?: string[]; packedTrees?: { name: string; path: string; main: boolean }[] };
+  const ext = (r.ext ?? {}) as { packedTrees?: { name: string; path: string; main: boolean }[] };
   // The package carried the wakes; here they are cancelled, the lead's and every helper's at any depth, so nothing
   // wakes the copy left behind. Then the team leaves this server's memory: archiving must not end their records.
   const team = workerMembersOf(r.chatId).map((m) => m.sid);
@@ -93,22 +119,28 @@ async function moved(r: TransportRecord): Promise<void> {
     mkdirSync(join(home, "transport"), { recursive: true, mode: 0o700 });
     await rename(spool, join(home, "transport", `${r.tid}.tar.zst`)).catch((err) => log(`${r.tid}: package not kept in the safety copy: ${err.message}`));
   }
-  // The chat's own worktrees go, so the branch can't be landed from two devices, but never before the folder is
-  // in the safety copy whole (ignored files, build output, what was left unticked or written since): nothing is
-  // deleted that isn't kept. A main checkout (the project itself) and a tree another chat made stay as they are.
-  const manifestTrees = new Map((ext.packedTrees ?? []).map((t) => [t.path, t]));
-  for (const p of ext.ownedTrees ?? []) {
-    const t = manifestTrees.get(p);
-    if (!t || t.main || !existsSync(p)) continue;
+  // Every worktree that travelled goes, so the branch can't be landed from two devices, whoever made it (the chat,
+  // its team, a script, you), but never before the folder is in the safety copy whole (ignored files, build output,
+  // what was left unticked or written since): nothing is deleted that isn't kept. The main checkout (the project
+  // itself) and a worktree another chat here still works in stay, each with a line saying why.
+  const packed = (ext.packedTrees ?? []).filter((t) => existsSync(t.path));
+  const helpers = ((r.ext ?? {}) as { helperIds?: string[] }).helperIds ?? [];
+  const users = await liveTreeUsers(packed.filter((t) => !t.main).map((t) => t.path), new Set([r.chatId, ...team, ...helpers]));
+  for (const c of treesToRetire(packed, users)) {
+    if (!c.retire) {
+      if (!packed.find((t) => t.path === c.path)?.main) log(`${r.tid}: ${c.path} stays here: ${c.why}`);
+      continue;
+    }
+    const p = c.path;
     // Kept whole (its submodules' git data too), read back, then removed; one that can't be kept whole stays.
-    const done = await keepAndRemoveTree(p, join(home, "transport"), r.tid, t.name);
+    const done = await keepAndRemoveTree(p, join(home, "transport"), r.tid, c.name);
     if (!done.removed) {
       log(`${r.tid}: ${p} stays: ${done.why}`);
       continue;
     }
     log(`${r.tid}: ${p} kept in the safety copy (${done.entries} entries, ${Math.round(done.size / 1024)} KB) and removed`);
     const common = done.common;
-    updateTransport(r.tid, (cur) => ({ ext: { removedTrees: [...(((cur.ext ?? {}) as { removedTrees?: unknown[] }).removedTrees ?? []), { name: t.name, path: p, common }] } }));
+    updateTransport(r.tid, (cur) => ({ ext: { removedTrees: [...(((cur.ext ?? {}) as { removedTrees?: unknown[] }).removedTrees ?? []), { name: c.name, path: p, common }] } }));
   }
   emitChatNews({ name: "chat.removed", chat: r.chatId, home });
   sessionsChanged();

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { havesOf, packWorktrees, projectComesFrom, publishTrees, rebuildWorktrees, remoteReachable, resolveSubmoduleUrl, SnapshotError, submodulesOf, surveyWorktree } from "./git-snapshot";
@@ -21,6 +21,18 @@ after(() => {
 const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
 const g = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, env, encoding: "utf8" });
 const facts = (cwd: string) => [g(cwd, "rev-parse", "HEAD"), g(cwd, "status", "--porcelain=v1", "-uall"), g(cwd, "ls-files", "-s", "-v"), g(cwd, "diff", "--cached"), g(cwd, "diff")].join("\n--\n");
+
+/** A worktree moved into place there: git's records of it are named for its folder, and nothing named for the staging
+    folder is left in the repository's records or beside it. */
+function namedForItsFolder(repo: string, target: string): void {
+  const common = g(target, "rev-parse", "--path-format=absolute", "--git-common-dir").trim();
+  const admin = g(target, "rev-parse", "--absolute-git-dir").trim();
+  assert.equal(admin, join(realpathSync(common), "worktrees", basename(target)), "its records are named for its folder");
+  assert.deepEqual(readdirSync(join(common, "worktrees")).filter((n) => n.includes("incoming")), [], "no records named for the staging folder");
+  assert.deepEqual(readdirSync(dirname(target)).filter((n) => n.includes("incoming")), [], "no staging folder left beside it");
+  assert.ok(g(repo, "worktree", "list", "--porcelain").includes(`worktree ${realpathSync(target)}\n`));
+  assert.equal(g(repo, "worktree", "prune", "--dry-run", "-v"), "", "git finds nothing stale");
+}
 
 test("a worktree with every kind of unfinished change rebuilds exactly in a clone; dependencies stay", async () => {
   const src = join(root, "src");
@@ -64,6 +76,7 @@ test("a worktree with every kind of unfinished change rebuilds exactly in a clon
   for (const f of ["u.txt", ".env", ".cache/spike/notes.md"]) assert.equal(readFileSync(join(there, f), "utf8"), readFileSync(join(wt, f), "utf8"));
   assert.ok(!existsSync(join(there, "node_modules")));
   assert.equal(g(proj, "for-each-ref", "refs/sova"), "", "the transport's refs are dropped");
+  namedForItsFolder(proj, there);
 });
 
 test("a merge in progress is refused with the reason", async () => {
@@ -593,6 +606,7 @@ test("a nested submodule in a chat's linked worktree arrives with both repositor
   assert.equal(g(join(there, "lib", "outer"), "rev-parse", "--absolute-git-dir").trim(), realpathSync(join(g(there, "rev-parse", "--absolute-git-dir").trim(), "modules", "lib", "outer")), "in the worktree's own git folder, as git lays it out");
   assert.ok(g(repo, "worktree", "list", "--porcelain").includes(`worktree ${realpathSync(there)}\n`), "the worktree is registered where it is");
   assert.equal(g(there, "status", "--porcelain=v1", "-uall"), g(wt, "status", "--porcelain=v1", "-uall"));
+  namedForItsFolder(repo, there);
 });
 
 test("a clone there with its submodule checked out at the gitlink (a project prepared there) takes the chat's submodule state at publish, replacing nothing", async () => {

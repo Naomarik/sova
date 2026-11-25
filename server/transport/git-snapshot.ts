@@ -1292,6 +1292,29 @@ export async function publishTrees(trees: readonly StagedTree[], tid: string, o:
   return { privateFiles, kept };
 }
 
+/** The name git gives a worktree's records (`<common>/worktrees/<id>`) for a folder: its last part as a ref name may
+    hold it, then a number while that name is taken. */
+function adminIdFor(common: string, folder: string): string {
+  const base = basename(folder).replace(/[\x00-\x20~^:?*[\\\x7f]/g, "-").replace(/\.\.+/g, "-").replace(/^\./, "-").replace(/\.lock$/, "-lock") || "worktree";
+  if (!existsSync(join(common, "worktrees", base))) return base;
+  for (let i = 1; ; i++) if (!existsSync(join(common, "worktrees", `${base}${i}`))) return `${base}${i}`;
+}
+
+/**
+ * A worktree moved into place keeps the records git made for its staging folder (`worktrees/-incoming-…`; git's own
+ * move keeps them too): they take the name git would give the folder it is in now, its `.git` names them there, and
+ * git's link back is repaired. Nothing named for the staging folder is left.
+ */
+async function nameAdminFor(target: string, common: string): Promise<void> {
+  const admin = await realOr((await ok(target, ["rev-parse", "--absolute-git-dir"], "Reading the worktree")).trim());
+  const worktrees = join(await realOr(common), "worktrees");
+  if (dirname(admin) !== worktrees || !basename(admin).startsWith("-incoming-")) return;
+  const to = join(worktrees, adminIdFor(common, target));
+  await rename(admin, to);
+  await writeFile(join(target, ".git"), `gitdir: ${to}\n`);
+  await ok(dirname(common), ["--git-dir", common, "worktree", "repair", target], "Repairing the worktree");
+}
+
 async function publishStages(trees: readonly StagedTree[], tid: string): Promise<void> {
   const main = trees.find((t) => t.main);
   let repo: string | null = null;
@@ -1320,6 +1343,7 @@ async function publishStages(trees: readonly StagedTree[], tid: string): Promise
       await rename(t.stage, t.target);
       await ok(dirname(common), ["--git-dir", common, "worktree", "repair", t.target], `Moving ${t.name} into place`);
     } else await ok(dirname(common), ["--git-dir", common, "worktree", "move", t.stage, t.target], `Moving ${t.name} into place`);
+    await nameAdminFor(t.target, common);
     repo ??= dirname(common);
   }
   if (main) for (const t of trees) if (!t.main) await git(main.target, ["worktree", "repair", t.target]);

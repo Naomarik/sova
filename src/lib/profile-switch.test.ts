@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PROFILE_MINOR_MODES, startsFrom, type ChatStarts, type Profile } from "../../shared/profiles";
-import { isEditedBuiltin, namesProfile, menuPick, startsOfRow, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
+import { isEditedBuiltin, namesProfile, menuPick, startsOfRow, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerNewChatLine, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
 
 const row = (key: string, providers: string[], extra: Partial<SwitchRow> = {}): SwitchRow => ({ key, id: key, kind: "pair", group: "yours", name: key.toUpperCase(), providers, setsModel: providers.length > 0, ...extra });
 const OFF = row("off", [], { kind: "off", group: "builtin", name: "Off" });
@@ -64,6 +64,13 @@ test("picking the chat's own profile does nothing unless it is edited", () => {
 test("the new chat line", () => {
   assert.equal(newChatLine("sova"), "New chat in sova. The default is already picked.");
   assert.equal(newChatLine(null), "New chat. The default is already picked.");
+});
+
+test("the picker's new chat line is hidden when there is no default or it couldn't be applied", () => {
+  assert.equal(pickerNewChatLine({ hasDefault: true, project: "sova" }), "New chat in sova. The default is already picked.");
+  assert.equal(pickerNewChatLine({ hasDefault: true, project: null, defaultNotApplied: undefined }), "New chat. The default is already picked.");
+  assert.equal(pickerNewChatLine({ hasDefault: false, project: "sova" }), null);
+  assert.equal(pickerNewChatLine({ hasDefault: true, project: "sova", defaultNotApplied: { profile: "Reviewer", reason: "it is not approved" } }), null);
 });
 
 // Update {name} is offered exactly when pressing it would change what a new chat on the chat's profile starts with

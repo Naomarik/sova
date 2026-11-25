@@ -101,6 +101,13 @@ export const pickDoesSomething = (r: Pick<SwitchRow, "key">, current: { key: str
 /** "New chat in {project}. The default is already picked." */
 export const newChatLine = (project: string | null | undefined): string => (project ? `New chat in ${project}. The default is already picked.` : "New chat. The default is already picked.");
 
+/**
+ * The picker's new chat line, or null: none when there is no default profile, nor when the default couldn't be
+ * applied (the empty screen's warn line says so, and "already picked" would contradict it).
+ */
+export const pickerNewChatLine = (o: { hasDefault: boolean; project: string | null | undefined; defaultNotApplied?: unknown }): string | null =>
+  o.hasDefault && !o.defaultNotApplied ? newChatLine(o.project) : null;
+
 /** What Update {name} compares: what a new chat on this chat's profile starts with against the chat now. */
 export interface UpdateSides {
   /** The server's answer for this chat's profile (startsOfRow); null or undefined: not known yet. */

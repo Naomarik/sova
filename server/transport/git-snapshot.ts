@@ -180,6 +180,9 @@ const LEFT_DIRS = new Set([
 ]);
 export const leftDir = (name: string): boolean => LEFT_DIRS.has(name) || /^dist-[^/]+$/.test(name);
 const leftFile = (name: string): boolean => name === ".DS_Store" || name.endsWith(".tsbuildinfo") || name.endsWith(".pyc");
+/** A dependency or build folder, or a link named as one (a worktree's node_modules linking to the main checkout's):
+    git names a link with no trailing `/`, so it is told apart from a file by what it is, never offered as one. */
+const leftEntry = (name: string, st: { isDirectory(): boolean; isSymbolicLink(): boolean }): boolean => leftDir(name) && (st.isDirectory() || st.isSymbolicLink());
 
 /** An untracked file over this is asked about (§app.transport/edge-cases). */
 export const LARGE_FILE = 50 * 1024 * 1024;
@@ -283,7 +286,7 @@ async function walk(root: string, rel: string, out: LooseFile[], kind: LooseFile
       }
       total += await walk(root, r, out, kind, nested);
     } else if (st.isFile() || st.isSymbolicLink()) {
-      if (leftFile(n)) continue;
+      if (leftFile(n) || leftEntry(n, st)) continue;
       out.push({ path: r, size: st.isFile() ? st.size : 0, kind });
       total += st.isFile() ? st.size : 0;
     }
@@ -355,7 +358,8 @@ async function surveyTree(name: string, path: string, key: string, base: string 
         continue;
       }
       const st = await lstat(join(top, p)).catch(() => null);
-      if (st) loose.push({ path: p, size: st.isFile() ? st.size : 0, kind: "untracked" });
+      if (st && leftEntry(p.split("/").at(-1)!, st)) left.push(p);
+      else if (st) loose.push({ path: p, size: st.isFile() ? st.size : 0, kind: "untracked" });
     }
     // git names an ignored folder once and never walks it (40,000 files of node_modules cost nothing).
     for (const p of nul((await ok(top, ["ls-files", "-o", "-i", "--exclude-standard", "--directory", "-z"], "Listing ignored files"))).sort()) {
@@ -370,7 +374,8 @@ async function surveyTree(name: string, path: string, key: string, base: string 
         scratch.push({ dir, size });
       } else if (!leftFile(parts.at(-1)!)) {
         const st = await lstat(join(top, p)).catch(() => null);
-        if (st) loose.push({ path: p, size: st.isFile() ? st.size : 0, kind: "private" });
+        if (st && leftEntry(parts.at(-1)!, st)) left.push(p);
+        else if (st) loose.push({ path: p, size: st.isFile() ? st.size : 0, kind: "private" });
       }
     }
     if (nested.length) refusal = "It has nested repositories: finish or remove that first.";

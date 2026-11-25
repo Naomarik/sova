@@ -10,6 +10,7 @@ import { createHash } from "node:crypto";
 import { createReadStream, existsSync, lstatSync, readdirSync } from "node:fs";
 import { copyFile, cp, lstat, mkdir, readdir, readFile, readlink, realpath, rename, rm, rmdir, stat, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
+import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { checkMembers, entryOf, listTar, type TarEntry, writeTar } from "./tar";
 
 // ---- git ------------------------------------------------------------------------------------------
@@ -984,7 +985,7 @@ async function seedRepo(stage: string, codeDir: string, tid: string, origin: str
   const bundle = join(codeDir, "commits.bundle");
   await ok(stage, ["init", "-q"], "Making the repository");
   const heads = (await git(stage, ["bundle", "list-heads", bundle])).stdout.split("\n").some((l) => / refs\/heads\/./.test(l));
-  await ok(stage, ["fetch", "-q", "--update-head-ok", bundle, `+${refOf(tid, "*")}:${refOf(tid, "*")}`, ...(heads ? ["+refs/heads/*:refs/heads/*"] : [])], "Fetching the bundle");
+  await ok(stage, [...NO_BACKGROUND_CLEANUP, "fetch", "-q", "--update-head-ok", bundle, `+${refOf(tid, "*")}:${refOf(tid, "*")}`, ...(heads ? ["+refs/heads/*:refs/heads/*"] : [])], "Fetching the bundle");
   if (origin) await ok(stage, ["remote", "add", "origin", withoutCredentials(origin)], "Recording the remote");
 }
 
@@ -1101,11 +1102,11 @@ async function fetchSubmodule(at: string, codeDir: string, sm: SubmoduleMeta): P
   if (sm.url && plainRemote(sm.url) && !(await git(at, ["remote", "get-url", "origin"])).stdout.trim()) await ok(at, ["remote", "add", "origin", sm.url], "Recording the submodule's remote");
   let v = await git(at, ["bundle", "verify", "-q", bundle]);
   if (v.code !== 0 && sm.url && plainRemote(sm.url)) {
-    await git(at, [...PROMPT_FREE_ARGS, "fetch", "-q", sm.url, "+refs/heads/*:refs/remotes/origin/*"], { env: PROMPT_FREE });
+    await git(at, [...NO_BACKGROUND_CLEANUP, ...PROMPT_FREE_ARGS, "fetch", "-q", sm.url, "+refs/heads/*:refs/remotes/origin/*"], { env: PROMPT_FREE });
     v = await git(at, ["bundle", "verify", "-q", bundle]);
   }
   if (v.code !== 0) throw new SnapshotError("needs-base", `The submodule ${sm.key} lacks commits the package builds on, and ${sm.url ? `its remote ${sm.url} didn't give them here` : "it has no remote recorded"}.`);
-  await ok(at, ["fetch", "-q", bundle, "+refs/sova/transport/*:refs/sova/transport/*"], `Fetching the submodule ${sm.key}`);
+  await ok(at, [...NO_BACKGROUND_CLEANUP, "fetch", "-q", bundle, "+refs/sova/transport/*:refs/sova/transport/*"], `Fetching the submodule ${sm.key}`);
 }
 
 /** The submodule's HEAD as it was where it came from: detached at its commit, or on its branch (moved there when the
@@ -1200,7 +1201,7 @@ async function reconnectSubmodules(dir: string): Promise<void> {
 async function fetchBundle(repo: string, codeDir: string, tid: string): Promise<void> {
   const v = await git(repo, ["bundle", "verify", "-q", join(codeDir, "commits.bundle")]);
   if (v.code !== 0) throw new SnapshotError("needs-base", "The repository there lacks commits the package builds on.");
-  await ok(repo, ["fetch", "-q", join(codeDir, "commits.bundle"), `+${refOf(tid, "*")}:${refOf(tid, "*")}`], "Fetching the bundle");
+  await ok(repo, [...NO_BACKGROUND_CLEANUP, "fetch", "-q", join(codeDir, "commits.bundle"), `+${refOf(tid, "*")}:${refOf(tid, "*")}`], "Fetching the bundle");
 }
 
 export async function rebuildWorktrees(o: {

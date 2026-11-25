@@ -27,7 +27,8 @@ import { serveTar } from "../mesh/links-transfer";
 import { localRequest } from "../mesh/proxy";
 import { isArchived, setArchived } from "../archived-sessions";
 import { pageOnlyRefusal } from "../page-only";
-import { readRegistry } from "../project-services/store";
+import { hostVars, readRegistry, setHostVars } from "../project-services/store";
+import { carriedSettingsOf, type CarryDeps, registerArrived } from "./project-carry";
 import { resolveSessionPath } from "../paths";
 import { archiveSession, cleanupSessions, getSessionSummary, markArchived } from "../sessions-index";
 import { stateRoot } from "../state-root";
@@ -330,6 +331,37 @@ export function cameBack(id: string): void {
   if (isArchived(id) !== want) setArchived(id, want);
 }
 
+/** The project registry and its settings stores, as a transport reads and fills them (project-carry.ts). */
+async function liveCarryDeps(): Promise<CarryDeps> {
+  const [{ listProjects, registerProjectIn }, po, approvals] = await Promise.all([import("../projects/spaces"), import("../project-overseer-store"), import("../project-skills-store")]);
+  return {
+    projects: () => listProjects().map((p) => ({ id: p.id, name: p.name, root: p.root })),
+    canonical: (p) => {
+      try {
+        return realpathSync(p);
+      } catch {
+        return resolve(p);
+      }
+    },
+    readOverseer: (id) => {
+      try {
+        const j = JSON.parse(readFileSync(po.projectOverseerPaths(id).settings, "utf8")) as unknown;
+        return j && typeof j === "object" && !Array.isArray(j) ? (j as Record<string, unknown>) : null;
+      } catch {
+        return null;
+      }
+    },
+    readApprovals: (id) => approvals.readApprovalStore().folders[approvals.projectFolderKey(id)] ?? null,
+    // The same registration as adding a project (§app/projects), a folder's.
+    register: async (root, name) => (await registerProjectIn("standalone", root, { ...(name ? { name } : {}), origin: "folder" })).project.id,
+    writeOverseer: (id, raw) => void po.writePoSettings(po.projectOverseerPaths(id), po.parsePoSettings(raw)),
+    writeApprovals: (id, d) =>
+      void approvals.updateApprovalStore((st) => {
+        st.folders[approvals.projectFolderKey(id)] = { context: d.context, skills: d.skills };
+      }),
+  };
+}
+
 export function mountTransport(app: Hono, mesh: Mesh): void {
   setChatStartGuard(startRefusal);
   // The page's routes answer this host's own page whether or not the mesh is on (no devices: none to pick).
@@ -388,6 +420,8 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     usageCut: (chatId, helpers) => cutChatUsage(chatId, helpers),
     moved,
     noteAgentCard: async (path, text, card) => (await acquireChatHandle(path)).appendNote(AGENT_CARD_NOTE, text, card),
+    hostValues: (root) => hostVars(root),
+    projectSettings: async (root) => carriedSettingsOf(root, await liveCarryDeps()),
   });
 
   dest.setDestinationDeps({
@@ -422,12 +456,22 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     importUsage: (bytes, from) => ({ ...importChatUsage(bytes, { from }) }),
     titleOf: async (path) => (await getSessionSummary(path))?.title || null,
     noteAgentCard: async (path, text, card) => (await acquireChatHandle(path)).appendNote(AGENT_CARD_NOTE, text, card),
+    registerArrived: async (root, settings) => registerArrived(root, settings, await liveCarryDeps()),
+    hostHeld: (root) => new Set(Object.keys(hostVars(root))),
+    writeHostValues: (root, values) => setHostVars(root, values),
   });
 
   // The Transport agent and Safe Transport, when this build has them (server/transport/agent-wire.ts).
   void import("./agent-wire")
     .then((m) => {
-      const h = m.transportHelpers(app, (tid, a) => void updateTransport(tid, { ext: { agent: a } }));
+      const h = m.transportHelpers(
+        app,
+        (tid, a) => void updateTransport(tid, { ext: { agent: a } }),
+        (tid, reason) => {
+          log(`${tid}: ${reason}`);
+          updateTransport(tid, { ext: { agentBlocked: reason } });
+        },
+      );
       // Their worktree branch is a name; a detached HEAD's is "".
       const named = <T extends { worktrees: { name: string; branch: string | null }[] }>(req: T) => ({ ...req, worktrees: req.worktrees.map((w) => ({ ...w, branch: w.branch ?? "" })) });
       setPrepareDestination((req, o) => h.prepareDestination(named(req), o));
@@ -527,6 +571,18 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       const res = await cancelTransport(tid);
       return res.ok ? c.json({ ok: true }) : c.json({ error: res.error }, res.status as 409);
     });
+
+  // The Transport card's Save (§app.transport/agent): the host values it asks for, by your click on this device's page.
+  app.post("/api/transport/:tid/host-values", small, async (c) => {
+    if (!local(c)) return notFound(c);
+    const refused = pageOnlyRefusal(c, YOUR_CLICK);
+    if (refused) return c.json({ error: refused, yourClick: true }, 403);
+    const body = (await c.req.json().catch(() => null)) as { values?: unknown } | null;
+    const extra = body && typeof body === "object" ? unknownKeys(Object.keys(body), ["values"]) : null;
+    if (extra) return c.json({ error: extra }, 400);
+    const res = dest.saveHostValues(c.req.param("tid"), body?.values);
+    return res.ok ? c.json({ ok: true, left: res.left }) : c.json({ error: res.error }, res.status);
+  });
 
   app.get("/api/transport/:tid/back", async (c) => {
     if (!local(c)) return notFound(c);

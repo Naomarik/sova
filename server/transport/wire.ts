@@ -2,6 +2,7 @@
 // step and drives it: it offers the chat, asks how far the destination is, says when the package is
 // ready, and sends the one commit. The destination pulls the package with the ticket and answers.
 // Every route but the package's is a `sessions` route there; the package's is the ticket's own.
+import type { CarriedSettings } from "./project-carry";
 import type { TransportState } from "./store";
 
 /** The offer's header: the click that started it, as the source minted it over the offer's body (asked back once). */
@@ -49,6 +50,11 @@ export interface OfferBody {
   model?: string;
   /** The source chat's own model. */
   chatModel?: string;
+  /** The host values the project's definition declares (`host`), and the ones this device holds for it: what that
+      device asks you for on the Transport card, prefilled with these. Never another project's or name's; never logged. */
+  host?: { names: string[]; values: Record<string, string> };
+  /** This device's Sova settings for the project, for a device where it isn't registered (§app.transport/arrival). */
+  projectSettings?: CarriedSettings;
 }
 
 export interface StatusBody {

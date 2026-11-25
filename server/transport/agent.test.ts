@@ -8,6 +8,8 @@ import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
 import { onboardModels } from "../projects/onboard";
 import { agentBrief } from "./agent-prompt";
+import { type AgentScope, agentLaunchFlags } from "./agent-scope";
+import { parseParentScope } from "../../pi-config/extensions/sandbox/policy.ts";
 import { type AgentDeps, preparedAt as preparedAtOf, agentModel, agentModelChoices, strongestRunnable, cleanRemote, needsAnswer, agentOf, afterArrival, isTransportAgent, prepareDestination, preflight, type PrepareRequest, projectNeeds, sameRemote, sourceValuesIn } from "./agent";
 
 after(dropScratchAgentDir);
@@ -27,7 +29,7 @@ test("what a project's files say it needs, per kind", () => {
 
 /** A device where `git` answers as a repository of the project in every existing folder, and programs are as given. */
 function device(root: string, over: Partial<AgentDeps> = {}) {
-  const started: { cwd: string; prompt: string; model: string }[] = [];
+  const started: { cwd: string; prompt: string; model: string; scope: AgentScope }[] = [];
   const told: string[] = [];
   const linked: string[][] = [];
   const ended: string[] = [];
@@ -43,6 +45,8 @@ function device(root: string, over: Partial<AgentDeps> = {}) {
     doctor: async () => null,
     offeredModels: async () => ["zai/glm-5.3", ...onboardModels()],
     claudeUsable: () => true,
+    agentHidden: async () => [],
+    confine: async () => null,
     startChat: async (i) => {
       started.push(i);
       busyPolls = 2;
@@ -112,7 +116,7 @@ test("nothing missing: ready at once, no agent; something missing: one agent, br
   const bare = agentBrief({ title: "t", device: "d", source: "s", folder: "/f", remotes: [], branches: [], checks: [], home: root });
   assert.ok(bare.includes("No remote is recorded: don't search the disk for a copy. Ask the user (align)"));
   assert.equal(s.model, onboardModels()[0], "the strongest model this device offers");
-  assert.equal(s.cwd, join(root, "webapps"), "it starts in the nearest folder that exists");
+  assert.equal(s.cwd, req.project.path, "it starts in the project's folder, made empty for its clone");
   assert.deepEqual(d.linked, [["agent-1", "sova-laptop", "chat-1"]]);
   assert.deepEqual(d.ended, ["lk_1"], "its link ends once the device is ready: no report bounces between the two chats");
   assert.match(s.prompt, /at most three messages/);
@@ -271,4 +275,73 @@ test("the project from the source: the dialog lists what its own setup definitio
   // A project that can be cloned there lists the clone, never an after-arrival list.
   const near = await needsAnswer({ remotes: [REMOTE], path: join(root, "there", "motors") }, device(root, { reachable: async () => true }).deps, { setup });
   assert.equal(near.afterArrival, undefined);
+});
+
+test("the agent runs confined: its scope writes only the project's folder, the arrived worktrees and the tool folders, hides host.json and the other projects, and is what its chat opens with", async () => {
+  const root = scratchRoot("transport-agent-");
+  const req = request(root);
+  const hostJson = join(root, "state", "project-services", "host.json");
+  mkdirSync(join(root, "state", "project-services"), { recursive: true });
+  writeFileSync(hostJson, JSON.stringify({ version: 1, projects: { "/elsewhere": { DB_URL: "secret" } } }));
+  const other = join(root, "webapps", "other-repo");
+  mkdirSync(other, { recursive: true });
+  mkdirSync(join(root, ".cargo"), { recursive: true });
+  const tree = join(root, "webapps", "motors-fix");
+  mkdirSync(tree, { recursive: true });
+  // A project registered at a folder above this one stays readable: hiding it would hide the project itself.
+  const d = device(root, { agentHidden: async () => [hostJson, other, join(root, "webapps"), join(root, "nowhere")] });
+  await prepareDestination({ ...req, trees: [tree, join(root, "webapps", "not-there")] }, d.deps);
+  const scope = d.started[0]!.scope;
+  assert.deepEqual(scope.writable, [req.project.path, tree, join(root, ".local/share/mise"), join(root, ".local/bin"), join(root, ".cargo")]);
+  assert.equal(scope.workspaceRoot, req.project.path);
+  assert.deepEqual(scope.hidden, [hostJson, other]);
+  assert.ok(!scope.writable.some((w) => w.startsWith(join(root, "state"))), "never Sova's own state");
+  // Its chat opens with the sandbox On at that scope (chat-manager's flags), a scope the sandbox extension takes.
+  const flags = agentLaunchFlags(d.deps.stateRoot(), "agent-1");
+  assert.ok(flags && "extra" in flags);
+  const parsed = parseParentScope(flags.extra["sandbox-parent"]);
+  assert.ok(parsed.ok);
+  assert.deepEqual(parsed.value.writable, scope.writable);
+  assert.deepEqual(parsed.value.hidden, scope.hidden);
+  assert.equal(agentLaunchFlags(d.deps.stateRoot(), "someone-else"), null, "an ordinary chat gets nothing");
+  assert.match(d.started[0]!.prompt, /You can write only in /);
+  assert.match(d.started[0]!.prompt, /Never set the project's host values/);
+});
+
+test("no confinement on this device: no agent starts, the transport waits as Needs you with the reason, and nothing is left made", async () => {
+  const root = scratchRoot("transport-agent-");
+  const req = request(root);
+  const d = device(root, { confine: async () => "no sandbox backend for this platform" });
+  const r = await prepareDestination(req, d.deps);
+  assert.ok("needsYou" in r);
+  assert.match(r.needsYou, /laptop-b can't confine the Transport agent to the project's folders \(no sandbox backend for this platform\), so it didn't start/);
+  assert.equal(d.started.length, 0);
+  assert.equal(agentOf(d.deps.stateRoot(), "tr_1"), null);
+  assert.deepEqual(await preflight(req.project, d.deps), [{ id: "folder", ok: false, detail: `${req.project.path} doesn't exist: clone ${REMOTE} there` }], "its folder wasn't left behind");
+  // After arrival, too: nothing starts, and the card hears why.
+  const blocked: string[] = [];
+  const after = device(root, { confine: async () => "bwrap is missing", onBlocked: (_t, why) => void blocked.push(why) });
+  mkdirSync(req.project.path, { recursive: true });
+  writeFileSync(join(req.project.path, "package.json"), "{}");
+  assert.deepEqual(await afterArrival({ ...req, fromSource: true, privateFiles: [], sourceValues: [] }, after.deps), []);
+  assert.equal(after.started.length, 0);
+  assert.equal(blocked.length, 1);
+  assert.match(blocked[0]!, /bwrap is missing/);
+});
+
+test("a host value the device lacks is never the agent's: alone it starts none, and beside other findings the agent isn't shown it", async () => {
+  const root = scratchRoot("transport-agent-");
+  const req = request(root);
+  mkdirSync(join(req.project.path, ".sova"), { recursive: true });
+  writeFileSync(join(req.project.path, ".sova", "project.json"), "{}");
+  const host = [{ id: "host:DB_URL", ok: false, detail: "set it in the host overlay" }];
+  const only = device(root, { doctor: async () => host });
+  assert.deepEqual(await prepareDestination(req, only.deps), { ready: true });
+  assert.equal(only.started.length, 0, "no agent for a host value");
+  const more = device(root, { doctor: async () => [...host, { id: "program:pg_ctl", ok: false, detail: "pg_ctl isn't on the PATH" }] });
+  await prepareDestination({ ...req, tid: "tr_2" }, more.deps);
+  assert.equal(more.started.length, 1);
+  assert.ok(!more.started[0]!.prompt.includes("doctor:host:DB_URL"), "the brief never lists it as something to fix");
+  assert.match(more.started[0]!.prompt, /doctor:program:pg_ctl/);
+  assert.ok(!(agentOf(more.deps.stateRoot(), "tr_2")?.checks ?? []).some((c) => c.id.startsWith("doctor:host:")), "nor does its card's list");
 });

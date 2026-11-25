@@ -82,3 +82,61 @@ test("the card's note is an info row carrying its card; details that don't read 
   assert.equal(plain?.transportAgent, undefined);
   assert.equal(plain?.text, "The Transport agent …");
 });
+
+test("after arrival: the project is registered with the carried settings, the card asks for each host value this device lacks prefilled with the source's, and only your Save writes them", async () => {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const dest = await import("./destination");
+  const { publicView, readTransport } = await import("./store");
+  const id = "0199aaaa-0000-7000-8000-0000000000b2";
+  const tid = "tr_hostask01";
+  const home = ensureChatHome(id);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  const file = join(home, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", id })}\n`);
+  const settings = { v: 1, name: "Motors", overseer: { version: 1, watch: false } };
+  createTransport({
+    tid, side: "destination", mode: "copy", chatId: id, sourceChatId: id, title: "t", peer: "desk", peerLabel: "Desk", path: "", folder: "/home/v/motors", state: "switching", arrivedId: id,
+    steps: { offered: "t", prepared: "t", pulled: "t", staged: "t", verified: "t", decided: "t", published: "t" },
+    ext: { offer: { trees: [], repoRel: null, project: { remotes: [], roots: [ROOT] } }, carry: { host: { names: ["DB_URL", "PORT_BASE"], values: { DB_URL: "postgres://desk/motors", PORT_BASE: "5400" } }, settings } },
+  });
+  setAfterArrival(() => []);
+  const registered: [string, unknown][] = [];
+  const written: [string, Record<string, string>][] = [];
+  const cards: string[] = [];
+  dest.setDestinationDeps({
+    peerFetch: async () => new Response("{}"),
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack: () => {},
+    openWithNote: async (p, text) => appendFileSync(p, `${JSON.stringify({ type: "custom_message", customType: "sova-transport-arrival", content: text })}\n`),
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+    noteAgentCard: async (p, text, card) => {
+      cards.push(text);
+      appendFileSync(p, `${JSON.stringify({ type: "custom_message", customType: TRANSPORT_AGENT_NOTE, content: text, details: card })}\n`);
+      return true;
+    },
+    registerArrived: async (root, s) => (registered.push([root, s]), { registered: "prj_new00001" }),
+    hostHeld: () => new Set(["PORT_BASE"]),
+    writeHostValues: (root, values) => void written.push([root, values]),
+  });
+  const res = await dest.commit({ id: "desk" }, tid, {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(registered, [["/home/v/motors", settings]]);
+  const r = readTransport(tid)!;
+  assert.deepEqual((r.ext as { hostAsk?: unknown }).hostAsk, [{ name: "DB_URL", value: "postgres://desk/motors" }], "only what this device lacks, prefilled with the source's");
+  assert.deepEqual(cards, ["This project needs 1 host value set on this device."], "its card is in the chat though no agent runs");
+  assert.equal(written.length, 0, "nothing writes a host value but your Save");
+  const view = publicView(r) as { ext?: Record<string, unknown> };
+  assert.equal(view.ext?.carry, undefined, "the source's values and settings never reach a page");
+  assert.ok(!JSON.stringify(view).includes("5400"));
+  // A second commit (a retry) registers nothing again.
+  await dest.commit({ id: "desk" }, tid, {});
+  assert.equal(registered.length, 1);
+  assert.deepEqual(dest.saveHostValues(tid, { PORT_BASE: "1" }), { ok: false, status: 400, error: "PORT_BASE isn't a host value this transport asks for" });
+  assert.deepEqual(dest.saveHostValues(tid, { DB_URL: "postgres://air/motors" }), { ok: true, left: [] });
+  assert.deepEqual(written, [["/home/v/motors", { DB_URL: "postgres://air/motors" }]]);
+  assert.deepEqual((readTransport(tid)!.ext as { hostAsk?: unknown }).hostAsk, []);
+  setAfterArrival(null);
+});

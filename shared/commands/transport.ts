@@ -82,4 +82,15 @@ export const TRANSPORT_ENTRIES: CommandEntry[] = [
   act("transport.cancel", "Cancel Transport", "Only your click: stop a transport and remove what arrived on the other device; the chat carries on here.", "cancel"),
   act("transport.interrupt", "Interrupt and Move", "Only your click: stop the helpers a Move waits for, so it goes on.", "interrupt"),
   act("transport.move-back", "Move Back", "Only your click: bring a Moved chat back here while nothing happened to it there.", "move-back"),
+  {
+    id: "transport.host-values",
+    label: "Save Host Values",
+    summary: "Only your click on this device's page: set the host values an arrived transport's card asks for, in this device's host.json for the project.",
+    effect: "changes",
+    params: { transport: tid, values: { type: "json", description: "Each asked host value's name and its value", in: "body", required: true } },
+    route: { method: "POST", path: "/api/transport/:tid/host-values" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "full",
+  },
 ];

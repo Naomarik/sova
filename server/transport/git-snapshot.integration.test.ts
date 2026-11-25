@@ -374,6 +374,8 @@ test("the needs answer: the project comes from this device for an unreachable re
     doctor: async () => null,
     offeredModels: async () => [],
     claudeUsable: () => false,
+    agentHidden: async () => [],
+    confine: async () => null,
     startChat: async () => Promise.reject(new Error("no agent here")),
     link: async () => ({ error: "none" }),
     tell: async () => undefined,

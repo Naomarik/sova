@@ -30,6 +30,8 @@ export interface PrepareRequest {
   chatModel?: string;
   /** The project comes in the package (§app.transport/package): nothing is cloned, and the setup checks run once it arrived. */
   fromSource?: boolean;
+  /** The chat's worktrees' folders here (absolute): the agent's tools may write them once they are there. */
+  trees?: string[];
 }
 
 export type Prepared = { ready: true } | { needsYou: string };

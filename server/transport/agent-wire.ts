@@ -10,9 +10,10 @@ import { acquireChatHandle, isSessionBusy } from "../chat-handle";
 import { meshSelf } from "../mesh";
 import { homesRoot } from "../chat-homes/root";
 import { ClaudeLogins, credentialsMtime, loginEnabled, readAccountsState } from "../../pi-config/extensions/claude-code/accounts.ts";
-import { hostVars as hostVarsOf } from "../project-services/store";
+import { hostVars as hostVarsOf, hostVarsFile } from "../project-services/store";
 import { agentRoot, stateRoot } from "../state-root";
-import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, isTransportAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames } from "./agent";
+import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, isTransportAgent, markAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames } from "./agent";
+import type { AgentScope } from "./agent-scope";
 import { remoteReachable } from "./git-snapshot";
 import type { SetupDef } from "./setup-def";
 import { bringHelpersToRest, busyOf, type HelperView, interruptWaiting, type SafeDeps } from "./safe-transport";
@@ -103,7 +104,18 @@ export function claudeLoginUsable(agentDir: string): boolean {
 }
 
 /** The Transport agent's live deps; `app` makes its chat through the same route a page's New Session does. */
-export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void): AgentDeps {
+/** Whether Sova's sandbox confines a chat to `scope` here: the backend probes that very policy (the launch a confined
+    tool call makes, its command `true`), its proxy included; null when it does, else why not. Partial enforcement is
+    refused unless the policy file accepts it, as for an unattended worker. */
+export async function confineProbe(scope: AgentScope): Promise<string | null> {
+  const { prepareSessionCommand } = await import("../../pi-config/extensions/sandbox/session-policy.ts");
+  const r = await prepareSessionCommand({ agentDir: agentRoot(), cwd: scope.workspaceRoot, sessionId: `transport-probe-${process.pid}-${Date.now()}`, parent: scope }, ["true"]);
+  if (!r.ok) return r.error;
+  await r.value.dispose();
+  return null;
+}
+
+export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void, onBlocked?: (tid: string, reason: string) => void): AgentDeps {
   return {
     stateRoot,
     home: () => homedir(),
@@ -128,6 +140,17 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
         return new Set<string>();
       }
     },
+    agentHidden: async () => {
+      const { listProjects } = await import("../projects/spaces");
+      let roots: string[] = [];
+      try {
+        roots = listProjects().map((p) => p.root);
+      } catch {
+        roots = [];
+      }
+      return [hostVarsFile(), join(stateRoot(), "transport"), homesRoot(), `${homesRoot()}.incoming`, ...roots];
+    },
+    confine: confineProbe,
     claudeUsable: () => claudeLoginUsable(agentRoot()),
     offeredModels: async () => {
       try {
@@ -136,12 +159,15 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
         return null;
       }
     },
-    startChat: async ({ cwd, title, prompt, model, thinking }) => {
+    startChat: async ({ cwd, title, prompt, model, thinking, tid, scope }) => {
       const { statingOwnNumber } = await import("../wire-gate");
       const res = await statingOwnNumber(app)("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd, link: true }) });
       const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
       if (res.status !== 201 || !json?.id || !json.path) throw new Error(`The Transport agent's chat didn't start: ${json?.error ?? `HTTP ${res.status}`}`);
       (await import("../session-titles")).writeAutoTitle(json.id, title);
+      // Its scope before its first open: the open's flags read it (agent-scope.ts agentLaunchFlags), so no tool call
+      // of it ever runs unconfined.
+      markAgent(stateRoot(), json.id, tid, Date.now(), scope);
       const chat = await acquireChatHandle(json.path);
       // Normal mode with align, so it can ask the user what it may not decide alone.
       await chat.switchMode({ mode: "normal", minorModes: ["align"] } as Parameters<typeof chat.switchMode>[0]);
@@ -164,7 +190,12 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
       await chat.deliverToAgent(text);
     },
     busy: (path) => isSessionBusy(path),
+    reopen: async (path) => {
+      const { closeChat } = await import("../chat-handle");
+      await closeChat(path, "The chat's worktrees arrived: reopening with them in reach.");
+    },
     ...(onAgent ? { onAgent } : {}),
+    ...(onBlocked ? { onBlocked } : {}),
     sleep,
     now: () => Date.now(),
   };
@@ -197,8 +228,8 @@ export function liveSafeDeps(): SafeDeps {
 /** What transport-core registers with its hooks (setPrepareDestination, setBringHelpersToRest,
     setAfterArrival, setNeedsAnswer, setPreviewExtras), bound to this server's live deps. `onAgent`:
     its updateTransport(tid, {ext: {agent}}), so the transport's view shows its agent. */
-export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void) {
-  const agentDeps = liveAgentDeps(app, onAgent);
+export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void, onBlocked?: (tid: string, reason: string) => void) {
+  const agentDeps = liveAgentDeps(app, onAgent, onBlocked);
   const safeDeps = liveSafeDeps();
   return {
     prepareDestination: (req: PrepareRequest, opts: { signal?: AbortSignal } = {}) => prepareDestination(req, agentDeps, opts),

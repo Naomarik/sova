@@ -37,6 +37,10 @@ export interface TransportView {
     agent?: { sessionId: string; path: string; title: string; device?: string; state: "working" | "ready" | "needs-you"; checks: { id: string; ok: boolean; detail: string }[] };
     /** What the agent sets up there after arrival (short names): done reads "…; setting up … there". */
     settingUp?: string[];
+    /** Here, after arrival: each host value this device lacks for the project, prefilled with the source's value. */
+    hostAsk?: { name: string; value: string }[];
+    /** Here, after arrival: why the agent couldn't start (this device can't confine it). */
+    agentBlocked?: string;
   };
 }
 
@@ -54,6 +58,10 @@ export const startTransport = (body: { path: string; peer: string; mode: "move" 
   call<{ tid: string; transport: TransportView }>("/api/transport", { method: "POST", body: JSON.stringify(body) });
 
 export const transportOf = (tid: string) => call<TransportView>(`/api/transport/${encodeURIComponent(tid)}`);
+
+/** The card's Save: the host values it asks for, written into this device's host.json for the project (your click). */
+export const saveTransportHostValues = (tid: string, values: Record<string, string>) =>
+  call<{ ok: boolean; left: { name: string; value: string }[] }>(`/api/transport/${encodeURIComponent(tid)}/host-values`, { method: "POST", body: JSON.stringify({ values }) });
 
 export const transportAct = (tid: string, act: "retry" | "cancel" | "interrupt") => call<{ ok: boolean }>(`/api/transport/${encodeURIComponent(tid)}/${act}`, { method: "POST", body: "{}" });
 

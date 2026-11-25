@@ -25,6 +25,7 @@ import { findConversation, relocateHome, sessionIdOfName } from "./relocate";
 import { createTransport, logName, readTransport, stepDone, type TransportRecord, updateTransport } from "./store";
 import { checkMembers } from "./tar";
 import { type AgentView, agentViewOf, type OfferBody, peerPath, type ReadyBody, type StatusBody, TICKET_HEADER } from "./wire";
+import { type CarriedSettings, type HostAsk, hostAsksOf, parseCarried, parseHostCarry, pickHostValues } from "./project-carry";
 
 const log = (line: string) => console.log(`[transport] ${line}`);
 
@@ -52,6 +53,13 @@ export interface DestinationDeps {
   titleOf?(path: string): Promise<string | null>;
   /** Put the Transport agent's card in the arrived chat (a note that starts no turn). */
   noteAgentCard?(path: string, text: string, card: AgentCardNote): Promise<boolean>;
+  /** The project arrived at `root`: register it here with the carried settings unless a project here has that root
+      (project-carry.ts registerArrived). */
+  registerArrived?(root: string, settings: CarriedSettings | null): Promise<{ registered: string } | { already: string } | { error: string }>;
+  /** The host value names this device holds for the project at `root` (its host.json); read only. */
+  hostHeld?(root: string): Set<string>;
+  /** Write host values for the project at `root` into this device's host.json: only on your Save on the card. */
+  writeHostValues?(root: string, values: Record<string, string>): void;
 }
 
 /** The Transport agent's card in a chat (§app.transport/agent): the transport it reads, the agent's title and device. */
@@ -160,13 +168,29 @@ export async function takeOffer(from: { id: string; label: string }, raw: string
     state: "preparing",
     ticket: b.ticket,
     // The folders that aren't here yet: one the Transport agent then makes is this transport's to take over.
-    ext: { absentAtOffer: (b.trees ?? []).map((t) => (t.rel ? resolve(dirname(resolve(b.folder)), t.rel) : resolve(b.folder))).filter((p) => !existsSync(p)), offer: { trees: b.trees, repoRel: b.repoRel, project: b.project, ...(b.model ? { model: b.model } : {}), ...(typeof b.chatModel === "string" && b.chatModel.length < 200 ? { chatModel: b.chatModel } : {}) } },
+    ext: {
+      absentAtOffer: (b.trees ?? []).map((t) => (t.rel ? resolve(dirname(resolve(b.folder)), t.rel) : resolve(b.folder))).filter((p) => !existsSync(p)),
+      offer: { trees: b.trees, repoRel: b.repoRel, project: b.project, ...(b.model ? { model: b.model } : {}), ...(typeof b.chatModel === "string" && b.chatModel.length < 200 ? { chatModel: b.chatModel } : {}) },
+      // The source's host values (for the declared names only) and its settings for the project: never in a view or a log.
+      ...carryOf(b),
+    },
   });
   stepDone(b.tid, "offered");
   log(`${b.tid}: offered by ${from.label} (${b.mode} of ${b.chat.id})`);
   void prepare(b.tid);
   return ok({ ok: true });
 }
+
+/** What an offer carries of the project besides its code (project-carry.ts), as the record keeps it (`ext.carry`). */
+function carryOf(b: OfferBody): { carry?: { host?: { names: string[]; values: Record<string, string> }; settings?: CarriedSettings } } {
+  const host = parseHostCarry(b.host);
+  const settings = parseCarried(b.projectSettings);
+  return host || settings ? { carry: { ...(host ? { host } : {}), ...(settings ? { settings } : {}) } } : {};
+}
+const carryOfRecord = (r: TransportRecord) => (((r.ext ?? {}) as { carry?: ReturnType<typeof carryOf>["carry"] }).carry ?? {}) as NonNullable<ReturnType<typeof carryOf>["carry"]>;
+
+/** The project's folder here: the repository (beside the chat's folder when its tree is a linked worktree). */
+const projectRootOf = (r: TransportRecord): string => repoPathOf(r) ?? r.folder;
 
 interface OfferExt {
   trees: OfferBody["trees"];
@@ -206,6 +230,7 @@ function requestOf(r: TransportRecord, fromSource: boolean, title = r.title): Pr
     ...(o.model ? { model: o.model } : {}),
     ...(o.chatModel ? { chatModel: o.chatModel } : {}),
     ...(fromSource ? { fromSource: true } : {}),
+    trees: o.trees.map((t) => (t.rel ? resolve(dirname(r.folder), t.rel) : r.folder)),
   };
 }
 
@@ -458,6 +483,10 @@ export async function commit(from: { id: string }, tid: string, body: { stopped?
     const said = Buffer.from(text).subarray(from).toString("utf8").split("\n").some((l) => l.includes('"sova-transport-arrival"') && l.includes(JSON.stringify(note).slice(1, -1)));
     if (!said) await need().openWithNote(file, note);
     await knob(tid, "opened");
+    await registerHere(tid);
+    // The host values this device lacks for the project are yours to set, on the card, prefilled with the source's.
+    const asks = hostAsksOf(carryOfRecord(r).host ?? null, need().hostHeld?.(projectRootOf(r)) ?? new Set());
+    if (asks.length || hostAsksOfRecord(readTransport(tid)!).length) updateTransport(tid, { ext: { hostAsk: asks } });
     // What is left to set up here goes to the Transport agent now (its turn goes on by itself): what it took on is
     // said to the source, and its card is in the chat (once: a card that travelled with the chat stays the one).
     const setup = await afterArrival({
@@ -487,16 +516,54 @@ const agentOfRecord = (r: TransportRecord): AgentView | null => {
   return a && typeof a.sessionId === "string" && typeof a.path === "string" ? a : null;
 };
 
-/** After arrival: the agent working here for transport `tid` gets its card in the arrived chat `file`, unless one is there. */
+/** The host values transport `r`'s card still asks for here. */
+const hostAsksOfRecord = (r: TransportRecord): HostAsk[] => ((r.ext ?? {}) as { hostAsk?: HostAsk[] }).hostAsk ?? [];
+
+/** After arrival: the card goes in the arrived chat `file`, unless one is there, when the agent works here for
+    transport `tid`, couldn't start (no confinement here), or a host value is to be asked. */
 async function putAgentCard(tid: string, file: string): Promise<void> {
   const r = readTransport(tid);
-  const a = r ? agentOfRecord(r) : null;
-  if (!r || !a || a.state === "ready" || !need().noteAgentCard) return;
+  if (!r || !need().noteAgentCard) return;
+  const a = agentOfRecord(r);
+  const working = !!a && a.state !== "ready";
+  const blocked = typeof ((r.ext ?? {}) as { agentBlocked?: string }).agentBlocked === "string";
+  const asks = hostAsksOfRecord(r).length;
+  if (!working && !blocked && !asks) return;
   if (hasAgentCard(await readFile(file, "utf8").catch(() => ""), tid)) return;
-  const device = a.device ?? "this device";
+  const device = a?.device ?? "this device";
+  const title = a?.title ?? `Transport: ${r.title}`;
+  const text = working ? `The Transport agent "${title}" is setting up this project on ${device}.` : blocked ? `The Transport agent couldn't start on ${device}.` : `This project needs ${asks === 1 ? "1 host value" : `${asks} host values`} set on ${device}.`;
   await need()
-    .noteAgentCard!(file, `The Transport agent "${a.title}" is setting up this project on ${device}.`, { tid, title: a.title, device })
+    .noteAgentCard!(file, text, { tid, title, device })
     .catch((err: unknown) => log(`${tid}: its agent's card wasn't put in the chat: ${err instanceof Error ? err.message : String(err)}`));
+}
+
+/** The project arrived: registered here with the source's settings for it, unless a project here has its root
+    (§app.transport/arrival). Once per transport; what happened is logged, never a setting's value. */
+async function registerHere(tid: string): Promise<void> {
+  const r = readTransport(tid);
+  if (!r || !need().registerArrived || ((r.ext ?? {}) as { registration?: string }).registration) return;
+  const root = projectRootOf(r);
+  const res = await need().registerArrived!(root, carryOfRecord(r).settings ?? null);
+  const said = "registered" in res ? `registered as ${res.registered}` : "already" in res ? `already ${res.already}` : `not registered: ${res.error}`;
+  log(`${tid}: the project at ${root}: ${said}`);
+  updateTransport(tid, { ext: { registration: "registered" in res ? res.registered : "already" in res ? "already" : "failed" } });
+}
+
+/** Your Save on the Transport card (POST /api/transport/:tid/host-values): the host values it asks, written into this
+    device's host.json for the project, and the card asks only for what is left. Values are never logged. */
+export function saveHostValues(tid: string, given: unknown): { ok: true; left: HostAsk[] } | { ok: false; status: 400 | 404 | 409; error: string } {
+  const r = readTransport(tid);
+  if (!r || r.side !== "destination") return { ok: false, status: 404, error: "No such transport here" };
+  const asked = hostAsksOfRecord(r);
+  if (!asked.length || !need().writeHostValues) return { ok: false, status: 409, error: "This transport asks for no host values here." };
+  const picked = pickHostValues(asked, given);
+  if (typeof picked === "string") return { ok: false, status: 400, error: picked };
+  need().writeHostValues!(projectRootOf(r), picked);
+  const left = asked.filter((a) => !(a.name in picked));
+  updateTransport(tid, { ext: { hostAsk: left } });
+  log(`${tid}: ${Object.keys(picked).length} host value(s) set by you for ${projectRootOf(r)}`);
+  return { ok: true, left };
 }
 
 /** How far it is (GET …/:tid). */

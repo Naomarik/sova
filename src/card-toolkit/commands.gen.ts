@@ -314,7 +314,8 @@ export type CommandId =
   | "transport.retry"
   | "transport.cancel"
   | "transport.interrupt"
-  | "transport.move-back";
+  | "transport.move-back"
+  | "transport.host-values";
 
 /** Each command's params, as its catalogue entry declares them. */
 export interface CommandParams {
@@ -5086,6 +5087,13 @@ export interface CommandParams {
     /** The transport's id (tr_…) */
     "transport": string;
   };
+  /** Only your click on this device's page: set the host values an arrived transport's card asks for, in this device's host.json for the project. (changes something; needs the card's owner trusted) */
+  "transport.host-values": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** Each asked host value's name and its value */
+    "values": unknown;
+  };
 }
 
 /** Whether each command only looks or changes something; a view runs either only once its owner is trusted. */
@@ -5402,4 +5410,5 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "transport.cancel": "changes",
   "transport.interrupt": "changes",
   "transport.move-back": "changes",
+  "transport.host-values": "changes",
 };

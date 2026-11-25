@@ -184,8 +184,14 @@ export function activeTransportOf(chatId: string): TransportRecord | null {
 }
 
 /** What a page may see of a record: never the ticket. */
+/** A record as a page reads it: never its ticket, nor what the offer carried of the project (the source's host values
+    and settings: `ext.carry`); the host values the card asks for are `ext.hostAsk`. */
 export function publicView(r: TransportRecord): Omit<TransportRecord, "ticket"> {
   const { ticket: _t, ...rest } = r;
+  if (rest.ext && "carry" in rest.ext) {
+    const { carry: _c, ...ext } = rest.ext as Record<string, unknown>;
+    return { ...rest, ext };
+  }
   return rest;
 }
 

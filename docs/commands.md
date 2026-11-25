@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 690 |
-| Routes a catalogue entry points at | 238 |
-| Catalogue entries | 312 |
+| Routes registered | 691 |
+| Routes a catalogue entry points at | 239 |
+| Catalogue entries | 313 |
 | Class: Peer protocol | 49 |
 | Class: Auth | 8 |
 | Class: Share pages | 0 |
@@ -353,6 +353,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `transport.cancel` | Cancel Transport | changes | `POST /api/transport/:tid/cancel` | full |
 | `transport.interrupt` | Interrupt and Move | changes | `POST /api/transport/:tid/interrupt` | full |
 | `transport.move-back` | Move Back | changes | `POST /api/transport/:tid/move-back` | full |
+| `transport.host-values` | Save Host Values | changes | `POST /api/transport/:tid/host-values` | full |
 
 ## Pending routes
 
@@ -1150,6 +1151,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/transport/:tid` | full | `transport.get` |
 | `GET /api/transport/:tid/back` | full | `transport.back` |
 | `POST /api/transport/:tid/cancel` | full | `transport.cancel` |
+| `POST /api/transport/:tid/host-values` | full | `transport.host-values` |
 | `POST /api/transport/:tid/interrupt` | full | `transport.interrupt` |
 | `POST /api/transport/:tid/move-back` | full | `transport.move-back` |
 | `POST /api/transport/:tid/retry` | full | `transport.retry` |

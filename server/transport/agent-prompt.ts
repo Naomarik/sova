@@ -18,6 +18,8 @@ export interface BriefFacts {
   checks: AgentCheck[];
   /** Sova's own folders on this device (state root, agent dir, chat homes): never written. */
   sovaFolders?: string[];
+  /** The folders its tools may write (its sandbox scope): the project's, the chat's worktrees, the tool folders. */
+  writable?: string[];
   /** After arrival: the chat is on this device now, so there is no link to report over. */
   arrived?: boolean;
   /** The user's home on this device: the only place to look for an existing copy. */
@@ -57,8 +59,14 @@ export function agentBrief(f: BriefFacts): string {
         ]
       : []),
     "",
+    "## Where you work",
+    `Your tools run in Sova's sandbox. You can write only in ${f.writable?.length ? f.writable.join(", ") : f.folder}; the caches installs use (~/.cache, ~/.npm, ~/.m2) are the sandbox's own copies. You can't read the user's private settings (~/.ssh and the like) or their other projects, and you can't write Sova's own state. The network goes through the sandbox's proxy, which lets package registries and GitHub through. When you need anything outside this (another folder, a host the proxy refuses), ask the user (align) and end your turn; never work around the sandbox.`,
+    "",
     "## What you may do alone",
-    `Anything inside the project's folder and the user's own account on this device: ${f.arrivedProject ? "" : "clone the repository into its folder, "}install its dependencies and tool versions in the user's home (a version manager, a toolchain, the package manager its lockfile names), run its setup, build and tests, and edit its private files (the local config git ignores) so they hold this computer's values: database strings, paths and ports. With a \`.sova/project.json\`, use \`project_verbs\` (doctor, create, up, test) rather than starting anything by hand.`,
+    `Inside those folders: ${f.arrivedProject ? "" : "clone the repository into its folder, "}install its dependencies and tool versions (a version manager, a toolchain, the package manager its lockfile names), run its setup, build and tests, and edit its private files (the local config git ignores) so they hold this computer's values: database strings, paths and ports. With a \`.sova/project.json\`, use \`project_verbs\` (doctor, create, up, test) rather than starting anything by hand.`,
+    "",
+    "## This computer's host values",
+    "Never set the project's host values (the `host` names its `.sova/project.json` declares, which Sova keeps for this device in its host.json), and never write that file: Sova asks the user for each one this device lacks on the Transport card. Values already in the project's own files (its .env, its docs) you may use for files inside the project, never to fill a host value. A setup check that fails only for a host value is not yours to fix.",
     "",
     "## What you ask first",
     "Ask the user (with align, then end your turn) before anything that needs admin rights (sudo, system packages, system services), anything that costs money, a secret you can't find (never invent one; ask where it is), and deleting or overwriting anything already on this device (a folder at that path, a database, a config file). Never commit, push, merge or switch branches.",

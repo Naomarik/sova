@@ -601,6 +601,7 @@
     "POST /api/tours/:sessionId/jobs/:jobId/sign-in": {"need":"full","is":"opted-out"},
     "POST /api/transport": {"need":"full","is":"command","ids":["transport.start"]},
     "POST /api/transport/:tid/cancel": {"need":"full","is":"command","ids":["transport.cancel"]},
+    "POST /api/transport/:tid/host-values": {"need":"full","is":"command","ids":["transport.host-values"]},
     "POST /api/transport/:tid/interrupt": {"need":"full","is":"command","ids":["transport.interrupt"]},
     "POST /api/transport/:tid/move-back": {"need":"full","is":"command","ids":["transport.move-back"]},
     "POST /api/transport/:tid/retry": {"need":"full","is":"command","ids":["transport.retry"]},

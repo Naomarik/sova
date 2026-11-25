@@ -295,6 +295,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "transport.cancel": "acts across two devices of a mesh; server/transport/*.test.ts and the lab cover it",
   "transport.interrupt": "acts across two devices of a mesh; server/transport/*.test.ts and the lab cover it",
   "transport.move-back": "acts across two devices of a mesh; server/transport/*.test.ts and the lab cover it",
+  "transport.host-values": "acts on an arrived transport's record and this device's host.json; server/transport/arrival-agent.test.ts covers it",
   "session.approval.set": "acquires a chat handle, which starts the chat's process (server/approval-in-chat.ts's own tests drive it)",
   "session.configure": "acquires a chat handle, which starts the chat's process",
   "session.mode.set": "acquires a chat handle, which starts the chat's process",

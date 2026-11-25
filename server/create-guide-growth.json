@@ -465,6 +465,7 @@
    "transport.cancel": "computers",
    "transport.interrupt": "computers",
    "transport.move-back": "computers",
+   "transport.host-values": "computers",
    "session.draft.get": "scripts",
    "session.draft.set": "scripts",
    "session.shell.output": "scripts",

@@ -15,6 +15,7 @@ import { bringHelpersToRest, knob, previewExtras } from "./hooks";
 import { movedOf } from "./moved";
 import { buildPackage } from "./package";
 import { readSetupDef, type SetupDef } from "./setup-def";
+import { type CarriedSettings, hostCarry } from "./project-carry";
 import { activeTransportOf, createTransport, logName, newTicket, newTid, readTransport, stepDone, type TransportRecord, updateTransport } from "./store";
 import type { AgentView, OfferBody, OfferTree, StatusBody } from "./wire";
 import { agentViewOf, peerPath, PROOF_HEADER } from "./wire";
@@ -75,6 +76,10 @@ export interface SourceDeps {
   moved(r: TransportRecord): Promise<void>;
   /** Put the Transport agent's card in the chat here (a note that starts no turn). */
   noteAgentCard?(path: string, text: string, card: { tid: string; title: string; device: string }): Promise<boolean>;
+  /** This device's host values for the project at `root` (its host.json; read only, never logged). */
+  hostValues?(root: string): Record<string, string>;
+  /** This device's Sova settings for the project at `root` as they travel (project-carry.ts); null: not a project here. */
+  projectSettings?(root: string): Promise<CarriedSettings | null>;
 }
 
 let deps: SourceDeps | null = null;
@@ -358,6 +363,29 @@ export async function startTransport(b: StartBody): Promise<{ ok: true; tid: str
   return { ok: true, tid };
 }
 
+/** The repository's own folder here for a tree: itself when it is the main checkout, else its common dir's parent. */
+async function repoRootOf(tree: { path: string; main: boolean }): Promise<string> {
+  if (tree.main) return tree.path;
+  const common = (await git(tree.path, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim();
+  return common ? dirname(common) : tree.path;
+}
+
+/** What the offer carries of the project besides its code: the host values its definition declares with this
+    device's values for them (only those names), and this device's Sova settings for it (project-carry.ts). */
+async function carriedOf(own: { path: string; main: boolean }): Promise<Pick<OfferBody, "host" | "projectSettings">> {
+  const d = need();
+  const root = await repoRootOf(own).catch(() => own.path);
+  const names = readSetupDef(own.path)?.host ?? [];
+  const host = names.length ? hostCarry(names, d.hostValues?.(root) ?? {}) : null;
+  let settings: CarriedSettings | null = null;
+  try {
+    settings = (await d.projectSettings?.(root)) ?? null;
+  } catch {
+    settings = null;
+  }
+  return { ...(host ? { host } : {}), ...(settings ? { projectSettings: settings } : {}) };
+}
+
 async function sendOffer(tid: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const d = need();
   const r = readTransport(tid)!;
@@ -379,6 +407,7 @@ async function sendOffer(tid: string): Promise<{ ok: true } | { ok: false; error
     sourceLabel: d.selfLabel(),
     ...(r.choices?.agentModel ? { model: r.choices.agentModel } : {}),
     ...(c?.model ? { chatModel: c.model } : {}),
+    ...(own ? await carriedOf(own) : {}),
   };
   const body = JSON.stringify(offer);
   const proof = d.mintProof(r.peer, body);

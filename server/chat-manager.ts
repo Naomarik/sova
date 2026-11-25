@@ -54,6 +54,7 @@ import { stateView } from "./harness/state-view";
 import { LiveTail } from "./chat-runtime/live-tail";
 import { takeWriterLock, type WriterLock, WriterLockHeld } from "./chat-runtime/writer-lock";
 import { sovaNamedKind } from "../shared/fixed-names";
+import { agentLaunchFlags } from "./transport/agent-scope";
 import { extensionFlagValues, getModelRuntime, openPiSession, type OpenFlags, type OpenRead, type PiBuild, type PiModelRuntime, reapplyClaudeModels, warmClaudeCodeProvider as warmPiProvider } from "./harness/pi/open";
 import type { PiExtensionAPI, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { PiChatHost } from "./harness/pi/host";
@@ -151,7 +152,7 @@ import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from 
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
-import { agentRoot } from "./state-root";
+import { agentRoot, stateRoot } from "./state-root";
 import { ARCHIVED_REFUSAL } from "./archived-sessions";
 import { SendKeys } from "./send-keys";
 import { UserTurns } from "./user-turns";
@@ -5238,7 +5239,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       // in their tmp) and the main checkout it starts in never a writable root; the rest goes through the merge verbs.
       // Sova's own machine-facing chats (the merge thread, its reviewers, the release thread): no reply shape (§chat.mode-menu/reply-shape).
       // Those and the special loadouts (the Overseer's own chat): no built-in helper profile while no default is chosen.
-      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}), ...(sovaNamedKind(snap) ? { replyShapeOff: true } : {}), ...(special || sovaNamedKind(snap) ? { noHelperProfile: true } : {}) }),
+      // A Transport agent's chat (§app.transport/agent): its sandbox On from its first tool call, confined to its scope.
+      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}), ...(agentLaunchFlags(stateRoot(), read.id) ?? {}), ...(sovaNamedKind(snap) ? { replyShapeOff: true } : {}), ...(special || sovaNamedKind(snap) ? { noHelperProfile: true } : {}) }),
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),

@@ -312,7 +312,8 @@
     "transport.retry",
     "transport.cancel",
     "transport.interrupt",
-    "transport.move-back"
+    "transport.move-back",
+    "transport.host-values"
   ],
   "retired": [
     "settings.agents.get",

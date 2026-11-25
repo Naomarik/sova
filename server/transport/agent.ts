@@ -15,10 +15,11 @@
 // needsAnswer only reads (git and, for a folder with a definition, its doctor). All three refuse a
 // folder outside the user's home or inside Sova's own folders, and never repeat a remote's credentials.
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { ONBOARD_THINKING, onboardModels } from "../projects/onboard";
 import { agentArrivedMissing, agentBrief, agentPrivateValues, agentStillMissing } from "./agent-prompt";
+import { type AgentScope, agentScope, MADE_TOOL_DIRS, preparedFile } from "./agent-scope";
 import { lacksRepo, projectComesFrom, withoutCredentials } from "./git-snapshot";
 import type { SetupDef } from "./setup-def";
 
@@ -57,6 +58,8 @@ export interface PrepareRequest {
   /** The project comes in the package (this device lacks it and can't clone it): no agent clones it, and the setup
       checks run once it has arrived. */
   fromSource?: boolean;
+  /** The chat's worktrees' folders on this device (absolute): writable for the agent once they are there. */
+  trees?: string[];
 }
 export type PrepareResult = { ready: true } | { needsYou: string };
 
@@ -99,8 +102,15 @@ export interface AgentDeps {
   offeredModels(): Promise<string[] | null>;
   /** Whether this device has a Claude login Claude Code can run on now. */
   claudeUsable(): boolean;
-  /** Start the agent's chat here, linked-member kind, with its title, model and first prompt. */
-  startChat(input: { cwd: string; title: string; prompt: string; model: string; thinking: string }): Promise<{ id: string; path: string }>;
+  /** Folders hidden from the agent besides the sandbox policy's own: this device's host values (host.json), the
+      transport records, the chat homes and the other projects registered here. */
+  agentHidden(): Promise<string[]>;
+  /** Whether Sova's sandbox can confine a chat to `scope` on this device (its backend probes that very scope): null
+      when it can, else why not. Nothing starts unconfined. */
+  confine(scope: AgentScope): Promise<string | null>;
+  /** Start the agent's chat here, linked-member kind, with its title, model and first prompt, its tools confined to
+      `scope` from its first call (recorded for transport `tid` before the chat first opens). */
+  startChat(input: { cwd: string; title: string; prompt: string; model: string; thinking: string; tid: string; scope: AgentScope }): Promise<{ id: string; path: string }>;
   /** Link the agent's chat to the chat on the source. */
   link(agentSessionId: string, sourcePeer: string, sourceChatId: string): Promise<{ linkId: string } | { error: string }>;
   /** End the agent's link to the chat on the source: its preparing is done, so no report can bounce between them. */
@@ -111,6 +121,10 @@ export interface AgentDeps {
   busy(path: string): boolean;
   /** The transport record heard of its agent (its `ext.agent`, for the transport's view); absent: nobody listens. */
   onAgent?(tid: string, a: AgentState): void;
+  /** After arrival, the agent couldn't start or take the chat's worktrees (no confinement here): its card says why. */
+  onBlocked?(tid: string, reason: string): void;
+  /** Close an idle agent's chat so its next open takes its new scope. */
+  reopen?(path: string): Promise<void>;
   sleep(ms: number): Promise<void>;
   now(): number;
 }
@@ -224,6 +238,8 @@ export async function preflight(asked: ProjectRef, deps: Pick<AgentDeps, "which"
     dir = false;
   }
   if (!dir) return [{ id: "folder", ok: false, detail: `${path} is a file, not a folder: ask the user before touching it` }];
+  // An empty folder (the agent's own workspace, made before it starts) holds nothing yet: the project is cloned into it.
+  if (isEmptyDir(path)) return [{ id: "folder", ok: false, detail: `${path} is empty: clone ${where} into it` }];
   const top = await deps.git(["rev-parse", "--show-toplevel"], path).catch(() => ({ code: 1, stdout: "" }));
   if (top.code !== 0) return [{ id: "folder", ok: false, detail: `${path} exists but isn't a Git repository: ask the user before changing anything in it` }];
   const checks: AgentCheck[] = [];
@@ -257,20 +273,37 @@ async function sameProject(path: string, project: ProjectRef, deps: Pick<AgentDe
 
 const missingOf = (checks: AgentCheck[]) => checks.filter((c) => !c.ok);
 
+const isEmptyDir = (p: string): boolean => {
+  try {
+    return readdirSync(p).length === 0;
+  } catch {
+    return false;
+  }
+};
+
+/** A doctor finding about a host value (the definition's `host` names, in this device's host.json): never the
+    agent's to fix. The user is asked for each on the Transport card (§app.transport/agent "This computer's host values"). */
+export const isHostCheck = (c: AgentCheck): boolean => c.id.startsWith("doctor:host:");
+/** What the agent is there for: every failing check but the host values. */
+export const agentMissing = (checks: AgentCheck[]): AgentCheck[] => missingOf(checks).filter((c) => !isHostCheck(c));
+/** The checks the agent is shown: the host values are the user's, so they are left out. */
+const forAgent = (checks: AgentCheck[]): AgentCheck[] => checks.filter((c) => !isHostCheck(c));
+
 // ---- prepared once per device -------------------------------------------------------------------
 
 interface PreparedFile {
   v: 1;
   /** By project key: where it was proven, and when. */
   projects: Record<string, { path: string; at: number; tid: string }>;
-  /** The agents' chats, by session id: what refuses transporting one (§app.transport/start). */
-  agents: Record<string, { tid: string; at: number }>;
+  /** The agents' chats, by session id: what refuses transporting one (§app.transport/start), and the scope its
+      tools are confined to (agent-scope.ts agentLaunchFlags reads it at each open). */
+  agents: Record<string, { tid: string; at: number; scope?: AgentScope }>;
   /** Each transport's agent, by transport id. */
   byTransport?: Record<string, AgentState>;
 }
 
-/** `<stateRoot>/transport-agent.json`: beside the transport records' folder, never in it. */
-export const preparedFile = (root: string) => join(root, "transport-agent.json");
+/** `<stateRoot>/transport-agent.json`: beside the transport records' folder, never in it (agent-scope.ts names it). */
+export { preparedFile };
 
 /** A project's identity on this device: its root commit, else its first remote, else its folder. Pure. */
 export const projectKey = (p: ProjectRef): string =>
@@ -306,9 +339,11 @@ function markPrepared(root: string, p: ProjectRef, tid: string, at: number): voi
   writePrepared(root, f);
 }
 
-function markAgent(root: string, sessionId: string, tid: string, at: number): void {
+/** Record session `sessionId` as transport `tid`'s agent, keeping the scope it was confined to (or recording `scope`). */
+export function markAgent(root: string, sessionId: string, tid: string, at: number, scope?: AgentScope): void {
   const f = readPrepared(root);
-  f.agents[sessionId] = { tid, at };
+  const was = f.agents[sessionId];
+  f.agents[sessionId] = { tid, at: was?.at ?? at, ...((scope ?? was?.scope) ? { scope: scope ?? was!.scope } : {}) };
   writePrepared(root, f);
 }
 
@@ -319,7 +354,8 @@ function saveAgent(deps: Pick<AgentDeps, "stateRoot" | "onAgent">, tid: string, 
   const root = deps.stateRoot();
   const f = readPrepared(root);
   (f.byTransport ??= {})[tid] = a;
-  f.agents[a.sessionId] = { tid, at: a.startedAt };
+  const was = f.agents[a.sessionId];
+  f.agents[a.sessionId] = { tid, at: a.startedAt, ...(was?.scope ? { scope: was.scope } : {}) };
   writePrepared(root, f);
   try {
     deps.onAgent?.(tid, a);
@@ -447,8 +483,9 @@ export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps,
     }
     return { ready: true };
   }
-  let checks = await preflight(req.project, deps);
-  if (!missingOf(checks).length) {
+  // A host value it lacks never holds the transport here: the user is asked for it on the Transport card once it arrives.
+  let checks = forAgent(await preflight(req.project, deps));
+  if (!agentMissing(checks).length) {
     markPrepared(root, req.project, req.tid, deps.now());
     const a = agentOf(deps.stateRoot(), req.tid);
     if (a && a.state !== "ready") {
@@ -468,47 +505,63 @@ export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps,
     agent = { ...agent, state: "working", checks };
     saveAgent(deps, req.tid, agent);
   }
-  checks = await waitForTurnEnd(agent.path, req.project, deps, opts.signal);
-  if (!missingOf(checks).length) {
+  checks = forAgent(await waitForTurnEnd(agent.path, req.project, deps, opts.signal));
+  if (!agentMissing(checks).length) {
     markPrepared(root, req.project, req.tid, deps.now());
     if (agent.linkId) await deps.endLink?.(agent.linkId).catch(() => undefined);
     saveAgent(deps, req.tid, { ...agent, state: "ready", checks });
     return { ready: true };
   }
   saveAgent(deps, req.tid, { ...agent, state: "needs-you", checks });
-  return { needsYou: deviceNeeds(deps.device(), missingOf(checks).length, agent.title) };
+  return { needsYou: deviceNeeds(deps.device(), agentMissing(checks).length, agent.title) };
 }
 
-/** Start the transport's agent: its chat here, on its model, briefed with `checks`, linked to the chat on the source. */
+/** Why the agent can't be confined on this device: it never starts then, and the transport waits as Needs you. */
+export const unconfinedRefusal = (device: string, why: string) => `${device} can't confine the Transport agent to the project's folders (${why}), so it didn't start. Set up Sova's sandbox there, then press Retry`;
+
+/** Start the transport's agent: its chat here, on its model, briefed with `checks`, linked to the chat on the source,
+    its tools confined from their first call to the project's folder, the chat's worktrees and the tool folders installs
+    fill (agent-scope.ts). When this device can't confine it, nothing starts. */
 async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: AgentDeps, arrived = false): Promise<AgentState | { needsYou: string }> {
   const root = deps.stateRoot();
   const title = `Transport: ${req.title}`;
   const choice = agentModel(req.model, await deps.offeredModels(), { claudeUsable: deps.claudeUsable(), ...(req.chatModel ? { chatModel: req.chatModel } : {}) });
   if (!choice) return { needsYou: `${deps.device()} offers no model for the Transport agent: pick one in the dialog` };
-  // Its folder may not exist yet: it works from the nearest folder that does, made inside the user's account.
-  const cwd = existsSync(req.project.path) ? resolve(req.project.path) : dirname(resolve(req.project.path));
-  mkdirSync(cwd, { recursive: true });
+  // Its workspace is the project's folder, made empty when it isn't there yet (it clones into it), and the tool
+  // folders a first install needs: a confined write lands only in a folder that exists.
+  const folder = resolve(req.project.path);
+  const made = !existsSync(folder);
+  mkdirSync(folder, { recursive: true });
+  for (const d of MADE_TOOL_DIRS) mkdirSync(join(deps.home(), d), { recursive: true });
+  const scope = agentScope({ folder, trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden() });
+  const unconfined = await deps.confine(scope).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
+  if (unconfined) {
+    if (made && isEmptyDir(folder)) rmdirSync(folder);
+    return { needsYou: unconfinedRefusal(deps.device(), unconfined) };
+  }
+  const shown = forAgent(checks);
   const prompt = agentBrief({
     title: req.title,
     device: deps.device(),
     source: req.sourceLabel ?? req.sourcePeer,
-    folder: resolve(req.project.path),
+    folder,
     remotes: req.project.remotes,
     branches: req.worktrees.map((w) => w.branch).filter(Boolean),
     ...(req.worktrees[0]?.branch ? { checkout: { branch: req.worktrees[0].branch, ...(req.worktrees[0].head ? { head: req.worktrees[0].head } : {}) } } : {}),
-    checks,
+    checks: shown,
     sovaFolders: deps.protectedRoots(),
+    writable: scope.writable,
     arrived,
     ...(req.fromSource ? { arrivedProject: true } : {}),
     home: deps.home(),
   });
-  const made = await deps.startChat({ cwd, title, prompt, model: choice.model, thinking: choice.thinking });
-  markAgent(root, made.id, req.tid, deps.now());
+  const chat = await deps.startChat({ cwd: folder, title, prompt, model: choice.model, thinking: choice.thinking, tid: req.tid, scope });
+  markAgent(root, chat.id, req.tid, deps.now(), scope);
   // After arrival the chat is here (a Move leaves only its Moved row there): a link joins two devices, so none is made.
   const linked: { linkId: string } | { error: string } = arrived
     ? { error: "the chat has arrived on this device" }
-    : await deps.link(made.id, req.sourcePeer, req.sourceChatId).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
-  const agent: AgentState = { sessionId: made.id, path: made.path, title, model: choice.model, device: deps.device(), ...("linkId" in linked ? { linkId: linked.linkId } : { linkError: linked.error }), state: "working", checks, startedAt: deps.now() };
+    : await deps.link(chat.id, req.sourcePeer, req.sourceChatId).catch((e: unknown) => ({ error: e instanceof Error ? e.message : String(e) }));
+  const agent: AgentState = { sessionId: chat.id, path: chat.path, title, model: choice.model, device: deps.device(), ...("linkId" in linked ? { linkId: linked.linkId } : { linkError: linked.error }), state: "working", checks: shown, startedAt: deps.now() };
   saveAgent(deps, req.tid, agent);
   return agent;
 }
@@ -586,7 +639,7 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
   const req = { ...asked, project: cleanProject(asked.project, deps.home()) };
   if (folderRefusal(req.project.path, deps.home(), deps.protectedRoots())) return [];
   const hits = sourceValuesIn(req.privateFiles, req.sourceValues);
-  const setup = req.fromSource ? missingOf(await preflight(req.project, deps)) : [];
+  const setup = req.fromSource ? agentMissing(await preflight(req.project, deps)) : [];
   if (req.fromSource && !setup.length) markPrepared(deps.stateRoot(), req.project, req.tid, deps.now());
   if (!hits.length && !setup.length) return [];
   const source = req.sourceLabel ?? req.sourcePeer;
@@ -594,19 +647,36 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
     found.map((h) => ({ id: `private:${h.file}`, ok: false, detail: `${h.file} still holds ${source}'s ${h.found.join(", ")}: point it at this computer` }));
   let agent = agentOf(deps.stateRoot(), req.tid);
   if (agent) {
+    // It started before the chat's worktrees were here: its next open confines it to them too (a running chat keeps the
+    // scope it opened with, so an idle one is closed and reopens on the message below).
+    const scope = agentScope({ folder: resolve(req.project.path), trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden() });
+    const was = readPrepared(deps.stateRoot()).agents[agent.sessionId]?.scope;
+    if (!was || scope.writable.some((w) => !was.writable.includes(w))) {
+      const unconfined = await deps.confine(scope).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
+      if (unconfined) {
+        deps.onBlocked?.(req.tid, unconfinedRefusal(deps.device(), unconfined));
+        return [];
+      }
+      markAgent(deps.stateRoot(), agent.sessionId, req.tid, deps.now(), scope);
+      if (!deps.busy(agent.path)) await deps.reopen?.(agent.path).catch(() => undefined);
+    }
     await deps.tell(agent.path, [...(setup.length ? [agentArrivedMissing(source, setup)] : []), ...(hits.length ? [agentPrivateValues(source, hits)] : [])].join("\n\n"));
     agent = { ...agent, state: "working", checks: [...setup, ...checksOf(hits)] };
     saveAgent(deps, req.tid, agent);
   } else {
     const started = await startAgent(req, [...setup, ...checksOf(hits)], deps, true);
-    if ("needsYou" in started) return [];
+    if ("needsYou" in started) {
+      // After arrival there is no transport step to hold: its card in the arrived chat says why nothing started.
+      deps.onBlocked?.(req.tid, started.needsYou);
+      return [];
+    }
     agent = started;
   }
   opts.onStarted?.(agent.checks);
   // Its turn ends: the checks and files are read again, and what it left is the transport's to show (ready, or Needs you).
   await turnEnded(agent.path, deps);
   const left = sourceValuesIn(req.privateFiles, req.sourceValues);
-  const stillSetup = setup.length ? missingOf(await preflight(req.project, deps)) : [];
+  const stillSetup = setup.length ? agentMissing(await preflight(req.project, deps)) : [];
   if (setup.length && !stillSetup.length) markPrepared(deps.stateRoot(), req.project, req.tid, deps.now());
   const done = !left.length && !stillSetup.length;
   saveAgent(deps, req.tid, { ...agent, state: done ? "ready" : "needs-you", checks: [...stillSetup, ...(left.length ? checksOf(left) : hits.map((h) => ({ id: `private:${h.file}`, ok: true, detail: `${h.file} points at this computer` })))] });

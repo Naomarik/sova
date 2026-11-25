@@ -41,9 +41,9 @@ export function TransportDeviceNeeds(props: { needs: readonly string[]; fromHere
           <For each={props.needs}>{(n) => <TransportRow>{n}</TransportRow>}</For>
         </ul>
         <Show when={after().length > 0}>
-          <p class="transport-rows-label" id="transport-after-title">
-            After it arrives:
-          </p>
+          <h4 class="text-eyebrow transport-subhead" id="transport-after-title">
+            After it arrives
+          </h4>
           <ul class="transport-rows" aria-labelledby="transport-after-title">
             <For each={after()}>{(n) => <TransportRow>{n}</TransportRow>}</For>
           </ul>

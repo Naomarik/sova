@@ -153,7 +153,9 @@ test("after arrival: private files still holding the source's paths go to the ag
   assert.deepEqual(sourceValuesIn([env, join(root, "clean.edn")], ["/Users/omar", "/Users/omar/webapps/motors"]), [{ file: env, found: ["/Users/omar/webapps/motors"] }]);
   const d = device(root);
   const req = { ...request(root), privateFiles: [env], sourceValues: ["/Users/omar/webapps/motors"] };
-  // The device was prepared already, so no agent ran: one starts for these files alone.
+  // The device was prepared already (the project is in its folder), so no agent ran: one starts for these files alone.
+  mkdirSync(req.project.path, { recursive: true });
+  writeFileSync(join(req.project.path, "README.md"), "motors\n");
   assert.deepEqual(await afterArrival(req, d.deps), [env]);
   assert.match(d.started[0]!.prompt, /still holds laptop's \/Users\/omar\/webapps\/motors/);
   assert.match(d.started[0]!.prompt, /you have no link to it/);

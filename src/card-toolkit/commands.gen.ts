@@ -315,7 +315,9 @@ export type CommandId =
   | "transport.cancel"
   | "transport.interrupt"
   | "transport.move-back"
-  | "transport.host-values";
+  | "transport.host-values"
+  | "transport.allow-downloads"
+  | "transport.admin-done";
 
 /** Each command's params, as its catalogue entry declares them. */
 export interface CommandParams {
@@ -5094,6 +5096,20 @@ export interface CommandParams {
     /** Each asked host value's name and its value */
     "values": unknown;
   };
+  /** Only your click on a device's page: let the Transport agent download what its card lists, from exactly the sites listed. (changes something; needs the card's owner trusted) */
+  "transport.allow-downloads": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** The download list's id (dl_…), as the card shows it */
+    "plan": string;
+  };
+  /** Only your click on a device's page: tell the Transport agent you ran the command its card shows, which it can't run itself. (changes something; needs the card's owner trusted) */
+  "transport.admin-done": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** The command's id (ad_…), as the card shows it */
+    "step": string;
+  };
 }
 
 /** Whether each command only looks or changes something; a view runs either only once its owner is trusted. */
@@ -5411,4 +5427,6 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "transport.interrupt": "changes",
   "transport.move-back": "changes",
   "transport.host-values": "changes",
+  "transport.allow-downloads": "changes",
+  "transport.admin-done": "changes",
 };

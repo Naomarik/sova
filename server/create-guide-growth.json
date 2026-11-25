@@ -466,6 +466,8 @@
    "transport.interrupt": "computers",
    "transport.move-back": "computers",
    "transport.host-values": "computers",
+   "transport.allow-downloads": "computers",
+   "transport.admin-done": "computers",
    "session.draft.get": "scripts",
    "session.draft.set": "scripts",
    "session.shell.output": "scripts",

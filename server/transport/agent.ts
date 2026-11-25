@@ -14,14 +14,15 @@
 // only arrival code that has verified the transport's ticket calls them (§mesh.peers/transport-ticket);
 // needsAnswer only reads (git and, for a folder with a definition, its doctor). All three refuse a
 // folder outside the user's home or inside Sova's own folders, and never repeat a remote's credentials.
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { ONBOARD_THINKING, onboardModels } from "../projects/onboard";
+import { adminAsked, adminDone, type AgentAsks, cleanCommand, cleanDownloads, cleanWhy, downloadsAllowed, downloadsAsked, hasWaitingAsk, hostsOf, MAX_ADMIN_STEPS, widenedScope } from "./agent-asks";
 import { agentArrivedMissing, agentBrief, agentPrivateValues, agentStillMissing } from "./agent-prompt";
 import { type AgentScope, agentScope, MADE_TOOL_DIRS, preparedFile } from "./agent-scope";
 import { lacksRepo, projectComesFrom, withoutCredentials } from "./git-snapshot";
-import type { SetupDef } from "./setup-def";
+import { miseTools, readSetupDef, type SetupDef } from "./setup-def";
 
 /** One setup check's finding, as doctor gives them (§app.project-services/doctor). */
 export interface AgentCheck {
@@ -63,8 +64,8 @@ export interface PrepareRequest {
 }
 export type PrepareResult = { ready: true } | { needsYou: string };
 
-/** A transport's agent, as its transport record keeps it (`ext.agent`). */
-export interface AgentState {
+/** A transport's agent, as its transport record keeps it (`ext.agent`), with what it asks you on its card. */
+export interface AgentState extends AgentAsks {
   sessionId: string;
   path: string;
   title: string;
@@ -96,6 +97,12 @@ export interface AgentDeps {
   reachable?(url: string): Promise<boolean>;
   /** The project's own doctor checks (§app.project-services/doctor) on a folder with a definition; null: none ran. */
   doctor(folder: string): Promise<AgentCheck[] | null>;
+  /** Whether `tool`, pinned by the project's mise file at `folder`, is installed at its pinned version for the user
+      (`mise where`, which installs nothing); absent: only that a program of its name is found. */
+  toolResolves?(tool: string, folder: string): Promise<boolean>;
+  /** The sites the sandbox's network reaches for a chat in `folder` before any list is allowed (the policy file's
+      allowlist, tightened by the project's own file); null: unreadable, so nothing is widened. */
+  networkBase?(folder: string): string[] | null;
   /** The names of the host values this device holds for the project at `folder` (its host overlay); read only. */
   hostValues?(folder: string): Set<string>;
   /** The model refs this device's picker lists; null: unreadable. */
@@ -226,7 +233,7 @@ export function folderRefusal(path: string, home: string, protectedRoots: readon
  * repository, this project's), each program its files name, its installed dependencies, and its own
  * doctor when it has a definition. A missing folder stops the rest: there is nothing to read yet.
  */
-export async function preflight(asked: ProjectRef, deps: Pick<AgentDeps, "which" | "git" | "doctor">): Promise<AgentCheck[]> {
+export async function preflight(asked: ProjectRef, deps: Pick<AgentDeps, "which" | "git" | "doctor" | "toolResolves">): Promise<AgentCheck[]> {
   const project = cleanProject(asked);
   const path = resolve(project.path);
   const where = project.remotes[0] ?? "its repository";
@@ -248,14 +255,43 @@ export async function preflight(asked: ProjectRef, deps: Pick<AgentDeps, "which"
   if (!ours) return checks;
   const has = (f: string) => existsSync(join(path, f));
   const needs = projectNeeds(has);
-  const found = needs.programs.length ? await deps.which(needs.programs) : new Set<string>();
-  for (const p of needs.programs) checks.push({ id: `tool:${p}`, ok: found.has(p), detail: found.has(p) ? `${p} found` : `${p} isn't installed for this user` });
+  // Besides what the files' kinds name, what its setup definition names (§app.transport/dialog "After it arrives"): the
+  // programs its .sova/project.json runs, and each tool its mise file pins, installed at that version.
+  const pinned = deps.toolResolves ? pinnedTools(path) : [];
+  const programs = [...new Set([...needs.programs, ...(readSetupDef(path)?.programs ?? [])])].filter((p) => !pinned.includes(p));
+  const found = programs.length ? await deps.which(programs) : new Set<string>();
+  for (const p of programs) checks.push({ id: `tool:${p}`, ok: found.has(p), detail: found.has(p) ? `${p} found` : `${p} isn't installed for this user` });
+  for (const t of pinned) {
+    const ok = await deps.toolResolves!(t, path).catch(() => false);
+    checks.push({ id: `tool:${t}`, ok, detail: ok ? `${t} installed at the version the project pins` : `${t} isn't installed at the version the project pins: mise install` });
+  }
   for (const d of needs.deps) checks.push({ id: `deps:${d.dir}`, ok: has(d.dir), detail: has(d.dir) ? `${d.dir} installed` : `${d.dir} is missing: ${d.how}` });
   if (has(".sova/project.json")) {
     const doc = await deps.doctor(path).catch(() => null);
     if (doc) for (const c of doc) checks.push({ id: `doctor:${c.id}`, ok: c.ok, detail: c.detail });
   }
   return checks;
+}
+
+/** The tools the project's mise files pin (mise.toml, .mise.toml, .tool-versions), each once; a backend's (`npm:x`) never. */
+export function pinnedTools(path: string): string[] {
+  const out: string[] = [];
+  for (const f of ["mise.toml", ".mise.toml"]) {
+    try {
+      out.push(...miseTools(readFileSync(join(path, f), "utf8")));
+    } catch {
+      // not there
+    }
+  }
+  try {
+    for (const l of readFileSync(join(path, ".tool-versions"), "utf8").split("\n")) {
+      const m = /^\s*([A-Za-z0-9][\w.+-]*)\s+\S/.exec(l.replace(/#.*$/, ""));
+      if (m) out.push(m[1]!);
+    }
+  } catch {
+    // not there
+  }
+  return [...new Set(out)].filter((t) => /^[A-Za-z0-9][\w.+-]{0,63}$/.test(t)).slice(0, 40);
 }
 
 /** Whether the repository at `path` is this project: its root commit is there, or a remote matches. */
@@ -499,14 +535,16 @@ export async function prepareDestination(asked: PrepareRequest, deps: AgentDeps,
     const started = await startAgent(req, checks, deps);
     if ("needsYou" in started) return started;
     agent = started;
-  } else if (!deps.busy(agent.path)) {
-    // A Retry: what is still missing goes to the agent it already has.
+  } else if (!deps.busy(agent.path) && !hasWaitingAsk(agent)) {
+    // A Retry: what is still missing goes to the agent it already has (one waiting on your click is left to wait).
     await deps.tell(agent.path, agentStillMissing(checks));
     agent = { ...agent, state: "working", checks };
     saveAgent(deps, req.tid, agent);
   }
-  checks = forAgent(await waitForTurnEnd(agent.path, req.project, deps, opts.signal));
-  if (!agentMissing(checks).length) {
+  await settled(req.tid, agent.path, deps, opts.signal);
+  checks = forAgent(await preflight(req.project, deps));
+  agent = agentOf(root, req.tid) ?? agent;
+  if (readyNow(checks, agent)) {
     markPrepared(root, req.project, req.tid, deps.now());
     if (agent.linkId) await deps.endLink?.(agent.linkId).catch(() => undefined);
     saveAgent(deps, req.tid, { ...agent, state: "ready", checks });
@@ -566,10 +604,28 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
   return agent;
 }
 
-/** Wait until the agent's turn ends (it ran, or never showed as running within the grace), then check again. */
-async function waitForTurnEnd(path: string, project: ProjectRef, deps: AgentDeps, signal?: AbortSignal): Promise<AgentCheck[]> {
-  await turnEnded(path, deps, signal);
-  return preflight(project, deps);
+/** Ready only when it is (§app.transport/agent "Ready only when it is"): every check but the host values passes, and
+    nothing the agent asked you (a download list, a command to run) still waits. Pure. */
+export const readyNow = (checks: AgentCheck[], a: AgentAsks | null): boolean => !agentMissing(checks).length && !(a && hasWaitingAsk(a));
+
+/**
+ * Wait until the agent's turn has ended with nothing it asked you still waiting: while a download list or a command
+ * waits on your click it reads Needs you, and once you answer (the answer tells it to go on) its next turn is waited
+ * for in turn. `signal` (a Cancel) stops the wait.
+ */
+async function settled(tid: string, path: string, deps: AgentDeps, signal?: AbortSignal): Promise<void> {
+  for (;;) {
+    await turnEnded(path, deps, signal);
+    const a = agentOf(deps.stateRoot(), tid);
+    if (!a || !hasWaitingAsk(a)) return;
+    if (a.state !== "needs-you") saveAgent(deps, tid, { ...a, state: "needs-you" });
+    for (;;) {
+      signal?.throwIfAborted();
+      const now = agentOf(deps.stateRoot(), tid);
+      if (!now || !hasWaitingAsk(now)) break;
+      await deps.sleep(AGENT_POLL_MS);
+    }
+  }
 }
 
 /** Resolves once the agent's turn has ended: it ran, or never showed as running within the grace. */
@@ -649,8 +705,9 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
   if (agent) {
     // It started before the chat's worktrees were here: its next open confines it to them too (a running chat keeps the
     // scope it opened with, so an idle one is closed and reopens on the message below).
-    const scope = agentScope({ folder: resolve(req.project.path), trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden() });
     const was = readPrepared(deps.stateRoot()).agents[agent.sessionId]?.scope;
+    // The sites you allowed it stay allowed.
+    const scope: AgentScope = { ...agentScope({ folder: resolve(req.project.path), trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden() }), ...(was?.proxyAllow ? { proxyAllow: was.proxyAllow } : {}) };
     if (!was || scope.writable.some((w) => !was.writable.includes(w))) {
       const unconfined = await deps.confine(scope).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
       if (unconfined) {
@@ -673,12 +730,105 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
     agent = started;
   }
   opts.onStarted?.(agent.checks);
-  // Its turn ends: the checks and files are read again, and what it left is the transport's to show (ready, or Needs you).
-  await turnEnded(agent.path, deps);
+  // Its turn ends (and whatever it asked you is answered): the checks and files are read again, and what it left is the
+  // transport's to show (ready, or Needs you). The setup checks run whatever it was handed: Ready says the project is.
+  await settled(req.tid, agent.path, deps);
   const left = sourceValuesIn(req.privateFiles, req.sourceValues);
-  const stillSetup = setup.length ? agentMissing(await preflight(req.project, deps)) : [];
-  if (setup.length && !stillSetup.length) markPrepared(deps.stateRoot(), req.project, req.tid, deps.now());
-  const done = !left.length && !stillSetup.length;
+  const stillSetup = agentMissing(await preflight(req.project, deps));
+  if (!stillSetup.length) markPrepared(deps.stateRoot(), req.project, req.tid, deps.now());
+  agent = agentOf(deps.stateRoot(), req.tid) ?? agent;
+  const done = !left.length && readyNow(stillSetup, agent);
   saveAgent(deps, req.tid, { ...agent, state: done ? "ready" : "needs-you", checks: [...stillSetup, ...(left.length ? checksOf(left) : hits.map((h) => ({ id: `private:${h.file}`, ok: true, detail: `${h.file} points at this computer` })))] });
   return hits.map((h) => h.file);
+}
+
+// ---- what it asks you on its card ---------------------------------------------------------------
+
+type AskDeps = Pick<AgentDeps, "stateRoot" | "onAgent" | "now">;
+type AskAnswer = { ok: true; text: string } | { ok: false; error: string };
+const newId = (prefix: string) => `${prefix}_${randomBytes(6).toString("hex")}`;
+
+/** The transport and agent of the agent chat `sessionId`, or why there is none. */
+function ownAgent(root: string, sessionId: string): { tid: string; a: AgentState } | { error: string } {
+  const f = readPrepared(root);
+  const tid = f.agents[sessionId]?.tid;
+  const a = tid ? f.byTransport?.[tid] : undefined;
+  return tid && a && a.sessionId === sessionId ? { tid, a } : { error: "transport_setup is the Transport agent's, and this chat isn't one." };
+}
+
+/**
+ * The agent's download list (transport_setup downloads): each tool, its version and the host it comes from, put on its
+ * card for your Allow. Nothing about its network changes here: only allowDownloads, on your click, widens it. A new list
+ * replaces one still waiting.
+ */
+export function askDownloads(deps: AskDeps, sessionId: string, input: { items?: unknown; why?: unknown }): AskAnswer {
+  const own = ownAgent(deps.stateRoot(), sessionId);
+  if ("error" in own) return { ok: false, error: own.error };
+  const items = cleanDownloads(input.items);
+  if (typeof items === "string") return { ok: false, error: items };
+  const why = cleanWhy(input.why);
+  saveAgent(deps, own.tid, { ...own.a, state: "needs-you", downloads: { id: newId("dl"), items, ...(why ? { why } : {}), state: "asked", at: deps.now() } });
+  return { ok: true, text: downloadsAsked(items) };
+}
+
+/** A command needing administrator rights (transport_setup admin): put on its card for you to run yourself. Never run. */
+export function askAdmin(deps: AskDeps, sessionId: string, input: { command?: unknown; why?: unknown }): AskAnswer {
+  const own = ownAgent(deps.stateRoot(), sessionId);
+  if ("error" in own) return { ok: false, error: own.error };
+  const c = cleanCommand(input.command);
+  if ("error" in c) return { ok: false, error: c.error };
+  const steps = own.a.admin ?? [];
+  // The same command asked again while it waits is the one step.
+  if (steps.some((s) => s.state === "asked" && s.command === c.command)) return { ok: true, text: adminAsked(c.command) };
+  if (steps.filter((s) => s.state === "asked").length >= MAX_ADMIN_STEPS) return { ok: false, error: `${MAX_ADMIN_STEPS} commands already wait for the user: end your turn.` };
+  const why = cleanWhy(input.why);
+  saveAgent(deps, own.tid, { ...own.a, state: "needs-you", admin: [...steps, { id: newId("ad"), command: c.command, ...(why ? { why } : {}), state: "asked" as const, at: deps.now() }].slice(-MAX_ADMIN_STEPS * 2) });
+  return { ok: true, text: adminAsked(c.command) };
+}
+
+type Answered = { ok: true; agent: AgentState; handed: Promise<void> } | { ok: false; status: 404 | 409 | 500; error: string };
+
+/** Once it is idle: reopened (its next open takes its new scope) when `reopen`, then told `text`. */
+async function handOn(deps: AgentDeps, path: string, text: string, reopen: boolean): Promise<void> {
+  const until = deps.now() + 10 * 60_000;
+  while (deps.busy(path) && deps.now() < until) await deps.sleep(AGENT_POLL_MS);
+  if (reopen) await deps.reopen?.(path).catch(() => undefined);
+  await deps.tell(path, text);
+}
+
+/**
+ * Your Allow on the card (only the route your click reaches calls it): the agent's network widens to what it reached
+ * before plus exactly the list's hosts, recorded as the scope its next open takes (the device's sandbox probes that
+ * scope first), and the agent is told to go on once it is idle. Anything not listed stays refused.
+ */
+export async function allowDownloads(deps: AgentDeps, tid: string, planId: unknown): Promise<Answered> {
+  const root = deps.stateRoot();
+  const a = agentOf(root, tid);
+  if (!a) return { ok: false, status: 404, error: "This transport has no Transport agent here." };
+  const plan = a.downloads;
+  if (!plan || plan.id !== planId) return { ok: false, status: 409, error: "That download list isn't the agent's current one. Nothing was allowed." };
+  if (plan.state === "allowed") return { ok: true, agent: a, handed: Promise.resolve() };
+  const scope = readPrepared(root).agents[a.sessionId]?.scope;
+  const base = deps.networkBase?.(scope?.workspaceRoot ?? "") ?? null;
+  if (!scope || (!scope.proxyAllow && !base)) return { ok: false, status: 500, error: "This device's sandbox network list can't be read, so nothing was allowed." };
+  const hosts = hostsOf(plan.items);
+  const widened = widenedScope(scope, base ?? [], hosts);
+  const why = await deps.confine(widened).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
+  if (why) return { ok: false, status: 500, error: `The agent's sandbox can't take the new sites (${why}). Nothing was allowed.` };
+  markAgent(root, a.sessionId, tid, deps.now(), widened);
+  const next: AgentState = { ...a, state: "working", downloads: { ...plan, state: "allowed", allowedAt: deps.now() } };
+  saveAgent(deps, tid, next);
+  return { ok: true, agent: next, handed: handOn(deps, a.path, downloadsAllowed(plan.items), true) };
+}
+
+/** Your Done on the card: you ran the command yourself; the agent is told to go on. Nothing is run here. */
+export async function markAdminDone(deps: AgentDeps, tid: string, stepId: unknown): Promise<Answered> {
+  const a = agentOf(deps.stateRoot(), tid);
+  if (!a) return { ok: false, status: 404, error: "This transport has no Transport agent here." };
+  const step = (a.admin ?? []).find((s) => s.id === stepId);
+  if (!step) return { ok: false, status: 409, error: "That command isn't one the agent asked you to run." };
+  if (step.state === "done") return { ok: true, agent: a, handed: Promise.resolve() };
+  const next: AgentState = { ...a, state: "working", admin: (a.admin ?? []).map((s) => (s.id === step.id ? { ...s, state: "done" as const, doneAt: deps.now() } : s)) };
+  saveAgent(deps, tid, next);
+  return { ok: true, agent: next, handed: handOn(deps, a.path, adminDone(step.command), false) };
 }

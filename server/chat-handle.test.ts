@@ -298,6 +298,33 @@ test("a server that will install a router makes boot readers wait for it: chats 
   installInProcessChats();
 });
 
+test("transport_setup is served to a Transport agent's chat only, and its run puts what it asks on the agent's card", async () => {
+  const { servedToolsForChat } = await import("./chat-handle");
+  const { stateRoot } = await import("./state-root");
+  const { markAgent } = await import("./transport/agent");
+  const { setTransportSetupRun, TRANSPORT_SETUP_TOOL } = await import("./transport/agent-tool");
+  const at = (id: string): string => {
+    const path = join(sessionsDir, `2026-11-25T00-00-00-000Z_${id}.jsonl`);
+    writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-25T00:00:00.000Z", cwd })}\n`);
+    return canonicalPath(path);
+  };
+  const names = (decls: { name: string }[]) => decls.map((d) => d.name);
+  const plain = at("01a0-transport-plain");
+  assert.ok(!names(await servedToolsForChat(plain, "01a0-transport-plain", () => undefined, null)).includes(TRANSPORT_SETUP_TOOL), "an ordinary chat never gets it");
+  markAgent(stateRoot(), "01a0-transport-agent", "tr_served1", Date.now());
+  const agent = at("01a0-transport-agent");
+  assert.equal(names(await servedToolsForChat(agent, "01a0-transport-agent", () => undefined, null)).at(-1), TRANSPORT_SETUP_TOOL, "last, after every tool it had before");
+  assert.ok(!names(await servedToolsForChat(agent, "01a0-transport-agent", () => undefined, "overseer")).includes(TRANSPORT_SETUP_TOOL), "never a special kind's");
+  // Its run is the server's: the session it was served for, never one the model names.
+  const heard: [string, Record<string, unknown>][] = [];
+  setTransportSetupRun((sessionId, params) => (heard.push([sessionId, params]), { ok: true, text: "Listed on the Transport card." }));
+  const { transportSetupTool } = await import("./transport/agent-tool");
+  const out = await transportSetupTool("01a0-transport-agent").execute("c1", { op: "downloads", items: [], sessionId: "someone-else" }, undefined, undefined, undefined as never);
+  assert.equal((out.content[0] as { text: string }).text, "Listed on the Transport card.");
+  assert.equal(heard[0]![0], "01a0-transport-agent");
+  setTransportSetupRun(null);
+});
+
 test("an ordinary chat is served its offer tool last, from its snapshot; a chat without offers or a special kind is served exactly what it was", async () => {
   const { servedToolsForChat } = await import("./chat-handle");
   const project = join(agentDir, "offers-project");

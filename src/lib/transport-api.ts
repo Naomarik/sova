@@ -19,6 +19,20 @@ export interface TransportPreview {
   agentModelDefault: string | null;
 }
 
+/** The Transport agent as its card shows it, with what it asks you (§app.transport/agent). */
+export interface TransportAgentView {
+  sessionId: string;
+  path: string;
+  title: string;
+  device?: string;
+  state: "working" | "ready" | "needs-you";
+  checks: { id: string; ok: boolean; detail: string }[];
+  /** Its download list: each tool, its version and the site it comes from; asked until your Allow. */
+  downloads?: { id: string; items: { tool: string; version: string; host: string }[]; why?: string; state: "asked" | "allowed" };
+  /** Commands needing administrator rights, for you to run yourself; asked until your Done. */
+  admin?: { id: string; command: string; why?: string; state: "asked" | "done" }[];
+}
+
 export interface TransportView {
   tid: string;
   side: "source" | "destination";
@@ -34,7 +48,7 @@ export interface TransportView {
   ext?: {
     waiting?: number;
     /** The Transport agent, as this device knows it (the source keeps what the destination reports). */
-    agent?: { sessionId: string; path: string; title: string; device?: string; state: "working" | "ready" | "needs-you"; checks: { id: string; ok: boolean; detail: string }[] };
+    agent?: TransportAgentView;
     /** What the agent sets up there after arrival (short names): done reads "…; setting up … there". */
     settingUp?: string[];
     /** Here, after arrival: each host value this device lacks for the project, prefilled with the source's value. */
@@ -62,6 +76,14 @@ export const transportOf = (tid: string) => call<TransportView>(`/api/transport/
 /** The card's Save: the host values it asks for, written into this device's host.json for the project (your click). */
 export const saveTransportHostValues = (tid: string, values: Record<string, string>) =>
   call<{ ok: boolean; left: { name: string; value: string }[] }>(`/api/transport/${encodeURIComponent(tid)}/host-values`, { method: "POST", body: JSON.stringify({ values }) });
+
+/** The card's Allow Downloads (your click): the agent may download exactly what its list names. */
+export const allowTransportDownloads = (tid: string, plan: string) =>
+  call<{ ok: boolean; agent?: TransportAgentView }>(`/api/transport/${encodeURIComponent(tid)}/allow-downloads`, { method: "POST", body: JSON.stringify({ plan }) });
+
+/** The card's Done (your click): you ran the command the agent can't run itself. */
+export const transportAdminDone = (tid: string, step: string) =>
+  call<{ ok: boolean; agent?: TransportAgentView }>(`/api/transport/${encodeURIComponent(tid)}/admin-done`, { method: "POST", body: JSON.stringify({ step }) });
 
 export const transportAct = (tid: string, act: "retry" | "cancel" | "interrupt") => call<{ ok: boolean }>(`/api/transport/${encodeURIComponent(tid)}/${act}`, { method: "POST", body: "{}" });
 

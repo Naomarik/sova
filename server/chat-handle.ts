@@ -88,6 +88,8 @@ import { describerTools } from "./design/describe";
 import { sessionOfferTools } from "./session-offers-tool";
 import { offerNoteFor } from "./session-offers";
 import { sessionCardTools } from "./transcript-cards-tool";
+import { agentTidOf } from "./transport/agent-scope";
+import { transportSetupTool } from "./transport/agent-tool";
 import { cardNoteFor } from "./transcript-cards";
 import { withMergeCardNote } from "./merge-queue/card-note";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
@@ -774,8 +776,9 @@ export function servedCoordinatorTools(chatId: ChatId, parentSessionId: string):
 export async function servedToolsForChat(chatId: ChatId, sessionId: string, known: () => string | undefined, kind: string | null): Promise<ServerToolDecl[]> {
   const decls = servedToolsFor(chatId, sessionId, known, kind === "powers", kind === null);
   if (kind !== null && kind !== "powers") return decls;
-  // Then its `card` tool when its snapshot has a type the agent may raise (§chat.transcript-cards/card-tool).
-  const extra = [...(await sessionOfferTools(sessionId, chatId)), ...(await sessionCardTools(sessionId, chatId))];
+  // Then its `card` tool when its snapshot has a type the agent may raise (§chat.transcript-cards/card-tool), and a
+  // Transport agent's own `transport_setup` (§app.transport/agent), for that chat only.
+  const extra = [...(await sessionOfferTools(sessionId, chatId)), ...(await sessionCardTools(sessionId, chatId)), ...(kind === null && agentTidOf(stateRoot(), sessionId) ? [transportSetupTool(sessionId)] : [])];
   if (!extra.length) return decls;
   serveTools(chatId, extra);
   return [...decls, ...extra.map(declOfTool)];

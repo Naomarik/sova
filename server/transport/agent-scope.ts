@@ -15,6 +15,9 @@ export interface AgentScope {
   workspaceRoot: string;
   writable: string[];
   hidden?: string[];
+  /** The sites its network reaches, once you allowed a download list (§app.transport/agent "Downloads, on your click"):
+      what it reached before plus exactly the hosts allowed. Absent: the policy's own allowlist. */
+  proxyAllow?: string[];
 }
 
 /** The tool folders under the user's home an install fills (version managers, toolchains, user programs, git deps),
@@ -45,6 +48,16 @@ export function agentScope(input: { folder: string; trees?: readonly string[]; h
 
 /** `<stateRoot>/transport-agent.json`: the agents' records (server/transport/agent.ts keeps them). */
 export const preparedFile = (root: string) => join(root, "transport-agent.json");
+
+/** The transport whose agent chat `sessionId` is, or null: not a Transport agent's chat here. */
+export function agentTidOf(root: string, sessionId: string): string | null {
+  try {
+    const tid = (JSON.parse(readFileSync(preparedFile(root), "utf8")) as { agents?: Record<string, { tid?: unknown }> }).agents?.[sessionId]?.tid;
+    return typeof tid === "string" ? tid : null;
+  } catch {
+    return null;
+  }
+}
 
 /** The open flags of a Transport agent's chat (server/chat-manager.ts): its sandbox On with its scope, which the
     chat can't lower. A chat recorded as an agent whose scope can't be read is held at the read-only level with its

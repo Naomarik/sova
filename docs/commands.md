@@ -13,10 +13,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 691 |
-| Routes a catalogue entry points at | 239 |
-| Catalogue entries | 313 |
-| Class: Peer protocol | 49 |
+| Routes registered | 695 |
+| Routes a catalogue entry points at | 241 |
+| Catalogue entries | 315 |
+| Class: Peer protocol | 51 |
 | Class: Auth | 8 |
 | Class: Share pages | 0 |
 | Class: Extension proxy | 5 |
@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 22 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 13 |
-| Hand-written tool specs | 155 |
+| Hand-written tool specs | 156 |
 
 ## Catalogue entries
 
@@ -354,6 +354,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `transport.interrupt` | Interrupt and Move | changes | `POST /api/transport/:tid/interrupt` | full |
 | `transport.move-back` | Move Back | changes | `POST /api/transport/:tid/move-back` | full |
 | `transport.host-values` | Save Host Values | changes | `POST /api/transport/:tid/host-values` | full |
+| `transport.allow-downloads` | Allow Downloads | changes | `POST /api/transport/:tid/allow-downloads` | full |
+| `transport.admin-done` | Done (Command Run) | changes | `POST /api/transport/:tid/admin-done` | full |
 
 ## Pending routes
 
@@ -387,7 +389,7 @@ class, leaves it, and a new route never joins it.
 
 ## Not-a-command classes
 
-### Peer protocol (49)
+### Peer protocol (51)
 
 Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer listener's door, never the operator's actions.
 
@@ -431,6 +433,8 @@ Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer li
 | `GET /api/peer/sync/manifest` | sync.docs |
 | `POST /api/peer/sync/push` | sync.docs |
 | `GET /api/peer/transport/:tid` | sessions |
+| `POST /api/peer/transport/:tid/admin-done` | sessions |
+| `POST /api/peer/transport/:tid/allow-downloads` | sessions |
 | `POST /api/peer/transport/:tid/cancel` | sessions |
 | `POST /api/peer/transport/:tid/commit` | sessions |
 | `POST /api/peer/transport/:tid/move-back` | sessions |
@@ -1149,6 +1153,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/transport` | full | `transport.list` |
 | `POST /api/transport` | full | `transport.start` |
 | `GET /api/transport/:tid` | full | `transport.get` |
+| `POST /api/transport/:tid/admin-done` | full | `transport.admin-done` |
+| `POST /api/transport/:tid/allow-downloads` | full | `transport.allow-downloads` |
 | `GET /api/transport/:tid/back` | full | `transport.back` |
 | `POST /api/transport/:tid/cancel` | full | `transport.cancel` |
 | `POST /api/transport/:tid/host-values` | full | `transport.host-values` |
@@ -1242,4 +1248,5 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/topics.ts` | 2 | `queue_push`, `queue_open` |
 | `server/tours/tools.ts` | 3 | `<computed: RECORD_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>` |
 | `server/transcript-cards-tool.ts` | 1 | `<computed: CARD_TOOL>` |
+| `server/transport/agent-tool.ts` | 1 | `transport_setup` |
 | `server/vis-check.ts` | 1 | `vis_check` |

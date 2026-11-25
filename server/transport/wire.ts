@@ -19,6 +19,8 @@ export const peerPath = {
   retry: (tid: string) => `/api/peer/transport/${tid}/retry`,
   needs: (tid: string) => `/api/peer/transport/${tid}/needs`,
   moveBack: (tid: string) => `/api/peer/transport/${tid}/move-back`,
+  allowDownloads: (tid: string) => `/api/peer/transport/${tid}/allow-downloads`,
+  adminDone: (tid: string) => `/api/peer/transport/${tid}/admin-done`,
   package: (tid: string) => `/api/peer/transport/${tid}/package`,
 };
 
@@ -96,17 +98,39 @@ export interface AgentView {
   device?: string;
   state: "working" | "ready" | "needs-you";
   checks: { id: string; ok: boolean; detail: string }[];
+  /** Its download list (§app.transport/agent "Downloads, on your click"): asked, or allowed by your click. */
+  downloads?: { id: string; items: { tool: string; version: string; host: string }[]; why?: string; state: "asked" | "allowed" };
+  /** Commands needing administrator rights it asked you to run yourself. */
+  admin?: { id: string; command: string; why?: string; state: "asked" | "done" }[];
 }
 
+const str = (v: unknown, max: number): string => (typeof v === "string" ? v.slice(0, max) : "");
+
 /** An agent's record, cut to what its card shows (never its link or model). Pure. */
-export const agentViewOf = (a: AgentView): AgentView => ({
-  sessionId: a.sessionId,
-  path: a.path,
-  title: a.title,
-  ...(a.device ? { device: a.device } : {}),
-  state: a.state,
-  checks: (a.checks ?? []).slice(0, 40).map((c) => ({ id: c.id, ok: c.ok, detail: c.detail })),
-});
+export const agentViewOf = (a: AgentView): AgentView => {
+  const d = a.downloads;
+  return {
+    sessionId: a.sessionId,
+    path: a.path,
+    title: a.title,
+    ...(a.device ? { device: a.device } : {}),
+    state: a.state,
+    checks: (a.checks ?? []).slice(0, 40).map((c) => ({ id: c.id, ok: c.ok, detail: c.detail })),
+    ...(d && typeof d.id === "string" && Array.isArray(d.items)
+      ? {
+          downloads: {
+            id: str(d.id, 40),
+            items: d.items.slice(0, 16).map((i) => ({ tool: str(i?.tool, 80), version: str(i?.version, 64), host: str(i?.host, 253) })),
+            ...(d.why ? { why: str(d.why, 300) } : {}),
+            state: d.state === "allowed" ? ("allowed" as const) : ("asked" as const),
+          },
+        }
+      : {}),
+    ...(Array.isArray(a.admin) && a.admin.length
+      ? { admin: a.admin.slice(-16).map((s) => ({ id: str(s?.id, 40), command: str(s?.command, 1000), ...(s?.why ? { why: str(s.why, 300) } : {}), state: s?.state === "done" ? ("done" as const) : ("asked" as const) })) }
+      : {}),
+  };
+};
 
 export interface ReadyBody {
   sha256: string;

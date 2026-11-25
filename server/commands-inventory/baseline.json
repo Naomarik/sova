@@ -483,6 +483,8 @@
     "POST /api/peer/set-browser-access": {"need":"admin","is":"peer"},
     "POST /api/peer/sync/extensions": {"need":"sync.extensions","is":"peer"},
     "POST /api/peer/sync/push": {"need":"sync.docs","is":"peer"},
+    "POST /api/peer/transport/:tid/admin-done": {"need":"sessions","is":"peer"},
+    "POST /api/peer/transport/:tid/allow-downloads": {"need":"sessions","is":"peer"},
     "POST /api/peer/transport/:tid/cancel": {"need":"sessions","is":"peer"},
     "POST /api/peer/transport/:tid/commit": {"need":"sessions","is":"peer"},
     "POST /api/peer/transport/:tid/move-back": {"need":"sessions","is":"peer"},
@@ -600,6 +602,8 @@
     "POST /api/tours/:sessionId/jobs/:jobId/cancel": {"need":"full","is":"opted-out"},
     "POST /api/tours/:sessionId/jobs/:jobId/sign-in": {"need":"full","is":"opted-out"},
     "POST /api/transport": {"need":"full","is":"command","ids":["transport.start"]},
+    "POST /api/transport/:tid/admin-done": {"need":"full","is":"command","ids":["transport.admin-done"]},
+    "POST /api/transport/:tid/allow-downloads": {"need":"full","is":"command","ids":["transport.allow-downloads"]},
     "POST /api/transport/:tid/cancel": {"need":"full","is":"command","ids":["transport.cancel"]},
     "POST /api/transport/:tid/host-values": {"need":"full","is":"command","ids":["transport.host-values"]},
     "POST /api/transport/:tid/interrupt": {"need":"full","is":"command","ids":["transport.interrupt"]},
@@ -748,6 +752,7 @@
     "server/topics.ts": ["queue_push","queue_open"],
     "server/tours/tools.ts": ["<computed: RECORD_TOUR_TOOL>","<computed: SHOW_TOUR_TOOL>","<computed: SHOW_TOUR_TOOL>"],
     "server/transcript-cards-tool.ts": ["<computed: CARD_TOOL>"],
+    "server/transport/agent-tool.ts": ["transport_setup"],
     "server/vis-check.ts": ["vis_check"]
   }
 }

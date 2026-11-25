@@ -12,7 +12,8 @@ import { homesRoot } from "../chat-homes/root";
 import { ClaudeLogins, credentialsMtime, loginEnabled, readAccountsState } from "../../pi-config/extensions/claude-code/accounts.ts";
 import { hostVars as hostVarsOf, hostVarsFile } from "../project-services/store";
 import { agentRoot, stateRoot } from "../state-root";
-import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, isTransportAgent, markAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames } from "./agent";
+import { canonicalize, loadPolicyFile, loadProjectTightening, policyFilePath } from "../../pi-config/extensions/sandbox/policy.ts";
+import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, allowDownloads, askAdmin, askDownloads, isTransportAgent, markAdminDone, markAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames } from "./agent";
 import type { AgentScope } from "./agent-scope";
 import { remoteReachable } from "./git-snapshot";
 import type { SetupDef } from "./setup-def";
@@ -88,6 +89,38 @@ export async function whichPrograms(programs: string[], env: NodeJS.ProcessEnv =
   return found;
 }
 
+/** The `mise` program for the user's commands here: on this server's PATH or in the user's usual install folders. */
+function miseBinary(env: NodeJS.ProcessEnv = process.env, home = homedir()): string | null {
+  const dirs = [...(env.PATH ?? "").split(delimiter), ...USER_BINS.flatMap((d) => expand(home, d)), ...SYSTEM_BINS].filter(Boolean);
+  for (const d of dirs) if (existsSync(join(d, "mise"))) return join(d, "mise");
+  return null;
+}
+
+/** Whether `tool`, pinned in the project's mise file at `folder`, is installed at that version: `mise where`, which
+    installs nothing and runs none of the project's commands (the folder's config trusted for this one read). */
+export function miseToolResolves(tool: string, folder: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  const mise = miseBinary(env);
+  if (!mise || !/^[A-Za-z0-9][\w.+-]{0,63}$/.test(tool)) return Promise.resolve(false);
+  return new Promise((done) => {
+    const child = spawn(mise, ["where", tool], { cwd: folder, env: { ...env, MISE_TRUSTED_CONFIG_PATHS: folder }, stdio: ["ignore", "ignore", "ignore"] });
+    const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
+    child.on("close", (code) => (clearTimeout(timer), done(code === 0)));
+    child.on("error", () => (clearTimeout(timer), done(false)));
+  });
+}
+
+/** The sites the sandbox's network reaches for a chat in `folder` with no list allowed: the policy file's allowlist,
+    tightened by the project's own file. Null when the policy can't be read. */
+export function sandboxNetworkBase(folder: string): string[] | null {
+  try {
+    const loaded = loadPolicyFile(policyFilePath(agentRoot()));
+    if (!loaded.ok) return null;
+    return [...loadProjectTightening(canonicalize(folder), loaded.value).policy.proxy.allow];
+  } catch {
+    return null;
+  }
+}
+
 /** Whether this device has a Claude login Claude Code can run on now: one in this device's order that is enabled,
     not limited or needing sign-in, not leaving, and signed in (credentials there, or in the macOS keychain). */
 export function claudeLoginUsable(agentDir: string): boolean {
@@ -128,6 +161,8 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
       return { code: r.code, stdout: r.stdout };
     },
     reachable: (url) => remoteReachable(url),
+    toolResolves: (tool, folder) => miseToolResolves(tool, folder),
+    networkBase: (folder) => sandboxNetworkBase(folder),
     doctor: async (folder): Promise<AgentCheck[] | null> => {
       const { projectEngine } = await import("../project-services/routes");
       const r = await projectEngine().run("doctor", { project: folder }, { kind: "system", id: "transport-agent" });
@@ -250,5 +285,10 @@ export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: str
     /** The dialog's Busy helpers: those of the chat working now. */
     busyHelpers: async (chatId: string) => busyOf(await safeDeps.helpers(chatId)).map((h) => ({ id: h.chatId, name: h.name })),
     isTransportAgent: (sessionId: string) => isTransportAgent(stateRoot(), sessionId),
+    /** transport_setup's run: the agent's asks, put on its card (agent.ts askDownloads / askAdmin). */
+    setupRun: (sessionId: string, params: Record<string, unknown>) => (params.op === "downloads" ? askDownloads(agentDeps, sessionId, params) : params.op === "admin" ? askAdmin(agentDeps, sessionId, params) : { ok: false as const, error: "op must be downloads or admin." }),
+    /** Your Allow and Done on the card, here where the agent works (routes.ts, only on your click). */
+    allowDownloads: (tid: string, plan: unknown) => allowDownloads(agentDeps, tid, plan),
+    adminDone: (tid: string, step: unknown) => markAdminDone(agentDeps, tid, step),
   };
 }

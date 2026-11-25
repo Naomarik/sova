@@ -1,7 +1,7 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { TransportAgentNote } from "../../shared/transport-agent-card";
 import { sessionHrefOn } from "../lib/mesh";
-import { saveTransportHostValues, type TransportView, transportOf } from "../lib/transport-api";
+import { allowTransportDownloads, saveTransportHostValues, transportAdminDone, type TransportView, transportOf } from "../lib/transport-api";
 import { TextField } from "./form";
 import { Chip } from "./ui";
 import "./TransportAgentCard.css";
@@ -22,6 +22,9 @@ const STATE: Record<"working" | "ready" | "needs-you", { word: string; tone: "ac
  * seconds while it works: its state, what is still to set up, and Open Agent Chat (on the device it works on). In the
  * arrived chat it also asks for each host value this device lacks for the project, prefilled with the source's value
  * (Save Values writes them here, on your click), and says why the agent couldn't start when this device can't confine it.
+ * On either device it shows what the agent asks you: a download list (each tool, its version and its site), which
+ * Allow Downloads lets it fetch from exactly those sites, and a command needing administrator rights, which you run
+ * yourself and answer with Done. While either waits, the card reads Needs you, never Ready.
  */
 export function TransportAgentCard(props: { card: TransportAgentNote }) {
   const [view, setView] = createSignal<TransportView | null>(null);
@@ -65,6 +68,28 @@ export function TransportAgentCard(props: { card: TransportAgentNote }) {
       setSaving(false);
     }
   };
+  const [answering, setAnswering] = createSignal<string | null>(null);
+  const [answerError, setAnswerError] = createSignal<{ id: string; message: string } | null>(null);
+  const answer = async (id: string, act: () => Promise<unknown>) => {
+    setAnswering(id);
+    setAnswerError(null);
+    try {
+      await act();
+      clearTimeout(timer);
+      await read();
+    } catch (err) {
+      setAnswerError({ id, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setAnswering(null);
+    }
+  };
+  const downloads = () => agent()?.downloads ?? null;
+  const askedSteps = () => (agent()?.admin ?? []).filter((s) => s.state === "asked");
+  const lastDone = () => (askedSteps().length ? null : ([...(agent()?.admin ?? [])].reverse().find((s) => s.state === "done") ?? null));
+  const waiting = () => downloads()?.state === "asked" || askedSteps().length > 0;
+  /** Its state as the chip shows it: never Ready while something it asked you waits. */
+  const shown = (s: "working" | "ready" | "needs-you") => (waiting() ? "needs-you" : s);
+  const hostsText = (items: readonly { host: string }[]) => [...new Set(items.map((i) => i.host))].join(", ");
   const device = () => agent()?.device || props.card.device || "that device";
   const left = () => (agent()?.checks ?? []).filter((c) => !c.ok);
   // The source keeps the agent the other device reports: its chat is there.
@@ -78,20 +103,68 @@ export function TransportAgentCard(props: { card: TransportAgentNote }) {
       <div class="transport-agent-card-head">
         <span class="transport-agent-card-title">Transport agent on {device()}</span>
         <Show when={agent()} fallback={<Show when={blocked()}><Chip tone={STATE["needs-you"].tone}>{STATE["needs-you"].word}</Chip></Show>}>
-          {(a) => <Chip tone={STATE[a().state].tone} live={a().state === "working"}>{STATE[a().state].word}</Chip>}
+          {(a) => <Chip tone={STATE[shown(a().state)].tone} live={shown(a().state) === "working"}>{STATE[shown(a().state)].word}</Chip>}
         </Show>
       </div>
       <p class="transport-agent-card-name text-caption text-muted">{agent()?.title ?? props.card.title}</p>
       <Show when={blocked()}>{(why) => <p class="transport-agent-card-line text-caption">{why()}.</p>}</Show>
       <Show when={agent()} fallback={<Show when={!blocked() && !asks().length && !saved()}><p class="transport-agent-card-line text-caption">Its progress shows on {device()}.</p></Show>}>
         {(a) => (
-          <Show when={left().length > 0} fallback={<p class="transport-agent-card-line text-caption">{a().state === "ready" ? `${device()} has what this project needs.` : "Checking what's left to set up."}</p>}>
-            <p class="transport-agent-card-line text-caption">{a().state === "needs-you" ? "Still missing:" : "Setting up:"}</p>
+          <Show when={left().length > 0} fallback={<Show when={!waiting()}><p class="transport-agent-card-line text-caption">{a().state === "ready" ? `${device()} has what this project needs.` : "Checking what's left to set up."}</p></Show>}>
+            <p class="transport-agent-card-line text-caption">{shown(a().state) === "needs-you" ? "Still missing:" : "Setting up:"}</p>
             <ul class="transport-agent-card-list text-caption">
               <For each={left()}>{(c) => <li>{c.detail}</li>}</For>
             </ul>
           </Show>
         )}
+      </Show>
+      <Show when={downloads()}>
+        {(d) => (
+          <Show
+            when={d().state === "asked"}
+            fallback={<p class="transport-agent-card-line text-caption">Allowed from <span class="text-mono">{hostsText(d().items)}</span>. The agent carries on.</p>}
+          >
+            <div class="transport-agent-card-ask">
+              <p class="transport-agent-card-line text-caption">
+                It needs to download {d().items.length === 1 ? "1 tool" : `${d().items.length} tools`} from sites its sandbox doesn't reach. Nothing downloads until you allow it.
+              </p>
+              <ul class="transport-agent-card-list text-caption">
+                <For each={d().items}>
+                  {(i) => (
+                    <li>
+                      {i.tool} {i.version} <span class="text-muted">from</span> <span class="text-mono">{i.host}</span>
+                    </li>
+                  )}
+                </For>
+              </ul>
+              <Show when={d().why}>{(w) => <p class="transport-agent-card-line text-caption text-muted">{w()}</p>}</Show>
+              <Show when={answerError()?.id === d().id}><p class="field-error">{answerError()!.message}</p></Show>
+              <div class="transport-agent-card-foot">
+                <button class="button button-sm" type="button" disabled={answering() !== null} onClick={() => void answer(d().id, () => allowTransportDownloads(props.card.tid, d().id))}>
+                  Allow Downloads
+                </button>
+              </div>
+            </div>
+          </Show>
+        )}
+      </Show>
+      <For each={askedSteps()}>
+        {(st) => (
+          <div class="transport-agent-card-ask">
+            <p class="transport-agent-card-line text-caption">This needs administrator rights, which the agent doesn't have. Run it yourself in a terminal on {device()}:</p>
+            <pre class="transport-agent-card-command text-mono">{st.command}</pre>
+            <Show when={st.why}>{(w) => <p class="transport-agent-card-line text-caption text-muted">{w()}</p>}</Show>
+            <Show when={answerError()?.id === st.id}><p class="field-error">{answerError()!.message}</p></Show>
+            <div class="transport-agent-card-foot">
+              <button class="button button-sm" type="button" disabled={answering() !== null} onClick={() => void answer(st.id, () => transportAdminDone(props.card.tid, st.id))}>
+                Done
+              </button>
+            </div>
+          </div>
+        )}
+      </For>
+      <Show when={lastDone()}>
+        <p class="transport-agent-card-line text-caption">You ran it. The agent carries on.</p>
       </Show>
       <Show when={asks().length > 0}>
         <form class="transport-agent-card-host" onSubmit={(e) => void save(e)}>

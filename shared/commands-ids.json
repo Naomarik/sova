@@ -313,7 +313,9 @@
     "transport.cancel",
     "transport.interrupt",
     "transport.move-back",
-    "transport.host-values"
+    "transport.host-values",
+    "transport.allow-downloads",
+    "transport.admin-done"
   ],
   "retired": [
     "settings.agents.get",

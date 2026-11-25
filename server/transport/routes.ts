@@ -41,7 +41,8 @@ import type { PackageManifest } from "./package";
 import { extractKeeping, keepAndRemoveTree, restoreKept, type TreeUser, treesToRetire, unzstd } from "./retire";
 import { cancelTransport, previewTransport, REFUSALS, resumeSources, retryTransport, servedPackage, setSourceDeps, startTransport } from "./source";
 import { activeTransportOf, listTransports, publicView, readTransport, type TransportRecord, updateTransport } from "./store";
-import { peerPath, PROOF_HEADER, TICKET_HEADER } from "./wire";
+import { type AgentView, agentViewOf, peerPath, PROOF_HEADER, TICKET_HEADER } from "./wire";
+import { setTransportSetupRun } from "./agent-tool";
 
 const small = bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
@@ -372,6 +373,44 @@ async function liveCarryDeps(): Promise<CarryDeps> {
   };
 }
 
+/** What the card asks you, answered where the agent works (agent.ts allowDownloads / markAdminDone, from agent-wire). */
+type AskAnswerFn = (tid: string, id: unknown) => Promise<{ ok: true; agent: AgentView; handed: Promise<void> } | { ok: false; status: 404 | 409 | 500; error: string }>;
+const askAnswers: { downloads: AskAnswerFn | null; admin: AskAnswerFn | null } = { downloads: null, admin: null };
+
+/** Why `id` isn't a download list's id (dl_…) or a command's (ad_…), or null. */
+function askIdRefusal(kind: "downloads" | "admin", id: unknown): string | null {
+  const [key, what, pattern] = kind === "downloads" ? (["plan", "download list", /^dl_[0-9a-f]{12}$/] as const) : (["step", "command", /^ad_[0-9a-f]{12}$/] as const);
+  if (typeof id !== "string") return `${key} must be a string: the ${what}'s id.`;
+  return pattern.test(id) ? null : `${JSON.stringify(id.slice(0, 40))} isn't a ${what}'s id (${kind === "downloads" ? "dl_" : "ad_"} and 12 hex digits).`;
+}
+
+/**
+ * Your Allow Downloads or Done on the Transport card (§app.transport/agent), after the page-only check: on the device the
+ * agent works on it is answered here; on the device the chat comes from it goes to that device with your click proven
+ * over that very request (as Move Back's is), and the card's view of the agent takes its answer.
+ */
+async function answerAsk(kind: "downloads" | "admin", r: TransportRecord, id: unknown, mesh: Pick<Mesh, "peerFetch">): Promise<{ status: number; body: Record<string, unknown> }> {
+  const bad = askIdRefusal(kind, id);
+  if (bad) return { status: 400, body: { error: bad } };
+  if (r.side === "destination") {
+    const fn = askAnswers[kind];
+    if (!fn) return { status: 409, body: { error: "This device runs no Transport agent." } };
+    const res = await fn(r.tid, id);
+    if (!res.ok) return { status: res.status, body: { error: res.error } };
+    void res.handed.catch((err: unknown) => log(`${r.tid}: the agent wasn't told: ${err instanceof Error ? err.message : String(err)}`));
+    log(`${r.tid}: ${kind === "downloads" ? "downloads allowed" : "a command run"} by your click`);
+    return { status: 200, body: { ok: true, agent: agentViewOf(res.agent) } };
+  }
+  const body = JSON.stringify(kind === "downloads" ? { plan: id } : { step: id });
+  const path = kind === "downloads" ? peerPath.allowDownloads(r.tid) : peerPath.adminDone(r.tid);
+  const res = await mesh.peerFetch(r.peer, path, { method: "POST", headers: { "content-type": "application/json", [PROOF_HEADER]: mintClickProof(r.peer, body) }, body, signal: AbortSignal.timeout(30_000) }).catch(() => null);
+  if (!res) return { status: 409, body: { error: REFUSALS.offline(r.peerLabel) } };
+  const j = ((await res.json().catch(() => null)) ?? {}) as { error?: string; agent?: AgentView };
+  if (!res.ok) return { status: res.status === 403 ? 403 : 409, body: { error: j.error ?? `${r.peerLabel} answered ${res.status}` } };
+  if (j.agent && typeof j.agent.sessionId === "string") updateTransport(r.tid, { ext: { agent: agentViewOf(j.agent) } });
+  return { status: 200, body: { ok: true, ...(j.agent ? { agent: agentViewOf(j.agent) } : {}) } };
+}
+
 export function mountTransport(app: Hono, mesh: Mesh): void {
   setChatStartGuard(startRefusal);
   // The page's routes answer this host's own page whether or not the mesh is on (no devices: none to pick).
@@ -434,16 +473,18 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     projectSettings: async (root) => carriedSettingsOf(root, await liveCarryDeps()),
   });
 
+  // Whether that device really minted this click proof for this body (asked back once, burnt there).
+  const clickProvenBy = async (peerId: string, proof: string, body: string): Promise<boolean> => {
+    try {
+      const res = await mesh.peerFetch(peerId, "/api/peer/click-proof", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ proof, digest: digest(body) }), signal: AbortSignal.timeout(10_000) });
+      return res.ok && ((await res.json()) as { ok?: unknown }).ok === true;
+    } catch {
+      return false;
+    }
+  };
   dest.setDestinationDeps({
     peerFetch: mesh.peerFetch,
-    clickProven: async (peerId, proof, body) => {
-      try {
-        const res = await mesh.peerFetch(peerId, "/api/peer/click-proof", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ proof, digest: digest(body) }), signal: AbortSignal.timeout(10_000) });
-        return res.ok && ((await res.json()) as { ok?: unknown }).ok === true;
-      } catch {
-        return false;
-      }
-    },
+    clickProven: clickProvenBy,
     adopt: (homeId) => {
       const n = adoptArrivedHome(homeId);
       log(`home ${homeId} arrived: ${n} helper records tracked`);
@@ -491,6 +532,9 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
       setInterruptWaiting((chatId) => h.interruptWaiting(chatId));
       setIsTransportAgent((id) => h.isTransportAgent(id));
       setPreviewExtras(async (chatId) => ({ busyHelpers: await h.busyHelpers(chatId) }));
+      setTransportSetupRun(h.setupRun);
+      askAnswers.downloads = h.allowDownloads;
+      askAnswers.admin = h.adminDone;
     })
     .catch((err) => log(`no Transport agent in this build: ${err instanceof Error ? err.message : String(err)}`));
 
@@ -594,6 +638,23 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     return res.ok ? c.json({ ok: true, left: res.left }) : c.json({ error: res.error }, res.status);
   });
 
+  // The Transport card's Allow Downloads and Done (§app.transport/agent): only your click on a device's page.
+  for (const [verb, kind, key] of [["allow-downloads", "downloads", "plan"], ["admin-done", "admin", "step"]] as const)
+    app.post(`/api/transport/:tid/${verb}`, small, async (c) => {
+      if (!local(c)) return notFound(c);
+      const refused = pageOnlyRefusal(c, YOUR_CLICK);
+      if (refused) return c.json({ error: refused, yourClick: true }, 403);
+      const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+      const extra = body && typeof body === "object" ? unknownKeys(Object.keys(body), [key]) : null;
+      if (extra) return c.json({ error: extra }, 400);
+      const bad = askIdRefusal(kind, body?.[key]);
+      if (bad) return c.json({ error: bad }, 400);
+      const r = readTransport(c.req.param("tid"));
+      if (!r) return notFound(c);
+      const res = await answerAsk(kind, r, body?.[key], mesh);
+      return c.json(res.body, res.status as 200);
+    });
+
   app.get("/api/transport/:tid/back", async (c) => {
     if (!local(c)) return notFound(c);
     const r = readTransport(c.req.param("tid"));
@@ -618,6 +679,26 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     const r = await dest.moveBack(caller, c.req.param("tid"), await c.req.text(), c.req.header(PROOF_HEADER) ?? "");
     return c.json(r.body as object, r.status as 200);
   });
+
+  // Allow Downloads and Done pressed on the page of the device the chat comes from: that click proven back, then answered here.
+  for (const [verb, kind, key] of [["allow-downloads", "downloads", "plan"], ["admin-done", "admin", "step"]] as const)
+    app.post(`/api/peer/transport/:tid/${verb}`, small, async (c) => {
+      const caller = mesh.requestPeer(c);
+      if (!caller) return notFound(c);
+      const r = readTransport(c.req.param("tid"));
+      if (!r || r.side !== "destination" || r.peer !== caller.id) return c.json({ error: "No such transport" }, 404);
+      const raw = await c.req.text();
+      const proof = c.req.header(PROOF_HEADER) ?? "";
+      if (!proof || !(await clickProvenBy(caller.id, proof, raw))) return c.json({ error: "Only you answer the Transport card, from a device's page. Nothing changed here." }, 403);
+      let body: Record<string, unknown> | null = null;
+      try {
+        body = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        return c.json({ error: "Bad request" }, 400);
+      }
+      const res = await answerAsk(kind, r, body?.[key], mesh);
+      return c.json(res.body, res.status as 200);
+    });
 
   app.get("/api/peer/transport/hello", (c) => (mesh.requestPeer(c) ? c.json({ ok: true }) : notFound(c)));
 

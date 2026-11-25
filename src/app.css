@@ -273,10 +273,13 @@ html, body { overflow: clip; overscroll-behavior: none; }
   border-radius: 0;
 }
 .cleanup-choices > li:not(:last-child) { border-bottom: var(--stroke-thin) solid var(--color-border); }
-/* A row and its Compress button side by side (§app.session-list/archive-compress): siblings, never nested. */
-.cleanup-choice-item { display: flex; align-items: center; }
-.cleanup-choice-item > .cleanup-choice { flex: 1; min-width: 0; }
-.cleanup-compress { flex: none; margin-inline-end: var(--space-2); }
+/* A row and its Compress button (§app.session-list/archive-compress): siblings, never nested, sharing one grid cell.
+   The row keeps the whole width, so every row's chevron sits on one line at the box's edge, a row with Compress or
+   without; Compress sits just before the chevron, and the row's text leaves it room. */
+.cleanup-choice-item { display: grid; align-items: center; }
+.cleanup-choice-item > * { grid-area: 1 / 1; }
+.cleanup-compress { justify-self: end; margin-inline-end: calc(var(--space-4) + 16px + var(--space-2)); }
+.cleanup-choice-item:has(> .cleanup-compress) .list-main { padding-inline-end: calc(5.5rem + var(--space-2)); }
 .cleanup-choice .list-title,
 .cleanup-choice .list-meta { display: block; }
 /* The scope is the point of the row: wrap it on a narrow sheet rather than cut it. */

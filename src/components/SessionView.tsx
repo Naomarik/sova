@@ -435,9 +435,12 @@ export function SessionView(props: {
       <Show when={updateNeededFor(path) && hostOf(path)}>{(h) => <HostUpdatePage host={h()} />}</Show>
       {/* A compressed chat never opens (§app.session-list/archive-compression): no transcript, no composer, no Unarchive. */}
       <Show when={s().compressed}>
-        <div class="empty">
-          <Icon name="archive" class="empty-mark" />
-          <p class="empty-body">This chat is compressed. Sova keeps it for the record and doesn't open it.</p>
+        <div class="center-fill">
+          <div class="empty">
+            <Icon name="archive" class="empty-mark" />
+            <p class="empty-title">This chat is compressed.</p>
+            <p class="empty-body">Sova keeps it for the record and doesn't open it.</p>
+          </div>
         </div>
       </Show>
       {/* A Moved row (§app.transport/moved-row): it runs on that device now; no transcript, no composer. */}

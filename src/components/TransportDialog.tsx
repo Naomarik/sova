@@ -3,12 +3,14 @@
 // untracked files (unticked), what that device still needs, and busy helpers at a Move. Start Transport is
 // your click; then the dialog follows the transport until it is done or needs you (Retry, Cancel).
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 import { sessionHrefOn } from "../lib/mesh";
 import { type BackState, moveBack, type TransportView, sizeText, startTransport, transportAct, transportBack, transportOf, transportPreview, transportsOf } from "../lib/transport-api";
 import { announce, toast } from "../lib/ui-state";
 import { Select, TextField, Toggle } from "./form";
-import { type BusyChoice, TransportBusyHelpers, TransportDeviceNeeds, TransportWaiting } from "./TransportHelpers";
+import { type BusyChoice, TransportBusyHelpers, TransportDeviceNeeds, TransportRow, TransportWaiting } from "./TransportHelpers";
 import { Banner, Icon, trapFocus } from "./ui";
+import "./TransportDialog.css";
 
 type Mode = "move" | "copy";
 const MODES: readonly { id: Mode; label: string; line: string }[] = [
@@ -18,6 +20,24 @@ const MODES: readonly { id: Mode; label: string; line: string }[] = [
 
 /** "a", "a and b", "a, b and 2 more". */
 const listWords = (xs: readonly string[]): string => (xs.length <= 2 ? xs.join(" and ") : `${xs.slice(0, 2).join(", ")} and ${xs.length - 2} more`);
+
+/** A ticked-or-not file: its box, its path, its size at the line's end; the whole row is the target. */
+function FileToggle(props: { path: string; size: number; checked: boolean; onChange(): void }) {
+  return (
+    <li>
+      <Toggle
+        label={
+          <span class="transport-file">
+            <span class="transport-file-path">{props.path}</span>
+            <span class="transport-size">{sizeText(props.size)}</span>
+          </span>
+        }
+        checked={props.checked}
+        onChange={() => props.onChange()}
+      />
+    </li>
+  );
+}
 
 const STATE_WORDS = (t: TransportView, size: number | undefined): string => {
   switch (t.state) {
@@ -156,7 +176,7 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
   const stateWord = (s: string) => (s === "ready" ? "" : s === "offline" ? " · offline" : s === "update" ? " · needs an update" : " · doesn't allow chats from here");
 
   return (
-    <>
+    <Portal>
       <div class="scrim" onClick={close} />
       <div class="modal transport-dialog" role="dialog" aria-modal="true" aria-labelledby="tr-title" ref={(el) => trapFocus(el)} onKeyDown={(e) => e.key === "Escape" && close()}>
         <div class="modal-head">
@@ -164,48 +184,50 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
             Transport This Chat
           </h2>
         </div>
-        <form class="modal-body stack" id="tr-form" onSubmit={start}>
+        <form class="modal-body" id="tr-form" onSubmit={start}>
           <Show when={error()}>{(e) => <Banner tone="error" title="Nothing was sent." body={e()} />}</Show>
           <Show when={base.error}>
             <Banner tone="error" title="Couldn't read this chat." body={String(base.error?.message ?? base.error)} />
           </Show>
           <Show when={running()}>
             {(t) => (
-              <div class="stack" role="status" aria-live="polite">
+              <div class="stack-2" role="status" aria-live="polite">
                 <Show
                   when={t().state === "needs-you"}
                   fallback={
-                    <Show when={t().state === "waiting-helpers"} fallback={<p class="text-body">{STATE_WORDS(t(), undefined)}</p>}>
+                    <Show when={t().state === "waiting-helpers"} fallback={<p class="transport-status">{STATE_WORDS(t(), undefined)}</p>}>
                       <TransportWaiting waiting={t().ext?.waiting ?? 0} onInterrupt={() => void act("interrupt")} />
                     </Show>
                   }
                 >
-                  <Banner tone="warn" title={`Transport to ${t().peerLabel} needs you.`} body={STATE_WORDS(t(), undefined)} />
+                  <Banner tone="warn" title={STATE_WORDS(t(), undefined)} />
                 </Show>
               </div>
             )}
           </Show>
           <Show when={!running()}>
-            <div class="tabs" role="tablist" aria-label="Move or Copy" style={{ flex: "none" }}>
-              <For each={MODES}>
-                {(m) => (
-                  <button
-                    type="button"
-                    role="tab"
-                    class={mode() === m.id ? "tab tab-active" : "tab"}
-                    id={`tr-tab-${m.id}`}
-                    aria-selected={mode() === m.id ? "true" : "false"}
-                    aria-controls="tr-panel"
-                    tabindex={mode() === m.id ? 0 : -1}
-                    onClick={() => setMode(m.id)}
-                  >
-                    {m.label}
-                  </button>
-                )}
-              </For>
+            <div class="stack-2">
+              <div class="tabs" role="tablist" aria-label="Move or Copy">
+                <For each={MODES}>
+                  {(m) => (
+                    <button
+                      type="button"
+                      role="tab"
+                      class={mode() === m.id ? "tab tab-active" : "tab"}
+                      id={`tr-tab-${m.id}`}
+                      aria-selected={mode() === m.id ? "true" : "false"}
+                      aria-controls="tr-panel"
+                      tabindex={mode() === m.id ? 0 : -1}
+                      onClick={() => setMode(m.id)}
+                    >
+                      {m.label}
+                    </button>
+                  )}
+                </For>
+              </div>
+              <p class="field-hint">{MODES.find((m) => m.id === mode())!.line}</p>
             </div>
-            <div class="stack" role="tabpanel" id="tr-panel" aria-labelledby={`tr-tab-${mode()}`}>
-              <p class="text-caption text-muted">{MODES.find((m) => m.id === mode())!.line}</p>
+            <div class="transport-panel" role="tabpanel" id="tr-panel" aria-labelledby={`tr-tab-${mode()}`}>
               <Show when={refusal()}>{(r) => <Banner tone="info" title={r()} body="Start Transport stays off until that changes." />}</Show>
               <Select
                 label="Device"
@@ -218,59 +240,56 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
               <Show when={view()}>
                 {(v) => (
                   <>
-                    <section class="card stack transport-card" aria-labelledby="tr-travels">
-                      <h3 class="card-title" id="tr-travels">
+                    <section class="stack-2" aria-labelledby="tr-travels">
+                      <h3 class="text-eyebrow" id="tr-travels">
                         Travels
                       </h3>
-                      <ul class="text-caption transport-list">
-                        <li>Conversation, title, tags, images, memory · {sizeText(v().travels.conversationBytes)}</li>
-                        <For each={v().travels.code}>{(c) => <li>Code: {c.branch ?? "detached HEAD"} and unfinished changes · {sizeText(c.bytes)}</li>}</For>
+                      <ul class="transport-rows">
+                        <TransportRow size={sizeText(v().travels.conversationBytes)}>Conversation, title, tags, images, memory</TransportRow>
+                        <For each={v().travels.code}>{(c) => <TransportRow size={sizeText(c.bytes)}>Code: {c.branch ?? "detached HEAD"} and unfinished changes</TransportRow>}</For>
                         <Show when={v().travels.helpers > 0}>
-                          <li>Team: {v().travels.helpers} helpers and their inboxes</li>
+                          <TransportRow>Team: {v().travels.helpers} helpers and their inboxes</TransportRow>
                         </Show>
                         <Show when={v().travels.scratch.length > 0}>
-                          <li>
-                            Scratch folders: {v().travels.scratch.map((s) => s.dir).join(", ")} · {sizeText(v().travels.scratch.reduce((n, s) => n + s.size, 0))}
-                          </li>
+                          <TransportRow size={sizeText(v().travels.scratch.reduce((n, s) => n + s.size, 0))} sub={v().travels.scratch.map((s) => s.dir).join(", ")}>
+                            Scratch folders
+                          </TransportRow>
                         </Show>
                       </ul>
                     </section>
                     <Show when={v().privateFiles.length > 0}>
-                      <section class="card stack transport-card" aria-labelledby="tr-private">
-                        <h3 class="card-title" id="tr-private">
+                      <section class="stack-2" aria-labelledby="tr-private">
+                        <h3 class="text-eyebrow" id="tr-private">
                           Private files git ignores
                         </h3>
-                        <For each={v().privateFiles}>
-                          {(f) => (
-                            <Toggle label={<span class="text-mono">{`${f.path} · ${sizeText(f.size)}`}</span>} checked={!untick().has(key(f))} onChange={() => toggle(untick, setUntick, key(f))} />
-                          )}
-                        </For>
+                        <ul class="transport-files">
+                          <For each={v().privateFiles}>{(f) => <FileToggle path={f.path} size={f.size} checked={!untick().has(key(f))} onChange={() => toggle(untick, setUntick, key(f))} />}</For>
+                        </ul>
                       </section>
                     </Show>
                     <Show when={v().large.length > 0}>
-                      <section class="card stack transport-card" aria-label="Large files">
-                        <For each={v().large}>
-                          {(f) => (
-                            <Toggle label={<span class="text-mono">{`${f.path} · ${sizeText(f.size)}: over 50 MB. Tick it to send it.`}</span>} checked={include().has(key(f))} onChange={() => toggle(include, setInclude, key(f))} />
-                          )}
-                        </For>
+                      <section class="stack-2" aria-labelledby="tr-large">
+                        <h3 class="text-eyebrow" id="tr-large">
+                          Large new files
+                        </h3>
+                        <p class="field-hint">Over 50 MB, so each stays here unless you tick it.</p>
+                        <ul class="transport-files">
+                          <For each={v().large}>{(f) => <FileToggle path={f.path} size={f.size} checked={include().has(key(f))} onChange={() => toggle(include, setInclude, key(f))} />}</For>
+                        </ul>
                       </section>
                     </Show>
-                    <section class="card stack transport-card" aria-labelledby="tr-stays">
-                      <h3 class="card-title" id="tr-stays">
+                    <section class="stack-2" aria-labelledby="tr-stays">
+                      <h3 class="text-eyebrow" id="tr-stays">
                         Stays here
                       </h3>
-                      <ul class="text-caption transport-list">
-                        <li>
+                      <ul class="transport-rows">
+                        <TransportRow size={v().staysHere.left.length > 0 ? sizeText(v().staysHere.leftBytes) : null} sub={v().staysHere.left.length > 0 ? v().staysHere.left.join(", ") : undefined}>
                           Build output and dependencies: rebuilt there
-                          <Show when={v().staysHere.left.length > 0}>
-                            {" "}({v().staysHere.left.join(", ")} · {sizeText(v().staysHere.leftBytes)})
-                          </Show>
-                        </li>
-                        <li>Share links to this chat end</li>
+                        </TransportRow>
+                        <TransportRow>Share links to this chat end</TransportRow>
                         <Show when={mode() === "move"}>
-                          <For each={v().staysHere.jobs}>{(j) => <li>Background job {j}: stopped at the switch</li>}</For>
-                          <For each={v().staysHere.copies ?? []}>{(c) => <li>Running copy {c}: stopped at the switch</li>}</For>
+                          <For each={v().staysHere.jobs}>{(j) => <TransportRow>Background job {j}: stopped at the switch</TransportRow>}</For>
+                          <For each={v().staysHere.copies ?? []}>{(c) => <TransportRow>Running copy {c}: stopped at the switch</TransportRow>}</For>
                         </Show>
                       </ul>
                     </section>
@@ -285,6 +304,19 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
           </Show>
         </form>
         <div class="modal-foot">
+          <span class="modal-spacer" />
+          <Show
+            when={running() && running()!.state !== "done" && running()!.state !== "cancelled"}
+            fallback={
+              <button type="button" class="button button-ghost" onClick={close}>
+                {running() ? "Close" : "Cancel"}
+              </button>
+            }
+          >
+            <button type="button" class="button button-ghost" onClick={() => void act("cancel")} title={`Removes what arrived on ${deviceLabel(running()!.peer)}. The chat carries on here.`}>
+              Cancel
+            </button>
+          </Show>
           <Show
             when={running()}
             fallback={
@@ -301,22 +333,9 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
               </Show>
             )}
           </Show>
-          <span class="modal-spacer" />
-          <Show
-            when={running() && running()!.state !== "done" && running()!.state !== "cancelled"}
-            fallback={
-              <button type="button" class="button button-ghost" onClick={close}>
-                {running() ? "Close" : "Cancel"}
-              </button>
-            }
-          >
-            <button type="button" class="button button-ghost" onClick={() => void act("cancel")} title={`Removes what arrived on ${deviceLabel(running()!.peer)}. The chat carries on here.`}>
-              Cancel
-            </button>
-          </Show>
         </div>
       </div>
-    </>
+    </Portal>
   );
 }
 
@@ -345,31 +364,38 @@ export function MovedPanel(props: { moved: { to: string; peer: string; tid: stri
     }
   };
   return (
-    <div class="empty">
-      <Icon name="external" class="empty-mark" />
-      <p class="empty-body">This chat moved to {props.moved.to}.</p>
-      <Show when={said()}>{(s) => <p class="empty-body text-error">{s()}</p>}</Show>
-      <div class="empty-action cluster">
-        <Show when={there()}>
-          {(href) => (
-            <a class="button" href={href()}>
-              Open There
-            </a>
-          )}
-        </Show>
-        <Show when={back()?.can === "move"}>
-          <button type="button" class="button button-primary" aria-disabled={pending() ? "true" : undefined} title={`Bring it back here. Nothing has happened to it on ${props.moved.to} yet.`} onClick={() => !pending() && void doBack()}>
-            {pending() ? "Moving Back…" : "Move Back"}
-          </button>
-        </Show>
-        <Show when={back()?.can === "copy" && there()}>
-          {(href) => (
-            <a class="button" href={href()} title={`It has changed on ${props.moved.to}, so this copies it back as a new chat.`} onClick={() => toast(`Open its ⋯ menu on ${props.moved.to} and choose Transport…, then Copy.`)}>
-              Copy Back
-            </a>
-          )}
-        </Show>
-        <Show when={back()?.can === null && back()?.reason}>{(r) => <p class="text-caption text-muted">{r()}</p>}</Show>
+    <div class="center-fill">
+      <div class="empty">
+        <Icon name="external" class="empty-mark" />
+        <p class="empty-title">This chat moved to {props.moved.to}.</p>
+        {/* Why Move Back is or isn't offered, said on the page: a button's title never shows on a phone. */}
+        <p class="empty-body">
+          <Show when={back()?.can === null && back()?.reason} fallback={back()?.can === "copy" ? `It has changed on ${props.moved.to}, so Copy Back brings it here as a new chat.` : "It runs there now."}>
+            {(r) => r()}
+          </Show>
+        </p>
+        <Show when={said()}>{(s) => <p class="empty-body text-error">{s()}</p>}</Show>
+        <div class="empty-action cluster">
+          <Show when={there()}>
+            {(href) => (
+              <a class="button" href={href()}>
+                Open There
+              </a>
+            )}
+          </Show>
+          <Show when={back()?.can === "move"}>
+            <button type="button" class="button button-primary" aria-disabled={pending() ? "true" : undefined} title={`Bring it back here. Nothing has happened to it on ${props.moved.to} yet.`} onClick={() => !pending() && void doBack()}>
+              {pending() ? "Moving Back…" : "Move Back"}
+            </button>
+          </Show>
+          <Show when={back()?.can === "copy" && there()}>
+            {(href) => (
+              <a class="button" href={href()} title={`It has changed on ${props.moved.to}, so this copies it back as a new chat.`} onClick={() => toast(`Open its ⋯ menu on ${props.moved.to} and choose Transport…, then Copy.`)}>
+                Copy Back
+              </a>
+            )}
+          </Show>
+        </div>
       </div>
     </div>
   );

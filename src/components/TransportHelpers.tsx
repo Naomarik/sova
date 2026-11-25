@@ -2,11 +2,28 @@
 // §app.transport/agent, §app.transport/safe-transport), rendered by TransportDialog.tsx: what that
 // device still needs with the agent's Model select, the Busy helpers choice of a Move, and the
 // waiting line with Interrupt and Move. Words: §design.copy-deck/transport.
-import { For, Show } from "solid-js";
+import { For, type JSX, Show } from "solid-js";
 import { modelLabel } from "../lib/format";
 import { Choice, Select } from "./form";
 
 export type BusyChoice = "safe" | "interrupt";
+
+/** One line of a list: what it is, then its size in a column of its own at the line's end. */
+export function TransportRow(props: { children: JSX.Element; size?: string | null; sub?: JSX.Element }) {
+  return (
+    <li class="transport-row">
+      <span class="transport-row-text">
+        {props.children}
+        <Show when={props.sub}>
+          <span class="transport-row-sub">{props.sub}</span>
+        </Show>
+      </span>
+      <Show when={props.size}>
+        <span class="transport-size">{props.size}</span>
+      </Show>
+    </li>
+  );
+}
 
 /** "That device still needs" and the agent's model: the project when it comes from this device (`fromHere`, its size),
     then each missing check, then what the project's setup definition says is set up once it has arrived
@@ -15,22 +32,22 @@ export function TransportDeviceNeeds(props: { needs: readonly string[]; fromHere
   const after = () => props.afterArrival ?? [];
   return (
     <Show when={props.needs.length > 0 || !!props.fromHere || after().length > 0}>
-      <section class="card stack" aria-labelledby="transport-needs-title" style={{ padding: "var(--space-3)" }}>
-        <h3 class="card-title" id="transport-needs-title">
+      <section class="stack-2" aria-labelledby="transport-needs-title">
+        <h3 class="text-eyebrow" id="transport-needs-title">
           That device still needs
         </h3>
-        <ul class="text-caption">
-          <Show when={props.fromHere}>{(size) => <li>The project comes from this device: its history and branches · {size()}</li>}</Show>
-          <For each={props.needs}>{(n) => <li>{n}</li>}</For>
-          <Show when={after().length > 0}>
-            <li>
-              After it arrives:
-              <ul>
-                <For each={after()}>{(n) => <li>{n}</li>}</For>
-              </ul>
-            </li>
-          </Show>
+        <ul class="transport-rows">
+          <Show when={props.fromHere}>{(size) => <TransportRow size={size()}>The project comes from this device: its history and branches</TransportRow>}</Show>
+          <For each={props.needs}>{(n) => <TransportRow>{n}</TransportRow>}</For>
         </ul>
+        <Show when={after().length > 0}>
+          <p class="transport-rows-label" id="transport-after-title">
+            After it arrives:
+          </p>
+          <ul class="transport-rows" aria-labelledby="transport-after-title">
+            <For each={after()}>{(n) => <TransportRow>{n}</TransportRow>}</For>
+          </ul>
+        </Show>
         <Select label="Model" value={props.model ?? ""} disabled={props.disabled || !props.models.length} options={props.models.map((m) => ({ value: m, label: modelLabel(m) ?? m }))} onChange={(v) => props.onModel(v)} />
       </section>
     </Show>
@@ -42,8 +59,8 @@ export function TransportBusyHelpers(props: { helpers: readonly { id: string; na
   const n = () => props.helpers.length;
   return (
     <Show when={n() > 0}>
-      <section class="card stack" aria-labelledby="transport-busy-title" style={{ padding: "var(--space-3)" }}>
-        <p class="card-title" id="transport-busy-title" title={props.helpers.map((h) => h.name).join(", ")}>
+      <section class="stack-2" aria-labelledby="transport-busy-title">
+        <p class="transport-rows-label" id="transport-busy-title" title={props.helpers.map((h) => h.name).join(", ")}>
           {n() === 1 ? "1 helper is working." : `${n()} helpers are working.`}
         </p>
         <Choice
@@ -65,8 +82,8 @@ export function TransportBusyHelpers(props: { helpers: readonly { id: string; na
 /** The transport's line while a Safe Transport waits, with Interrupt and Move beside it. */
 export function TransportWaiting(props: { waiting: number; onInterrupt(): void; pending?: boolean }) {
   return (
-    <div class="cluster" role="status">
-      <span>{props.waiting === 1 ? "Waiting for 1 helper to finish" : `Waiting for ${props.waiting} helpers to finish`}</span>
+    <div class="spread" role="status">
+      <span class="transport-status">{props.waiting === 1 ? "Waiting for 1 helper to finish" : `Waiting for ${props.waiting} helpers to finish`}</span>
       <button type="button" class="button button-sm button-ghost" disabled={props.pending} onClick={() => props.onInterrupt()}>
         Interrupt and Move
       </button>

@@ -366,22 +366,29 @@ div.overview-project-card-row::after { content: ""; flex: none; width: 16px; }
 .overview-project-card-muted { color: var(--color-ink-muted); }
 .overview-project-card-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-success); }
 .overview-project-card-fig { min-width: 52px; text-align: right; }
-.overview-project-card-pips { display: inline-flex; gap: 1px; }
-/* Copies: one pip per usable place. Each look differs in shape as well as tone; the row's title and hidden text carry
-   the counts. Stopped is ink-muted, never --color-border-strong: that neutral is the running copies' part of the memory
-   bar one row below. */
-.overview-project-card-pips > i { position: relative; flex: none; box-sizing: border-box; width: 5px; height: 10px; border-radius: 1px; border: var(--stroke-thin) solid var(--color-border-strong); background: var(--color-sunken); }
+/* Copies: one pip per copy the limit allows. On a narrow card a long strip shrinks its pips (to 4px) rather than
+   wrapping or cutting the row's label: the label keeps its text's width, the value and the strip may shrink. */
+.overview-project-card-row:has(> .overview-project-card-val > .overview-project-card-pips) > .overview-project-card-key { flex: 1 0 auto; }
+.overview-project-card-val:has(> .overview-project-card-pips) { min-width: 0; flex: 0 1 auto; }
+.overview-project-card-val:has(> .overview-project-card-pips) > .overview-project-card-fig { flex: none; }
+.overview-project-card-pips { display: inline-flex; gap: 2px; min-width: 0; }
+/* Each look differs in shape as well as tone, every pip the same 8x10 box; the row's title and hidden text carry the
+   counts. Stopped is ink-muted, never --color-border-strong: that neutral is the running copies' part of the memory bar
+   one row below. */
+.overview-project-card-pips > i { position: relative; flex: 0 1 8px; width: 8px; min-width: 4px; box-sizing: border-box; height: 10px; border-radius: 1px; border: var(--stroke-thin) solid var(--color-border-strong); background: var(--color-sunken); }
 .overview-project-card-pips > i.overview-project-card-pip-running { border-color: var(--status-info); background: var(--status-info); }
 .overview-project-card-pips > i.overview-project-card-pip-stopped { border-color: var(--color-ink-muted); }
 .overview-project-card-pips > i.overview-project-card-pip-stopped::after { content: ""; position: absolute; inset: 50% 0 0; background: var(--color-ink-muted); }
-.overview-project-card-pips > i.overview-project-card-pip-elsewhere { width: 2px; border-color: var(--status-warn); background: var(--status-warn); }
-/* Not checked: hollow with a dashed outline. A real `border-style: dashed` on a 5x10 box nearly closes up at 1x and reads
-   as free, so the dashes are drawn pixel for pixel: a mask over the token's fill. */
+/* Used elsewhere: a box of the same width, warn outline, an amber bar inside. */
+.overview-project-card-pips > i.overview-project-card-pip-elsewhere { border-color: var(--status-warn); }
+.overview-project-card-pips > i.overview-project-card-pip-elsewhere::after { content: ""; position: absolute; inset: 0 2px; background: var(--status-warn); }
+/* Not checked: hollow with a dashed outline. A real `border-style: dashed` on so small a box nearly closes up at 1x and
+   reads as free, so the dashes are drawn pixel for pixel: a mask over the token's fill, 8x10 (corners and mid-sides). */
 .overview-project-card-pips > i.overview-project-card-pip-unchecked {
   border: 0;
   border-radius: 0;
   background: var(--color-border-strong);
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 10' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h2v1H1v1H0zM3 0h2v2H4V1H3zM0 4h1v2H0zM4 4h1v2H4zM0 8h1v1h1v1H0zM4 8h1v2H3V9h1z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 10' shape-rendering='crispEdges'%3E%3Cpath d='M0 0h2v1H1v1H0zM6 0h2v2H7V1H6zM3 0h2v1H3zM0 4h1v2H0zM7 4h1v2H7zM3 9h2v1H3zM0 8h1v1h1v1H0zM7 8h1v2H6V9h1z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
 }
 /* Memory in use: the mix of the total, filling the whole bar whenever anything is used: chats in --status-info, running
    copies in --color-border-strong (a neutral, not the accent), a 1px surface gap between them; the row's title and hidden

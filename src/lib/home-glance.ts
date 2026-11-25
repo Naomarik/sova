@@ -25,11 +25,13 @@ export interface ReadyRow {
   muted: boolean;
 }
 
-/** What one usable place is, as its pip draws it. `unchecked`: other programs couldn't be looked at, so never "free". */
+/** What one pip draws: a copy running, a stopped copy, or room for one that is free, used elsewhere or not checked.
+ *  `unchecked`: other programs couldn't be looked at, so never "free". */
 export type PlaceLook = "running" | "stopped" | "elsewhere" | "free" | "unchecked";
 
 export interface SlotsRow {
-  /** One per usable place, grouped: running, stopped, used elsewhere, then free (or not checked). */
+  /** One per copy the project may run at once (max(cap, running)), grouped: running, stopped, used elsewhere, then
+   *  free (or not checked). */
   pips: PlaceLook[];
   /** "3 running", "12 at limit". */
   text: string;
@@ -192,14 +194,21 @@ export function retirementWords(g: Partial<Pick<ProjectGlance, "retired" | "held
 }
 
 /** The Copies row: `running` is the copy limit's own count (the figure and hover), `runningPlaces` the running pips. */
-function slotsRow({ running, cap, usable, runningPlaces, stopped, elsewhere, free }: NonNullable<ProjectGlance["slots"]>): SlotsRow {
-  const unchecked = free === null ? Math.max(0, usable - runningPlaces - stopped - elsewhere) : 0;
+/** The places' states mapped onto the copy limit: max(cap, running) pips, `running` of them running (the limit's own
+ *  count); the room left takes stopped copies first, then the open rest is free as far as free places go, else used
+ *  elsewhere, or all not checked when the free places are unknown. Stopped copies beyond the room show in the hover only. */
+function slotsRow({ running, cap, stopped, elsewhere, free }: NonNullable<ProjectGlance["slots"]>): SlotsRow {
+  const room = Math.max(0, cap - running);
+  const stoppedPips = Math.min(stopped, room);
+  const open = room - stoppedPips;
+  const freePips = free === null ? 0 : Math.min(open, free);
+  const elsewherePips = free === null ? 0 : open - freePips;
   const pips: PlaceLook[] = [
-    ...Array<PlaceLook>(runningPlaces).fill("running"),
-    ...Array<PlaceLook>(stopped).fill("stopped"),
-    ...Array<PlaceLook>(elsewhere).fill("elsewhere"),
-    ...Array<PlaceLook>(free ?? 0).fill("free"),
-    ...Array<PlaceLook>(unchecked).fill("unchecked"),
+    ...Array<PlaceLook>(running).fill("running"),
+    ...Array<PlaceLook>(stoppedPips).fill("stopped"),
+    ...Array<PlaceLook>(elsewherePips).fill("elsewhere"),
+    ...Array<PlaceLook>(freePips).fill("free"),
+    ...Array<PlaceLook>(free === null ? open : 0).fill("unchecked"),
   ];
   const counts = `${running} running, ${stopped} stopped but holding a place, ${elsewhere} used elsewhere${free === null ? "" : `, ${free} free`}.`;
   const title = [

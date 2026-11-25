@@ -148,18 +148,19 @@ export interface ProjectGlanceRelease {
 
 /** A project's copies and places as its card shows them (§app.projects/home-glance). */
 export interface ProjectGlanceSlots {
-  /** The copy limit's own count of running copies (the figure): the main checkout's and conformance's never, a running record outside the usable slots included. */
+  /** The copy limit's own count of running copies (the figure and the running pips): the main checkout's and conformance's never, a running record outside the usable slots included. */
   running: number;
+  /** The copy limit in force: the card draws max(cap, running) pips. */
   cap: number;
   /** The slots of 1 to 16 the project's numbering can use: one place each. */
   usable: number;
-  /** Places a running copy of the project holds (the running pips; `running` may count more). */
+  /** Places a running copy of the project holds (`running` may count more). */
   runningPlaces: number;
   /** Places a copy of the project holds and doesn't run. */
   stopped: number;
   /** Places no copy of the project holds whose ports something else has. */
   elsewhere: number;
-  /** Places a new copy could take; null: not checked (the places left over are drawn as such). */
+  /** Places a new copy could take; null: not checked (the card's open pips are then drawn not checked). */
   free: number | null;
 }
 

@@ -3,12 +3,9 @@
 // (§app.access/your-click). The peer routes: every one but the package's is a sessions route on the
 // destination (server/mesh/access.ts); the package's belongs to no grant and checks the one-time
 // ticket itself (§mesh.peers/transport-ticket), comparing in constant time and never logging it.
-import { execFile } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { rename, rm as rmAsync } from "node:fs/promises";
-import { pipeline } from "node:stream/promises";
-import { createZstdDecompress } from "node:zlib";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -40,7 +37,8 @@ import { cleanSetupDef } from "./setup-def";
 import { git, publishTrees, rebuildWorktrees } from "./git-snapshot";
 import { isTransportAgent, needsAnswer, setAfterArrival, setBringHelpersToRest, setInterruptWaiting, setIsTransportAgent, setNeedsAnswer, setPrepareDestination, setPreviewExtras, interruptWaiting, releasePause, type ProjectRef } from "./hooks";
 import { allMoved, markMoved, MOVE_BACK_MS, movedOf, unmarkMoved } from "./moved";
-import { compressFolder, type PackageManifest } from "./package";
+import type { PackageManifest } from "./package";
+import { extractKeeping, keepAndRemoveTree, restoreKept, unzstd } from "./retire";
 import { cancelTransport, previewTransport, REFUSALS, resumeSources, retryTransport, servedPackage, setSourceDeps, startTransport } from "./source";
 import { activeTransportOf, listTransports, publicView, readTransport, type TransportRecord, updateTransport } from "./store";
 import { peerPath, PROOF_HEADER, TICKET_HEADER } from "./wire";
@@ -102,34 +100,18 @@ async function moved(r: TransportRecord): Promise<void> {
   for (const p of ext.ownedTrees ?? []) {
     const t = manifestTrees.get(p);
     if (!t || t.main || !existsSync(p)) continue;
-    const kept = join(home, "transport", `${r.tid}-code-${t.name}.tar.zst`);
-    try {
-      mkdirSync(join(home, "transport"), { recursive: true, mode: 0o700 });
-      const c = await compressFolder(p, kept);
-      log(`${r.tid}: ${p} kept in the safety copy (${c.entries} entries, ${Math.round(c.size / 1024)} KB)`);
-    } catch (err) {
-      log(`${r.tid}: ${p} stays: it couldn't be kept whole (${err instanceof Error ? err.message : String(err)})`);
+    // Kept whole (its submodules' git data too), read back, then removed; one that can't be kept whole stays.
+    const done = await keepAndRemoveTree(p, join(home, "transport"), r.tid, t.name);
+    if (!done.removed) {
+      log(`${r.tid}: ${p} stays: ${done.why}`);
       continue;
     }
-    const common = (await git(p, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).stdout.trim();
-    const rm = await git(common ? dirname(common) : p, ["worktree", "remove", "--force", p]);
-    if (rm.code !== 0) log(`${r.tid}: ${p} was not removed: ${rm.stderr.trim()}`);
-    else updateTransport(r.tid, (cur) => ({ ext: { removedTrees: [...(((cur.ext ?? {}) as { removedTrees?: unknown[] }).removedTrees ?? []), { name: t.name, path: p, common }] } }));
+    log(`${r.tid}: ${p} kept in the safety copy (${done.entries} entries, ${Math.round(done.size / 1024)} KB) and removed`);
+    const common = done.common;
+    updateTransport(r.tid, (cur) => ({ ext: { removedTrees: [...(((cur.ext ?? {}) as { removedTrees?: unknown[] }).removedTrees ?? []), { name: t.name, path: p, common }] } }));
   }
   emitChatNews({ name: "chat.removed", chat: r.chatId, home });
   sessionsChanged();
-}
-
-/** A zstd archive read into a plain tar beside it (removed by the caller). */
-async function unzstd(file: string, out: string): Promise<void> {
-  await pipeline(createReadStream(file), createZstdDecompress(), createWriteStream(out, { mode: 0o600 }));
-}
-
-/** Extract `tarFile` into `dir`, never replacing a file already there (GNU tar's --skip-old-files, bsdtar's -k). */
-function extractKeeping(tarFile: string, dir: string): Promise<void> {
-  const run = (flag: string) =>
-    new Promise<number>((done) => execFile("tar", ["-x", "-p", flag, "-f", tarFile, "-C", dir], { maxBuffer: 8 * 1024 * 1024 }, (err) => done(err ? ((err as { code?: number }).code ?? 1) : 0)));
-  return run("--skip-old-files").then((code) => (code === 0 ? undefined : run("-k").then((c) => (c === 0 ? undefined : Promise.reject(new Error(`tar couldn't restore into ${dir}`))))));
 }
 
 /** Whether a Moved row can come back, and how (§app.transport/moved-row): Move Back for 7 days while nothing happened there, then Copy Back. */
@@ -177,13 +159,9 @@ export async function moveBackToHere(r: TransportRecord, mesh: Pick<Mesh, "peerF
       const repo = removed[0] ? dirname(removed[0].common) : null;
       const staged = await rebuildWorktrees({ repo, codeDir: join(at, "code"), tid: r.tid, metas, targets });
       await publishTrees(staged, r.tid);
-      // What never travelled (build output, unticked files) comes back from the folder's own archive; nothing is replaced.
-      for (const x of removed) {
-        const kept = join(home, "transport", `${r.tid}-code-${x.name}.tar.zst`);
-        if (!existsSync(kept)) continue;
-        await unzstd(kept, join(at, `${x.name}.tar`));
-        await extractKeeping(join(at, `${x.name}.tar`), dirname(x.path));
-      }
+      // What never travelled (build output, unticked files, its submodules' own git data) comes back from what was
+      // kept; nothing is replaced.
+      for (const x of removed) await restoreKept(join(home, "transport"), r.tid, x.name, x.path, at);
     }
     unmarkMoved(r.chatId);
     const a = await archiveSession(r.path, false);

@@ -646,7 +646,10 @@ export async function retryTransport(tid: string): Promise<{ ok: boolean; error?
   // A switch that changed here meanwhile is packed again; one the destination already holds goes on.
   const repack = r.mode === "move" && !r.decided && r.steps.packed && !(await unchangedSincePack(r));
   updateTransport(tid, { state: "preparing", needsYou: undefined, attempt: r.attempt + 1, ...(repack ? { steps: { offered: r.steps.offered } } : {}) });
-  await post(r, peerPath.retry(tid), {}).catch(() => null);
+  const res = await post(r, peerPath.retry(tid), {}).catch(() => null);
+  // That device dropped a package it couldn't build on (a submodule's remote didn't give its commits): packed again,
+  // with what it now asks for (that submodule's whole history).
+  if (res?.body.repack === true && !r.decided) updateTransport(tid, { steps: { offered: r.steps.offered } });
   drive(tid);
   return { ok: true };
 }

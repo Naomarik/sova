@@ -627,3 +627,21 @@ test("a clone there with its submodule checked out at the gitlink (a project pre
   assert.equal(subFacts(join(target, "services", "samba")), subFacts(sub), "the submodule's HEAD, status and index are the chat's");
   assert.equal(g(target, "worktree", "list", "--porcelain").split("\n").filter((l) => l.startsWith("worktree ")).length, 1, "the check's scratch worktree is gone");
 });
+
+test("a Retry after a package that lacked commits there (a submodule's remote didn't give them) drops it and waits for a new one, asking for whole histories", async () => {
+  const { retry, statusOf } = await import("./destination");
+  const { createTransport, readTransport, updateTransport } = await import("./store");
+  const offer = { trees: [{ name: "w", branch: "feat", main: false, rel: "w" }], repoRel: "r", project: { remotes: [], roots: [], submodules: [{ key: "lib/samba", url: "https://127.0.0.1:1/samba.git" }] } };
+  createTransport({ tid: "tr_repack01", side: "destination", mode: "move", chatId: "c2", sourceChatId: "c2", title: "t", peer: "desk", peerLabel: "Desk", path: "", folder: join(root, "there-rp", "w"), state: "needs-you", ext: { offer } });
+  // What arrive leaves after a submodule's needs-base: the package's commits there weren't enough.
+  updateTransport("tr_repack01", { pkg: { sha256: "a".repeat(64), size: 10 }, steps: { offered: "x", prepared: "x", pulled: "x" }, haves: [], ext: { subsFetch: [], repack: true }, needsYou: { reason: "The submodule lib/samba lacks commits", at: "x" } });
+  const res = retry({ id: "desk" }, "tr_repack01");
+  assert.deepEqual(res.body, { ok: true, repack: true }, "the source is told to pack again");
+  const r = readTransport("tr_repack01")!;
+  assert.equal(r.pkg, undefined);
+  assert.equal(r.steps.pulled, undefined);
+  assert.equal(r.state, "preparing");
+  const s = await statusOf({ id: "desk" }, "tr_repack01");
+  assert.ok(s.steps.prepared && !s.steps.pulled && s.state === "preparing", "the source's next look packs and sends a new package");
+  assert.equal(s.subsFetch, undefined, "no submodule comes by its remote: each travels with its history");
+});

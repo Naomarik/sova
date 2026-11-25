@@ -394,8 +394,9 @@ async function arrive(tid: string): Promise<void> {
     stepDone(tid, "verified", { ext: { sourceValues }, state: "switching", arrivedId, renamed: staged.filter((s) => s.renamedFrom).map((s) => ({ from: s.renamedFrom!, to: s.branch! })) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // A package built on commits not here: the next one carries them (a submodule's remote too: its history).
-    if (err instanceof SnapshotError && err.reason === "needs-base") updateTransport(tid, { haves: [], ext: { subsFetch: [] } });
+    // A package built on commits not here (a submodule's remote that didn't give them): a Retry asks for a new one,
+    // carrying the whole history.
+    if (err instanceof SnapshotError && err.reason === "needs-base") updateTransport(tid, { haves: [], ext: { subsFetch: [], repack: true } });
     needsYou(tid, msg);
   } finally {
     arriving.delete(tid);
@@ -689,6 +690,11 @@ export function retry(from: { id: string }, tid: string): { status: number; body
   const r = readTransport(tid);
   if (!r || r.side !== "destination" || r.peer !== from.id) return ok({ error: "No such transport" }, 404);
   if (r.state === "done" || r.state === "cancelled") return ok({ ok: true, state: r.state });
+  // The package lacked commits this device can't get: drop it and wait for the new one the source packs.
+  if (((r.ext ?? {}) as { repack?: boolean }).repack && !r.steps.verified) {
+    updateTransport(tid, { needsYou: undefined, state: "preparing", attempt: r.attempt + 1, pkg: undefined, steps: { ...r.steps, pulled: undefined, staged: undefined, verified: undefined }, ext: { repack: false } });
+    return ok({ ok: true, repack: true });
+  }
   updateTransport(tid, { needsYou: undefined, state: r.steps.verified ? "switching" : r.pkg ? "sending" : "preparing", attempt: r.attempt + 1 });
   if (!r.steps.prepared) void prepare(tid);
   else if (r.pkg && !r.steps.verified) void arrive(tid);

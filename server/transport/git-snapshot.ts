@@ -299,7 +299,7 @@ async function recordedRemote(top: string): Promise<string | null> {
 }
 
 /** The gitlinks of the tree at `top` (from its index), with their names and URLs from its `.gitmodules`. */
-async function gitlinksOf(top: string): Promise<{ path: string; name: string; url: string }[]> {
+export async function gitlinksOf(top: string): Promise<{ path: string; name: string; url: string }[]> {
   const paths = nul((await git(top, ["ls-files", "-s", "-z"])).stdout)
     .filter((l) => l.startsWith("160000 "))
     .map((l) => l.slice(l.indexOf("\t") + 1));

@@ -18,6 +18,7 @@ import {
 } from "../../shared/profiles";
 import type { ChatProfileInfo } from "../../shared/protocol";
 import { compactModel, modelLabel } from "./format";
+import { builtinGroup, isEditedBuiltin } from "./profile-switch";
 import { majorGlyph, minorGlyph, type ModeGlyph } from "./mode-glyphs";
 
 /** The Icon a profile's icon names (an unknown one reads as the wrench). */
@@ -277,7 +278,7 @@ export const editedLabel = (name: string): string => `${name}, edited`;
 
 /**
  * The picker's groups from the joined list: Yours (pairs, library-only profiles and unlinked
- * session profiles), This project, then Built in; hidden rows left out. No card stands for no
+ * session profiles), This project, then Built in (an edited built-in one in its place there); hidden rows left out. No card stands for no
  * profile: an older server's Off row is never drawn. Without a joined list (an older server) the
  * old groups, less their no-profile card.
  */
@@ -304,8 +305,15 @@ export function joinedPickerProfiles(l: ProfilesListing | undefined): ReturnType
     };
   };
   const shown = l.joined.filter((r) => r.kind !== "off" && !r.hidden);
-  const of = (g: JoinedProfile["group"]) => shown.filter((r) => r.group === g).map(card).filter((c): c is JoinedCard => c !== null);
-  return { mine: null, yours: of("yours"), project: of("project"), projectName: old.projectName, builtins: of("builtin") };
+  const cards = (rows: readonly JoinedProfile[]) => rows.map(card).filter((c): c is JoinedCard => c !== null);
+  // An edited built-in one is listed in its built-in one's place, under Built in (§chat.subagent-profiles/edited-builtin).
+  return {
+    mine: null,
+    yours: cards(shown.filter((r) => r.group === "yours" && !isEditedBuiltin(r))),
+    project: cards(shown.filter((r) => r.group === "project")),
+    projectName: old.projectName,
+    builtins: cards(builtinGroup(shown)),
+  };
 }
 
 /** Every card of the picker's groups, in their order. */

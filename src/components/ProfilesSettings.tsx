@@ -22,12 +22,15 @@ import {
   plainStarts,
   setAllTo,
   sharersOf,
+  startsOf,
   withDeleted,
+  withReset,
   deleteRefusal,
   derivedDefaultOf,
   withDuplicate,
-  withMadeYours,
+  editTarget,
   withNewProfile,
+  yoursFromBuiltinLine,
   type DraftRow,
   type JoinedRowWire,
   type ListRow,
@@ -50,8 +53,9 @@ const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
  * both parts. The list beside the editor (under it on a narrow panel): New Profile, then Yours, This
  * project and Built in. The editor (§app.settings-dialog/profile-editor): the name and Default or
  * Make Default, then the Models part (§chat.subagent-profiles/settings) and the When a Chat Starts
- * part. Yours are the dialog's draft, saved with Save Changes; a project's are read-only, with
- * Approve Profile; Approve and Hide save at once.
+ * part. Yours are the dialog's draft, saved with Save Changes; a built-in one edits in place, its first
+ * change making it yours (a copy in its place, frozen, with Reset to Built-in); a project's are
+ * read-only, with Approve Profile; Approve and Hide save at once.
  */
 export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: string | null }) {
   setProfilesCwd(props.cwd);
@@ -88,7 +92,10 @@ export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: 
     const k = safeListing()?.thisChat ?? (subagentSettingsPath() ? subagentSettingsChat() : undefined);
     return k && k !== OFF_KEY ? k : null;
   };
-  const groups = createMemo(() => (draft() ? listGroups(draft()!, wire(), store.saved(), thisChat()) : null));
+  /** Each built-in row's key → the draft key of the copy of yours its first change made (listed in the
+      built-in's place under Built in, which it hides while the draft holds it). */
+  const [copies, setCopies] = createSignal<Record<string, string>>({});
+  const groups = createMemo(() => (draft() ? listGroups(draft()!, wire(), store.saved(), thisChat(), copies()) : null));
 
   const [picked, setPicked] = createSignal<string | null>(null);
   const [part, setPart] = createSignal<ProfilesPart>("models");
@@ -96,18 +103,30 @@ export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: 
   const [busy, setBusy] = createSignal<string | null>(null);
   const [actionError, setActionError] = createSignal<string | null>(null);
 
-  // A new profile, once saved, keeps its editor open under its saved key.
+  // A new profile, once saved, keeps its editor open under its saved key (a built-in's copy too).
   createEffect(
     on(lastSavedKeys, (keys) => {
       const to = keys.get(untrack(picked) ?? "");
       if (to) setPicked(to);
+      const c = untrack(copies);
+      if (Object.values(c).some((k) => keys.has(k))) setCopies(Object.fromEntries(Object.entries(c).map(([b, k]) => [b, keys.get(k) ?? k])));
     }),
   );
   const allRows = (): ListRow[] => (groups() ? [...groups()!.yours, ...groups()!.project, ...groups()!.builtin] : []);
+  /** A row by key: a built-in one picked before its first change is found as the copy of yours in its place. */
+  const rowOf = (key: string | null, all = allRows()): ListRow | undefined =>
+    key ? (all.find((r) => r.key === key) ?? all.find((r) => r.key === copies()[key]) ?? all.find((r) => r.wire?.replaces === key)) : undefined;
   /** The open profile: the one picked (or asked for), else this chat's, else the default, else the first. */
   const current = (): ListRow | undefined => {
     const all = allRows();
-    return all.find((r) => r.key === picked()) ?? all.find((r) => r.thisChat) ?? all.find((r) => r.isDefault) ?? all[0];
+    return rowOf(picked(), all) ?? all.find((r) => r.thisChat) ?? all.find((r) => r.isDefault) ?? all[0];
+  };
+  /** The editor's identity: the picked key, also once a built-in picked there became the copy of yours in its place,
+      so its first change never remounts the editor (focus and open rows stay). */
+  const editorKey = (): string | undefined => {
+    const c = current();
+    const p = picked();
+    return c && p && c.key !== p && rowOf(p)?.key === c.key ? p : c?.key;
   };
   // The mode menu's gears, Manage Profiles… and the limit row open a profile at a part.
   createEffect(() => {
@@ -143,25 +162,41 @@ export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: 
     const out = fn(copy);
     store.setDraft(out ?? copy);
   };
-  const editRow = (key: string, fn: (r: DraftRow) => void) =>
+  /** The draft row an edit of `key` goes to: a built-in one's first change makes the copy of yours in its place. */
+  const target = (key: string): string => {
+    const d = draft();
+    if (!d) return key;
+    const out = editTarget(d, copies(), wire(), key);
+    if (out.draft !== d) {
+      store.setDraft(out.draft);
+      setCopies(out.copies);
+      setPicked(key);
+    }
+    return out.to;
+  };
+  const editRow = (key: string, fn: (r: DraftRow) => void) => {
+    const to = target(key);
     edit((d) => {
-      const r = d.rows.find((x) => x.key === key);
+      const r = d.rows.find((x) => x.key === to);
       if (r) fn(r);
     });
+  };
   /** The library half of `key` as a library profile, for the Models part. */
   const libProfile = (key: string): SubagentProfile | null => {
     const r = row(key);
     const h = r?.lib ? draft()!.library[r.lib] : undefined;
     return h && r ? ({ ...h, id: r.lib!, name: r.name } as SubagentProfile) : null;
   };
-  const changeLib = (key: string, fn: (p: SubagentProfile) => SubagentProfile | void) =>
+  const changeLib = (key: string, fn: (p: SubagentProfile) => SubagentProfile | void) => {
+    const to = target(key);
     edit((d) => {
-      const r = d.rows.find((x) => x.key === key);
+      const r = d.rows.find((x) => x.key === to);
       const h = r?.lib ? d.library[r.lib] : undefined;
       if (!r || !h) return;
       const p = { ...h, id: r.lib!, name: r.name } as SubagentProfile;
       d.library[r.lib!] = helpersOf(fn(p) ?? p);
     });
+  };
   const template = () => l()?.template ?? (safeLibrary() ? helpersOf(safeLibrary()!.template) : null);
 
   const newProfile = () => {
@@ -200,16 +235,16 @@ export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: 
     setPicked(null);
   };
   const makeDefault = (key: string) => edit((d) => void (d.default = key));
-  /** Make It Yours: an editable copy under Yours, opened in the editor where the built-in was. */
-  const makeYours = (key: string) => {
+  /** Reset to Built-in: the edited built-in one leaves the draft (saved with Save Changes, never refused for the
+      default), and the built-in one is back in its place, open in the editor. */
+  const resetToBuiltin = (key: string) => {
     const d = draft();
-    const w = wire().find((x) => x.key === key);
-    if (!d || !w) return;
-    const out = withMadeYours(d, w);
-    if (!out.key) return setActionError(`One of yours is already named ${w.name}.`);
+    if (!d) return;
+    const back = rowOf(key)?.wire?.replaces ?? Object.entries(copies()).find(([, k]) => k === key)?.[0] ?? null;
     setActionError(null);
-    store.setDraft(out.draft);
-    setPicked(out.key);
+    store.setDraft(withReset(d, key));
+    setCopies((c) => Object.fromEntries(Object.entries(c).filter(([, k]) => k !== key)));
+    setPicked(back);
   };
   /** Open {default}: the profile whose helpers a chat on a helper-less profile takes. */
   const defaultRow = (): ListRow | undefined => allRows().find((r) => r.isDefault);
@@ -271,6 +306,9 @@ export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: 
       >
         <span class="profiles-pick-name">
           <span class="profiles-pick-title">{lp.r.name}</span>
+          <Show when={lp.r.editedBuiltin}>
+            <Chip>Yours</Chip>
+          </Show>
           <Show when={lp.r.isDefault}>
             <Chip tone="accent">Default</Chip>
           </Show>
@@ -392,14 +430,14 @@ export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: 
           </div>
 
           <div class="profiles-editor-pane">
-            <Show when={current()?.key} keyed>
+            <Show when={editorKey()} keyed>
               {(key) => {
                 // Remounted only when another profile is picked: an edit keeps its open rows and focus.
                 // A save that gives a new profile its saved key drops this key from the list a moment
                 // before the editor follows it there: the row last seen stands in until then.
                 let seen: ListRow | undefined;
                 const c = (): ListRow => {
-                  const now = current()?.key === key ? current() : allRows().find((r) => r.key === key);
+                  const now = editorKey() === key ? current() : rowOf(key);
                   if (now) seen = now;
                   return (now ?? seen ?? current())!;
                 };
@@ -442,16 +480,21 @@ export function ProfilesSettingsSection(props: { cwd: string | null; chatPath?: 
                       r.lib = lib;
                     })
                   }
-                  onSetAll={(pick) =>
+                  onSetAll={(pick) => {
+                    const to = target(c().key);
                     store.setDraft(
-                      setAllTo(draft()!, c().key, pick, {
+                      setAllTo(draft()!, to, pick, {
                         efforts: (b, m) => modelEfforts(optionsReady(), b, m),
                         levels: (ref) => modelList()?.find((x) => x.ref === ref)?.thinkingLevels ?? null,
                       }),
-                    )
-                  }
+                    );
+                  }}
                   onMakeDefault={() => makeDefault(c().key)}
-                  onMakeYours={() => makeYours(c().key)}
+                  copyOf={(() => {
+                    const b = Object.entries(copies()).find(([, k]) => k === c().key)?.[0] ?? c().wire?.replaces;
+                    return b ? (wire().find((x) => x.key === b)?.name ?? c().name) : undefined;
+                  })()}
+                  onReset={() => resetToBuiltin(c().key)}
                   openDefault={(() => {
                     const d = defaultRow();
                     return d && d.key !== c().key ? { name: d.name, open: () => (setPicked(d.key), setPart("models"), setActionError(null)) } : undefined;
@@ -510,7 +553,9 @@ function ProfileEditor(props: {
   onChooseHelpers(): void;
   onSetAll(pick: { backend: "pi" | "claude-code"; model: string }): void;
   onMakeDefault(): void;
-  onMakeYours(): void;
+  /** The built-in this profile of yours takes the place of (its name), or undefined. */
+  copyOf?: string;
+  onReset(): void;
   openDefault?: { name: string; open(): void };
   onDuplicate(): void;
   onDelete(): void;
@@ -519,12 +564,11 @@ function ProfileEditor(props: {
 }) {
   const yours = () => props.r.group === "yours" && !!props.draftRow;
   const builtIn = () => props.r.group === "builtin";
-  const readOnly = () => !yours();
-
-  /** Why Make It Yours waits: one of yours already has the built-in's name (and so already takes its place). */
-  const yoursNamed = () => props.draft.rows.some((x) => x.name.toLowerCase() === props.r.name.toLowerCase());
+  /** A built-in one edits in place: its first change makes it yours (the screen's `target`). */
+  const editable = () => yours() || builtIn();
+  const readOnly = () => !editable();
   const w = () => props.r.wire;
-  const session = () => (yours() ? props.draftRow!.starts : w()?.session ? (w()!.session as unknown as Starts) : null);
+  const session = () => (yours() ? props.draftRow!.starts : w()?.session ? startsOf(w()!.session!) : null);
   const chat = () => (yours() ? { model: props.draftRow!.model, thinking: props.draftRow!.thinking } : { model: w()?.session?.model ?? null, thinking: w()?.session?.thinking ?? null });
   const helpers = () => (yours() ? props.libProfile : w()?.library ?? null);
   const shared = () => alsoUsedBy(yours() ? sharersOf(props.draft, props.r.key, props.wire) : (w()?.alsoUsedBy ?? []));
@@ -558,23 +602,12 @@ function ProfileEditor(props: {
           rule={yours() ? PROFILE_LABEL_RULE : undefined}
           error={yours() ? nameIssue(props.draft, props.r.key) : null}
           value={yours() ? props.draftRow!.name : props.r.name}
-          disabled={readOnly() || props.saving}
+          disabled={!yours() || props.saving}
           onInput={(v) => props.onName(v)}
         />
         {defaultControl()}
         <Show when={props.r.thisChat}>
           <Chip tone="info">This chat</Chip>
-        </Show>
-        <Show when={builtIn()}>
-          <button
-            type="button"
-            class="button button-sm"
-            disabled={props.saving || yoursNamed()}
-            title={yoursNamed() ? `One of yours is already named ${props.r.name}.` : undefined}
-            onClick={props.onMakeYours}
-          >
-            Make It Yours
-          </button>
         </Show>
       </div>
       <Show when={props.r.thisChat}>
@@ -585,6 +618,7 @@ function ProfileEditor(props: {
           {builtInLine(w()?.providers ?? [])}
         </p>
       </Show>
+      <Show when={yours() && props.r.editedBuiltin && props.copyOf}>{(b) => <p class="profile-muted">{yoursFromBuiltinLine(b())}</p>}</Show>
       <Show when={props.r.group === "project"}>
         <Banner
           tone="warn"
@@ -611,7 +645,12 @@ function ProfileEditor(props: {
             {props.r.hidden ? "Show In Picker" : "Hide From Picker"}
           </button>
         </Show>
-        <Show when={yours()}>
+        <Show when={yours() && props.r.editedBuiltin}>
+          <button type="button" class="button button-sm button-ghost" disabled={props.saving} onClick={props.onReset}>
+            Reset to Built-in
+          </button>
+        </Show>
+        <Show when={yours() && !props.r.editedBuiltin}>
           <button
             type="button"
             class="button button-sm button-destructive"
@@ -660,14 +699,14 @@ function ProfileEditor(props: {
             readOnly={readOnly()}
             disabled={props.saving}
             chat={chat()}
-            onChat={yours() ? props.onChat : undefined}
+            onChat={editable() ? props.onChat : undefined}
             profile={helpers()}
             change={(fn) => props.changeLib((p) => void fn(p))}
             replace={(fn) => props.changeLib(fn)}
             noHelpers={noHelpers()}
             onChooseHelpers={yours() && props.template ? props.onChooseHelpers : undefined}
             openDefault={props.openDefault}
-            onSetAll={yours() ? props.onSetAll : undefined}
+            onSetAll={editable() ? props.onSetAll : undefined}
             rows={props.rows}
             options={props.options}
             models={modelList()}

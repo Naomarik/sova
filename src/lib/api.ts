@@ -752,15 +752,14 @@ export const approveProfile = (cwd: string, p: { id: string; grant: string[]; ov
 export const switchProfile = (path: string, profile: string, host?: string | null) =>
   request<ProfileSwitchResult>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { method: "POST", body: JSON.stringify({ profile }) });
 /** Update {name}: this chat's model, effort, mode and add-on modes into its profile (the server takes
-    the chat's). Answers the fresh listing; refused for Off, a project's file or one that can't be read. */
+    the chat's); a built-in profile's first update makes it yours. Answers the fresh listing; refused for Off, a project's file or one that can't be read. */
 export const updateProfileFromChat = (path: string, cwd?: string | null) =>
   request<ProfilesListing>("/api/profiles/update-from-chat", { method: "POST", body: JSON.stringify({ path, ...(cwd ? { cwd } : {}) }) });
 /** Cancel Switch: drop the switch waiting for the reply to end. */
 export const cancelProfileSwitch = (path: string, host?: string | null) =>
   request<{ cancelled: boolean; state: ChatProfileState }>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { method: "DELETE" });
-/** Make a joined profile (its key, or "off") this computer's default; with `path` and no key, that chat's
-    profile, the chat's strict flag and memory type saved with it. Answers the fresh listing. */
-export const putDefaultProfile = (body: { key?: string; path?: string; cwd?: string | null }) =>
+/** Make a joined profile (its key) this computer's default (Settings → Profiles' Make Default). Answers the fresh listing. */
+export const putDefaultProfile = (body: { key: string; cwd?: string | null }) =>
   request<ProfilesListing>("/api/profiles/default", { method: "PUT", body: JSON.stringify({ ...body, cwd: body.cwd ?? undefined }) });
 
 export const setProfileHidden = (key: string, hidden: boolean, cwd?: string | null) =>
@@ -772,6 +771,9 @@ export const saveMyProfile = (body: ProfileSaveRequest) =>
 /** Delete one of yours; refused for the default, and a library half another profile links stays. */
 export const deleteMyProfile = (key: string, cwd?: string | null) =>
   request<ProfileWriteAnswer>("/api/profiles/mine/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, ...(cwd ? { cwd } : {}) }) });
+/** Reset to Built-in: delete the profile of yours taking a built-in one's place (the default too), so the built-in is back. */
+export const resetMyProfile = (key: string, cwd?: string | null) =>
+  request<ProfileWriteAnswer>("/api/profiles/mine/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, reset: true, ...(cwd ? { cwd } : {}) }) });
 /** A new session in `cwd` with a profile picked; nothing is sent (the chip's Run Again). */
 export const startProfileSession = (cwd: string, profile: ProfilePickRef) =>
   request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile }) });

@@ -24,6 +24,9 @@ import {
   withDuplicate,
   withMadeYours,
   builtInLine,
+  editTarget,
+  withReset,
+  yoursFromBuiltinLine,
   withNewProfile,
   type ProfilesDraft,
 } from "./profiles-settings";
@@ -101,23 +104,24 @@ test("the This chat chip: on the row of the chat's profile, in any group; none w
   assert.deepEqual(chips(null), []);
   assert.deepEqual(chips("user:gone"), []);
   // Helpers in effect named by their library id: the row whose helpers they are.
-  assert.deepEqual(chips("library:c"), ["user:claude"], "a pair linking them (a Make It Yours copy)");
+  assert.deepEqual(chips("library:c"), ["user:claude"], "a pair linking them (a built-in's copy of yours)");
   assert.deepEqual(chips("library:fast"), ["library:fast"]);
   assert.deepEqual(chips("library:openai"), ["sova:openai"], "a built-in one");
   assert.deepEqual(chips("library:gone"), []);
-  // Read before a Make It Yours copy was saved: the built-in's key goes to the copy that replaces it.
+  // Read before a built-in's copy of yours was saved: the built-in's key goes to the copy that replaces it.
   const copy = joined({ key: "user:claude-copy", kind: "pair", group: "yours", name: "Claude", libraryId: "claude", replaces: "sova:claude" });
   const g = listGroups(draftOf([copy], "user:claude-copy"), [copy], null, "sova:claude");
-  assert.deepEqual(g.yours.filter((r) => r.thisChat).map((r) => r.key), ["user:claude-copy"]);
+  assert.deepEqual(g.builtin.filter((r) => r.thisChat).map((r) => r.key), ["user:claude-copy"], "listed under Built in, in the built-in's place");
 });
 
-test("a built-in profile's line names the account it is for", () => {
-  assert.equal(builtInLine(["openai-codex"]), "Built in for your OpenAI account. Make It Yours to change it.");
-  assert.equal(builtInLine(["ollama-cloud"]), "Built in for your Ollama Cloud account. Make It Yours to change it.");
-  assert.equal(builtInLine(["claude", "openai-codex"]), "Built in. Make It Yours to change it.", "more than one account: none named");
+test("a built-in profile's line names the account it is for and that a change makes it yours; a copy says it is yours", () => {
+  assert.equal(builtInLine(["openai-codex"]), "Built in for your OpenAI account. Your changes make it yours.");
+  assert.equal(builtInLine(["ollama-cloud"]), "Built in for your Ollama Cloud account. Your changes make it yours.");
+  assert.equal(builtInLine(["claude", "openai-codex"]), "Built in. Your changes make it yours.", "more than one account: none named");
+  assert.equal(yoursFromBuiltinLine("Claude"), "Yours, changed from the built-in Claude. Sova's updates to Claude no longer reach it.");
 });
 
-test("Make It Yours: a copy under Yours with the built-in's name and both its parts; refused when one of yours has the name", () => {
+test("a built-in's first change: a copy under Yours with the built-in's name and both its parts; refused when one of yours has the name", () => {
   const d = draftOf(WIRE, "user:claude");
   const out = withMadeYours(d, builtinOpenai);
   assert.ok(out.key);
@@ -132,6 +136,41 @@ test("Make It Yours: a copy under Yours with the built-in's name and both its pa
   const starts = withMadeYours(draftOf([], "sova:claude"), builtinClaude);
   assert.equal(starts.draft.rows[0]!.starts?.mode, "delegate", "When a Chat Starts comes too");
   assert.equal(starts.draft.default, "sova:claude", "the default stays where it was: nothing moves it but Make Default");
+});
+
+test("editing a built-in one in place: its first change makes one copy of yours, which every later change goes to", () => {
+  const d = draftOf(WIRE, "user:claude");
+  const first = editTarget(d, {}, WIRE, "sova:openai");
+  assert.notEqual(first.to, "sova:openai");
+  assert.deepEqual(first.copies, { "sova:openai": first.to });
+  const copy = first.draft.rows.find((r) => r.key === first.to)!;
+  assert.deepEqual([copy.name, copy.model], ["OpenAI", "openai-codex/gpt-6.2-sol"], "the built-in's name and parts, so once saved it takes its place");
+  assert.equal(first.draft.default, "user:claude", "the default stays where it was");
+  const again = editTarget(first.draft, first.copies, WIRE, "sova:openai");
+  assert.deepEqual([again.to, again.draft === first.draft, again.draft.rows.length], [first.to, true, d.rows.length + 1], "no second copy");
+  // Yours are edited as they are, and a built-in whose name one of yours has is left (that one already takes its place).
+  assert.equal(editTarget(d, {}, WIRE, "user:claude").to, "user:claude");
+  assert.equal(editTarget(d, {}, [...WIRE, builtinClaude], "sova:claude").to, "sova:claude");
+});
+
+test("an edited built-in one is listed under Built in, in the built-in one's place, with Reset to Built-in", () => {
+  const deepseek = joined({ key: "sova:deepseek", kind: "builtin", group: "builtin", name: "DeepSeek", id: "deepseek" });
+  const wire = [builtinOpenai, deepseek];
+  const d = draftOf(wire, "sova:openai");
+  // A draft copy: under Built in where OpenAI was (Sova's order: Claude, OpenAI, DeepSeek), never under Yours.
+  const first = editTarget(d, {}, wire, "sova:openai");
+  const g = listGroups(first.draft, wire, d, null, first.copies);
+  assert.deepEqual([g.yours.map((r) => r.key), g.builtin.map((r) => [r.key, r.editedBuiltin])], [[], [[first.to, true], ["sova:deepseek", false]]]);
+  // Saved: the server's row of yours with `replaces` sits there too, after a shipped Claude.
+  const copy = joined({ key: "user:openai", kind: "pair", group: "yours", name: "OpenAI", id: "openai", replaces: "sova:openai" });
+  const saved = [builtinClaude, deepseek, copy];
+  const s2 = draftOf(saved, "user:openai");
+  assert.deepEqual(listGroups(s2, saved, s2).builtin.map((r) => r.key), ["sova:claude", "user:openai", "sova:deepseek"]);
+  // Reset leaves the draft even as the default (Delete would be refused), its library half with it.
+  assert.equal(deleteRefusal(s2, "user:openai"), "Make another profile the default first.");
+  const reset = withReset(first.draft, first.to);
+  assert.deepEqual([reset.rows.length, Object.keys(reset.library).length], [d.rows.length, Object.keys(d.library).length]);
+  assert.equal(withReset(s2, "user:openai").rows.length, 0);
 });
 
 test("the footprint: distinct models, the chat's own first, at most 3 then +N; none reads as the chat's own", () => {

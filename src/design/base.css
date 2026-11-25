@@ -4745,6 +4745,7 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   color: var(--color-ink-muted);
 }
 .text-muted   { color: var(--color-ink-muted); }
+.text-warn    { color: var(--status-warn); }
 .text-error   { color: var(--status-error); }
 .text-num     { font-variant-numeric: tabular-nums; }
 .truncate     { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

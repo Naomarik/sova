@@ -3,6 +3,7 @@ import { acquireChatHandle } from "./chat-handle";
 import { resolveDefaultProfile } from "./default-profile";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import type { ModePatch } from "./mode-state";
+import { noteDefaultNotApplied } from "./default-start-notes";
 import { applyProfile } from "./session-profile-routes";
 
 /**
@@ -21,6 +22,21 @@ import { applyProfile } from "./session-profile-routes";
  * the default's helpers are.
  */
 export async function startOnDefault(path: string, cwd: string, byOverseer: boolean, helpers?: string): Promise<{ ok: true; applied: "none" | "whole" | "models" } | { ok: false; error: string }> {
+  const r = await startOn(path, cwd, byOverseer, helpers);
+  // Kept for the new chat's empty screen (server/default-start-notes.ts): the chat socket's `profile` message says it.
+  noteDefaultNotApplied(path, r.ok ? null : { profile: r.profile, reason: r.reason });
+  return r.ok ? r : { ok: false, error: r.error };
+}
+
+/** A refusal's words without the "{name} can't be picked here: " the line already says. */
+export const ownReason = (error: string, profile: string): string => {
+  const lead = `${profile} can't be picked here: `;
+  return error.startsWith(lead) ? error.slice(lead.length) : error;
+};
+
+type Started = { ok: true; applied: "none" | "whole" | "models" } | { ok: false; error: string; profile: string; reason: string };
+
+async function startOn(path: string, cwd: string, byOverseer: boolean, helpers?: string): Promise<Started> {
   const d = await resolveDefaultProfile(cwd).catch(() => null);
   const half = d?.row.session;
   // Helpers alone (a library profile, or a seeded starter shown as Claude, which keeps its own models): nothing to
@@ -31,14 +47,15 @@ export async function startOnDefault(path: string, cwd: string, byOverseer: bool
   // No default at all (nothing chosen, nothing connected) has no session half either: the chat keeps the model new
   // chats open on, with no helper profile.
   if (!d || !half) return { ok: true, applied: "none" };
+  const profile = d.row.name;
   const whole = !byOverseer || isCapabilityNeutral(half) || (half.overseerMayStart && half.approval !== "needed");
   if (whole && half.approval !== "needed") {
     const r = await applyProfile(path, { source: half.source, id: half.id }, byOverseer ? "overseer" : undefined);
     if (r.ok || !r.running) {
       // Also after a partly applied default, which may have moved the helpers before it failed.
       const repin = helpers === undefined ? null : await acquireChatHandle(path).then((chat) => chat.switchSubagentProfile(helpers)).then(() => null, (e) => String(e));
-      if (!r.ok) return { ok: false, error: `the default profile wasn't applied: ${r.error}` };
-      return repin ? { ok: false, error: `the named helpers weren't kept: ${repin}` } : { ok: true, applied: "whole" };
+      if (!r.ok) return { ok: false, error: `the default profile wasn't applied: ${r.error}`, profile, reason: ownReason(r.error, profile) };
+      return repin ? { ok: false, error: `the named helpers weren't kept: ${repin}`, profile, reason: `the helpers it was started with weren't kept (${repin})` } : { ok: true, applied: "whole" };
     }
   }
   // Its modes, model and effort, and helpers only.
@@ -57,7 +74,8 @@ export async function startOnDefault(path: string, cwd: string, byOverseer: bool
     if (half.thinking) await chat.setThinking(half.thinking).catch((e) => failed.push(`effort (${String(e)})`));
     if (d.row.library && helpers === undefined) await chat.switchSubagentProfile(d.row.library.id).catch((e) => failed.push(`helpers (${String(e)})`));
   } catch (err) {
-    return { ok: false, error: `the default profile's models weren't applied: ${err instanceof Error ? err.message : String(err)}` };
+    const why = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `the default profile's models weren't applied: ${why}`, profile, reason: `its models couldn't be set (${why})` };
   }
-  return failed.length ? { ok: false, error: `the default profile's ${failed.join(", ")} weren't applied` } : { ok: true, applied: "models" };
+  return failed.length ? { ok: false, error: `the default profile's ${failed.join(", ")} weren't applied`, profile, reason: `its ${failed.join(", ")} couldn't be set` } : { ok: true, applied: "models" };
 }

@@ -28,7 +28,7 @@ const defaultsFile = join(stateDir, "defaults.json");
 const defaultProfileFile = join(stateDir, "default-profile.json");
 
 const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
-const { saveMine, deleteMine, duplicateMine, saveCurrentAsProfile, updateFromChat } = await import("./profile-editor");
+const { saveMine, deleteMine, duplicateMine, resetToBuiltin, saveCurrentAsProfile, updateFromChat } = await import("./profile-editor");
 const { chooseDefaultProfile, resolveDefaultProfile } = await import("./default-profile");
 const { joinedProfiles, pickJoined } = await import("./joined-profiles");
 const { DEFAULT_LIMITS } = await import("../shared/profiles");
@@ -441,6 +441,57 @@ describe("from a chat", () => {
     assert.deepEqual([s.model, s.thinking, s.mode, s.minorModes, s.subagents], ["zai/glm-5.3", "high", "delegate", ["align"], "house"]);
     assert.equal(read(libFile), lib);
     assert.equal((await updateFromChat("sova:default", {}, deps)).ok, false, "an older Off saves nothing");
-    assert.equal((await updateFromChat("sova:openai", {}, deps)).ok, false, "a built-in profile isn't updated here");
+  });
+
+  test("Update {name} on a built-in profile makes it yours, in its place: both parts copied, the chat's modes in", async () => {
+    const r = await updateFromChat("sova:claude", { thinking: "high", mode: "delegate", minorModes: ["align", "spec", "memory"] }, deps);
+    assert.ok(r.ok, !r.ok ? r.error : "");
+    assert.equal(r.ok && r.savedKey, "user:claude");
+    const s = json<Yours>(yoursFile).profiles.find((p) => p.id === "claude")!;
+    assert.deepEqual([s.label, s.mode, s.minorModes, s.model, s.thinking, s.subagents], ["Claude", "delegate", ["align", "spec"], "claude-code-cli/claude-opus-5-5", "high", "claude"]);
+    const rows = await joinedProfiles();
+    assert.deepEqual([pickJoined(rows, "sova:claude")?.key, rows.some((x) => x.key === "sova:claude")], ["user:claude", false], "the built-in's key finds the copy; the built-in isn't listed");
+    // Frozen: a later Update saves into the copy, and nothing of Sova's built-in reaches it again.
+    assert.ok((await updateFromChat("sova:claude", { mode: "normal" }, deps)).ok);
+    assert.equal(json<Yours>(yoursFile).profiles.filter((p) => p.label === "Claude").length, 1);
+    assert.equal(json<Yours>(yoursFile).profiles.find((p) => p.id === "claude")!.mode, "normal");
+  });
+
+  test("Update {name} on the chosen default keeps the older default files written; on another profile it leaves them", async () => {
+    const rows = await joinedProfiles();
+    chooseDefaultProfile(pickJoined(rows, "house")!, rows);
+    const modeBefore = read(modeFile);
+    assert.ok((await updateFromChat("user:plain", { mode: "delegate", minorModes: ["vis"] }, deps)).ok);
+    assert.equal(read(modeFile), modeBefore, "not the default: mode.json untouched");
+    assert.ok((await updateFromChat("user:house", { model: "zai/glm-5.3", mode: "delegate", minorModes: ["align"] }, deps)).ok);
+    const mode = json<{ mode: string; minorModes: string[] }>(modeFile);
+    assert.deepEqual([mode.mode, mode.minorModes], ["delegate", ["align"]]);
+    assert.equal(json<{ model: string }>(defaultsFile).model, "zai/glm-5.3");
+  });
+});
+
+describe("Reset to Built-in", () => {
+  test("deletes the copy of yours taking a built-in's place, and the built-in one is back", async () => {
+    assert.ok((await updateFromChat("sova:claude", { mode: "delegate" }, deps)).ok);
+    const r = await resetToBuiltin("user:claude", deps);
+    assert.ok(r.ok, !r.ok ? r.error : "");
+    assert.equal(json<Yours>(yoursFile).profiles.some((p) => p.id === "claude"), false);
+    assert.equal(json<Lib>(libFile).profiles.some((p) => p.id === "claude"), false, "its own helpers went with it");
+    assert.equal(pickJoined(await joinedProfiles(), "claude")?.key, "sova:claude");
+    const refused = await resetToBuiltin("user:house", deps);
+    assert.deepEqual(refused.ok ? null : [refused.status, refused.error], [409, "House takes no built-in profile's place."]);
+  });
+
+  test("allowed for the chosen default, which then names the built-in one", async () => {
+    assert.ok((await updateFromChat("sova:claude", { mode: "delegate" }, deps)).ok);
+    const rows = await joinedProfiles();
+    chooseDefaultProfile(pickJoined(rows, "user:claude")!, rows);
+    assert.equal((await deleteMine("user:claude", deps)).ok, false, "Delete still refuses the default");
+    const r = await resetToBuiltin("user:claude", deps);
+    assert.ok(r.ok, !r.ok ? r.error : "");
+    assert.equal(r.ok && r.savedKey, "sova:claude");
+    const d = await resolveDefaultProfile();
+    assert.deepEqual([d.row.key, d.info.chosen], ["sova:claude", true]);
+    assert.deepEqual(json(defaultProfileFile), { version: 1, profile: "claude" });
   });
 });

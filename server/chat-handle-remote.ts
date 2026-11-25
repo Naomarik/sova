@@ -10,6 +10,7 @@ import { type ChatCall, type ChatId, type ChatMethod, type ChatMethods, type Cha
 import type { ChatAskMethod, ChatRuntimeMirror, ChatWireFrame, ExitCause, FrameOf } from "../shared/chat-runtime-wire";
 import type { EntryId, HEntry, ToolResult } from "../shared/harness";
 import { CHAT_CLOSED_CLOSE_CODE, type ChatClientMessage, type ChatServerMessage } from "../shared/protocol";
+import { isProfileFrame, withDefaultNote } from "./default-start-notes";
 import {
   answerChatAsk,
   type ChatClient,
@@ -239,8 +240,10 @@ export class RemoteChatHandle extends ChatHandle {
       // Closing quietly (an archive): the chat's own goodbye, "reconnect", never reaches a pane;
       // everything before it (an ack, a refusal) does, in order.
       if (this.quietClose && isReconnectGoodbye(f.json)) return;
-      if (c.sendRaw) c.sendRaw(f.json);
-      else c.send(JSON.parse(f.json));
+      if (isProfileFrame(f.json)) this.lastProfile = f.json;
+      const json = withDefaultNote(this.path, f.json);
+      if (c.sendRaw) c.sendRaw(json);
+      else c.send(JSON.parse(json));
     });
     for (const t of REQUEST_FRAMES) on(t, (f) => this.request(link, f));
     on("reload.request", (f) => this.hooks.reload?.(this, f.auto));
@@ -418,6 +421,16 @@ export class RemoteChatHandle extends ChatHandle {
         ...(first && client.pull && client.have ? { have: client.have } : {}),
       },
     });
+  }
+  /** The chat's last `profile` frame, as its process sent it (before the server's note). */
+  private lastProfile: string | null = null;
+  override resendProfile(): void {
+    if (!this.lastProfile) return;
+    const json = withDefaultNote(this.path, this.lastProfile);
+    for (const c of this.clients.values()) {
+      if (c.sendRaw) c.sendRaw(json);
+      else c.send(JSON.parse(json));
+    }
   }
   clientMessage(client: ChatClient, msg: ChatClientMessage): void {
     if ((msg.type === "prompt" || msg.type === "steer") && (this.gating > 0 || this.hooks.needsBeforeMessage?.(this))) {

@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { JoinedProfile, ListedProfile, ProfilesListing } from "../../shared/profiles";
-import { editedLabel, hasDefaultProfile, inEffectCard, isDefaultCard, isLibraryCard, joinedPickerProfiles, pickerCards, pickerSections } from "./profiles";
+import { editedLabel, hasDefaultProfile, inEffectCard, isDefaultCard, isLibraryCard, joinedPickerProfiles, pickerCards, pickerSections, type JoinedCard } from "./profiles";
 
 const listed = (id: string, extra: Partial<ListedProfile> = {}): ListedProfile => ({
   id,
@@ -52,6 +52,13 @@ test("yours, this project's, then built in; no card for no profile, whatever the
   assert.deepEqual([fast.remove, fast.grant, fast.model], [[], [], undefined], "and no capability or model");
   assert.equal(fast.key, "library:fast");
   assert.ok(!isLibraryCard(g.yours[0]!));
+});
+
+test("an edited built-in one's card is under Built in, in its built-in one's place (§chat.subagent-profiles/edited-builtin)", () => {
+  const edited = { ...CLAUDE, replaces: "sova:claude" };
+  const g = joinedPickerProfiles(listing([edited, FAST, REL, OPENAI]));
+  assert.deepEqual([g.yours.map((p) => p.label), g.builtins.map((p) => p.label)], [["Fast"], ["Claude", "OpenAI"]]);
+  assert.equal((g.builtins[0] as JoinedCard).joined?.replaces, "sova:claude", "its Yours chip reads this");
 });
 
 test("hidden rows are left out; an older server's listing keeps its groups, less its no-profile card", () => {

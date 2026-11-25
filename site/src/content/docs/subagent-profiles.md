@@ -39,8 +39,8 @@ as many profiles as you like, each with a name you choose.
 ## Built in
 
 Sova ships three profiles, each a whole setup named after the account it runs on. Settings →
-Profiles lists them under **Built in**, read-only, and lists only the ones whose account is
-connected on this computer:
+Profiles lists them under **Built in**, and lists only the ones whose account is connected on this
+computer:
 
 | Profile | For | This chat | Delegate | Teams |
 |---|---|---|---|---|
@@ -48,10 +48,14 @@ connected on this computer:
 | **OpenAI** | an OpenAI sign-in | GPT-6.2 Sol, medium | GPT-6.2 Sol: Planning at xhigh, Investigation at low, Routine at medium, Complex at high | None chosen: both run on the chat's own model |
 | **DeepSeek** | an Ollama Cloud key | DeepSeek V4.1 Flash, high | DeepSeek V4.1 Flash: Planning at max, Investigation at low, Routine and Complex at high | Coordinator at high, monitor at low |
 
-Each names fixed models: a newer model doesn't move them. To change one, press **Make It Yours**:
-it saves an editable copy under **Yours**, with the same name, and the copy takes the built-in
-one's place everywhere, so it's listed once. A profile of yours with a built-in one's name does
-the same.
+Each names fixed models: a newer model doesn't move them. You can change one in place: edit it in
+Settings → Profiles and press **Save Changes**, or press **Update {name}** in the mode menu of a chat
+on it. Its first change makes it yours: a profile of yours with the same name, still listed under
+**Built in** where it was, with a **Yours** chip, that takes the built-in one's place everywhere, so
+it's listed once. From then on Sova's updates to that built-in profile never reach it, and its editor
+says it is yours, changed from the built-in one, with **Reset to Built-in** to go back to it as Sova
+ships it. A profile of yours with a built-in one's name
+takes its place the same way.
 
 Every chat you work in runs on a profile. To work with no helpers, turn Delegate off in the mode
 menu.
@@ -68,8 +72,7 @@ Until you choose one, the default follows the accounts connected here: **Claude*
 sign-in, else **OpenAI** with an OpenAI sign-in, else **DeepSeek** with an Ollama Cloud key. Nothing
 is saved for it, so connecting Claude later makes Claude the default.
 
-Choose it with **Make Default** in Settings → Profiles, or **Make {name} the Default** in a chat's
-mode menu. Once you have, nothing else moves it. The default stays on this computer: with [Mesh](/mesh) on, your
+Choose it with **Make Default** in Settings → Profiles. Once you have, nothing else moves it. The default stays on this computer: with [Mesh](/mesh) on, your
 profiles sync to your other devices, but each keeps its own default.
 
 ## Switch a chat's profile
@@ -96,9 +99,10 @@ and modes stay as they are.
 
 Under the list, **Manage Profiles…** opens Settings → Profiles on this chat's profile, at its
 Models part (the Delegate, Create and spec gears do too), and **Save
-Current as Profile** saves what this chat uses now as a new profile of yours. The menu's footer has
-**Make {name} the Default**, and, while this chat's model or modes differ from its profile,
-**Update {name}**, which saves them into the profile.
+Current as Profile** saves what this chat uses now as a new profile of yours. While this chat's
+modes, model or effort differ from what a new chat on its profile would start with, the menu's footer
+has **Update {name}**, which saves them into the profile (a built-in one's first update makes it
+yours), then says what new chats now start with.
 
 ## "(edited)"
 
@@ -127,8 +131,9 @@ A profile's editor has its name, **Make Default** (or the Default chip), and two
 - **When a Chat Starts**: Mode, Add-ons, Tools, Session powers, One at a time, the first message and
   whether the Overseer may start it.
 
-A built-in profile is read-only, with **Make Default** and **Make It Yours**. A
-profile of yours with no helpers of its own takes them from the default, and offers **Choose
+A built-in profile opens in the editor like yours: its first change makes it yours, saved with **Save
+Changes**. An edited built-in one has **Reset to Built-in** in Delete's place: with **Save Changes** it
+deletes your copy and brings the built-in one back, also when it is the default. A profile of yours with no helpers of its own takes them from the default, and offers **Choose
 Helpers** or **Open {default}**.
 
 **Save Changes** saves it. A change to Models reaches every chat on that profile from its next turn;
@@ -175,7 +180,7 @@ them as before:
 | `subagent-profiles.json` | Their helpers and alignment settings, shared with pi in the terminal |
 | `default-profile.json` | This computer's default profile, once you choose one; never synced |
 
-The built-in profiles aren't in these files, so they never sync; a copy made with Make It Yours is
+The built-in profiles aren't in these files, so they never sync; one you changed is yours, and is
 saved and syncs like any profile of yours.
 
 A project's profiles are files in its `.sova/profiles/` folder. The file format is in the

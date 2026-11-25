@@ -16,7 +16,7 @@ import {
 import type { ChatProfileInfo, ChatProfileState } from "../../shared/protocol";
 import { approveProfile, fetchProfiles, pickProfile, saveCurrentProfile, type ProfilePickRef } from "../lib/api";
 import { cardUnusable, changeRows, hasDefaultProfile, defaultTools, editedLabel, flippedRemove, guardrailNote, inEffectCard, isDefaultCard, isLibraryCard, joinedPickerProfiles, pickRef, pickerCards, profileSettingsLine, type JoinedCard, type MySettingsState } from "../lib/profiles";
-import { newChatLine } from "../lib/profile-switch";
+import { pickerNewChatLine } from "../lib/profile-switch";
 import { openProfiles } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import { PROFILE_GRID_CUSTOM, ProfileGrid } from "./ProfileGrid";
@@ -188,8 +188,8 @@ export function ProfilePicker(props: {
 
   return (
     <section class="profile-picker" aria-label="Profile">
-      <Show when={hasDefaultProfile(listing())}>
-        <p class="profile-muted">{newChatLine(listing()?.project.state === "ok" ? listing()?.project.name : null)}</p>
+      <Show when={pickerNewChatLine({ hasDefault: hasDefaultProfile(listing()), project: listing()?.project.state === "ok" ? listing()?.project.name : null, defaultNotApplied: props.info.defaultNotApplied })}>
+        {(line) => <p class="profile-muted">{line()}</p>}
       </Show>
       <ProfileGrid
         path={props.path}

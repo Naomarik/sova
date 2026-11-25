@@ -64,8 +64,7 @@ A pick applies to this chat only and keeps the panel open. The foot says so: "Th
 while memory is off." The type survives a reload, a rewind and a server restart. On a short window
 the rows scroll, so none is cut off.
 
-**Make {name} the Default** in the menu saves the chat's type with its profile. Each new chat starts from that default type, and
-before you've saved one, from UniiChat.
+Each new chat starts from the default type, UniiChat until another was saved as the default.
 
 ## Recalling a line
 
@@ -147,7 +146,7 @@ with two small drawings each, and what the summary size and the summarizer's mod
 The summarizer makes one-off model calls, never a session. They go through this device's model
 policy, run on this machine's Claude login, and count as the chat's own spend.
 
-The type new chats start from isn't set here. It comes from the mode menu's **Make {name} the Default**.
+The type new chats start from isn't set here.
 
 ## Where memory can't be on
 

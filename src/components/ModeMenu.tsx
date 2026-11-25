@@ -2,11 +2,11 @@ import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } 
 import type { ChatMemoryChoice, ChatProjectModes, ChatServerMessage, MemoryType, ModeApplies, ModeInfo, ProjectMinorInfo, ProjectModeApprovalNeeded } from "../../shared/protocol";
 import { memoryRowText, sameMemoryChoice } from "../lib/memory-ui";
 import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
-import { ApiError, fetchProfiles, getChatMode, getMode, pickProfile, postMode, putDefaultProfile, saveCurrentProfile, switchProfile, updateProfileFromChat } from "../lib/api";
+import { ApiError, fetchProfiles, getChatMode, getMode, pickProfile, postMode, saveCurrentProfile, switchProfile, updateProfileFromChat } from "../lib/api";
 import type { ChatProfileState } from "../../shared/protocol";
 import { OFF_KEY, type JoinedProfile, type ProfilesListing } from "../../shared/profiles";
 import { hasDefaultProfile } from "../lib/profiles";
-import { defaultLabel, defaultTitle, editedName, menuPick, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, updateOffered, namesProfile } from "../lib/profile-switch";
+import { editedName, isEditedBuiltin, menuPick, pickDoesSomething, pickerRows, rowDisabledReason, startsOfRow, switchedLine, switchRefused, switchWaitingLine, updateOffered, namesProfile } from "../lib/profile-switch";
 import {
   APPROVE_HOOKS_LABEL,
   approvalFootFor,
@@ -29,6 +29,7 @@ import {
   type ShownMode,
 } from "../lib/mode-menu";
 import { useHostScope } from "../lib/host-scope";
+import { modelLabel } from "../lib/format";
 import { usePaneId } from "../lib/pane-scope";
 import { openProfiles } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
@@ -149,8 +150,6 @@ export function ModeMenu(props: { control: ModeControl }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<{ title: string; body: string } | null>(null);
   const [active, setActive] = createSignal(0);
-  /** The save's own request. `busy` is the rows' (a switch): the button says "Saving…" only for this. */
-  const [saving, setSaving] = createSignal(false);
   // The picker panel: the joined profiles this chat can switch to, its own roving row, and the
   // inline flow that saves what this chat uses now as a new profile.
   const [listing, setListing] = createSignal<ProfilesListing | null>(null);
@@ -158,6 +157,8 @@ export function ModeMenu(props: { control: ModeControl }) {
   const [saveError, setSaveError] = createSignal<string | null>(null);
   /** The Update {name} request in flight. */
   const [updating, setUpdating] = createSignal(false);
+  /** The profile the last Update {name} saved into, for the foot's confirmation; cleared on the next open or switch. */
+  const [savedTo, setSavedTo] = createSignal<string | null>(null);
   const [picker, setPicker] = createSignal(false);
   const [search, setSearch] = createSignal("");
   const [pActive, setPActive] = createSignal(0);
@@ -190,7 +191,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     // By key; else the helpers in effect (a library-only row first); else by id.
     return (
       joined().find((r) => (c.key ? r.key === c.key : false)) ??
-      // A built-in one a profile of yours now takes the place of (Make It Yours).
+      // A built-in one a profile of yours now takes the place of (its first change made it yours).
       (c.key ? joined().find((r) => r.replaces === c.key) : undefined) ??
       (lib ? (joined().find((r) => r.kind === "library" && r.libraryId === lib) ?? joined().find((r) => r.libraryId === lib)) : undefined) ??
       joined().find((r) => r.id === c.id)
@@ -286,19 +287,37 @@ export function ModeMenu(props: { control: ModeControl }) {
     return c ? shownOf(c) : null;
   };
   /** Is this chat's profile this computer's default? The server's answer (the listing read on open,
-      or the save's reply), never a switch's: unknown either side is not "already the default". */
-  const alreadyDefault = () => {
+      or the save's reply), never a switch's: unknown either side is not the default. */
+  const onDefault = (): boolean | null => {
     const d = hasDefaultProfile(listing() ?? undefined) ? listing()!.defaultProfile : undefined;
     const c = chatProfile()?.current;
-    return !!d && !!c && (c.key ? d.key === c.key : d.id === c.id);
+    if (!d || !c || !namesProfile(c)) return null;
+    return d.key === currentRow()?.key || (c.key ? d.key === c.key : d.id === c.id);
   };
-  const saveState = (): "idle" | "saving" | "done" => (saving() ? "saving" : alreadyDefault() ? "done" : "idle");
-  /** Update {name}: offered only for one of yours, while this chat's model, effort, mode or add-ons differ. */
+  /** Update {name}: offered for one of yours or a built-in one, while saving would change what a new chat on it
+      starts with (the server's resolution: its profile over this computer's starting modes, field by field). */
   const updatable = () => {
     const s = shown();
     return updateOffered(currentRow(), {
-      profile: currentRow()?.session,
+      starts: startsOfRow(currentRow(), listing()?.startsBase),
       chat: { model: props.control.model?.() ?? null, thinking: props.control.thinking?.() ?? null, mode: s ? savableMode(s).mode : null, minorModes: s?.minorModes ?? null },
+    });
+  };
+  /** The foot's sentence: what new chats start with, as the listing (or the last save's answer) says. */
+  const foot = () => {
+    const n = listing()?.newChats;
+    const starts = startsOfRow(currentRow(), listing()?.startsBase);
+    const model = props.control.model?.() ?? null;
+    const thinking = props.control.thinking?.() ?? null;
+    // ", on {model} · {effort}" when the model or effort is what differs: what a new chat on this profile starts on.
+    const modelDiffers = !!starts && ((!!starts.model && !!model && starts.model !== model) || (!!starts.thinking && !!thinking && starts.thinking !== thinking));
+    const modelLine = modelDiffers ? [modelLabel(starts!.model ?? model), starts!.thinking ?? thinking].filter(Boolean).join(" · ") : null;
+    return footNote(shown(), chatProfile() && updatable() ? profileName() : null, {
+      newChats: n ? { name: n.name, mode: n.mode, minorModes: n.minorModes } : null,
+      onDefault: onDefault(),
+      differs: updatable(),
+      modelLine,
+      saved: updatable() ? null : savedTo(),
     });
   };
 
@@ -358,6 +377,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     closedByChoice = false;
     tabbedAway = false;
     if (!keepError) setError(null);
+    setSavedTo(null);
     setPicker(false);
     setMemPanel(false);
     setMemError(null);
@@ -444,6 +464,7 @@ export function ModeMenu(props: { control: ModeControl }) {
     }
     setBusy(true);
     setError(null);
+    setSavedTo(null);
     try {
       wakeChat();
       setInfo(await postMode(patch, props.control.path)); // this chat's "mode" message follows over the socket
@@ -548,31 +569,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     openProfiles({ ...(key ? { profile: key } : {}), ...(host() ? {} : { path: props.control.path, ...(key ? { chat: key } : {}) }), part: "models", ...(section ? { section } : {}) });
   };
 
-  /**
-   * `Make {name} the Default`: THIS chat's profile becomes this computer's default
-   * (§chat.profiles/default), and this chat's strict flag and memory type are saved for new chats as
-   * before. The request carries no profile of its own: the server takes this chat's, so a switch
-   * landing between the click and the request can't make the default something the user never saw.
-   * The answer (the fresh listing) is what `alreadyDefault` reads from then on.
-   */
-  const saveAsDefault = async () => {
-    if (busy() || saving() || alreadyDefault()) return;
-    const name = profileName();
-    setSaving(true);
-    setError(null);
-    try {
-      wakeChat();
-      setListing(await putDefaultProfile({ path: props.control.path, cwd: props.control.cwd?.() ?? null }));
-      announce(`Default: ${listing()?.defaultProfile?.name ?? name}. New chats start here.`);
-    } catch (err) {
-      const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
-      setError({ title: "Couldn't save the default.", body: `${why}.` });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /** `Update {name}`: this chat's model, effort, mode and add-ons into its profile; nothing switches here. */
+  /** `Update {name}`: this chat's model, effort, mode and add-ons into its profile (a built-in one's first save
+      makes it yours, in its place); nothing switches here. */
   const updateProfile = async () => {
     if (busy() || updating() || !updatable()) return;
     const name = profileName();
@@ -580,7 +578,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     setError(null);
     try {
       setListing(await updateProfileFromChat(props.control.path, props.control.cwd?.() ?? null));
-      announce(`Updated ${name}.`);
+      // The foot line (aria-live) now says what new chats start with, from the save's answer.
+      setSavedTo(name);
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
       setError({ title: `Couldn't update ${name}.`, body: `${why}. The profile is unchanged.` });
@@ -1049,7 +1048,13 @@ export function ModeMenu(props: { control: ModeControl }) {
                     >
                       <Icon name="check" small class="popover-item-check" />
                       <span class="popover-item-text">
-                        <span class="popover-item-label">{isCurrent(p) ? shownProfile() : p.name}</span>
+                        <span class="popover-item-label">
+                          {isCurrent(p) ? shownProfile() : p.name}
+                          <Show when={isEditedBuiltin(p)}>
+                            {" "}
+                            <span class="chip">Yours</span>
+                          </Show>
+                        </span>
                         <span class="popover-item-desc" classList={{ "mode-menu-profile-off": !!rowDisabledReason(p) }}>
                           {rowDisabledReason(p) ?? p.footprint}
                         </span>
@@ -1199,11 +1204,11 @@ export function ModeMenu(props: { control: ModeControl }) {
           </div>
 
           <div class="mode-menu-foot">
-            <p class="mode-menu-foot-line">
-              <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · {footNote(shown(), chatProfile() && updatable() ? profileName() : null)}
+            <p class="mode-menu-foot-line" aria-live="polite">
+              <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · {foot()}
             </p>
-            <div class="button-row">
-              <Show when={updatable()}>
+            <Show when={updatable()}>
+              <div class="button-row">
                 <button
                   type="button"
                   class="button button-ghost button-sm mode-menu-update"
@@ -1213,22 +1218,8 @@ export function ModeMenu(props: { control: ModeControl }) {
                 >
                   {updating() ? "Saving…" : `Update ${profileName()}`}
                 </button>
-              </Show>
-              <Show when={canSaveCurrent()}>
-              <button
-                type="button"
-                class="button button-ghost button-sm mode-menu-save"
-                aria-disabled={busy() || saving() || alreadyDefault() ? "true" : undefined}
-                title={defaultTitle(chatProfile() ? profileName() : null, alreadyDefault())}
-                onClick={() => void saveAsDefault()}
-              >
-                <Show when={alreadyDefault() && !saving()}>
-                  <Icon name="check" small />
-                </Show>
-                {defaultLabel(saveState(), chatProfile() ? profileName() : null)}
-              </button>
-              </Show>
-            </div>
+              </div>
+            </Show>
           </div>
         </Show>
         </Show>

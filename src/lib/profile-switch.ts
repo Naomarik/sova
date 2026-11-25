@@ -1,6 +1,8 @@
 // Pure words and choices for a chat's profile switch (§chat.profiles/switch, §chat.profiles/edited,
 // §chat.subagent-profiles/limit-row). DOM- and Solid-free, so the unit tier tests it directly.
 
+import { profileMinors, startsFrom, type ChatStarts, type Profile } from "../../shared/profiles";
+
 /** The fields of a joined profile row these helpers read (shared/profiles.ts JoinedProfile). */
 export interface SwitchRow {
   key: string;
@@ -15,6 +17,28 @@ export interface SwitchRow {
   hidden?: true;
   unusable?: string;
   approval?: "needed" | "approved";
+  /** The built-in one this row of yours takes the place of ("sova:<id>"). */
+  replaces?: string;
+}
+
+/** A profile of yours in a built-in one's place, an edited built-in one (§chat.subagent-profiles/edited-builtin):
+    listed where the built-in one was, under Built in, with a Yours chip. */
+export const isEditedBuiltin = (r: { group: string; replaces?: string }): boolean => r.group === "yours" && !!r.replaces;
+
+/** The order Sova ships its built-in profiles in; an edited one takes its built-in one's place in it. */
+const BUILTIN_ORDER = ["claude", "openai", "deepseek"];
+const builtinRank = (r: { id: string; replaces?: string }) => {
+  const i = BUILTIN_ORDER.indexOf(r.replaces ? r.replaces.slice("sova:".length) : r.id);
+  return i < 0 ? BUILTIN_ORDER.length : i;
+};
+
+/** The rows listed under Built in: the shipped ones and the edited ones in their places, in Sova's order (stable). */
+export function builtinGroup<T extends { id: string; group: string; replaces?: string }>(rows: readonly T[]): T[] {
+  return rows
+    .filter((r) => r.group === "builtin" || isEditedBuiltin(r))
+    .map((r, i) => ({ r, i }))
+    .sort((a, b) => builtinRank(a.r) - builtinRank(b.r) || a.i - b.i)
+    .map((x) => x.r);
 }
 
 /** Whether a chat's `chat_profile` names a profile: none with no profile at all (no account connected
@@ -61,11 +85,11 @@ export function limitOffers<T extends SwitchRow>(rows: readonly T[], exhausted: 
   return [...usable.filter((r) => r.group === "yours"), ...usable.filter((r) => r.group === "builtin")].slice(0, max);
 }
 
-/** The picker's rows: yours, then this project's, then the built-in ones; hidden rows left out, and
-    no row for no profile (an older server's Off). */
+/** The picker's rows: yours, then this project's, then the built-in ones (an edited built-in one among them, in its
+    place); hidden rows left out, and no row for no profile (an older server's Off). */
 export function pickerRows<T extends SwitchRow>(rows: readonly T[]): T[] {
   const rest = rows.filter((r) => r.kind !== "off" && !r.hidden);
-  return [...rest.filter((r) => r.group === "yours"), ...rest.filter((r) => r.group === "project"), ...rest.filter((r) => r.group === "builtin")];
+  return [...rest.filter((r) => r.group === "yours" && !isEditedBuiltin(r)), ...rest.filter((r) => r.group === "project"), ...builtinGroup(rest)];
 }
 
 /** Why a picker row can't be picked here, or null. */
@@ -74,38 +98,53 @@ export const rowDisabledReason = (r: SwitchRow): string | null => (r.approval ==
 /** What a picked row does to this chat: nothing (its own profile, not edited), or a switch. */
 export const pickDoesSomething = (r: Pick<SwitchRow, "key">, current: { key: string | null; edited: boolean }): boolean => r.key !== current.key || current.edited;
 
-/** The Default button's label. */
-export function defaultLabel(state: "idle" | "saving" | "done", name: string | null): string {
-  return state === "saving" ? "Saving…" : state === "done" ? "Already the default" : name ? `Make ${name} the Default` : "Make This Profile the Default";
-}
-
-/** The Default button's title. */
-export function defaultTitle(name: string | null, already: boolean): string {
-  if (!name) return "Make this chat's profile the default for new chats.";
-  return already ? `New chats already start on ${name}.` : `New chats will start on ${name}.`;
-}
-
 /** "New chat in {project}. The default is already picked." */
 export const newChatLine = (project: string | null | undefined): string => (project ? `New chat in ${project}. The default is already picked.` : "New chat. The default is already picked.");
 
-/** What Update {name} compares: the profile's session half against the chat now. */
+/**
+ * The picker's new chat line, or null: none when there is no default profile, nor when the default couldn't be
+ * applied (the empty screen's warn line says so, and "already picked" would contradict it).
+ */
+export const pickerNewChatLine = (o: { hasDefault: boolean; project: string | null | undefined; defaultNotApplied?: unknown }): string | null =>
+  o.hasDefault && !o.defaultNotApplied ? newChatLine(o.project) : null;
+
+/** What Update {name} compares: what a new chat on this chat's profile starts with against the chat now. */
 export interface UpdateSides {
-  profile: { model?: string | null; thinking?: string | null; mode?: string | null; minorModes?: readonly string[] | null } | undefined;
+  /** The server's answer for this chat's profile (startsOfRow); null or undefined: not known yet. */
+  starts: ChatStarts | null | undefined;
   chat: { model?: string | null; thinking?: string | null; mode?: string | null; minorModes?: readonly string[] | null };
 }
 
 /**
- * Whether Update {name} is offered (§chat.subagent-profiles/menu): only for one of your profiles,
- * while this chat's model, effort, mode or add-on modes differ from what the profile sets. A field
- * the profile leaves unset keeps the chat's own, so it is no difference; unknown on the chat's side
- * (its mode or model not arrived) is none either.
+ * What a new chat on `row` starts with, as the server opens one: its session half over the listing's
+ * `startsBase` (shared/profiles startsFrom, the server's own rule). From an older server with no
+ * `startsBase`, only what the half itself sets, so a field it leaves unset is never a difference.
  */
-export function updateOffered(row: Pick<SwitchRow, "kind" | "group" | "unusable"> | null | undefined, s: UpdateSides): boolean {
-  if (!row || row.group !== "yours" || row.kind === "off" || row.unusable) return false; // a built-in one is read-only
-  const p = s.profile ?? {};
+export function startsOfRow(row: { session?: Pick<Profile, "mode" | "minorModes" | "model" | "thinking"> } | null | undefined, base: ChatStarts | null | undefined): Partial<ChatStarts> | null {
+  if (!row) return null;
+  if (base) return startsFrom(row.session, base);
+  const h = row.session;
+  return { ...(h?.mode ? { mode: h.mode } : {}), ...(h?.minorModes ? { minorModes: profileMinors(h.minorModes) } : {}), ...(h?.model ? { model: h.model } : {}), ...(h?.thinking ? { thinking: h.thinking } : {}) };
+}
+
+/**
+ * Whether Update {name} is offered (§chat.subagent-profiles/menu): for one of yours or a built-in
+ * one (whose first save makes it yours), never a project's file, while saving would change what a
+ * new chat on it starts with: its mode, its add-on modes (only those a profile can hold: memory and
+ * project modes never count), its model or effort. Unknown on either side is no difference.
+ */
+export function updateOffered(row: Pick<SwitchRow, "kind" | "group" | "unusable"> | null | undefined, s: { starts: Partial<ChatStarts> | null | undefined; chat: UpdateSides["chat"] }): boolean {
+  if (!row || (row.group !== "yours" && row.group !== "builtin") || row.kind === "off" || row.unusable) return false;
+  const p = s.starts;
+  if (!p) return false;
   const c = s.chat;
   const differs = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a !== b;
-  const minors = (a: readonly string[] | null | undefined, b: readonly string[] | null | undefined) => !!a && !!b && (a.length !== b.length || a.some((m) => !b.includes(m)));
+  const minors = (a: readonly string[] | null | undefined, b: readonly string[] | null | undefined) => {
+    if (!a || !b) return false;
+    const x = profileMinors(a);
+    const y = profileMinors(b);
+    return x.length !== y.length || x.some((m) => !y.includes(m));
+  };
   return differs(p.model, c.model) || differs(p.thinking, c.thinking) || differs(p.mode, c.mode) || minors(p.minorModes, c.minorModes);
 }
 

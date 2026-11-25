@@ -223,6 +223,34 @@ test("a design takes its run's skills on its own record: its first message lists
   assert.equal(stat(label!).skills, undefined);
 });
 
+test("the designers get the skills as they stand at Start: one the main chat added on the brief, none it took off", async () => {
+  const { editSetup } = await import("./setup-change");
+  const { runSkills } = await import("./skills");
+  const mk = (name: string) => {
+    const d = join(dir, "kits", name);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "SKILL.md"), `---\nname: ${name}\ndescription: ${name} rules\n---\n${name} body`);
+    return { name, description: `${name} rules`, dir: d, from: "named" as const };
+  };
+  const run = newRun(["zai/a"], ["Minimalist"]);
+  store.changeDesigns(parent.sessionId, (s) => {
+    const r = s.runs.find((x) => x.id === run)!;
+    r.phase = "brief";
+    r.skills = [mk("brand"), mk("playwright")];
+    r.brief = { rev: 1, textRev: 1, summary: "S", prompt: "P", promptBy: "coordinator", writing: null, conflict: null, questions: [], looks: {}, skills: ["brand", "playwright"] };
+  });
+  const tokens = mk("tokens");
+  await editSetup(parent.sessionId, run, { skills: [tokens.dir], removeSkills: ["brand"] }, { addImages: async () => ({ names: [], refused: [] }), findSkills: (names) => runSkills(dir, names), runs: () => store.viewOf(parent.sessionId).runs });
+  launchDesigns(parent, run, { brief: "the brief" });
+  await ticks();
+  assert.deepEqual(stat("A").skills?.map((k) => k.name), ["playwright", "tokens"]);
+  const reader = sessionDesignTools(parent, "A").find((t) => t.name === "design_skill")!;
+  assert.ok(reader, "design_skill is offered");
+  const ok = (await reader.execute("t", { skill: "tokens", file: "SKILL.md" }, undefined, undefined, undefined)) as { content: { text: string }[] };
+  assert.match(ok.content[0]!.text, /tokens body/);
+  await assert.rejects(reader.execute("t", { skill: "brand", file: "SKILL.md" }, undefined, undefined, undefined) as Promise<unknown>, /No skill "brand"/);
+});
+
 test("a design reads only the skills its brief chose for the designers: design_skill refuses the run's others", async () => {
   const mk = (name: string) => {
     const d = join(dir, ".agents", "skills", name);

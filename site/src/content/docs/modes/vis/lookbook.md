@@ -72,9 +72,9 @@ You can also ask your chat to change the open card ("add GLM 5.3 at high effort"
 styles"). It changes only what you asked and tells you what the card now holds. The latest change wins
 the whole card: your click saves the card as you see it, and a change from the chat after it replaces
 it. Words you're typing in the request's editor are never replaced while you type. After **Start
-Creative Director** the chat can still change the designers, their efforts, styles and layouts until
-you press **Start** on the brief; what you want changed in the request, its pictures or its skills
-then goes to the Creative Director instead. Before that, your chat can add pictures to the card from
+Creative Director** the chat can still change the designers, their efforts, styles, layouts and
+design skills until you press **Start** on the brief; what you want changed in the request or its
+pictures then goes to the Creative Director instead. Before that, your chat can add pictures to the card from
 three places only: a file directly in `/tmp`, the chat's attachments folder, or the chat's shared
 folder. A picture it can't add (somewhere else, not an image, over 8 MB, or missing) is named, with
 why.
@@ -86,6 +86,15 @@ design skill, name it to your chat in your own words: by its name ("use the bran
 the project's skills) or by its folder ("use the brand kit in ~/kits/acme", a folder holding a
 `SKILL.md`). Setup lists the skills you named under **Design skills**; there is nothing to tick. A
 skill you named that can't be found becomes one of the Creative Director's questions on the brief.
+
+Your chat can add or take off a skill until you press **Start** on the brief. After **Start Creative
+Director**, Sova tells the Creative Director itself, and the brief's **Design skills** line and
+estimate follow at once: a skill added goes to the designers unless the Creative Director leaves it
+out for not being about design, and one taken off leaves them. Start then reads **Writing the Full
+Prompt** until the Creative Director has taken the change in; if the Full Prompt is your own, the
+brief asks **Keep My Prompt** or **Rewrite It**. A skill named then that can't be found is only named
+in the chat's answer. The designers get the skills as they stand when you press **Start**; after
+that, a run's skills no longer change.
 
 The Creative Director reads the skills, and can read any file you point it to ("the logo is in my
 Downloads folder"), but writes and runs nothing. It chooses which of your skills the designers use,

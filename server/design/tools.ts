@@ -4,7 +4,7 @@
 // `design_hand_in` (it is done: the page is checked here).
 import type { HEntry, ToolResult, ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, designDirectionLine, isDesignLabel, type DesignNote } from "../../shared/design";
-import { coordinatorCard, tellCoordinator } from "./coordinator";
+import { coordinatorCard, skillsChanged, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
 import { editSetup, leftOutWords, SetupRefused, setupSummary, type EditDeps, type SetupDelta } from "./setup-change";
 import { ownImages } from "./asset-routes";
@@ -44,7 +44,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "edit" changes the open Setup card when the user asks for a change after it is up: send only what they asked to change (it never opens a second card and never starts anything); until Start Creative Director anything on it, then until Start on the brief only designers, efforts, styles, layouts and Pair Up/Every Mix (the request's words, images and skills then go to the Creative Director with tell). It answers with what the card now holds and anything that couldn't change, and why. op "read" without label: while the newest card is still in Setup, what it holds; else the Creative Director's card (the coordinator) and each design's version count. With label, where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, its views (the screens the page names: tabs, other pages, menus, dialogs), and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "look" returns one picture of one design: label (and version, or "A11"), view (one of its views by name; none: its first screen) and size ("desktop" or "phone"). op "tell" passes text word for word to the Creative Director. images: paths of pictures to add (a screenshot, a logo), each a PNG, JPEG, WebP or GIF up to 8 MB, from one of three places: directly in /tmp (yours, sandbox or not), Sova's attachments folder, or your own shared folder (any folder below it); a picture elsewhere is refused, so copy it into your shared folder first. On start and edit they join the run itself; on tell they go to the Creative Director. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "edit" changes the open Setup card when the user asks for a change after it is up: send only what they asked to change (it never opens a second card and never starts anything); until Start Creative Director anything on it, then until Start on the brief only designers, efforts, styles, layouts, Pair Up/Every Mix and skills (the request's words and images then go to the Creative Director with tell; a skills change Sova tells it itself, so never pass that on). After Start on the brief nothing on it changes, its skills included. It answers with what the card now holds and anything that couldn't change, and why. op "read" without label: while the newest card is still in Setup, what it holds; else the Creative Director's card (the coordinator) and each design's version count. With label, where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, its views (the screens the page names: tabs, other pages, menus, dialogs), and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "look" returns one picture of one design: label (and version, or "A11"), view (one of its views by name; none: its first screen) and size ("desktop" or "phone"). op "tell" passes text word for word to the Creative Director. images: paths of pictures to add (a screenshot, a logo), each a PNG, JPEG, WebP or GIF up to 8 MB, from one of three places: directly in /tmp (yours, sandbox or not), Sova's attachments folder, or your own shared folder (any folder below it); a picture elsewhere is refused, so copy it into your shared folder first. On start and edit they join the run itself; on tell they go to the Creative Director. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
@@ -62,8 +62,8 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           removeLayouts: list("edit: layouts to untick."),
           combine: str("edit: how styles and layouts mix: pair (Pair Up) or every (Every Mix).", { enum: ["pair", "every"] }),
           coordinator: str("start or edit: the model id for the Creative Director (the coordinator), only when the user named one. edit: only before Start Creative Director."),
-          skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none. edit: skills to add."),
-          removeSkills: list("edit: skills to take off, by name."),
+          skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none. edit: skills to add, until Start on the brief; after Start Creative Director one not found is only named in the result."),
+          removeSkills: list("edit: skills to take off, by name, until Start on the brief."),
           images: list("start, edit or tell: the paths of pictures to add (see the allowed places above)."),
           removeImages: list("edit: images to take off this run, by their names (img-1); they stay in the chat's images."),
           label: str('read: the page to locate: a design\'s label ("A") for its latest version, a label with a version number ("A11") for that version, or several separated by commas ("A11, A16"). You get each page\'s file path and size, not its text. look: one design\'s label ("A"), or with a version number ("A11").'),
@@ -199,6 +199,7 @@ function editDeps(p: DesignParent, pictures: { shared?: string | undefined; chat
     addImages: (paths) => ownImages(p, paths, pictures),
     findSkills: (names) => runSkills(cwd, names),
     runs: () => viewOf(p.sessionId).runs,
+    skillsChanged: (runId, change) => skillsChanged(p, runId, change),
     ...(chatModel ? { chatModel } : {}),
   };
 }

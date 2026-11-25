@@ -279,7 +279,8 @@ export interface DesignRun {
   imagesBusy?: "capturing" | "describing";
   /** The person's approval of a run above the free limit (q2). */
   confirmedSpend?: boolean;
-  /** The design skills this run's Creative Director and designers use, fixed when the run is made. Absent: none (or a run made before skills). */
+  /** The design skills this run's Creative Director and designers use: named when the run is made, changed by the main chat's
+      edit until Start on the brief (the designers get them as they stand at Start). Absent: none (or a run made before skills). */
   skills?: DesignSkill[];
   /** Skills the user named for this run that weren't found. */
   skillsMissing?: DesignSkillMissing[];

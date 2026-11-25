@@ -31,7 +31,7 @@ When the user asks for a change after the card is up, call `lookbook` with `{"op
 - `efforts`: as on start.
 - `coordinator`: the Creative Director, only before Start Creative Director.
 - `directions` / `removeDirections`, `layouts` / `removeLayouts`: styles and layouts to tick or untick. `combine`: `pair` (Pair Up) or `every` (Every Mix).
-- `brief`: the request's whole new words. `images`: pictures to add; `removeImages`: names (img-1) to take off this run (they stay in the chat's images). `skills` / `removeSkills`. These four only before Start Creative Director; after it they go to the Creative Director with `tell`.
+- `brief`: the request's whole new words. `images`: pictures to add; `removeImages`: names (img-1) to take off this run (they stay in the chat's images). These three only before Start Creative Director; after it they go to the Creative Director with `tell`. `skills` / `removeSkills`: until Start on the brief. After Start Creative Director Sova tells the Creative Director of the change itself (never `tell` it), and a skill not found is only named in the result, never asked about on the brief.
 - `run`: only when it isn't this chat's newest Lookbook.
 
 It answers with what the card now holds (designers with their efforts, the Creative Director, styles, layouts, how many designs, images by name) and each thing that couldn't change, and why. Say what you changed in your reply. Once Start on the brief is pressed, nothing on the card changes any more.

@@ -65,21 +65,38 @@ const row = (c: Copies) => cardRuntime(glance({ slots: c }), NOW).slots!;
 const GROUP_ORDER = ["running", "stopped", "elsewhere", "free", "unchecked"];
 const ELSEWHERE_WORDS = "Used elsewhere: another program has the ports these places need, so a new copy can't go there. Stopping this project's copies won't free them.";
 
-test("copies: one pip per usable place, grouped running, stopped, elsewhere, free, whatever the mix", () => {
-  for (const [running, stopped, elsewhere] of [[0, 0, 0], [1, 2, 3], [16, 0, 0], [0, 16, 0], [0, 0, 16], [5, 0, 11]] as const) {
-    const free = 16 - running - stopped - elsewhere;
-    const { pips } = row(copies({ running, cap: 16, usable: 16, stopped, elsewhere }));
-    assert.equal(pips.length, 16);
-    assert.deepEqual([running, stopped, elsewhere, free], ["running", "stopped", "elsewhere", "free"].map((l) => pips.filter((p) => p === l).length));
-    const ranks = pips.map((p) => GROUP_ORDER.indexOf(p));
-    assert.deepEqual(ranks, [...ranks].sort((a, b) => a - b));
-  }
-});
+/** What the strip promises for one glance, or null when `pips` keeps it: one pip per copy the limit allows (more
+ *  only while more run), every running copy drawn, the room left taken by stopped copies first, a free pip only where
+ *  a place is free, no free pip while the free places are unknown, and the groups in order. */
+const strip = (c: Copies, pips: string[]): string | null => {
+  const n = (look: string) => pips.filter((p) => p === look).length;
+  const room = Math.max(0, c.cap - c.running);
+  const open = room - Math.min(c.stopped, room);
+  if (pips.length !== Math.max(c.cap, c.running)) return "one pip per copy the limit allows";
+  if (n("running") !== c.running) return "every running copy the limit counts is drawn";
+  if (n("stopped") !== Math.min(c.stopped, room)) return "stopped copies fill the room first";
+  if (c.free === null && (n("free") > 0 || n("elsewhere") > 0 || n("unchecked") !== open)) return "unknown: every open pip not checked";
+  if (c.free !== null && (n("free") !== Math.min(open, c.free) || n("unchecked") > 0)) return "as many free pips as free places";
+  const ranks = pips.map((p) => GROUP_ORDER.indexOf(p));
+  if (ranks.some((r, i) => i > 0 && r < ranks[i - 1]!)) return "grouped running, stopped, elsewhere, free or not checked";
+  return null;
+};
 
-test("copies: a project with fewer usable places draws only those", () => {
-  const r = row(copies({ running: 1, usable: 9, cap: 12 }));
-  assert.equal(r.pips.length, 9);
-  assert.equal(r.pips.filter((p) => p === "free").length, 8);
+test("copies: one pip per copy the limit allows, mapped from the places, whatever the mix", () => {
+  for (const cap of [1, 4, 16]) {
+    for (const running of new Set([0, 1, cap - 1, cap, cap + 2])) {
+      const room = Math.max(0, cap - running);
+      for (const stopped of new Set([0, 1, room, room + 2])) {
+        const open = room - Math.min(stopped, room);
+        for (const free of [null, 0, 1, open, open + 3]) {
+          const c = copies({ running, cap, usable: 16, runningPlaces: Math.min(running, 16), stopped, elsewhere: 2, free });
+          assert.equal(strip(c, row(c).pips), null, JSON.stringify(c));
+        }
+      }
+    }
+  }
+  // The rule can fail: one pip per usable place, as the strip drew before, breaks it.
+  assert.equal(strip(copies({ usable: 16, free: 16 }), Array(16).fill("free")), "one pip per copy the limit allows");
 });
 
 test("the figure reads at limit exactly once the count reaches the limit, and the count is the limit's, not the pips'", () => {
@@ -87,7 +104,7 @@ test("the figure reads at limit exactly once the count reaches the limit, and th
   assert.equal(row(copies({ running: 4 })).text, "4 at limit");
   const beyondPlaces = row(copies({ running: 5, runningPlaces: 4 }));
   assert.equal(beyondPlaces.text, "5 at limit", "a running record outside the usable slots still counts");
-  assert.equal(beyondPlaces.pips.filter((p) => p === "running").length, 4, "and draws no pip");
+  assert.equal(beyondPlaces.pips.filter((p) => p === "running").length, 5, "and has a running pip");
   assert.ok(beyondPlaces.title.startsWith("5 running,"), "the hover gives the limit's count too");
   assert.equal(row(copies({ running: 1 })).muted, false);
 });
@@ -105,9 +122,9 @@ test("hover: the counts and the limit, the used-elsewhere sentences only while a
   assert.equal(row(copies({ running: 1, usable: 16, cap: 12, elsewhere: 3 })).title, `1 running, 0 stopped but holding a place, 3 used elsewhere, 12 free. Up to 12 can run at once. ${ELSEWHERE_WORDS}`);
 });
 
-test("not checked: no free pip, no free count, and it says so; other Sova copies still count as used elsewhere", () => {
+test("not checked: no free pip, no free count, and it says so; other Sova copies still count as used elsewhere in the hover", () => {
   const r = row(copies({ running: 1, usable: 8, stopped: 1, elsewhere: 2, free: null }));
-  assert.deepEqual(r.pips, ["running", "stopped", "elsewhere", "elsewhere", "unchecked", "unchecked", "unchecked", "unchecked"]);
+  assert.deepEqual(r.pips, ["running", "stopped", "unchecked", "unchecked"], "the room the limit leaves, never drawn free or used elsewhere");
   assert.equal(r.title, `1 running, 1 stopped but holding a place, 2 used elsewhere. Up to 4 can run at once. ${ELSEWHERE_WORDS} Other programs were not checked.`);
   assert.equal(row(copies({ usable: 2, free: null })).title, "0 running, 0 stopped but holding a place, 0 used elsewhere. Up to 4 can run at once. Other programs were not checked.");
 });

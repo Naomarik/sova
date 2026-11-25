@@ -193,7 +193,6 @@ export function retirementWords(g: Partial<Pick<ProjectGlance, "retired" | "held
   return parts.length ? parts.join(" · ") : null;
 }
 
-/** The Copies row: `running` is the copy limit's own count (the figure and hover), `runningPlaces` the running pips. */
 /** The places' states mapped onto the copy limit: max(cap, running) pips, `running` of them running (the limit's own
  *  count); the room left takes stopped copies first, then the open rest is free as far as free places go, else used
  *  elsewhere, or all not checked when the free places are unknown. Stopped copies beyond the room show in the hover only. */

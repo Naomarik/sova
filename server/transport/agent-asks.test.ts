@@ -12,7 +12,7 @@ import { hostAllowed } from "../../pi-config/extensions/sandbox/proxy.ts";
 import { parseParentScope } from "../../pi-config/extensions/sandbox/policy.ts";
 import { type AgentScope, agentLaunchFlags, agentTidOf, preparedFile } from "./agent-scope";
 import { cleanDownloads, downloadsAllowed } from "./agent-asks";
-import { afterArrival, type AgentCheck, type AgentDeps, agentOf, allowDownloads, askAdmin, askDownloads, markAdminDone, preflight, preparedAt, prepareDestination, type PrepareRequest, readyNow } from "./agent";
+import { afterArrival, agentTurnEnded, type AgentCheck, type AgentDeps, agentOf, allowDownloads, askAdmin, askDownloads, markAdminDone, preflight, preparedAt, prepareDestination, type PrepareRequest, readyNow } from "./agent";
 import { agentViewOf } from "./wire";
 
 after(dropScratchAgentDir);
@@ -227,6 +227,57 @@ test("after arrival, an answer once its wait has ended (it read Needs you): the 
   const a = agentOf(state, req.tid)!;
   assert.deepEqual(a.checks.filter((c) => !c.ok), []);
   assert.equal(a.state, "ready");
+});
+
+test("after arrival, any turn of the agent's chat that ends (one your own message started included) reads the checks again: Ready clears Needs you, still missing stays; one run at a time, coalesced", async () => {
+  const root = scratchRoot("transport-asks-");
+  const req = request(root);
+  project(req.project.path);
+  mkdirSync(join(req.project.path, "node_modules"), { recursive: true });
+  const state = join(root, "state");
+  let installed = false;
+  let running = 0;
+  let most = 0;
+  let reads = 0;
+  const d = device(root, {
+    toolResolves: async (t) => {
+      if (t !== "node") return true;
+      reads++;
+      most = Math.max(most, ++running);
+      for (let i = 0; i < 5; i++) await tick();
+      running--;
+      return installed;
+    },
+  });
+  await afterArrival({ ...req, fromSource: true, privateFiles: [], sourceValues: [] }, d.deps);
+  const path = agentOf(state, req.tid)!.path;
+  assert.equal(agentOf(state, req.tid)?.state, "needs-you");
+  assert.equal(agentTurnEnded(d.deps, join(root, "someone-else.jsonl")), null, "another chat's turn reads nothing");
+
+  // A turn you started by typing into its chat ends with node still missing: Needs you stays, over node.
+  await agentTurnEnded(d.deps, path);
+  assert.equal(agentOf(state, req.tid)?.state, "needs-you");
+  assert.deepEqual(agentOf(state, req.tid)!.checks.filter((c) => !c.ok).map((c) => c.id), ["tool:node"]);
+
+  // The next one installs it. Three turn ends heard at once: the checks never overlap, and one more run covers the rest.
+  installed = true;
+  reads = 0;
+  const runs = [agentTurnEnded(d.deps, path), agentTurnEnded(d.deps, path), agentTurnEnded(d.deps, path)];
+  await Promise.all(runs);
+  assert.equal(most, 1, "one check run at a time");
+  assert.equal(reads, 2, "the first run, then one for the turns that ended during it");
+  const a = agentOf(state, req.tid)!;
+  assert.equal(a.state, "ready");
+  assert.deepEqual(a.checks.filter((c) => !c.ok), []);
+  assert.ok(preparedAt(state, req.project) !== null);
+
+  // While an arrival waits on its turns, that wait reads the checks: a turn end reads nothing of its own.
+  // (Its turn never ends here: the wait is left pending, holding no timer.)
+  const d2 = device(root, { busy: () => true, sleep: () => new Promise<void>(() => {}), startChat: async () => ({ id: "agent-2", path: join(root, "agent-2.jsonl") }) });
+  const tid2 = "tr_asks2";
+  void afterArrival({ ...req, tid: tid2, fromSource: true, privateFiles: [], sourceValues: [] }, { ...d2.deps, toolResolves: async (t) => t !== "java" });
+  await until(() => !!agentOf(state, tid2));
+  assert.equal(agentTurnEnded(d2.deps, join(root, "agent-2.jsonl")), null);
 });
 
 test("a listed site is one plain public host: wildcards, addresses, schemes, ports and local names are refused, and nothing is put on the card", () => {

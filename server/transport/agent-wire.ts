@@ -6,7 +6,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { delimiter, join } from "node:path";
 import type { Hono } from "hono";
-import { acquireChatHandle, isSessionBusy } from "../chat-handle";
+import { acquireChatHandle, isSessionBusy, onAgentSettled } from "../chat-handle";
 import { meshSelf } from "../mesh";
 import { homesRoot } from "../chat-homes/root";
 import { ClaudeLogins, credentialsMtime, loginEnabled, readAccountsState } from "../../pi-config/extensions/claude-code/accounts.ts";
@@ -14,7 +14,7 @@ import { inheritedEnv } from "../project-services/env-allow";
 import { hostVars as hostVarsOf, hostVarsFile } from "../project-services/store";
 import { agentRoot, stateRoot } from "../state-root";
 import { canonicalize, loadPolicyFile, loadProjectTightening, policyFilePath } from "../../pi-config/extensions/sandbox/policy.ts";
-import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, allowDownloads, askAdmin, askDownloads, isTransportAgent, markAdminDone, markAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames } from "./agent";
+import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, agentTurnEnded, allowDownloads, askAdmin, askDownloads, isTransportAgent, markAdminDone, markAgent, needsAnswer, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames } from "./agent";
 import type { AgentScope } from "./agent-scope";
 import { remoteReachable } from "./git-snapshot";
 import type { SetupDef } from "./setup-def";
@@ -270,6 +270,11 @@ export function liveSafeDeps(): SafeDeps {
 export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: string, a: AgentState) => void, onBlocked?: (tid: string, reason: string) => void) {
   const agentDeps = liveAgentDeps(app, onAgent, onBlocked);
   const safeDeps = liveSafeDeps();
+  // Every turn of an arrived Transport agent's chat that ends reads its setup checks again (a message you typed into
+  // it included); off the event, since listeners run inside it.
+  onAgentSettled((path) =>
+    setTimeout(() => void agentTurnEnded(agentDeps, path)?.catch((err: unknown) => console.log(`[transport-agent] the checks after a turn of ${path}: ${err instanceof Error ? err.message : String(err)}`)), 0),
+  );
   return {
     prepareDestination: (req: PrepareRequest, opts: { signal?: AbortSignal } = {}) => prepareDestination(req, agentDeps, opts),
     /** Resolves with what the agent sets up (short names) as soon as it has it; its turn goes on by itself. */

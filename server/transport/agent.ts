@@ -792,9 +792,58 @@ const privateChecks = (source: string, found: { file: string; found: string[] }[
 async function arrivalChecked(tid: string, deps: AgentDeps): Promise<void> {
   const root = deps.stateRoot();
   const r = readPrepared(root).arrivals?.[tid];
-  let agent = agentOf(root, tid);
+  const agent = agentOf(root, tid);
   if (!r || !agent) return;
   await settled(tid, agent.path, deps);
+  await arrivalRead(tid, deps);
+}
+
+/** The arrival checks running now, by state root and transport, and whether another turn ended meanwhile. */
+const reading = new Map<string, { again: boolean; done: Promise<void> }>();
+
+/** The arrival's checks read now, one run at a time per transport: asked again while one runs, one more run follows it
+    (however many asked), so nothing a later turn did is missed and nothing overlaps. */
+function arrivalRead(tid: string, deps: AgentDeps): Promise<void> {
+  const key = settleKey(deps.stateRoot(), tid);
+  const cur = reading.get(key);
+  if (cur) {
+    cur.again = true;
+    return cur.done;
+  }
+  const entry = { again: false, done: Promise.resolve() };
+  reading.set(key, entry);
+  entry.done = (async () => {
+    try {
+      do {
+        entry.again = false;
+        await arrivalReadOnce(tid, deps);
+      } while (entry.again);
+    } finally {
+      reading.delete(key);
+    }
+  })();
+  return entry.done;
+}
+
+/**
+ * A turn of an agent's chat here ended (its run settled), whatever started it: your message typed straight into it
+ * included. After arrival its setup checks are read again and its card and transport take them: Ready once all pass,
+ * Needs you while something is still missing. None while a prepare or an arrival already waits on its turns (that wait
+ * reads them), and none for a chat that is no arrival's agent. Returns the read, or null when there is none.
+ */
+export function agentTurnEnded(deps: AgentDeps, path: string): Promise<void> | null {
+  const root = deps.stateRoot();
+  const f = readPrepared(root);
+  const tid = Object.entries(f.byTransport ?? {}).find(([t, a]) => f.arrivals?.[t] && (canonical(a.path) === canonical(path) || a.sessionId === path))?.[0];
+  if (!tid || settling.has(settleKey(root, tid))) return null;
+  return arrivalRead(tid, deps);
+}
+
+async function arrivalReadOnce(tid: string, deps: AgentDeps): Promise<void> {
+  const root = deps.stateRoot();
+  const r = readPrepared(root).arrivals?.[tid];
+  let agent = agentOf(root, tid);
+  if (!r || !agent) return;
   const left = sourceValuesIn(r.privateFiles, r.sourceValues);
   const stillSetup = agentMissing(await preflight(r.project, deps));
   if (!stillSetup.length) markPrepared(root, r.project, tid, deps.now());

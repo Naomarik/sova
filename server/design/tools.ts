@@ -15,7 +15,7 @@ import { designSectionName } from "../../shared/design-models";
 import type { DesignRun } from "../../shared/design";
 import { assertTakesPages, DESIGN_HAND_IN_TOOL, draftNow, streamCalled, editBase, handIn, landingProblem, readingSkill, refusedPage, savePage, takeLook, type DesignParent } from "./batch";
 import { listSkillFiles, readSkillFile, runSkills, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
-import { livePage } from "./live";
+import { livePage, streamCallTurnedAway } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
 import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store";
@@ -375,33 +375,39 @@ function allSessionTools(parent: DesignParent, label: string, reply = false): To
       async execute(_id, params: { label?: string; html?: unknown; append?: unknown; edits?: Edit[] }, _signal, _update, ctx) {
         own(params?.label);
         streamCalled(parent.sessionId, label);
-        const sent = (["html", "append", "edits"] as const).filter((k) => params[k] !== undefined);
-        if (reply && (params.html !== undefined || params.append !== undefined))
-          throw new Error(`Your page is written in your reply, between the line ${DESIGN_PAGE_START} and the line ${DESIGN_PAGE_END}; design_stream takes only edits.`);
-        if (sent.length !== 1) throw new Error(sent.length ? `Send one of html, append or edits per call, not ${sent.join(" and ")}.` : "Send html, append or edits.");
-        let html: string;
-        let what: string;
-        if (params.html !== undefined) {
-          if (typeof params.html !== "string" || !params.html.trim()) throw new Error("html is the page's text.");
-          html = params.html;
-          what = "Saved as your draft";
-        } else if (params.append !== undefined) {
-          if (typeof params.append !== "string" || !params.append) throw new Error("append is the text to add.");
-          const draft = pendingPage(parent.sessionId, label);
-          if (draft === null) throw new Error("You have no draft to add to yet: start the page with html (its first part, or all of it).");
-          html = draft + params.append;
-          what = "Added to your draft";
-        } else {
-          if (!Array.isArray(params.edits) || !params.edits.length) throw new Error("edits is a list of find-and-replace pairs.");
-          const current = editBase(parent.sessionId, label, ctx ? ctx.branch() : null);
-          if (current === null) throw new Error(reply ? "You have no page to edit yet: write it in your reply, between the marker lines." : "You have no page to edit yet; send html.");
-          const out = applyEdits(current, params.edits);
-          if ("error" in out) throw new Error(`${out.error} Nothing was changed.`);
-          html = out.html;
-          what = "Edits applied to your draft";
+        try {
+          const sent = (["html", "append", "edits"] as const).filter((k) => params[k] !== undefined);
+          if (reply && (params.html !== undefined || params.append !== undefined))
+            throw new Error(`Your page is written in your reply, between the line ${DESIGN_PAGE_START} and the line ${DESIGN_PAGE_END}; design_stream takes only edits.`);
+          if (sent.length !== 1) throw new Error(sent.length ? `Send one of html, append or edits per call, not ${sent.join(" and ")}.` : "Send html, append or edits.");
+          let html: string;
+          let what: string;
+          if (params.html !== undefined) {
+            if (typeof params.html !== "string" || !params.html.trim()) throw new Error("html is the page's text.");
+            html = params.html;
+            what = "Saved as your draft";
+          } else if (params.append !== undefined) {
+            if (typeof params.append !== "string" || !params.append) throw new Error("append is the text to add.");
+            const draft = pendingPage(parent.sessionId, label);
+            if (draft === null) throw new Error("You have no draft to add to yet: start the page with html (its first part, or all of it).");
+            html = draft + params.append;
+            what = "Added to your draft";
+          } else {
+            if (!Array.isArray(params.edits) || !params.edits.length) throw new Error("edits is a list of find-and-replace pairs.");
+            const current = editBase(parent.sessionId, label, ctx ? ctx.branch() : null);
+            if (current === null) throw new Error(reply ? "You have no page to edit yet: write it in your reply, between the marker lines." : "You have no page to edit yet; send html.");
+            const out = applyEdits(current, params.edits);
+            if ("error" in out) throw new Error(`${out.error} Nothing was changed.`);
+            html = out.html;
+            what = "Edits applied to your draft";
+          }
+          savePage(parent, label, html);
+          return say(savedText(parent.sessionId, html, what, reply), { label, chars: html.length });
+        } catch (err) {
+          // Its page, if it streamed one whole, is no page a later part goes on from.
+          streamCallTurnedAway(parent.sessionId, label);
+          throw err;
         }
-        savePage(parent, label, html);
-        return say(savedText(parent.sessionId, html, what, reply), { label, chars: html.length });
       },
     },
     {

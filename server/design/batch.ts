@@ -460,6 +460,8 @@ async function writtenThisTurn(sid: string, label: string, d: DesignRecord): Pro
     if (reply.draft !== undefined) setPendingPage(sid, label, reply.draft);
     if (reply.page || reply.problem) return reply;
   }
+  // So is a page written whole that didn't land: the tile goes on showing it while it is fixed, after a restart too.
+  if (live && d.route !== "reply") setPendingPage(sid, label, live);
   return { page: null, problem };
 }
 
@@ -531,12 +533,25 @@ function takeFixTry(sid: string, label: string): { attempt: number; session: num
   });
 }
 
+/** While a page is fixed the tile goes on showing it: its draft, drawn again only when the tile shows something else.
+    With no draft there is nothing to show. */
+function keepDraftOnTile(sid: string, label: string): void {
+  if (pendingPage(sid, label) === null) {
+    clearLivePage(sid, label);
+    if (designOf(sid, label)?.live) changeDesign(sid, label, (x) => void delete x.live);
+    return;
+  }
+  drawDraft(sid, label);
+  const page = livePage(sid, label);
+  if (page && !designOf(sid, label)?.live) showLive(sid, label, page.version, page.draw);
+}
+
+/** The card reads Fixing, with its reason; what the tile shows is the caller's (keepDraftOnTile). */
 function showFixing(sid: string, label: string, problem: string, attempt: number): DesignRecord {
   const d = changeDesign(sid, label, (x) => {
     x.status = "fixing";
     x.fix = { reason: problem, attempt, of: DESIGN_FIX_TRIES };
     delete x.error;
-    delete x.live;
     delete x.thinking;
     delete x.readingSkill;
   });
@@ -563,7 +578,7 @@ async function sendBack(parent: DesignParent, label: string, problem: string): P
   const sid = parent.sessionId;
   const tried = takeFixTry(sid, label);
   if (!tried) return false;
-  clearLivePage(sid, label);
+  keepDraftOnTile(sid, label);
   const d = showFixing(sid, label, problem, tried.attempt);
   try {
     await deliverDesign(parent, label, { text: fixMessage(d.route, problem, tried.attempt), key: `fix:${tried.session}:${tried.attempt}`, by: "server" });
@@ -726,16 +741,18 @@ export function refusedPage(parent: DesignParent, label: string, problem: string
     drawDraft(sid, label);
   }
   const tried = takeFixTry(sid, label);
-  clearLivePage(sid, label);
   if (tried) {
     changeDesigns(sid, (s) => {
       const i = s.internal?.[label];
       if (i) i.refused = problem;
     });
+    // The refused page stays on the tile while it is fixed; the fix's first change redraws it in place.
+    keepDraftOnTile(sid, label);
     showFixing(sid, label, problem, tried.attempt);
     heard(parent, label);
     throw new Error(problem);
   }
+  clearLivePage(sid, label);
   const d = designOf(sid, label);
   if (d?.sessionId) void workers(parent).abort(d.sessionId).catch(() => {});
   if (d?.versions.length) {

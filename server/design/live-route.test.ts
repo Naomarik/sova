@@ -9,7 +9,7 @@ import { Hono } from "hono";
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "design-live-route-"));
 const { DESIGN_STREAM_CSP } = await import("../../src/lib/design-frame");
 const { mountDesignLiveRoutes } = await import("./live-route");
-const { applySlice, clearLivePage, drawDraftLive, livePage } = await import("./live");
+const { applySlice, clearLivePage, drawDraftLive, livePage, streamCallTurnedAway } = await import("./live");
 const { LIVE_LINK_MS, liveLinkOpens, mintLiveLink, setLiveLinkClockForTest } = await import("./live-link");
 const store = await import("./store");
 const { designView } = await import("./live");
@@ -297,6 +297,7 @@ test("under a part added to the end, the estimate charges only what this reply w
 test("a part added after a turned-away call goes on from the saved draft, not from what that call streamed", async () => {
   store.setPendingPage(sid, label, "<p>D</p>");
   slice(1, 0, "<p>X</p>");
+  streamCallTurnedAway(sid, label);
   const f = await reader(await urlFor());
   await settle();
   const r = part(2, 0, "<p>P</p>");
@@ -304,4 +305,33 @@ test("a part added after a turned-away call goes on from the saved draft, not fr
   assert.equal(livePage(sid, label)!.text, "<p>D</p><p>P</p>");
   await f.ended();
   assert.equal(f.text().includes("<p>P</p>"), false, "the turned-away document isn't written onto");
+});
+
+test("html then append in one reply: the part goes on from the new page, never from the older draft it replaces", async () => {
+  // The tile shows the old draft; the reply writes a new page whole, then a part, and neither call has run yet.
+  store.setPendingPage(sid, label, "<p>OLD</p>");
+  drawDraftLive(sid, label, 1, "<p>OLD</p>");
+  slice(2, 0, "<p>NEW</p>");
+  const f = await reader(await urlFor());
+  await settle();
+  const r = part(3, 0, "<p>P</p>");
+  assert.ok(r && !r.began, "the new page's document goes on");
+  assert.equal(livePage(sid, label)!.text, "<p>NEW</p><p>P</p>");
+  const drawn = livePage(sid, label)!.draw;
+  // The calls run: the html is saved, then the part. The document on show already is each, so nothing is drawn again.
+  store.setPendingPage(sid, label, "<p>NEW</p>");
+  assert.equal(drawDraftLive(sid, label, 1, "<p>NEW</p>"), null);
+  store.setPendingPage(sid, label, "<p>NEW</p><p>P</p>");
+  assert.equal(drawDraftLive(sid, label, 1, "<p>NEW</p><p>P</p>"), null);
+  assert.equal(livePage(sid, label)!.draw, drawn);
+  await settle();
+  assert.ok(f.text().endsWith("<p>NEW</p><p>P</p>"), f.text());
+  assert.equal(f.text().includes("OLD"), false, "the old draft is never what the part is added to");
+  assert.equal(f.done(), false);
+});
+
+test("a first part and one added to it in the same reply, before any draft is saved, are one document", () => {
+  slice(1, 0, "<p>A</p>");
+  assert.ok(part(2, 0, "<p>B</p>"), "the part isn't set aside for want of a saved draft");
+  assert.equal(livePage(sid, label)!.text, "<p>A</p><p>B</p>");
 });

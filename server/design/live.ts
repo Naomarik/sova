@@ -42,6 +42,9 @@ interface Buffer {
   /** Names the document on show: a new one (a whole page again, or the draft redrawn after edits) gets a new number,
       and a frame showing another reconnects. Unique across restarts, so a browser's old number never matches. */
   draw: number;
+  /** It holds a page a design_stream call is writing whole (its html) that isn't saved yet: that call runs only once its
+      reply has ended, so a part a later call of the same reply adds goes on from this page, never from the older draft. */
+  unsaved?: true;
 }
 const pages = new Map<string, Buffer>();
 const keyOf = (sessionId: string, label: string) => `${sessionId}\0${label}`;
@@ -116,18 +119,22 @@ export function applySlice(sessionId: string, label: string, version: number, f:
     // A new page starts at 0; a later slice of one this server never held waits for the resync.
     if (f.at !== 0) return null;
     if (f.append) {
-      // A part added to the end: the same document goes on, from the draft as it stands. What is on show but isn't the
-      // draft (a call that was turned away streamed it) is drawn again from the draft first.
-      const draft = pendingPage(sessionId, label);
-      if (!draft) return null;
-      if (!b) {
-        // This server held none (it restarted): the document the tile already shows, when it is this version's.
-        const live = designOf(sessionId, label)?.live;
-        b = seed(sessionId, label, version, live?.version === version ? live.draw : undefined);
-      } else if (b.text !== draft) {
-        endFollowers(key);
-        b = seed(sessionId, label, version);
-        began = true;
+      // A part added to the end: the same document goes on. After a page an earlier call of this reply wrote whole, from
+      // that page: its call hasn't run yet, so the saved draft is still the one it replaces. Otherwise from the draft as
+      // it stands; what is on show but isn't the draft (a call that was turned away streamed it) is drawn again from the
+      // draft first.
+      if (!b?.unsaved) {
+        const draft = pendingPage(sessionId, label);
+        if (!draft) return null;
+        if (!b) {
+          // This server held none (it restarted): the document the tile already shows, when it is this version's.
+          const live = designOf(sessionId, label)?.live;
+          b = seed(sessionId, label, version, live?.version === version ? live.draw : undefined);
+        } else if (b.text !== draft) {
+          endFollowers(key);
+          b = seed(sessionId, label, version);
+          began = true;
+        }
       }
       if (!b) return null;
       b.gen = f.gen;
@@ -135,7 +142,7 @@ export function applySlice(sessionId: string, label: string, version: number, f:
     } else {
       // Another page: a document already written can't be taken back, so the frame draws a new one.
       endFollowers(key);
-      b = { version, gen: f.gen, text: "", base: 0, draw: nextDraw() };
+      b = { version, gen: f.gen, text: "", base: 0, draw: nextDraw(), unsaved: true };
       pages.set(key, b);
       began = true;
     }
@@ -164,13 +171,19 @@ function tellFollowers(key: string, b: Buffer): void {
 }
 
 /** The draft was saved (a whole page, a part added, or edits): the document on show becomes the draft. Already the same
-    (a part streamed onto it): nothing happens. Otherwise it is drawn again from the draft under a new `draw`, which is
-    returned; the frame keeps the old picture until the new one has painted. */
+    (a part streamed onto it), or the same with a part a later call of the reply streamed onto its end: nothing happens.
+    Otherwise it is drawn again from the draft under a new `draw`, which is returned; the frame keeps the old picture
+    until the new one has painted. */
 export function drawDraftLive(sessionId: string, label: string, version: number, draft: string): number | null {
   const key = keyOf(sessionId, label);
   const b = pages.get(key);
   if (b && b.version === version && b.text === draft) {
     b.base = b.text.length;
+    delete b.unsaved;
+    return null;
+  }
+  if (b && b.version === version && b.base === draft.length && b.text.startsWith(draft)) {
+    delete b.unsaved;
     return null;
   }
   endFollowers(key);
@@ -178,6 +191,12 @@ export function drawDraftLive(sessionId: string, label: string, version: number,
   pages.set(key, next);
   tell({ sessionId, event: { type: "design.live", label, version, draw: next.draw, at: 0, text: draft, chars: draft.length } });
   return next.draw;
+}
+
+/** A design_stream call was turned away: a page it streamed whole is no page a later part goes on from. */
+export function streamCallTurnedAway(sessionId: string, label: string): void {
+  const b = pages.get(keyOf(sessionId, label));
+  if (b) delete b.unsaved;
 }
 
 export function clearLivePage(sessionId: string, label: string): void {

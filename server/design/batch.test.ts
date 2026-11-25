@@ -14,7 +14,7 @@ const history = await import("./history");
 const store = await import("./store");
 const { sessionDesignTools } = await import("./tools");
 const { WorkerRegistry } = await import("../chat-workers");
-const { livePage } = await import("./live");
+const { clearLivePage, livePage } = await import("./live");
 const { servedOnTakeBack } = await import("../chat-host");
 
 const PAGE = "<!doctype html><html><body>hi</body></html>";
@@ -652,7 +652,9 @@ test("a page with a script error goes back once, naming it, and spends no coordi
   assert.equal(f.sends.length, 2, "the first message and exactly one fix");
   assert.match(lastSend(f).text, /script 1, line 2: /);
   assert.equal(lastSend(f).report, false);
-  assert.equal(livePage(parent.sessionId, "A"), null, "the broken page isn't what the card goes on drawing");
+  assert.equal(livePage(parent.sessionId, "A")?.text, BROKEN, "the broken page stays on the tile while it is fixed");
+  assert.equal(stat("A").live?.draw, livePage(parent.sessionId, "A")?.draw, "the same document, not drawn again");
+  assert.equal(store.pendingPage(parent.sessionId, "A"), BROKEN, "it is the draft the fix changes");
   assert.equal(coordinatorSends, 0);
   assert.equal(parentOpens, 0);
   assert.equal(coordinatorNotes().length, 1);
@@ -677,6 +679,29 @@ test("a page a tool refuses spends a try and reads Fixing, and if the turn stops
   settle(f);
   await waitFor(() => stat("A").fix?.attempt === 2);
   assert.match(lastSend(f).text, /script 1, line 2/);
+});
+
+test("a page the hand-in refused stays on the tile while it is fixed, after a restart too; the fix's first change redraws it in place", async () => {
+  const f = await start();
+  await streamTool("A").execute("t", { label: "A", html: BROKEN }, undefined, undefined, undefined);
+  const draw = stat("A").live!.draw;
+  await assert.rejects(handInTool("A").execute("t", { label: "A", note: NOTE }, undefined, undefined, undefined), /script 1, line 2/);
+  assert.equal(stat("A").status, "fixing");
+  assert.match(stat("A").fix!.reason, /script 1, line 2/);
+  assert.equal(livePage(parent.sessionId, "A")?.text, BROKEN);
+  assert.equal(stat("A").live?.draw, draw, "the same document: no redraw");
+  // A restart: this server's memory is gone, the record on disk is what the tile goes on.
+  clearLivePage(parent.sessionId, "A");
+  store.forgetDesignCache();
+  assert.equal(stat("A").live?.draw, draw);
+  assert.equal(livePage(parent.sessionId, "A")?.text, BROKEN, "the refused draft, read back");
+  assert.equal(livePage(parent.sessionId, "A")?.draw, draw, "the document the browser already shows");
+  // The fix's first change: drawn again, in place, still Fixing until it lands.
+  await streamTool("A").execute("t", { label: "A", edits: [{ find: "var a = ;", replace: "var a = 1;" }] }, undefined, undefined, undefined);
+  assert.equal(livePage(parent.sessionId, "A")?.text, BROKEN.replace("var a = ;", "var a = 1;"));
+  assert.notEqual(stat("A").live?.draw, draw);
+  assert.equal(stat("A").status, "fixing");
+  assert.equal(fixSends(f).length, 0);
 });
 
 test("a refused page later replaced by one that lands sends nothing back", async () => {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { namesProfile, defaultLabel, defaultTitle, menuPick, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
+import { PROFILE_MINOR_MODES, startsFrom, type ChatStarts, type Profile } from "../../shared/profiles";
+import { isEditedBuiltin, namesProfile, menuPick, startsOfRow, updateOffered, editedName, limitLine, limitOffers, newChatLine, pickDoesSomething, pickerRows, rowDisabledReason, switchedLine, switchRefused, switchWaitingLine, type SwitchRow } from "./profile-switch";
 
 const row = (key: string, providers: string[], extra: Partial<SwitchRow> = {}): SwitchRow => ({ key, id: key, kind: "pair", group: "yours", name: key.toUpperCase(), providers, setsModel: providers.length > 0, ...extra });
 const OFF = row("off", [], { kind: "off", group: "builtin", name: "Off" });
@@ -45,37 +46,80 @@ test("picker rows: yours, then the project's, then built in; hidden ones and an 
   assert.equal(rowDisabledReason(row("p", [])), null);
 });
 
+test("an edited built-in one is a picker row under Built in, in its built-in one's place, never among yours", () => {
+  const builtin = (key: string) => row(key, [], { kind: "builtin", group: "builtin", id: key.slice("sova:".length) });
+  const edited = row("user:openai", [], { id: "openai", replaces: "sova:openai" });
+  const rows = [row("y1", []), edited, row("p1", [], { group: "project" }), builtin("sova:deepseek"), builtin("sova:claude")];
+  assert.deepEqual(pickerRows(rows).map((r) => r.key), ["y1", "p1", "sova:claude", "user:openai", "sova:deepseek"]);
+  assert.equal(isEditedBuiltin(edited), true);
+  assert.equal(isEditedBuiltin(row("y1", [])), false);
+});
+
 test("picking the chat's own profile does nothing unless it is edited", () => {
   assert.equal(pickDoesSomething({ key: "a" }, { key: "a", edited: false }), false);
   assert.equal(pickDoesSomething({ key: "a" }, { key: "a", edited: true }), true);
   assert.equal(pickDoesSomething({ key: "b" }, { key: "a", edited: false }), true);
 });
 
-test("the default button and the new chat line", () => {
-  assert.equal(defaultLabel("idle", "Claude"), "Make Claude the Default");
-  assert.equal(defaultLabel("done", "Claude"), "Already the default");
-  assert.equal(defaultLabel("saving", "Claude"), "Saving…");
-  assert.equal(defaultTitle("Claude", false), "New chats will start on Claude.");
-  assert.equal(defaultTitle("Claude", true), "New chats already start on Claude.");
-  assert.equal(defaultTitle(null, false), "Make this chat's profile the default for new chats.");
+test("the new chat line", () => {
   assert.equal(newChatLine("sova"), "New chat in sova. The default is already picked.");
   assert.equal(newChatLine(null), "New chat. The default is already picked.");
 });
 
-test("Update {name}: only yours, only while something it saves differs", () => {
-  const yours = row("claude", ["claude"]);
-  const same = { model: "claude-code-cli/claude-opus-5-5", thinking: "high", mode: "delegate", minorModes: ["align", "spec"] };
-  assert.equal(updateOffered(yours, { profile: same, chat: same }), false);
-  assert.equal(updateOffered(yours, { profile: same, chat: { ...same, minorModes: ["spec", "align"] } }), false, "the same add-ons in another order");
-  assert.equal(updateOffered(yours, { profile: same, chat: { ...same, thinking: "low" } }), true);
-  assert.equal(updateOffered(yours, { profile: same, chat: { ...same, mode: "normal" } }), true);
-  assert.equal(updateOffered(yours, { profile: same, chat: { ...same, minorModes: ["align"] } }), true);
-  assert.equal(updateOffered(yours, { profile: same, chat: { model: null, thinking: null, mode: null, minorModes: null } }), false, "unknown is never a difference");
-  assert.equal(updateOffered(row("p", ["zai"], { group: "project" }), { profile: same, chat: { ...same, mode: "normal" } }), false, "a project's file");
-  assert.equal(updateOffered(OFF, { profile: undefined, chat: same }), false, "never Off");
-  assert.equal(updateOffered(yours, { profile: { model: same.model, thinking: same.thinking }, chat: { ...same, mode: "normal", minorModes: [] } }), false, "a mode the profile leaves unset is no difference");
-  assert.equal(updateOffered(yours, { profile: { minorModes: [] }, chat: { ...same, minorModes: ["align"] } }), true, "[] is set: no add-ons");
-  assert.equal(updateOffered(row("lib", ["zai"], { kind: "library" }), { profile: undefined, chat: same }), false, "a library-only row sets none of them");
+// Update {name} is offered exactly when pressing it would change what a new chat on the chat's profile starts with
+// (§chat.subagent-profiles/menu): the save writes the chat's mode, its profile-holdable add-ons, model and effort into
+// the profile's session half, and a new chat starts on that half over this computer's starting modes (mode.json),
+// field by field. Checked over every combination of half, base and chat below.
+type Half = Pick<Profile, "mode" | "minorModes" | "model" | "thinking"> | undefined;
+type Chat = { model: string | null; thinking: string | null; mode: string | null; minorModes: string[] | null };
+const same = (a: ChatStarts, b: ChatStarts) => JSON.stringify(a) === JSON.stringify(b);
+/** What pressing it saves, and so what a new chat on the profile then starts with. */
+const afterSave = (half: Half, base: ChatStarts, c: Chat): ChatStarts =>
+  startsFrom({ ...half, ...(c.mode ? { mode: c.mode } : {}), ...(c.minorModes ? { minorModes: PROFILE_MINOR_MODES.filter((m) => c.minorModes!.includes(m)) } : {}), ...(c.model ? { model: c.model } : {}), ...(c.thinking ? { thinking: c.thinking as Profile["thinking"] } : {}) }, base);
+const halves: Half[] = [undefined, {}, { mode: "delegate" }, { minorModes: ["align"] }, { minorModes: [] }, { mode: "normal", minorModes: ["align", "spec"] }, { model: "m/a", thinking: "high" }];
+const bases: ChatStarts[] = [{ mode: "normal", minorModes: [] }, { mode: "delegate", minorModes: ["align", "spec"], model: "m/a", thinking: "high" }];
+const chats: Chat[] = [];
+for (const mode of [null, "normal", "delegate"])
+  for (const minorModes of [null, [], ["align"], ["spec", "align"], ["align", "spec", "memory"], ["memory"]])
+    for (const [model, thinking] of [[null, null], ["m/a", "high"], ["m/b", "low"]] as const) chats.push({ mode, minorModes, model, thinking });
+/** Unknown on either side is never a difference: a model or effort a new chat would open on unnamed (neither the
+    profile nor defaults.json sets it) is left out of both. */
+const knownDiff = (half: Half, base: ChatStarts, c: Chat) => {
+  const now = startsFrom(half, base);
+  const after = afterSave(half, base, c);
+  if (!now.model) delete after.model;
+  if (!now.thinking) delete after.thinking;
+  return !same(now, after);
+};
+
+test("Update {name}: offered exactly when saving would change what a new chat on the profile starts with", () => {
+  for (const group of ["yours", "builtin"] as const)
+    for (const half of halves)
+      for (const base of bases)
+        for (const c of chats) {
+          const r = row("p", [], { group, kind: group === "builtin" ? "builtin" : "pair" });
+          assert.equal(updateOffered(r, { starts: startsOfRow({ session: half as Profile | undefined }, base), chat: c }), knownDiff(half, base, c), JSON.stringify({ group, half, base, c }));
+        }
+  // The rule catches the old one, which compared only what the profile itself sets (so a profile with no saved modes
+  // never offered a save): with the base unknown, that is exactly what startsOfRow answers.
+  const old = (half: Half, c: Chat) => updateOffered(row("p", []), { starts: startsOfRow({ session: half as Profile | undefined }, null), chat: c });
+  assert.ok(chats.some((c) => old(undefined, c) !== knownDiff(undefined, bases[0]!, c)));
+});
+
+test("Update {name}: the cases the fix is for, by hand", () => {
+  const base: ChatStarts = { mode: "normal", minorModes: [] };
+  const chat = { model: null, thinking: null, mode: "delegate", minorModes: ["align", "spec"] };
+  const on = (r: SwitchRow, half: Half, b: ChatStarts | null = base, c: Chat = chat) => updateOffered(r, { starts: startsOfRow({ session: half as Profile | undefined }, b), chat: c });
+  assert.equal(on(row("mine", []), { model: "m/a" }), true, "a profile with no saved modes, the chat on delegate · align · spec");
+  assert.equal(on(row("sova:claude", ["claude"], { kind: "builtin", group: "builtin" }), { model: "m/a" }), true, "a built-in profile");
+  // A profile that sets only its main mode: the add-ons are compared against mode.json's.
+  assert.equal(on(row("mine", []), { mode: "delegate" }, { mode: "normal", minorModes: ["align", "spec"] }), false);
+  assert.equal(on(row("mine", []), { mode: "delegate" }, { mode: "normal", minorModes: ["align"] }), true);
+  assert.equal(on(row("mine", []), {}, { mode: "delegate", minorModes: ["align", "spec"] }, { ...chat, minorModes: ["align", "spec", "memory"] }), false, "memory on is no difference");
+  assert.equal(on(row("p", [], { group: "project", kind: "project" }), {}), false, "never a project's file");
+  assert.equal(on(OFF, {}), false, "never Off");
+  assert.equal(on(row("bad", [], { unusable: "No credentials here for x." }), {}), false);
+  assert.equal(updateOffered(row("mine", []), { starts: null, chat }), false, "the listing not read yet");
 });
 
 test("a mode-menu pick before the first message is a card pick, both parts; after it, the switch", async () => {

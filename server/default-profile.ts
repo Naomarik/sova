@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { OFF_ID, OFF_KEY, type DefaultProfileInfo, type JoinedProfile } from "../shared/profiles";
+import { OFF_ID, OFF_KEY, profileMinors, startsFrom, type ChatStarts, type DefaultProfileInfo, type JoinedProfile } from "../shared/profiles";
 import {
   builtinFallback, loadSubagentProfiles, profilesDefaultOf, readProfilesDefault, writeProfilesDefault,
 } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -123,17 +123,34 @@ export function olderDefaultsOf(row: JoinedProfile): { mode?: ModePatch; model?:
   };
 }
 
+/**
+ * What a field a profile leaves unset starts as on a new chat: mode.json's mode and add-on modes (only those a
+ * profile can hold; Create is never a default, so normal), and defaults.json's model and effort, else none.
+ */
+export function startsBase(): ChatStarts {
+  const m = readMode();
+  const d = loadDefaults();
+  return {
+    mode: m.mode === "delegate" ? "delegate" : "normal",
+    minorModes: profileMinors(m.minorModes),
+    ...(d.model ? { model: d.model } : {}),
+    ...(d.thinking ? { thinking: d.thinking } : {}),
+  };
+}
+
+/** What a new chat started now starts with: the default's session half over `base` (startOnDefault pins the
+    modes it sets; the chat follows mode.json for the rest). No default, or one with no session half: `base`. */
+export function newChatStarts(def: { row: JoinedProfile }, base = startsBase()): ChatStarts & { key: string; name: string } {
+  return { key: def.row.key, name: def.row.name, ...startsFrom(def.row.session, base) };
+}
+
 export class DefaultRefusal extends Error {}
 
 /**
- * Make `row` this computer's default: the older files first (only where what the profile sets
- * differs from what they hold, so an untouched file stays byte for byte), then default-profile.json.
- * `extraMode`: what else the mode menu's Make Default saves into mode.json (the chat's strict flag).
+ * The three older default files written for what `row` sets, each only where it differs from what it holds (so an
+ * untouched file stays byte for byte). Choosing a default does it, and so does saving into the chosen default.
  */
-export function chooseDefaultProfile(row: JoinedProfile, rows: readonly JoinedProfile[], extraMode: Pick<ModePatch, "strict"> = {}, dir = agentRoot()): DefaultProfileInfo {
-  if (row.kind === "project" && rows.some((r) => r.group === "yours" && r.kind !== "library" && r.id === row.id))
-    throw new DefaultRefusal(`One of your profiles has the id "${row.id}" too, so this project's profile can't be the default.`);
-  if (row.approval === "needed") throw new DefaultRefusal(`${row.name} needs your approval first (Settings → Profiles).`);
+export function writeOlderDefaults(row: JoinedProfile, extraMode: Pick<ModePatch, "strict"> = {}, dir = agentRoot()): void {
   const older = olderDefaultsOf(row);
   const mode: ModePatch = { ...(older.mode ?? {}), ...extraMode };
   if (mode.mode || mode.minorModes || mode.strict !== undefined) {
@@ -149,6 +166,17 @@ export function chooseDefaultProfile(row: JoinedProfile, rows: readonly JoinedPr
   if (Object.keys(patch).length) saveDefaults(patch);
   const lib = readProfilesDefault(dir);
   if (older.subagents && !(lib.state === "ok" && lib.value.default === older.subagents)) writeProfilesDefault(dir, { version: 1, default: older.subagents });
+}
+
+/**
+ * Make `row` this computer's default: the older files first (writeOlderDefaults), then default-profile.json.
+ * `extraMode`: what else to save into mode.json (a chat's strict flag).
+ */
+export function chooseDefaultProfile(row: JoinedProfile, rows: readonly JoinedProfile[], extraMode: Pick<ModePatch, "strict"> = {}, dir = agentRoot()): DefaultProfileInfo {
+  if (row.kind === "project" && rows.some((r) => r.group === "yours" && r.kind !== "library" && r.id === row.id))
+    throw new DefaultRefusal(`One of your profiles has the id "${row.id}" too, so this project's profile can't be the default.`);
+  if (row.approval === "needed") throw new DefaultRefusal(`${row.name} needs your approval first (Settings → Profiles).`);
+  writeOlderDefaults(row, extraMode, dir);
   writeDefaultProfileFile(row.id);
   return { key: row.key, id: row.id, name: row.name, chosen: true };
 }

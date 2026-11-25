@@ -2828,6 +2828,14 @@ export interface ChatProfileInfo {
   granted: string[];
   /** With a profile: what picking My settings puts back (the entry's `mine`, §chat.profiles/applying). */
   mine?: import("./profiles").ProfileMine;
+  /** A new chat that couldn't start on this computer's default profile, and why; only while it has no message. */
+  defaultNotApplied?: DefaultNotApplied;
+}
+
+/** Why a new chat isn't on the default profile: the profile's name, and the reason in the user's words. */
+export interface DefaultNotApplied {
+  profile: string;
+  reason: string;
 }
 
 /** Why a `queue_remove` was refused, and nothing was removed.

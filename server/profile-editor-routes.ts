@@ -6,12 +6,12 @@ import type { DelegateSources } from "./delegate";
 import { joinedProfiles, pickJoined } from "./joined-profiles";
 import { saveDefaultMemoryType } from "./memory/settings";
 import { resolveSessionPath } from "./paths";
-import { deleteMine, duplicateMine, saveCurrentAsProfile, saveMine, updateFromChat, type ChatNow, type EditorAnswer } from "./profile-editor";
+import { deleteMine, duplicateMine, resetToBuiltin, saveCurrentAsProfile, saveMine, updateFromChat, type ChatNow, type EditorAnswer } from "./profile-editor";
 import { profilesListing } from "./session-profile-routes";
 import { getSessionSummary } from "./sessions-index";
 
 /**
- * Settings → Profiles' writes and the mode menu's Make Default / Update (§chat.profiles/joined,
+ * Settings → Profiles' writes (Reset to Built-in among them) and the mode menu's Update (§chat.profiles/joined,
  * /default, §app.settings-dialog/profile-editor, §chat.subagent-profiles/menu). Each answers the
  * fresh listing for the body's `cwd` (plus `savedKey`), or `{error, field?, partial?}`. Registered
  * by server/app.ts beside the library's routes, which keep working for older clients.
@@ -84,9 +84,10 @@ export async function saveCurrentFor(path: string, label: unknown, sources: Dele
 }
 
 /**
- * Make {name} the Default from a chat's mode menu: this chat's profile becomes this computer's
- * default, and as Save as default did, the chat's strict flag and memory type are saved for new
- * chats. Throws DefaultRefusal (409) or an Error with the sentence.
+ * Make a chat's profile the default ({path} on PUT /api/profiles/default, and POST /api/mode's saveDefault; an
+ * older client's mode menu sends them, today's chooses the default only in Settings → Profiles): this chat's
+ * profile becomes this computer's default, and the chat's strict flag and memory type are saved for new chats.
+ * Throws DefaultRefusal (409) or an Error with the sentence.
  */
 export async function makeChatDefault(path: string): Promise<DefaultProfileInfo> {
   const s = await getSessionSummary(path);
@@ -121,9 +122,10 @@ export function registerProfileEditorRoutes(app: Hono, sources: DelegateSources)
   app.post("/api/profiles/mine/delete", async (c) => {
     const b = await body(c);
     const cwd = str(b.cwd);
-    return answer(c, await deleteMine(b.key, { sources, cwd }), cwd);
+    // `reset: true`: Reset to Built-in, a profile of yours taking a built-in one's place deleted so the built-in is back.
+    return answer(c, await (b.reset === true ? resetToBuiltin : deleteMine)(b.key, { sources, cwd }), cwd);
   });
-  // Make Default: {key} from Settings → Profiles, or {path} from a chat's mode menu (this chat's
+  // Make Default: {key} from Settings → Profiles, or {path} from an older client's mode menu (this chat's
   // profile, and as Save as default did, its strict flag and memory type for new chats).
   app.put("/api/profiles/default", async (c) => {
     const b = await body(c);

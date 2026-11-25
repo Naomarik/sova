@@ -1517,8 +1517,9 @@ export function buildApp(deps: AppDeps) {
       if (!summary) return c.json({ error: "Session file not found" }, 404);
       if (summary.overseer) return c.json({ error: "The Overseer is always in normal mode." }, 409);
       if (summary.projectOverseer || summary.baton || summary.workerSession || summary.queueChat || (summary.org && summary.org.kind !== "coding")) return c.json({ error: "This chat's profile can't be the default." }, 409);
-      // Make {name} the Default (§chat.profiles/default): this chat's profile becomes this computer's
-      // default, with its strict flag and memory type; the older default files are kept written.
+      // Save as default (§chat.profiles/default; an older client's mode menu, which today offers Update {name}
+      // instead): this chat's profile becomes this computer's default, with its strict flag and memory type; the
+      // older default files are kept written.
       try {
         const defaultProfile = await makeChatDefault(path);
         return c.json({ ...modeInfo(readMode()), defaultProfile });

@@ -19,8 +19,8 @@ export interface ShownMode {
   saveMode?: string;
 }
 
-/** The footer's sentence, after the `strict:` chip: a switch is this chat's own — nothing else
-    follows it — and new sessions start from the default, which the button below it sets. */
+/** The footer's general sentence, after the `strict:` chip: a switch is this chat's own (nothing else
+    follows it), and new sessions start from the default profile. */
 export const FOOT_NOTE = "A switch here is this chat's own. New chats start from the default profile.";
 
 /** The foot's sentence in Create: no default holds it, so the button saves the chat's last other
@@ -33,12 +33,44 @@ export function savableMode(m: ShownMode): ShownMode {
   return { ...m, mode: m.saveMode ?? (m.mode === "create" ? "normal" : m.mode) };
 }
 
-/** The footer's sentence, after the `strict:` chip. In Create, what Update {name} would save, when
-    this chat's profile is known. */
-export function footNote(m: ShownMode | null, profile: string | null = null): string {
-  if (m?.mode !== "create") return FOOT_NOTE;
-  const s = savableMode(m);
-  return profile ? `${CREATE_FOOT_NOTE} Update ${profile} saves ${[s.mode, ...s.minorModes].join(" · ")}.` : CREATE_FOOT_NOTE;
+/** Where the default is chosen, named when this chat's profile isn't it. */
+export const CHOOSE_DEFAULT_NOTE = "Choose the default in Settings → Profiles.";
+
+/** What the foot knows about new chats, from the server's listing (`newChats`). */
+export interface FootFacts {
+  /** What a new chat started now starts with, and the default it starts on ("" for none); null from an older server. */
+  newChats: { name: string; mode: string; minorModes: readonly string[] } | null;
+  /** Is this chat's profile the default? null while either isn't known. */
+  onDefault: boolean | null;
+  /** Is Update {name} offered (this chat differs from what a new chat on its profile starts with)? */
+  differs: boolean;
+  /** "{model} · {effort}" a new chat starts on, when the model or effort is what differs; else null. */
+  modelLine?: string | null;
+  /** The profile a press just saved into, while this chat still matches it; else null. */
+  saved: string | null;
+}
+
+const startsLine = (n: { mode: string; minorModes: readonly string[] }) => [n.mode, ...n.minorModes].join(" · ");
+
+/**
+ * The footer's sentence, after the `strict:` chip (§chat.mode-menu/save-for-new-chats). After a press: what new chats
+ * now really start with, from the listing the save answered ("Saved. New chats start in …", or "Saved to {name}. New
+ * chats still start from {default}." when this chat's profile isn't the default). In Create: what Update {name} would
+ * save. Then the first that applies: this chat's profile isn't the default (it names the default and where it is
+ * chosen); this chat differs (what new chats start with now); else the general sentence, naming the default.
+ */
+export function footNote(m: ShownMode | null, profile: string | null = null, f?: FootFacts): string {
+  const n = f?.newChats ?? null;
+  const name = n?.name.trim() ? n.name : "the default profile";
+  if (f?.saved && n) return f.onDefault === false ? `Saved to ${f.saved}. New chats still start from ${name}.` : `Saved. New chats start in ${startsLine(n)}.`;
+  if (m?.mode === "create") {
+    const s = savableMode(m);
+    return profile ? `${CREATE_FOOT_NOTE} Update ${profile} saves ${[s.mode, ...s.minorModes].join(" · ")}.` : CREATE_FOOT_NOTE;
+  }
+  if (!n) return FOOT_NOTE;
+  if (f?.onDefault === false && n.name.trim()) return `New chats start from ${n.name}. ${CHOOSE_DEFAULT_NOTE}`;
+  if (f?.differs) return `New chats start in ${startsLine(n)}${f.modelLine ? `, on ${f.modelLine}` : ""}.`;
+  return `A switch here is this chat's own. New chats start from ${name}.`;
 }
 
 /** The major modes a chat's menu offers, from the global list: those a default can hold, then those

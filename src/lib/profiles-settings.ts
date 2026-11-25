@@ -2,6 +2,7 @@ import type { SubagentProfile } from "../../shared/subagent-profiles";
 import type { DelegateBackendId, WorkerChoice } from "../../shared/protocol";
 import { DEFAULT_LIMITS, KEEPS_OWN_MODEL, LIMIT_KEYS, LIMIT_LABEL, type ProfileLimits, OFF_KEY, type JoinedProfile, type Profile, type ProfileStarts, type ThinkingLevel } from "../../shared/profiles";
 import { check, type FieldCheck, type WholeRule } from "../../shared/form-rules";
+import { builtinGroup } from "./profile-switch";
 import { TEAM_NUMBERS, TEAM_RULES, type TeamNumberField } from "../../shared/subagent-limits";
 import { PROFILE_LABEL_RULE, PROFILE_NAME_OFF, PROFILE_NAME_TAKEN, PROFILE_READ_RULE } from "../../shared/profile-limits";
 import { profilesFields } from "./subagent-profiles-draft";
@@ -147,6 +148,9 @@ export interface ListRow {
   unsaved: boolean;
   /** The profile in effect for the chat Settings was opened from: its "This chat" chip. */
   thisChat: boolean;
+  /** One of yours in a built-in one's place, saved or still a draft (§chat.subagent-profiles/edited-builtin): listed
+      under Built in where the built-in was, with a Yours chip, and Reset to Built-in in Delete's place. */
+  editedBuiltin: boolean;
   wire?: JoinedRowWire;
 }
 
@@ -155,13 +159,23 @@ export interface ListRow {
  * Built in (the profiles Sova ships for the accounts connected here). A saved row unchanged in the
  * draft keeps the server's footprint. `thisChat`: the key of the profile in effect for the chat
  * (a `library:<id>` key no row has names helpers in effect: the row whose helpers they are, see chatRowKey)
- * Settings was opened from (none: no chip anywhere).
+ * Settings was opened from (none: no chip anywhere). An edited built-in one (a row of yours in a built-in one's place,
+ * or `copies`' draft copy of one: built-in key → draft key) is listed under Built in, in the built-in one's place,
+ * which it hides.
  */
-export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], saved: ProfilesDraft | null, chatKey: string | null = null): Record<ListGroup, ListRow[]> {
+export function listGroups(
+  d: ProfilesDraft,
+  wire: readonly JoinedRowWire[],
+  saved: ProfilesDraft | null,
+  chatKey: string | null = null,
+  copies: Readonly<Record<string, string>> = {},
+): Record<ListGroup, ListRow[]> {
+  /** Each draft copy's key → the built-in key it takes the place of. */
+  const copyOf = new Map(Object.entries(copies).filter(([, k]) => d.rows.some((r) => r.key === k)).map(([b, k]) => [k, b]));
   const thisChat = chatRowKey(chatKey, wire);
   const byKey = new Map(wire.map((w) => [w.key, w]));
   const savedRow = (key: string) => saved?.rows.find((r) => r.key === key);
-  const yours = d.rows.map((r): ListRow => {
+  const mine = d.rows.map((r): ListRow => {
     const w = byKey.get(r.key);
     const s = savedRow(r.key);
     const same = !!w && !!s && canonical(s) === canonical(r) && canonical(r.lib ? saved?.library[r.lib] : null) === canonical(r.lib ? d.library[r.lib] : null);
@@ -175,6 +189,7 @@ export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], sav
       hidden: !!w?.hidden,
       unsaved: isNewKey(r.key),
       thisChat: !!thisChat && thisChat === r.key,
+      editedBuiltin: !!w?.replaces || copyOf.has(r.key),
       wire: w,
     };
   });
@@ -188,33 +203,42 @@ export function listGroups(d: ProfilesDraft, wire: readonly JoinedRowWire[], sav
     hidden: !!w.hidden,
     unsaved: false,
     thisChat: !!thisChat && thisChat === w.key,
+    editedBuiltin: false,
     wire: w,
   });
   const project = wire.filter((w) => w.group === "project").map((w) => fromWire(w, "project"));
+  const hidden = new Set(copyOf.values());
   // An older server's Off row is never listed: no chat runs on no profile now.
-  const builtin = wire.filter((w) => w.group === "builtin" && w.kind !== "off" && w.key !== OFF_KEY).map((w) => fromWire(w, "builtin"));
-  return { yours, project, builtin };
+  const shipped = wire.filter((w) => w.group === "builtin" && w.kind !== "off" && w.key !== OFF_KEY && !hidden.has(w.key)).map((w) => fromWire(w, "builtin"));
+  const placed = [
+    ...shipped.map((row) => ({ id: row.wire!.id, group: "builtin", row })),
+    ...mine.filter((r) => r.editedBuiltin).map((row) => ({ id: row.wire?.id ?? row.key, group: "builtin", replaces: row.wire?.replaces ?? copyOf.get(row.key), row })),
+  ];
+  return { yours: mine.filter((r) => !r.editedBuiltin), project, builtin: builtinGroup(placed).map((x) => x.row) };
 }
 
 /** The accounts the built-in profiles run on, by the provider their models spend. */
 const BUILTIN_ACCOUNTS: Record<string, string> = { claude: "Claude", "openai-codex": "OpenAI", "ollama-cloud": "Ollama Cloud" };
 
-/** A built-in profile's line in its editor: the account it is for, when its models name one. */
+/** A built-in profile's line in its editor: the account it is for, when its models name one, and that a change makes it yours. */
 export function builtInLine(providers: readonly string[]): string {
   const known = [...new Set(providers.map((p) => BUILTIN_ACCOUNTS[p]).filter((n): n is string => !!n))];
-  return known.length === 1 ? `Built in for your ${known[0]} account. Make It Yours to change it.` : "Built in. Make It Yours to change it.";
+  return `${known.length === 1 ? `Built in for your ${known[0]} account.` : "Built in."} Your changes make it yours.`;
 }
+
+/** The line of an edited built-in one (`builtin`: its name): it is yours, frozen (§chat.subagent-profiles/edited-builtin). */
+export const yoursFromBuiltinLine = (builtin: string): string => `Yours, changed from the built-in ${builtin}. Sova's updates to ${builtin} no longer reach it.`;
 
 /**
  * The row a chat's profile key names: that key when a row has it; else the row that now takes a
  * built-in one's place (`replaces`); else, for helpers in effect
  * (`library:<id>`), the row whose helpers they are — a library-only row, then yours, then a project's
- * or a built-in one (a copy made with Make It Yours links the built-in's id). Null when none fits.
+ * or a built-in one (a built-in's copy of yours links the built-in's id). Null when none fits.
  */
 export function chatRowKey(key: string | null, wire: readonly Pick<JoinedRowWire, "key" | "kind" | "group" | "libraryId" | "replaces">[]): string | null {
   if (!key) return null;
   if (wire.some((w) => w.key === key)) return key;
-  // A built-in one a profile of yours now takes the place of (Make It Yours, saved since this was read).
+  // A built-in one a profile of yours now takes the place of (its first change, saved since this was read).
   const taker = wire.find((w) => w.replaces === key);
   if (taker) return taker.key;
   if (!key.startsWith("library:")) return null;
@@ -224,9 +248,9 @@ export function chatRowKey(key: string | null, wire: readonly Pick<JoinedRowWire
 }
 
 /**
- * Make It Yours (§app.settings-dialog/profiles): an editable copy of a built-in profile under Yours,
- * both parts, under the built-in's own name, so once saved it takes the built-in's place (a profile
- * of yours named like a built-in replaces it). Saved with Save Changes, like New Profile. Answers
+ * A built-in profile's first change in the editor (§app.settings-dialog/profiles): the change goes into a copy of it
+ * under Yours, both parts, under the built-in's own name, so once saved it takes the built-in's place (a profile of
+ * yours named like a built-in replaces it) and is frozen as yours. Saved with Save Changes, like New Profile. Answers
  * the new draft and the new row's key; `d` unchanged when one of yours already has that name.
  */
 export function withMadeYours(d: ProfilesDraft, w: Pick<JoinedRowWire, "name" | "session" | "library">): { draft: ProfilesDraft; key: string | null } {
@@ -242,6 +266,39 @@ export function withMadeYours(d: ProfilesDraft, w: Pick<JoinedRowWire, "name" | 
     },
     null,
   );
+}
+
+/**
+ * Where an edit of `key` in the editor goes (§app.settings-dialog/profiles): a row of yours, as it is; a built-in
+ * one's first change makes the copy of yours in its place (withMadeYours) and records it in `copies` (built-in key →
+ * the copy's draft key), so later changes go to that copy. Pure: answers the draft and copies to keep.
+ */
+export function editTarget(
+  d: ProfilesDraft,
+  copies: Readonly<Record<string, string>>,
+  wire: readonly JoinedRowWire[],
+  key: string,
+): { to: string; draft: ProfilesDraft; copies: Record<string, string> } {
+  const w = wire.find((x) => x.key === key);
+  if (!w || w.group !== "builtin") return { to: key, draft: d, copies: { ...copies } };
+  const had = copies[key];
+  if (had && d.rows.some((r) => r.key === had)) return { to: had, draft: d, copies: { ...copies } };
+  const out = withMadeYours(d, w);
+  if (!out.key) return { to: key, draft: d, copies: { ...copies } };
+  return { to: out.key, draft: out.draft, copies: { ...copies, [key]: out.key } };
+}
+
+/**
+ * Reset to Built-in (§app.settings-dialog/profile-editor): an edited built-in one leaves the draft like a deleted one,
+ * and its library half with it, but never refused for being the default (the default keeps naming its id, which then
+ * finds the built-in one). Saved with Save Changes, as the server's reset.
+ */
+export function withReset(d: ProfilesDraft, key: string): ProfilesDraft {
+  const next = clone(d);
+  const row = next.rows.find((r) => r.key === key);
+  next.rows = next.rows.filter((r) => r.key !== key);
+  if (row?.lib && !next.rows.some((r) => r.lib === row.lib)) delete next.library[row.lib];
+  return next;
 }
 
 /** The pi provider whose models are Claude Code's (`claude-code-cli/<id>`). */

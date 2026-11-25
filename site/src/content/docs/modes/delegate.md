@@ -35,8 +35,7 @@ Delegate uses that route's fallback. **Without a fallback, the agent asks you wh
 
 The gear on Delegate's row in the mode menu, **Configure Delegate**, opens Settings → **Profiles** on
 the profile this chat's helpers run on, at its Models part. It switches nothing, so you can set
-Delegate up before turning it on. A built-in profile is read-only: **Make It Yours** gives you a copy
-to edit.
+Delegate up before turning it on. A built-in profile edits in place: its first change makes it yours.
 
 In the profile's **Delegate** group, each work kind has one row of three choices:
 Backend, Model and Effort.

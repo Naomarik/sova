@@ -290,3 +290,27 @@ test("a new chat's first send is never refused: it waits for the check before it
   assert.deepEqual([checked, link.sent.filter((f) => f.t === "client.msg").length], [1, 1]);
   assert.equal(heard.find((m) => m.type === "error"), undefined, "nothing waits for a decision any more");
 });
+
+test("a new chat's note that it missed the default rides its profile frames to every pane, until a pick spends it", async () => {
+  const { noteDefaultNotApplied } = await import("./default-start-notes");
+  const { h, link, path } = handle();
+  const seen: unknown[][] = [[], []];
+  const panes = seen.map((got) => ({ send: (m: unknown) => got.push(m) }));
+  for (const p of panes) h.attach(p as never);
+  const ids = link.sent.filter((f): f is FrameOf<"client.attach"> => f.t === "client.attach").map((f) => f.clientId);
+  const profile = { type: "profile", profile: null, locked: false, pickable: true, tools: [], removed: [], granted: [] };
+  noteDefaultNotApplied(path, { profile: "Reader", reason: "Provider openai is turned off." });
+  for (const clientId of ids) link.deliver({ t: "client.send", clientId, json: JSON.stringify(profile) } as never);
+  link.deliver({ t: "client.send", clientId: ids[0]!, json: JSON.stringify({ type: "sandbox", on: false }) } as never);
+  assert.deepEqual(seen.map((got) => (got[0] as { defaultNotApplied?: unknown }).defaultNotApplied), [{ profile: "Reader", reason: "Provider openai is turned off." }, { profile: "Reader", reason: "Provider openai is turned off." }]);
+  assert.deepEqual(seen[0]![1], { type: "sandbox", on: false }, "other frames pass as they are");
+  // A pick that took (helpers alone reopen nothing): every pane hears the profile again, with no note.
+  assert.equal(noteDefaultNotApplied(path, null), true);
+  h.resendProfile();
+  assert.deepEqual(seen.map((got) => got.at(-1)), [profile, profile]);
+  // A chat with a message spends it.
+  noteDefaultNotApplied(path, { profile: "Reader", reason: "x" });
+  link.deliver({ t: "client.send", clientId: ids[0]!, json: JSON.stringify({ ...profile, locked: true }) } as never);
+  assert.equal((seen[0]!.at(-1) as { defaultNotApplied?: unknown }).defaultNotApplied, undefined);
+  assert.equal(noteDefaultNotApplied(path, null), false, "already spent");
+});

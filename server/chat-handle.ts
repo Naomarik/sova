@@ -148,6 +148,10 @@ export abstract class ChatHandle {
   abstract call<M extends ChatMethod>(method: M, args: ChatMethods[M]["args"]): Promise<ChatMethods[M]["result"]>;
   /** A browser joins: it gets the chat's hello and state, then everything the chat sends. */
   abstract attach(client: ChatClient): void;
+  /** Tell every pane the chat's profile again, as the server now adds to it (a new chat's note that it
+      missed the default, spent by a pick: server/default-start-notes.ts). A chat in this process has
+      none to add. */
+  resendProfile(): void {}
   /** A message from that browser. */
   abstract clientMessage(client: ChatClient, msg: ChatClientMessage): void;
   abstract detach(client: ChatClient): void;

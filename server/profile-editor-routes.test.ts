@@ -45,6 +45,14 @@ describe("the profile routes", () => {
     assert.deepEqual(body.defaultProfile, { key: "user:claude", id: "claude", name: "Claude", chosen: false });
     assert.equal(body.joined?.find((r) => r.isDefault)?.key, "user:claude");
     assert.ok(body.template && !("id" in body.template));
+    // What a new chat starts with: the default's half over mode.json, field by field (Claude sets a model, no modes).
+    assert.deepEqual(body.startsBase, { mode: "normal", minorModes: [] });
+    assert.deepEqual(body.newChats, { key: "user:claude", name: "Claude", mode: "normal", minorModes: [], model: "claude-code-cli/claude-opus-5-5" });
+  });
+
+  test("POST /api/profiles/mine/delete with reset: Reset to Built-in, refused for a profile taking no built-in's place", async () => {
+    const r = await call("POST", "/api/profiles/mine/delete", { key: "library:solo", reset: true });
+    assert.deepEqual([r.status, r.body.error], [409, "Solo takes no built-in profile's place."]);
   });
 
   test("POST /api/profiles/mine adds a pair and answers its key; a name refusal names the field", async () => {

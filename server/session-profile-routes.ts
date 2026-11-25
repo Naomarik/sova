@@ -12,7 +12,7 @@ import { getSessionInsight } from "./insights";
 import { helperProfileOf, loadSubagentProfiles } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { readConnectedAccounts } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import { chatProfileKey, switchChatProfile } from "./profile-switch";
-import { isNoDefault, resolveDefaultProfile } from "./default-profile";
+import { isNoDefault, newChatStarts, resolveDefaultProfile, startsBase } from "./default-profile";
 import { buildJoined, joinedProfiles, pickJoined } from "./joined-profiles";
 import { agentRoot } from "./state-root";
 import { resolveSessionPath } from "./paths";
@@ -24,6 +24,7 @@ import { resolveChoice, singletonHolder, SingletonRefusal, snapshotKey, type Pro
 import { getSessionSummary, listedSession, listSessions } from "./sessions-index";
 import { rowsOf } from "./transcript";
 import { readBranch } from "./harness/pi/reader";
+import { noteDefaultNotApplied } from "./default-start-notes";
 
 /**
  * Profiles over HTTP (§chat.profiles/applying, /projects, /trust, §app.settings-dialog/profiles),
@@ -49,7 +50,12 @@ let applying: Promise<unknown> = Promise.resolve();
  * special session, and for a One at a time profile live elsewhere.
  */
 export function applyProfile(path: string, choice: ProfileChoice, by?: "overseer" | "start"): Promise<ApplyResult> {
-  const run = applying.then(() => applyNow(path, choice, by));
+  // A pick that took is what the chat is on now: a new chat's note that it missed the default is spent.
+  const run = applying.then(() => applyNow(path, choice, by)).then((r) => {
+    // Every open pane hears it, also after a pick that doesn't reopen the chat (helpers alone).
+    if (r.ok && noteDefaultNotApplied(path, null)) chatHandle(path)?.resendProfile();
+    return r;
+  });
   applying = run.catch(() => undefined);
   return run;
 }
@@ -261,6 +267,7 @@ export async function profilesListing(cwd?: string | null, path?: string): Promi
   const def = await resolveDefaultProfile(cwd, joined);
   for (const r of joined) if (r.key === def.row.key) r.isDefault = true;
   const { id: _id, name: _name, ...template } = info.template;
+  const base = startsBase();
   return {
     builtins: src.builtins,
     yours: src.yours,
@@ -275,6 +282,9 @@ export async function profilesListing(cwd?: string | null, path?: string): Promi
     defaultProfile: def.info,
     library: { file: library.file, ...(library.state === "malformed" ? { error: library.errors.join("; ") } : {}) },
     template,
+    // What a field a profile leaves unset starts as, and what a new chat started now starts with.
+    startsBase: base,
+    newChats: newChatStarts(def, base),
     // The row that chat is on: a "library:<id>" key with no row of its own is the row carrying that helper half.
     ...(await thisChatKey(path).then((k) => (k ? { thisChat: pickJoined(joined, k)?.key ?? k } : {}))),
     ...(src.yoursError ? { error: src.yoursError } : {}),

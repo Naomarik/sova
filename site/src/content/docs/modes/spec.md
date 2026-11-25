@@ -136,6 +136,6 @@ own agent folder has spec only while its parent has it on, too.
 ## Project coding sessions
 
 A project has no coding-mode setting of its own: its coding sessions start in this computer's
-default mode, the one **Make {name} the Default** in a chat's mode menu sets, and the project page names
+default mode, the one the default profile starts in (**Update {name}** in a chat's mode menu saves it), and the project page names
 it. A coding session has spec only when that default does, and you or an Overseer can turn it on or off
 in a running session, as in any chat.

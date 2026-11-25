@@ -7,7 +7,8 @@ import { problemOf } from "../shared/form-rules";
 import type { SubagentProfile, SubagentProfilesFile } from "../shared/subagent-profiles";
 import { helperProfileOf, idFor, loadSubagentProfiles, writeSubagentProfiles } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { subagentProfilesInfo } from "./subagent-profiles";
-import { resolveDefaultProfile } from "./default-profile";
+import { chooseDefaultProfile, readDefaultProfileFile, resolveDefaultProfile, writeOlderDefaults } from "./default-profile";
+import { isBuiltinProfileId } from "../pi-config/extensions/subagents/builtin-profiles.ts";
 import type { DelegateSources } from "./delegate";
 import { joinedProfiles, pickJoined } from "./joined-profiles";
 import { changeProfiles } from "./profiles-store";
@@ -276,6 +277,43 @@ export async function deleteMine(key: unknown, deps: EditorDeps): Promise<Editor
   // A default nobody chose (the built-in profile the accounts give, or the row that takes its place) is no file's:
   // deleting that row brings the built-in one back as the default.
   if (def.row.key === row.key && !def.fromAccounts) return fail(409, "Make another profile the default first.");
+  return deleteHalves(row, rows, dir);
+}
+
+/**
+ * Reset to Built-in (§chat.subagent-profiles/edited-builtin): a profile of yours that takes a built-in one's place is
+ * deleted, both halves of its own, so the built-in one as Sova ships it is back in its place. Unlike Delete it is
+ * never refused for being the default, which then names the built-in one.
+ */
+export async function resetToBuiltin(key: unknown, deps: EditorDeps): Promise<EditorAnswer> {
+  const dir = deps.dir ?? agentRoot();
+  if (typeof key !== "string") return fail(400, "Expected {key}");
+  const rows = await joinedProfiles(deps.cwd, {}, dir);
+  const row = pickJoined(rows, key);
+  if (!row || row.key !== key) return fail(404, "That profile isn't here anymore.");
+  const builtin = row.group === "yours" && row.replaces ? row.replaces.slice("sova:".length) : undefined;
+  if (!builtin || !isBuiltinProfileId(builtin)) return fail(409, `${row.name} takes no built-in profile's place.`);
+  const def = await resolveDefaultProfile(deps.cwd, rows, dir);
+  const wasChosen = def.info.chosen && def.row.key === row.key;
+  const r = await deleteHalves(row, rows, dir);
+  if (!r.ok) return r;
+  // The default keeps naming the same id, which now finds the built-in one (or will, once its account is connected
+  // here). Only a default named some other way (the seeded starter's id, say) is moved onto the built-in one.
+  const file = readDefaultProfileFile();
+  if (!wasChosen || (file.state === "ok" && file.profile === builtin)) return { ok: true, savedKey: `sova:${builtin}` };
+  const after = await joinedProfiles(deps.cwd, {}, dir);
+  const shipped = pickJoined(after, `sova:${builtin}`);
+  if (!shipped) return { ok: true, savedKey: `sova:${builtin}` };
+  try {
+    chooseDefaultProfile(shipped, after, {}, dir);
+  } catch (err) {
+    return fail(409, `${row.name} was reset, but the default wasn't moved to the built-in one: ${message(err)}`);
+  }
+  return { ok: true, savedKey: shipped.key };
+}
+
+/** Delete `row`'s own halves: its session half first, then its library half when no other profile links it. */
+async function deleteHalves(row: JoinedProfile, rows: readonly JoinedProfile[], dir: string): Promise<EditorAnswer> {
   // Its library half is its own only under the id it links: a link to a built-in id reaches the profile of yours
   // taking that built-in's place (the seeded starter, say), which is another profile, never deleted here.
   const ownHalf = row.library && row.library.id === row.libraryId ? row.library : undefined;
@@ -344,35 +382,80 @@ export async function saveCurrentAsProfile(label: unknown, now: ChatNow, deps: E
   return run({ ...(source ? { library, copiedFrom: { [id]: source.id } } : {}), session: (list) => [...list, fresh], savedKey: `user:${id}` }, deps);
 }
 
+/** The session half's When a Chat Starts fields, as the editor saves them. */
+const startsOfHalf = (p: Profile): ProfileStarts => ({
+  icon: p.icon, description: p.description, remove: p.remove, grant: p.grant, singleton: p.singleton, limits: p.limits,
+  firstMessage: p.firstMessage, overseerMayStart: p.overseerMayStart,
+  ...(p.mode === "normal" || p.mode === "delegate" ? { mode: p.mode } : {}), ...(p.minorModes !== undefined ? { minorModes: p.minorModes } : {}),
+});
+
+/**
+ * A built-in profile's first save (§app.settings-dialog/profiles): `req` saved as a profile of yours under the
+ * built-in's name, so it takes the built-in's place, with both parts copied from it where `req` leaves them out
+ * (its helpers under the built-in's id). From then on it is yours: Sova's changes to the built-in never reach it.
+ */
+export async function saveBuiltinAsYours(row: JoinedProfile, req: Omit<ProfileSaveRequest, "key" | "name">, deps: EditorDeps): Promise<EditorAnswer> {
+  if (row.group !== "builtin" || row.kind !== "builtin") return fail(409, `${row.name} isn't built in.`);
+  const half = row.session;
+  return saveMine({
+    name: row.name,
+    starts: req.starts ?? (half ? startsOfHalf(half) : undefined),
+    model: req.model !== undefined ? req.model : (half?.model ?? null),
+    thinking: req.thinking !== undefined ? req.thinking : (half?.thinking ?? null),
+    ...(req.helpers ? { helpers: req.helpers } : row.library ? { helpers: helpersOf(row.library) } : {}),
+  }, deps);
+}
+
 /**
  * Update {name} (§chat.subagent-profiles/menu): this chat's model and effort, and its mode and
  * add-on modes, into its profile's session half (made, linked, for a library-only profile). Never a
- * helper; never a project's or a built-in profile.
+ * helper; never a project's. A built-in profile's first update makes it yours (saveBuiltinAsYours).
+ * Saved into the chosen default, the older default files follow (§chat.profiles/default).
  */
 export async function updateFromChat(key: string | undefined, now: ChatNow, deps: EditorDeps): Promise<EditorAnswer> {
   const dir = deps.dir ?? agentRoot();
   const rows = await joinedProfiles(deps.cwd, {}, dir);
   const row = key ? pickJoined(rows, key) : null;
   if (!row || row.kind === "off") return fail(409, "This chat's profile isn't here anymore.");
-  if (row.group !== "yours") return fail(409, row.kind === "project" ? `${row.name} is a file in the project, so it can't be updated here.` : `${row.name} is built in, so it can't be updated here. Make It Yours first.`);
-  const current = row.session;
-  const starts: ProfileStarts | undefined = current
-    ? { icon: current.icon, description: current.description, remove: current.remove, grant: current.grant, singleton: current.singleton, limits: current.limits, firstMessage: current.firstMessage, overseerMayStart: current.overseerMayStart, ...(now.mode ? { mode: now.mode } : {}), ...(now.minorModes ? { minorModes: PROFILE_MINOR_MODES.filter((m) => now.minorModes!.includes(m)) } : {}) }
-    : undefined;
-  const req: ProfileSaveRequest = {
-    key: row.key,
-    name: row.name,
-    ...(starts ? { starts } : {}),
+  if (row.group === "project") return fail(409, `${row.name} is a file in the project, so it can't be updated here.`);
+  const def = await resolveDefaultProfile(deps.cwd, rows, dir);
+  const wasDefault = def.info.chosen && def.row.key === row.key;
+  const r = await updateInto(row, now, deps);
+  if (r.ok && wasDefault) {
+    // The chosen default keeps the older default files written for what it sets, as choosing it did.
+    const saved = pickJoined(await joinedProfiles(deps.cwd, {}, dir), r.savedKey ?? row.key);
+    if (saved) {
+      try {
+        writeOlderDefaults(saved, {}, dir);
+      } catch (err) {
+        return { ...r, warnings: [...(r.warnings ?? []), `New chats' older default files weren't updated: ${message(err)}`] };
+      }
+    }
+  }
+  return r;
+}
+
+async function updateInto(row: JoinedProfile, now: ChatNow, deps: EditorDeps): Promise<EditorAnswer> {
+  const chatModes = {
+    ...(now.mode ? { mode: now.mode } : {}),
+    ...(now.minorModes ? { minorModes: PROFILE_MINOR_MODES.filter((m) => now.minorModes!.includes(m)) } : {}),
+  };
+  const chatModel = {
     ...(now.model ? { model: now.model } : {}),
     ...(now.thinking && (THINKING_LEVELS as readonly string[]).includes(now.thinking) ? { thinking: now.thinking as Profile["thinking"] } : {}),
   };
-  if (!current) {
-    // A library-only profile: its session half is made with the chat's modes.
-    req.starts = {
-      remove: [], grant: [], singleton: false, limits: { ...DEFAULT_LIMITS }, overseerMayStart: false,
-      ...(now.mode ? { mode: now.mode } : {}),
-      ...(now.minorModes ? { minorModes: PROFILE_MINOR_MODES.filter((m) => now.minorModes!.includes(m)) } : {}),
-    };
+  if (row.group === "builtin") {
+    const half = row.session;
+    const base: ProfileStarts = half ? startsOfHalf(half) : { remove: [], grant: [], singleton: false, limits: { ...DEFAULT_LIMITS }, overseerMayStart: false };
+    return saveBuiltinAsYours(row, { starts: { ...base, ...chatModes }, ...chatModel }, deps);
   }
+  const current = row.session;
+  const req: ProfileSaveRequest = {
+    key: row.key,
+    name: row.name,
+    // A library-only profile: its session half is made with the chat's modes.
+    starts: { ...(current ? startsOfHalf(current) : { remove: [], grant: [], singleton: false, limits: { ...DEFAULT_LIMITS }, overseerMayStart: false }), ...chatModes },
+    ...chatModel,
+  };
   return saveMine(req, deps);
 }

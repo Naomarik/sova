@@ -306,4 +306,30 @@ describe("create route: an Overseer's start on this computer's default", () => {
       rmSync(policy, { force: true });
     }
   });
+
+  test("a person's new chat that missed the default says why on its empty screen, until a pick takes", async () => {
+    const { defaultNotAppliedOf } = await import("./default-start-notes");
+    defaultIs({});
+    const policy = join(dir, "model-policy.json");
+    writeFileSync(policy, JSON.stringify({ version: 1, disabledProviders: ["openai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));
+    let path: string;
+    try {
+      const res = await create({}, here);
+      assert.equal(res.status, 201);
+      const body = (await res.json()) as { path: string; defaultNotApplied?: string };
+      path = body.path;
+      assert.match(body.defaultNotApplied ?? "", /openai is turned off/);
+    } finally {
+      rmSync(policy, { force: true });
+    }
+    // Kept on the server, which adds it to the chat's profile frames, so a reload or another tab shows it too.
+    const note = defaultNotAppliedOf(path);
+    assert.equal(note?.profile, "Reader");
+    assert.match(note?.reason ?? "", /openai is turned off/);
+    assert.doesNotMatch(note?.reason ?? "", /can't be picked here/, "the line names the profile once");
+    // A pick on the empty screen that takes spends it.
+    const picked = await request("POST", "/api/sessions/profile", { path, profile: "reader" });
+    assert.ok(picked.status < 300, `the pick took (${picked.status}: ${await picked.text()})`);
+    assert.equal(defaultNotAppliedOf(path), undefined);
+  });
 });

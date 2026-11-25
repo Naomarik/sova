@@ -79,12 +79,15 @@ Press it to open the menu. It has these groups:
 - **Profile**: one row, **Profile · {name}**, that opens the picker for this chat's
   [profile](/docs/subagent-profiles/).
 
-The menu's foot reads `strict: off` (or `on`), then "A switch here is this chat's own. New chats
-start from the default profile." Beside it are **Make {name} the Default** and **Update {name}**, for
-this chat's profile.
+The menu's foot reads `strict: off` (or `on`), then what new chats start with. When this chat's
+profile isn't the default, it says "New chats start from {default}. Choose the default in Settings →
+Profiles." While this chat's modes, model or effort differ from what a new chat on its profile would
+start with, it says what new chats start with now ("New chats start in normal.") and offers **Update
+{name}**, which saves them into this chat's profile. Otherwise it reads "A switch here is this chat's
+own. New chats start from {default}."
 
 The menu works from the keyboard: arrow keys move between rows, Enter or Space picks or toggles,
-Escape closes, and Tab reaches the foot's buttons.
+Escape closes, and Tab reaches the foot's button.
 
 ## When a switch applies
 
@@ -96,7 +99,7 @@ chat, and the chat's running workers keep running.
 - **Switching to Create** also turns align on, in the same step. A chat still on code older than Create
   can't take the switch: it fails with its reason, and the mode stays as it was.
 - **A chat that can't switch** shows **This chat can't switch.** in its menu, for example when
-  another program wrote its session. The chat is left as it was; **Make {name} the Default** still works.
+  another program wrote its session. The chat is left as it was; **Update {name}** still works.
 
 Switching a minor mode in the middle of a chat doesn't rewrite the instructions the model already
 has (except align in Delegate or Create, which changes one paragraph of Delegate's instructions). The change reaches the model as a hidden note with its next message, which you don't see in
@@ -115,13 +118,20 @@ Each computer has one [default profile](/docs/subagent-profiles/), and new chats
 also keeps `~/.pi/agent/mode.json`, the default modes, written to match it. A chat that has never
 switched follows that default; its first switch pins that chat to its own modes from then on.
 
-**A switch never changes the default**, not even in a brand-new chat. The default moves only when
-you ask for exactly that: **Make {name} the Default** in the menu. It makes this chat's profile what
-  new chats start from, with this chat's strict flag and memory type. Project modes are
-  never part of the default, and neither is Create: in a Create chat it saves the chat's last normal or
-  Delegate choice. It reads **Already the default**, and can't be pressed, when this chat's profile
-  is the default already. **Update {name}**, beside it, saves this chat's model, effort and modes
-  into its profile.
+**A switch never changes the default**, not even in a brand-new chat. What new chats start with moves
+only when you ask for exactly that: **Update {name}** in the menu saves this chat's mode, its add-on
+modes (align, spec and vis), its model and its effort into this chat's profile, and new chats on that
+profile start with them. A new chat takes each one its profile sets, and the rest from `mode.json`
+(else normal, with no add-ons). The button shows whenever pressing it would change what a new chat
+on this chat's profile starts with: memory and project modes never count, since a profile can't hold
+them, and neither does Create: in a Create chat it saves the chat's last normal or Delegate choice. A
+built-in profile is updated too: its first update makes it yours, in its place (see
+[Profiles](/docs/subagent-profiles/)).
+
+After the press the foot says what new chats now start with: "Saved. New chats start in delegate ·
+align · spec." When this chat's profile isn't the default, it says "Saved to {name}. New chats still
+start from {default}." Which profile is the default is chosen in Settings → Profiles, with **Make
+Default**.
 
 A saved default reaches new sessions from their next start. It also
 reaches any session that has never switched, the next time it starts or reopens. Chats that have
@@ -192,8 +202,8 @@ and every other tool stay, and the agent's instructions read the same either way
 
 - It is **per session** and **off by default**. Set it by typing `/mode strict on` or
   `/mode strict off` in the chat.
-- The web mode menu shows it read-only in its foot, `strict: off` or `strict: on`. **Make {name} the
-  Default** saves it for new chats.
+- The web mode menu shows it read-only in its foot, `strict: off` or `strict: on`. New chats take it
+  from `mode.json`.
 - In normal mode the flag is kept and does nothing. Switching to Delegate or Create applies it.
 - Sova never sets it: a switch from the menu can't carry it, and project coding sessions never set
   it. Workers are never strict.
@@ -216,7 +226,7 @@ Each chat picks one of two types in the **Memory type** panel:
   compacted part becomes summary lines the model can open, instead of a one-off summary. Its size is
   the size of those lines, 32 KB by default.
 
-The type is this chat's own, kept while memory is off, and **Make {name} the Default** saves it. Each type's
+The type is this chat's own, kept while memory is off. Each type's
 summary size is set once for every chat, in Settings → Memory.
 Turning memory on in a chat that already has messages prepares it in the background ("Preparing
 memory: 120 of 480 messages"); its turns go out as without memory until that's done. The Session
@@ -234,8 +244,8 @@ own instead, on by default. See [Memory](/docs/modes/memory/).
   typed `/mode` answers "The Overseer is always in normal mode."
 - **A project's coding sessions** start on this computer's default profile,
   pinned from their first message, so a later change to the default never moves them. A project has
-  no mode setting of its own: its page names the mode its coding sessions start in, and **Make {name} the
-  Default** in any chat's mode menu changes it. Either Overseer can start or message a coding session
+  no mode setting of its own: its page names the mode its coding sessions start in, and **Update
+  {name}** on the default profile, from any chat's mode menu, changes it. Either Overseer can start or message a coding session
   in normal or Delegate, with any minor modes (never memory) and profile, for that session only. Create
   is chosen in a chat, so neither can name it. Neither
   answers alignment questions: while a session waits on your answers, they can't turn its align off.

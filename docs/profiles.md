@@ -69,8 +69,7 @@ every chat Sova starts with no profile named: New Session, a project's coding se
 project's own coding model, if it has one, is still the session's model) and an Overseer start that
 names none.
 
-- **Choose it** with **Make Default** in Settings → Profiles, or **Make {name} the Default** in a
-  chat's mode menu. Nothing else moves it: picks, switches, model changes and Overseer calls change
+- **Choose it** with **Make Default** in Settings → Profiles. Nothing else moves it: picks, switches, model changes and Overseer calls change
   only that chat.
 - It is kept in `default-profile.json` in Sova's state folder, `{"version": 1, "profile": "<id or
   off>"}`. It never syncs: each computer keeps its own.

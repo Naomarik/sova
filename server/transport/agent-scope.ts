@@ -34,6 +34,12 @@ export const TOOL_DIRS = [".local/share/mise", ".gitlibs", ".cargo", ".rustup", 
 /** The folders inside TOOL_DIRS that tools put on the PATH (shims and bin folders): read-only for the agent, and made
     (empty) when missing once it is confined, so the sandbox can bind them read-only: an install would make one. */
 export const PATH_TOOL_DIRS = [".local/share/mise/shims", ".cargo/bin", "go/bin", ".bun/bin", ".deno/bin", ".volta/bin", ".asdf/shims", ".asdf/bin"] as const;
+/** The version managers' install folders (`<tool>/<version>/bin` in each), relative to the home: every version's bin
+    folder already there is held read-only too, since the user's shell puts it on the PATH (`mise activate`, asdf)
+    while the server's own PATH, which pathDirs reads, doesn't carry it. A version the agent installs is made later,
+    writable. */
+export const VERSION_INSTALL_DIRS = [".local/share/mise/installs", ".asdf/installs"] as const;
+
 /** Made when missing, so a first install has somewhere to go: mise's installs. */
 export const MADE_TOOL_DIRS = [".local/share/mise"] as const;
 
@@ -53,6 +59,15 @@ export function toolDirsToMake(home: string, projectHas: (file: string) => boole
 /** The PATH's folders (absolute ones only), from a PATH string. Pure. */
 export const pathDirsOf = (path: string | undefined): string[] => (path ?? "").split(":").filter((d) => d.startsWith("/")).map((d) => resolve(d));
 
+/** A folder's entries, none when it can't be listed. */
+const listDir = (dir: string): string[] => {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+};
+
 const within = (child: string, parent: string): boolean => {
   const c = resolve(child);
   const p = resolve(parent);
@@ -62,17 +77,23 @@ const within = (child: string, parent: string): boolean => {
 /**
  * The agent's scope. Writable: `folder` (the project's), each of `trees` (the chat's worktrees here) that exists,
  * and each tool folder of TOOL_DIRS under `home` that exists. Read-only inside those tool folders: their PATH folders
- * (PATH_TOOL_DIRS) and each folder of `pathDirs` (the user's PATH) in one. Hidden: each of `hidden` that exists and
+ * (PATH_TOOL_DIRS), each version's bin folder the version managers hold now (VERSION_INSTALL_DIRS), and each folder of
+ * `pathDirs` (the user's PATH) in one. Hidden: each of `hidden` that exists and
  * neither holds nor lies inside a writable root (a project registered at a folder above this one stays readable). Pure
- * but for `exists`.
+ * but for `exists` and `list`.
  */
-export function agentScope(input: { folder: string; trees?: readonly string[]; home: string; hidden?: readonly string[]; pathDirs?: readonly string[]; exists?: (p: string) => boolean }): AgentScope {
+export function agentScope(input: { folder: string; trees?: readonly string[]; home: string; hidden?: readonly string[]; pathDirs?: readonly string[]; exists?: (p: string) => boolean; list?: (dir: string) => string[] }): AgentScope {
   const exists = input.exists ?? existsSync;
+  const list = input.list ?? listDir;
   const folder = resolve(input.folder);
   const tools = TOOL_DIRS.map((d) => join(input.home, d)).filter(exists);
   const writable = [...new Set([folder, ...(input.trees ?? []).map((t) => resolve(t)).filter(exists), ...tools])];
   const inTool = (p: string) => tools.some((t) => within(p, t));
-  const readOnly = [...new Set([...PATH_TOOL_DIRS.map((d) => join(input.home, d)), ...(input.pathDirs ?? []).map((d) => resolve(d))])].filter(inTool);
+  const versionBins = VERSION_INSTALL_DIRS.map((d) => join(input.home, d))
+    .filter(inTool)
+    .flatMap((root) => list(root).flatMap((tool) => list(join(root, tool)).map((v) => join(root, tool, v, "bin"))))
+    .filter(exists);
+  const readOnly = [...new Set([...PATH_TOOL_DIRS.map((d) => join(input.home, d)), ...versionBins, ...(input.pathDirs ?? []).map((d) => resolve(d))])].filter(inTool);
   const hidden = [...new Set((input.hidden ?? []).filter(Boolean).map((h) => resolve(h)))].filter((h) => exists(h) && !writable.some((w) => within(w, h) || within(h, w)));
   return { version: 1, level: "workspace-write", workspaceRoot: folder, writable, ...(readOnly.length ? { readOnly } : {}), ...(hidden.length ? { hidden } : {}) };
 }

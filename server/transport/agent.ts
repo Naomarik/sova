@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { basename, dirname, join, resolve } from "node:path";
 import type { HEntry } from "../../shared/harness";
 import { ONBOARD_THINKING, onboardModels } from "../projects/onboard";
-import { adminAsked, adminDone, type AgentAsks, cleanCommand, cleanDownloads, cleanWhy, downloadsAllowed, downloadsAsked, hasWaitingAsk, hostsOf, MAX_ADMIN_STEPS, MAX_OUTSIDE_FILES, type OutsideFile, outsideAsked, outsideDone, widenedScope } from "./agent-asks";
+import { adminAsked, adminDone, pathAsked, type AgentAsks, cleanCommand, cleanDownloads, cleanWhy, downloadsAllowed, downloadsAsked, hasWaitingAsk, hostsOf, MAX_ADMIN_STEPS, MAX_OUTSIDE_FILES, type OutsideFile, outsideAsked, outsideDone, widenedScope } from "./agent-asks";
 import { agentArrivedMissing, agentBrief, agentCopyFailed, agentPrivateValues, agentStillMissing } from "./agent-prompt";
 import { type CopyDeps, copyChecks, type CopyPlan, copyPlan, type CopyReading, copyStartText, type CopyView, copyViewOf, copyWaiting, oneAtATime, readCopy, restartOf } from "./arrival-copy";
 import { cleanOutsidePath, outsideRefusal, outsideShown, writeOutside } from "./outside-file";
@@ -115,6 +115,8 @@ export interface AgentDeps {
   /** The user's XDG config folder here (`$XDG_CONFIG_HOME`), where a tool such as the Clojure CLI keeps its config;
       absent or undefined: unset. */
   configHome?(): string | undefined;
+  /** The folders on the user's PATH (absolute): those inside a tool folder stay read-only for the agent. */
+  pathDirs?(): string[];
   /** The names of the host values this device holds for the project at `folder` (its host overlay); read only. */
   hostValues?(folder: string): Set<string>;
   /** The model refs this device's picker lists; null: unreadable. */
@@ -638,12 +640,13 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
   const made = !existsSync(folder);
   mkdirSync(folder, { recursive: true });
   makeToolDirs(folder, deps);
-  const scope = agentScope({ folder, trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden() });
+  const scope = agentScope({ folder, trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden(), pathDirs: deps.pathDirs?.() ?? [] });
   const unconfined = await deps.confine(scope).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
   if (unconfined) {
     if (made && isEmptyDir(folder)) rmdirSync(folder);
     return { needsYou: unconfinedRefusal(deps.device(), unconfined) };
   }
+  holdPathDirs(scope);
   const shown = forAgent(checks);
   const prompt = agentBrief({
     title: req.title,
@@ -656,6 +659,7 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     checks: shown,
     sovaFolders: deps.protectedRoots(),
     writable: scope.writable,
+    ...(scope.readOnly?.length ? { readOnly: scope.readOnly } : {}),
     arrived,
     ...(req.fromSource ? { arrivedProject: true } : {}),
     home: deps.home(),
@@ -673,6 +677,18 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
 }
 
 /** The tool folders a first install of the project at `folder` writes, made when missing (agent-scope.ts toolDirsToMake). */
+/** The PATH's folders in its tool folders (its scope's read-only ones), made empty when missing so the sandbox binds them
+    read-only: an install would otherwise make one and fill it. */
+const holdPathDirs = (scope: AgentScope): void => {
+  for (const d of scope.readOnly ?? []) {
+    try {
+      mkdirSync(d, { recursive: true });
+    } catch {
+      // one the sandbox can't bind stays refused to its file tools all the same
+    }
+  }
+};
+
 const makeToolDirs = (folder: string, deps: Pick<AgentDeps, "home" | "configHome">): void => {
   for (const d of toolDirsToMake(deps.home(), (f) => existsSync(join(folder, f)), deps.configHome?.())) mkdirSync(d, { recursive: true });
 };
@@ -826,13 +842,14 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
     // The project is here now: the tool folders its first install writes are made (the Clojure CLI's config, for one).
     makeToolDirs(resolve(req.project.path), deps);
     // The sites you allowed it stay allowed.
-    const scope: AgentScope = { ...agentScope({ folder: resolve(req.project.path), trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden() }), ...(was?.proxyAllow ? { proxyAllow: was.proxyAllow } : {}) };
-    if (!was || scope.writable.some((w) => !was.writable.includes(w))) {
+    const scope: AgentScope = { ...agentScope({ folder: resolve(req.project.path), trees: req.trees ?? [], home: deps.home(), hidden: await deps.agentHidden(), pathDirs: deps.pathDirs?.() ?? [] }), ...(was?.proxyAllow ? { proxyAllow: was.proxyAllow } : {}) };
+    if (!was || scope.writable.some((w) => !was.writable.includes(w)) || (scope.readOnly ?? []).some((r) => !(was.readOnly ?? []).includes(r))) {
       const unconfined = await deps.confine(scope).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
       if (unconfined) {
         deps.onBlocked?.(req.tid, unconfinedRefusal(deps.device(), unconfined));
         return [];
       }
+      holdPathDirs(scope);
       markAgent(deps.stateRoot(), agent.sessionId, req.tid, deps.now(), scope, agent.path);
       if (!deps.busy(agent.path)) await deps.reopen?.(agent.path).catch(() => undefined);
     }
@@ -1048,18 +1065,19 @@ export function askDownloads(deps: AskDeps, sessionId: string, input: { items?: 
 }
 
 /** A command needing administrator rights (transport_setup admin): put on its card for you to run yourself. Never run. */
-export function askAdmin(deps: AskDeps, sessionId: string, input: { command?: unknown; why?: unknown }): AskAnswer {
+export function askAdmin(deps: AskDeps, sessionId: string, input: { command?: unknown; why?: unknown }, kind?: "path"): AskAnswer {
   const own = ownAgent(deps.stateRoot(), sessionId);
   if ("error" in own) return { ok: false, error: own.error };
   const c = cleanCommand(input.command);
   if ("error" in c) return { ok: false, error: c.error };
   const steps = own.a.admin ?? [];
   // The same command asked again while it waits is the one step.
-  if (steps.some((s) => s.state === "asked" && s.command === c.command)) return { ok: true, text: adminAsked(c.command) };
+  const said = kind === "path" ? pathAsked(c.command) : adminAsked(c.command);
+  if (steps.some((s) => s.state === "asked" && s.command === c.command)) return { ok: true, text: said };
   if (steps.filter((s) => s.state === "asked").length >= MAX_ADMIN_STEPS) return { ok: false, error: `${MAX_ADMIN_STEPS} commands already wait for the user: end your turn.` };
   const why = cleanWhy(input.why);
-  saveAgent(deps, own.tid, { ...own.a, state: "needs-you", admin: [...steps, { id: newId("ad"), command: c.command, ...(why ? { why } : {}), state: "asked" as const, at: deps.now() }].slice(-MAX_ADMIN_STEPS * 2) });
-  return { ok: true, text: adminAsked(c.command) };
+  saveAgent(deps, own.tid, { ...own.a, state: "needs-you", admin: [...steps, { id: newId("ad"), ...(kind ? { kind } : {}), command: c.command, ...(why ? { why } : {}), state: "asked" as const, at: deps.now() }].slice(-MAX_ADMIN_STEPS * 2) });
+  return { ok: true, text: said };
 }
 
 /** `handed`: the agent has been told. `checked`: the checks were read again after the turn that hands it (at once when a

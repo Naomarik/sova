@@ -1,6 +1,7 @@
 // Where the Transport agent's tools may reach (§app.transport/agent "Confined"): Sova's own sandbox, given a scope
 // the way a sandboxed parent hands one to its workers (the sandbox extension's `--sandbox-parent`). It writes only
-// in the project's folder, the chat's worktrees and the tool folders installs fill in the user's home; the caches
+// in the project's folder, the chat's worktrees and the tool folders installs fill in the user's home, never a folder
+// on the user's PATH; the caches
 // installs use (~/.cache, ~/.npm, ~/.m2) and mise's and pnpm's state stay the sandbox's own private copies, as for
 // every confined chat. Hidden from it besides the policy's own list: this device's host values (host.json), the
 // transport records that carry the source's, the chat homes and the other projects registered here.
@@ -14,19 +15,27 @@ export interface AgentScope {
   level: "workspace-write";
   workspaceRoot: string;
   writable: string[];
+  /** Read-only inside the writable folders: the PATH's folders in the tool folders. */
+  readOnly?: string[];
   hidden?: string[];
   /** The sites its network reaches, once you allowed a download list (§app.transport/agent "Downloads, on your click"):
       what it reached before plus exactly the hosts allowed. Absent: the policy's own allowlist. */
   proxyAllow?: string[];
 }
 
-/** The tool folders under the user's home an install fills (version managers, toolchains, user programs, git deps, the
-    Clojure CLI's own config folder in either of its places), writable when they exist. The caches and mise's and
+/** The tool folders under the user's home an install fills (version managers, toolchains, git deps, the Clojure CLI's
+    own config folder in either of its places), writable when they exist, but for the folders on the user's PATH in them
+    (PATH_TOOL_DIRS, and any folder the PATH names in one): those stay read-only, so nothing the agent installs runs as
+    a program of the user's next shell or chat; putting a program on the PATH is asked on its card (transport_setup
+    `path`). The user's own bin folder (~/.local/bin) is on the PATH, so it is none of them. The caches and mise's and
     pnpm's state are the sandbox's private copies already; mise writes nothing of its own under ~/.config for an
     install, so that stays read-only. */
-export const TOOL_DIRS = [".local/share/mise", ".local/bin", ".gitlibs", ".cargo", ".rustup", "go", ".bun", ".deno", ".volta", ".asdf", ".clojure", ".config/clojure"] as const;
-/** Made when missing, so a first install has somewhere to go: mise's installs and the user's own bin folder. */
-export const MADE_TOOL_DIRS = [".local/share/mise", ".local/bin"] as const;
+export const TOOL_DIRS = [".local/share/mise", ".gitlibs", ".cargo", ".rustup", "go", ".bun", ".deno", ".volta", ".asdf", ".clojure", ".config/clojure"] as const;
+/** The folders inside TOOL_DIRS that tools put on the PATH (shims and bin folders): read-only for the agent, and made
+    (empty) when missing once it is confined, so the sandbox can bind them read-only: an install would make one. */
+export const PATH_TOOL_DIRS = [".local/share/mise/shims", ".cargo/bin", "go/bin", ".bun/bin", ".deno/bin", ".volta/bin", ".asdf/shims", ".asdf/bin"] as const;
+/** Made when missing, so a first install has somewhere to go: mise's installs. */
+export const MADE_TOOL_DIRS = [".local/share/mise"] as const;
 
 /** The Clojure CLI's config folder for the user (CLJ_CONFIG's default, which its first run fills with deps.edn and
     tools/): `$XDG_CONFIG_HOME/clojure` when that is set, else `~/.clojure`. Pure. */
@@ -35,11 +44,14 @@ export const clojureConfigDir = (home: string, xdgConfigHome?: string): string =
 /** The tool folders made when missing before the agent's scope is read (absolute): MADE_TOOL_DIRS, and the Clojure CLI's
     config folder when the project runs the CLI (a deps.edn) and that folder is one of TOOL_DIRS. Pure. */
 export function toolDirsToMake(home: string, projectHas: (file: string) => boolean, xdgConfigHome?: string): string[] {
-  const out = MADE_TOOL_DIRS.map((d) => join(home, d));
+  const out: string[] = MADE_TOOL_DIRS.map((d) => join(home, d));
   const clj = clojureConfigDir(home, xdgConfigHome);
   if (projectHas("deps.edn") && TOOL_DIRS.some((d) => resolve(join(home, d)) === resolve(clj))) out.push(clj);
   return out;
 }
+
+/** The PATH's folders (absolute ones only), from a PATH string. Pure. */
+export const pathDirsOf = (path: string | undefined): string[] => (path ?? "").split(":").filter((d) => d.startsWith("/")).map((d) => resolve(d));
 
 const within = (child: string, parent: string): boolean => {
   const c = resolve(child);
@@ -49,16 +61,20 @@ const within = (child: string, parent: string): boolean => {
 
 /**
  * The agent's scope. Writable: `folder` (the project's), each of `trees` (the chat's worktrees here) that exists,
- * and each tool folder of TOOL_DIRS under `home` that exists. Hidden: each of `hidden` that exists and neither holds
- * nor lies inside a writable root (a project registered at a folder above this one stays readable). Pure but for
- * `exists`.
+ * and each tool folder of TOOL_DIRS under `home` that exists. Read-only inside those tool folders: their PATH folders
+ * (PATH_TOOL_DIRS) and each folder of `pathDirs` (the user's PATH) in one. Hidden: each of `hidden` that exists and
+ * neither holds nor lies inside a writable root (a project registered at a folder above this one stays readable). Pure
+ * but for `exists`.
  */
-export function agentScope(input: { folder: string; trees?: readonly string[]; home: string; hidden?: readonly string[]; exists?: (p: string) => boolean }): AgentScope {
+export function agentScope(input: { folder: string; trees?: readonly string[]; home: string; hidden?: readonly string[]; pathDirs?: readonly string[]; exists?: (p: string) => boolean }): AgentScope {
   const exists = input.exists ?? existsSync;
   const folder = resolve(input.folder);
-  const writable = [...new Set([folder, ...(input.trees ?? []).map((t) => resolve(t)).filter(exists), ...TOOL_DIRS.map((d) => join(input.home, d)).filter(exists)])];
+  const tools = TOOL_DIRS.map((d) => join(input.home, d)).filter(exists);
+  const writable = [...new Set([folder, ...(input.trees ?? []).map((t) => resolve(t)).filter(exists), ...tools])];
+  const inTool = (p: string) => tools.some((t) => within(p, t));
+  const readOnly = [...new Set([...PATH_TOOL_DIRS.map((d) => join(input.home, d)), ...(input.pathDirs ?? []).map((d) => resolve(d))])].filter(inTool);
   const hidden = [...new Set((input.hidden ?? []).filter(Boolean).map((h) => resolve(h)))].filter((h) => exists(h) && !writable.some((w) => within(w, h) || within(h, w)));
-  return { version: 1, level: "workspace-write", workspaceRoot: folder, writable, ...(hidden.length ? { hidden } : {}) };
+  return { version: 1, level: "workspace-write", workspaceRoot: folder, writable, ...(readOnly.length ? { readOnly } : {}), ...(hidden.length ? { hidden } : {}) };
 }
 
 /** `<stateRoot>/transport-agent.json`: the agents' records (server/transport/agent.ts keeps them). */

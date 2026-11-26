@@ -29,8 +29,9 @@ export interface TransportAgentView {
   checks: { id: string; ok: boolean; detail: string }[];
   /** Its download list: each tool, its version and the site it comes from; asked until your Allow. */
   downloads?: { id: string; items: { tool: string; version: string; host: string }[]; why?: string; state: "asked" | "allowed" };
-  /** Commands needing administrator rights, for you to run yourself; asked until your Done. */
-  admin?: { id: string; command: string; why?: string; state: "asked" | "done" }[];
+  /** Commands for you to run yourself, asked until your Done: needing administrator rights, or (`kind` "path") putting a
+      program on your PATH, which the agent's sandbox never writes. */
+  admin?: { id: string; kind?: "path"; command: string; why?: string; state: "asked" | "done" }[];
   /** Files the project needs that live outside it on the device the chat came from (`from`), as `~/…` in its home and
       here; asked until your Bring From (brought, or kept when one was already here) or I Placed It Myself. */
   outside?: { id: string; path: string; folder: string; why?: string; from: string; state: "asked" | "brought" | "kept" | "placed" }[];

@@ -25,8 +25,8 @@ const STATE: Record<"working" | "ready" | "needs-you", { word: string; tone: "ac
  * arrived chat it also asks for each host value this device lacks for the project, prefilled with the source's value
  * (Save Values writes them here, on your click), and says why the agent couldn't start when this device can't confine it.
  * On either device it shows what the agent asks you: a download list (each tool, its version and its site), which
- * Allow Downloads lets it fetch from exactly those sites, and a command needing administrator rights, which you run
- * yourself (Copy Command beside it) and answer with Done, and a file that lives outside the project on the device the
+ * Allow Downloads lets it fetch from exactly those sites, and a command needing administrator rights or putting a program
+ * on your PATH (whose folders the agent never writes), which you run yourself (Copy Command beside it) and answer with Done, and a file that lives outside the project on the device the
  * chat came from (Copy Path beside it), which Bring From {device} copies here once or you place yourself. After arrival
  * Ready means the app runs: the chat's running copy is up and its entry page answers, and Open App opens it. Every button
  * sits in one row at the card's foot: the answers first, the first of them primary, then Open App, then Open Agent Chat.
@@ -219,7 +219,10 @@ export function TransportAgentCard(props: { card: TransportAgentNote }) {
                 <Show when={askedSteps().length > 1}>
                   <span class="transport-agent-card-command-n">Command {i() + 1}.</span>{" "}
                 </Show>
-                This needs administrator rights, which the agent doesn't have. Run it yourself in a terminal on {device()}:
+                {st.kind === "path"
+                  ? "This puts a program on your PATH, which the agent can't write to."
+                  : "This needs administrator rights, which the agent doesn't have."}{" "}
+                Run it yourself in a terminal on {device()}:
               </p>
               <div class="transport-agent-card-command-row">
                 <pre class="transport-agent-card-command text-mono">{st.command}</pre>

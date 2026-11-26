@@ -332,6 +332,38 @@ test("a command needing administrator rights is never run: the card shows it, an
   assert.ok(!d.ran.some((call) => call.join(" ").includes("apt-get")), "nothing here ever ran it");
 });
 
+test("a command putting a program on the PATH is never the agent's: the card shows it as one for you to run, and only your Done tells the agent to go on", async () => {
+  const root = scratchRoot("transport-asks-");
+  const req = request(root);
+  project(req.project.path);
+  mkdirSync(join(req.project.path, "node_modules"), { recursive: true });
+  const COMMAND = "ln -s ~/.local/share/mise/installs/java/21/bin/java ~/.local/bin/java";
+  let asked = false;
+  const d = device(root, {
+    toolResolves: async (t) => asked || t !== "java",
+    busy: () => {
+      if (!asked) {
+        asked = true;
+        const r = askAdmin(d.deps, "agent-1", { command: COMMAND, why: "its build script runs java from the PATH" }, "path");
+        assert.ok(r.ok && /writes a folder on their PATH/.test(r.text), r.ok ? r.text : r.error);
+        return true;
+      }
+      return false;
+    },
+  });
+  const prepared = prepareDestination(req, d.deps);
+  await until(() => !!agentOf(join(root, "state"), req.tid)?.admin?.length);
+  const a = agentOf(join(root, "state"), req.tid)!;
+  assert.deepEqual(agentViewOf(a).admin, [{ id: a.admin![0]!.id, kind: "path", command: COMMAND, why: "its build script runs java from the PATH", state: "asked" }], "the card shows it as a PATH command");
+  assert.equal(a.state, "needs-you");
+  assert.ok(!d.ran.some((call) => call.join(" ").includes("ln -s")), "nothing ran it");
+  const done = await markAdminDone(d.deps, req.tid, a.admin![0]!.id);
+  assert.ok(done.ok);
+  await done.handed;
+  assert.match(d.told.at(-1)!, /The user says they ran this themselves on this device: ln -s/);
+  assert.deepEqual(await prepared, { ready: true });
+});
+
 test("Ready is refused while an item is missing: a tool not installed at the version the project pins, or anything still asked of you", async () => {
   const root = scratchRoot("transport-asks-");
   const req = request(root);

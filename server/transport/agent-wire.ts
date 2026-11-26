@@ -18,7 +18,7 @@ import { CONTRACT_FILE, parseDefinition } from "../../shared/project-contract";
 import { backendFor } from "../../pi-config/extensions/sandbox/backend.ts";
 import { type AgentCheck, type AgentDeps, type AgentState, afterArrival, agentTurnEnded, allowDownloads, askAdmin, askDownloads, askOutsideFile, bringOutsideFile, copyLogs, isTransportAgent, markAdminDone, markAgent, needsAnswer, placedOutsideFile, prepareDestination, type PrepareRequest, type ProjectRef, settingUpNames, startCopy } from "./agent";
 import type { CopyDeps } from "./arrival-copy";
-import type { AgentScope } from "./agent-scope";
+import { type AgentScope, pathDirsOf } from "./agent-scope";
 import { remoteReachable } from "./git-snapshot";
 import type { SetupDef } from "./setup-def";
 import { bringHelpersToRest, busyOf, type HelperView, interruptWaiting, type SafeDeps } from "./safe-transport";
@@ -260,6 +260,7 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
     reachable: (url) => remoteReachable(url),
     toolResolves: (tool, folder) => miseToolResolves(tool, folder),
     configHome: () => process.env.XDG_CONFIG_HOME,
+    pathDirs: () => pathDirsOf(process.env.PATH),
     networkBase: (folder) => sandboxNetworkBase(folder),
     doctor: async (folder): Promise<AgentCheck[] | null> => {
       const { projectEngine } = await import("../project-services/routes");
@@ -395,15 +396,15 @@ export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: str
     setupRun: (sessionId: string, params: Record<string, unknown>) =>
       params.op === "downloads"
         ? askDownloads(agentDeps, sessionId, params)
-        : params.op === "admin"
-          ? askAdmin(agentDeps, sessionId, params)
+        : params.op === "admin" || params.op === "path"
+          ? askAdmin(agentDeps, sessionId, params, params.op === "path" ? "path" : undefined)
           : params.op === "outside_file"
             ? askOutsideFile(agentDeps, sessionId, params)
             : params.op === "start_copy"
               ? startCopy(agentDeps, sessionId)
               : params.op === "copy_logs"
                 ? copyLogs(agentDeps, sessionId, params)
-                : { ok: false as const, error: "op must be downloads, admin, outside_file, start_copy or copy_logs." },
+                : { ok: false as const, error: "op must be downloads, admin, path, outside_file, start_copy or copy_logs." },
     /** Your Allow, Done, Bring From and I Placed It Myself on the card, here where the agent works (routes.ts, only on your click). */
     allowDownloads: (tid: string, plan: unknown) => allowDownloads(agentDeps, tid, plan),
     adminDone: (tid: string, step: unknown) => markAdminDone(agentDeps, tid, step),

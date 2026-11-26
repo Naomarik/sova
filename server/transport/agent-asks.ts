@@ -21,9 +21,11 @@ export interface DownloadPlan {
   allowedAt?: number;
 }
 
-/** A command needing administrator rights, for you to run: `asked` until your Done. */
+/** A command for you to run yourself: one needing administrator rights, or (`kind` "path") one putting a program on
+    your PATH, whose folders the agent's sandbox holds read-only. `asked` until your Done. */
 export interface AdminStep {
   id: string;
+  kind?: "path";
   command: string;
   why?: string;
   state: "asked" | "done";
@@ -146,6 +148,10 @@ export const downloadsAsked = (items: readonly DownloadItem[]): string =>
 /** The tool's answer to a command for the user. Pure. */
 export const adminAsked = (command: string): string =>
   `The Transport card shows the user this command to run themselves: ${command}\nNever run it, or anything else with sudo. End your turn now; you'll be told when the user has run it.`;
+
+/** The tool's answer to a command that puts a program on the user's PATH. Pure. */
+export const pathAsked = (command: string): string =>
+  `The Transport card shows the user this command to run themselves, since it writes a folder on their PATH: ${command}\nNever try it yourself or put the program on the PATH another way. End your turn now; you'll be told when the user has run it.`;
 
 /** What the agent hears once you allowed its list. Pure. */
 export const downloadsAllowed = (items: readonly DownloadItem[]): string =>

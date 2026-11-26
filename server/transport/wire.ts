@@ -100,8 +100,8 @@ export interface AgentView {
   checks: { id: string; ok: boolean; detail: string }[];
   /** Its download list (§app.transport/agent "Downloads, on your click"): asked, or allowed by your click. */
   downloads?: { id: string; items: { tool: string; version: string; host: string }[]; why?: string; state: "asked" | "allowed" };
-  /** Commands needing administrator rights it asked you to run yourself. */
-  admin?: { id: string; command: string; why?: string; state: "asked" | "done" }[];
+  /** Commands it asked you to run yourself: needing administrator rights, or (`kind` "path") putting a program on your PATH. */
+  admin?: { id: string; kind?: "path"; command: string; why?: string; state: "asked" | "done" }[];
   /** Files outside the project on the device the chat came from it asked you to bring or place (§app.transport/agent). */
   outside?: { id: string; path: string; folder: string; why?: string; from: string; state: "asked" | "brought" | "kept" | "placed" }[];
 }
@@ -129,7 +129,7 @@ export const agentViewOf = (a: AgentView): AgentView => {
         }
       : {}),
     ...(Array.isArray(a.admin) && a.admin.length
-      ? { admin: a.admin.slice(-16).map((s) => ({ id: str(s?.id, 40), command: str(s?.command, 1000), ...(s?.why ? { why: str(s.why, 300) } : {}), state: s?.state === "done" ? ("done" as const) : ("asked" as const) })) }
+      ? { admin: a.admin.slice(-16).map((s) => ({ id: str(s?.id, 40), ...(s?.kind === "path" ? { kind: "path" as const } : {}), command: str(s?.command, 1000), ...(s?.why ? { why: str(s.why, 300) } : {}), state: s?.state === "done" ? ("done" as const) : ("asked" as const) })) }
       : {}),
     ...(Array.isArray(a.outside) && a.outside.length
       ? {

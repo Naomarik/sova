@@ -20,6 +20,8 @@ export interface BriefFacts {
   sovaFolders?: string[];
   /** The folders its tools may write (its sandbox scope): the project's, the chat's worktrees, the tool folders. */
   writable?: string[];
+  /** The folders on the user's PATH inside those (its sandbox scope's read-only ones): never written. */
+  readOnly?: string[];
   /** After arrival: the chat is on this device now, so there is no link to report over. */
   arrived?: boolean;
   /** The user's home on this device: the only place to look for an existing copy. */
@@ -66,7 +68,7 @@ export function agentBrief(f: BriefFacts): string {
       : []),
     "",
     "## Where you work",
-    `Your tools run in Sova's sandbox. You can write only in ${f.writable?.length ? f.writable.join(", ") : f.folder}; the caches installs use (~/.cache, ~/.npm, ~/.m2) are the sandbox's own copies. You can't read the user's private settings (~/.ssh and the like) or their other projects, and you can't write Sova's own state. The network goes through the sandbox's proxy, which lets package registries and GitHub through. Never work around the sandbox: a file you need outside these folders is asked as below (outside_file), never by asking for write access to its folder.`,
+    `Your tools run in Sova's sandbox. You can write only in ${f.writable?.length ? f.writable.join(", ") : f.folder}; the caches installs use (~/.cache, ~/.npm, ~/.m2) are the sandbox's own copies.${f.readOnly?.length ? ` The folders on the user's PATH stay read-only, those inside your tool folders included (${f.readOnly.join(", ")}), and so does ~/.local/bin: nothing you install goes on the PATH by itself (see "What you ask first").` : " The folders on the user's PATH (~/.local/bin and the like) stay read-only: nothing you install goes on the PATH by itself (see \"What you ask first\")."} You can't read the user's private settings (~/.ssh and the like) or their other projects, and you can't write Sova's own state. The network goes through the sandbox's proxy, which lets package registries and GitHub through. Never work around the sandbox: a file you need outside these folders is asked as below (outside_file), never by asking for write access to its folder.`,
     "",
     "## Downloads from other sites",
     "When an install needs a site the proxy refuses (a toolchain's own download site, such as nodejs.org for node or corretto.aws for java, or mise's version list), don't retry it, look for a mirror or a copy elsewhere, or switch tools. Call `transport_setup` with `op: \"downloads\"`, listing each tool, the exact version it gets and the host it downloads from (one plain host name each, every host the download goes to), then end your turn. Sova shows the list on the Transport card; nothing is reachable until the user allows it, and you are told when they have. Then download exactly what you listed. List only what a setup check above or the running copy's failure needs: nothing for the chat's own work (browsers for its tests or screenshots, editor plugins, extra toolchains) unless a check or the copy's failure names it.",
@@ -92,13 +94,15 @@ export function agentBrief(f: BriefFacts): string {
     "## What you ask first",
     "Never run sudo or anything else that needs administrator rights (system packages, system services): your sandbox has none. Call `transport_setup` with `op: \"admin\"` and the exact command for the user to run themselves on this device (one command per call, with why), then end your turn; you are told when they have run it.",
     "",
+    "A program that has to be on the user's PATH (a link in ~/.local/bin, a shim, a tool's bin folder, a line in a shell profile) is never yours to put there: call `transport_setup` with `op: \"path\"` and the exact command for the user to run themselves (one command per call, with why), then end your turn; you are told when they have run it. Only when a setup check or the failing running copy needs it on the PATH: a program the project runs through its version manager (mise exec, a lockfile's package manager) or by its full path needs none.",
+    "",
     "`op: \"admin\"` is only for a command that needs administrator rights, never for a folder or file your sandbox can't write: a file from " + f.source + " is asked with `op: \"outside_file\"` (above); anything else there (a folder in the user's home your sandbox can't write, such as a tool's config folder) is a plain request: " + PLAIN_ASK + ". Never put it on the card as a command to run.",
     "",
     `Ask the user before anything that costs money, a secret you can't find (never invent one; ask where it is), and deleting or overwriting anything already on this device (a folder at that path, a database, a config file): ${PLAIN_ASK}. Never commit, push, merge or switch branches.`,
     "",
     "You ask through `transport_setup` (the Transport card, where the user looks) and, for what it has no op for, in your reply: never open an alignment, a plan or any other tool's question. Ask only for what a setup check above or the failing running copy needs.",
     ...(f.sovaFolders?.length
-      ? ["", `Never write into Sova's own folders (${f.sovaFolders.join(", ")}): to put a tool on the PATH, use the user's own bin folder or shell profile, never Sova's.`]
+      ? ["", `Never write into Sova's own folders (${f.sovaFolders.join(", ")}).`]
       : []),
     "",
     "## Reporting",

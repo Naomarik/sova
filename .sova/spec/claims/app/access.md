@@ -9,7 +9,9 @@ behalf.
 It listens on `127.0.0.1:4800`, loopback only, unless the server is started with `HOST` or `PORT`
 set (`HOST=0.0.0.0` exposes it on every address of the machine on purpose; `PORT=0` takes any free
 port). The installed `sova` launcher passes both through to the server, and with no `PORT` set it starts
-the server on the port it was installed with (`--port`, default `4800`). The public side of
+the server on the port it was installed with (`--port`, default `4800`). Beside that, it listens on
+the same port at this machine's address on each network the person trusted on the Access page, for
+the devices on that network alone (§app.access/networks). The public side of
 Sova — the share listener and preview links — is not this claim: it keeps its own tokens and its
 own edge (§mesh.public, §app.baton/share-listener).
 
@@ -55,7 +57,8 @@ Independently of the token, and even when it is right, it refuses with `403`:
   (never a forwarded one): `127.0.0.1`, `localhost` or `[::1]` on any port, this machine's own
   hostname, any MagicDNS name (`*.ts.net`, which only Tailscale resolves — so `tailscale serve`
   reaches the app even while the mesh is off and its own name unknown), the front door's and the
-  serve URL's names, every address of this machine while the server is bound to all of them (`0.0.0.0`), and
+  serve URL's names, every address of this machine while the server is bound to all of them (`0.0.0.0`),
+  this machine's address on each trusted network Sova is listening at (§app.access/networks), and
   any name listed in `SOVA_ALLOWED_HOSTS`. A domain name that merely resolves here is refused.
 - a **cross-site request**: an `Origin` that is not one of the app's own, or, with no such
   `Origin`, a `Sec-Fetch-Site` of `same-site` or `cross-site`. The app's own origins are matched
@@ -63,7 +66,8 @@ Independently of the token, and even when it is right, it refuses with `403`:
   this server's port, this machine's hostname on it (and each of its addresses while bound to all
   of them), the mesh's own MagicDNS name on any port, a `*.ts.net` page whose origin is exactly
   `https://` and the real `Host` (name and port; another tailnet's page is another site), the front
-  door, this host's and each peer's serve URL, and any origin listed in `SOVA_ALLOWED_ORIGINS`. This, not the cookie, is what refuses
+  door, this host's and each peer's serve URL, the exact `http://<address>:<port>` of each trusted
+  network's listener while it is open, and any origin listed in `SOVA_ALLOWED_ORIGINS`. This, not the cookie, is what refuses
   a page on another port of the same machine — the browser counts it as the same site and sends it
   the cookie — and what stops a page the person visits, or a rebound hostname, from acting for
   them; a page behind the front door, whose proxy names this host in `Host`, passes by its own
@@ -79,6 +83,17 @@ Independently of the token, and even when it is right, it refuses with `403`:
   CORS preflight.
 
 Sova makes no demand on a body's content type: the token and the two rules above are the gate.
+
+**A trusted network's listener also judges the source.** On the listener Sova opens at a trusted
+network's address (§app.access/networks), a connection whose own address is outside every trusted
+range is closed at accept, before any page, and the same check runs again on each request and each
+socket upgrade, so a range no longer trusted is cut off on connections already open. The source is
+the connection's own remote address alone, never an `X-Forwarded-*` or other header. A connection
+that passes is then gated exactly as above: token, host rule and cross-site rule.
+
+**Sign-in always applies on a trusted network.** While Sova listens on any trusted network it counts
+as reachable from elsewhere, and the token is asked for on every listener: `SOVA_AUTH=off` never
+applies to a trusted network's listener, nor to the loopback one while a trusted listener is open.
 
 Never asked for the token, and reachable exactly as before: a call with no socket at all (the
 Overseer's own dispatch, schedules, decide loops, tests through `app.request`), and a call on the
@@ -98,7 +113,8 @@ by its raw spelling: decoded once, with repeated slashes collapsed and letter ca
 `/%61pi/…`, `/API/…` or `//api/…` is `/api` and needs the token. A spelling that can't be judged
 that way (an encoded `.`, `/` or `\`, a bad escape, or a `%` still left after decoding) is never
 the shell and needs the token too. `SOVA_AUTH=off` stops asking for the token, for a test
-rig, and only while the server is bound to loopback; the host and cross-site rules hold anyway.
+rig, and only while the server is bound to loopback and listens on no trusted network; the host and
+cross-site rules hold anyway.
 
 **A browser on this machine is not asked.** Opening the app's own address on the machine Sova runs
 on just works: a request that carries **no proxy header at all** (nothing from a front, a relay or
@@ -108,8 +124,9 @@ it — `Sec-Fetch-Mode: navigate` with `Sec-Fetch-Site` either `same-origin` (a 
 script cannot set, is answered and given the cookie instead of the unlock screen. Every other caller keeps the rules
 above unchanged: a request carrying proxy headers (which is how the tailnet reaches this listener,
 through loopback), a cross-site request, a page on another port of this host, a foreign Host, and
-any caller that sets no fetch metadata at all still needs the token. The rule is a convenience for
-the person at the keyboard, never a licence for the network. A guided-tour recorder is not that
+any caller that sets no fetch metadata at all still needs the token, and so does every browser on a
+trusted network, its own navigation included. The rule is a convenience for the person at the
+keyboard, never a licence for the network. A guided-tour recorder is not that
 person (§app.tours/sites): every request it makes carries `X-Sova-Tour-Recorder: 1`, and silent
 local sign-in, unlock, /api/auth/token and pairing all refuse a request carrying it; a recorder
 signs in to its own managed test copy only by a cookie Sova sets for that exact address. A request carrying the header, whatever its value, also has every method but GET and HEAD refused,
@@ -168,13 +185,15 @@ alternative for someone who has that launcher.
   named only as the alternative for a person who installed through the installer's launcher — never
   as the only way, because a checkout has no such command.
 - **One address at a time.** Unlocking one address of this Sova does not unlock another: the cookie
-  is scoped to the host it was set for, so `127.0.0.1`, `localhost` and a tailnet name each need
-  their own unlock, while two ports of one host share one. The screen says so, and the pairing code
+  is scoped to the host it was set for, so `127.0.0.1`, `localhost`, a tailnet name and a trusted
+  network's address each need their own unlock, while two ports of one host share one. The screen
+  says so, and the pairing code
   is the way across — a code is not bound to the address that minted it and works at any address
   this server allows, which is why the access page names the address to open and not merely a link.
-- **The phone.** A device reaching the app through `tailscale serve` gets in with a pairing code
-  read off a browser that is already unlocked, or with the token its owner copies to it; its host
-  name counts as reachable by the rule above.
+- **The phone.** A device reaching the app through `tailscale serve`, or at this machine's address
+  on a trusted network (§app.access/networks), gets in with a pairing code read off a browser that
+  is already unlocked, or with the token its owner copies to it; its host name or that address
+  counts as reachable by the rule above. A trusted network never lets a device in without one.
 - **Its copy.** Heading "Unlock Sova"; "This browser hasn't been let into this Sova yet."; "A pairing
   code is the way in: on any browser that's already in, open Access to make a code, then open this
   address with `#c=<code>` after it, or paste the code here." The choice, legend **What are you
@@ -185,8 +204,9 @@ alternative for someone who has that launcher.
   for the token, the token file's path (`~/.pi/agent/sova/auth-token`, or `sova/auth-token` under the
   server's `PI_CODING_AGENT_DIR`) with `sova token` and `sova open` as the launcher's alternative.
   **Unlock** is disabled while the field is empty or a try is under way; a refusal shows its reason
-  under the field. The foot: "Unlocking covers this address only: `127.0.0.1`, `localhost` and a
-  tailnet name each need their own, while two ports of one host share one."
+  under the field. The foot: "Unlocking covers this address only: `127.0.0.1`, `localhost`, a
+  tailnet name and a trusted network's address each need their own, while two ports of one host
+  share one."
 
 ## §app.access/callers — Everything that is not a browser
 
@@ -240,8 +260,8 @@ Every caller keeps working with no new step for the person:
 
 ## §app.access/your-click — What only your own click passes
 
-Nineteen approvals are listed here. Eighteen pass only on what Sova takes for the person's own click
-in its page on this machine; the nineteenth, choosing where links open, is a narrower door that a
+Twenty approvals are listed here. Nineteen pass only on what Sova takes for the person's own click
+in its page on this machine; the twentieth, choosing where links open, is a narrower door that a
 script holding the operator token passes too (**Where links open**, below). Both hold but for what
 the Overseer keeps and a schedule on another computer (§app.access/other-roads). Each one lets
 something act later without asking, so the ordinary roads of a chat, a script (but at that narrower
@@ -258,6 +278,7 @@ every chat.
 | Lowering a chat's sandbox | `POST /api/sandbox` | The Sandbox rows in that chat's composer |
 | Approving a project tool | `POST /api/mode` with `projectModes` and `approve` | **Approve and Turn On** in that chat's mode menu |
 | Trusting a project's or an extension's cards | `POST /api/session-cards/trust` with `on: true` | **Trust {name}'s Cards** on one of its cards |
+| Trusting a network | `POST /api/auth/networks/trust`, for a listed network or a typed range | **Trust Network** in the confirmation that a network's **Trust…** or **Trust Range…** opens on the Access page's Networks card (§app.access/networks) |
 | Restarting Sova | `POST /api/updates/restart`, or Apply of Sova's own checkout (`POST /api/project-services/apply`, `POST /api/projects/:pid/services/apply`) | **Restart Sova** in Settings → General (the Running Copies tab offers no Apply) |
 | Updating Sova | `POST /api/updates/check`, `POST /api/updates/apply`, `PUT /api/updates/settings` | Settings → General |
 | How much CPU agents may use | `PUT /api/settings/agent-cpu` | **Limit agents' CPU** and its cores in Settings → General (§app.load-priority/ceiling) |
@@ -297,7 +318,9 @@ every chat.
   a power turned On with this refusal (§app.commands/catalogue). Extensions are the exception: Turn
   Off and Remove stay at the page too, as everything that changes an MCP server does
   (§app.mcp/reads), so a misled chat can't quietly turn one off. The agents' CPU ceiling is another:
-  tightening it stays at the page too, so a misled chat can't slow every agent.
+  tightening it stays at the page too, so a misled chat can't slow every agent. **Stop Trusting** a
+  network only narrows, so it stays open to whoever can reach that local-only route
+  (§app.access/networks).
 - **What still passes.** **Apply and Approve** on a Settings change card is your click
   (§app.project-overseer/settings). A rewind or regenerate in the page past a raise still lowers the
   sandbox (§chat.sandbox/toggle). A fork opens at its fork point's sandbox state, so from an Off
@@ -413,17 +436,28 @@ own cookie. The code is a secret in its own right and is treated as one.
   consumed; a bad, spent or expired one is refused
   with the same 401 a bad token gets, and a spent code is never accepted twice.
 - **Every address a device can use.** The answer names each of them, as its own link: the origin
-  the minting page is served from, and the tailnet's own HTTPS address — this host's serve URL when
-  it has one, else `https://<its MagicDNS name>:8443` — with its port. Never a bare IP address, and
-  never http for the tailnet one. A code is exchanged at whichever of those origins the other
+  the minting page is served from, the tailnet's own HTTPS address — this host's serve URL when
+  it has one, else `https://<its MagicDNS name>:8443` — with its port, and, for each trusted network
+  Sova is listening at (§app.access/networks), `http://<this machine's address on it>:<port>`. That
+  plain http address on a trusted network is the one bare IP address offered beside loopback: an IP
+  address is named only while it is a trusted network's open listener, and the tailnet one is never
+  http. A code is exchanged at whichever of those origins the other
   device opens, so one code serves every link; an address this server cannot know is simply absent,
   and a page with no reachable-from-elsewhere link says so rather than offering a loopback one to a
   phone that cannot open it.
-- **The phone's way in is the tailnet link.** The page leads with the address another device can
-  reach — the tailnet HTTPS one — and renders it as a **QR** the phone scans, drawn in the page
-  itself from a vendored encoder (no external service, no image request), with a copy control
-  beside every other address. The QR carries a live single-use code, so the page keeps saying the
-  link is private.
+- **The phone's way in is the address it can reach.** The page renders one address another device
+  can reach as a **QR** the phone scans, drawn in the page itself from a vendored encoder (no
+  external service, no image request), with a copy control beside every address. The QR carries a
+  live single-use code, so the page keeps saying the link is private.
+- **What the QR points at.** After a code is made, a **QR points at** picker lists the addresses
+  reachable from another device: Tailscale (its HTTPS address, when known), every trusted network
+  Sova is listening at, and the address the page is open at when another device can reach it.
+  Picking one redraws the QR for it; the code is the same, and it works at every one. The browser
+  remembers the last pick and starts on it the next time it is offered, else on the first, with
+  Tailscale leading. Under a QR at a plain http address the page says what the phone misses there:
+  notifications, installing Sova as an app, voice input and some Copy buttons; under a trusted
+  network's, also that it opens only on a device connected to that same network, so a privacy VPN
+  such as Mullvad, which doesn't connect your own devices to each other, won't do.
 - **Who may mint.** Only a browser the gate already trusts: the route is behind the gate like every
   other, and it is **local-only** — a call carrying `c.env.meshPeer` (the peer listener) or a
   relayed one is refused, so a paired peer cannot mint itself the owner's credential.
@@ -440,14 +474,16 @@ own cookie. The code is a secret in its own right and is treated as one.
   with a status line: "No code made yet. Make one when your other device is ready.", "Making a code
   for your other device…", "Your code is ready. Keep the code and link private." or "The code
   couldn't be made. Try making a code again." A made code shows:
-  - the QR of the first link, when that link is reachable from another device (not loopback),
-    with "Scan with your phone's camera. Keep this QR and its link private." ("This link is too long
-    for an easy-to-scan QR. Copy the link to your other device instead." when it won't fit); with no
-    such link, "Sova has to be reached by its tailnet address for a phone to pair. Open Sova at that
-    address, then make another code.";
+  - the **QR points at** picker and the QR of the picked link, when a link is reachable from
+    another device (not loopback), with "Scan with your phone's camera. Keep this QR and its link
+    private." ("This link is too long for an easy-to-scan QR. Copy the link to your other device
+    instead." when it won't fit), and under a plain http QR the notes above; with no such link, "No address here can
+    be opened from another device. Open Sova at its tailnet address, or trust a network under
+    Networks, then make another code.";
   - the **Pairing code** field, read-only, and a countdown ("4:59 left"; then "This code has
     expired. Make another code.");
   - one read-only field per link, labelled **Phone · Tailscale** (the tailnet HTTPS address),
+    **Phone · {network}** (a trusted network's address, named as the Networks list names it),
     **This address** (the page's own origin) or **This machine only** (the page's origin when it is
     `localhost`), each with **Copy Link** ("Link copied." / "The link wasn't copied. Select it and
     copy it yourself."), disabled once the code expired.
@@ -458,3 +494,67 @@ own cookie. The code is a secret in its own right and is treated as one.
 - **The token, in full, only where it is needed.** The same page may show the install's token
   behind a second, deliberate step — for the case where the exchange route itself is what is broken
   — and never by default.
+
+## §app.access/networks — The networks another device may connect from
+
+Out of the box the main listener answers this machine alone (§app/access), and a phone reaches it
+through Tailscale, whose `tailscale serve` carries it to loopback over HTTPS. Any other network is
+opened only by the person trusting it on the Access page, one network or range at a time. Trusting a
+network lets its devices connect; it never signs them in: each still pairs once with a code
+(§app.access/devices), and the gate asks for the token there as everywhere (§app.access/gate).
+
+- **The list.** The Access page's **Networks** card ("Where other devices may reach this Sova")
+  lists Tailscale first, as its HTTPS address set up through Tailscale. Then each VPN this machine
+  has up: named where Sova can tell — Tailscale (Headscale looks the same), WireGuard, ZeroTier,
+  NetBird, Nebula — else plain **VPN**, with its interface name, this machine's address on it and the
+  range it covers, each marked **Trusted** or **Not trusted**. Below the VPNs come this machine's
+  Wi-Fi and wired networks, each marked as not a VPN. Docker, virtual-machine and bridge networks,
+  loopback, link-local addresses and interfaces that are down are never listed. A VPN whose address
+  has no range of its own is listed with the range its routes cover, or as "range unknown: add it
+  below" when none can be read. Sova finds all of this from the operating system's own interface
+  tables and routes, and Tailscale's own local API when it answers, on Linux and macOS, with nothing
+  installed and no other VPN program asked; it looks again every 30 seconds, so the list follows
+  networks as they come up and go down.
+- **Trusting one.** **Trust…** on a listed network, or **Trust Range…** after typing one in **Add a
+  range** (such as `10.224.0.0/22`), opens a confirmation naming the range, how many addresses it
+  holds and what a device there may then do: reach this Sova's unlock screen and pair with a code.
+  Only its **Trust Network** trusts it; cancelling changes nothing.
+- **Private ranges only.** A range must lie inside 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
+  100.64.0.0/10 (the shared range Tailscale, Headscale and NetBird use) or fd00::/8 (IPv6
+  unique-local). One that reaches any public address, `0.0.0.0/0` or `8.8.8.0/24` alike, is refused
+  outright with the reason, and so is one that isn't a range; nothing is trusted. The confirmation
+  warns when the range is wider than the network it sits on, or sits on none of this machine's
+  networks; above 65,536 addresses it shows the count, and **Trust Network** stays off until the range is
+  typed again exactly.
+- **Wi-Fi and wired.** Trusting a network marked not a VPN shows a stronger warning: traffic there is
+  plain HTTP, readable by anyone on that network, including the sign-in, which never expires; trust
+  only a network you control, such as home, never a café's or an office's.
+- **What trusted does.** Sova then also listens at this machine's address on that network, on its
+  own port, and answers there only connections whose own address is inside a trusted range; any
+  other connection is cut off before it sees any page (§app.access/gate). A browser there is never
+  signed in without a pairing code or the token, and once in it is an ordinary browser of this Sova:
+  like a phone through `tailscale serve`, it counts as local, so it may make a code itself. With
+  `HOST=0.0.0.0` Sova already answers on every network, token required; the card says so instead of
+  offering per-network switches.
+- **Until Stop Trusting.** Trust is kept in `<state root>/trusted-networks.json` (mode 0600) and lasts
+  across restarts until **Stop Trusting**. It follows the network: while its VPN is down Sova does
+  not listen there and the row reads **Trusted · waiting** with why, and when it comes back Sova
+  listens again on its own, retrying a listener it couldn't open every 15 seconds.
+- **Stop Trusting** needs no confirmation and closes every open connection from that network at once,
+  live sockets included; its devices are then cut off like any other. It signs nobody out: a
+  device's sign-in lasts until the install's token is reset (§app.access/token), and works again if
+  the network is trusted again.
+- **Who may.** Trusting, `POST /api/auth/networks/trust` with the range (and, above 65,536
+  addresses, the range typed again), passes only on the person's own click in the page
+  (§app.access/your-click); a chat, a script, a tool, an extension, a mesh peer and the Overseer are
+  refused with where to click (§design.copy-deck/your-click), and nothing changes. It re-checks the
+  range itself, so a refused range or a missing retype is refused there too, and with `HOST=0.0.0.0`
+  it answers that there is nothing to trust per network. Stop Trusting, `POST
+  /api/auth/networks/untrust`, only narrows, so any local caller holding the token may do it. The
+  list, `GET /api/auth/networks`, and the check of a range before its confirmation, `POST
+  /api/auth/networks/check`, only read. All four are local-only, never a mesh peer's or a relayed
+  call, and refuse a guided-tour recorder.
+- **What Sova can't see.** It can't tell whether a phone can really reach it through a listed
+  network: a privacy VPN connects to the internet, not to your other devices. A firewall on this
+  machine (macOS's incoming-connections prompt, a Linux firewall) may still block the phone; the
+  card says what to check.

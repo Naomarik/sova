@@ -458,6 +458,7 @@ the person clicks.
 | Going back past a sandbox raise, not from the page | Only the user lowers a chat's sandbox. Ask them to rewind this chat in the page. Nothing was changed. |
 | A project tool | Approving a project mode's tools needs the user's own click. Ask them to turn {id} on in that chat's mode menu. Nothing was turned on. |
 | A schedule through a mesh peer, its proof failed or missing | This computer couldn't confirm your click with the one the schedule is on. Try Approve again, or approve it on that computer's page. Nothing was approved. |
+| Trusting a network | Only the user trusts a network. Ask them to press Trust on the Access page. Nothing was trusted. |
 | Restarting Sova | Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted. |
 | Updating Sova | Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed. |
 | How much CPU agents may use | Only the user changes how much CPU agents may use. Ask them to do it in Settings → General. Nothing was changed. |

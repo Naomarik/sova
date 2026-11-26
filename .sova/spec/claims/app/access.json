@@ -58,10 +58,11 @@
     "kind": "behavior",
     "requires": [
       "§app.access/gate",
-      "§app.access/unlock"
+      "§app.access/unlock",
+      "§app.access/networks"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "package.json",
       "server/auth-devices.ts",
@@ -76,8 +77,19 @@
       "src/lib/qr-reference.ts",
       "src/lib/qr-reference.json",
       "src/lib/qr.ts",
-      "server/app.ts"
-    ]
+      "server/app.ts",
+      "server/auth.test.ts",
+      "shared/networks.ts",
+      "src/lib/networks.ts",
+      "src/lib/networks.test.ts",
+      "src/lib/api.ts",
+      "docs/getting-started.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-26T16:15Z",
+      "source": "pi-session:a4cea2f9-9509-4ec5-859b-51b9f0f41d49#8e7f2d91"
+    }
   },
   "§app.access/gate": {
     "kind": "behavior",
@@ -100,8 +112,57 @@
       "server/caller-keys.ts",
       "server/tours/runner-header.ts",
       "server/design/live-link.ts",
-      "server/design/live-route.ts"
-    ]
+      "server/design/live-route.ts",
+      "server/ws.ts",
+      "server/networks/live.ts",
+      "server/networks/listeners.ts",
+      "server/trusted-networks.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-26T16:15Z",
+      "source": "pi-session:a4cea2f9-9509-4ec5-859b-51b9f0f41d49#8e7f2d91"
+    }
+  },
+  "§app.access/networks": {
+    "kind": "behavior",
+    "requires": [
+      "§app.access/gate",
+      "§app.access/your-click",
+      "§app.access/token"
+    ],
+    "authority": "accepted",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-26T16:15Z",
+      "source": "pi-session:a4cea2f9-9509-4ec5-859b-51b9f0f41d49#8e7f2d91"
+    },
+    "code": [
+      "shared/networks.ts",
+      "server/networks/detect.ts",
+      "server/networks/probe.ts",
+      "server/networks/ranges.ts",
+      "server/networks/store.ts",
+      "server/networks/listeners.ts",
+      "server/networks/live.ts",
+      "server/networks/routes.ts",
+      "server/networks/detect.test.ts",
+      "server/networks/ranges.test.ts",
+      "server/networks/routes.test.ts",
+      "server/trusted-networks.integration.test.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "server/page-only.ts",
+      "src/components/NetworksCard.tsx",
+      "src/components/AccessPage.tsx",
+      "src/lib/networks.ts",
+      "src/lib/networks.test.ts",
+      "src/lib/api.ts",
+      "src/app.css",
+      "scripts/run-tests.mjs",
+      "docs/getting-started.md"
+    ],
+    "evidence": "verified"
   },
   "§app.access/other-roads": {
     "kind": "behavior",
@@ -178,7 +239,12 @@
       "src/lib/auth.ts",
       "src/lib/socket.ts",
       "src/main.tsx"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-26T16:15Z",
+      "source": "pi-session:a4cea2f9-9509-4ec5-859b-51b9f0f41d49#8e7f2d91"
+    }
   },
   "§app.access/your-click": {
     "kind": "behavior",
@@ -201,7 +267,7 @@
       "§app.access/click-limits"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/page-only.ts",
       "server/session-offers-routes.ts",
@@ -268,12 +334,14 @@
       "server/agent-cpu.ts",
       "server/agent-cpu.test.ts",
       "AGENTS.md",
-      "server/playbook-runs/routes.ts"
+      "server/playbook-runs/routes.ts",
+      "server/networks/routes.ts",
+      "server/trusted-networks.integration.test.ts"
     ],
     "agreed": {
-      "by": "claude-opus-5-5",
-      "at": "2026-11-18T09:21Z",
-      "source": "pi-session:01a16fb8-66ef-7539-b91a-750e70105d42#f6240ff1"
+      "by": "user",
+      "at": "2026-11-26T16:15Z",
+      "source": "pi-session:a4cea2f9-9509-4ec5-859b-51b9f0f41d49#8e7f2d91"
     }
   },
   "§app/access": {
@@ -287,12 +355,18 @@
       "server/ws.ts",
       "src/lib/auth.ts",
       "src/components/Unlock.tsx",
-      "scripts/install.sh"
+      "scripts/install.sh",
+      "server/networks/listeners.ts"
     ],
     "notOwned": [
       "§mesh.peers/listener",
       "§mesh.public/preview",
       "§app.baton/share-listener"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-26T16:15Z",
+      "source": "pi-session:a4cea2f9-9509-4ec5-859b-51b9f0f41d49#8e7f2d91"
+    }
   }
 }

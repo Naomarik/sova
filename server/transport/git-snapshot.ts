@@ -1244,6 +1244,29 @@ export async function rebuildWorktrees(o: {
   /** The recorded remote, for a repository the package builds whole (no credentials; null: none). */
   origin?: string | null;
 }): Promise<StagedTree[]> {
+  try {
+    return await rebuildAll(o);
+  } catch (err) {
+    // A rebuild that failed partway leaves nothing beside the folders: every stage it made goes, with git's records
+    // of it and the transport's refs.
+    await dropFailedStages(o).catch(() => {});
+    throw err;
+  }
+}
+
+/** The stages a failed rebuild of `o` may have made (each named for this transport), removed: the linked ones from
+    the repository they were added to first, then the repository's own. */
+async function dropFailedStages(o: Parameters<typeof rebuildWorktrees>[0]): Promise<void> {
+  const main = o.metas.find((m) => m.main);
+  const mainTarget = main ? o.targets[main.name] : o.makeRepo?.path;
+  const mainStage = mainTarget ? stageOf(mainTarget, o.tid) : null;
+  const linked = o.metas.filter((m) => !m.main && o.targets[m.name]).map((m) => ({ stage: stageOf(o.targets[m.name]!, o.tid), target: o.targets[m.name]!, main: false }));
+  const repo = mainStage && existsSync(mainStage) ? mainStage : main ? (mainTarget ?? null) : o.repo;
+  await dropStages(linked, repo && existsSync(repo) ? repo : null, o.tid);
+  if (mainStage && mainTarget) await dropStages([{ stage: mainStage, target: mainTarget, main: true }], null, o.tid);
+}
+
+async function rebuildAll(o: Parameters<typeof rebuildWorktrees>[0]): Promise<StagedTree[]> {
   const ours = (target: string) => (o.ours ?? []).includes(target);
   const out: StagedTree[] = [];
   const main = o.metas.find((m) => m.main);

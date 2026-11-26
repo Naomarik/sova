@@ -374,6 +374,49 @@ test("a publish that stopped right after moving a tree (before recording it) goe
   }
 });
 
+test("a rebuild that fails partway leaves nothing beside the folders: the stages it made go, with git's records of them and the transport's refs; the folder in the way is kept", async () => {
+  // The repository made from the package, then the chat's worktree refused: its folder holds other work.
+  {
+    const { wt } = projectWithChat("fp1");
+    const repo = join(root, "there-fp1", "fp1");
+    const there = join(root, "there-fp1", "fp1-wt");
+    mkdirSync(there, { recursive: true });
+    writeFileSync(join(there, "mine"), "mine\n");
+    const p = await packWorktrees({ tid: "t-fp1", trees: [await surveyWorktree("fp1-wt", wt)], haves: [], outDir: join(root, "pack-fp1"), repo: true });
+    await assert.rejects(rebuildWorktrees({ repo, codeDir: join(root, "pack-fp1"), tid: "t-fp1", metas: p.metas, targets: { "fp1-wt": there }, makeRepo: { path: repo, origin: null, defaultBranch: p.repo!.defaultBranch } }), (e: unknown) => e instanceof SnapshotError && e.reason === "taken");
+    assert.deepEqual(readdirSync(join(root, "there-fp1")).filter((n) => n.includes("incoming")), [], "no stage left");
+    assert.ok(!existsSync(repo));
+    assert.equal(readFileSync(join(there, "mine"), "utf8"), "mine\n");
+  }
+  // In a repository there (a clone): the first worktree rebuilt, the second refused.
+  {
+    const src = join(root, "src-fp2");
+    mkdirSync(src);
+    g(src, "init", "-q", "-b", "master");
+    writeFileSync(join(src, "a"), "a\n");
+    g(src, "add", "a");
+    g(src, "commit", "-qm", "a");
+    const repo = join(root, "there-fp2", "src-fp2");
+    g(root, "clone", "-q", src, repo);
+    const trees = [];
+    for (const n of ["fpa", "fpb"]) {
+      g(src, "worktree", "add", "-q", join(root, n), "-b", n);
+      writeFileSync(join(root, n, "a"), `a\n${n}\n`);
+      g(join(root, n), "commit", "-qam", n);
+      trees.push(await surveyWorktree(n, join(root, n)));
+    }
+    const p = await packWorktrees({ tid: "t-fp2", trees, haves: await havesOf(repo), outDir: join(root, "pack-fp2") });
+    const targets = { fpa: join(root, "there-fp2", "fpa"), fpb: join(root, "there-fp2", "fpb") };
+    mkdirSync(targets.fpb);
+    writeFileSync(join(targets.fpb, "mine"), "mine\n");
+    await assert.rejects(rebuildWorktrees({ repo, codeDir: join(root, "pack-fp2"), tid: "t-fp2", metas: p.metas, targets }), (e: unknown) => e instanceof SnapshotError && e.reason === "taken");
+    assert.deepEqual(readdirSync(join(root, "there-fp2")).filter((n) => n.includes("incoming")), [], "no stage left");
+    assert.ok(!g(repo, "worktree", "list", "--porcelain").includes("incoming"), "git lists no stage");
+    assert.equal(g(repo, "for-each-ref", "refs/sova"), "", "no transport refs left");
+    assert.equal(readFileSync(join(targets.fpb, "mine"), "utf8"), "mine\n");
+  }
+});
+
 test("a folder that holds other work where a tree's move began is never taken for it: the publish refuses, replacing nothing", async () => {
   const src = join(root, "src-hb");
   mkdirSync(src);

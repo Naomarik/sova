@@ -34,7 +34,8 @@ import { feedConnected, feedHeard, listInputsMoved } from "./list-generation";
  * A rows socket that names the label pairs it reads (`&labels=<extId>:<key>,…`, server/session-labels.ts)
  * gets its rows with those labels: the re-diff compares the list with the union of the connected
  * sockets' pairs laid over it, and each socket's frames and `rows_check` digest are cut to its own
- * pairs. With no such socket, or no label stored, the rows frames are exactly as before.
+ * pairs: a change it doesn't read (another socket's label) is a version bump with an empty upsert for
+ * it. With no such socket, or no label stored, the rows frames are exactly as before.
  */
 
 type Send = (msg: SessionFeedMessage) => void;
@@ -415,7 +416,15 @@ export class SessionFeed {
         if (!labelled) {
           const msg = frame(upsert);
           for (const send of this.rowClients) send(msg);
-        } else this.sendCut((f) => frame(upsert.map((r) => lab!.project(r, f))));
+        } else {
+          // Each socket gets only the rows that changed as it sees them: a label it doesn't read moves its version
+          // with an empty upsert, never a row it already holds.
+          const seen = (r: SessionSummary, f: FeedLabelFilter | null): boolean => {
+            const was = prev.get(r.path);
+            return !was || rowEntry(lab!.project(was, f)).key !== rowEntry(lab!.project(r, f)).key;
+          };
+          this.sendCut((f) => frame(upsert.filter((r) => seen(r, f)).map((r) => lab!.project(r, f))));
+        }
       }
     }
     if (this.checkDue && prev) {

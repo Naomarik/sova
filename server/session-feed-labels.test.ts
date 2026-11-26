@@ -87,14 +87,15 @@ describe("a label socket", () => {
     const first = rowsOf(lab).at(-1)!;
     assert.deepEqual(first.upsert.find((r) => r.id === "a")?.labels, { alpha: { owner: "kim" } });
     assert.ok(rowsOf(plain).every((f) => f.upsert.every((r) => r.labels === undefined)));
-    // A label write: the label socket hears it; the plain socket gets the same version with no labels; the old socket no list_changed.
+    // A label write: the label socket hears it; the plain socket gets the same version with no rows; the old socket no list_changed.
     const oldCount = old.length;
     L.setLabels("a", "/s/a.jsonl", "alpha", { owner: "lee" });
     await h.step();
     const last = rowsOf(lab).at(-1)!;
     assert.deepEqual(last.upsert.map((r) => [r.id, r.labels]), [["a", { alpha: { owner: "lee" } }]]);
     assert.equal(rowsOf(plain).at(-1)!.to, last.to);
-    assert.equal(rowsOf(plain).at(-1)!.upsert[0]!.labels, undefined);
+    // A label it doesn't read: its version moves, with no row it already holds.
+    assert.deepEqual(rowsOf(plain).at(-1)!.upsert, []);
     assert.equal(old.slice(oldCount).some((m) => m.type === "list_changed"), false);
     h.feed.stop();
   });

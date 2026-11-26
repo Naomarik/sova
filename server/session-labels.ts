@@ -327,6 +327,24 @@ export function projectLabels(row: SessionSummary, pairs: LabelPairs | null): Se
   return withField(row, pairs ? pick(row.labels, pairs) : undefined);
 }
 
+/** A linked computer's row as this host passes it on to a page that asked for `pairs`: only those pairs,
+    each value one this host would keep (a peer's answer is data, never trusted to be cut). */
+export function peerRowLabels(row: SessionSummary, pairs: LabelPairs): SessionSummary {
+  const l = row.labels;
+  if (l === undefined) return row;
+  if (!isObj(l)) return withField(row, undefined);
+  const clean: SessionLabels = {};
+  for (const [ext, keys] of pairs.byExt) {
+    const kv = Object.hasOwn(l, ext) ? l[ext] : undefined;
+    if (!isObj(kv)) continue;
+    for (const k of keys) {
+      const v = Object.hasOwn(kv, k) ? cleanLabelValue(kv[k]) : null;
+      if (v !== null) (clean[ext] ??= {})[k] = v;
+    }
+  }
+  return withField(row, Object.keys(clean).length ? clean : undefined);
+}
+
 /** One row (a single-row read) with the labels `pairs` names. */
 export function rowWithLabels(row: SessionSummary, pairs: LabelPairs): SessionSummary {
   return withLabels([row], pairs)[0]!;

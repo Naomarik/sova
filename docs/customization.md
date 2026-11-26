@@ -173,8 +173,8 @@ moves, changes or deletes it. A folder is an extension when it holds `sova-exten
 ```
 
 - Required: `version: 1`, `id`, `title` and `needsContract`, the rules it needs, a string `"<major>.<minor>"`.
-  A key Sova doesn't know is refused. `commands`, `screens`, `cards` and `drawings` mean what they mean in a list
-  entry below, with `dist` read as `page`.
+  A key Sova doesn't know is refused. `commands`, `screens`, `cards`, `drawings` and `records` mean what they mean
+  in a list entry below, with `dist` read as `page`.
 - `page`: a folder holding its `index.html`. `backend.run`: the program as words, never a shell line.
   `backend.folder`: the program's own code; with none, the whole extension folder. Both stay inside the folder,
   and neither may lie in `.git`, `node_modules`, `.worktrees` or `.agent`, anywhere, or in `data` or `logs` directly
@@ -456,6 +456,35 @@ never on a later poll, and draws what you answer as data:
   after 3 in a row Sova stops asking until the page reloads. The user can hide the line from your
   page (`Hide on Home Card`). While your backend is down, Sova doesn't ask.
 
+**Labels on a chat** (extension contract v1.21). Your backend may keep a few short labels of its own on
+any chat on this computer, such as who owns it, and read them back. They are kept beside the chat
+(`<state root>/session-labels.json`), never in its file, and nothing reaches the model. Only your key sets
+them, and only under your own extension's id: Sova's token, a page and a linked computer are refused (403).
+
+```
+POST /api/sessions/labels   (x-sova-token: your key)
+{ "id": "<session id>", "labels": { "owner": "kim", "where": null } }
+→ { "id": "<session id>", "labels": { "owner": "kim" } }
+
+GET /api/sessions/labels?id=<session id>   → { "id": …, "labels": { "<extension id>": { "owner": "kim" } } }
+GET /api/sessions/labels                   → { "sessions": { "<session id>": { "<extension id>": { … } } } }
+```
+
+- A write merges: each key you name is set, `null` deletes it, the keys you leave out stay. A key is 1 to
+  32 of `a-z 0-9 -`, starting with a letter or digit; a value is 1 to 64 plain characters (trimmed, no line
+  breaks); at most 8 keys of yours on one chat. A bad key or value is a 400, an unknown chat a 404, and
+  nothing is written. The reads are this computer's own: a linked computer is refused.
+- Each write that changes something is told on Sova's event stream (`/ws/events`) as `session.labelled`
+  `{ id, path, extension }`, the ids only. `session.created` tells you of a new chat, so you can label it.
+- On the session list a chat carries `labels` (`{ "<extension id>": { "<key>": "<value>" } }`) only for a
+  request that names the pairs it reads: `labels=<extension id>:<key>,…` (at most 16) on `GET /api/sessions`,
+  `GET /api/sessions/summary`, `GET /api/sessions/by-id/<id>`, the list's feed socket and
+  `GET /api/mesh/sessions`, which asks each linked computer for the same pairs. Only those pairs come back,
+  and a chat with none of them has no field. A request that names none, or names them wrongly, gets
+  exactly the list it always got, and so does a linked computer that names none: a Sova with no
+  extension sees no change from a server whose extension labels its chats. Sova's own page names a pair
+  only while a list declaration (below) names its owner label.
+
 **The session list's people** (extension contract v1.21). With `"screens": ["list"]`, your backend
 says who the people in the list are, and which of your labels on a chat (`POST /api/sessions/labels`)
 names its owner. From that, Sova draws two things of its own: a person menu in the sessions pane's
@@ -499,6 +528,30 @@ most 64 KB of JSON:
 - A late, malformed or oversized answer is dropped, and your last good answer stays. After 3 bad
   answers in a row Sova stops asking until the page reloads. The user can turn the people off from
   your extension's page (`Hide People in Session List`).
+
+**Who started a chat and who typed each message** (extension contract v1.21). With `"records": ["senders"]`
+(the review says so under **Records**), Sova records, while your extension is on, who started each chat it
+makes and who typed each message sent into a chat on this computer. A caller is `peer:<node id>` for a linked
+computer (its mesh node identity, which a rename doesn't change; a page on that computer typing through its
+peer is that computer), `operator` for this machine's own page or token, and, for who started it, `ext:<id>` for
+an extension's key. A message's caller is an invisible note beside it in the chat's file, never sent to the
+model: the model reads exactly what was typed, and Sova adds no "From" line to it. Who started it is kept
+beside the chat, never in its file. Read both with your key (this computer only, never a linked one's):
+
+```
+GET /api/sessions/senders?path=<session file>
+→ { "startedBy": { "by": "peer:<node id>", "label": "Kim's laptop", "at": 1764100000000 } | null,
+    "messages": [{ "entryId": "<user message id>", "by": "operator" }, …] }
+```
+
+- `label` is the linked computer's name when it was sent, if it had one.
+- What was typed before your extension asked carries no caller, and nothing is recorded while it is off.
+  Only chats made through `POST /api/sessions` (the page's New Session, a script, a key, a linked computer) have
+  a `startedBy`; a chat Sova starts by itself (a helper, a worker, a fork) reads `null`, never `operator`.
+  Without any extension naming `senders`, Sova writes nothing new, to a chat's file or beside it.
+- In an open chat, a message another computer typed reads **From {name}**: the person of the list's
+  declaration (above) whose `callers` hold that caller, else the computer's name. Your own (`self`) and
+  this machine's page read as they always did.
 
 **Cards and drawings in chats** (extension contract v1.17). An entry may add card types and
 drawing kinds to chat transcripts, with the meanings and rules of a project's own

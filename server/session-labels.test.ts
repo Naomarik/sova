@@ -156,6 +156,18 @@ describe("the overlay", () => {
   });
 });
 
+describe("a linked computer's rows, passed on to a page that asked", () => {
+  test("only the asked pairs, each value as this host would keep it; anything else dropped", () => {
+    const pairs = L.parseLabelPairs("alpha:owner")!;
+    const big = row("s1", { labels: { alpha: { owner: "kim", where: "x" }, x: { y: "z".repeat(65_536) } } });
+    assert.deepEqual(L.peerRowLabels(big, pairs).labels, { alpha: { owner: "kim" } });
+    for (const labels of [{ x: { y: "v" } }, { alpha: { owner: "a\nb" } }, { alpha: { owner: "z".repeat(65) } }, { alpha: "kim" }, "kim", { alpha: { owner: 3 } }])
+      assert.equal("labels" in L.peerRowLabels(row("s1", { labels } as never), pairs), false, JSON.stringify(labels));
+    const plain = row("s2");
+    assert.equal(L.peerRowLabels(plain, pairs), plain);
+  });
+});
+
 describe("POST /api/sessions/labels: an extension's key only", () => {
   const KEY = "ext-key-alpha-0123456789";
   initAuthToken();

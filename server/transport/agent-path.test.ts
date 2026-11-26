@@ -31,7 +31,7 @@ for (const f of [
   ".bun/_bun", ".bun/bin/bun", ".bun/install/global/node_modules/cowsay/index.js",
   ".cargo/env", ".cargo/bin/rustc", ".cargo/registry/index/x",
   ".rustup/settings.toml", ".rustup/toolchains/stable-x86_64/bin/rustc",
-  ".local/share/mise/installs/node/22.11.0/lib/node_modules/npm/bin/npx-cli.js", ".local/share/mise/shims/node", ".local/share/mise/plugins/foo/bin/exec-env",
+  ".local/share/mise/installs/node/22.11.0/lib/node_modules/npm/bin/npx-cli.js", ".local/share/mise/installs/.mise-installs.toml", ".local/share/mise/shims/node", ".local/share/mise/plugins/foo/bin/exec-env",
   ".asdf/asdf.sh", ".asdf/installs/python/3.12.1/lib/python3.12/site-packages/evil.pth", ".asdf/shims/python",
   ".volta/bin/node", ".volta/tools/image/node/20.11.0/bin/node", ".volta/tools/user/platform.json",
   ".deno/bin/deno", ".deno/env", ".local/bin/git", "go/bin/gopls", "go/pkg/mod/cache/x",
@@ -51,6 +51,8 @@ test("the agent writes only its tools' install and cache folders: no PATH folder
   const writes = (p: string) => checkWrite(policy, join(home, p)).ok;
   for (const p of [
     "webapps/motors/node_modules/x",
+    // mise's own record of its tools' backends, rewritten at each install (a `mise install` fails when it can't).
+    ".local/share/mise/installs/.mise-installs.toml",
     ".local/share/mise/installs/node/23.1.0/bin/node", ".local/share/mise/installs/python/3.13.0/bin/python", ".local/share/mise/downloads/x", ".local/share/mise/plugins/new-plugin/bin/x",
     ".asdf/installs/python/3.13.0/bin/python",
     ".cargo/registry/cache/x.crate", ".cargo/git/db/x",

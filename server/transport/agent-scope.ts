@@ -108,8 +108,9 @@ const within = (child: string, parent: string): boolean => {
 /**
  * The agent's scope. Writable: `folder` (the project's), each of `trees` (the chat's worktrees here) that exists, and
  * the install and cache subfolders of each tool folder under `home` (TOOL_LAYOUTS) that exist.
- * Read-only inside those: every entry already in a `versions` folder (a link is passed over: it names an entry, and the
- * entry it names is held where it is), and each folder of `pathDirs` (the user's PATH) in one. Hidden: each of `hidden`
+ * Read-only inside those: every entry already at a `versions` folder's last depth (a link is passed over: it names an
+ * entry, and the entry it names is held where it is; a file on the way down is the manager's own record, left
+ * writable), and each folder of `pathDirs` (the user's PATH) in one. Hidden: each of `hidden`
  * that exists and neither holds nor lies inside a writable root (a project registered at a folder above this one stays
  * readable). Pure but for `exists`, `list` and `kind`.
  */
@@ -127,8 +128,10 @@ export function agentScope(input: { folder: string; trees?: readonly string[]; h
       const p = join(dir, name);
       const k = kind(p);
       if (k === "link" || k === "missing") continue;
-      if (depth <= 1 || k === "file") held.push(p);
-      else walk(p, depth - 1);
+      // Only the entries at the last depth are held: a file on the way down (mise's installs/.mise-installs.toml, which
+      // it rewrites at each install) is a manager's own record, which nothing runs.
+      if (depth <= 1) held.push(p);
+      else if (k === "dir") walk(p, depth - 1);
     }
   };
   for (const l of tools) for (const v of l.versions ?? []) walk(join(input.home, l.dir, v.path), v.depth);

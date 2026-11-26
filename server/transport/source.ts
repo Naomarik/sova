@@ -695,9 +695,20 @@ export async function cancelTransport(tid: string): Promise<{ ok: boolean; statu
   } catch {
     if (r.decided) return { ok: false, status: 409, error: `${r.peerLabel} is offline; it may hold the chat already. Try again once it is back.` };
   }
-  if (res && res.status === 409 && res.body.published) {
+  // It is going in there (opening, or partly in place): it can't be called back, so it is followed to its end here.
+  if (res && res.status === 409 && (res.body.published || res.body.publishing)) {
     drive(tid);
-    return { ok: false, status: 409, error: "It already arrived there." };
+    const error = res.body.publishing
+      ? `It is opening on ${r.peerLabel} right now, so it can't be cancelled; it arrives in a moment.`
+      : res.body.error === "It already arrived here." || !res.body.error
+        ? "It already arrived there."
+        : `Part of it is already in place on ${r.peerLabel}, so it can't be cancelled; press Retry to finish it.`;
+    return { ok: false, status: 409, error };
+  }
+  // Decided: the chat may open there on any answer but a yes, so nothing is called off here without one.
+  if (r.decided && res && !res.ok) {
+    drive(tid);
+    return { ok: false, status: 409, error: `${r.peerLabel} didn't cancel it (${String(res.body.error ?? `it answered ${res.status}`).replace(/\.$/, "")}); it may hold the chat already. Try again.` };
   }
   updateTransport(tid, { state: "cancelled", ticket: undefined, ticketBurnt: true });
   await rm(join(spoolDir(), `${tid}.tar.zst`), { force: true });

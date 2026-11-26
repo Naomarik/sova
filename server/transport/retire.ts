@@ -3,13 +3,14 @@
 // the folder), each archive read back before anything goes; only then is the worktree removed, so its branch can't be
 // landed from two devices. Move Back puts both back beside what the package rebuilt, replacing nothing.
 import { execFile } from "node:child_process";
-import { createReadStream, createWriteStream, existsSync, realpathSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, lstatSync, realpathSync } from "node:fs";
 import { lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { createZstdDecompress } from "node:zlib";
 import { git, gitlinksOf } from "./git-snapshot";
 import { compressFolder } from "./package";
+import { checkMembers, listTar, listTarStream, type TarMemberHead } from "./tar";
 
 /** The archive of the folder itself, and of its submodules' git data, in the safety copy's `transport/` folder. */
 export const keptFolder = (keep: string, tid: string, name: string): string => join(keep, `${tid}-code-${name}.tar.zst`);
@@ -68,31 +69,109 @@ export async function unzstd(file: string, out: string): Promise<void> {
   await pipeline(createReadStream(file), createZstdDecompress(), createWriteStream(out, { mode: 0o600 }));
 }
 
-/** Extract `tarFile` into `dir`, never replacing a file already there (GNU tar's --skip-old-files, bsdtar's -k). */
-export function extractKeeping(tarFile: string, dir: string): Promise<void> {
+/** A safety copy whose members may not be written where Move Back puts them: why, said once, nothing restored. */
+export class KeptRefused extends Error {
+  constructor(readonly why: string) {
+    super(`The safety copy was refused: ${why}. Nothing was restored.`);
+  }
+}
+
+/** Is `rel` under `dir` a link already (a member may never be written through it)? */
+const linkThere = (dir: string | null) => (rel: string): boolean => {
+  if (!dir) return false;
+  try {
+    return lstatSync(join(dir, rel)).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+
+/** Why `members` may not be extracted into `dir` (null: no folder yet), or null: the package's own checks
+    (checkMembers): no absolute name or `..`, only files, folders and links, no special bits, nothing through a link. */
+function refusalOf(members: readonly TarMemberHead[], dir: string | null): string | null {
+  return checkMembers(members, linkThere(dir));
+}
+
+/** Why a zstd safety copy may not go into `dir`, or null; read as a stream, never whole, nothing written. */
+export async function keptRefusal(zst: string, dir: string | null): Promise<string | null> {
+  let members: TarMemberHead[] = [];
+  try {
+    await pipeline(createReadStream(zst), createZstdDecompress(), async (src: AsyncIterable<Buffer>) => {
+      members = await listTarStream(src);
+    });
+  } catch (err) {
+    return `it holds ${err instanceof Error ? err.message : String(err)}`;
+  }
+  return refusalOf(members, dir);
+}
+
+/** Extract `tarFile` into `dir`, never replacing a file already there (GNU tar's --skip-old-files, bsdtar's -k).
+    Its members are checked first (read through a file handle, never whole): a refused one writes nothing (KeptRefused). */
+export async function extractKeeping(tarFile: string, dir: string): Promise<void> {
+  let members: TarMemberHead[];
+  try {
+    members = await listTar(tarFile);
+  } catch (err) {
+    throw new KeptRefused(`it holds ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const why = refusalOf(members, dir);
+  if (why) throw new KeptRefused(why);
   const run = (flag: string) =>
-    new Promise<number>((done) => execFile("tar", ["-x", "-p", flag, "-f", tarFile, "-C", dir], { maxBuffer: 8 * 1024 * 1024 }, (err) => done(err ? ((err as { code?: number }).code ?? 1) : 0)));
-  return run("--skip-old-files").then((code) => (code === 0 ? undefined : run("-k").then((c) => (c === 0 ? undefined : Promise.reject(new Error(`tar couldn't restore into ${dir}`))))));
+    new Promise<number>((done) => execFile("tar", ["-x", "-p", "--no-same-owner", flag, "-f", tarFile, "-C", dir], { maxBuffer: 8 * 1024 * 1024 }, (err) => done(err ? ((err as { code?: number }).code ?? 1) : 0)));
+  const code = await run("--skip-old-files");
+  if (code === 0) return;
+  if ((await run("-k")) !== 0) throw new Error(`tar couldn't restore into ${dir}`);
 }
 
 /**
  * Move Back, after the package rebuilt the worktree at `path`: what never travelled comes back from its kept folder
  * (build output, unticked files) beside what is there, and its submodules' git data (their other branches, reflogs,
  * stashes) into its git folder's `modules/`, each replacing nothing the rebuild wrote. `work` is a scratch folder.
+ * Both archives are checked before either is written: one refused restores nothing (KeptRefused).
  */
 export async function restoreKept(keep: string, tid: string, name: string, path: string, work: string): Promise<void> {
   const folder = keptFolder(keep, tid, name);
-  if (existsSync(folder)) {
-    await unzstd(folder, join(work, `${name}.tar`));
-    await extractKeeping(join(work, `${name}.tar`), dirname(path));
-  }
   const data = keptGitData(keep, tid, name);
-  if (existsSync(data)) {
-    const gitDir = (await git(path, ["rev-parse", "--absolute-git-dir"])).stdout.trim();
+  const hasFolder = existsSync(folder);
+  const hasData = existsSync(data);
+  let gitDir = "";
+  if (hasData) {
+    gitDir = (await git(path, ["rev-parse", "--absolute-git-dir"])).stdout.trim();
     if (!gitDir) throw new Error(`${path} isn't a checkout, so its submodules' git data can't go back`);
-    await unzstd(data, join(work, `${name}.git.tar`));
-    await extractKeeping(join(work, `${name}.git.tar`), gitDir);
   }
+  if (hasFolder) await unzstd(folder, join(work, `${name}.tar`));
+  if (hasData) await unzstd(data, join(work, `${name}.git.tar`));
+  for (const [tar, into, has] of [[join(work, `${name}.tar`), dirname(path), hasFolder], [join(work, `${name}.git.tar`), gitDir, hasData]] as const) {
+    if (!has) continue;
+    let members: TarMemberHead[];
+    try {
+      members = await listTar(tar);
+    } catch (err) {
+      throw new KeptRefused(`it holds ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const why = refusalOf(members, into);
+    if (why) throw new KeptRefused(why);
+  }
+  if (hasFolder) await extractKeeping(join(work, `${name}.tar`), dirname(path));
+  if (hasData) await extractKeeping(join(work, `${name}.git.tar`), gitDir);
+}
+
+/**
+ * Why Move Back may not start (checked before the other device is asked to stop it), or null: every archive of the
+ * safety copy that exists is checked as a stream against where it goes. A missing one isn't refused here (Move Back
+ * stops at it and says so, as before).
+ */
+export async function moveBackRefusal(home: string, tid: string, removed: readonly { name: string; path: string }[]): Promise<string | null> {
+  if (!removed.length) return null;
+  const keep = join(home, "transport");
+  const checks: [string, string | null][] = [[join(keep, `${tid}.tar.zst`), null]];
+  for (const x of removed) checks.push([keptFolder(keep, tid, x.name), dirname(x.path)], [keptGitData(keep, tid, x.name), null]);
+  for (const [zst, into] of checks) {
+    if (!existsSync(zst)) continue;
+    const why = await keptRefusal(zst, into);
+    if (why) return new KeptRefused(why).message;
+  }
+  return null;
 }
 
 /** A chat here that isn't the moved one or its team, and isn't archived: its folder and the worktrees it tracks. */

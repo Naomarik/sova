@@ -39,7 +39,7 @@ import { git, publishTrees, rebuildWorktrees } from "./git-snapshot";
 import { isTransportAgent, needsAnswer, setAfterArrival, setBringHelpersToRest, setInterruptWaiting, setIsTransportAgent, setNeedsAnswer, setPrepareDestination, setPreviewExtras, interruptWaiting, releasePause, type ProjectRef } from "./hooks";
 import { allMoved, markMoved, MOVE_BACK_MS, movedOf, unmarkMoved } from "./moved";
 import type { PackageManifest } from "./package";
-import { extractKeeping, keepAndRemoveTree, restoreKept, type TreeUser, treesToRetire, unzstd } from "./retire";
+import { extractKeeping, keepAndRemoveTree, moveBackRefusal, restoreKept, type TreeUser, treesToRetire, unzstd } from "./retire";
 import { cancelTransport, previewTransport, REFUSALS, resumeSources, retryTransport, servedPackage, setSourceDeps, startTransport } from "./source";
 import { activeTransportOf, listTransports, publicView, readTransport, type TransportRecord, updateTransport } from "./store";
 import { type AgentView, agentViewOf, peerPath, PROOF_HEADER, TICKET_HEADER } from "./wire";
@@ -172,14 +172,18 @@ export async function backState(r: TransportRecord, mesh: Pick<Mesh, "peerFetch"
 export async function moveBackToHere(r: TransportRecord, mesh: Pick<Mesh, "peerFetch">): Promise<{ ok: boolean; error?: string }> {
   const st = await backState(r, mesh);
   if (st.can !== "move") return { ok: false, error: st.reason ?? `It has changed on ${r.peerLabel}, so this copies it back as a new chat.` };
+  const home = chatHome(r.chatId);
+  const removed = ((r.ext ?? {}) as { removedTrees?: { name: string; path: string; common: string }[] }).removedTrees ?? [];
+  // The safety copy is checked before the other device is asked anything: one that would write outside where it
+  // goes (or holds what Sova never keeps) is refused here, and the chat keeps running there.
+  const refused = await moveBackRefusal(home, r.tid, removed);
+  if (refused) return { ok: false, error: `${refused} It still runs on ${r.peerLabel}.` };
   // Your click here, proven to the other device over this very request (as an offer's is).
   const body = JSON.stringify({ path: r.path });
   const res = await mesh.peerFetch(r.peer, peerPath.moveBack(r.tid), { method: "POST", headers: { "content-type": "application/json", [PROOF_HEADER]: mintClickProof(r.peer, body) }, body, signal: AbortSignal.timeout(60_000) }).catch(() => null);
   if (!res) return { ok: false, error: REFUSALS.offline(r.peerLabel) };
   if (!res.ok) return { ok: false, error: ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? `${r.peerLabel} answered ${res.status}` };
   // From here the chat runs nowhere until it is restored: a failure is retried (the other side answers "again").
-  const home = chatHome(r.chatId);
-  const removed = ((r.ext ?? {}) as { removedTrees?: { name: string; path: string; common: string }[] }).removedTrees ?? [];
   const at = join(dest.incomingRoot(), `${r.tid}-back`);
   try {
     if (removed.length) {

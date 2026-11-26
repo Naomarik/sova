@@ -5,13 +5,14 @@ import { dropScratchAgentDir } from "../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import { zstdCompressSync } from "node:zlib";
 import { scratchRoot } from "../test-scratch";
 import { packWorktrees, publishTrees, rebuildWorktrees, surveyWorktree } from "./git-snapshot";
-import { keepAndRemoveTree, keptFolder, keptGitData, restoreKept, unzstd } from "./retire";
-import { listTar } from "./tar";
+import { extractKeeping, keepAndRemoveTree, KeptRefused, keptFolder, keptGitData, moveBackRefusal, restoreKept, unzstd } from "./retire";
+import { listTar, type TarEntry, writeTar } from "./tar";
 
 const root = scratchRoot("sova-transport-retire-");
 after(() => {
@@ -102,4 +103,73 @@ test("a Move's worktree holding a submodule with unfinished work is kept whole (
   assert.equal(g(wt, "rev-parse", "--absolute-git-dir").trim(), join(common, "worktrees", "proj-wt"), "its records are named for its folder");
   assert.deepEqual(readdirSync(join(common, "worktrees")).filter((n) => n.includes("incoming")), [], "nothing named for the staging folder");
   assert.equal(g(src, "worktree", "prune", "--dry-run", "-v"), "");
+});
+
+// ---- Move Back's safety copy is checked before a byte is written (the package's own checks) ----------------------
+
+/** A plain tar of `entries` (the package's writer: any name, any link), then `patch` on its bytes. */
+async function craftTar(file: string, entries: TarEntry[], patch?: (b: Buffer) => void): Promise<void> {
+  await writeTar(file, entries);
+  if (!patch) return;
+  const b = readFileSync(file);
+  patch(b);
+  writeFileSync(file, b);
+}
+/** Set header `at`'s byte `off` to `ch` and fix its checksum. */
+function patchHeader(b: Buffer, at: number, off: number, ch: string): void {
+  const h = b.subarray(at, at + 512);
+  h.write(ch, off, "latin1");
+  h.write("        ", 148, 8, "ascii");
+  let sum = 0;
+  for (const x of h) sum += x;
+  h.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
+}
+const dir = (name: string): TarEntry => ({ name, type: "dir", mode: 0o755, mtime: 0 });
+const data = (name: string, mode = 0o644): TarEntry => ({ name, type: "data", mode, mtime: 0, data: Buffer.from("evil\n") });
+
+test("Move Back refuses a safety copy that writes through a link it makes: nothing written, here or outside", async () => {
+  const at = join(root, "through-own");
+  const into = join(at, "into");
+  const outside = join(at, "outside");
+  mkdirSync(into, { recursive: true });
+  mkdirSync(outside);
+  const tar = join(at, "kept.tar");
+  await craftTar(tar, [dir("wt"), { name: "wt/l", type: "symlink", target: outside, mode: 0o777, mtime: 0 }, data("wt/l/authorized_keys")]);
+  await assert.rejects(extractKeeping(tar, into), (err: unknown) => err instanceof KeptRefused && /through a link/.test(err.message) && /Nothing was restored/.test(err.message));
+  assert.deepEqual(readdirSync(outside), [], "nothing outside");
+  assert.deepEqual(readdirSync(into), [], "nothing here either");
+});
+
+test("Move Back refuses a kept folder whose member goes through a link already beside the rebuilt worktree", async () => {
+  const at = join(root, "through-there");
+  const parent = join(at, "code");
+  const outside = join(at, "outside");
+  const keep = join(at, "keep");
+  const work = join(at, "work");
+  for (const d of [join(parent, "wt"), outside, keep, work]) mkdirSync(d, { recursive: true });
+  symlinkSync(outside, join(parent, "wt", "out"));
+  const tar = join(at, "kept.tar");
+  await craftTar(tar, [dir("wt"), data("wt/out/evil")]);
+  writeFileSync(keptFolder(keep, "tb1", "wt"), zstdCompressSync(readFileSync(tar)));
+  await assert.rejects(restoreKept(keep, "tb1", "wt", join(parent, "wt"), work), (err: unknown) => err instanceof KeptRefused && /through a link/.test(err.message));
+  assert.deepEqual(readdirSync(outside), [], "nothing written where the link leads");
+  // Checked before the other device is asked anything, as a stream of the zstd archive.
+  mkdirSync(join(at, "home", "transport"), { recursive: true });
+  writeFileSync(keptFolder(join(at, "home", "transport"), "tb1", "wt"), zstdCompressSync(readFileSync(tar)));
+  assert.match((await moveBackRefusal(join(at, "home"), "tb1", [{ name: "wt", path: join(parent, "wt") }])) ?? "", /The safety copy was refused: .*through a link.*Nothing was restored/);
+});
+
+test("Move Back refuses a safety copy member of a kind Sova never keeps, or with special permission bits", async () => {
+  const at = join(root, "kinds");
+  for (const [name, patch, why] of [
+    ["fifo", (b: Buffer) => patchHeader(b, 512, 156, "6"), /of a kind Sova never sends/],
+    ["setuid", undefined, /special permission bits/],
+  ] as const) {
+    const into = join(at, name);
+    mkdirSync(into, { recursive: true });
+    const tar = join(at, `${name}.tar`);
+    await craftTar(tar, [dir("wt"), data("wt/x", name === "setuid" ? 0o4755 : 0o644)], patch);
+    await assert.rejects(extractKeeping(tar, into), (err: unknown) => err instanceof KeptRefused && why.test(err.message), name);
+    assert.deepEqual(readdirSync(into), [], `${name}: nothing written`);
+  }
 });

@@ -367,6 +367,48 @@ test("an archived chat with no message yet arrives and stays, archived: the re-a
   assert.ok(isArchived(id));
 });
 
+test("Move Back refuses a safety copy here that would write through a link before the other device is asked: it keeps running there", async () => {
+  resetMovedMemo();
+  const { chatHome } = await import("../chat-homes/root");
+  const { PROOF_HEADER } = await import("./wire");
+  const { moveBackToHere } = await import("./routes");
+  const { movedOf } = await import("./moved");
+  const { writeTar } = await import("./tar");
+  const { mkdirSync, readFileSync, readdirSync, writeFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { zstdCompressSync } = await import("node:zlib");
+  const { dest, stopped } = await arrivedThere("tr_mbbad01", "0199aaaa-0000-7000-8000-000000000031");
+  const here = "0199aaaa-0000-7000-8000-000000000032";
+  const outside = join(chatHome(here), "..", "outside-tr_mbbad02");
+  mkdirSync(outside, { recursive: true });
+  // Its package in the safety copy: a link out of the folder, then a file through it.
+  const keep = join(chatHome(here), "transport");
+  mkdirSync(keep, { recursive: true });
+  const tar = join(keep, "crafted.tar");
+  await writeTar(tar, [{ name: "home", type: "dir", mode: 0o700, mtime: 0 }, { name: "home/l", type: "symlink", target: outside, mode: 0o777, mtime: 0 }, { name: "home/l/evil", type: "data", mode: 0o644, mtime: 0, data: Buffer.from("x") }]);
+  writeFileSync(join(keep, "tr_mbbad02.tar.zst"), zstdCompressSync(readFileSync(tar)));
+  const src = createTransport({ tid: "tr_mbbad02", side: "source", mode: "move", chatId: here, sourceChatId: here, title: "t", peer: "laptop", peerLabel: "Laptop", path: "/here.jsonl", folder: "~/x", state: "done", ext: { removedTrees: [{ name: "w", path: join(outside, "..", "w"), common: "/nowhere/.git" }] } });
+  markMoved(here, { tid: src.tid, peer: "laptop", to: "Laptop", at: new Date().toISOString(), arrivedId: here, arrivedPath: "/there.jsonl" });
+  const asked: string[] = [];
+  const mesh = {
+    peerFetch: async (_peer: string, path: string, init?: RequestInit) => {
+      asked.push(path);
+      if (path.endsWith("/move-back")) {
+        const r = await dest.moveBack({ id: "desk" }, "tr_mbbad01", String(init?.body), (init?.headers as Record<string, string>)[PROOF_HEADER] ?? "");
+        return new Response(JSON.stringify(r.body), { status: r.status });
+      }
+      return new Response(JSON.stringify(await dest.statusOf({ id: "desk" }, "tr_mbbad01")));
+    },
+  };
+  const res = await moveBackToHere(readTransport(src.tid)!, mesh);
+  assert.equal(res.ok, false);
+  assert.match(res.error ?? "", /^The safety copy was refused: .*through a link\. Nothing was restored\. It still runs on Laptop\.$/);
+  assert.deepEqual(stopped, [], "the other device wasn't stopped");
+  assert.ok(!asked.some((p) => p.endsWith("/move-back")), "nor asked to");
+  assert.ok(movedOf(here), "it is still the Moved row here");
+  assert.deepEqual(readdirSync(outside), [], "nothing written outside");
+});
+
 /** The device a chat moved to ("desk" asks it, as the device it came from), with an arrived chat that opened there. */
 async function arrivedThere(tid: string, id: string) {
   const { ensureChatHome } = await import("../chat-homes/root");

@@ -15,6 +15,7 @@ export const EVENT_NAMES = [
   "session.renamed",
   "session.tagged",
   "session.archived",
+  "session.labelled",
   "turn.started",
   "turn.ended",
   "attention.changed",
@@ -52,6 +53,8 @@ export type StreamEvent =
   | (Base & OfSession & { name: "session.renamed"; source: "observed"; from: string; title: string })
   | (Base & OfSession & { name: "session.tagged"; source: "observed"; tags: EventTags | null })
   | (Base & OfSession & { name: "session.archived"; source: "observed"; archived: boolean })
+  /** An extension changed its labels on the chat (POST /api/sessions/labels): its id only, never the values. */
+  | (Base & OfSession & { name: "session.labelled"; source: "hosted"; extension: string })
   | (Base & OfSession & { name: "turn.started" | "turn.ended"; source: EventSource })
   | (Base & { name: "attention.changed" })
   /** Ids and type only, never the card's data or answer (§app.events/card-news). */

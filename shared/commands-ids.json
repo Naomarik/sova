@@ -302,7 +302,9 @@
     "project.merge-queue.setup-map",
     "project.merge-queue.setup-history",
     "project.verb.merge.events",
-    "project.merge-queue.events"
+    "project.merge-queue.events",
+    "session.labels.set",
+    "session.labels.get"
   ],
   "retired": [
     "settings.agents.get",

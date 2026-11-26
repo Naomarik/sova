@@ -286,6 +286,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "design.remove": "acts on a design only a model session makes; server/design/batch.test.ts covers it",
   "design.restore": "acts on a design only a model session makes; server/design/batch.test.ts covers it",
   "session.send": "starts a chat process for the turn",
+  "session.labels.set": "only an extension's key sets labels: the token this file runs with is refused before the body is read (server/session-labels.test.ts drives the key)",
   "session.approval.set": "acquires a chat handle, which starts the chat's process (server/approval-in-chat.ts's own tests drive it)",
   "session.configure": "acquires a chat handle, which starts the chat's process",
   "session.mode.set": "acquires a chat handle, which starts the chat's process",
@@ -417,6 +418,8 @@ function anchors(c: CommandEntry): Anchor[] {
   // The job id is checked before the session: a refused anchor (no such session) and a real one (no such job) both carry one.
   if (c.id === "session.job.stop") return [{ anchor: { session: missing[0], id: "j1" }, refuse: true, kind: "refused" }, { anchor: { session: session()[0], id: "j1" }, refuse: false, kind: "real" }];
   if (c.id === "session.tags.set") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
+  // Labels are read by id, for any id (an id with none reads as none); the write refuses every caller but a key before its body.
+  if (c.id === "session.labels.get") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
   if (c.params.session) {
     out.push({ anchor: { session: sessionArg(c, missing) }, refuse: true, kind: "refused" });
     if (!VALIDATE_ONLY[c.id]) out.push({ anchor: { session: sessionArg(c, session(c.id.includes("archive"))) }, refuse: false, kind: "real" });
@@ -592,6 +595,7 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
     oracle: async (_b, v) => assert.ok(JSON.stringify(await read("GET", `/api/sessions/summary?id=${v.session}`)).includes("fuzzed")),
   },
+  "session.labels.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.archive": {
     values: () => ({ session: session(true)[0] }),
     status: 200,

@@ -9,6 +9,7 @@ import { refuseUpgrade } from "./auth";
 import { type NotPage, notPageSocket, yourClickBody } from "./page-only";
 import { RELAYED_HEADER } from "./mesh/proxy";
 import { onCardNews } from "./transcript-cards";
+import { type LabelPairs, parseLabelPairs } from "./session-labels";
 import { chatClosedToKeys, EXTENSION_CHAT_DOOR, extensionFrameRefusal } from "./extension-doors";
 import { sandboxAfterRewind, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { isDirectLocal } from "./compression";
@@ -523,7 +524,7 @@ function handleWatch(ws: WebSocket, path: string, ask: TailAsk, wire: WireVersio
 
 /** /ws/watch?feed=sessions: the session list's decision overlays, pushed (server/session-feed.ts).
     `rows`: the socket asked for the changed rows themselves (`&rows=1`) instead of `list_changed`. */
-function handleFeed(ws: WebSocket, rows: boolean): void {
+function handleFeed(ws: WebSocket, rows: boolean, labels: LabelPairs | null = null): void {
   const feed = sessionFeed();
   if (!feed) {
     sendJson(ws, { type: "error", message: "The session feed is not running" });
@@ -540,7 +541,7 @@ function handleFeed(ws: WebSocket, rows: boolean): void {
       return;
     }
     sendRaw(ws, json);
-  }, { rows });
+  }, { rows, labels });
   // The LLM calls in flight ride the same socket.
   const removeLlm = llmInflight()?.addBrowser((msg) => sendJson(ws, msg));
   ws.on("close", () => {
@@ -612,7 +613,7 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
   server.handleUpgrade(req, socket, head, (ws) => {
     // /ws/watch?feed=sessions: no session at all, the list's pushed overlays.
     if (route === "/ws/watch" && url.searchParams.get("feed") === "sessions") {
-      handleFeed(ws, url.searchParams.get("rows") === "1");
+      handleFeed(ws, url.searchParams.get("rows") === "1", parseLabelPairs(url.searchParams.get("labels")));
       return;
     }
     if (route === "/ws/watch" && url.searchParams.get("feed") === "llm") {

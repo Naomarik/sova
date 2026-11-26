@@ -52,6 +52,7 @@ const full = (): Required<SessionSummary> => ({
   workerSignals: { stuck: 1 },
   turnError: { message: "overloaded" },
   tags: { topic: "feature" },
+  labels: { "team-x": { owner: "kim" } },
   profile: { id: "reviewer", label: "Read-only reviewer", icon: "eye", source: "sova" },
   queueChat: { role: "reviewer" },
   readiness: { trees: [{ path: "/w/t", branch: "feat/x", state: "ready", why: "checks passed" }], badge: "ready", branch: "feat/x", since: 12 },

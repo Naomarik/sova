@@ -64,7 +64,7 @@ describe("the table against the real app", () => {
   });
 
   test("the openings stay open: reads, and speaking and showing under its own name", () => {
-    for (const [m, p] of [["GET", "/api/overseer/notes"], ["GET", "/api/settings/overseer"], ["GET", "/api/merge-queue/cards"], ["POST", "/api/sessions/prompt"], ["POST", "/api/sessions"], ["POST", "/api/session-cards/post"], ["POST", "/api/session-cards/answer"], ["POST", "/api/chat/action"]] as const)
+    for (const [m, p] of [["GET", "/api/overseer/notes"], ["GET", "/api/settings/overseer"], ["GET", "/api/merge-queue/cards"], ["POST", "/api/sessions/prompt"], ["POST", "/api/sessions"], ["POST", "/api/session-cards/post"], ["POST", "/api/session-cards/answer"], ["POST", "/api/chat/action"], ["POST", "/api/sessions/labels"], ["GET", "/api/sessions/labels"]] as const)
       assert.equal(closedDoor(m, p), null, `${m} ${p}`);
   });
 

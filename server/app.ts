@@ -173,6 +173,8 @@ import { readNotes, writeNotes } from "./overseer-store";
 import { problemOf } from "../shared/form-rules";
 import { NOTES_RULE } from "../shared/overseer-limits";
 import { pathOfId, promptSession } from "./session-prompt";
+import { parseLabelPairs, rowWithLabels, withLabels } from "./session-labels";
+import { registerLabelRoutes } from "./session-labels-routes";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
@@ -350,12 +352,19 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/sessions", async (c) => {
     // Several at once (tabs, peers) share a build that started after the request arrived.
     const arrived = Date.now();
+    // Labels only for a request that names the pairs it reads (server/session-labels.ts): none, the list as is.
+    const pairs = parseLabelPairs(c.req.query("labels"));
     const feed = sessionFeed();
-    if (!feed) return c.json(await listSessionsAfresh(arrived));
+    if (!feed) {
+      const list = await listSessionsAfresh(arrived);
+      return c.json(pairs ? withLabels(list, pairs) : list);
+    }
     const { body, epoch, version } = await feed.snapshot(() => listSessionsAfresh(arrived));
     c.header(LIST_VERSION_HEADER, `${epoch}:${version}`);
-    return c.json(body);
+    return c.json(pairs ? withLabels(body, pairs) : body);
   });
+  // Labels on a chat: an extension's key writes them, the main listener reads them back.
+  registerLabelRoutes(app, { pathOfId });
   registerProfileRoutes(app);
   registerProfileSwitchRoutes(app);
   registerTimeSpentRoutes(app);
@@ -2069,7 +2078,8 @@ export function buildApp(deps: AppDeps) {
     const path = await pathOfId(id);
     const summary = path ? await getSessionSummary(path) : null;
     if (!summary) return c.json({ error: "No session with that id" }, 404);
-    return c.json(summary, 200, { "Cache-Control": "no-store" });
+    const pairs = parseLabelPairs(c.req.query("labels"));
+    return c.json(pairs ? rowWithLabels(summary, pairs) : summary, 200, { "Cache-Control": "no-store" });
   }
   app.get("/api/sessions/summary", (c) => summaryById(c, c.req.query("id") ?? ""));
   // The same answer at a path-shaped URL (§mesh.links/by-id): links fill a member's path, resolve a

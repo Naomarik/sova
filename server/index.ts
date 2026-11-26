@@ -85,6 +85,7 @@ import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/
 import { verifiedPeerSocket } from "./mesh/peer-address";
 import { peerUrl } from "./mesh/peers";
 import { onTagsChanged } from "./session-tags";
+import { onLabelled, projectLabels, unionPairs, withLabels } from "./session-labels";
 import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
 import { checkReadinessInputs, configureReadiness } from "./merge-readiness";
@@ -320,6 +321,7 @@ const events = startEvents({
   onChatEvent,
   onAttention: onAttentionNotified,
   onCard: onCardNews,
+  onLabelled,
   holdFeed: () => sessionFeed()?.add(() => {}) ?? null,
   isHosted: (path) => chatHandle(path) !== undefined,
   idOf,
@@ -347,7 +349,11 @@ configureSessionFeed({
   },
   after: feedFrames,
   frameKey: feedFrameKey,
+  // Rows sockets that name label pairs get those labels (server/session-labels.ts); the rest, the list as is.
+  labels: { union: unionPairs, overlay: withLabels, project: projectLabels },
 });
+// A label write is no listing change: the feed compares again, and only label sockets' rows move.
+onLabelled(() => sessionFeed()?.nudge());
 // The LLM calls in flight, pushed on the same feed (server/llm-inflight.ts): this process's own
 // counter, the other processes' live records, and each peer's own count while a browser listens.
 configureLlmInflight({

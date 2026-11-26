@@ -140,8 +140,9 @@
 .session-row-chip-info > .chip-dot { color: var(--status-info); }
 
 /* The list place (lib/list-place, components/ListPlace.tsx): a row's owner as 2 letters in a round
-   mark on its meta line, before the host, on a sunken fill; yours on the tint your own messages wear,
-   with a strong edge, so it reads by its edge as well as its fill. Never a control. */
+   mark on its meta line, before the host: a thin strong edge on a surface fill (the pane is sunken, so
+   a sunken fill vanishes in dark); yours on the tint your own messages wear, with the control-weight
+   edge, so it reads by its edge as well as its fill. Never a control. */
 .owner-mark {
   flex: none;
   display: inline-grid;
@@ -149,8 +150,8 @@
   width: 20px;
   height: 20px;
   border-radius: var(--r-full);
-  border: var(--stroke-thin) solid var(--color-border);
-  background: var(--color-sunken);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  background: var(--color-surface);
   color: var(--color-ink-2);
   font-family: var(--font-body);
   font-size: var(--fs-micro);

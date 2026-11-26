@@ -58,6 +58,7 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   signals: "compare",
   workerSignals: "compare",
   tags: "compare",
+  labels: "compare",
   readiness: "compare",
   branches: "compare",
 };

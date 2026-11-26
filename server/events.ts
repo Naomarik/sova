@@ -48,6 +48,8 @@ export interface EventSources {
   onAttention(fn: () => void): () => void;
   /** What happens to transcript cards (§app.events/card-news); left out: no such news. */
   onCard?(fn: (e: { name: "card.raised" | "card.changed" | "card.answered"; id: string; path: string; card: string; cardType: string }) => void): () => void;
+  /** Labels an extension changed on a chat (`session.labelled`); left out: no such news. */
+  onLabelled?(fn: (e: { id: string; path: string; extension: string }) => void): () => void;
   /** Hold the session feed's loop running as one client does; null when there is no feed. */
   holdFeed(): (() => void) | null;
   /** Does this server hold the session's chat (its turns are hosted events)? */
@@ -257,6 +259,7 @@ export class EventHub {
     );
     this.offs.push(this.sources.onAttention(guard("an attention note", () => this.attentionSoon())));
     if (this.sources.onCard) this.offs.push(this.sources.onCard(guard("a card's news", (e) => this.record({ ...e, source: "hosted" }))));
+    if (this.sources.onLabelled) this.offs.push(this.sources.onLabelled(guard("a label's news", (e) => this.record({ name: "session.labelled", id: e.id, path: e.path, extension: e.extension, source: "hosted" }))));
     const release = this.sources.holdFeed();
     if (release) this.offs.push(release);
   }

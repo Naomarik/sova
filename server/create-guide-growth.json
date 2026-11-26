@@ -441,6 +441,8 @@
    "session.title.set": "scripts",
    "session.title.reset": "scripts",
    "session.tags.set": "scripts",
+   "session.labels.set": "extensions",
+   "session.labels.get": "extensions",
    "session.archive": "scripts",
    "session.unarchive": "scripts",
    "session.configure": "scripts",

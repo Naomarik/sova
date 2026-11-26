@@ -5208,6 +5208,10 @@ export interface SessionTags {
   user?: string[];
 }
 
+/** A chat's labels: `{<extension id>: {<key>: <value>}}`. Keys match /^[a-z0-9][a-z0-9-]{0,31}$/, at most 8
+    per extension per chat; values are plain text of 1 to 64 characters. */
+export type SessionLabels = Record<string, Record<string, string>>;
+
 export interface SessionAlign {
   openDocs: number;
   openQuestions: number;
@@ -5234,6 +5238,11 @@ export interface SessionSummary {
       digest. (A worker that ended in an error is the digest's deterministic "worker-error".) */
   workerSignals?: { stuck: number };
   tags?: SessionTags;
+  /** Labels extensions set on the chat (POST /api/sessions/labels, server/session-labels.ts), by
+      extension id then key. Sent only to a requester that names the pairs it reads (`labels=<extId>:<key>,…`
+      on the list, the row reads, the feed socket and the mesh list) and only those pairs; absent (never
+      empty) when none is set, and on every request that names none. */
+  labels?: SessionLabels;
   /** Merge readiness of the worktrees this session tracks (§chat.worktrees/readiness,
       server/merge-readiness.ts): git and the file, no model, read in the background, so a row
       gains it a moment after it first lists. Absent when the session tracks no worktree of its

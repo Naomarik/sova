@@ -523,8 +523,10 @@ most 64 KB of JSON:
 - Labels are on the rows only while a declaration names them: the page then asks for exactly that
   `<ownerExt>:<ownerKey>` pair, and a linked computer's rows carry it too. A label from another
   computer is drawn only because your declaration names its key; no other label of a chat is drawn.
-  Without any extension naming `list`, Sova asks nothing, keeps no timer, and every row and every
-  list read is exactly what it was.
+  The browser remembers that pair, so the next page load asks for it from its first list read on and
+  your answer arriving changes nothing; once the page knows no declaration is there (your extension
+  is gone, off, or answers 204), it forgets the pair. Without any extension naming `list`, Sova asks
+  nothing, keeps no timer, and every row and every list read is exactly what it was.
 - A late, malformed or oversized answer is dropped, and your last good answer stays. After 3 bad
   answers in a row Sova stops asking until the page reloads. The user can turn the people off from
   your extension's page (`Hide People in Session List`).

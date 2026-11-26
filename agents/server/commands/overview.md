@@ -83,7 +83,8 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
   v1.21): `src/lib/list-place.ts` (the validator: people with 2 letters and callers, the owner label
   key, you; the lane, `createPlaceAnswers` in `row-place.ts` with the row place's pacing, timeout and
   mute, its own switch under `LIST_OFF_KEY`; the first good declaration wins; it alone says which
-  label pair the row reads carry, `src/lib/labels-ask.ts`), `src/components/ListPlace.tsx` (Sova's own
+  label pair the row reads carry, `src/lib/labels-ask.ts`, kept per browser under `sova:labels-read`
+  so a reload starts labelled and the declaration arriving reconnects and redraws nothing), `src/components/ListPlace.tsx` (Sova's own
   owner mark on a row, any host's, and the person menu in the pane's foot beside the host menu).
   App runs the one lane and hands it down through `ListPlaceContext` (the transcript reads its
   callers). With no extension naming `list`: no request, no timer, no node, and today's URLs.

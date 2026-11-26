@@ -1,0 +1,60 @@
+/* A transport's progress (§app.transport/dialog): its steps as a quiet column, a mark at each step's first line (a
+   tick when done, the live dot for the one under way, the alert for one stopped, a hollow dot to come); the step
+   under way in ink, the rest muted. Only the live dot moves. The Sending meter sits under its step. */
+.transport-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.transport-step {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: var(--space-2);
+  align-items: start;
+  color: var(--color-ink-muted);
+}
+.transport-step-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--fs-body) * var(--lh-body));
+}
+.transport-step[data-state="done"] { color: var(--color-ink-2); }
+.transport-step[data-state="done"] .transport-step-mark { color: var(--status-success); }
+.transport-step[data-state="current"] { color: var(--color-ink); font-weight: var(--fw-medium); }
+.transport-step[data-state="failed"] { color: var(--color-ink); font-weight: var(--fw-medium); }
+.transport-step[data-state="failed"] .transport-step-mark { color: var(--status-error); }
+.transport-step-todo {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+}
+.transport-step-text { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.transport-step-text > :not(.transport-step-label) { font-weight: var(--fw-regular); }
+.transport-step-reason { color: var(--color-ink-2); overflow-wrap: anywhere; }
+.transport-meter { max-width: 420px; }
+/* The arrived share, in the accent: this bar reports work happening now, as the live dot beside it does. */
+.transport-meter-fill { background: var(--color-accent); }
+
+/* The chat head's line while a transport runs: under the path line, at its size, the whole line the target. */
+.session-head-transport { margin: 2px 0 0; display: flex; min-width: 0; }
+.transport-head-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+}
+.transport-head-status:hover :is(.transport-head-status-text, .transport-head-status-step) { color: var(--color-ink); text-decoration: underline; }
+.transport-head-status[data-state="needs-you"] { color: var(--status-warn); }
+.transport-head-status[data-state="needs-you"] .transport-head-status-text { color: var(--color-ink); }
+.transport-head-status .icon { width: var(--fs-caption); height: var(--fs-caption); flex: none; }
+.transport-head-status-text { min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.transport-head-status-step { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--color-ink); }
+.transport-head-status[data-state="running"] .transport-head-status-step { color: var(--color-ink-2); }

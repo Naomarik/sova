@@ -1,5 +1,8 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
 import { MovedPanel } from "./TransportDialog";
+import { TransportHeadStatus } from "./TransportProgress";
+import { openTransport } from "./SessionContextMenu";
+import { liveTransportOf, lookForTransport } from "../lib/transport-follow";
 import { sharingOffHere } from "../lib/public-links";
 import { shareHref } from "../lib/share-slice";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../../shared/protocol";
@@ -271,6 +274,12 @@ export function SessionView(props: {
     return [paneName(), cwdLabel(s(), null), ...(cost ? [cost] : [])].filter(Boolean).join(" · ");
   };
 
+  // A transport of this chat under way from here (§app.transport/dialog): its line under the title, read from the
+  // page's one follower of it, asked for once as the chat opens. Transport is this device's own, never a peer's.
+  const transportChat = createMemo(() => (hostOf(path) ? null : (s()?.id ?? null)));
+  createEffect(on(transportChat, (id) => void (id && lookForTransport(id, true))));
+  const liveTransport = () => liveTransportOf(transportChat());
+
   /** The single-session view's head, unchanged: the whole width of the main column. */
   const FullHead = () => (
     <header class="session-head">
@@ -306,6 +315,7 @@ export function SessionView(props: {
             </span>
           </Show>
         </p>
+        <TransportHeadStatus t={liveTransport()} onOpen={() => openTransport(path)} />
       </div>
       <ContextGauge path={path} />
       <ProfileChip summary={s()} info={profileInfo()} />

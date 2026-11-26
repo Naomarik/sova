@@ -2,14 +2,16 @@
 // device and its folder, what travels and what stays, the private files git ignores (ticked), the large
 // untracked files (unticked), what that device still needs, and busy helpers at a Move. Start Transport is
 // your click; then the dialog follows the transport until it is done or needs you (Retry, Cancel).
-import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { sessionHrefOn } from "../lib/mesh";
-import { type BackState, moveBack, type TransportView, sizeText, startTransport, transportAct, transportBack, transportOf, transportPreview, transportsOf } from "../lib/transport-api";
+import { type BackState, moveBack, type TransportView, sizeText, startTransport, transportAct, transportBack, transportPreview } from "../lib/transport-api";
+import { doneLine, followAgain, followTransport, lookForTransport, putTransport, transportById } from "../lib/transport-follow";
 import { announce, toast } from "../lib/ui-state";
 import { type TransportErrorFrom, transportErrorBanner } from "../lib/transport-dialog-error";
 import { Select, TextField, Toggle } from "./form";
-import { type BusyChoice, TransportBusyHelpers, TransportDeviceNeeds, TransportRow, TransportWaiting } from "./TransportHelpers";
+import { type BusyChoice, TransportBusyHelpers, TransportDeviceNeeds, TransportRow } from "./TransportHelpers";
+import { TransportSteps } from "./TransportProgress";
 import { Banner, Icon, trapFocus } from "./ui";
 import "./TransportDialog.css";
 
@@ -18,9 +20,6 @@ const MODES: readonly { id: Mode; label: string; line: string }[] = [
   { id: "move", label: "Move", line: "Hands the chat to that device. Here it becomes a Moved row." },
   { id: "copy", label: "Copy", line: "Leaves this chat here as it is." },
 ];
-
-/** "a", "a and b", "a, b and 2 more". */
-const listWords = (xs: readonly string[]): string => (xs.length <= 2 ? xs.join(" and ") : `${xs.slice(0, 2).join(", ")} and ${xs.length - 2} more`);
 
 /** A ticked-or-not file: its box, its path, its size at the line's end; the whole row is the target. */
 function FileToggle(props: { path: string; size: number; checked: boolean; onChange(): void }) {
@@ -40,32 +39,6 @@ function FileToggle(props: { path: string; size: number; checked: boolean; onCha
   );
 }
 
-const STATE_WORDS = (t: TransportView, size: number | undefined): string => {
-  switch (t.state) {
-    case "preparing":
-      return `Preparing ${t.peerLabel}…`;
-    case "waiting-helpers":
-      return `Waiting for ${t.ext?.waiting ?? 0} helpers to finish`;
-    case "packing":
-    case "sending":
-      return `Sending ${sizeText(t.pkg?.size ?? size ?? 0)}…`;
-    case "checking":
-      return "Checking what arrived…";
-    case "switching":
-      return "Switching…";
-    case "done": {
-      // The Transport agent goes on there after arrival: done says what it is still setting up.
-      const setting = t.ext?.settingUp ?? [];
-      const did = t.mode === "move" ? "Moved" : "Copied";
-      return setting.length ? `${did} to ${t.peerLabel}; setting up ${listWords(setting)} there…` : `${did} to ${t.peerLabel}.`;
-    }
-    case "needs-you":
-      return t.needsYou?.reason ?? `Transport to ${t.peerLabel} stopped. The chat carries on here.`;
-    case "cancelled":
-      return "Cancelled. Nothing moved.";
-  }
-};
-
 export function TransportDialog(props: { path: string; onClose(): void }) {
   const [mode, setMode] = createSignal<Mode>("move");
   const [peer, setPeer] = createSignal<string>("");
@@ -79,21 +52,17 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
   const [model, setModel] = createSignal<string | null>(null);
   const [error, setError] = createSignal<{ from: TransportErrorFrom; text: string } | null>(null);
   const [pending, setPending] = createSignal(false);
-  const [running, setRunning] = createSignal<TransportView | null>(null);
+  // The transport this dialog follows, as the page's follower last read it (the chat's head reads the same one).
+  const [tid, setTid] = createSignal<string | null>(null);
+  const running = (): TransportView | null => transportById(tid());
 
   // A transport of this chat already under way (or needing you) shows its progress, Retry and Cancel.
   createEffect(() => {
     const b = base();
     if (!b) return;
-    void transportsOf(b.chat.id)
-      .then(({ transports }) => {
-        const t = [...transports].reverse().find((x) => x.side === "source" && x.state !== "done" && x.state !== "cancelled");
-        if (t && !running()) {
-          setRunning(t);
-          if (t.state !== "needs-you") follow(t.tid);
-        }
-      })
-      .catch(() => {});
+    void lookForTransport(b.chat.id, true).then((t) => {
+      if (t && !tid()) setTid(t.tid);
+    });
   });
   createEffect(() => {
     const b = base();
@@ -105,27 +74,11 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
     if (p && model() === null) setModel(p.agentModelDefault);
   });
 
-  // Following a started transport: one read every 1.5 s while it is under way.
-  let timer: ReturnType<typeof setInterval> | undefined;
-  const follow = (tid: string) => {
-    clearInterval(timer);
-    timer = setInterval(async () => {
-      const t = await transportOf(tid).catch(() => null);
-      if (!t) return;
-      setRunning(t);
-      if (t.state === "done" || t.state === "cancelled" || t.state === "needs-you") {
-        clearInterval(timer);
-        // A refused action's reason ("It is opening on Laptop right now…") is over once the transport ended.
-        if (t.state !== "needs-you" && error()?.from !== "start") setError(null);
-        if (t.state === "done") {
-          const line = STATE_WORDS(t, undefined);
-          toast(line);
-          announce(line);
-        }
-      }
-    }, 1500);
-  };
-  onCleanup(() => clearInterval(timer));
+  // A refused action's reason ("It is opening on Laptop right now…") is over once the transport ended.
+  createEffect(() => {
+    const t = running();
+    if (t && (t.state === "done" || t.state === "cancelled") && error() && error()!.from !== "start") setError(null);
+  });
 
   const key = (f: { tree: string; path: string }) => `${f.tree}/${f.path}`;
   const toggle = (set: () => Set<string>, put: (s: Set<string>) => void, k: string) => {
@@ -154,8 +107,8 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
         ...(mode() === "move" ? { busyChoice: busy() } : {}),
         ...(model() ? { agentModel: model()! } : {}),
       });
-      setRunning(r.transport);
-      follow(r.tid);
+      followTransport(r.transport);
+      setTid(r.tid);
     } catch (err) {
       setError({ from: "start", text: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -169,12 +122,12 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
     setError(null);
     try {
       await transportAct(t.tid, a);
-      if (a === "cancel") setRunning({ ...t, state: "cancelled" });
-      else follow(t.tid);
+      if (a === "cancel") putTransport({ ...t, state: "cancelled" });
+      else followAgain(t.tid);
     } catch (err) {
       setError({ from: a, text: err instanceof Error ? err.message : String(err) });
       // A refused Cancel: it goes on (opening there, say), so the dialog keeps following it to its end.
-      if (a === "cancel") follow(t.tid);
+      if (a === "cancel") followAgain(t.tid);
     }
   };
 
@@ -202,16 +155,16 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
           </Show>
           <Show when={running()}>
             {(t) => (
-              <div class="stack-2" role="status" aria-live="polite">
-                <Show
-                  when={t().state === "needs-you"}
-                  fallback={
-                    <Show when={t().state === "waiting-helpers"} fallback={<p class="transport-status">{STATE_WORDS(t(), undefined)}</p>}>
-                      <TransportWaiting waiting={t().ext?.waiting ?? 0} onInterrupt={() => void act("interrupt")} />
-                    </Show>
-                  }
-                >
-                  <Banner tone="warn" title={STATE_WORDS(t(), undefined)} />
+              <div class="stack-2">
+                <Show when={t().state === "cancelled"} fallback={<TransportSteps t={t()} onInterrupt={() => void act("interrupt")} />}>
+                  <p class="transport-status" role="status">
+                    Cancelled. Nothing moved.
+                  </p>
+                </Show>
+                <Show when={t().state === "done"}>
+                  <p class="transport-status" role="status">
+                    {doneLine(t())}
+                  </p>
                 </Show>
               </div>
             )}

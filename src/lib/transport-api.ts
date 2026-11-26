@@ -58,6 +58,10 @@ export interface TransportView {
   received?: number;
   ext?: {
     waiting?: number;
+    /** A Move waited for busy helpers (its dialog keeps that step). */
+    waitedHelpers?: boolean;
+    /** The newest readings of the bytes that device held while it pulled, each with when this device read it. */
+    sent?: { at: number; n: number }[];
     /** The Transport agent, as this device knows it (the source keeps what the destination reports). */
     agent?: TransportAgentView;
     /** What the agent sets up there after arrival (short names): done reads "…; setting up … there". */

@@ -14,6 +14,7 @@ import { git, historyBytes, type LooseFile, LARGE_FILE, looseBytes, submodulesOf
 import { bringHelpersToRest, knob, previewExtras } from "./hooks";
 import { movedOf } from "./moved";
 import { buildPackage } from "./package";
+import { mirrorThere } from "./progress";
 import { readSetupDef, type SetupDef } from "./setup-def";
 import { type CarriedSettings, hostCarry } from "./project-carry";
 import { activeTransportOf, createTransport, logName, newTicket, newTid, readTransport, type RunningCopy, stepDone, type TransportRecord, updateTransport } from "./store";
@@ -483,6 +484,8 @@ async function step(r: TransportRecord): Promise<"wait" | "again" | "stop"> {
     const sent = await sendOffer(r.tid);
     return sent.ok ? "wait" : (needsYou(r.tid, sent.error), "stop");
   }
+  // The destination's own steps and the bytes it holds: what the dialog's steps and Sending bar draw (§app.transport/dialog).
+  r = mirrorThere(r, s);
   if (s.agent) await followAgent(r, s.agent);
   if (s.state === "needs-you") return needsYou(r.tid, s.needsYou ?? "it stopped there"), "stop";
   if (s.steps.opened) return finish(r, s);
@@ -519,7 +522,7 @@ async function step(r: TransportRecord): Promise<"wait" | "again" | "stop"> {
     updateTransport(r.tid, { state: "sending" });
     return "wait";
   }
-  updateTransport(r.tid, { ...(s.received !== undefined ? { received: s.received } : {}), state: s.steps.pulled ? "checking" : s.steps.prepared ? r.state : "preparing" });
+  updateTransport(r.tid, { state: s.steps.pulled ? "checking" : s.steps.prepared ? r.state : "preparing" });
   return "wait";
 }
 
@@ -575,7 +578,7 @@ async function pack(r: TransportRecord): Promise<void> {
     updateTransport(r.tid, { ext: { helperIds: helpers.map((h) => h.chatId) } });
     let interrupted: string[] = [];
     let wrapped: string[] = [];
-    const rest = bringHelpersToRest(c.id, r.choices?.busyChoice ?? "safe", (waiting) => void updateTransport(r.tid, { ext: { waiting } }), { signal: ctl.signal });
+    const rest = bringHelpersToRest(c.id, r.choices?.busyChoice ?? "safe", (waiting) => void updateTransport(r.tid, { ext: { waiting, ...(waiting > 0 ? { waitedHelpers: true } : {}) } }), { signal: ctl.signal });
     if (rest) {
       const got = await rest;
       interrupted = got.interrupted;

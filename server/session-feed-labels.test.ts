@@ -58,7 +58,9 @@ async function script(withLabels: boolean, labelSocket: boolean) {
   await new Promise((r) => setTimeout(r, 40)); // a safety net: rows_check
   await settle(h.feed);
   h.feed.stop();
-  return { old: scrub(old), rows: scrub(rows) };
+  // The safety net's timer fires a varying number of times in the wait: each distinct frame, in first-seen order.
+  const distinct = (ms: SessionFeedMessage[]) => [...new Set(scrub(ms))];
+  return { old: distinct(old), rows: distinct(rows) };
 }
 
 describe("inert when no socket names labels, or no label is stored", () => {

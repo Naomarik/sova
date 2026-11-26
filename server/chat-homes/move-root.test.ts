@@ -8,7 +8,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, st
 import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import { CHAT_HOMES_ROOT_ENV, HOMES_ENV, homesRoot, homesRootInfo, MARKER_FILE, onHomesRootSwitch, rebaseHomePath, resetHomesMemoForTests } from "./root";
-import { cancelMove, chatsFolderInfo, currentMove, JOURNAL_FILE, liveSyncOf, MOVE_STATE_FILE, moveHold, moveSettled, type MoveDeps, previewMove, recoverMove, resetMoveForTests, startMove, SUBFOLDER, targetOf } from "./move-root";
+import { cancelMove, chatsFolderInfo, currentMove, JOURNAL_FILE, syncIo, liveSyncOf, MOVE_STATE_FILE, moveHold, moveSettled, type MoveDeps, previewMove, recoverMove, resetMoveForTests, startMove, SUBFOLDER, targetOf } from "./move-root";
 import { sessionPathShape } from "../paths";
 import { acquireChatHandle, setChatRouter, type ChatHandle } from "../chat-handle";
 
@@ -303,5 +303,27 @@ describe("a move", () => {
       setChatRouter(null);
       for (const f of Object.values(files)) rmSync(f, { force: true });
     }
+  });
+
+  test("the copy is on the disk before the marker: each rewritten file flushed, then every folder of the copy and its parent", async () => {
+    const seen: string[] = [];
+    const was = { ...syncIo };
+    syncIo.file = (f) => (seen.push(`file ${f}`), was.file(f));
+    syncIo.dir = (d) => (seen.push(`dir ${d}`), was.dir(d));
+    const off = onHomesRootSwitch(() => seen.push("marker"));
+    try {
+      assert.ok((await startMove(to, deps())).ok);
+      await moveSettled();
+    } finally {
+      off();
+      Object.assign(syncIo, was);
+    }
+    assert.equal(currentMove()!.phase, "done", currentMove()!.error);
+    const marker = seen.indexOf("marker");
+    assert.ok(marker > 0, "the switch came after flushes");
+    // The helper's record had its paths rewritten after its checked copy: flushed again.
+    assert.ok(seen.slice(0, marker).includes(`file ${join(to, ID, "workers", `${WORKER}.json`)}.sova-part`), seen.join("\n"));
+    for (const d of [to, join(to, ID), join(to, ID, "sessions"), join(to, ID, "workers"), join(to, ID, "chat", "attachments"), join(to, "..")].map((p) => join(p)))
+      assert.ok(seen.slice(0, marker).includes(`dir ${d}`), `${d} flushed before the marker`);
   });
 });

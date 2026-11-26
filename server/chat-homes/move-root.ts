@@ -521,15 +521,17 @@ function copyOneSync(from: string, to: string, e: Entry, map: PathMap): JournalL
   return { rel: e.rel, size: st.size, mtimeMs: st.mtimeMs, sha256: sha, out };
 }
 
-/** Flush a file's data to the disk. */
-function fsyncFile(file: string): void {
-  const fd = openSync(file, "r+");
+/** Flush a file's data, or a folder's entries, to the disk (`syncIo`: a test watches the order). */
+function fsyncPath(p: string, how: "r" | "r+"): void {
+  const fd = openSync(p, how);
   try {
     fsyncSync(fd);
   } finally {
     closeSync(fd);
   }
 }
+export const syncIo = { file: (file: string): void => fsyncPath(file, "r+"), dir: (dir: string): void => fsyncPath(dir, "r") };
+const fsyncFile = (file: string): void => syncIo.file(file);
 
 /**
  * Flush every folder under `root` (and `root` itself): the renames that put each copied file in place are on the disk
@@ -550,12 +552,7 @@ function fsyncTree(root: string): void {
   // Deepest first, then the folder holding `root` (its entry, for a folder the move made).
   for (const d of [...dirs.reverse(), dirname(root)]) {
     try {
-      const fd = openSync(d, "r");
-      try {
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
+      syncIo.dir(d);
     } catch {
       // not supported here
     }

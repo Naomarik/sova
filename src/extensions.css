@@ -140,7 +140,8 @@
 .session-row-chip-info > .chip-dot { color: var(--status-info); }
 
 /* The list place (lib/list-place, components/ListPlace.tsx): a row's owner as 2 letters in a round
-   mark on its meta line, before the host; yours in ink on a strong edge. Never a control. */
+   mark on its meta line, before the host, on a sunken fill; yours on the tint your own messages wear,
+   with a strong edge, so it reads by its edge as well as its fill. Never a control. */
 .owner-mark {
   flex: none;
   display: inline-grid;
@@ -149,7 +150,7 @@
   height: 20px;
   border-radius: var(--r-full);
   border: var(--stroke-thin) solid var(--color-border);
-  background: var(--color-surface);
+  background: var(--color-sunken);
   color: var(--color-ink-2);
   font-family: var(--font-body);
   font-size: var(--fs-micro);
@@ -159,9 +160,11 @@
 }
 .owner-mark-self {
   border: var(--stroke-icon) solid var(--color-border-strong);
-  background: var(--color-sunken);
+  background: var(--color-accent-tint);
   color: var(--color-ink);
 }
+/* Everyone's place in the menu: the mark's box, holding the person glyph, so every name lines up. */
+.owner-mark-all { border-color: transparent; background: none; color: var(--color-ink-muted); }
 .list-meta-row > .owner-mark { margin-right: var(--space-1); }
 
 /* The person row of the pane's foot, beside the host row: the host row's shape (.insights-row). */

@@ -175,7 +175,16 @@ export function PersonMenu(props: { declaration: ListDeclaration; value: string 
               >
                 <Icon name="check" small class="popover-item-check" />
                 <span class="popover-item-text person-menu-option-text">
-                  <Show when={o.person}>{(p) => <OwnerMark person={p()} self={p().id === props.declaration.self} quiet />}</Show>
+                  <Show
+                    when={o.person}
+                    fallback={
+                      <span class="owner-mark owner-mark-all" aria-hidden="true">
+                        <Icon name="worker" small />
+                      </span>
+                    }
+                  >
+                    {(p) => <OwnerMark person={p()} self={p().id === props.declaration.self} quiet />}
+                  </Show>
                   <span class="popover-item-label">{labelOf(o)}</span>
                 </span>
               </div>

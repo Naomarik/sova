@@ -224,6 +224,9 @@ const DOC_OF: Partial<Record<ChangeLine["d"], HomeDoc>> = { meta: "meta", seen: 
 
 /** One line of the log, this process's own included (its writes are already held: a stat finds nothing new). */
 function applyLine(s: State, l: ChangeLine): void {
+  // A line of this pid is taken as this process's own write, already held. A replay from the index's cursor at a start
+  // may hold the previous server's lines under the same pid (a container that always starts it as pid 1): skipping them
+  // loses nothing, since loaded() reads every home from disk at the start, and session-files' listener takes every line.
   const own = l.p === process.pid;
   const doc = DOC_OF[l.d];
   if (doc) {

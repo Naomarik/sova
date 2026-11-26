@@ -136,9 +136,10 @@ const within = (p: string, dir: string) => p === dir || p.startsWith(`${dir}/`);
 export function folderRefusal(folder: unknown): string | null {
   if (typeof folder !== "string" || !isAbsolute(folder) || folder.includes("\0")) return "The folder must be an absolute path on that device.";
   const f = resolve(folder);
-  const real = canonical(dirname(f));
+  // Where it really is: a link on the way (one not made yet under it too) is followed.
+  const real = canonical(f);
   const home = canonical(homedir());
-  if (!within(f, home) && !within(real, home)) return `${folder} isn't inside this device's home folder.`;
+  if (!within(real, home)) return `${folder} isn't inside this device's home folder.`;
   for (const own of [stateRoot(), agentRoot(), homesRoot()].map(canonical)) if (within(f, own) || within(real, own) || within(own, f)) return `${folder} is inside Sova's own state on this device.`;
   return null;
 }
@@ -465,9 +466,11 @@ async function arriveNow(tid: string): Promise<void> {
     let staged: StagedTree[] = [];
     if (manifest.worktrees.length)
       staged = await rebuildWorktrees({ repo, codeDir: join(at, "code"), tid, metas: manifest.worktrees.map((w) => w.meta), targets, ours: ((cur.ext ?? {}) as { absentAtOffer?: string[] }).absentAtOffer ?? [], ...(makeRepo ? { makeRepo } : {}), origin });
+    // Recorded at once, before anything may stop this run: Cancel's removal (after it, in the lane) finds every stage.
+    updateTransport(tid, { ext: { staged, targets, publish: { begun: [], done: [] } } });
     await knob(tid, "staged");
     stale();
-    stepDone(tid, "staged", { ext: { staged, targets, publish: { begun: [], done: [] } } });
+    stepDone(tid, "staged");
     // The home, pointed at this device: a Copy's conversations get ids of their own.
     const ids: Record<string, string> = {};
     if (cur.mode === "copy") for (const n of await readdir(join(at, "home", "sessions")).catch(() => [] as string[])) {

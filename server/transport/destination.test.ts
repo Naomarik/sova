@@ -37,12 +37,16 @@ test("an offer naming a repository or a worktree outside the chosen folder's rea
   mkdirSync(join(homedir(), "proj"), { recursive: true });
   mkdirSync(join(homedir(), ".ssh"), { recursive: true });
   if (!existsSync(join(homedir(), "proj", "link"))) symlinkSync(join(homedir(), ".ssh"), join(homedir(), "proj", "link"));
+  // A link inside the home that points out of it: a path through it is outside, though it reads as inside.
+  if (!existsSync(join(homedir(), "proj", "out"))) symlinkSync("/", join(homedir(), "proj", "out"));
   const cases: [string, Record<string, unknown>][] = [
     ["an absolute repository path", { repoRel: join(homedir(), ".config", "x") }],
     ["a repository inside Sova's own state", { repoRel: relative(join(homedir(), "proj"), join(stateRoot(), "evil")) }],
     ["a repository outside this user's home", { repoRel: relative(join(homedir(), "proj"), "/tmp/evil-repo") }],
     ["a worktree under a link that leaves the folder's parent", { trees: [{ name: "wt", branch: "feat", main: false, rel: "" }, { name: "w2", branch: "b", main: false, rel: "link/w" }] }],
     ["a worktree path climbing out", { trees: [{ name: "w2", branch: "b", main: false, rel: "../x" }] }],
+    ["a repository through a link leaving the home", { repoRel: "out/var/evil-repo" }],
+    ["a chosen folder through a link leaving the home", { folder: join(homedir(), "proj", "out", "var", "evil", "wt"), repoRel: null }],
   ];
   for (const [what, over] of cases) {
     const tid = nextTid();

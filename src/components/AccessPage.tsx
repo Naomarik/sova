@@ -3,13 +3,17 @@ import { mintAccessCode, revealAccessToken } from "../lib/api";
 import { Icon } from "./ui";
 import { announce } from "../lib/ui-state";
 import { encodeQr } from "../lib/qr";
+import { linkOrigin, pickedLink, pickerLinks, pickNotes, QR_PICK_KEY } from "../lib/networks";
+import { NetworksCard } from "./NetworksCard";
+import { Select } from "./form";
 
-function reachableLink(url: string): boolean {
+const store = (): Storage | null => {
   try {
-    const { hostname, protocol } = new URL(url);
-    return ["http:", "https:"].includes(protocol) && !/^(localhost|.*\.localhost|127(?:\.\d+){3}|\[::1\]|0\.0\.0\.0)$/i.test(hostname);
-  } catch { return false; }
-}
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+};
 
 export function AccessPage() {
   const [pair, setPair] = createSignal<Awaited<ReturnType<typeof mintAccessCode>> | null>(null);
@@ -19,16 +23,27 @@ export function AccessPage() {
   const [revealing, setRevealing] = createSignal(false);
   const [tokenError, setTokenError] = createSignal(false);
   const [copyStatus, setCopyStatus] = createSignal("");
+  // A network trusted or stopped after the code was made: its links are the ones from when it was made.
+  const [networksMoved, setNetworksMoved] = createSignal(false);
   const [now, setNow] = createSignal(Date.now());
   const timer = setInterval(() => setNow(Date.now()), 1000);
   onCleanup(() => clearInterval(timer));
   const seconds = () => Math.max(0, Math.ceil((Date.parse(pair()?.expiresAt ?? "") - now()) / 1000));
   const links = createMemo(() => pair()?.links ?? []);
-  const firstLink = createMemo(() => links()[0]);
-  const phoneLink = createMemo(() => {
-    const link = firstLink();
-    return link && reachableLink(link.url) ? link : undefined;
-  });
+  // The QR's choices: every address a phone could open, Tailscale first; the last pick is remembered.
+  const choices = createMemo(() => pickerLinks(links()));
+  const [remembered, setRemembered] = createSignal<string | null>(store()?.getItem(QR_PICK_KEY) ?? null);
+  const phoneLink = createMemo(() => pickedLink(choices(), remembered()));
+  const notes = createMemo(() => pickNotes(phoneLink()));
+  function pick(url: string) {
+    const origin = linkOrigin(url);
+    setRemembered(origin);
+    try {
+      store()?.setItem(QR_PICK_KEY, origin);
+    } catch {
+      // A full or blocked storage only forgets the pick.
+    }
+  }
   const qr = createMemo(() => {
     const link = phoneLink();
     if (!link) return null;
@@ -52,6 +67,7 @@ export function AccessPage() {
     setMinting(true);
     setMintError(false);
     setCopyStatus("");
+    setNetworksMoved(false);
     try {
       setPair(await mintAccessCode());
       setNow(Date.now());
@@ -92,6 +108,7 @@ export function AccessPage() {
         </a>
         <h1 ref={title} tabindex="-1" class="text-display-xl" style={{ margin: "0" }}>Access</h1>
         <p>Let another browser or device into this Sova — a different browser or address on this machine, or your phone — with a one-use code. You never see or share this install's access token.</p>
+        <NetworksCard onChange={() => pair() && setNetworksMoved(true)} />
         <section class="card stack" aria-labelledby="access-code-title" style={{ padding: "var(--space-4)", "min-width": "0" }}>
           <h2 id="access-code-title" class="text-heading-m">Bring a device in</h2>
           <p>The code expires in 5 minutes and works once. Scan the QR or open a link on the browser or device you're letting in, or type the code on its unlock screen. Each link is an address of this Sova with <code>/#c=&lt;code&gt;</code> after it; the code works at any of them.</p>
@@ -104,7 +121,7 @@ export function AccessPage() {
               <div style={{ display: "flex", "flex-wrap": "wrap", gap: "var(--space-4)", "align-items": "flex-start" }}>
               <div class="stack stack-2" style={{ "flex-basis": "calc(var(--space-8) * 4)", "max-width": "100%" }}>
               <Show when={phoneLink()} fallback={
-                <p>Sova has to be reached by its tailnet address for a phone to pair. Open Sova at that address, then make another code.</p>
+                <p>No address here can be opened from another device. Open Sova at its tailnet address, or trust a network under Networks, then make another code.</p>
               }>
                 <Show when={seconds()}>
                   <Show when={qr()} fallback={<p>This link is too long for an easy-to-scan QR. Copy the link to your other device instead.</p>}>{(q) => (
@@ -118,7 +135,11 @@ export function AccessPage() {
                     </>
                   )}</Show>
                 </Show>
+                <Select label="QR points at" value={phoneLink()?.url ?? ""} onChange={pick}
+                  options={choices().map((c) => ({ value: c.url, label: c.label }))} />
+                <For each={notes()}>{(n) => <p class="field-hint">{n}</p>}</For>
               </Show>
+              <Show when={networksMoved()}><p>Your networks changed after this code was made. Make another code to include them.</p></Show>
               </div>
               <div class="stack" style={{ flex: "1 1 calc(var(--space-8) * 4)", "min-width": "0" }}>
                 <div class="field">

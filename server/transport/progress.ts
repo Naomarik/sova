@@ -40,11 +40,15 @@ export function therePatch(r: TransportRecord, s: StatusBody, now: number): Part
     sent = [...keep, { at: now, n: s.received }].slice(-SENT_SAMPLES);
   }
   const received = typeof s.received === "number" && s.received !== r.received;
-  if (!changed && !sent && !received) return null;
+  // That device holds nothing of the package now (a Retry or a new package starts the pull again): neither does this
+  // record, nor its readings, so the bar never shows the last pull's bytes against the new one.
+  const dropped = s.received === undefined && (r.received !== undefined || ext.sent !== undefined);
+  if (!changed && !sent && !received && !dropped) return null;
   return {
     ...(changed ? { steps } : {}),
     ...(received ? { received: s.received } : {}),
     ...(sent ? { ext: { sent } } : {}),
+    ...(dropped ? { received: undefined, ext: { sent: undefined } } : {}),
   };
 }
 

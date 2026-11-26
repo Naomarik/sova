@@ -390,7 +390,8 @@ export function packageReady(from: { id: string }, tid: string, b: ReadyBody): {
   if (r.state === "cancelled") return ok({ error: "It was cancelled here." }, 409);
   // A new package can't replace one that is being published, or partly is.
   if (committing.has(tid) || r.steps.published || publishedAny(r)) return ok({ error: "It is already being put in place here." }, 409);
-  updateTransport(tid, { pkg: { sha256: b.sha256, size: b.size }, state: "sending", needsYou: undefined, steps: { ...r.steps, pulled: undefined, staged: undefined, verified: undefined } });
+  // What arrived of an earlier package goes with its steps: the new pull counts from nothing (§app.transport/progress).
+  updateTransport(tid, { pkg: { sha256: b.sha256, size: b.size }, state: "sending", needsYou: undefined, received: undefined, steps: { ...r.steps, pulled: undefined, staged: undefined, verified: undefined } });
   void arrive(tid);
   return ok({ ok: true });
 }
@@ -427,7 +428,7 @@ async function arriveNow(tid: string): Promise<void> {
     // it no longer matches the package's hashes, so the package is pulled and unpacked again.
     if (r.steps.pulled && !r.steps.verified && (r.ext as { relocating?: string } | undefined)?.relocating === pkg.sha256) {
       log(`${tid}: the last attempt stopped while relocating; pulling the package again`);
-      r = updateTransport(tid, { steps: { ...r.steps, pulled: undefined, staged: undefined }, ext: { relocating: "" } })!;
+      r = updateTransport(tid, { steps: { ...r.steps, pulled: undefined, staged: undefined }, received: undefined, ext: { relocating: "" } })!;
     }
     if (!r.steps.pulled) {
       await rm(at, { recursive: true, force: true });
@@ -440,7 +441,8 @@ async function arriveNow(tid: string): Promise<void> {
         snapshot: pkg,
         resolvedDest: at,
         rootNames: ["package.json", "home", "code", "usage.json"],
-        onProgress: (p) => void updateTransport(tid, { received: p.received }),
+        // Only while this package is still the one: an older pull's last chunk never puts its count back.
+        onProgress: (p) => void updateTransport(tid, (cur) => (cur.pkg?.sha256 === pkg.sha256 ? { received: p.received } : {})),
         prescan: async (members) => {
           const all: { name: string; flag: string; mode: number }[] = [];
           for await (const m of members) all.push({ name: m.name, flag: m.type === "file" ? "0" : m.type === "dir" ? "5" : m.type === "symlink" ? "2" : "?", mode: 0 });
@@ -853,7 +855,7 @@ export function retry(from: { id: string }, tid: string): { status: number; body
   if (r.state === "done" || r.state === "cancelled") return ok({ ok: true, state: r.state });
   // The package lacked commits this device can't get: drop it and wait for the new one the source packs.
   if (((r.ext ?? {}) as { repack?: boolean }).repack && !r.steps.verified) {
-    updateTransport(tid, { needsYou: undefined, state: "preparing", attempt: r.attempt + 1, pkg: undefined, steps: { ...r.steps, pulled: undefined, staged: undefined, verified: undefined }, ext: { repack: false } });
+    updateTransport(tid, { needsYou: undefined, state: "preparing", attempt: r.attempt + 1, pkg: undefined, received: undefined, steps: { ...r.steps, pulled: undefined, staged: undefined, verified: undefined }, ext: { repack: false } });
     return ok({ ok: true, repack: true });
   }
   updateTransport(tid, { needsYou: undefined, state: r.steps.verified ? "switching" : r.pkg ? "sending" : "preparing", attempt: r.attempt + 1 });

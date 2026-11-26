@@ -58,5 +58,56 @@ test("its steps are the destination's as it says them now, its readings the newe
   assert.equal(sent[sent.length - 1]!.n, (SENT_SAMPLES + 3) * 100);
   const again = therePatch(cur, status({ steps: { prepared: at }, received: 50 }), 99_000)!;
   assert.deepEqual((again.ext as { sent: SentSample[] }).sent, [{ at: 99_000, n: 50 }]);
-  assert.equal(therePatch({ ...rec({ steps: { offered: at, stopped: at, packed: at, prepared: at } }), received: 50 }, status({ steps: { prepared: at } }), 5), null, "nothing new: no write");
+  assert.equal(therePatch({ ...rec({ steps: { offered: at, stopped: at, packed: at, prepared: at, pulled: at } }), received: 50 }, status({ steps: { prepared: at, pulled: at }, received: 50 }), 5), null, "nothing new: no write");
+});
+
+test("a pull begun again counts from nothing: a Retry after a relocation stopped, a new package and a repack each drop what arrived before", async () => {
+  const { packageReady, retry, setDestinationDeps } = await import("./destination");
+  const { homedir } = await import("node:os");
+  const { join } = await import("node:path");
+  const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+  const old = { sha256: "a".repeat(64), size: 34 * 1024 * 1024 };
+  // What the destination's record says the moment its pull asks for the package: before any of it arrived.
+  const atPull: { tid: string; received: number | undefined; pulled: string | undefined }[] = [];
+  setDestinationDeps({
+    peerFetch: async (_peer: string, path: string) => {
+      const tid = path.split("/").at(-2)!;
+      const r = readTransport(tid);
+      atPull.push({ tid, received: r?.received, pulled: r?.steps.pulled });
+      return Response.json({ error: "gone" }, { status: 404 });
+    },
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack: () => {},
+    openWithNote: async () => {},
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+  });
+  const make = (tid: string, ext: Record<string, unknown>) => {
+    const id = `0199eeee-0000-7000-8000-${tid.slice(-12).padStart(12, "0")}`;
+    createTransport({ tid, side: "destination", mode: "copy", chatId: id, sourceChatId: id, title: "t", peer: "desk", peerLabel: "Desk", path: "", folder: join(homedir(), "proj", tid), state: "needs-you", ticket: "x".repeat(40), pkg: old, received: old.size, steps: { offered: at, prepared: at, pulled: at, staged: at }, ext: { offer: { trees: [], repoRel: null, project: { remotes: [], roots: [] } }, ...ext } });
+  };
+  const pulledFor = async (tid: string) => {
+    for (let i = 0; i < 300 && !atPull.some((x) => x.tid === tid); i++) await sleep(10);
+    return atPull.find((x) => x.tid === tid);
+  };
+  // A Retry after an arrival that stopped while relocating: the package is pulled again.
+  make("tr_progrelo1", { relocating: old.sha256 });
+  retry({ id: "desk" }, "tr_progrelo1");
+  assert.deepEqual(await pulledFor("tr_progrelo1"), { tid: "tr_progrelo1", received: undefined, pulled: undefined });
+  // A new package from the source.
+  make("tr_prognew01", {});
+  assert.deepEqual(packageReady({ id: "desk" }, "tr_prognew01", { sha256: "b".repeat(64), size: 10 * 1024 * 1024 }).body, { ok: true });
+  assert.equal(readTransport("tr_prognew01")?.received, undefined, "the old package's bytes went with it");
+  assert.deepEqual(await pulledFor("tr_prognew01"), { tid: "tr_prognew01", received: undefined, pulled: undefined });
+  // A repack: the package is dropped and a new one awaited.
+  make("tr_progrpk01", { repack: true });
+  assert.deepEqual(retry({ id: "desk" }, "tr_progrpk01").body, { ok: true, repack: true });
+  assert.equal(readTransport("tr_progrpk01")?.received, undefined);
+  // And the source, told nothing arrived there now, forgets what it kept: its bar never shows the old pull full.
+  const src = rec({ steps: { offered: at, stopped: at, packed: at, prepared: at }, received: old.size, ext: { sent: [{ at: 1, n: old.size }] } });
+  const p = therePatch(src, status({ steps: { prepared: at } }), 2)!;
+  assert.ok(p && "received" in p && p.received === undefined, JSON.stringify(p));
+  assert.equal((p.ext as { sent?: unknown }).sent, undefined);
 });

@@ -71,6 +71,14 @@ test("Bring From never brings a file out of a device-wide download cache, a link
   symlinkSync(join(home, ".m2/repository/org/x/x-1.0.jar"), join(home, "x.jar"));
   const linked = readOutside("x.jar", home, [], []);
   assert.ok(!linked.ok && /download cache/.test(linked.error));
+  // A cache folder that is itself a link, moved to another disk in the home: refused by the path asked.
+  const moved = join(root, "home2");
+  put(join(moved, "bigdisk", "m2", "repository", "org", "y", "y-1.0.jar"));
+  symlinkSync(join(moved, "bigdisk", "m2"), join(moved, ".m2"));
+  const viaLink = readOutside(".m2/repository/org/y/y-1.0.jar", moved, [], []);
+  assert.ok(!viaLink.ok && /download cache \(~\/\.m2\/repository\)/.test(viaLink.error), JSON.stringify(viaLink));
+  // macOS's spellings.
+  for (const rel of ["Library/Caches/pip/http/x", "Library/pnpm/store/v3/files/x"]) assert.ok("error" in cleanOutsidePath(`~/${rel}`), rel);
   // The tools' own config files travel as any file does.
   for (const rel of [".m2/settings.xml", ".cargo/config.toml", ".gradle/gradle.properties", ".clojure/deps.edn"]) {
     put(join(home, rel));

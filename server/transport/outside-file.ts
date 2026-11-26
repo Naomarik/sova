@@ -13,6 +13,8 @@ import { readTransport, updateTransport } from "./store";
 export const DOWNLOAD_CACHES = [
   ".m2/repository", ".gitlibs", ".cargo/registry", ".cargo/git", "go/pkg/mod", ".bun/install/cache", ".npm", ".gradle/caches",
   ".gradle/wrapper/dists", ".ivy2/cache", ".sbt/boot", ".cache", ".local/share/pnpm", ".pnpm-store", ".yarn/berry/cache", ".nuget/packages",
+  // The macOS spellings: its own caches folder (pip, Homebrew…) and pnpm's store there.
+  "Library/Caches", "Library/pnpm/store",
 ] as const;
 
 /** The cache of DOWNLOAD_CACHES a home-relative path is in, or null. Pure. */
@@ -70,8 +72,10 @@ export function outsideRefusal(abs: string, home: string, hidden: readonly strin
   if (!within(r, real(home)) || r === real(home)) return `${abs} isn't a file inside the home folder`;
   for (const h of hidden) if (h && (within(abs, h) || within(r, real(h)))) return `${abs} is in the sandbox's hidden list (${h}): private settings never travel`;
   for (const f of refused) if (f && (within(abs, f) || within(r, real(f)))) return `${abs} is in Sova's own folders`;
-  // Read through its links too: a link elsewhere in the home to a cached file is that file.
-  const cache = downloadCacheOf(r.slice(real(home).length + 1));
+  // By the path asked (a cache folder that is itself a link, ~/.m2 moved to another disk) and by the one it reads
+  // through its links (a link elsewhere in the home to a cached file is that file).
+  const asked = resolve(abs);
+  const cache = (within(asked, resolve(home)) ? downloadCacheOf(asked.slice(resolve(home).length + 1)) : null) ?? downloadCacheOf(r.slice(real(home).length + 1));
   if (cache) return cacheRefusal(abs, cache);
   return null;
 }

@@ -1,10 +1,10 @@
 // Run the many-chats bench once and print its numbers (scripts/bench-chat-homes/bench.ts). A scratch folder only:
 // it sets the agent dir and homes folder before Sova's code loads, and removes them after.
-//   bun scripts/bench-chat-homes/run.ts [homes=5000] [active=150]   (active=all: the worst case, every chat active)
+//   bun scripts/bench-chat-homes/run.ts [homes=5000] [active=1000]   (active=all: the worst case, every chat active)
 import { benchHomes } from "./bench";
 
 const homes = Number(process.argv[2]) || 5000;
-const active = process.argv[3] === "all" ? homes : Number(process.argv[3]) || 150;
+const active = process.argv[3] === "all" ? homes : Number(process.argv[3]) || 1000;
 const r = await benchHomes({ homes, active });
 const ms = (v: number) => `${v.toFixed(2)} ms`;
 console.log(

@@ -51,4 +51,11 @@ test("a Moved row is never swept by age or as an empty session, its home kept wh
 
   // Your own Delete of the archived Moved row still removes it.
   assert.deepEqual((await cleanupSessions({ mode: "paths", paths: [paths.movedOld], dryRun: true })).deletedIds, [movedOld]);
+
+  // Compressed after its 7 days (the safety copy is compressed, never removed), it is still never swept by age.
+  const packed = await cleanupSessions({ mode: "paths", paths: [paths.movedOld], action: "compress", dryRun: false });
+  assert.deepEqual(packed.compressedIds, [movedOld], JSON.stringify(packed));
+  assert.deepEqual((await cleanupSessions({ mode: "age", minAgeDays: 7, dryRun: true })).deletedIds, []);
+  assert.deepEqual((await cleanupSessions({ mode: "age", minAgeDays: 7, dryRun: false })).deletedIds, []);
+  assert.equal(existsSync(`${chatHome(movedOld)}.tar.gz`), true, "its compressed home, <homes>/<id>.tar.gz, stays");
 });

@@ -10,8 +10,9 @@ import { basename, dirname, join } from "node:path";
 import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
-import { chatHome, forgetHome, hasHome, homeIdOfPath, homesRoot, isHomeSessionFile } from "./chat-homes/root";
+import { chatHome, forgetHome, hasHome, homeIdOfPath, isHomeSessionFile } from "./chat-homes/root";
 import { forgetHomeRecords, helperRecords, refreshHomeRecords } from "./chat-homes/records";
+import { homeSessionFiles, noteHomeSessionPath } from "./chat-homes/session-files";
 import { emitChatNews } from "./chat-home-events";
 import { isWebSession, removeWebSession } from "./web-sessions";
 import type { HEntry } from "../shared/harness";
@@ -890,28 +891,12 @@ async function existingParent(raw: unknown): Promise<{ parent: string; parentId:
 
 /**
  * The second walk (§app.chat-homes/new-chats): each chat home of this state root, its flat `sessions/` folder, real
- * `.jsonl` files only (never a dot-file: a worker fork's temporary source copy). Homes whose manifest names another
- * state root are skipped (hasHome, read once per home).
+ * `.jsonl` files only (never a dot-file: a worker fork's temporary source copy), from the homes index
+ * (server/chat-homes/session-files.ts: a folder is read again only when it changed). Homes whose manifest names
+ * another state root are skipped (hasHome, read once per home).
  */
 async function listHomeSessionFiles(files: string[]): Promise<void> {
-  const root = homesRoot();
-  let homes: Dirent[];
-  try {
-    homes = await readdir(root, { withFileTypes: true });
-  } catch {
-    return; // no homes yet
-  }
-  await Promise.all(
-    homes.map(async (d) => {
-      if (!d.isDirectory() || !hasHome(d.name)) return;
-      const dir = join(root, d.name, "sessions");
-      try {
-        for (const f of await readdir(dir, { withFileTypes: true })) if (f.isFile() && f.name.endsWith(".jsonl") && !f.name.startsWith(".")) files.push(join(dir, f.name));
-      } catch {
-        // unreadable: skip
-      }
-    }),
-  );
+  files.push(...(await homeSessionFiles()));
 }
 
 /** Told at each full build's walk (server start, a page connecting, the 5-minute sweep): a reader of the homes that
@@ -1593,7 +1578,11 @@ export function trackSessionFiles(): { note: (path: string | null) => void; stop
     note: (path) => {
       if (stopped) return;
       if (path === null) tracker.all = true;
-      else tracker.dirty.add(path);
+      else {
+        tracker.dirty.add(path);
+        // A homed conversation the watch saw: its home's folder is read at the next full build too.
+        noteHomeSessionPath(path);
+      }
     },
     stop: () => {
       if (stopped) return;

@@ -9,7 +9,8 @@ import { createSessionFile, mintSessionId, type NewSessionFile } from "../harnes
 import { emitChatNews } from "../chat-home-events";
 import { sessionsChanged } from "../list-generation";
 import { chatHomesOn } from "../web-settings";
-import { abandonNewHome, chatHome, ensureChatHome, hasHome, homeIdOfPath, homeSessionsDir, homesRootAvailable, isHomeSessionFile } from "./root";
+import { abandonNewHome, chatHome, ensureChatHome, hasHome, homeIdOfPath, homeSessionsDir, homesRoot, homesRootAvailable, isHomeSessionFile, noteHomeArrived } from "./root";
+import { appendChange } from "./changes";
 
 export interface NewChatPlace {
   id: string;
@@ -47,6 +48,8 @@ export function createNewChatFile(opts: Omit<NewSessionFile, "sessionsDir">, on:
 /** A new chat's home now holds its conversation: `chat.created` on the event stream (§app.events/names). Once per home,
     never for a helper placed in its parent's home. */
 function homeBorn(id: string): void {
+  // Its conversation is new in the home: every reader of the homes is told (the change log).
+  appendChange(homesRoot(), id, "sessions");
   emitChatNews({ name: "chat.created", chat: id, home: chatHome(id) });
 }
 
@@ -61,6 +64,7 @@ export function forkBorn(forkPath: string): void {
  * already name this state root), listed at once, and announced. False when it isn't a home of this state root.
  */
 export function registerArrivedHome(id: string): boolean {
+  noteHomeArrived(id);
   if (!hasHome(id)) return false;
   sessionsChanged();
   homeBorn(id);

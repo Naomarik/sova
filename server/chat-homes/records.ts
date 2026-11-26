@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { chatHome, hasHome, homesRoot, listHomeIds } from "./root";
+import { chatHome, hasHome, homesRoot, listHomeIds, noteHomeArrived, onHomesRootSwitch, sweepHomeNegatives } from "./root";
+import { appendChange, onChanges, pollChanges, startTail, type ChangeLine } from "./changes";
 import { CHAT_HOME_ENV, setChatHomesRoot } from "../../pi-config/extensions/sandbox/shared-folder.ts";
 
 // The shared folder's helper (pi-config, no server imports) asks the server's own homes folder.
@@ -28,9 +29,12 @@ setChatHomesRoot(homesRoot);
  * Several processes write these files (the server, the chat processes it runs, a second server on
  * the same state root), so a home's file follows the stores' own rule: a write re-reads it and
  * changes only the keys this process changed (against what it last read), leaving another writer's
- * keys as they are; and a read re-reads a home's files when its `chat/` folder's stat moved (every
- * write there is a rename into it), checked at most once a second (CHECK_MS): one stat per home, as
- * the stores re-read their own files.
+ * keys as they are. Every write appends a line to the homes' change log (server/chat-homes/changes.ts),
+ * and a read takes the lines appended since, at most once a second (CHECK_MS): one read of the log,
+ * whatever the number of homes, and a stat of each home a line names. The log is a hint: every
+ * BACKSTOP_MS (and when lines may have gone by unread) a read checks every home's `chat/` folder's
+ * stat as before (every write there is a rename into it), so a write that came with no line is seen
+ * late, never lost.
  */
 
 export type HomeDoc = "meta" | "seen" | "signals";
@@ -68,19 +72,52 @@ interface State {
   /** Bumped whenever what this process holds of the homes changed other than by its own write: a home arrived,
       was read again or forgotten, or another process wrote one. A store's memo compares it (homesGeneration). */
   gen: number;
-  /** Bumped only when a home arrived, was read again or forgotten (homesArrivals): for stores of whole files. */
-  arrivals: number;
+  /** Per home, the change counter when what it holds of it last changed other than by a write of its own records
+      docs here (homeGeneration): a store of whole per-chat files (offers, cards) compares its home's alone. */
+  homeGens: Map<string, number>;
+  /** The counter when this state began: every home's generation before any change. */
+  base: number;
+  /** The homes changed, in order, by counter (homesChangedSince); `floor`: older entries were dropped. */
+  journal: { at: number; id: string }[];
+  floor: number;
+  /** When every home was last checked whole (the backstop sweep); `sweepNow`: lines may have gone by unread. */
+  sweptAt: number;
+  sweepNow: boolean;
 }
 
-/** How long a read trusts the homes' files without a stat: as long as the stores trust their own (seen.ts CACHE_MS). */
+/** How long a read trusts the homes' files without reading the log: as long as the stores trust their own (seen.ts CACHE_MS). */
 const CHECK_MS = 1000;
+/** How often a read checks every home whatever the log says: the session list's full build's pace (SWEEP_MS). */
+export const BACKSTOP_MS = 5 * 60_000;
+/** How many changed homes the journal keeps before an older cursor means "everything". */
+const JOURNAL_MAX = 20_000;
 
 let st: State | null = null;
+/** Never goes back, across states: a cursor or generation of an older state never equals a newer one's. */
+let counter = 0;
+
+/** I/O this module did (the bench and tests count it). */
+export const recordsIo = { sweeps: 0, stats: 0 };
 
 function state(): State {
   const root = homesRoot();
-  if (!st || st.root !== root) st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map(), checkedAt: 0, envKey: envKey(), gen: 0, arrivals: 0 };
+  if (!st || st.root !== root) {
+    const base = ++counter;
+    st = { root, loaded: false, membersLoaded: false, homes: new Map(), members: new Map(), checkedAt: 0, envKey: envKey(), gen: 0, homeGens: new Map(), base, journal: [], floor: base, sweptAt: Date.now(), sweepNow: false };
+  }
   return st;
+}
+
+/** What this process holds of `homeId` changed other than by its own records write: its generation moves. */
+function bumpHome(s: State, homeId: string): void {
+  const at = ++counter;
+  s.homeGens.set(homeId, at);
+  s.journal.push({ at, id: homeId });
+  if (s.journal.length > JOURNAL_MAX) {
+    const cut = s.journal.length - JOURNAL_MAX / 2;
+    s.floor = s.journal[cut - 1]!.at;
+    s.journal = s.journal.slice(cut);
+  }
 }
 
 const isObj = (v: unknown): v is Json => !!v && typeof v === "object" && !Array.isArray(v);
@@ -97,6 +134,7 @@ function readDoc(homeId: string, doc: HomeDoc): Json {
 
 /** A file's identity as a stat shows it ("" when missing): a write (tmp + rename) changes its inode. */
 function stampOf(file: string): string {
+  recordsIo.stats++;
   try {
     const st = statSync(file);
     return `${st.ino}:${st.size}:${st.mtimeMs}`;
@@ -129,22 +167,90 @@ function readInto(h: HomeEntry, homeId: string, doc: HomeDoc): void {
 
 const chatDir = (homeId: string): string => join(chatHome(homeId), "chat");
 
-/** Re-read the files of each home whose `chat/` folder moved since this process last read or wrote there. */
-function fresh(s: State): void {
-  const now = Date.now();
-  if (now - s.checkedAt < CHECK_MS) return;
-  s.checkedAt = now;
+/** Re-read each file of the home whose stat no longer matches what this process last read or wrote. */
+function recheck(s: State, homeId: string, h: HomeEntry, docs: readonly HomeDoc[] = HOME_DOCS): boolean {
+  let moved = false;
+  for (const doc of docs)
+    if (stampOf(homeDocFile(homeId, doc)) !== h.stamp.get(doc)) {
+      readInto(h, homeId, doc);
+      s.gen++;
+      moved = true;
+    }
+  return moved;
+}
+
+/** The backstop: every home whose `chat/` folder moved since this process last read or wrote there is read again,
+    homes that came with no line are found, and every "not a home" answer is asked again. */
+function sweep(s: State): void {
+  recordsIo.sweeps++;
+  s.sweptAt = Date.now();
+  s.sweepNow = false;
+  sweepHomeNegatives();
   for (const [homeId, h] of s.homes) {
     const ds = stampOf(chatDir(homeId));
     if (ds === h.dirStamp) continue;
     h.dirStamp = ds;
-    for (const doc of HOME_DOCS)
-      if (stampOf(homeDocFile(homeId, doc)) !== h.stamp.get(doc)) {
-        readInto(h, homeId, doc);
-        s.gen++;
-      }
+    if (recheck(s, homeId, h)) bumpHome(s, homeId);
+  }
+  if (s.loaded) for (const id of listHomeIds()) if (!s.homes.has(id)) loadHome(s, id);
+}
+
+/** Take what the log says changed since the last look (at most once a second); sweep when due. */
+function fresh(s: State): void {
+  const now = Date.now();
+  if (now - s.checkedAt < CHECK_MS) return;
+  s.checkedAt = now;
+  pollChanges(s.root);
+  if (s.sweepNow || now - s.sweptAt >= BACKSTOP_MS || now < s.sweptAt) sweep(s);
+}
+
+const DOC_OF: Partial<Record<ChangeLine["d"], HomeDoc>> = { meta: "meta", seen: "seen", signals: "signals" };
+
+/** One line of the log, this process's own included (its writes are already held: a stat finds nothing new). */
+function applyLine(s: State, l: ChangeLine): void {
+  const own = l.p === process.pid;
+  const doc = DOC_OF[l.d];
+  if (doc) {
+    if (own) return;
+    const h = s.homes.get(l.h);
+    if (h) {
+      if (recheck(s, l.h, h, [doc])) bumpHome(s, l.h);
+    } else if (s.loaded && hasHome(l.h)) loadHome(s, l.h);
+    return;
+  }
+  switch (l.d) {
+    case "home":
+      if (own) return;
+      noteHomeArrived(l.h);
+      if (s.loaded && !s.homes.has(l.h) && hasHome(l.h)) loadHome(s, l.h);
+      else bumpHome(s, l.h);
+      return;
+    case "gone":
+      if (s.homes.delete(l.h)) s.gen++;
+      for (const [m, h] of s.members) if (h === l.h) s.members.delete(m);
+      bumpHome(s, l.h);
+      return;
+    case "workers":
+      if (!own && s.membersLoaded) listMembers(s, l.h);
+      return;
+    case "offers":
+    case "cards":
+      if (!own) bumpHome(s, l.h);
+      return;
+    default:
+      return;
   }
 }
+
+onChanges((root, lines, gap) => {
+  const s = st;
+  if (!s || s.root !== root) return;
+  if (gap) s.sweepNow = true;
+  for (const l of lines) applyLine(s, l);
+});
+
+// A Chats folder move: everything held of the old folder goes; the next read is of the new one.
+onHomesRootSwitch(() => resetHomeRecords());
 
 function loadHome(s: State, homeId: string, members = true): HomeEntry {
   // The folder first: a write landing while the files are read shows as a move at the next check. A home with no
@@ -158,7 +264,7 @@ function loadHome(s: State, homeId: string, members = true): HomeEntry {
   s.homes.set(homeId, entry);
   if (members) listMembers(s, homeId);
   s.gen++;
-  s.arrivals++;
+  bumpHome(s, homeId);
   return entry;
 }
 
@@ -177,6 +283,10 @@ function loaded(): State {
   // The worker registry listed every home's workers/ at start (membersFromRegistry): not again here.
   const members = !s.membersLoaded;
   s.loaded = s.membersLoaded = true;
+  // The log is read from here on before the homes are: a write landing while they are read is a line read next.
+  startTail(s.root);
+  s.checkedAt = Date.now();
+  s.sweptAt = s.checkedAt;
   for (const id of listHomeIds()) if (!s.homes.has(id)) loadHome(s, id, members);
   return s;
 }
@@ -214,12 +324,17 @@ export function reloadHome(homeId: string): void {
     else listMembers(s, homeId);
   }
   s.gen++;
-  s.arrivals++;
+  bumpHome(s, homeId);
 }
 
 /** A home arrived from outside (Transport, right after the rename that publishes it): every store, its memo
-    included, lists the chat's records (title, archive mark, origin, seen, signals, offers, cards…) at its next read. */
-export const homeArrived = (homeId: string): void => reloadHome(homeId);
+    included, lists the chat's records (title, archive mark, origin, seen, signals, offers, cards…) at its next read,
+    and every other process reading the homes is told by the log. */
+export function homeArrived(homeId: string): void {
+  noteHomeArrived(homeId);
+  reloadHome(homeId);
+  appendChange(state().root, homeId, "home");
+}
 
 /** Forget a home that was removed (Delete). */
 export function forgetHomeRecords(homeId: string): void {
@@ -227,7 +342,7 @@ export function forgetHomeRecords(homeId: string): void {
   s.homes.delete(homeId);
   for (const [m, h] of s.members) if (h === homeId) s.members.delete(m);
   s.gen++;
-  s.arrivals++;
+  bumpHome(s, homeId);
 }
 
 /** What a store's memo compares: it changes whenever the homes' records this process holds changed other than by
@@ -248,9 +363,43 @@ const envKey = (): string => {
   return `${e.PI_CODING_AGENT_DIR ?? ""}\0${e.SOVA_CHAT_HOMES ?? ""}\0${e.SOVA_CHAT_HOMES_ROOT ?? ""}\0${e.HOME ?? ""}`;
 };
 
-/** What a store of whole per-chat files (offers, cards) compares: a home arrived, was read again or forgotten. */
-export function homesArrivals(): number {
-  return loaded().arrivals;
+/**
+ * What a store of whole per-chat files (offers, cards) compares for one chat: its home's generation, which moves when
+ * that home arrived, was read again or forgotten, or another process wrote its cards or offers. 0 for a chat with no
+ * home. Never reads every home.
+ */
+export function homeGeneration(id: string): number {
+  const home = homeOf(id);
+  if (!home) return 0;
+  const s = state();
+  fresh(s);
+  return s.homeGens.get(home) ?? s.base;
+}
+
+/** Where the changes are now: hand it back to homesChangedSince. */
+export const homesChangeCursor = (): number => {
+  const s = state();
+  fresh(s);
+  return counter;
+};
+
+/**
+ * Each home whose generation moved after `cursor` (homesChangeCursor), once each; null when the cursor is older than
+ * what is kept, or of another homes folder: read everything again.
+ */
+export function homesChangedSince(cursor: number): string[] | null {
+  const s = state();
+  fresh(s);
+  if (cursor < s.floor) return null;
+  const out = new Set<string>();
+  for (let i = s.journal.length - 1; i >= 0 && s.journal[i]!.at > cursor; i--) out.add(s.journal[i]!.id);
+  return [...out];
+}
+
+/** A store of whole per-chat files wrote one: other processes reading the homes hear of it (no-op for no home). */
+export function noteHomeFileWritten(id: string, doc: "offers" | "cards" | "workers" | "sessions"): void {
+  const home = homeOf(id);
+  if (home) appendChange(homesRoot(), home, doc);
 }
 
 /** The session id a store key names. */
@@ -424,9 +573,10 @@ function writeHomeField(s: State, homeId: string, doc: HomeDoc, field: string, n
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(out), { mode: 0o644 });
     renameSync(tmp, file);
-    // The folder's stamp is left as it was: the next check sees it moved and stats this home's files, where our own
+    // The folder's stamp is left as it was: the next sweep sees it moved and stats this home's files, where our own
     // file's stamp matches and another writer's, landed in between, does not.
     remember(h, doc, out, stampOf(file));
+    appendChange(s.root, homeId, doc);
   } catch (err) {
     console.warn(`[chat-homes] ${doc}.json write failed for ${homeId}:`, err instanceof Error ? err.message : String(err));
   }
@@ -498,12 +648,21 @@ export function splitOutSet(next: Set<string>, doc: HomeDoc, field: string, only
   return { legacy, legacyChanged: one === null };
 }
 
-/** For tests: drop everything this module holds in memory. */
-export function resetHomeRecordsForTest(): void {
+/** Drop everything this module holds in memory (a Chats folder move; tests): the next read reads the homes again. */
+export function resetHomeRecords(): void {
   st = null;
 }
+export const resetHomeRecordsForTest = resetHomeRecords;
 
-/** For tests: the next read checks every home's files at once, as a second later would. */
+/** For tests: the next read takes the log at once, as a second later would. */
 export function expireHomeRecordChecksForTest(): void {
   if (st) st.checkedAt = 0;
+}
+
+/** For tests: the next read also sweeps every home, as five minutes later would. */
+export function expireHomeRecordSweepForTest(): void {
+  if (st) {
+    st.checkedAt = 0;
+    st.sweptAt = 0;
+  }
 }

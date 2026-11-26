@@ -40,7 +40,8 @@ import { checkoutRootOf } from "../pi-config/extensions/mode/project-discovery.t
 import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { stateRoot } from "./state-root";
-import { homeDirOf, homeRecordDirs, homesArrivals } from "./chat-homes/records";
+import { homeDirOf, homeGeneration, homeOf, homeRecordDirs, noteHomeFileWritten } from "./chat-homes/records";
+import { OpenRecordIndex } from "./chat-homes/open-index";
 import { findExtension, listedExtensions, readExtensionsWithOffers } from "./extensions";
 import { extDrawingDecl } from "./extension-views";
 
@@ -304,7 +305,7 @@ const recordFile = (sessionId: string) => {
 };
 /** Every folder that holds records: the server-wide one and each home's. */
 const recordDirs = (): string[] => [cardsDir(), ...homeRecordDirs("cards")];
-const records = new Map<string, { dir: string; rec: SessionRecord | null; arrivals: number }>();
+const records = new Map<string, { dir: string; rec: SessionRecord | null; gen: number }>();
 
 function writeAtomic(file: string, data: unknown): void {
   mkdirSync(dirname(file), { recursive: true });
@@ -317,8 +318,9 @@ function readRecord(sessionId: string): SessionRecord | null {
   if (!SESSION_ID_RE.test(sessionId)) return null;
   const dir = cardsDir();
   const hit = records.get(sessionId);
-  // A home that arrived (or was forgotten) since: its record is read again.
-  if (hit && hit.dir === dir && hit.arrivals === homesArrivals()) return hit.rec;
+  // Its home arrived, was forgotten or written by another process since: its record is read again.
+  const gen = homeGeneration(sessionId);
+  if (hit && hit.dir === dir && hit.gen === gen) return hit.rec;
   let rec: SessionRecord | null = null;
   try {
     const raw = JSON.parse(readFileSync(recordFile(sessionId), "utf8")) as Record<string, unknown>;
@@ -340,25 +342,23 @@ function readRecord(sessionId: string): SessionRecord | null {
   } catch {
     // missing or unreadable: none
   }
-  records.set(sessionId, { dir, rec, arrivals: homesArrivals() });
+  records.set(sessionId, { dir, rec, gen });
   return rec;
 }
 
 function saveRecord(rec: SessionRecord): void {
   writeAtomic(recordFile(rec.sessionId), rec);
-  records.set(rec.sessionId, { dir: cardsDir(), rec, arrivals: homesArrivals() });
-  if (openIndex && openIndex.dir === cardsDir()) {
-    const open = openOf(rec);
-    if (open.length) openIndex.open.set(rec.sessionId, open);
-    else openIndex.open.delete(rec.sessionId);
-  }
+  records.set(rec.sessionId, { dir: cardsDir(), rec, gen: homeGeneration(rec.sessionId) });
+  noteHomeFileWritten(rec.sessionId, "cards");
+  const open = openOf(rec);
+  openIndex.put(rec.sessionId, open.length ? open : undefined, homeOf(rec.sessionId));
   sessionsChanged();
 }
 
 /** Tests: forget what was read. */
 export function resetCardsForTest(): void {
   records.clear();
-  openIndex = null;
+  openIndex.reset();
   inflight.clear();
 }
 
@@ -935,29 +935,16 @@ const dataTitle = (c: CardInfo): string | undefined => {
   return typeof t === "string" && t.trim() ? t : undefined;
 };
 
-let openIndex: { dir: string; arrivals: number; open: Map<string, OpenCard[]> } | null = null;
+/** The chats with open cards, from one index of every record (only a changed home's folder is read again). */
+const openIndex = new OpenRecordIndex<OpenCard[]>("cards", cardsDir, (id) => {
+  const rec = readRecord(id);
+  const open = rec ? openOf(rec) : [];
+  return rec && open.length ? open : undefined;
+});
 
 /** A session's open cards (§app.overseer/attention-digest, `card-waiting`), from one index of every record. */
 export function openCardsOf(sessionId: string): OpenCard[] {
-  const dir = cardsDir();
-  if (!openIndex || openIndex.dir !== dir || openIndex.arrivals !== homesArrivals()) {
-    openIndex = { dir, arrivals: homesArrivals(), open: new Map() };
-    const names: string[] = [];
-    for (const d of recordDirs()) {
-      try {
-        names.push(...readdirSync(d));
-      } catch {
-        // none there
-      }
-    }
-    for (const n of names) {
-      if (!n.endsWith(".json")) continue;
-      const rec = readRecord(n.slice(0, -5));
-      const open = rec ? openOf(rec) : [];
-      if (rec && open.length) openIndex.open.set(rec.sessionId, open);
-    }
-  }
-  const open = openIndex.open.get(sessionId) ?? [];
+  const open = openIndex.get(sessionId) ?? [];
   // Asked only when an extension's card is open: a card with no extension reads no list.
   if (!open.some((c) => c.ext)) return open;
   const active = new Map(readExtensionsWithOffers().map((e) => [e.entry.id, e.entry]));

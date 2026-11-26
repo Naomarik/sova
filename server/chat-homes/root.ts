@@ -16,6 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { homedir, hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { chatStateRoot } from "../state-root";
+import { appendChange, onChanges } from "./changes";
 
 /** The override's name (harnesses and hermetic copies set it for a server). */
 export const HOMES_ENV = "SOVA_CHAT_HOMES";
@@ -229,18 +230,58 @@ export function readHomeManifest(id: string): HomeManifest | null {
 }
 
 /**
- * Whether the chat has a home of this state root. A positive answer is kept; a negative one re-reads (a home is made
- * once, never unmade except by Delete, which calls forgetHome).
+ * Names asked about that are not a home of this state root (no manifest, or another state root's), per homes root:
+ * kept until a line of the change log says the id became a home (made here or by another process, or arrived), the
+ * home is made or arrives here (ensureChatHome, noteHomeArrived), or a sweep (sweepHomeNegatives) asks again.
+ */
+const notHomes = new Map<string, Set<string>>();
+const notHome = (): Set<string> => {
+  const root = homesRoot();
+  let set = notHomes.get(root);
+  if (!set) notHomes.set(root, (set = new Set()));
+  return set;
+};
+/** I/O hasHome did (the bench and tests count it). */
+export const homeIo = { manifestReads: 0 };
+
+/**
+ * Whether the chat has a home of this state root. Both answers are kept: a positive one until Delete (forgetHome), a
+ * negative one until the id is said to have become a home (notHomes).
  */
 export function hasHome(id: string): boolean {
   if (!isHomeId(id)) return false;
   const set = known();
   if (set.has(id)) return true;
+  const no = notHome();
+  if (no.has(id)) return false;
+  homeIo.manifestReads++;
   const m = readHomeManifest(id);
-  if (!m || m.stateRoot !== canonicalStateRoot()) return false;
+  if (!m || m.stateRoot !== canonicalStateRoot()) {
+    no.add(id);
+    return false;
+  }
   set.add(id);
   return true;
 }
+
+/** A home arrived from outside under `id` (a Transport's publishing rename): asked again, not answered from before. */
+export function noteHomeArrived(id: string): void {
+  notHome().delete(id);
+}
+
+/** The backstop sweep: every name asked about again (a home copied in by hand, with no line in the log). */
+export function sweepHomeNegatives(): void {
+  notHome().clear();
+}
+
+// A line of the log (this process's or another's) that says an id is a home, or is gone: the answers held follow it.
+onChanges((root, lines, gap) => {
+  if (gap) notHomes.get(root)?.clear();
+  for (const l of lines) {
+    if (l.d === "home") notHomes.get(root)?.delete(l.h);
+    else if (l.d === "gone") knownHomes.get(root)?.delete(l.h);
+  }
+});
 
 /**
  * Undo a home this server just made for a chat whose file then could not be created: removed only while it holds nothing
@@ -254,14 +295,16 @@ export function abandonNewHome(id: string): void {
     if (top.length > 0 || readdirSync(join(home, "sessions")).length > 0) return;
     rmSync(home, { recursive: true, force: true });
     known().delete(id);
+    appendChange(homesRoot(), id, "gone");
   } catch {
     // gone already, or unreadable: leave it
   }
 }
 
-/** After a Delete removed a home. */
+/** After a Delete (or a compression) removed a home: told to every reader of the homes. */
 export function forgetHome(id: string): void {
   known().delete(id);
+  appendChange(homesRoot(), id, "gone");
 }
 
 /** This host as org-holder.ts names it (`<state root>/host.json`'s id, its machine name), read without making one. */
@@ -299,7 +342,10 @@ export function ensureChatHome(id: string): string {
       writeJsonAtomic(join(home, HOME_FILE), manifest);
     }
     if (!existsSync(join(home, INDEX_FILE))) writeJsonAtomic(join(home, INDEX_FILE), { v: 1, layout: LAYOUT_VERSION, files: HOME_FILE_KINDS });
+    const fresh = !known().has(id);
     known().add(id);
+    notHome().delete(id);
+    if (fresh) appendChange(root, id, "home");
   }
   if (!overridden && !fromMarker) {
     const state = canonicalStateRoot();
@@ -414,5 +460,9 @@ export function resetHomesMemoForTests(): void {
   stateMemo = null;
   previousMemo = null;
   knownHomes.clear();
+  notHomes.clear();
   missingLogged.clear();
 }
+
+// After a Chats folder move every name is asked about again under the new folder.
+onHomesRootSwitch(() => notHomes.clear());

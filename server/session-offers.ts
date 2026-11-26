@@ -38,7 +38,8 @@ import { recordActed } from "./message-labels";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
-import { homeDirOf, homeRecordDirs, homesArrivals } from "./chat-homes/records";
+import { homeDirOf, homeGeneration, homeOf, noteHomeFileWritten } from "./chat-homes/records";
+import { OpenRecordIndex } from "./chat-homes/open-index";
 import { draftProofVia, draftsLeft } from "./spec-drafts-state";
 import { queueTargetOfTree } from "./worktrees";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
@@ -197,7 +198,7 @@ const recordFile = (sessionId: string) => {
 };
 const countsFile = () => join(offersDir(), "counts.json");
 
-const records = new Map<string, { dir: string; rec: SessionRecord | null; arrivals: number }>();
+const records = new Map<string, { dir: string; rec: SessionRecord | null; gen: number }>();
 
 function writeAtomic(file: string, data: unknown): void {
   mkdirSync(dirname(file), { recursive: true });
@@ -210,8 +211,9 @@ function readRecord(sessionId: string): SessionRecord | null {
   if (!SESSION_ID_RE.test(sessionId)) return null;
   const dir = offersDir();
   const hit = records.get(sessionId);
-  // A home that arrived (or was forgotten) since: its record is read again.
-  if (hit && hit.dir === dir && hit.arrivals === homesArrivals()) return hit.rec;
+  // Its home arrived, was forgotten or written by another process since: its record is read again.
+  const gen = homeGeneration(sessionId);
+  if (hit && hit.dir === dir && hit.gen === gen) return hit.rec;
   let rec: SessionRecord | null = null;
   try {
     const raw = JSON.parse(readFileSync(recordFile(sessionId), "utf8")) as Record<string, unknown>;
@@ -251,7 +253,7 @@ function readRecord(sessionId: string): SessionRecord | null {
   } catch {
     // missing or unreadable: none
   }
-  records.set(sessionId, { dir, rec, arrivals: homesArrivals() });
+  records.set(sessionId, { dir, rec, gen });
   return rec;
 }
 
@@ -279,19 +281,16 @@ function openEntryOf(rec: SessionRecord): { title: string; at: number; name: str
 
 function saveRecord(rec: SessionRecord): void {
   writeAtomic(recordFile(rec.sessionId), rec);
-  records.set(rec.sessionId, { dir: offersDir(), rec, arrivals: homesArrivals() });
-  if (openIndex && openIndex.dir === offersDir()) {
-    const open = openEntryOf(rec);
-    if (open) openIndex.open.set(rec.sessionId, open);
-    else openIndex.open.delete(rec.sessionId);
-  }
+  records.set(rec.sessionId, { dir: offersDir(), rec, gen: homeGeneration(rec.sessionId) });
+  noteHomeFileWritten(rec.sessionId, "offers");
+  openIndex.put(rec.sessionId, openEntryOf(rec), homeOf(rec.sessionId));
   sessionsChanged();
 }
 
 /** Tests: forget what was read. */
 export function resetOffersForTest(): void {
   records.clear();
-  openIndex = null;
+  openIndex.reset();
   inflight.clear();
 }
 
@@ -936,30 +935,21 @@ export function offerNoteFor(sessionId: string): string | null {
   return `Offer ${card.id} (${card.name}): the user pressed "${card.choice.label}". ${card.outcome.state === "done" ? "It ran" : "It failed"}: ${card.outcome.text ?? ""}`.trim();
 }
 
-let openIndex: { dir: string; arrivals: number; open: Map<string, { title: string; at: number; name: string; root: string }> } | null = null;
+/** The chats with an open offer, from one index of every record (only a changed home's folder is read again). */
+const openIndex = new OpenRecordIndex<{ title: string; at: number; name: string; root: string }>(
+  "offers",
+  offersDir,
+  (id) => {
+    const rec = readRecord(id);
+    return rec ? openEntryOf(rec) : undefined;
+  },
+  (n) => n === "counts.json",
+);
 
 /** The session's open offer: its Needs you item (§app.overseer/attention-digest, `offer-waiting`) and, while idle, its
     asks-you mark (§app.decisions/asks-user). Read from one index of every record. */
 export function openOfferOf(sessionId: string): { title: string; at: number } | undefined {
-  const dir = offersDir();
-  if (!openIndex || openIndex.dir !== dir || openIndex.arrivals !== homesArrivals()) {
-    openIndex = { dir, arrivals: homesArrivals(), open: new Map() };
-    const names: string[] = [];
-    for (const d of [dir, ...homeRecordDirs("offers")]) {
-      try {
-        names.push(...readdirSync(d));
-      } catch {
-        // none there
-      }
-    }
-    for (const n of names) {
-      if (!n.endsWith(".json") || n === "counts.json") continue;
-      const rec = readRecord(n.slice(0, -5));
-      const open = rec ? openEntryOf(rec) : undefined;
-      if (rec && open) openIndex.open.set(rec.sessionId, open);
-    }
-  }
-  const hit = openIndex.open.get(sessionId);
+  const hit = openIndex.get(sessionId);
   if (!hit) return undefined;
   // An offer that left the file stops at once: its open card is withdrawn.
   if (!liveOffer(readOffersFile(hit.root), hit.name)) {
@@ -967,7 +957,7 @@ export function openOfferOf(sessionId: string): { title: string; at: number } | 
     if (rec) {
       for (const c of rec.cards) if (c.state === "open") c.state = "withdrawn";
       saveRecord(rec);
-    } else openIndex.open.delete(sessionId);
+    } else openIndex.delete(sessionId);
     return undefined;
   }
   return { title: hit.title, at: hit.at };

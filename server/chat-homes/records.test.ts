@@ -2,7 +2,7 @@
 // A chat home's own records (server/chat-homes/records.ts): a homed chat's entries go to its home's
 // chat/*.json, everyone else's stay in the server-wide files, and every read sees both.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -12,7 +12,7 @@ process.env.PI_CODING_AGENT_DIR = join(scratch, "agent");
 process.env.SOVA_CHAT_HOMES = join(scratch, "homes");
 
 const { ensureChatHome, forgetHome } = await import("./root");
-const { expireHomeRecordChecksForTest, forgetHomeRecords, homeArrived, homeOf, homesGeneration, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
+const { expireHomeRecordChecksForTest, expireHomeRecordSweepForTest, forgetHomeRecords, homeArrived, homeOf, homesGeneration, registerHomeMember, resetHomeRecordsForTest } = await import("./records");
 const { markSeen, readSeen } = await import("../seen");
 const { memoSessionTitles, readSessionTitles, setSessionTitle } = await import("../session-titles");
 const { isArchived, setArchived } = await import("../archived-sessions");
@@ -22,6 +22,7 @@ const { readSignals, updateSignals, workerKey } = await import("../signals-store
 const { checkTmpImage, deleteAttachment, saveUploadedImage, sessionAttachmentsDir } = await import("../attachments");
 const { findTmpImagePaths } = await import("../../shared/tmp-paths");
 const { WorkerRegistry } = await import("../chat-workers");
+const { segmentFile, segments } = await import("./changes");
 
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -31,6 +32,8 @@ const WORKER = "019a0000-0000-7000-8000-00000000000c";
 const state = join(scratch, "agent", "sova");
 const doc = (name: string) => join(process.env.SOVA_CHAT_HOMES!, HOMED, "chat", `${name}.json`);
 const json = (f: string) => JSON.parse(readFileSync(f, "utf8"));
+/** The line another process appends after its write (server/chat-homes/changes.ts), with a pid not ours. */
+const otherProcessLine = (h: string, d: string) => appendFileSync(segmentFile(process.env.SOVA_CHAT_HOMES!, segments(process.env.SOVA_CHAT_HOMES!).at(-1) ?? 1), `${JSON.stringify({ h, d, g: 1, p: process.pid + 1 })}\n`);
 
 ensureChatHome(HOMED);
 
@@ -74,11 +77,26 @@ test("another process's write to the same home is kept by this one's next write,
   const after = json(doc("meta"))["session-titles.json#titles"];
   assert.equal(after[OTHER]?.title, "Theirs");
   assert.equal(after[HOMED]?.title, "Mine again");
-  // And the other way round: their change shows here once the files are checked again.
+  // And the other way round: their change, told by its line in the change log, shows here at the next look.
   meta["session-titles.json#titles"] = { ...after, [OTHER]: { title: "Theirs, renamed", by: "user", at: 2 } };
   writeFileSync(doc("meta"), JSON.stringify(meta));
+  otherProcessLine(HOMED, "meta");
   expireHomeRecordChecksForTest();
   assert.equal(readSessionTitles()[OTHER], "Theirs, renamed");
+});
+
+test("a write by rename that came with no line in the change log is seen by the backstop sweep, late but never lost", () => {
+  setSessionTitle(HOMED, "Before");
+  const meta = json(doc("meta"));
+  meta["session-titles.json#titles"][HOMED] = { title: "Renamed in by hand", by: "user", at: 3 };
+  writeFileSync(`${doc("meta")}.x`, JSON.stringify(meta));
+  renameSync(`${doc("meta")}.x`, doc("meta"));
+  // The log says nothing: a look at the log alone keeps what was read.
+  expireHomeRecordChecksForTest();
+  assert.equal(readSessionTitles()[HOMED], "Before");
+  // The sweep (every BACKSTOP_MS) checks every home whatever the log says.
+  expireHomeRecordSweepForTest();
+  assert.equal(readSessionTitles()[HOMED], "Renamed in by hand");
 });
 
 test("a homed chat's unsent draft never goes into its home", () => {

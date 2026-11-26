@@ -6,7 +6,7 @@ import { stateRoot } from "./state-root";
 import type { TmpAttachment } from "../shared/protocol";
 import { ATTACHMENT_TAIL, findTmpImagePaths, HOME_ATTACHMENT_TAIL, isPiClipboardName, SESSION_ID, TMP_IMAGE_PATH } from "../shared/tmp-paths";
 import { homeDirOf } from "./chat-homes/records";
-import { homesRoot } from "./chat-homes/root";
+import { homesRoot, rebaseHomePath } from "./chat-homes/root";
 
 // Image paths named in transcript text (pi's TUI pastes a clipboard image by writing it to /tmp
 // and inserting the path as text; replies, tool output and subagent reports then quote it). We
@@ -166,8 +166,10 @@ const up = (p: string, n: number): string => (n <= 0 ? p : up(dirname(p), n - 1)
  * the resolved root, at most 20MB. 400 = bad shape, 404 = missing, 403 = resolves elsewhere or
  * too large.
  */
-export function checkTmpImage(p: unknown): TmpImageCheck {
-  if (typeof p !== "string" || p.length > 1024) return badShape();
+export function checkTmpImage(raw: unknown): TmpImageCheck {
+  if (typeof raw !== "string" || raw.length > 1024) return badShape();
+  // An image named in a conversation under the folder its chat was in before a Chats folder move: the same file now.
+  const p = rebaseHomePath(raw);
   const inTmp = p.length <= 255 && TMP_IMAGE_PATH.test(p);
   let r: { real: string | null; depth: number } | null = null;
   if (!inTmp) {

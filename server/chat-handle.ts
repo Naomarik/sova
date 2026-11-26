@@ -122,6 +122,7 @@ export {
   warmChatRuntime,
 } from "./chat-manager";
 import { fetchSessionTimings } from "./reply-facts";
+import { moveHold } from "./chat-homes/move-root";
 
 export { failureReply, refusalOf };
 
@@ -477,7 +478,8 @@ export async function acquireChatHandle(path: string, force = false): Promise<Ch
   if (!router) throw new Error("no chat router: the server hosts no chat in its process");
   // A compressed chat never starts (§app.session-list/archive-compression): its file is gone, and a start would make an empty one.
   if (compressedAt(path)) throw new Error(COMPRESSED_REFUSAL);
-  const why = startGuard?.(path);
+  // A Chats folder move holds every chat until its switch (§app.chat-homes/move-folder).
+  const why = moveHold() ?? startGuard?.(path);
   // Read only, as an archived chat is: a pane keeps its rows and is told closed; a request answers 409 with the reason.
   if (why) throw Object.assign(new ArchivedError(), { message: why });
   return router.acquire(path, force);

@@ -1,4 +1,6 @@
 import { AutomationsShelf } from "./AutomationsShelf";
+import { ChatsFolderMissing } from "./ChatsFolderSetting";
+import { chatsFolderInfo, folderMissing } from "../lib/chats-folder";
 import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
 import { builtOnceOpen } from "../lib/built-once";
@@ -2597,6 +2599,8 @@ export function Sidebar(props: {
         <nav ref={(el) => onCleanup(holdListScroll(el))} class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
           {/* A host that keeps its sessions from this one has no rows here (§mesh.peers/grants). */}
           <Show when={hiddenHost()}>{(h) => <p class="sidebar-region-note">Hidden by {hostLabel(h())}.</p>}</Show>
+          {/* The chats folder missing: said, never a list that only looks short (§app.chat-homes/move-folder). */}
+          <ChatsFolderMissing />
           <Show when={props.error}>
             <div class="transcript-banner">
               <Banner
@@ -2622,7 +2626,7 @@ export function Sidebar(props: {
             </div>
           </Show>
 
-          <Show when={props.sessions && all().length === 0}>
+          <Show when={props.sessions && all().length === 0 && !folderMissing(chatsFolderInfo())}>
             <div class="empty">
               <p class="empty-title">
                 <Show when={sessionsDir()} fallback="0 sessions yet.">

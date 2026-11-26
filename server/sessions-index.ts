@@ -1696,6 +1696,26 @@ async function buildTracked(): Promise<SessionSummary[]> {
   }
 }
 
+/**
+ * A Chats folder move switched the homes folder (§app.chat-homes/move-folder): every summary of a file under the old
+ * one goes (its chats are listed from the new folder, once each), no listing held from before is handed out again,
+ * and the next tracked build reads everything.
+ */
+export function forgetHomedSessions(oldRoot: string): number {
+  let n = 0;
+  for (const path of [...entries.keys()])
+    if (path.startsWith(oldRoot + "/")) {
+      dropEntry(path);
+      n++;
+    }
+  for (const path of [...lastRows.keys()]) if (path.startsWith(oldRoot + "/")) lastRows.delete(path);
+  listing = null;
+  tracker.all = true;
+  tracker.files = null;
+  tracker.dirty.clear();
+  return n;
+}
+
 /** Adds to `dirty` each of `files` whose stat no longer matches its cached summary (or that has
     none, or is gone). */
 async function addMoved(files: readonly string[], dirty: Set<string>): Promise<void> {

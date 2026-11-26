@@ -308,7 +308,9 @@ const FULL_PREFIXES = [
   // A chat dismissed from Needs you (§app.session-list/needs-you-dismiss): the operator's own list.
   "attention","auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs", "mcp",
   // Transport (§app.transport/start): only your click on this device's own page starts or steers one.
-  "transport"];
+  "transport",
+  // The Chats folder (§app.chat-homes/move-folder): where this computer keeps its chats, and their move (your click only).
+  "chats-folder"];
 // A project mode's command (§chat.mode-menu/project-mode-commands) runs one of the project's own programs: `full`,
 // whatever method, though it sits under `mode`, which stays `sessions`.
 const MODE_COMMAND_PATH = "/api/mode/command";

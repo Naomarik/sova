@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 700 |
-| Routes a catalogue entry points at | 243 |
-| Catalogue entries | 317 |
+| Routes registered | 704 |
+| Routes a catalogue entry points at | 247 |
+| Catalogue entries | 321 |
 | Class: Peer protocol | 54 |
 | Class: Auth | 8 |
 | Class: Share pages | 0 |
@@ -358,6 +358,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `transport.admin-done` | Done (Command Run) | changes | `POST /api/transport/:tid/admin-done` | full |
 | `transport.bring-file` | Bring From Device | changes | `POST /api/transport/:tid/bring-file` | full |
 | `transport.placed-file` | I Placed It Myself | changes | `POST /api/transport/:tid/placed-file` | full |
+| `chats-folder.get` | Show Chats Folder | looks | `GET /api/chats-folder` | full |
+| `chats-folder.preview` | Preview Chats Folder Move | looks | `GET /api/chats-folder/preview` | full |
+| `chats-folder.move` | Move Chats | changes | `POST /api/chats-folder/move` | full |
+| `chats-folder.cancel` | Cancel Chats Folder Move | changes | `POST /api/chats-folder/move/cancel` | full |
 
 ## Pending routes
 
@@ -944,6 +948,10 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/attention/dismiss` | full | `attention.dismiss` |
 | `GET /api/audit` | full | `audit.list` |
 | `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.shell.list`, `chat.shell.stop`, `chat.stop` |
+| `GET /api/chats-folder` | full | `chats-folder.get` |
+| `POST /api/chats-folder/move` | full | `chats-folder.move` |
+| `POST /api/chats-folder/move/cancel` | full | `chats-folder.cancel` |
+| `GET /api/chats-folder/preview` | full | `chats-folder.preview` |
 | `GET /api/chats/:id/usage` | sessions | `chat.usage` |
 | `GET /api/cwds` | sessions | `cwds.list` |
 | `GET /api/design` | full | `design.list` |

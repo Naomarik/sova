@@ -319,7 +319,11 @@ export type CommandId =
   | "transport.allow-downloads"
   | "transport.admin-done"
   | "transport.bring-file"
-  | "transport.placed-file";
+  | "transport.placed-file"
+  | "chats-folder.get"
+  | "chats-folder.preview"
+  | "chats-folder.move"
+  | "chats-folder.cancel";
 
 /** Each command's params, as its catalogue entry declares them. */
 export interface CommandParams {
@@ -5126,6 +5130,20 @@ export interface CommandParams {
     /** The file's id (of_…), as the card shows it */
     "file": string;
   };
+  /** The folder this computer keeps its chats in, whether a variable sets it, whether it is there, and the latest move. (only looks; needs the card's owner trusted) */
+  "chats-folder.get": Record<string, never>;
+  /** What moving every chat to a folder would copy (chats, files, size, free space there, a live-sync service it is in), or why it can't. (only looks; needs the card's owner trusted) */
+  "chats-folder.preview": {
+    /** The folder to move every chat to (a new or empty one; one that holds files gets a sova-chats folder inside it) */
+    "folder": string;
+  };
+  /** Only your click in Settings → General moves your chats; anything else is refused and nothing is moved. (changes something; needs the card's owner trusted) */
+  "chats-folder.move": {
+    /** The folder to move every chat to (a new or empty one; one that holds files gets a sova-chats folder inside it) */
+    "folder": string;
+  };
+  /** Only your click cancels a move, before it switches to the new folder; your chats stay where they were. (changes something; needs the card's owner trusted) */
+  "chats-folder.cancel": Record<string, never>;
 }
 
 /** Whether each command only looks or changes something; a view runs either only once its owner is trusted. */
@@ -5447,4 +5465,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "transport.admin-done": "changes",
   "transport.bring-file": "changes",
   "transport.placed-file": "changes",
+  "chats-folder.get": "looks",
+  "chats-folder.preview": "looks",
+  "chats-folder.move": "changes",
+  "chats-folder.cancel": "changes",
 };

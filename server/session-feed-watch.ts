@@ -89,6 +89,13 @@ export function liveSignature(now = Date.now()): string {
   return JSON.stringify(out.map((x) => JSON.stringify(x)).sort());
 }
 
+/** Each running watch's re-sync, for a change of the folders it may watch that no event says (a Chats folder move). */
+const resyncers = new Set<() => void>();
+/** Every running feed watch takes its folders again now (the homes' `sessions/` after a Chats folder move). */
+export function resyncFeedWatches(): void {
+  for (const f of resyncers) f();
+}
+
 export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}): () => void {
   const sessionsDir = opts.sessionsDir ?? SESSIONS_DIR;
   const liveDir = opts.liveDir ?? LIVE_DIR;
@@ -341,9 +348,16 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
     sync();
   }, opts.resyncMs ?? RESYNC_MS);
   resync.unref?.();
+  const resyncNow = (): void => {
+    asked.clear();
+    sync();
+    changed();
+  };
+  resyncers.add(resyncNow);
 
   return () => {
     stopped = true;
+    resyncers.delete(resyncNow);
     offGeneration();
     clearInterval(liveInterval);
     clearInterval(resync);

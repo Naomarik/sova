@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import { isHomeSessionFile } from "./chat-homes/root";
+import { isHomeSessionFile, rebaseHomePath } from "./chat-homes/root";
 import { agentRoot } from "./state-root";
 
 function canonical(p: string): string {
@@ -52,7 +52,8 @@ const isInsideSessions = (p: string) =>
  */
 export function sessionPathShape(raw: string | undefined | null): string | null {
   if (!raw) return null;
-  const abs = resolve(raw);
+  // A conversation named under the folder its chats were in before a Chats folder move is the same one in the current folder.
+  const abs = rebaseHomePath(resolve(raw));
   if (!abs.endsWith(".jsonl")) return null;
   const literal = abs.startsWith(join(agentRoot(), "sessions") + sep)
     ? join(SESSIONS_DIR, abs.slice(join(agentRoot(), "sessions").length))

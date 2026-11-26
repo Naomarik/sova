@@ -317,7 +317,11 @@
     "transport.allow-downloads",
     "transport.admin-done",
     "transport.bring-file",
-    "transport.placed-file"
+    "transport.placed-file",
+    "chats-folder.get",
+    "chats-folder.preview",
+    "chats-folder.move",
+    "chats-folder.cancel"
   ],
   "retired": [
     "settings.agents.get",

@@ -922,6 +922,34 @@ export class ChatHostRouter {
     return true;
   }
 
+  /**
+   * A Chats folder move (§app.chat-homes/move-folder): every chat process stops, idle ones included, since each holds
+   * the homes folder it started with. Helpers are parked (their records stay idle, never ended), every other chat is
+   * closed with `message` for its panes, and any process still recorded with no handle is stopped. Resolves to how
+   * many processes are left (0 unless one refused to stop).
+   */
+  async stopEveryProcess(message: string): Promise<number> {
+    for (const id of this.workers.unendedIds()) await this.workers.park(id).catch((err: unknown) => log(`${id}: park failed: ${err instanceof Error ? err.message : String(err)}`));
+    for (const h of [...this.remotes.values()]) if (!h.closed && !this.workerPaths.has(h.path)) await this.close(h.path, message).catch((err: unknown) => log(`${h.path}: close failed: ${err instanceof Error ? err.message : String(err)}`));
+    for (const r of this.sup.list()) {
+      this.sup.expectExit(r.chatId, "archived");
+      await this.sup.stop(r.chatId, "archived").catch(() => {});
+    }
+    return this.sup.list().length;
+  }
+
+  /** Whether any chat or helper runs a turn now (starting, running or compacting). */
+  workingChats(): string[] {
+    const out: string[] = [];
+    for (const h of this.remotes.values()) {
+      if (h.closed) continue;
+      const m = h.mirror;
+      if (m.running || m.starting || m.compacting) out.push(h.path);
+    }
+    for (const id of this.workers.unendedIds()) if (this.workers.working(id)) out.push(this.workers.record(id)?.path ?? id);
+    return [...new Set(out)];
+  }
+
   // ---- worker chats (§app.chat-processes/workers) ----------------------------------------------------
 
   /** Start worker chat `rec` in a process of its own and open it as its loadout; a process that does
@@ -1175,6 +1203,19 @@ export async function parkWorkerChat(chatId: string): Promise<boolean> {
 /** After a Move: these worker chats leave this server's memory; their records stay on disk as the safety copy. */
 export function forgetWorkerChats(chatIds: readonly string[]): void {
   router?.workers.forget(chatIds);
+}
+
+/** A Chats folder move: stop every chat process (ChatHostRouter.stopEveryProcess); the count left running. */
+export async function stopEveryChatProcess(message: string): Promise<number> {
+  return (await router?.stopEveryProcess(message)) ?? 0;
+}
+
+/** The session files of every chat and helper running a turn now. */
+export const workingChatPaths = (): string[] => router?.workingChats() ?? [];
+
+/** After a Chats folder move switched the homes root: the helpers' records are read again from the new one. */
+export function rehomeWorkerChats(oldRoot: string): number {
+  return router?.workers.rehome(oldRoot) ?? 0;
 }
 
 /** A home that arrived from another device (Transport): its helpers' records are tracked now. */

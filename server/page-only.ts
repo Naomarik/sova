@@ -90,6 +90,7 @@ const DOORS = {
   playbookDefaults: "Only the user saves a playbook's defaults. Ask them to press Save as My Defaults on its card in Sova's page. Nothing was saved.",
   extensions: "Only the user changes extensions. Ask them to do it in Settings → Extensions. Nothing was changed.",
   agentCpu: "Only the user changes how much CPU agents may use. Ask them to do it in Settings → General. Nothing was changed.",
+  chatsFolder: "Only the user moves the chats folder. Ask them to do it in Settings → General. Nothing was moved.",
   accountToken: "Only the user saves or removes the Cloudflare token. Ask them to do it in Settings → Public links. Nothing was changed.",
   setupChat: "Only the user starts a setup chat. Ask them to press Set Up With a Chat in Settings → Public links. Nothing was started.",
   cloudflared: "Only the user downloads programs. Ask them to press Download in Settings → Public links. Nothing was downloaded.",

@@ -398,11 +398,37 @@ const noteStart = (id: string) => {
 export const programStartedAt = (id: string): number | undefined => startedAt.get(id);
 export const programNotFound = (id: string): string | undefined => notFound.get(id);
 
+/** Programs that read chats, stopped for a Chats folder move (§app.chat-homes/move-folder): none starts until released. */
+const heldForMove = new Set<string>();
+
+/**
+ * A Chats folder move: every program that reads chats (it was handed the homes folder as SOVA_CHATS_DIR) stops and
+ * stays stopped until releaseChatReaders. Resolves to their ids.
+ */
+export async function holdChatReaders(): Promise<string[]> {
+  const ids: string[] = [];
+  for (const l of listedExtensions() ?? []) {
+    if (!l.valid || !hasRun(l.raw) || !readsChats(l.raw)) continue;
+    const id = l.valid.entry.id;
+    heldForMove.add(id);
+    ids.push(id);
+    await stopIfRunning(id).catch((err: unknown) => console.warn(`[extensions] ${id}: stop for the chats folder move failed: ${(err as Error).message}`));
+  }
+  return ids;
+}
+
+/** After the move (or its cancel): the held programs start again, each handed the homes folder in force now. */
+export async function releaseChatReaders(): Promise<void> {
+  const ids = [...heldForMove];
+  heldForMove.clear();
+  for (const id of ids) await watchProgram(id);
+}
+
 /** One failed program, while what it runs is what you approved. Read again in its turn: a stop may have come first. */
 const watchProgram = (id: string): Promise<void> =>
   oneAtATime(id, async () => {
     const l = listedExtension(id);
-    if (!l || l.state !== "on" || !hasRun(l.raw) || typeof l.raw.api !== "string" || stopped.has(id) || notFound.has(id)) return;
+    if (!l || l.state !== "on" || !hasRun(l.raw) || typeof l.raw.api !== "string" || stopped.has(id) || notFound.has(id) || heldForMove.has(id)) return;
     const st = await programStatus(id);
     if (st.state === "active" || st.state === "activating") return;
     const recent = (recentStarts.get(id) ?? []).filter((t) => Date.now() - t < START_WINDOW_MS);

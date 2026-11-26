@@ -551,6 +551,34 @@ export class WorkerRegistry {
     return wasRunning;
   }
 
+  /** Every helper whose record hasn't ended (a Chats folder move parks them all: §app.chat-homes/move-folder). */
+  unendedIds(): string[] {
+    return [...this.live.values()].filter((l) => l.rec.state !== "ended").map((l) => l.rec.chatId);
+  }
+
+  /**
+   * After a Chats folder move switched the homes root: every helper whose record was read from a home of `oldRoot`
+   * leaves memory, and every home's records are read again from the current root (their paths rewritten by the move).
+   * Returns how many records are tracked from the homes now.
+   */
+  rehome(oldRoot: string): number {
+    if (!this.homes) return 0;
+    for (const [id, l] of this.live) {
+      if (!l.rec.path.startsWith(oldRoot + "/")) continue;
+      this.cancelSettle(l);
+      this.live.delete(id);
+      this.keys.delete(l.rec.key);
+    }
+    let n = 0;
+    for (const rec of this.readHomes()) {
+      if (this.live.has(rec.chatId)) continue;
+      this.track(rec);
+      n++;
+    }
+    membersFromRegistry();
+    return n;
+  }
+
   /** After a Move: these helpers leave this server's memory; their records' files stay as they are (the safety copy). */
   forget(chatIds: readonly string[]): void {
     for (const id of chatIds) {

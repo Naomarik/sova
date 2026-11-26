@@ -13,6 +13,7 @@ import { PROJECT_ENTRIES, VERB_ENTRIES } from "./commands/projects.ts";
 import { OVERSEER_ENTRIES } from "./commands/overseer.ts";
 import { OTHER_ENTRIES } from "./commands/other.ts";
 import { TRANSPORT_ENTRIES } from "./commands/transport.ts";
+import { CHATS_FOLDER_ENTRIES } from "./commands/chats-folder.ts";
 
 export type { CommandEffect, CommandEntry, CommandParam, CommandRoute, MeshNeed, ParamIn, ParamType } from "./commands/types.ts";
 
@@ -24,6 +25,7 @@ export const COMMANDS: readonly CommandEntry[] = [
   ...OVERSEER_ENTRIES,
   ...OTHER_ENTRIES,
   ...TRANSPORT_ENTRIES,
+  ...CHATS_FOLDER_ENTRIES,
 ];
 
 export const findCommand = (id: string): CommandEntry | undefined => COMMANDS.find((c) => c.id === id);

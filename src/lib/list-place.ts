@@ -20,7 +20,7 @@ import type { ExtensionInfo, SessionSummary } from "../../shared/protocol";
 import { offersPlace, screenPath } from "../../shared/extension-offers";
 import { createSlotPolicy, readCappedJson, type SlotPolicy, type SlotStorage } from "./reply-slot";
 import { createPlaceAnswers, sameRowExtensions, type RowClock, type RowExtension, type RowSource } from "./row-place";
-import { setLabelsAsk } from "./labels-ask";
+import { labelsAsk, setLabelsAsk } from "./labels-ask";
 
 /** People read from one answer; the rest make it bad. */
 export const LIST_PEOPLE_MAX = 32;
@@ -208,10 +208,14 @@ export interface ListPlace {
   declaration(): ListDeclaration | null;
   /** The declared person a caller was, or undefined. */
   personOfCaller(caller: string): ListPerson | undefined;
+  /** This browser had a declaration last time (lib/labels-ask's kept pairs) and nothing has said
+      otherwise yet: the pane gives its rows their owner slot from the first draw, so the declaration
+      arriving draws the marks without drawing the list again. */
+  expected(): boolean;
 }
 
 /** No declaration, ever: outside the provider, and the whole page while no extension names `list`. */
-export const NO_LIST_PLACE: ListPlace = { declaration: () => null, personOfCaller: () => undefined };
+export const NO_LIST_PLACE: ListPlace = { declaration: () => null, personOfCaller: () => undefined, expected: () => false };
 
 /** The page's list place, handed down from App to the pane and the transcript. */
 export const ListPlaceContext = createContext<ListPlace>(NO_LIST_PLACE);
@@ -232,39 +236,52 @@ export function createListPlace(opts: {
   clock?: RowClock;
   /** Where the labels the declaration names go (lib/labels-ask; a test's own). */
   readLabels?: (pairs: string | null) => void;
+  /** Whether a declaration is expected at first (default: lib/labels-ask kept pairs from last time). */
+  expected?: boolean;
 }): ListPlace {
   const fetch: Fetch = opts.fetch ?? ((url, init) => globalThis.fetch(url, init));
   const policy = opts.policy ?? listPolicy;
   const sources = createMemo(() => listExtensions(opts.extensions()), [], { equals: sameRowExtensions });
   const [declaration, setDeclaration] = createSignal<ListDeclaration | null>(null, { equals: sameDeclaration });
+  const [expected, setExpected] = createSignal(opts.expected ?? labelsAsk() !== null);
+  // The rows carry the owner label only while a declaration names it (lib/labels-ask). Said only
+  // once it is known: an answer landed, or there is no extension to ask. Until then the pairs kept
+  // from last time stand, so a page load that ends where the last one did changes nothing.
+  const readLabels = opts.readLabels ?? setLabelsAsk;
+  const settle = (d: ListDeclaration | null) => {
+    setDeclaration(d);
+    readLabels(labelPairs(d));
+    if (!d) setExpected(false);
+  };
   let lane: ReturnType<typeof createPlaceAnswers<ListDeclaration | null>> | null = null;
 
   const close = () => {
     lane?.stop();
     lane = null;
-    setDeclaration(null);
+    // No extension names `list` in a loaded extension list: known. No list yet: nothing is known.
+    if (opts.extensions() !== undefined && !sources().length) settle(null);
+    else setDeclaration(null);
   };
   const ask = (soon: boolean) => {
     const list = sources();
     if (!list.length || !opts.sessions()) return close();
-    lane ??= createPlaceAnswers(policy, validateListAnswer, (answers) => setDeclaration(answers.find(([, d]) => d)?.[1] ?? null), { clock: opts.clock });
+    lane ??= createPlaceAnswers(policy, validateListAnswer, (answers) => settle(answers.find(([, d]) => d)?.[1] ?? null), { clock: opts.clock });
     lane.ask(list.map((ext): RowSource => ({ ext, ask: (signal) => askList(fetch, ext.id, signal) })), soon);
   };
 
   // Whether the list is there yet, and which extensions: at once. The list changing: no sooner than
   // ROW_ASK_MIN_MS after the last ask. With no extension that names `list` neither does anything.
   const hasList = createMemo(() => !!opts.sessions());
-  createEffect(on([hasList, sources], () => ask(false)));
+  // The extension list loading with no `list` extension in it is news too: last time's pairs go.
+  const extensionsKnown = createMemo(() => opts.extensions() !== undefined);
+  createEffect(on([hasList, sources, extensionsKnown], () => ask(false)));
   createEffect(on(opts.sessions, () => sources().length > 0 && ask(true), { defer: true }));
   const offPolicy = policy.subscribe(() => lane && ask(true));
-  // The rows carry the owner label only while a declaration names it (lib/labels-ask).
-  const readLabels = opts.readLabels ?? setLabelsAsk;
-  createEffect(on(declaration, (d) => readLabels(labelPairs(d))));
   onCleanup(() => {
     offPolicy();
-    close();
-    readLabels(null);
+    lane?.stop();
+    lane = null;
   });
 
-  return { declaration, personOfCaller: (caller) => personOfCaller(declaration(), caller) };
+  return { declaration, personOfCaller: (caller) => personOfCaller(declaration(), caller), expected };
 }

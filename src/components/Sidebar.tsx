@@ -3060,7 +3060,8 @@ export function Sidebar(props: {
 
     </>
   );
-  const hasDeclaration = createMemo(() => listPlace.declaration() !== null);
+  // Expected from the first draw when this browser had one last time, so its arrival draws only the marks.
+  const hasDeclaration = createMemo(() => listPlace.declaration() !== null || listPlace.expected());
   /** A row's owner and whether it is you, by the declaration (reactive: it changes with the declaration). */
   const ownerOfRow: OwnerOfRow = (s) => {
     const d = listPlace.declaration();

@@ -59,7 +59,7 @@ function clock() {
   };
 }
 
-function page(opts: { extensions: ExtensionInfo[]; answers?: Record<string, unknown> }) {
+function page(opts: { extensions: ExtensionInfo[] | undefined; answers?: Record<string, unknown>; expected?: boolean; fail?: boolean }) {
   const calls: string[] = [];
   const asked: (string | null)[] = [];
   const time = clock();
@@ -74,8 +74,10 @@ function page(opts: { extensions: ExtensionInfo[]; answers?: Record<string, unkn
       policy,
       clock: time.c,
       readLabels: (p) => asked.push(p),
+      expected: opts.expected ?? false,
       fetch: async (url, init) => {
         calls.push(`${init.method ?? "GET"} ${url}`);
+        if (opts.fail) throw new Error("backend down");
         const id = decodeURIComponent(url.split("/")[2]!);
         return new Response(JSON.stringify(opts.answers?.[id] ?? DECL));
       },
@@ -130,8 +132,40 @@ describe("with an extension that declares people", () => {
     p.advance(ROW_ASK_MIN_MS);
     await tick();
     assert.equal(p.calls.length, 2, "one trailing ask");
+    const n = p.asked.length;
     p.dispose();
-    assert.equal(p.asked.at(-1), null, "gone with the page");
+    assert.equal(p.asked.length, n, "the page going says nothing: the pairs stay for the next load");
+  });
+
+  test("labels are said only once known: kept pairs stand until an answer or a loaded extension list says otherwise", async () => {
+    // This browser had a declaration: rows get their slot from the first draw, nothing is said yet.
+    const p = page({ extensions: undefined, expected: true });
+    p.setSessions(many(3));
+    await tick();
+    assert.equal(p.place.expected(), true);
+    assert.deepEqual(p.asked, [], "no extension list yet: nothing known, nothing said");
+    p.setExtensions([team]);
+    await tick();
+    assert.deepEqual(p.asked, ["team-bar:owner"], "the answer names the same pairs: the page's reads were already right");
+    p.dispose();
+
+    // Last time's extension is gone: once the extension list is loaded, the pairs and the slot go.
+    const gone = page({ extensions: undefined, expected: true });
+    assert.equal(gone.place.expected(), true);
+    gone.setExtensions([plain]);
+    await tick();
+    assert.equal(gone.place.expected(), false);
+    assert.deepEqual(gone.asked, [null]);
+    gone.dispose();
+
+    // A request that fails is not an answer: the kept pairs stand.
+    const down = page({ extensions: [team], expected: true, fail: true });
+    down.setSessions(many(1));
+    await tick();
+    assert.equal(down.calls.length, 1);
+    assert.equal(down.place.expected(), true);
+    assert.deepEqual(down.asked, []);
+    down.dispose();
   });
 
   test("the first extension with a good declaration is the one", async () => {

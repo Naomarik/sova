@@ -5,13 +5,19 @@
  * and POST /api/chats-folder/move/cancel. The move itself is move-root.ts; this wires it to the running server.
  */
 import type { Hono } from "hono";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { expandPath, loadPolicyFile, policyFilePath } from "../../pi-config/extensions/sandbox/policy.ts";
+import { sessionTmpBase } from "../../pi-config/extensions/sandbox/session-policy.ts";
 import { jobAlive } from "../background-jobs";
+import { agentRoot } from "../state-root";
+import { TOOL_DIRS } from "../transport/agent-scope";
 import { rehomeWorkerChats, stopEveryChatProcess, workingChatPaths } from "../chat-host";
 import { holdChatReaders, releaseChatReaders } from "../extension-loader";
 import { sessionsChanged } from "../list-generation";
 import { yourClickRefusal } from "../page-only";
 import { resyncFeedWatches } from "../session-feed-watch";
-import { cachedTitleOf, forgetHomedSessions, listSessionsAfresh } from "../sessions-index";
+import { cachedTitleOf, forgetHomedSessions, listSessions, listSessionsAfresh } from "../sessions-index";
 import { cancelMove, chatsFolderInfo, type MoveDeps, previewMove, recoverMove, startMove } from "./move-root";
 
 const log = (line: string) => console.log(`[chats-folder] ${line}`);
@@ -19,6 +25,14 @@ const log = (line: string) => console.log(`[chats-folder] ${line}`);
 export const liveMoveDeps: MoveDeps = {
   working: () => workingChatPaths().map((p) => cachedTitleOf(p) || p),
   jobAlive: (j) => jobAlive(j),
+  writableRoots: async () => {
+    const home = homedir();
+    const agent = agentRoot();
+    const cwds = [...new Set((await listSessions()).map((r) => r.cwd).filter((c): c is string => typeof c === "string" && c.length > 0))];
+    const policy = loadPolicyFile(policyFilePath(agent));
+    const extras = policy.ok ? policy.value.writable.map((w) => expandPath(w, { home, agentDir: agent, cwd: "/" })) : [];
+    return [...cwds, ...extras, sessionTmpBase(), ...TOOL_DIRS.map((d) => join(home, d))];
+  },
   stopChats: (message) => stopEveryChatProcess(message),
   holdReaders: holdChatReaders,
   releaseReaders: releaseChatReaders,

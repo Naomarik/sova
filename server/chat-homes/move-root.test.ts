@@ -8,7 +8,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, st
 import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import { CHAT_HOMES_ROOT_ENV, HOMES_ENV, homesRoot, homesRootInfo, MARKER_FILE, onHomesRootSwitch, rebaseHomePath, resetHomesMemoForTests } from "./root";
-import { beginHomesWork, cancelMove, chatsFolderInfo, currentMove, JOURNAL_FILE, repositoryOf, syncIo, liveSyncOf, MOVE_STATE_FILE, moveHold, moveSettled, type MoveDeps, previewMove, recoverMove, resetMoveForTests, startMove, SUBFOLDER, targetOf } from "./move-root";
+import { beginHomesWork, writableRootOf, cancelMove, chatsFolderInfo, currentMove, JOURNAL_FILE, repositoryOf, syncIo, liveSyncOf, MOVE_STATE_FILE, moveHold, moveSettled, type MoveDeps, previewMove, recoverMove, resetMoveForTests, startMove, SUBFOLDER, targetOf } from "./move-root";
 import { sessionPathShape } from "../paths";
 import { acquireChatHandle, setChatRouter, type ChatHandle } from "../chat-handle";
 import { createTransport, newTid, resetActiveIndex } from "../transport/store";
@@ -423,5 +423,20 @@ describe("a move", () => {
     await moveSettled();
     assert.equal(currentMove()!.phase, "done", currentMove()!.error);
     assert.ok(statSync(join(to, fresh, "sessions")).isDirectory());
+  });
+
+  test("never into a folder a confined chat may write (a chat's folder, a sandbox writable root, a tool folder); home itself doesn't count", async () => {
+    const proj = join(outside, `notes-${n}`);
+    mkdirSync(proj, { recursive: true });
+    const d = deps({ writableRoots: async () => [proj] });
+    assert.match((await previewMove(join(proj, "chats"), d)).refusal ?? "", /A chat can write in that folder \(.*notes-/);
+    const r = await startMove(join(proj, "chats"), d);
+    assert.ok(!r.ok && /A chat can write in that folder/.test(r.error));
+    assert.equal(existsSync(join(proj, "chats")), false, "nothing made there");
+    assert.equal((await previewMove(to, d)).refusal, undefined, "a folder beside it is fine");
+    // A chat started in home itself (or above) would refuse every folder under home: it never counts.
+    const home = join(outside, `home-w-${n}`);
+    assert.equal(writableRootOf(join(home, "data", "chats"), [home, "/"], home), null);
+    assert.equal(writableRootOf(join(home, "proj", "chats"), [home, join(home, "proj")], home), join(home, "proj"));
   });
 });

@@ -45,6 +45,9 @@ export interface MoveDeps {
   working(): string[];
   /** Whether a background job whose record hasn't ended still runs (its unit or cgroup); left out, every such record counts. */
   jobAlive?(job: JobRecord): Promise<boolean>;
+  /** Every folder Sova knows a confined chat may write: each chat's folder, the sandbox policy's writable extras, the
+      sandbox tmp base, the Transport agent's tool folders. Left out: none. */
+  writableRoots?(): Promise<string[]>;
   /** Stop every chat process, idle ones included; resolves to how many are left. */
   stopChats(message: string): Promise<number>;
   /** Stop the programs that read chats, and start them again. */
@@ -314,7 +317,22 @@ export async function jobsInFolder(from: string, alive?: (job: JobRecord) => Pro
   return out;
 }
 
-function refusalFor(target: string, bytes: number, deps: Pick<MoveDeps, "working"> | null, resuming: boolean, jobs: readonly string[] = []): string | null {
+/**
+ * The writable root of a confined chat `target` is in, or null. The home folder itself and what is above it never
+ * count (a chat started in `~` may write all of home: the default chats folder too), only a folder below home or
+ * outside it.
+ */
+export function writableRootOf(target: string, roots: readonly string[], home: string = canonical(homedir())): string | null {
+  for (const raw of roots) {
+    if (!raw || !isAbsolute(raw)) continue;
+    const root = canonical(raw);
+    if (root === "/" || root === home || within(home, root)) continue;
+    if (within(target, root)) return root;
+  }
+  return null;
+}
+
+function refusalFor(target: string, bytes: number, deps: Pick<MoveDeps, "working"> | null, resuming: boolean, jobs: readonly string[] = [], writable: readonly string[] = []): string | null {
   const locked = lockedWhy();
   if (locked) return locked;
   if (running && ACTIVE.has(running.move.phase)) return `Your chats are already moving to ${running.move.to}.`;
@@ -331,6 +349,8 @@ function refusalFor(target: string, bytes: number, deps: Pick<MoveDeps, "working
     if (within(target, own) || within(own, target)) return `That folder is inside Sova's own settings folder (${own}), or holds it. Pick one outside it.`;
   const repo = repositoryOf(target);
   if (repo) return `That folder is inside a repository (${repo}), where your chats would show as changes. Pick one outside it.`;
+  const open = writableRootOf(target, writable);
+  if (open) return `A chat can write in that folder (${open}), so it could change your chats there. Pick one outside it.`;
   if (!resuming && !emptyOrNew(target)) return `${target} already holds files. Pick an empty folder, or a new one.`;
   try {
     accessSync(nearestExisting(target), constants.W_OK);
@@ -368,7 +388,7 @@ export function chatsFolderInfo(): ChatsFolderInfo {
   return { path: info.root, source: info.source, ...(info.env ? { env: info.env } : {}), exists: info.exists, ...(locked ? { locked } : {}), ...(move ? { move } : {}), ...(prev.length ? { movedFrom: prev } : {}) };
 }
 
-export async function previewMove(picked: string, deps: Pick<MoveDeps, "working" | "jobAlive"> | null): Promise<ChatsFolderPreview> {
+export async function previewMove(picked: string, deps: Pick<MoveDeps, "working" | "jobAlive" | "writableRoots"> | null): Promise<ChatsFolderPreview> {
   if (!picked || !isAbsolute(picked)) return { target: picked, chats: 0, files: 0, bytes: 0, free: null, refusal: "Pick a folder." };
   const from = homesRoot();
   const target = interruptedTo(canonical(picked)) ? canonical(picked) : targetOf(picked);
@@ -376,7 +396,8 @@ export async function previewMove(picked: string, deps: Pick<MoveDeps, "working"
   const bytes = entries.reduce((n, e) => n + e.size, 0);
   const sync = liveSyncOf(target);
   const jobs = existsSync(from) ? await jobsInFolder(from, deps?.jobAlive) : [];
-  const refusal = refusalFor(target, bytes, deps, interruptedTo(target), jobs);
+  const writable = (await deps?.writableRoots?.().catch(() => [] as string[])) ?? [];
+  const refusal = refusalFor(target, bytes, deps, interruptedTo(target), jobs, writable);
   return { target, chats: chatCount(from, entries), files: entries.length, bytes, free: freeAt(target), ...(sync ? { liveSync: sync } : {}), ...(refusal ? { refusal } : {}) };
 }
 
@@ -758,7 +779,8 @@ export async function startMove(picked: string, deps: MoveDeps): Promise<StartAn
   const entries = existsSync(from) ? await walkAsync(from) : [];
   const bytes = entries.reduce((n, e) => n + e.size, 0);
   const jobs = existsSync(from) ? await jobsInFolder(from, deps.jobAlive) : [];
-  const why = refusalFor(to, bytes, deps, resuming, jobs);
+  const writable = (await deps.writableRoots?.().catch(() => [] as string[])) ?? [];
+  const why = refusalFor(to, bytes, deps, resuming, jobs, writable);
   if (why) return { ok: false, status: 409, error: why };
   const prior = resuming ? readState() : null;
   const move: ChatsFolderMove = {

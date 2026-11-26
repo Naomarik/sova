@@ -83,6 +83,9 @@ test("an idle open chat and a compressed chat move with the whole folder; afterw
     // A is idle with its process running.
     await until("a's process", async () => chatProcessRoots(s.agentDir, s.pid).includes(from));
 
+    // A chat's own folder is one a confined chat writes: never the chats folder.
+    const inWork = (await call("GET", `/api/chats-folder/preview?path=${encodeURIComponent(join(s.work, "chats"))}`)).body;
+    assert.match(inWork.refusal ?? "", /A chat can write in that folder/);
     const to = join(s.scratch, "moved-chats");
     const preview = (await call("GET", `/api/chats-folder/preview?path=${encodeURIComponent(to)}`)).body;
     assert.equal(preview.target, to);

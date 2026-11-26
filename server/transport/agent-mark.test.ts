@@ -10,6 +10,7 @@ import { scratchRoot } from "../test-scratch";
 import { parseParentScope } from "../../pi-config/extensions/sandbox/policy.ts";
 import { type AgentScope, agentLaunchFlags, agentScope, agentTidOf, preparedFile } from "./agent-scope";
 import { isTransportAgent, markAgent } from "./agent";
+import { homesRoot, markerFile, resetHomesMemoForTests } from "../chat-homes/root";
 
 after(dropScratchAgentDir);
 
@@ -77,4 +78,23 @@ test("a device record that can't be read is never written over: recording an age
   writeFileSync(preparedFile(s.state), torn);
   assert.throws(() => markAgent(s.state, "01a0-second", "tr_def456", 2, s.scope), /can't be read/);
   assert.equal(readFileSync(preparedFile(s.state), "utf8"), torn);
+});
+
+test("after a Chats folder move, an agent recorded at its old path keeps its mark in the folder it lives in now, the one its chat opens from", () => {
+  const s = setup("01a0-moved-agent");
+  // The chats are in the current homes folder now; the marker names the one they moved from (kept, as a move keeps it).
+  const now = homesRoot();
+  mkdirSync(join(now, s.id, "sessions"), { recursive: true });
+  writeFileSync(join(now, s.id, "home.json"), JSON.stringify({ v: 1, id: s.id }));
+  writeFileSync(markerFile(), JSON.stringify({ v: 1, homes: now, movedFrom: [join(s.root, "homes")] }));
+  resetHomesMemoForTests();
+  const there = join(now, s.id, "sessions", `${s.id}.jsonl`);
+  // The record still names the old path (Allow Downloads re-records its widened scope through it).
+  const widened = { ...s.scope, proxyAllow: ["nodejs.org"] };
+  markAgent(s.state, s.id, "tr_abc123", 1, widened, s.path);
+  assert.equal((JSON.parse(readFileSync(join(now, s.id, AGENT_MARK), "utf8")) as { scope: AgentScope }).scope.proxyAllow?.[0], "nodejs.org", "written in the home it opens from");
+  assert.throws(() => readFileSync(join(s.home, AGENT_MARK)), /ENOENT/, "never in the old, kept one");
+  const flags = agentLaunchFlags(s.state, s.id, there);
+  assert.ok(flags && "extra" in flags);
+  assert.deepEqual(JSON.parse(flags.extra["sandbox-parent"]!).proxyAllow, ["nodejs.org"]);
 });

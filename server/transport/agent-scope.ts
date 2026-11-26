@@ -1,12 +1,12 @@
 // Where the Transport agent's tools may reach (§app.transport/agent "Confined"): Sova's own sandbox, given a scope
 // the way a sandboxed parent hands one to its workers (the sandbox extension's `--sandbox-parent`). It writes only
-// in the project's folder, the chat's worktrees and the tool folders installs fill in the user's home, never a folder
-// on the user's PATH; the caches
+// in the project's folder, the chat's worktrees and the install and cache folders of the user's tools, never a folder
+// on the user's PATH, a file a shell profile sources or a version already installed; the caches
 // installs use (~/.cache, ~/.npm, ~/.m2) and mise's and pnpm's state stay the sandbox's own private copies, as for
 // every confined chat. Hidden from it besides the policy's own list: this device's host values (host.json), the
 // transport records that carry the source's, the chat homes and the other projects registered here.
 // Node builtins only: server/chat-manager.ts reads the launch flags from here.
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 /** The scope, in the sandbox extension's ParentScope shape (pi-config/extensions/sandbox/policy.ts). */
@@ -23,41 +23,72 @@ export interface AgentScope {
   proxyAllow?: string[];
 }
 
-/** The tool folders under the user's home an install fills (version managers, toolchains, git deps, the Clojure CLI's
-    own config folder in either of its places), writable when they exist, but for the folders on the user's PATH in them
-    (PATH_TOOL_DIRS, and any folder the PATH names in one): those stay read-only, so nothing the agent installs runs as
-    a program of the user's next shell or chat; putting a program on the PATH is asked on its card (transport_setup
-    `path`). The user's own bin folder (~/.local/bin) is on the PATH, so it is none of them. The caches and mise's and
-    pnpm's state are the sandbox's private copies already; mise writes nothing of its own under ~/.config for an
-    install, so that stays read-only. */
-export const TOOL_DIRS = [".local/share/mise", ".gitlibs", ".cargo", ".rustup", "go", ".bun", ".deno", ".volta", ".asdf", ".clojure", ".config/clojure"] as const;
-/** The folders inside TOOL_DIRS that tools put on the PATH (shims and bin folders): read-only for the agent, and made
-    (empty) when missing once it is confined, so the sandbox can bind them read-only: an install would make one. */
-export const PATH_TOOL_DIRS = [".local/share/mise/shims", ".cargo/bin", "go/bin", ".bun/bin", ".deno/bin", ".volta/bin", ".asdf/shims", ".asdf/bin"] as const;
-/** The version managers' install folders (`<tool>/<version>/bin` in each), relative to the home: every version's bin
-    folder already there is held read-only too, since the user's shell puts it on the PATH (`mise activate`, asdf)
-    while the server's own PATH, which pathDirs reads, doesn't carry it. A version the agent installs is made later,
-    writable. */
-export const VERSION_INSTALL_DIRS = [".local/share/mise/installs", ".asdf/installs"] as const;
+/**
+ * How each tool folder under the user's home is opened to the agent: only its install and cache subfolders are writable,
+ * never the folder itself, so nothing at its top can be written or made (a file a shell profile sources, such as
+ * ~/.bun/_bun, ~/.cargo/env or ~/.asdf/asdf.sh, its bin or shim folder, its settings). `open`: writable whole (downloads,
+ * caches, registries). `versions`: writable for a new entry, but each entry already there (a version, a plugin, a
+ * toolchain, an image) read-only whole, `depth` levels below: a version the agent installs is a new folder it may write,
+ * one the user already runs isn't. A file is never a writable root (the sandbox's writable roots are folders), so a tool's
+ * lock file at its folder's top (cargo's .package-cache) stays read-only: cargo goes on without it there. Nothing on the
+ * user's PATH is writable (~/.local/bin is no tool folder, and ~/.deno holds only its bin); putting a program there is
+ * asked on the agent's card (transport_setup `path`). The caches in ~/.cache and mise's and pnpm's state are the
+ * sandbox's private copies already.
+ */
+export interface ToolLayout {
+  dir: string;
+  open?: readonly string[];
+  versions?: readonly { path: string; depth: number }[];
+}
+export const TOOL_LAYOUTS: readonly ToolLayout[] = [
+  { dir: ".local/share/mise", open: ["downloads"], versions: [{ path: "installs", depth: 2 }, { path: "plugins", depth: 1 }] },
+  { dir: ".asdf", open: ["downloads", "tmp"], versions: [{ path: "installs", depth: 2 }, { path: "plugins", depth: 1 }] },
+  { dir: ".cargo", open: ["registry", "git"] },
+  { dir: ".rustup", open: ["downloads", "tmp", "update-hashes"], versions: [{ path: "toolchains", depth: 1 }] },
+  { dir: "go", open: ["pkg"] },
+  { dir: ".bun", open: ["install/cache"] },
+  { dir: ".volta", open: ["cache", "tmp", "log", "tools/inventory"], versions: [{ path: "tools/image", depth: 2 }] },
+  { dir: ".gitlibs", open: ["_repos", "libs"] },
+  // The Clojure CLI's config folder: its first run fills it (deps.edn, tools/); what is there already stays as it is.
+  { dir: ".clojure", versions: [{ path: "", depth: 1 }] },
+  { dir: ".config/clojure", versions: [{ path: "", depth: 1 }] },
+];
+/** The tool folders, relative to the home. */
+export const TOOL_DIRS = TOOL_LAYOUTS.map((l) => l.dir);
 
-/** Made when missing, so a first install has somewhere to go: mise's installs. */
+/** Made when missing, so a first install has somewhere to go: mise's folder. */
 export const MADE_TOOL_DIRS = [".local/share/mise"] as const;
 
 /** The Clojure CLI's config folder for the user (CLJ_CONFIG's default, which its first run fills with deps.edn and
     tools/): `$XDG_CONFIG_HOME/clojure` when that is set, else `~/.clojure`. Pure. */
 export const clojureConfigDir = (home: string, xdgConfigHome?: string): string => (xdgConfigHome?.startsWith("/") ? join(xdgConfigHome, "clojure") : join(home, ".clojure"));
 
-/** The tool folders made when missing before the agent's scope is read (absolute): MADE_TOOL_DIRS, and the Clojure CLI's
-    config folder when the project runs the CLI (a deps.edn) and that folder is one of TOOL_DIRS. Pure. */
-export function toolDirsToMake(home: string, projectHas: (file: string) => boolean, xdgConfigHome?: string): string[] {
-  const out: string[] = MADE_TOOL_DIRS.map((d) => join(home, d));
+/** A layout's writable subfolders (absolute): its open and versions paths. */
+const openPaths = (home: string, l: ToolLayout): string[] => [...(l.open ?? []), ...(l.versions ?? []).map((v) => v.path)].map((p) => join(home, l.dir, p));
+
+/** The folders made before the agent's scope is read (absolute): MADE_TOOL_DIRS, the Clojure CLI's config folder when
+    the project runs the CLI (a deps.edn) and that folder is one of TOOL_DIRS, and each writable subfolder of every tool
+    folder there (or made now), so an install writes into one. Pure but for `exists`. */
+export function toolDirsToMake(home: string, projectHas: (file: string) => boolean, xdgConfigHome?: string, exists: (p: string) => boolean = existsSync): string[] {
+  const made: string[] = MADE_TOOL_DIRS.map((d) => join(home, d));
   const clj = clojureConfigDir(home, xdgConfigHome);
-  if (projectHas("deps.edn") && TOOL_DIRS.some((d) => resolve(join(home, d)) === resolve(clj))) out.push(clj);
-  return out;
+  if (projectHas("deps.edn") && TOOL_DIRS.some((d) => resolve(join(home, d)) === resolve(clj))) made.push(clj);
+  const there = TOOL_LAYOUTS.filter((l) => made.includes(join(home, l.dir)) || exists(join(home, l.dir)));
+  return [...new Set([...made, ...there.flatMap((l) => openPaths(home, l))])];
 }
 
 /** The PATH's folders (absolute ones only), from a PATH string. Pure. */
 export const pathDirsOf = (path: string | undefined): string[] => (path ?? "").split(":").filter((d) => d.startsWith("/")).map((d) => resolve(d));
+
+type Kind = "dir" | "file" | "link" | "missing";
+const kindOf = (p: string): Kind => {
+  try {
+    const st = lstatSync(p);
+    return st.isSymbolicLink() ? "link" : st.isDirectory() ? "dir" : "file";
+  } catch {
+    return "missing";
+  }
+};
 
 /** A folder's entries, none when it can't be listed. */
 const listDir = (dir: string): string[] => {
@@ -75,25 +106,34 @@ const within = (child: string, parent: string): boolean => {
 };
 
 /**
- * The agent's scope. Writable: `folder` (the project's), each of `trees` (the chat's worktrees here) that exists,
- * and each tool folder of TOOL_DIRS under `home` that exists. Read-only inside those tool folders: their PATH folders
- * (PATH_TOOL_DIRS), each version's bin folder the version managers hold now (VERSION_INSTALL_DIRS), and each folder of
- * `pathDirs` (the user's PATH) in one. Hidden: each of `hidden` that exists and
- * neither holds nor lies inside a writable root (a project registered at a folder above this one stays readable). Pure
- * but for `exists` and `list`.
+ * The agent's scope. Writable: `folder` (the project's), each of `trees` (the chat's worktrees here) that exists, and
+ * the install and cache subfolders of each tool folder under `home` (TOOL_LAYOUTS) that exist.
+ * Read-only inside those: every entry already in a `versions` folder (a link is passed over: it names an entry, and the
+ * entry it names is held where it is), and each folder of `pathDirs` (the user's PATH) in one. Hidden: each of `hidden`
+ * that exists and neither holds nor lies inside a writable root (a project registered at a folder above this one stays
+ * readable). Pure but for `exists`, `list` and `kind`.
  */
-export function agentScope(input: { folder: string; trees?: readonly string[]; home: string; hidden?: readonly string[]; pathDirs?: readonly string[]; exists?: (p: string) => boolean; list?: (dir: string) => string[] }): AgentScope {
+export function agentScope(input: { folder: string; trees?: readonly string[]; home: string; hidden?: readonly string[]; pathDirs?: readonly string[]; exists?: (p: string) => boolean; list?: (dir: string) => string[]; kind?: (p: string) => Kind }): AgentScope {
   const exists = input.exists ?? existsSync;
   const list = input.list ?? listDir;
+  const kind = input.kind ?? kindOf;
   const folder = resolve(input.folder);
-  const tools = TOOL_DIRS.map((d) => join(input.home, d)).filter(exists);
-  const writable = [...new Set([folder, ...(input.trees ?? []).map((t) => resolve(t)).filter(exists), ...tools])];
-  const inTool = (p: string) => tools.some((t) => within(p, t));
-  const versionBins = VERSION_INSTALL_DIRS.map((d) => join(input.home, d))
-    .filter(inTool)
-    .flatMap((root) => list(root).flatMap((tool) => list(join(root, tool)).map((v) => join(root, tool, v, "bin"))))
-    .filter(exists);
-  const readOnly = [...new Set([...PATH_TOOL_DIRS.map((d) => join(input.home, d)), ...versionBins, ...(input.pathDirs ?? []).map((d) => resolve(d))])].filter(inTool);
+  const tools = TOOL_LAYOUTS.filter((l) => exists(join(input.home, l.dir)));
+  const toolRoots = tools.flatMap((l) => openPaths(input.home, l)).filter(exists);
+  const writable = [...new Set([folder, ...(input.trees ?? []).map((t) => resolve(t)).filter(exists), ...toolRoots])];
+  const held: string[] = [];
+  const walk = (dir: string, depth: number): void => {
+    for (const name of list(dir).sort()) {
+      const p = join(dir, name);
+      const k = kind(p);
+      if (k === "link" || k === "missing") continue;
+      if (depth <= 1 || k === "file") held.push(p);
+      else walk(p, depth - 1);
+    }
+  };
+  for (const l of tools) for (const v of l.versions ?? []) walk(join(input.home, l.dir, v.path), v.depth);
+  const inTool = (p: string) => toolRoots.some((t) => within(p, t));
+  const readOnly = [...new Set([...held, ...(input.pathDirs ?? []).map((d) => resolve(d))])].filter(inTool);
   const hidden = [...new Set((input.hidden ?? []).filter(Boolean).map((h) => resolve(h)))].filter((h) => exists(h) && !writable.some((w) => within(w, h) || within(h, w)));
   return { version: 1, level: "workspace-write", workspaceRoot: folder, writable, ...(readOnly.length ? { readOnly } : {}), ...(hidden.length ? { hidden } : {}) };
 }

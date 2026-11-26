@@ -294,10 +294,12 @@ test("the agent runs confined: its scope writes only the project's folder, the a
   const d = device(root, { agentHidden: async () => [hostJson, other, join(root, "webapps"), join(root, "nowhere")] });
   await prepareDestination({ ...req, trees: [tree, join(root, "webapps", "not-there")] }, d.deps);
   const scope = d.started[0]!.scope;
-  assert.deepEqual(scope.writable, [req.project.path, tree, join(root, ".local/share/mise"), join(root, ".cargo")]);
+  // Of the tool folders only their install and cache folders, made first: never a folder's top or its bin.
+  const m = join(root, ".local/share/mise");
+  assert.deepEqual(scope.writable, [req.project.path, tree, join(m, "downloads"), join(m, "installs"), join(m, "plugins"), join(root, ".cargo/registry"), join(root, ".cargo/git")]);
   // The PATH's folders in its tool folders stay read-only, made so the sandbox can bind them; ~/.local/bin is none of its.
-  assert.deepEqual(scope.readOnly, [join(root, ".local/share/mise/shims"), join(root, ".cargo/bin")]);
-  assert.ok(existsSync(join(root, ".cargo", "bin")) && existsSync(join(root, ".local/share/mise/shims")));
+  assert.equal(scope.readOnly, undefined, "nothing installed yet to hold");
+  assert.ok(!existsSync(join(root, ".cargo", "bin")) && !existsSync(join(m, "shims")), "no PATH folder is made for it");
   assert.ok(!existsSync(join(root, ".local", "bin")), "the user's own bin folder is never made for it");
   assert.equal(scope.workspaceRoot, req.project.path);
   assert.deepEqual(scope.hidden, [hostJson, other]);
@@ -313,7 +315,7 @@ test("the agent runs confined: its scope writes only the project's folder, the a
   assert.equal(agentLaunchFlags(d.deps.stateRoot(), "someone-else"), null, "an ordinary chat gets nothing");
   assert.match(d.started[0]!.prompt, /You can write only in /);
   assert.match(d.started[0]!.prompt, /Never set the project's host values/);
-  assert.ok(d.started[0]!.prompt.includes(`The folders on the user's PATH stay read-only, those inside your tool folders included (${join(root, ".local/share/mise/shims")}, ${join(root, ".cargo/bin")}), and so does ~/.local/bin`));
+  assert.match(d.started[0]!.prompt, /what is installed there already \(each version, plugin and toolchain\) stays read-only, a version you install goes in a new folder of its own/);
   assert.match(d.started[0]!.prompt, /call `transport_setup` with `op: "path"` and the exact command for the user to run themselves/);
 });
 
@@ -337,10 +339,11 @@ test("the Clojure CLI's config folder is a tool folder: made for a project that 
   assert.match(brief, /a folder in the user's home your sandbox can't write, such as a tool's config folder\) is a plain request: say it in plain words in your reply/);
   // Each place the CLI keeps its config, by the environment; a project without a deps.edn has none made.
   const has = (f: string) => f === "deps.edn";
-  assert.deepEqual(toolDirsToMake("/h", has), ["/h/.local/share/mise", "/h/.clojure"]);
-  assert.deepEqual(toolDirsToMake("/h", has, "/h/.config"), ["/h/.local/share/mise", "/h/.config/clojure"]);
-  assert.deepEqual(toolDirsToMake("/h", has, "/elsewhere/config"), ["/h/.local/share/mise"], "outside the home: not a tool folder of its scope");
-  assert.deepEqual(toolDirsToMake("/h", () => false, "/h/.config"), ["/h/.local/share/mise"]);
+  const mise = ["/h/.local/share/mise/downloads", "/h/.local/share/mise/installs", "/h/.local/share/mise/plugins"];
+  assert.deepEqual(toolDirsToMake("/h", has), ["/h/.local/share/mise", "/h/.clojure", ...mise]);
+  assert.deepEqual(toolDirsToMake("/h", has, "/h/.config"), ["/h/.local/share/mise", "/h/.config/clojure", ...mise]);
+  assert.deepEqual(toolDirsToMake("/h", has, "/elsewhere/config"), ["/h/.local/share/mise", ...mise], "outside the home: not a tool folder of its scope");
+  assert.deepEqual(toolDirsToMake("/h", () => false, "/h/.config"), ["/h/.local/share/mise", ...mise]);
   // Either place, when there, is writable like every tool folder; neither when missing.
   const at = (...there: string[]) => agentScope({ folder: "/h/p", home: "/h", exists: (p) => there.includes(p) }).writable;
   assert.deepEqual(at("/h/.clojure", "/h/.config/clojure"), ["/h/p", "/h/.clojure", "/h/.config/clojure"]);

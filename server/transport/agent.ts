@@ -23,6 +23,7 @@ import { adminAsked, adminDone, pathAsked, type AgentAsks, cleanCommand, cleanDo
 import { agentArrivedMissing, agentBrief, agentCopyFailed, agentPrivateValues, agentStillMissing } from "./agent-prompt";
 import { type CopyDeps, copyChecks, type CopyPlan, copyPlan, type CopyReading, copyStartText, type CopyView, copyViewOf, copyWaiting, oneAtATime, readCopy, restartOf } from "./arrival-copy";
 import { cleanOutsidePath, outsideRefusal, outsideShown, writeOutside } from "./outside-file";
+import { rebaseHomePath } from "../chat-homes/root";
 import { type AgentScope, agentHomeOf, agentScope, agentStandingAt, preparedFile, readAgentRecords, toolDirsToMake, writeAgentMark } from "./agent-scope";
 import { lacksRepo, projectComesFrom, withoutCredentials } from "./git-snapshot";
 import { miseTools, readSetupDef, type SetupDef } from "./setup-def";
@@ -436,13 +437,17 @@ function markPrepared(root: string, p: ProjectRef, tid: string, at: number): voi
   writePrepared(root, f);
 }
 
+/** The home of agent chat `sessionId` from the session file recorded for it: a path recorded before a Chats folder move
+    is read in the folder the chats are in now (the old one is kept, and a mark written there would never be read). */
+const homeOfAgent = (sessionId: string, sessionPath?: string): string | null => agentHomeOf(sessionId, sessionPath ? rebaseHomePath(sessionPath) : sessionPath);
+
 /** Record session `sessionId` (its file at `sessionPath`) as transport `tid`'s agent, keeping the scope it was confined
     to (or recording `scope`): in the device's record and, for a chat with a home, in its own mark there first. */
 export function markAgent(root: string, sessionId: string, tid: string, at: number, scope?: AgentScope, sessionPath?: string): void {
   const f = readPrepared(root);
   const was = f.agents[sessionId];
   const entry = { tid, at: was?.at ?? at, ...((scope ?? was?.scope) ? { scope: scope ?? was!.scope } : {}) };
-  const home = agentHomeOf(sessionId, sessionPath);
+  const home = homeOfAgent(sessionId, sessionPath);
   if (home) writeAgentMark(home, { v: 1, ...entry });
   f.agents[sessionId] = entry;
   writePrepared(root, f);
@@ -457,7 +462,7 @@ function saveAgent(deps: Pick<AgentDeps, "stateRoot" | "onAgent">, tid: string, 
   (f.byTransport ??= {})[tid] = a;
   const was = f.agents[a.sessionId];
   const entry = { tid, at: a.startedAt, ...(was?.scope ? { scope: was.scope } : {}) };
-  const home = agentHomeOf(a.sessionId, a.path);
+  const home = homeOfAgent(a.sessionId, a.path);
   if (home) writeAgentMark(home, { v: 1, ...entry });
   f.agents[a.sessionId] = entry;
   writePrepared(root, f);
@@ -646,7 +651,6 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     if (made && isEmptyDir(folder)) rmdirSync(folder);
     return { needsYou: unconfinedRefusal(deps.device(), unconfined) };
   }
-  holdPathDirs(scope);
   const shown = forAgent(checks);
   const prompt = agentBrief({
     title: req.title,
@@ -659,7 +663,6 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     checks: shown,
     sovaFolders: deps.protectedRoots(),
     writable: scope.writable,
-    ...(scope.readOnly?.length ? { readOnly: scope.readOnly } : {}),
     arrived,
     ...(req.fromSource ? { arrivedProject: true } : {}),
     home: deps.home(),
@@ -677,18 +680,6 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
 }
 
 /** The tool folders a first install of the project at `folder` writes, made when missing (agent-scope.ts toolDirsToMake). */
-/** The PATH's folders in its tool folders (its scope's read-only ones), made empty when missing so the sandbox binds them
-    read-only: an install would otherwise make one and fill it. */
-const holdPathDirs = (scope: AgentScope): void => {
-  for (const d of scope.readOnly ?? []) {
-    try {
-      mkdirSync(d, { recursive: true });
-    } catch {
-      // one the sandbox can't bind stays refused to its file tools all the same
-    }
-  }
-};
-
 const makeToolDirs = (folder: string, deps: Pick<AgentDeps, "home" | "configHome">): void => {
   for (const d of toolDirsToMake(deps.home(), (f) => existsSync(join(folder, f)), deps.configHome?.())) mkdirSync(d, { recursive: true });
 };
@@ -849,7 +840,6 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
         deps.onBlocked?.(req.tid, unconfinedRefusal(deps.device(), unconfined));
         return [];
       }
-      holdPathDirs(scope);
       markAgent(deps.stateRoot(), agent.sessionId, req.tid, deps.now(), scope, agent.path);
       if (!deps.busy(agent.path)) await deps.reopen?.(agent.path).catch(() => undefined);
     }

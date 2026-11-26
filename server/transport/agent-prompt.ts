@@ -20,8 +20,6 @@ export interface BriefFacts {
   sovaFolders?: string[];
   /** The folders its tools may write (its sandbox scope): the project's, the chat's worktrees, the tool folders. */
   writable?: string[];
-  /** The folders on the user's PATH inside those (its sandbox scope's read-only ones): never written. */
-  readOnly?: string[];
   /** After arrival: the chat is on this device now, so there is no link to report over. */
   arrived?: boolean;
   /** The user's home on this device: the only place to look for an existing copy. */
@@ -68,7 +66,7 @@ export function agentBrief(f: BriefFacts): string {
       : []),
     "",
     "## Where you work",
-    `Your tools run in Sova's sandbox. You can write only in ${f.writable?.length ? f.writable.join(", ") : f.folder}; the caches installs use (~/.cache, ~/.npm, ~/.m2) are the sandbox's own copies.${f.readOnly?.length ? ` The folders on the user's PATH stay read-only, those inside your tool folders included (${f.readOnly.join(", ")}), and so does ~/.local/bin: nothing you install goes on the PATH by itself (see "What you ask first").` : " The folders on the user's PATH (~/.local/bin and the like) stay read-only: nothing you install goes on the PATH by itself (see \"What you ask first\")."} You can't read the user's private settings (~/.ssh and the like) or their other projects, and you can't write Sova's own state. The network goes through the sandbox's proxy, which lets package registries and GitHub through. Never work around the sandbox: a file you need outside these folders is asked as below (outside_file), never by asking for write access to its folder.`,
+    `Your tools run in Sova's sandbox. You can write only in ${f.writable?.length ? f.writable.join(", ") : f.folder}; the caches installs use (~/.cache, ~/.npm, ~/.m2) are the sandbox's own copies. Of the user's tool folders only their install and cache folders are among those: what is installed there already (each version, plugin and toolchain) stays read-only, a version you install goes in a new folder of its own, and the folders on the user's PATH (~/.local/bin, shims, bin folders) and the files a shell profile reads stay read-only, so nothing you install goes on the PATH by itself (see "What you ask first"). You can't read the user's private settings (~/.ssh and the like) or their other projects, and you can't write Sova's own state. The network goes through the sandbox's proxy, which lets package registries and GitHub through. Never work around the sandbox: a file you need outside these folders is asked as below (outside_file), never by asking for write access to its folder.`,
     "",
     "## Downloads from other sites",
     "When an install needs a site the proxy refuses (a toolchain's own download site, such as nodejs.org for node or corretto.aws for java, or mise's version list), don't retry it, look for a mirror or a copy elsewhere, or switch tools. Call `transport_setup` with `op: \"downloads\"`, listing each tool, the exact version it gets and the host it downloads from (one plain host name each, every host the download goes to), then end your turn. Sova shows the list on the Transport card; nothing is reachable until the user allows it, and you are told when they have. Then download exactly what you listed. List only what a setup check above or the running copy's failure needs: nothing for the chat's own work (browsers for its tests or screenshots, editor plugins, extra toolchains) unless a check or the copy's failure names it.",

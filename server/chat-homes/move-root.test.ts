@@ -361,7 +361,7 @@ describe("a move", () => {
     try {
       const r = await startMove(to, deps());
       assert.ok(!r.ok);
-      assert.match(r.error, /A Transport of Fix the build is under way/);
+      assert.match(r.error, /A Transport of Fix the build is under way\. Finish or cancel it first, then move\./);
       assert.equal(existsSync(to), false);
       writeFileSync(join(tdir, `${tid}.json`), JSON.stringify({ ...rec, state: "done" }));
       // A compression running: the move waits for it.

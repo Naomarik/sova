@@ -364,7 +364,7 @@ function refusalFor(target: string, bytes: number, deps: Pick<MoveDeps, "working
   const transports = liveTransports();
   if (transports.length) {
     const one = transports.length === 1;
-    return `${one ? "A Transport" : `${transports.length} Transports`} of ${transports.slice(0, 3).join(", ")}${transports.length > 3 ? "…" : ""} ${one ? "is" : "are"} under way. Moving waits until ${one ? "it's" : "they're"} done or cancelled.`;
+    return `${one ? "A Transport" : `${transports.length} Transports`} of ${transports.slice(0, 3).join(", ")}${transports.length > 3 ? "…" : ""} ${one ? "is" : "are"} under way. Finish or cancel ${one ? "it" : "them"} first, then move.`;
   }
   const work = [...homesWork.values()];
   if (work.length) return `${work[0]}${work.length > 1 ? ` and ${work.length - 1} more` : ""} ${work.length > 1 ? "are" : "is"} running in your chats folder. Moving waits until it's done.`;

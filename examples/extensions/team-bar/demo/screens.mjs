@@ -45,7 +45,7 @@ try {
   /** The list holds the shared server's rows (they arrive on the mesh poll) and the avatars. */
   const listReady = async (withAvatars) => {
     await page.getByRole("navigation", { name: "Session list" }).getByText("Update the onboarding checklist").first().waitFor({ timeout: 60_000 });
-    if (withAvatars) await page.locator("[data-owner-avatar], .row-avatar").first().waitFor({ timeout: 30_000 });
+    if (withAvatars) await page.locator("span.owner-mark").first().waitFor({ timeout: 30_000 });
     await sleep(800);
   };
 
@@ -54,12 +54,12 @@ try {
   await listReady(true);
   await shot("1-bar-avatars.png");
 
-  const menu = page.getByRole("button", { name: /Everyone/ }).first();
+  const menu = page.locator("button.person-menu-trigger").first();
   await menu.click();
   await sleep(300);
   await shot("2-person-menu.png");
 
-  await page.getByRole("menuitemradio", { name: /Lee Varga/ }).or(page.getByRole("option", { name: /Lee Varga/ })).or(page.getByRole("menuitem", { name: /Lee Varga/ })).first().click();
+  await page.locator('[role=menuitemradio][data-person-id="lee"]').first().click();
   await sleep(500);
   await shot("3-narrowed-to-lee.png");
 
@@ -68,14 +68,10 @@ try {
   await sleep(800);
   await shot("4-from-name.png");
 
-  // Back to everyone for the phone and the off shots.
+  // Back to everyone for the phone and the off shots (the choice is kept per browser).
+  await page.evaluate(() => localStorage.removeItem("sova:person-filter"));
   await page.goto(demo.kim.base + "/");
   await listReady(true);
-  const back = page.getByRole("button", { name: /Lee Varga|Everyone/ }).first();
-  if ((await back.textContent())?.includes("Lee")) {
-    await back.click();
-    await page.getByRole("menuitemradio", { name: /Everyone/ }).or(page.getByRole("option", { name: /Everyone/ })).or(page.getByRole("menuitem", { name: /Everyone/ })).first().click();
-  }
   await page.setViewportSize({ width: 390, height: 844 });
   await sleep(800);
   const w = await page.evaluate(() => innerWidth);

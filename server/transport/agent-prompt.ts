@@ -83,6 +83,9 @@ export function agentBrief(f: BriefFacts): string {
         ]
       : []),
     "",
+    "## Dependencies come from their registries",
+    `Fetch the project's dependencies only through its own build tools, from their registries (its package manager, Maven or Gradle, cargo, go, the Clojure CLI, pip): never copy a dependency folder or a download cache (~/.m2, ~/.gitlibs, ~/.cargo/registry, ~/go/pkg/mod, bun's or npm's cache, a node_modules, a target, a .venv) from another folder on this device or from ${f.source}, and never ask for a file in one with outside_file. Those caches are this device's own and its build tools fill them; nothing in them travels.`,
+    "",
     "## What you may do alone",
     `Inside those folders: ${f.arrivedProject ? "" : "clone the repository into its folder, "}install its dependencies and tool versions (a version manager, a toolchain, the package manager its lockfile names), run its setup and tests, and edit its private files (the local config git ignores) so they hold this computer's values: database strings, paths and ports. Never run its servers, builds or watchers yourself${f.copies?.length ? ": the running copy does, through start_copy, and copy_logs shows what they printed" : ""}. With a \`.sova/project.json\`, use \`project_verbs\` (doctor, test) rather than starting anything by hand. Set up only what the setup checks above list and what the running copy needs to start: nothing for the chat's own work later (a browser for its tests or screenshots, an editor's tooling, a warmed cache), unless a check or the copy's failure names it.`,
     "",

@@ -548,7 +548,7 @@ describe("bringing a device in", () => {
     assert.deepEqual(Object.keys(a).sort(), ["code", "expiresAt", "links"]);
     assert.match(a.code, /^[A-Za-z0-9_-]{43}$/);
     assert.notEqual(a.code, b.code, "a later response must never return the earlier code");
-    assert.deepEqual(a.links, [{ label: "This machine only", url: `http://localhost:4800/#c=${a.code}` }]);
+    assert.deepEqual(a.links, [{ label: "This machine only", url: `http://localhost:4800/#c=${a.code}`, kind: "here", secure: false }]);
     assert.ok(Date.parse(a.expiresAt) >= before + 300_000);
     assert.ok(Date.parse(a.expiresAt) <= Date.now() + 300_000);
     assert.equal(statSync(store()).mode & 0o777, 0o600);
@@ -559,7 +559,7 @@ describe("bringing a device in", () => {
     for (const log of logs) assert.equal(log.mock.callCount(), 0);
   });
 
-  type PairAnswer = { code: string; expiresAt: string; links: Array<{ label: string; url: string }> };
+  type PairAnswer = { code: string; expiresAt: string; links: Array<{ label: string; url: string; kind: string; secure: boolean; range?: string }> };
 
   test("mesh off: pairing offers only the request's own origin, with loopback labelled honestly", async () => {
     for (const [host, env, origin, label] of [
@@ -572,7 +572,7 @@ describe("bringing a device in", () => {
       const res = await mint({ ...cookie(), host, "x-forwarded-proto": "https", "x-forwarded-host": "ignored.ts.net" }, env);
       assert.equal(res.status, 200);
       const body = await res.json() as PairAnswer;
-      assert.deepEqual(body.links, [{ label, url: `${origin}/#c=${body.code}` }]);
+      assert.deepEqual(body.links, [{ label, url: `${origin}/#c=${body.code}`, kind: "here", secure: origin.startsWith("https:") }]);
     }
   });
 
@@ -580,8 +580,8 @@ describe("bringing a device in", () => {
     setAuthHosts(() => ({ magicDns: "box.example.ts.net", own: ["https://box.example.ts.net:9443/", "https://door.example"] }));
     const body = await (await mint()).json() as PairAnswer;
     assert.deepEqual(body.links, [
-      { label: "Phone · Tailscale", url: `https://box.example.ts.net:9443/#c=${body.code}` },
-      { label: "This machine only", url: `http://localhost:4800/#c=${body.code}` },
+      { label: "Phone · Tailscale", url: `https://box.example.ts.net:9443/#c=${body.code}`, kind: "tailscale", secure: true },
+      { label: "This machine only", url: `http://localhost:4800/#c=${body.code}`, kind: "here", secure: false },
     ]);
     assert.ok(!JSON.stringify(body.links).includes("door.example"), "the front door is not this host's serve URL");
   });
@@ -591,8 +591,8 @@ describe("bringing a device in", () => {
       setAuthHosts(() => ({ magicDns: "box.example.ts.net.", own: [serve, "https://door.example"] }));
       const body = await (await mint()).json() as PairAnswer;
       assert.deepEqual(body.links, [
-        { label: "Phone · Tailscale", url: `https://box.example.ts.net:8443/#c=${body.code}` },
-        { label: "This machine only", url: `http://localhost:4800/#c=${body.code}` },
+        { label: "Phone · Tailscale", url: `https://box.example.ts.net:8443/#c=${body.code}`, kind: "tailscale", secure: true },
+        { label: "This machine only", url: `http://localhost:4800/#c=${body.code}`, kind: "here", secure: false },
       ]);
     }
   });
@@ -601,10 +601,10 @@ describe("bringing a device in", () => {
     const host = "box.example.ts.net:9443";
     setAuthHosts(() => ({ own: [`https://${host}/`] }));
     const body = await (await mint({ ...cookie(), host, origin: `https://${host}` })).json() as PairAnswer;
-    assert.deepEqual(body.links, [{ label: "Phone · Tailscale", url: `https://${host}/#c=${body.code}` }]);
+    assert.deepEqual(body.links, [{ label: "Phone · Tailscale", url: `https://${host}/#c=${body.code}`, kind: "tailscale", secure: true }]);
     setAuthHosts(() => ({}));
     const direct = await (await mint({ ...cookie(), host, origin: `https://${host}` })).json() as PairAnswer;
-    assert.deepEqual(direct.links, [{ label: "This address", url: `https://${host}/#c=${direct.code}` }]);
+    assert.deepEqual(direct.links, [{ label: "This address", url: `https://${host}/#c=${direct.code}`, kind: "here", secure: true }]);
   });
 
   test("an IP literal never appears in a pairing link, from the request, serve URL or MagicDNS", async () => {
@@ -615,7 +615,7 @@ describe("bringing a device in", () => {
       assert.equal(res.status, 200);
       const body = await res.json() as PairAnswer;
       const loopback = ["127.0.0.1", "[::1]", "0x7f000001"].includes(ip);
-      assert.deepEqual(body.links, loopback ? [{ label: "This machine only", url: `http://localhost:4800/#c=${body.code}` }] : []);
+      assert.deepEqual(body.links, loopback ? [{ label: "This machine only", url: `http://localhost:4800/#c=${body.code}`, kind: "here", secure: false }] : []);
       for (const link of body.links) assert.equal(isIP(new URL(link.url).hostname.replace(/^\[|\]$/g, "")), 0);
     }
     setAuthHosts(() => ({ magicDns: "box.example.ts.net", own: ["https://192.0.2.1:9443"] }));
@@ -755,5 +755,89 @@ describe("a guided-tour recorder's sockets (§app.access/gate)", () => {
     // Only this install's own marker name counts: another copy's (another state directory) is an ordinary cookie.
     assert.equal(upgradeAllowed(upgrade(marked(tourRecorderCookieName("/made-up/other/.agent")), "/ws/chat?path=x")), true);
     assert.equal(warned.mock.callCount(), 2);
+  });
+});
+
+describe("a trusted network's listener (§app.access/networks, §app.access/gate)", async () => {
+  const { setOpenTrustedForTest, markTrusted } = await import("./networks/live");
+  const { pairOrigin } = await import("./auth");
+  const WG = { address: "10.8.0.2", port: 4800, ranges: ["10.8.0.0/24"], label: "WireGuard · wg0" };
+  afterEach(() => setOpenTrustedForTest([]));
+  /** A request as a trusted listener hands it on: its socket's address inside the range, the request marked. */
+  const onTrusted = (raw: Record<string, string> = {}) => {
+    const incoming = { socket: { remoteAddress: "10.8.0.5" }, headers: raw };
+    markTrusted(incoming);
+    return { incoming };
+  };
+
+  test("pairing offers a plain http link at each open trusted listener, after Tailscale and before the page's own address", async () => {
+    setOpenTrustedForTest([WG]);
+    setAuthHosts(() => ({ magicDns: "box.example.ts.net" }));
+    const res = await ask("/api/auth/pair", { method: "POST", headers: cookie() });
+    const body = (await res.json()) as { code: string; links: unknown[] };
+    assert.deepEqual(body.links, [
+      { label: "Phone · Tailscale", url: `https://box.example.ts.net:8443/#c=${body.code}`, kind: "tailscale", secure: true },
+      { label: "Phone · WireGuard · wg0", url: `http://10.8.0.2:4800/#c=${body.code}`, kind: "trusted", secure: false, range: "10.8.0.0/24" },
+      { label: "This machine only", url: `http://localhost:4800/#c=${body.code}`, kind: "here", secure: false },
+    ]);
+  });
+
+  test("a page open at the trusted address gets that one link once; with the listener closed, no IP link at all", async () => {
+    setOpenTrustedForTest([WG]);
+    const at = { ...cookie(), host: "10.8.0.2:4800", origin: "http://10.8.0.2:4800" };
+    const open = (await (await ask("/api/auth/pair", { method: "POST", headers: at }, onTrusted(at))).json()) as { code: string; links: unknown[] };
+    assert.deepEqual(open.links, [{ label: "Phone · WireGuard · wg0", url: `http://10.8.0.2:4800/#c=${open.code}`, kind: "trusted", secure: false, range: "10.8.0.0/24" }]);
+    setOpenTrustedForTest([]);
+    process.env.SOVA_ALLOWED_HOSTS = "10.8.0.2";
+    const closed = (await (await ask("/api/auth/pair", { method: "POST", headers: { ...cookie(), host: "10.8.0.2:4800" } })).json()) as { links: unknown[] };
+    assert.deepEqual(closed.links, []);
+  });
+
+  test("an IP literal pairs only at an open trusted listener's exact address, port and plain http", () => {
+    setOpenTrustedForTest([WG]);
+    assert.equal(pairOrigin("http://10.8.0.2:4800")?.href, "http://10.8.0.2:4800/");
+    for (const refused of ["http://10.9.0.2:4800", "http://10.8.0.2:4801", "https://10.8.0.2:4800", "http://10.8.0.3:4800", "http://192.0.2.1:4800"]) assert.equal(pairOrigin(refused), null, refused);
+  });
+
+  test("SOVA_AUTH=off on a loopback bind stops applying while any trusted listener is open, and applies again once none is", () => {
+    process.env.SOVA_AUTH = "off";
+    assert.equal(serverAuthEnabled(), false);
+    // A loopback stand-in counts as much as a VPN address: being open is what exposes Sova.
+    setOpenTrustedForTest([{ address: "127.0.0.2", port: 4800, ranges: ["127.0.0.2/31"] }]);
+    assert.equal(serverAuthEnabled(), true);
+    setOpenTrustedForTest([]);
+    assert.equal(serverAuthEnabled(), false);
+  });
+
+  test("a request on a trusted listener is asked for the token even with SOVA_AUTH=off, and gets it with the token", async () => {
+    process.env.SOVA_AUTH = "off";
+    const host = { host: "10.8.0.2:4800" };
+    setOpenTrustedForTest([WG]);
+    assert.equal((await ask("/api/sessions", { headers: host }, onTrusted(host))).status, 401);
+    assert.equal((await ask("/api/sessions", { headers: { ...host, ...cookie() } }, onTrusted(host))).status, 200);
+    assert.equal((await ask("/api/sessions", { headers: { ...host, "x-sova-token": sovaToken() } }, onTrusted(host))).status, 200);
+  });
+
+  test("a navigation on a trusted listener is never signed in silently, even from a loopback socket with no proxy header", async () => {
+    const nav = { host: "127.0.0.2:4800", "sec-fetch-site": "none", "sec-fetch-mode": "navigate" };
+    setOpenTrustedForTest([{ address: "127.0.0.2", port: 4800, ranges: ["127.0.0.2/31"] }]);
+    const incoming = { socket: { remoteAddress: "127.0.0.3" }, headers: nav };
+    markTrusted(incoming);
+    const res = await ask("/api/sessions", { headers: nav }, { incoming });
+    assert.equal(res.status, 401);
+    assert.equal(res.headers.get("set-cookie"), null);
+    // Positive control: the same navigation on the main listener is signed in.
+    const main = { ...nav, host: HOST };
+    assert.equal((await ask("/api/sessions", { headers: main }, { incoming: { socket: { remoteAddress: "127.0.0.1" }, headers: main } })).status, 200);
+  });
+
+  test("the trusted address is a Host and an exact origin Sova goes by only while its listener is open", async () => {
+    const at = { ...cookie(), host: "10.8.0.2:4800" };
+    assert.equal((await ask("/api/sessions", { headers: at })).status, 403, "closed: a foreign Host");
+    setOpenTrustedForTest([WG]);
+    assert.equal((await ask("/api/sessions", { headers: at })).status, 200);
+    assert.equal((await ask("/api/sessions", { headers: { ...at, origin: "http://10.8.0.2:4800" } })).status, 200);
+    for (const origin of ["http://10.8.0.2:4801", "https://10.8.0.2:4800", "http://10.8.0.3:4800"]) assert.equal((await ask("/api/sessions", { headers: { ...at, origin } })).status, 403, origin);
+    assert.equal((await ask("/api/sessions", { headers: { ...cookie(), host: "10.8.0.3:4800" } })).status, 403, "another address on that network is no name of Sova's");
   });
 });

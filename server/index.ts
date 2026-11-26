@@ -56,7 +56,9 @@ import { startScheduleKeeper } from "./schedule-routes";
 import { cancelChatWakes, startWakeKeeper } from "./wake-keeper-live";
 import { monitorJobs, startJobKeeper, stopJobsOf, sweepJobs } from "./background-jobs";
 import { onWorkerKilled } from "./chat-workers";
-import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
+import { attachWebSockets, mainListenerUpgrade, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
+import { startTrustedListeners, stopTrustedListeners } from "./networks/listeners";
+import { setTailscaleAsk } from "./networks/probe";
 import { detachChatHost, startChatHost, stopWorkersOf, wakeOwnerOf, workerChatsOf } from "./chat-host";
 import { agentCpu } from "./agent-cpu";
 import { expectChatRouter } from "./chat-handle";
@@ -91,7 +93,7 @@ import { checkReadinessInputs, configureReadiness } from "./merge-readiness";
 import { addOwnPid, readLiveRecords } from "./live";
 import { claimRecordedChats, scrubChatProcessEnv } from "./chat-runtime/supervisor";
 import { startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
-import { serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken } from "./auth";
+import { authListenPort, serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken } from "./auth";
 
 // A server started from a chat's own tools (a hermetic server in a worktree) inherits that chat
 // process's own variables: never this server's (§app.chat-processes/supervision).
@@ -164,7 +166,7 @@ if (PORT) setLinkOrigin(linkOrigin(PORT));
 // the shell reachable, with token checks refused until the file is deleted and we restart.
 initAuthToken();
 if (process.env.SOVA_AUTH === "off")
-  console.warn(serverAuthEnabled() ? `[auth] SOVA_AUTH=off ignored: ${HOST} is not a loopback bind` : "[auth] SOVA_AUTH=off: the token is not asked for");
+  console.warn(serverAuthEnabled() ? `[auth] SOVA_AUTH=off ignored: ${HOST} is not a loopback bind` : "[auth] SOVA_AUTH=off: the token is not asked for (while no trusted network's listener is open)");
 // What the gate knows from the mesh (server/auth.ts): this host's MagicDNS name, its front door and
 // serve URL (names it answers to, and pages it is served from), and the peers' serve URLs.
 setAuthHosts(() => {
@@ -229,6 +231,10 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port} (${SERVER_RUNTIME.name} ${SERVER_RUNTIME.version})`);
+  // Each trusted network's listener, on this port at that network's address (§app.access/networks). Tailscale's
+  // own addresses are asked for only while the mesh is on; with nothing trusted nothing is read until the page asks.
+  setTailscaleAsk(() => meshApi.enabled());
+  startTrustedListeners({ fetch: app.fetch, upgrade: mainListenerUpgrade, port: authListenPort, host: () => HOST });
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket, streamUpgrade: upgradeSovaStreamSocket });
   // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
   // Then the Cloudflare tunnels: the share tunnel's wiring, and the tunnels a previous server left
@@ -443,6 +449,7 @@ async function shutdown() {
   stopResourceMonitor();
   meshLinks.stop();
   stopMesh();
+  stopTrustedListeners();
   stopShareRuntime();
   await stopVoice();
   // Every visit with an open share socket is seen now, so the commit below carries it.

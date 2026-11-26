@@ -158,6 +158,7 @@ const GLOBS = [
   "server/chat-runtime/*.test.ts",
   "server/projects/*.test.ts",
   "server/mesh/*.test.ts",
+  "server/networks/*.test.ts",
   "server/sync/*.test.ts",
   "server/org-host/*.test.ts",
   "server/org-history/*.test.ts",

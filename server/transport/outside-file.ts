@@ -34,8 +34,8 @@ const real = (p: string): string => {
 };
 
 /**
- * The agent's path, checked: a file in that device's home, written `~/…` (an absolute path under `sourceHome`, the
- * other device's home as the arrival knows it, is taken as the same), with no `.` or `..` part. Returns it relative to
+ * The agent's path, checked: a file in that device's home, written `~/…` (an absolute path under `sourceHome`, a home
+ * the caller knows the same file under, such as the agent's own device's, is taken as the same), with no `.` or `..` part. Returns it relative to
  * the home, or why not. Pure.
  */
 export function cleanOutsidePath(raw: unknown, sourceHome?: string): { rel: string } | { error: string } {
@@ -43,7 +43,7 @@ export function cleanOutsidePath(raw: unknown, sourceHome?: string): { rel: stri
   if (!p) return { error: "path must name the file, as ~/… (a file in the user's home on the device the chat came from)." };
   if (p.length > MAX_PATH || p.includes("\0")) return { error: "That path is too long or holds a NUL." };
   if (sourceHome && isAbsolute(p) && within(p, sourceHome) && resolve(p) !== resolve(sourceHome)) p = `~/${resolve(p).slice(resolve(sourceHome).length + 1)}`;
-  if (!p.startsWith("~/")) return { error: `${JSON.stringify(p.slice(0, 80))} isn't in the user's home there: the card brings only a file in the home (~/…). Ask the user with align for anything else.` };
+  if (!p.startsWith("~/")) return { error: `${JSON.stringify(p.slice(0, 80))} isn't in the user's home there: the card brings only a file in the home (~/…). Ask the user for anything else in plain words in your reply.` };
   const parts = p.slice(2).split("/");
   if (parts.some((x) => x === "" || x === "." || x === "..")) return { error: `${JSON.stringify(p.slice(0, 80))} isn't a plain path to one file: no empty, . or .. parts.` };
   return { rel: parts.join("/") };

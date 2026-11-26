@@ -114,7 +114,7 @@ test("nothing missing: ready at once, no agent; something missing: one agent, br
   assert.match(s.prompt, /check out feat\/fix and leave the tracked files exactly as they are/);
   assert.ok(s.prompt.includes(`look only under this device's home (${root}), never elsewhere on the disk`));
   const bare = agentBrief({ title: "t", device: "d", source: "s", folder: "/f", remotes: [], branches: [], checks: [], home: root });
-  assert.ok(bare.includes("No remote is recorded: don't search the disk for a copy. Ask the user (align)"));
+  assert.ok(bare.includes("No remote is recorded: don't search the disk for a copy. Ask the user where to get it: say it in plain words in your reply"));
   assert.equal(s.model, onboardModels()[0], "the strongest model this device offers");
   assert.equal(s.cwd, req.project.path, "it starts in the project's folder, made empty for its clone");
   assert.deepEqual(d.linked, [["agent-1", "sova-laptop", "chat-1"]]);
@@ -327,7 +327,7 @@ test("the Clojure CLI's config folder is a tool folder: made for a project that 
   const brief = d.started[0]!.prompt;
   assert.ok(brief.split("\n").some((l) => l.includes("You can write only in") && l.includes(join(root, ".config", "clojure"))), "its brief names the folder as writable");
   assert.match(brief, /`op: "admin"` is only for a command that needs administrator rights/);
-  assert.match(brief, /a folder or file in the user's home your sandbox can't write, such as a tool's config folder\) is a plain request: ask the user with align/);
+  assert.match(brief, /a folder in the user's home your sandbox can't write, such as a tool's config folder\) is a plain request: say it in plain words in your reply/);
   // Each place the CLI keeps its config, by the environment; a project without a deps.edn has none made.
   const has = (f: string) => f === "deps.edn";
   assert.deepEqual(toolDirsToMake("/h", has), ["/h/.local/share/mise", "/h/.local/bin", "/h/.clojure"]);
@@ -376,4 +376,45 @@ test("a host value the device lacks is never the agent's: alone it starts none, 
   assert.ok(!more.started[0]!.prompt.includes("doctor:host:DB_URL"), "the brief never lists it as something to fix");
   assert.match(more.started[0]!.prompt, /doctor:program:pg_ctl/);
   assert.ok(!(agentOf(more.deps.stateRoot(), "tr_2")?.checks ?? []).some((c) => c.id.startsWith("doctor:host:")), "nor does its card's list");
+});
+
+test("every text the agent reads sends its asks to the card or its reply, never to an alignment; a missing file in this home is an outside_file ask first, and only what the checks or the copy need is set up", async () => {
+  const { agentArrivedMissing, agentCopyFailed, agentPrivateValues, agentStillMissing } = await import("./agent-prompt");
+  const { TRANSPORT_SETUP_DESCRIPTION, TRANSPORT_SETUP_PARAMETERS } = await import("./agent-tool");
+  const { outsideAsked, outsideDone } = await import("./agent-asks");
+  const { cleanOutsidePath } = await import("./outside-file");
+  const missing = [{ id: "copy:lab/x", ok: false, detail: "resources: compose file missing: /h/Projects/stack/override.yml" }];
+  const base = { title: "t", device: "desk", source: "laptop", folder: "/h/p", branches: [], checks: missing, home: "/h" };
+  // Each brief the agent can get: before arrival with a remote, with none, the project from the source, after arrival with a copy.
+  const briefs = [
+    agentBrief({ ...base, remotes: [REMOTE] }),
+    agentBrief({ ...base, remotes: [] }),
+    agentBrief({ ...base, remotes: [REMOTE], arrivedProject: true, arrived: true, copies: ["lab/x"] }),
+  ];
+  const f = { path: "~/a.json", from: "laptop" };
+  const texts = [
+    ...briefs,
+    agentStillMissing(missing),
+    agentArrivedMissing("laptop", missing),
+    agentCopyFailed("laptop", missing),
+    agentPrivateValues("laptop", [{ file: ".env", found: ["/old"] }]),
+    TRANSPORT_SETUP_DESCRIPTION,
+    JSON.stringify(TRANSPORT_SETUP_PARAMETERS),
+    outsideAsked(f),
+    ...(["brought", "kept", "placed"] as const).map((how) => outsideDone(f, how, "/h/a.json")),
+    ...["/etc/x", ""].map((p) => { const r = cleanOutsidePath(p); return "error" in r ? r.error : ""; }),
+  ];
+  // The align tool is never named as a way to ask (only "never open an alignment" may name one).
+  for (const t of texts) assert.doesNotMatch(t, /\balign\b/i, t.slice(0, 120));
+  for (const b of briefs) {
+    assert.match(b, /never open an alignment, a plan or any other tool's question/);
+    // The missing file the copy names in this home: outside_file first, as ~/…, never write access to its folder.
+    assert.match(b, /names as missing, outside the project's folder and in this device's home \(such as "compose file missing: \/h\/Projects\/stack\/override\.yml"\), is such a file: it came from laptop/);
+    assert.match(b, /Ask for it this way first, as ~\/… \(~\/Projects\/stack\/override\.yml\), even when its folder isn't there or your sandbox can't write it: never ask for write access to that folder/);
+    assert.match(b, /Set up only what the setup checks above list and what the running copy needs to start: nothing for the chat's own work later \(a browser for its tests or screenshots/);
+    assert.match(b, /List only what a setup check above or the running copy's failure needs/);
+  }
+  assert.match(agentCopyFailed("laptop", missing), /a missing file the log names in this device's home outside the project is asked with outside_file first, as ~\/…, never by asking for write access to its folder/);
+  assert.match(TRANSPORT_SETUP_DESCRIPTION, /ask for it here first \(its path as ~\/…, or as this device's path, read as the same\), never for write access to its folder/);
+  assert.match(TRANSPORT_SETUP_DESCRIPTION, /never extras for the chat's own work/);
 });

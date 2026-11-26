@@ -32,6 +32,10 @@ export interface BriefFacts {
 
 const line = (c: AgentCheck) => `- ${c.id}: ${c.detail}`;
 
+/** How the agent asks what no `transport_setup` op covers: in its reply, never through an alignment or another tool
+    (its chat runs with no modes, agent-wire.ts AGENT_MODES). */
+const PLAIN_ASK = "say it in plain words in your reply and end your turn (the transport waits as Needs you and the user answers in this chat)";
+
 /** The first prompt. Pure. */
 export function agentBrief(f: BriefFacts): string {
   const missing = f.checks.filter((c) => !c.ok);
@@ -52,8 +56,8 @@ export function agentBrief(f: BriefFacts): string {
     f.arrivedProject
       ? `- The project came with the chat from ${f.source}, its branches and history included, and is in place in its folder. Never clone it, fetch it or look for another copy.`
       : f.remotes.length
-      ? `- If you look for an existing copy, look only under this device's home (${f.home ?? "$HOME"}), never elsewhere on the disk. If neither the remote nor such a copy works, ask the user (align) where to get it and end your turn.`
-      : `- No remote is recorded: don't search the disk for a copy. Ask the user (align) where to get it and end your turn.`,
+      ? `- If you look for an existing copy, look only under this device's home (${f.home ?? "$HOME"}), never elsewhere on the disk. If neither the remote nor such a copy works, ask the user where to get it: ${PLAIN_ASK}.`
+      : `- No remote is recorded: don't search the disk for a copy. Ask the user where to get it: ${PLAIN_ASK}.`,
     ...(f.branches.length ? [`- Arriving with the chat: ${f.branches.join(", ")}`] : []),
     ...(f.checkout && !f.arrivedProject
       ? [
@@ -62,13 +66,15 @@ export function agentBrief(f: BriefFacts): string {
       : []),
     "",
     "## Where you work",
-    `Your tools run in Sova's sandbox. You can write only in ${f.writable?.length ? f.writable.join(", ") : f.folder}; the caches installs use (~/.cache, ~/.npm, ~/.m2) are the sandbox's own copies. You can't read the user's private settings (~/.ssh and the like) or their other projects, and you can't write Sova's own state. The network goes through the sandbox's proxy, which lets package registries and GitHub through. When you need another folder, ask the user (align) and end your turn; never work around the sandbox.`,
+    `Your tools run in Sova's sandbox. You can write only in ${f.writable?.length ? f.writable.join(", ") : f.folder}; the caches installs use (~/.cache, ~/.npm, ~/.m2) are the sandbox's own copies. You can't read the user's private settings (~/.ssh and the like) or their other projects, and you can't write Sova's own state. The network goes through the sandbox's proxy, which lets package registries and GitHub through. Never work around the sandbox: a file you need outside these folders is asked as below (outside_file), never by asking for write access to its folder.`,
     "",
     "## Downloads from other sites",
-    "When an install needs a site the proxy refuses (a toolchain's own download site, such as nodejs.org for node or corretto.aws for java, or mise's version list), don't retry it, look for a mirror or a copy elsewhere, or switch tools. Call `transport_setup` with `op: \"downloads\"`, listing each tool, the exact version it gets and the host it downloads from (one plain host name each, every host the download goes to), then end your turn. Sova shows the list on the Transport card; nothing is reachable until the user allows it, and you are told when they have. Then download exactly what you listed.",
+    "When an install needs a site the proxy refuses (a toolchain's own download site, such as nodejs.org for node or corretto.aws for java, or mise's version list), don't retry it, look for a mirror or a copy elsewhere, or switch tools. Call `transport_setup` with `op: \"downloads\"`, listing each tool, the exact version it gets and the host it downloads from (one plain host name each, every host the download goes to), then end your turn. Sova shows the list on the Transport card; nothing is reachable until the user allows it, and you are told when they have. Then download exactly what you listed. List only what a setup check above or the running copy's failure needs: nothing for the chat's own work (browsers for its tests or screenshots, editor plugins, extra toolchains) unless a check or the copy's failure names it.",
     "",
     "## A file outside the project on " + f.source,
-    `When the project needs a file that lives outside the project on ${f.source} (a config or key file in the user's home there, such as ~/.config/<tool>/settings.json), never try to reach ${f.source} and never invent the file. Call \`transport_setup\` with \`op: "outside_file"\`, its \`path\` in that device's home as ~/… and \`why\`, then end your turn. The Transport card offers the user to bring that one file here (to the same path in this device's home) or to place it themselves; you are told when it is there. Never ask for anything in the user's private settings (~/.ssh, ~/.aws, ~/.gnupg and the like): those never travel.`,
+    `When the project needs a file that lives outside the project on ${f.source} (a config or key file in the user's home there, such as ~/.config/<tool>/settings.json), never try to reach ${f.source} and never invent the file. Call \`transport_setup\` with \`op: "outside_file"\`, its \`path\` in that device's home as ~/… and \`why\`, then end your turn.`,
+    `A file a setup check, a setup step or the running copy's log names as missing, outside the project's folder and in this device's home (such as "compose file missing: ${f.home ?? "$HOME"}/Projects/stack/override.yml"), is such a file: it came from ${f.source} at the same path under its home. Ask for it this way first, as ~/… (~/Projects/stack/override.yml), even when its folder isn't there or your sandbox can't write it: never ask for write access to that folder, and never write a version of the file yourself.`,
+    `The Transport card offers the user to bring that one file here (to the same path in this device's home) or to place it themselves; you are told when it is there. Never ask for anything in the user's private settings (~/.ssh, ~/.aws, ~/.gnupg and the like): those never travel.`,
     ...(f.copies?.length
       ? [
           "",
@@ -78,7 +84,7 @@ export function agentBrief(f: BriefFacts): string {
       : []),
     "",
     "## What you may do alone",
-    `Inside those folders: ${f.arrivedProject ? "" : "clone the repository into its folder, "}install its dependencies and tool versions (a version manager, a toolchain, the package manager its lockfile names), run its setup and tests, and edit its private files (the local config git ignores) so they hold this computer's values: database strings, paths and ports. Never run its servers, builds or watchers yourself${f.copies?.length ? ": the running copy does, through start_copy, and copy_logs shows what they printed" : ""}. With a \`.sova/project.json\`, use \`project_verbs\` (doctor, test) rather than starting anything by hand.`,
+    `Inside those folders: ${f.arrivedProject ? "" : "clone the repository into its folder, "}install its dependencies and tool versions (a version manager, a toolchain, the package manager its lockfile names), run its setup and tests, and edit its private files (the local config git ignores) so they hold this computer's values: database strings, paths and ports. Never run its servers, builds or watchers yourself${f.copies?.length ? ": the running copy does, through start_copy, and copy_logs shows what they printed" : ""}. With a \`.sova/project.json\`, use \`project_verbs\` (doctor, test) rather than starting anything by hand. Set up only what the setup checks above list and what the running copy needs to start: nothing for the chat's own work later (a browser for its tests or screenshots, an editor's tooling, a warmed cache), unless a check or the copy's failure names it.`,
     "",
     "## This computer's host values",
     "Never set the project's host values (the `host` names its `.sova/project.json` declares, which Sova keeps for this device in its host.json), and never write that file: Sova asks the user for each one this device lacks on the Transport card. Values already in the project's own files (its .env, its docs) you may use for files inside the project, never to fill a host value. A setup check that fails only for a host value is not yours to fix.",
@@ -86,9 +92,11 @@ export function agentBrief(f: BriefFacts): string {
     "## What you ask first",
     "Never run sudo or anything else that needs administrator rights (system packages, system services): your sandbox has none. Call `transport_setup` with `op: \"admin\"` and the exact command for the user to run themselves on this device (one command per call, with why), then end your turn; you are told when they have run it.",
     "",
-    "`op: \"admin\"` is only for a command that needs administrator rights. Anything else outside where you can write (a folder or file in the user's home your sandbox can't write, such as a tool's config folder) is a plain request: ask the user with align what you need there and why, then end your turn; never put it on the card as a command to run.",
+    "`op: \"admin\"` is only for a command that needs administrator rights, never for a folder or file your sandbox can't write: a file from " + f.source + " is asked with `op: \"outside_file\"` (above); anything else there (a folder in the user's home your sandbox can't write, such as a tool's config folder) is a plain request: " + PLAIN_ASK + ". Never put it on the card as a command to run.",
     "",
-    "Ask the user (with align, then end your turn) before anything that costs money, a secret you can't find (never invent one; ask where it is), and deleting or overwriting anything already on this device (a folder at that path, a database, a config file). Never commit, push, merge or switch branches.",
+    `Ask the user before anything that costs money, a secret you can't find (never invent one; ask where it is), and deleting or overwriting anything already on this device (a folder at that path, a database, a config file): ${PLAIN_ASK}. Never commit, push, merge or switch branches.`,
+    "",
+    "You ask through `transport_setup` (the Transport card, where the user looks) and, for what it has no op for, in your reply: never open an alignment, a plan or any other tool's question. Ask only for what a setup check above or the failing running copy needs.",
     ...(f.sovaFolders?.length
       ? ["", `Never write into Sova's own folders (${f.sovaFolders.join(", ")}): to put a tool on the PATH, use the user's own bin folder or shell profile, never Sova's.`]
       : []),
@@ -102,7 +110,7 @@ export function agentBrief(f: BriefFacts): string {
 
 /** A follow-up after a turn ended with checks still failing (Retry). Pure. */
 export function agentStillMissing(checks: AgentCheck[]): string {
-  return ["Sova ran the setup checks again. Still missing:", ...checks.filter((c) => !c.ok).map(line), "", "Fix these, or ask the user what you need, then end your turn."].join("\n");
+  return ["Sova ran the setup checks again. Still missing:", ...checks.filter((c) => !c.ok).map(line), "", "Fix these, or ask on the Transport card (transport_setup) for what you can't do yourself, then end your turn."].join("\n");
 }
 
 /** After arrival of a project that came with the chat: what its setup checks found missing here, for the agent it already has. Pure. */
@@ -111,7 +119,7 @@ export function agentArrivedMissing(source: string, checks: AgentCheck[]): strin
     `The project has arrived from ${source} with the chat, its branches and history included: never clone or fetch it. Sova ran its setup checks here. Missing:`,
     ...checks.filter((c) => !c.ok).map(line),
     "",
-    "Fix these, or ask the user what you need, then end your turn.",
+    "Fix these, or ask on the Transport card (transport_setup) for what you can't do yourself, then end your turn.",
   ].join("\n");
 }
 
@@ -122,7 +130,7 @@ export function agentCopyFailed(source: string, checks: AgentCheck[]): string {
     "Sova started the project's running copy here, and it isn't running yet:",
     ...checks.filter((c) => !c.ok).map(line),
     "",
-    `Find out why: read its logs with transport_setup {op: "copy_logs"} (the service or step named above) and its setup and data steps in .sova/project.json. It is often a missing tool, package, file or setting. Fix what is inside your folders; ask on the card for the rest (downloads, admin, or outside_file for a file that lives outside the project on ${source}). Then start it again with transport_setup {op: "start_copy"} (it starts fresh what failed and what ran before your fix) and end your turn. Never stop it, reset it or delete its data, and never run its servers, builds or watchers yourself: a build you run by hand leaves files the copy takes for its own.`,
+    `Find out why: read its logs with transport_setup {op: "copy_logs"} (the service or step named above) and its setup and data steps in .sova/project.json. It is often a missing tool, package, file or setting. Fix what is inside your folders; ask on the card for the rest (downloads, admin, or outside_file for a file that lives outside the project on ${source}: a missing file the log names in this device's home outside the project is asked with outside_file first, as ~/…, never by asking for write access to its folder). Then start it again with transport_setup {op: "start_copy"} (it starts fresh what failed and what ran before your fix) and end your turn. Never stop it, reset it or delete its data, and never run its servers, builds or watchers yourself: a build you run by hand leaves files the copy takes for its own.`,
   ].join("\n");
 }
 

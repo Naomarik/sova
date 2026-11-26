@@ -153,3 +153,15 @@ test("a file in the hidden list or inside the project is never put on the card; 
   assert.equal(existsSync(join(root, ".motorsrc")), false, "nothing written for it");
   assert.equal(agentOf(join(root, "state"), "tr_outside03")!.outside!.find((x) => x.id === second.id)!.state, "placed");
 });
+
+test("the missing file a copy's log names at this device's own path is asked as the same ~/… there, its folder missing here or not", async () => {
+  const root = scratchRoot("transport-outside-");
+  const { deps, fetched, a } = await arrived(root, "tr_outside09");
+  const here = join(root, "Projects", "stack", "compose", "motors.override.yml");
+  const r = askOutsideFile(deps, a.sessionId, { path: here, why: "The copy's data step reads the stack's compose override from it." });
+  assert.ok(r.ok, JSON.stringify(r));
+  const f = agentOf(join(root, "state"), "tr_outside09")!.outside![0]!;
+  assert.deepEqual({ path: f.path, folder: f.folder, state: f.state }, { path: "~/Projects/stack/compose/motors.override.yml", folder: "~/Projects/stack/compose", state: "asked" });
+  assert.deepEqual(fetched, [], "naming it reads nothing there");
+  assert.equal(askOutsideFile(deps, a.sessionId, { path: "/etc/motors.yml" }).ok, false, "outside this home: still refused");
+});

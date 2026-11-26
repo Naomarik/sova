@@ -1196,13 +1196,14 @@ export function askOutsideFile(deps: AskDeps & Pick<AgentDeps, "home" | "protect
   const own = ownAgent(deps.stateRoot(), sessionId);
   if ("error" in own) return { ok: false, error: own.error };
   const arrival = readPrepared(deps.stateRoot()).arrivals?.[own.tid];
-  const p = cleanOutsidePath(input.path);
+  // A path in this device's home (as a check or the copy's log names the missing file here) is the same ~/… there.
+  const p = cleanOutsidePath(input.path, deps.home());
   if ("error" in p) return { ok: false, error: p.error };
   const here = join(deps.home(), p.rel);
   const hiddenHere = deps.hiddenPaths?.() ?? [];
   // The hidden list as names under the home (~/.ssh…): the same on the device the chat came from.
   const why = outsideRefusal(here, deps.home(), hiddenHere, deps.protectedRoots());
-  if (why) return { ok: false, error: `${why}. Ask the user with align if the project really needs it.` };
+  if (why) return { ok: false, error: `${why}. If the project really needs it, say so to the user in plain words in your reply.` };
   const code = [resolve(arrival?.project.path ?? ""), ...(arrival?.trees ?? [])].filter((t) => t && t !== "/");
   if (code.some((t) => within(here, t))) return { ok: false, error: `~/${p.rel} is inside the project or the chat's worktrees here: it travels with the code, so it isn't an outside file.` };
   const asked = own.a.outside ?? [];

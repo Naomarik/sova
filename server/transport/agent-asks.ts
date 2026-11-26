@@ -162,7 +162,7 @@ export const outsideAsked = (f: Pick<OutsideFile, "path" | "from">): string =>
 
 /** What the agent hears once the file is here (or was already). Pure. */
 export function outsideDone(f: Pick<OutsideFile, "path" | "from">, how: "brought" | "kept" | "placed", at: string): string {
-  if (how === "kept") return `The user pressed Bring From ${f.from} for ${f.path}, but a file was already at ${at} on this device, so it was kept as it is and nothing was brought. Check that it is the one the project needs (ask the user with align if not, never overwrite it), then carry on with the setup and end your turn.`;
+  if (how === "kept") return `The user pressed Bring From ${f.from} for ${f.path}, but a file was already at ${at} on this device, so it was kept as it is and nothing was brought. Check that it is the one the project needs (if not, say so to the user in plain words in your reply, and never overwrite it), then carry on with the setup and end your turn.`;
   if (how === "placed") return `The user says they placed ${f.path} themselves, at ${at} on this device. Check that it is there and carry on with the setup, then end your turn.`;
   return `The user brought ${f.path} from ${f.from}: it is at ${at} on this device now, readable only by the user. Carry on with the setup, then end your turn.`;
 }

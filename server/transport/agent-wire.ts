@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { delimiter, join } from "node:path";
 import type { Hono } from "hono";
-import { acquireChatHandle, isSessionBusy, onAgentSettled } from "../chat-handle";
+import { acquireChatHandle, type ChatHandle, isSessionBusy, onAgentSettled } from "../chat-handle";
 import { meshSelf } from "../mesh";
 import { homesRoot } from "../chat-homes/root";
 import { ClaudeLogins, credentialsMtime, loginEnabled, readAccountsState } from "../../pi-config/extensions/claude-code/accounts.ts";
@@ -213,6 +213,22 @@ export function claudeLoginUsable(agentDir: string): boolean {
   }
 }
 
+/** The Transport agent's modes (§app.transport/agent "Its own brief only"): normal, with no minor mode (no align,
+    spec, vis or memory) and no project mode, whatever this device's default for new chats turns on. Its asks go on its
+    card through transport_setup, never into an alignment nobody answers. */
+export const AGENT_MODES = { mode: "normal", strict: false, minorModes: [], projectModes: [] } as const;
+
+/** Put the agent's new chat on AGENT_MODES and pin it there (its own `mode` entry, so no later change of this device's
+    default moves it), before its first prompt builds its system prompt. Throws when the chat isn't left on exactly
+    those modes: the agent then never starts on the device's. */
+export async function applyAgentModes(chat: Pick<ChatHandle, "switchMode" | "pinMode">): Promise<void> {
+  const r = await chat.switchMode({ mode: AGENT_MODES.mode, strict: AGENT_MODES.strict, minorModes: [], projectModes: [] });
+  if (r.error) throw new Error(`The Transport agent's chat couldn't leave this device's default modes: ${r.error}`);
+  if (r.mode !== AGENT_MODES.mode || r.strict || r.minorModes.length || r.projectModes?.length)
+    throw new Error(`The Transport agent's chat is still on ${[r.mode, ...r.minorModes, ...(r.projectModes ?? [])].join(", ")}, not plain normal mode`);
+  if (!(await chat.pinMode())) throw new Error("The Transport agent's chat couldn't be pinned to its modes");
+}
+
 /** The Transport agent's live deps; `app` makes its chat through the same route a page's New Session does. */
 /** Whether Sova's sandbox confines a chat to `scope` here: the backend probes that very policy (the launch a confined
     tool call makes, its command `true`), its proxy included; null when it does, else why not. Partial enforcement is
@@ -286,8 +302,8 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
       // of it ever runs unconfined.
       markAgent(stateRoot(), json.id, tid, Date.now(), scope);
       const chat = await acquireChatHandle(json.path);
-      // Normal mode with align, so it can ask the user what it may not decide alone.
-      await chat.switchMode({ mode: "normal", minorModes: ["align"] } as Parameters<typeof chat.switchMode>[0]);
+      // No modes of this device's defaults: only its brief and its own tools (transport_setup asks on its card).
+      await applyAgentModes(chat);
       await chat.setModel(model);
       await chat.setThinking(thinking);
       await chat.deliverToAgent(prompt);

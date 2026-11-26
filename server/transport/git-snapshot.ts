@@ -172,11 +172,13 @@ async function fileSha(path: string): Promise<string> {
 
 // ---- what travels and what stays ----------------------------------------------------------------
 
-/** Dependency and build-output folders: rebuilt there, never sent. `.cache` is not one of them:
-    agents keep scratch work there, so it travels as a scratch folder. */
+/** Dependency, download-cache and build-output folders: rebuilt there by the project's own build tools, never sent
+    (a project-local Maven repository or gitlibs folder, a virtualenv, a pnpm store included). `.cache` is not one of
+    them: agents keep scratch work there, so it travels as a scratch folder. */
 const LEFT_DIRS = new Set([
   "node_modules", "dist", "build", "out", "target", "coverage", ".turbo", ".vite", ".next", ".nuxt", ".svelte-kit",
   ".parcel-cache", ".cpcache", ".shadow-cljs", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".gradle",
+  ".m2", ".gitlibs", ".venv", ".pnpm-store",
 ]);
 export const leftDir = (name: string): boolean => LEFT_DIRS.has(name) || /^dist-[^/]+$/.test(name);
 const leftFile = (name: string): boolean => name === ".DS_Store" || name.endsWith(".tsbuildinfo") || name.endsWith(".pyc");
@@ -357,8 +359,16 @@ async function surveyTree(name: string, path: string, key: string, base: string 
         nested.push(p.slice(0, -1));
         continue;
       }
+      // A file inside a dependency, cache or build folder git doesn't ignore stays with that folder (listed once).
+      const parts = p.split("/");
+      const at = parts.slice(0, -1).findIndex((x) => leftDir(x));
+      if (at >= 0) {
+        const dir = parts.slice(0, at + 1).join("/");
+        if (!left.includes(dir)) left.push(dir);
+        continue;
+      }
       const st = await lstat(join(top, p)).catch(() => null);
-      if (st && leftEntry(p.split("/").at(-1)!, st)) left.push(p);
+      if (st && leftEntry(parts.at(-1)!, st)) left.push(p);
       else if (st) loose.push({ path: p, size: st.isFile() ? st.size : 0, kind: "untracked" });
     }
     // git names an ignored folder once and never walks it (40,000 files of node_modules cost nothing).

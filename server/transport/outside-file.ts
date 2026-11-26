@@ -8,6 +8,18 @@ import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readS
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { readTransport, updateTransport } from "./store";
 
+/** The device-wide download caches, relative to the home: what is in them is fetched on each device by its own build
+    tools from their registries, so no file in one travels (a tool's own config beside them, ~/.m2/settings.xml, may). */
+export const DOWNLOAD_CACHES = [
+  ".m2/repository", ".gitlibs", ".cargo/registry", ".cargo/git", "go/pkg/mod", ".bun/install/cache", ".npm", ".gradle/caches",
+  ".gradle/wrapper/dists", ".ivy2/cache", ".sbt/boot", ".cache", ".local/share/pnpm", ".pnpm-store", ".yarn/berry/cache", ".nuget/packages",
+] as const;
+
+/** The cache of DOWNLOAD_CACHES a home-relative path is in, or null. Pure. */
+export const downloadCacheOf = (rel: string): string | null => DOWNLOAD_CACHES.find((c) => rel === c || rel.startsWith(`${c}/`)) ?? null;
+const cacheRefusal = (shown: string, cache: string): string =>
+  `${shown} is in a download cache (~/${cache}): the project's build tools fetch what it holds on each device from their registries, so nothing in it travels. Run the project's install (its package manager, Maven, Gradle, cargo, go, the Clojure CLI) instead.`;
+
 /** The most one file may be (a config file, a key file the project reads; never a data set). */
 export const OUTSIDE_FILE_MAX = 1024 * 1024;
 const MAX_PATH = 1024;
@@ -46,6 +58,8 @@ export function cleanOutsidePath(raw: unknown, sourceHome?: string): { rel: stri
   if (!p.startsWith("~/")) return { error: `${JSON.stringify(p.slice(0, 80))} isn't in the user's home there: the card brings only a file in the home (~/…). Ask the user for anything else in plain words in your reply.` };
   const parts = p.slice(2).split("/");
   if (parts.some((x) => x === "" || x === "." || x === "..")) return { error: `${JSON.stringify(p.slice(0, 80))} isn't a plain path to one file: no empty, . or .. parts.` };
+  const cache = downloadCacheOf(parts.join("/"));
+  if (cache) return { error: cacheRefusal(p, cache) };
   return { rel: parts.join("/") };
 }
 
@@ -56,6 +70,9 @@ export function outsideRefusal(abs: string, home: string, hidden: readonly strin
   if (!within(r, real(home)) || r === real(home)) return `${abs} isn't a file inside the home folder`;
   for (const h of hidden) if (h && (within(abs, h) || within(r, real(h)))) return `${abs} is in the sandbox's hidden list (${h}): private settings never travel`;
   for (const f of refused) if (f && (within(abs, f) || within(r, real(f)))) return `${abs} is in Sova's own folders`;
+  // Read through its links too: a link elsewhere in the home to a cached file is that file.
+  const cache = downloadCacheOf(r.slice(real(home).length + 1));
+  if (cache) return cacheRefusal(abs, cache);
   return null;
 }
 

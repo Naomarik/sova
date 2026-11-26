@@ -421,6 +421,8 @@
       "src/lib/summary-diff.ts",
       "server/sessions-index-tracked.test.ts",
       "server/sessions-index-real.parity.test.ts",
+      "server/sessions-index-real-source.test.helper.ts",
+      "server/sessions-index-real-source.test.ts",
       "server/session-feed-join.test.ts"
     ],
     "requires": [

@@ -32,8 +32,9 @@ import { feedConnected, feedHeard, listInputsMoved } from "./list-generation";
  * other socket (an older tab, a peer's proxied feed) gets `list_changed` exactly as before.
  *
  * A rows socket that names the label pairs it reads (`&labels=<extId>:<key>,…`, server/session-labels.ts)
- * gets its rows with those labels: the re-diff compares the list with the union of the connected
- * sockets' pairs laid over it, and each socket's frames and `rows_check` digest are cut to its own
+ * gets its rows with those labels: the re-diff compares the list with the union of the connected (and
+ * joining) sockets' pairs laid over it, so a joiner's first frame follows the labelled list it read for
+ * itself, and each socket's frames and `rows_check` digest are cut to its own
  * pairs: a change it doesn't read (another socket's label) is a version bump with an empty upsert for
  * it. With no such socket, or no label stored, the rows frames are exactly as before.
  */
@@ -202,6 +203,9 @@ export class SessionFeed {
   private readonly rowClients = new Set<Send>();
   /** The rows clients that named label pairs, with their filter (a subset of `rowClients`). */
   private readonly labelClients = new Map<Send, FeedLabelFilter>();
+  /** The filters of label sockets still joining: their join's diff already lays them over the base, so the
+      list each read for itself is the base its first frame follows (no re-diff of every row after it). */
+  private readonly joiningFilters = new Set<FeedLabelFilter>();
   /** This run of the feed: a new one at each start, so a version is never read across runs. */
   private epochId = newEpoch();
   /** Row changes seen in this run; `base` is the list at it (null before the first diff). */
@@ -274,22 +278,22 @@ export class SessionFeed {
     }
     const held: SessionFeedMessage[] = [];
     this.held.add(held);
+    const filter = opts.rows && opts.labels && this.opts.labels ? opts.labels : null;
+    if (filter) this.joiningFilters.add(filter);
     this.run(async () => {
       try {
         await this.diff(true);
       } finally {
         this.joining--;
         this.held.delete(held);
+        if (filter) this.joiningFilters.delete(filter);
       }
       if (gone) return;
       this.clients.add(send);
       if (opts.rows) {
         this.rowClients.add(send);
-        // Its labels join the base at the next re-diff (soon): until then its rows are the list's own.
-        if (opts.labels && this.opts.labels) {
-          this.labelClients.set(send, opts.labels);
-          this.nudge(0);
-        }
+        // Its labels are in the base already (its join's diff laid them over): its frames follow from there.
+        if (filter) this.labelClients.set(send, filter);
         send({ type: "rows_hello", epoch: this.epochId, version: this.version });
       }
       send({ type: "marks", full: true, sessions: [...this.sent.values()] });
@@ -297,6 +301,7 @@ export class SessionFeed {
     });
     return () => {
       gone = true;
+      if (filter) this.joiningFilters.delete(filter);
       this.held.delete(held);
       held.length = 0;
       this.clients.delete(send);
@@ -397,7 +402,7 @@ export class SessionFeed {
   private diffRowsOf(plain: readonly SessionSummary[]): void {
     // The base the versions count: the list itself, or with the label sockets' union laid over it.
     const lab = this.opts.labels;
-    const union = lab && this.labelClients.size ? lab.union(this.labelClients.values()) : null;
+    const union = lab && (this.labelClients.size || this.joiningFilters.size) ? lab.union([...this.labelClients.values(), ...this.joiningFilters]) : null;
     const list = union ? lab!.overlay(plain, union) : plain;
     // Rows that may carry labels: each socket then gets them cut to its own pairs (none for the rest).
     const labelled = list !== plain || this.labelled;

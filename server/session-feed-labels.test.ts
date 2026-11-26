@@ -73,6 +73,52 @@ describe("inert when no socket names labels, or no label is stored", () => {
 });
 
 describe("a label socket", () => {
+  const big = (n: number) => Array.from({ length: n }, (_, i) => row(`r${String(i).padStart(4, "0")}`));
+
+  test("joining a fresh feed over more labelled rows than a frame holds: no list_changed, no rows, after its join", async () => {
+    const list = big(300);
+    for (const r of list) L.setLabels(r.id, r.path, "alpha", { owner: "kim" });
+    const h = harness(list, true);
+    const lab: SessionFeedMessage[] = [];
+    h.feed.add((m) => lab.push(m), { rows: true, labels: L.parseLabelPairs("alpha:owner") });
+    await settle(h.feed);
+    await h.step();
+    await h.step();
+    h.feed.stop();
+    assert.deepEqual(lab.map((m) => m.type), ["rows_hello", "marks"]);
+  });
+
+  test("a union that grows: the sockets already there get no row they hold, and no list_changed", async () => {
+    const list = big(300);
+    for (const r of list) {
+      L.setLabels(r.id, r.path, "alpha", { owner: "kim" });
+      L.setLabels(r.id, r.path, "beta", { owner: "lee" });
+    }
+    const h = harness(list, true);
+    const plain: SessionFeedMessage[] = [];
+    const alpha: SessionFeedMessage[] = [];
+    const beta: SessionFeedMessage[] = [];
+    h.feed.add((m) => plain.push(m), { rows: true });
+    h.feed.add((m) => alpha.push(m), { rows: true, labels: L.parseLabelPairs("alpha:owner") });
+    await settle(h.feed);
+    h.feed.add((m) => beta.push(m), { rows: true, labels: L.parseLabelPairs("beta:owner") });
+    await settle(h.feed);
+    await h.step();
+    h.feed.stop();
+    assert.deepEqual(beta.map((m) => m.type), ["rows_hello", "marks"]);
+    for (const [name, ms] of [["plain", plain], ["alpha", alpha]] as const) {
+      assert.ok(!ms.some((m) => m.type === "list_changed"), name);
+      for (const m of ms) if (m.type === "rows") assert.deepEqual([m.upsert, m.remove], [[], []], name);
+    }
+    // The version the newcomer starts at is the one the others are at.
+    const at = (ms: SessionFeedMessage[]) => {
+      const r = ms.filter((m) => m.type === "rows").at(-1) as Extract<SessionFeedMessage, { type: "rows" }> | undefined;
+      return r?.to ?? (ms[0] as Extract<SessionFeedMessage, { type: "rows_hello" }>).version;
+    };
+    assert.equal(at(plain), (beta[0] as Extract<SessionFeedMessage, { type: "rows_hello" }>).version);
+    assert.equal(at(alpha), at(plain));
+  });
+
   test("gets its pairs on its rows; a plain socket the same rows without them; a label write moves only rows", async () => {
     L.setLabels("a", "/s/a.jsonl", "alpha", { owner: "kim", where: "srv" });
     L.setLabels("a", "/s/a.jsonl", "beta", { owner: "zed" });
@@ -85,10 +131,8 @@ describe("a label socket", () => {
     h.feed.add((m) => lab.push(m), { rows: true, labels: L.parseLabelPairs("alpha:owner") });
     await settle(h.feed);
     const rowsOf = (ms: SessionFeedMessage[]) => ms.filter((m): m is Extract<SessionFeedMessage, { type: "rows" }> => m.type === "rows");
-    // Its labels joined the base: the label socket's row a carries alpha:owner only.
-    const first = rowsOf(lab).at(-1)!;
-    assert.deepEqual(first.upsert.find((r) => r.id === "a")?.labels, { alpha: { owner: "kim" } });
-    assert.ok(rowsOf(plain).every((f) => f.upsert.every((r) => r.labels === undefined)));
+    // Its labels were in the base from its join: nothing follows the list it read for itself.
+    assert.deepEqual(lab.map((m) => m.type), ["rows_hello", "marks"]);
     // A label write: the label socket hears it; the plain socket gets the same version with no rows; the old socket no list_changed.
     const oldCount = old.length;
     L.setLabels("a", "/s/a.jsonl", "alpha", { owner: "lee" });

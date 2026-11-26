@@ -211,6 +211,9 @@ describe("a move", () => {
     assert.equal(JSON.parse(readFileSync(join(state, MARKER_FILE), "utf8")).homes, from);
     assert.ok(d.calls.includes("releaseReaders"));
     assert.ok(!d.calls.some((c) => c.startsWith("afterSwitch")));
+    // Its partial copy goes, as a cancel's does: a retry to the same folder starts there clean.
+    assert.equal(existsSync(to), false, "the folder the move made is gone");
+    assert.equal((await previewMove(to, deps())).target, to, "the same folder again, not a sova-chats beside a half copy");
   });
 
   test("a move the server's stop interrupted is resumed from the files its journal checked", async () => {

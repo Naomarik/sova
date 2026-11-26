@@ -18,6 +18,7 @@
  *   it made goes, the old folder stays in force.
  */
 import { createHash, randomUUID } from "node:crypto";
+import type { Dirent } from "node:fs";
 import { closeSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, renameSync, rmSync, statfsSync, symlinkSync, utimesSync, writeFileSync, writeSync, accessSync, appendFileSync, realpathSync, chmodSync } from "node:fs";
 import { lstat, mkdir, open, readdir, readlink, rename, rm, symlink, utimes, chmod } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -462,6 +463,7 @@ async function copyOne(from: string, to: string, e: Entry, map: PathMap, cancell
       const next = rewritten(kind, readFileSync(part, "utf8"), map);
       if (next !== null) {
         writeFileSync(part, next);
+        fsyncFile(part);
         out = Buffer.byteLength(next);
       }
     }
@@ -509,6 +511,7 @@ function copyOneSync(from: string, to: string, e: Entry, map: PathMap): JournalL
     const next = rewritten(kind, readFileSync(part, "utf8"), map);
     if (next !== null) {
       writeFileSync(part, next);
+      fsyncFile(part);
       out = Buffer.byteLength(next);
     }
   }
@@ -516,6 +519,47 @@ function copyOneSync(from: string, to: string, e: Entry, map: PathMap): JournalL
   utimesSync(part, st.atime, st.mtime);
   renameSync(part, dst);
   return { rel: e.rel, size: st.size, mtimeMs: st.mtimeMs, sha256: sha, out };
+}
+
+/** Flush a file's data to the disk. */
+function fsyncFile(file: string): void {
+  const fd = openSync(file, "r+");
+  try {
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Flush every folder under `root` (and `root` itself): the renames that put each copied file in place are on the disk
+ * before the marker names the folder, so a power loss right after the switch never leaves it naming missing files.
+ * Where a folder can't be opened for it (a platform that refuses), the data's own fsync stands.
+ */
+function fsyncTree(root: string): void {
+  const dirs = [root];
+  for (let i = 0; i < dirs.length; i++) {
+    let names: Dirent[];
+    try {
+      names = readdirSync(dirs[i]!, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const n of names) if (n.isDirectory()) dirs.push(join(dirs[i]!, n.name));
+  }
+  // Deepest first, then the folder holding `root` (its entry, for a folder the move made).
+  for (const d of [...dirs.reverse(), dirname(root)]) {
+    try {
+      const fd = openSync(d, "r");
+      try {
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+    } catch {
+      // not supported here
+    }
+  }
 }
 
 /** Whether the journal's line for `e` still stands: the original unchanged and the copy there, as it was left. */
@@ -714,6 +758,7 @@ async function run(move: ChatsFolderMove, deps: MoveDeps, made: boolean): Promis
     move.files = last.length;
     move.copiedFiles = last.length;
     move.copiedBytes = move.bytes = last.reduce((n, e) => n + e.size, 0);
+    fsyncTree(to);
     writeMarker(to, [from, ...previousHomesRoots()]);
     switchHomesRoot();
     // A conversation Sova's own chat wrote moments ago is Sova's in the new folder too: its next open isn't taken for
@@ -735,9 +780,15 @@ async function run(move: ChatsFolderMove, deps: MoveDeps, made: boolean): Promis
     await deps.afterSwitch(from, to);
     await finish("done");
   } catch (err) {
-    if (err instanceof Cancelled) {
+    // Before the marker the old folder is in force: what the move made in the new one goes (a cancel's, and a
+    // failure's, so a retry to the same folder starts there clean, never beside a half copy).
+    const removePartial = async () => {
+      if (homesRoot() === to) return;
       if (made) await rm(to, { recursive: true, force: true }).catch(() => {});
       else for (const e of await readdir(to).catch(() => [] as string[])) await rm(join(to, e), { recursive: true, force: true }).catch(() => {});
+    };
+    if (err instanceof Cancelled) {
+      await removePartial();
       deps.log(`chats folder move to ${to} cancelled; your chats stay in ${from}`);
       await finish("cancelled");
       return;
@@ -749,6 +800,7 @@ async function run(move: ChatsFolderMove, deps: MoveDeps, made: boolean): Promis
       await finish("done", msg);
       return;
     }
+    await removePartial();
     await finish("failed", `${msg} Your chats stay in ${from}.`);
   }
 }

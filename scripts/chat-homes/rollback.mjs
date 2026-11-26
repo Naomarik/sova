@@ -21,7 +21,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { createGunzip } from "node:zlib";
 import { backup } from "./backup.mjs";
-import { agentDir, checkoutInfo, cwdSessionsDir, exists, homesRoot, liveProcesses, parseArgs, runningSova, sha256File, sharedBase, stateRootOf, tar } from "./lib.mjs";
+import { agentDir, checkoutInfo, cwdSessionsDir, exists, homesRoot, liveProcesses, parseArgs, previousHomesRoots, runningSova, sha256File, sharedBase, stateRootOf, tar } from "./lib.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -312,6 +312,7 @@ function loadJournal(homes) {
 /** What one home's rollback does: its conversations' moves and every path into it, read from the home as it is. */
 function planHome({ agent, state, homes, shared, id, report }) {
   const home = join(homes, id);
+  const spellings = [home, ...previousHomesRoots(agent).map((root) => join(root, id))];
   const moves = [];
   const paths = [];
   const sessions = join(home, "sessions");
@@ -326,13 +327,17 @@ function planHome({ agent, state, homes, shared, id, report }) {
       }
       const to = join(cwdSessionsDir(agent, h.cwd), n);
       moves.push([from, to]);
-      paths.push([from, to]);
+      for (const at of spellings) paths.push([join(at, "sessions", n), to]);
     }
-  // Every place a path into the home may name (worker records, wake nudges, conversations' image links).
-  paths.push([join(home, "shared"), join(shared, id)]);
-  paths.push([`${join(home, "chat", "attachments")}/`, `${join(state, "attachments", id)}/`]);
-  paths.push([`${join(home, "chat", "memory")}/`, `${join(state, "memory")}/`]);
-  if (exists(join(home, "teams"))) for (const lead of readdirSync(join(home, "teams"))) paths.push([join(home, "teams", lead), join(state, "teams", lead, "mailbox")]);
+  // Every place a path into the home may name (worker records, wake nudges, conversations' image links), under this
+  // folder and under each it was in before a Chats folder move (what a compressed chat's archive and a conversation's
+  // words still say).
+  for (const at of spellings) {
+    paths.push([join(at, "shared"), join(shared, id)]);
+    paths.push([`${join(at, "chat", "attachments")}/`, `${join(state, "attachments", id)}/`]);
+    paths.push([`${join(at, "chat", "memory")}/`, `${join(state, "memory")}/`]);
+    if (exists(join(home, "teams"))) for (const lead of readdirSync(join(home, "teams"))) paths.push([join(at, "teams", lead), join(state, "teams", lead, "mailbox")]);
+  }
   const workers = exists(join(home, "workers")) ? readdirSync(join(home, "workers")).filter((w) => w.endsWith(".json")).map((w) => join(state, "chats", "workers", w)) : [];
   return { moves, paths, workers };
 }

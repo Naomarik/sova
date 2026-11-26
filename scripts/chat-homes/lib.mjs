@@ -50,6 +50,16 @@ export function homesRoot(agent, env = process.env) {
   return join(homedir(), ".local", "state", "sova", "chats", key);
 }
 
+/** The homes folders this install's chats were in before a Chats folder move (the marker's `movedFrom`), newest first. */
+export function previousHomesRoots(agent) {
+  try {
+    const m = JSON.parse(readFileSync(join(canonical(stateRootOf(agent)), "chat-homes.json"), "utf8"));
+    return Array.isArray(m?.movedFrom) ? m.movedFrom.filter((r) => typeof r === "string" && isAbsolute(r)) : [];
+  } catch {
+    return [];
+  }
+}
+
 /** The base of every older chat's shared folder: $SOVA_SHARED_BASE (absolute), else ~/.local/state/sova/shared. */
 export function sharedBase(env = process.env) {
   const own = env.SOVA_SHARED_BASE;

@@ -75,3 +75,32 @@ test("a rerun never reports a compressed chat an earlier run restored", async ()
   assert.deepEqual(r.problems, [`${join(dir, "b.jsonl.gz")} is missing: chat b can't be uncompressed`], "only the chat really missing");
   assert.deepEqual(Object.keys(JSON.parse(readFileSync(store, "utf8")).chats), ["b"], "the restored one left the store");
 });
+
+test("after a Chats folder move, the paths a chat's records and words still name in its earlier folder are rewritten too", async () => {
+  const agent = join(scratch, "agent-moved");
+  const homes = join(scratch, "homes-now");
+  const earlier = join(scratch, "homes-before");
+  const env = { PI_CODING_AGENT_DIR: agent, SOVA_CHAT_HOMES: homes, SOVA_SHARED_BASE: join(scratch, "shared-moved"), HOME: scratch };
+  mkdirSync(join(agent, "sova"), { recursive: true });
+  // The marker a Chats folder move wrote: the chats were in `earlier` before.
+  writeFileSync(join(agent, "sova", "chat-homes.json"), JSON.stringify({ v: 1, homes, movedFrom: [earlier] }));
+  const id = "019a0000-0000-7000-8000-0000000000d1";
+  const home = join(homes, id);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  mkdirSync(join(home, "workers"), { recursive: true });
+  mkdirSync(join(home, "chat", "attachments"), { recursive: true });
+  writeFileSync(join(home, "home.json"), JSON.stringify({ v: 1, id }));
+  writeFileSync(join(home, "chat", "attachments", "a.png"), "png");
+  const name = `2026_${id}.jsonl`;
+  const helperName = "2026_019a0000-0000-7000-8000-0000000000d2.jsonl";
+  // As a compressed chat's archive unpacks, or a conversation's words say: the earlier folder's paths.
+  writeFileSync(join(home, "sessions", name), `${JSON.stringify({ type: "session", id, cwd: "/w/p" })}\n${JSON.stringify({ type: "message", message: { role: "user", content: [{ type: "text", text: `see ${join(earlier, id, "chat", "attachments", "a.png")}` }] } })}\n`);
+  writeFileSync(join(home, "sessions", helperName), `${JSON.stringify({ type: "session", id: "d2", cwd: "/w/p" })}\n`);
+  writeFileSync(join(home, "workers", "ag_02.json"), JSON.stringify({ id: "ag_02", state: "ended", path: join(earlier, id, "sessions", helperName), parent: { path: join(earlier, id, "sessions", name) } }));
+  await rollback({ noBackup: true, env, log: () => {} });
+  const rec = JSON.parse(readFileSync(join(agent, "sova", "chats", "workers", "ag_02.json"), "utf8"));
+  assert.equal(rec.path, join(agent, "sessions", "--w-p--", helperName));
+  assert.equal(rec.parent.path, join(agent, "sessions", "--w-p--", name));
+  const words = readFileSync(join(agent, "sessions", "--w-p--", name), "utf8");
+  assert.ok(words.includes(join(agent, "sova", "attachments", id, "a.png")) && !words.includes(earlier), words);
+});

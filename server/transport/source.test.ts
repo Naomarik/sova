@@ -113,3 +113,51 @@ test("Cancel after the decision that the other device refuses for any other reas
   assert.notEqual(readTransport(tid)?.state, "cancelled");
   updateTransport(tid, { state: "needs-you" });
 });
+
+test("Cancel while the switch is decided under it: the decision as it is when that device answers counts, so a refusal then isn't called off here", async () => {
+  const { cancelTransport } = await import("./source");
+  const { createTransport, readTransport, updateTransport } = await import("./store");
+  const tid = "tr_srccancel3";
+  createTransport({ tid, side: "source", mode: "move", chatId: "chat-c3", sourceChatId: "chat-c3", title: "t", peer: "peer-1", peerLabel: "laptop-b", path: "/z.jsonl", folder: "~/z", state: "switching", steps: { offered: "t", packed: "t" } });
+  const deps: Partial<SourceDeps> = {
+    peers: () => [{ id: "peer-1", label: "laptop-b" }],
+    moved: async () => {},
+    peerFetch: async (_peer, path) => {
+      if (path.endsWith("/cancel")) {
+        // The drive loop decides while Cancel waits for this answer.
+        updateTransport(tid, { decided: true });
+        return Response.json({ error: "Something broke" }, { status: 500 });
+      }
+      return Response.json({ tid, state: "needs-you", steps: { verified: "t" }, needsYou: "x" });
+    },
+  };
+  setSourceDeps(deps as SourceDeps);
+  const res = await cancelTransport(tid);
+  assert.equal(res.ok, false);
+  assert.notEqual(readTransport(tid)?.state, "cancelled");
+  updateTransport(tid, { state: "needs-you" });
+});
+
+test("a Cancel taken while a step asks that device's status: the step never decides after it, and no commit goes", async () => {
+  const { drive } = await import("./source");
+  const { createTransport, readTransport, updateTransport } = await import("./store");
+  const tid = "tr_srccancel4";
+  createTransport({ tid, side: "source", mode: "copy", chatId: "chat-c4", sourceChatId: "chat-c4", title: "t", peer: "peer-1", peerLabel: "laptop-b", path: "/w.jsonl", folder: "~/w", state: "checking", steps: { offered: "t", packed: "t" } });
+  const asked: string[] = [];
+  const deps: Partial<SourceDeps> = {
+    peers: () => [{ id: "peer-1", label: "laptop-b" }],
+    moved: async () => {},
+    peerFetch: async (_peer, path) => {
+      asked.push(path);
+      // Cancel lands here while the status is on its way: the record is cancelled when it answers verified.
+      updateTransport(tid, { state: "cancelled", ticket: undefined, ticketBurnt: true });
+      return Response.json({ tid, state: "switching", steps: { verified: "t" } });
+    },
+  };
+  setSourceDeps(deps as SourceDeps);
+  drive(tid);
+  await new Promise((ok) => setTimeout(ok, 200));
+  assert.equal(readTransport(tid)?.state, "cancelled");
+  assert.ok(!readTransport(tid)?.decided, "never decided");
+  assert.deepEqual(asked.filter((p) => p.endsWith("/commit")), [], "no commit sent");
+});

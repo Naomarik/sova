@@ -452,6 +452,8 @@ export function drive(tid: string): void {
 
 function needsYou(tid: string, reason: string): void {
   const r = readTransport(tid);
+  // Cancelled meanwhile (that device took the Cancel, then refused the commit this step was sending): it stays so.
+  if (r?.state === "cancelled") return void log(`${tid}: stopped by Cancel: ${reason}`);
   log(`${tid}: needs you: ${reason}`);
   // Once decided the chat is no longer here: it waits to open there.
   const after = r?.decided ? "The chat opens there once it is finished: press Retry." : "The chat carries on here.";
@@ -491,6 +493,8 @@ async function step(r: TransportRecord): Promise<"wait" | "again" | "stop"> {
         needsYou(r.tid, "the chat changed here during the switch, so nothing moved; retry to send it again");
         return "stop";
       }
+      // Cancelled while this step asked: it is never decided after that, and no commit goes.
+      if (readTransport(r.tid)?.state === "cancelled") return "stop";
       updateTransport(r.tid, { ticket: undefined, ticketBurnt: true, decided: true, state: "switching" });
       await knob(r.tid, "decided");
       stepDone(r.tid, "decided");
@@ -690,10 +694,12 @@ export async function cancelTransport(tid: string): Promise<{ ok: boolean; statu
   if (!r || r.side !== "source") return { ok: false, status: 404, error: "No such transport" };
   if (r.state === "done") return { ok: false, status: 409, error: "It already moved." };
   let res: Awaited<ReturnType<typeof post>> | null = null;
+  // Decided now, not when Cancel was pressed: the switch may be decided while that device is asked.
+  const decided = () => !!readTransport(tid)?.decided;
   try {
     res = await post(r, peerPath.cancel(tid), {});
   } catch {
-    if (r.decided) return { ok: false, status: 409, error: `${r.peerLabel} is offline; it may hold the chat already. Try again once it is back.` };
+    if (decided()) return { ok: false, status: 409, error: `${r.peerLabel} is offline; it may hold the chat already. Try again once it is back.` };
   }
   // It is going in there (opening, or partly in place): it can't be called back, so it is followed to its end here.
   if (res && res.status === 409 && (res.body.published || res.body.publishing)) {
@@ -706,7 +712,7 @@ export async function cancelTransport(tid: string): Promise<{ ok: boolean; statu
     return { ok: false, status: 409, error };
   }
   // Decided: the chat may open there on any answer but a yes, so nothing is called off here without one.
-  if (r.decided && res && !res.ok) {
+  if (decided() && res && !res.ok) {
     drive(tid);
     return { ok: false, status: 409, error: `${r.peerLabel} didn't cancel it (${String(res.body.error ?? `it answered ${res.status}`).replace(/\.$/, "")}); it may hold the chat already. Try again.` };
   }

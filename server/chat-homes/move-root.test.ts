@@ -434,6 +434,11 @@ describe("a move", () => {
     assert.ok(!r.ok && /A chat can write in that folder/.test(r.error));
     assert.equal(existsSync(join(proj, "chats")), false, "nothing made there");
     assert.equal((await previewMove(to, d)).refusal, undefined, "a folder beside it is fine");
+    // Roots that can't be read refuse the move (never allow it unchecked).
+    const broken = deps({ writableRoots: async () => { throw new Error("no list"); } });
+    const b = await startMove(to, broken);
+    assert.ok(!b.ok && /couldn't check which folders your chats may write/.test(b.error));
+    assert.equal(existsSync(to), false);
     // A chat started in home itself (or above) would refuse every folder under home: it never counts.
     const home = join(outside, `home-w-${n}`);
     assert.equal(writableRootOf(join(home, "data", "chats"), [home, "/"], home), null);

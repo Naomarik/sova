@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { homedir, hostname } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { chatStateRoot } from "../state-root";
-import { appendChange, onChanges } from "./changes";
+import { appendChange, onChanges, pollChanges } from "./changes";
 
 /** The override's name (harnesses and hermetic copies set it for a server). */
 export const HOMES_ENV = "SOVA_CHAT_HOMES";
@@ -241,6 +241,8 @@ const notHome = (): Set<string> => {
   if (!set) notHomes.set(root, (set = new Set()));
   return set;
 };
+/** When a kept negative answer last read the log. */
+let negativePolledAt = 0;
 /** I/O hasHome did (the bench and tests count it). */
 export const homeIo = { manifestReads: 0 };
 
@@ -253,7 +255,14 @@ export function hasHome(id: string): boolean {
   const set = known();
   if (set.has(id)) return true;
   const no = notHome();
-  if (no.has(id)) return false;
+  if (no.has(id)) {
+    // A process that reads nothing else of the homes still hears a line that made it one: the log, once a second.
+    const now = Date.now();
+    if (now - negativePolledAt < 1000) return false;
+    negativePolledAt = now;
+    pollChanges(homesRoot());
+    if (no.has(id)) return false;
+  }
   homeIo.manifestReads++;
   const m = readHomeManifest(id);
   if (!m || m.stateRoot !== canonicalStateRoot()) {

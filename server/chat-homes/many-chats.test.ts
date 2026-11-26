@@ -30,7 +30,7 @@ const manifest = (sid: string) => {
 };
 const lineFromAnotherProcess = (h: string, d: string) => appendFileSync(segmentFile(HOMES, segments(HOMES).at(-1) ?? 1), `${JSON.stringify({ h, d, g: 1, p: process.pid + 1 })}\n`);
 
-test("a 'not a home' answer is kept, and asked again when a line, an arrival or the sweep says so", () => {
+test("a 'not a home' answer is kept, and asked again when a line, an arrival or the sweep says so", async () => {
   ensureChatHome(id(1)); // the homes root exists, so lines can be written
   const old = id(500);
   assert.equal(hasHome(old), false);
@@ -42,7 +42,8 @@ test("a 'not a home' answer is kept, and asked again when a line, an arrival or 
   manifest(old);
   assert.equal(hasHome(old), false, "nothing said so yet");
   lineFromAnotherProcess(old, "home");
-  pollChanges(HOMES);
+  // Read by hasHome itself (once a second) even in a process that reads nothing else of the homes.
+  await new Promise((r) => setTimeout(r, 1010));
   assert.equal(hasHome(old), true);
 
   // A Transport's arrival says so itself.

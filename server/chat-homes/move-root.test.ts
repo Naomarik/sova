@@ -18,8 +18,11 @@ const ARCHIVED = "019a0000-0000-7000-8000-00000000bbbb";
 const WORKER = "019a0000-0000-7000-8000-00000000cccc";
 let n = 0;
 let from = "";
+/** Folders for the chats beside the agent dir, never in it (a move into it is refused). */
+const outside = join(scratchAgentDir, "..", "chats-folders");
 let to = "";
 after(dropScratchAgentDir);
+after(() => rmSync(outside, { recursive: true, force: true }));
 
 const sha = (f: string) => createHash("sha256").update(readFileSync(f)).digest("hex");
 
@@ -78,8 +81,8 @@ beforeEach(() => {
   delete process.env[HOMES_ENV];
   delete process.env[CHAT_HOMES_ROOT_ENV];
   process.env.PI_CODING_AGENT_DIR = scratchAgentDir;
-  from = join(scratchAgentDir, `old-${n}`);
-  to = join(scratchAgentDir, `new-${n}`);
+  from = join(outside, `old-${n}`);
+  to = join(outside, `new-${n}`);
   mkdirSync(state, { recursive: true });
   rmSync(join(state, MOVE_STATE_FILE), { force: true });
   seed(from);
@@ -150,6 +153,19 @@ describe("a move", () => {
     assert.match((await previewMove(join(from, "inside"), deps())).refusal ?? "", /inside your chats folder/);
     assert.match((await previewMove(from, deps())).refusal ?? "", /already/);
     assert.match((await previewMove(join(scratchAgentDir, "sessions", "x"), deps())).refusal ?? "", /pi's own sessions folder/);
+    // Outside everything a tool writes: not in the agent dir or the state root, nor around them, nor in a repository.
+    for (const inside of [join(scratchAgentDir, `chats-${n}`), join(state, `chats-${n}`)]) {
+      assert.match((await previewMove(inside, deps())).refusal ?? "", /inside Sova's own settings folder/, inside);
+      const r = await startMove(inside, deps());
+      assert.ok(!r.ok && /Sova's own settings folder/.test(r.error));
+      assert.equal(existsSync(inside), false, "nothing made there");
+    }
+    // Picking the agent dir itself (it holds files): its sova-chats would be inside it.
+    assert.match((await previewMove(scratchAgentDir, deps())).refusal ?? "", /inside Sova's own settings folder/);
+    const repo = join(outside, `repo-${n}`);
+    mkdirSync(join(repo, ".git"), { recursive: true });
+    assert.match((await previewMove(join(repo, "chats"), deps())).refusal ?? "", /inside a repository/);
+    rmSync(repo, { recursive: true, force: true });
   });
 
   test("refused while a chat works, and while a variable sets the folder: nothing stops, nothing is copied", async () => {
@@ -169,9 +185,9 @@ describe("a move", () => {
   });
 
   test("a live-sync folder is named, and still allowed", async () => {
-    const box = join(scratchAgentDir, `Dropbox-${n}`, "chats");
+    const box = join(outside, `Dropbox-${n}`, "chats");
     assert.equal(liveSyncOf(box), "Dropbox");
-    const st = join(scratchAgentDir, `synced-${n}`);
+    const st = join(outside, `synced-${n}`);
     mkdirSync(st, { recursive: true });
     writeFileSync(join(st, ".stfolder"), "");
     assert.equal(liveSyncOf(join(st, "chats")), "Syncthing");

@@ -124,6 +124,16 @@ function nearestExisting(p: string): string {
   return at;
 }
 
+/** The working tree holding `p` (the nearest folder above it with a `.git`), or null. */
+function repositoryOf(p: string): string | null {
+  for (let at = p; ; ) {
+    if (existsSync(join(at, ".git"))) return at;
+    const up = dirname(at);
+    if (up === at) return null;
+    at = up;
+  }
+}
+
 const emptyOrNew = (p: string): boolean => {
   try {
     return readdirSync(p).length === 0;
@@ -279,6 +289,12 @@ function refusalFor(target: string, bytes: number, deps: Pick<MoveDeps, "working
   if (within(from, target)) return "Your chats folder is inside that folder. Pick an empty folder, or a new one.";
   const sessions = canonical(join(agentRoot(), "sessions"));
   if (within(target, sessions)) return "That folder is inside pi's own sessions folder, where every chat would be listed twice. Pick another.";
+  // Homes sit outside everything a tool writes (§app.chat-homes/location): never in pi's agent folder or Sova's own
+  // state, nor around them, and never in a repository, where every chat would show as a change.
+  for (const own of [agentRoot(), stateRoot()].map(canonical))
+    if (within(target, own) || within(own, target)) return `That folder is inside Sova's own settings folder (${own}), or holds it. Pick one outside it.`;
+  const repo = repositoryOf(target);
+  if (repo) return `That folder is inside a repository (${repo}), where your chats would show as changes. Pick one outside it.`;
   if (!resuming && !emptyOrNew(target)) return `${target} already holds files. Pick an empty folder, or a new one.`;
   try {
     accessSync(nearestExisting(target), constants.W_OK);

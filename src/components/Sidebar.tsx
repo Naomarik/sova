@@ -1439,6 +1439,11 @@ export function Sidebar(props: {
     const d = dirInfo();
     return d ? tildePath(d.sessionsDir, d.home) : null;
   };
+  /** The chats folder, named beside it once it is there: chats made since chat homes live in it. */
+  const homesDir = () => {
+    const d = dirInfo(), c = chatsFolderInfo();
+    return d && c?.exists ? tildePath(c.path, d.home) : null;
+  };
   // Labels for remote groups: refetched only when the set of targets the list uses changes.
   const usedTargets = createMemo(
     () => [...new Set(all().map((s) => remotePlaceOf(s)?.target).filter(Boolean))].sort().join("\n") || false,
@@ -2608,7 +2613,7 @@ export function Sidebar(props: {
                 title="Couldn't read your sessions."
                 body={
                   <>
-                    <code>~/.pi/agent/sessions</code> wasn't changed. Check the server is running, then retry. <span class="text-muted">({props.error})</span>
+                    Nothing in <code>~/.pi/agent/sessions</code> or your chats folder was changed. Check the server is running, then retry. <span class="text-muted">({props.error})</span>
                   </>
                 }
                 action={
@@ -2632,7 +2637,16 @@ export function Sidebar(props: {
                 <Show when={sessionsDir()} fallback="0 sessions yet.">
                   {(dir) => (
                     <>
-                      0 sessions in <code>{dir()}</code>.
+                      0 sessions in <code>{dir()}</code>
+                      <Show when={homesDir()}>
+                        {(homes) => (
+                          <>
+                            {" or "}
+                            <code>{homes()}</code>
+                          </>
+                        )}
+                      </Show>
+                      .
                     </>
                   )}
                 </Show>

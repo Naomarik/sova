@@ -151,6 +151,11 @@ async function pair(server, kim) {
     const p = (await ok(kim, "GET", "/api/mesh/lan")).pairings?.find((x) => x.id === "server");
     return p?.channels?.answer?.state === "connected" && p?.channels?.ask?.state === "connected";
   });
+  // Made-up display names: a copy otherwise calls itself by this machine's host name.
+  for (const [copy, label] of [[server, "Team server"], [kim, "Kim's laptop"]]) {
+    const self = JSON.parse(readFileSync(join(copy.agentDir, "sova", "peers.json"), "utf8")).self;
+    await ok(copy, "PUT", "/api/mesh/label", { id: self.id, label });
+  }
   const hex = (pin) => pin.replace(/[\s-]/g, "").toLowerCase();
   return { kimNode: `lan:${hex(kimPin)}`, serverNode: `lan:${hex(serverPin)}` };
 }
@@ -192,9 +197,9 @@ async function seededChat(server, { owner, by, label, title, turns, question }) 
   await ok(server, "POST", "/api/sessions/labels", { id: made.id, labels: { owner } }, { "x-sova-token": server.key });
   const all = lines(made.path);
   let parent = all.at(-1)?.type === "session" ? null : (all.at(-1)?.id ?? null);
-  const t0 = Date.now() - 3 * 3_600_000;
+  const t0 = Date.now() - (20 + 10 * seq) * 60_000;
   let n = 0;
-  const at = () => new Date(t0 + (n++) * 60_000).toISOString();
+  const at = () => new Date(t0 + (n++) * 20_000).toISOString();
   const put = (e) => {
     appendFileSync(made.path, `${JSON.stringify(e)}\n`);
     parent = e.id;
@@ -216,7 +221,7 @@ async function seededChat(server, { owner, by, label, title, turns, question }) 
   }
   if (question) await appendQuestion(made.path, () => parent, (id) => (parent = id), at());
   // Nobody wrote this but the seeding: aged, so Sova doesn't read it as another process still writing.
-  const old = new Date(t0 + n * 60_000);
+  const old = new Date(t0 + n * 20_000);
   utimesSync(made.path, old, old);
   await ok(server, "POST", "/api/sessions/title", { path: made.path, title });
   return made;

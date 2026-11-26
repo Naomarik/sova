@@ -64,7 +64,10 @@ try {
   await shot("3-narrowed-to-lee.png");
 
   await page.getByRole("navigation", { name: "Session list" }).getByText("Update the onboarding checklist").first().click();
-  await page.getByText(/From Lee Varga/).first().waitFor({ timeout: 30_000 });
+  await page.getByText(/From Lee Varga/).first().waitFor({ timeout: 30_000, state: "attached" });
+  // The thread opens at its end; scroll to its start so the messages typed on Lee's computer show.
+  await page.mouse.move(860, 400);
+  for (let i = 0; i < 10; i++) await page.mouse.wheel(0, -2000);
   await sleep(800);
   await shot("4-from-name.png");
 

@@ -478,7 +478,7 @@ export async function acquireChatHandle(path: string, force = false): Promise<Ch
   if (!router) throw new Error("no chat router: the server hosts no chat in its process");
   // A compressed chat never starts (§app.session-list/archive-compression): its file is gone, and a start would make an empty one.
   if (compressedAt(path)) throw new Error(COMPRESSED_REFUSAL);
-  // A Chats folder move holds every chat until its switch (§app.chat-homes/move-folder).
+  // A Chats folder move holds every chat until its switch (§app.chat-homes/chats-folder).
   const why = moveHold() ?? startGuard?.(path);
   // Read only, as an archived chat is: a pane keeps its rows and is told closed; a request answers 409 with the reason.
   if (why) throw Object.assign(new ArchivedError(), { message: why });

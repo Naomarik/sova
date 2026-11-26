@@ -1,5 +1,5 @@
 /**
- * The Chats folder move (Settings → General, "Chats · this computer"; §app.chat-homes/move-folder): every chat home of
+ * The Chats folder move (Settings → General, "Chats · this computer"; §app.chat-homes/chats-folder): every chat home of
  * this state root, and everything else in the homes folder (compressed chats' `<id>.tar.gz` and their records), copied
  * to another folder, each file checked by sha256, then the marker written last and the running server switched to it.
  *

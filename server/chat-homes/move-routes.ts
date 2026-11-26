@@ -1,5 +1,5 @@
 /**
- * The Chats folder setting's routes (Settings → General, "Chats · this computer"; §app.chat-homes/move-folder):
+ * The Chats folder setting's routes (Settings → General, "Chats · this computer"; §app.chat-homes/chats-folder):
  * GET /api/chats-folder (the folder in force, where it comes from, the latest move), GET /api/chats-folder/preview
  * (what a move to a folder would do, or why it can't), POST /api/chats-folder/move (only your own click on the page)
  * and POST /api/chats-folder/move/cancel. The move itself is move-root.ts; this wires it to the running server.

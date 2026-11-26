@@ -399,7 +399,7 @@ export function homesRootInfo(): HomesRootInfo {
 export const markerFile = (): string => join(canonicalStateRoot(), MARKER_FILE);
 
 /**
- * The homes folders this state root's chats were in before a Chats folder move (§app.chat-homes/move-folder), newest
+ * The homes folders this state root's chats were in before a Chats folder move (§app.chat-homes/chats-folder), newest
  * first: a path written while a chat lived there (an attachment in its conversation, a browser's open tab) is read as
  * the same place in the current folder (rebaseHomePath). Read from the marker, memoized with the root.
  */

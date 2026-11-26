@@ -551,7 +551,7 @@ export class WorkerRegistry {
     return wasRunning;
   }
 
-  /** Every helper whose record hasn't ended (a Chats folder move parks them all: §app.chat-homes/move-folder). */
+  /** Every helper whose record hasn't ended (a Chats folder move parks them all: §app.chat-homes/chats-folder). */
   unendedIds(): string[] {
     return [...this.live.values()].filter((l) => l.rec.state !== "ended").map((l) => l.rec.chatId);
   }

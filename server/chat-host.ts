@@ -923,7 +923,7 @@ export class ChatHostRouter {
   }
 
   /**
-   * A Chats folder move (§app.chat-homes/move-folder): every chat process stops, idle ones included, since each holds
+   * A Chats folder move (§app.chat-homes/chats-folder): every chat process stops, idle ones included, since each holds
    * the homes folder it started with. Helpers are parked (their records stay idle, never ended), every other chat is
    * closed with `message` for its panes, and any process still recorded with no handle is stopped. Resolves to how
    * many processes are left (0 unless one refused to stop).

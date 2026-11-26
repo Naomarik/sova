@@ -10,7 +10,7 @@ const STORAGE_DEFAULTS: StorageWebSettings = { chatHomes: true, autoCompress: tr
 
 /**
  * Settings → General's **Chats · this computer**: the folder chats are kept in and its move (ChatsFolderSetting.tsx,
- * §app.chat-homes/move-folder), where new chats are kept (§app.chat-homes/new-chats) and whether
+ * §app.chat-homes/chats-folder), where new chats are kept (§app.chat-homes/new-chats) and whether
  * old archived chats are compressed (§app.session-list/archive-compression). Both on by default; saved at once.
  * Off, Chat homes makes new chats as before; chats that already have a home stay listed either way.
  */

@@ -1697,7 +1697,7 @@ async function buildTracked(): Promise<SessionSummary[]> {
 }
 
 /**
- * A Chats folder move switched the homes folder (§app.chat-homes/move-folder): every summary of a file under the old
+ * A Chats folder move switched the homes folder (§app.chat-homes/chats-folder): every summary of a file under the old
  * one goes (its chats are listed from the new folder, once each), no listing held from before is handed out again,
  * and the next tracked build reads everything.
  */

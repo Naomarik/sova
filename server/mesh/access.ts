@@ -309,7 +309,7 @@ const FULL_PREFIXES = [
   "attention","auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs", "mcp",
   // Transport (§app.transport/start): only your click on this device's own page starts or steers one.
   "transport",
-  // The Chats folder (§app.chat-homes/move-folder): where this computer keeps its chats, and their move (your click only).
+  // The Chats folder (§app.chat-homes/chats-folder): where this computer keeps its chats, and their move (your click only).
   "chats-folder"];
 // A project mode's command (§chat.mode-menu/project-mode-commands) runs one of the project's own programs: `full`,
 // whatever method, though it sits under `mode`, which stays `sessions`.

@@ -2599,7 +2599,7 @@ export function Sidebar(props: {
         <nav ref={(el) => onCleanup(holdListScroll(el))} class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
           {/* A host that keeps its sessions from this one has no rows here (§mesh.peers/grants). */}
           <Show when={hiddenHost()}>{(h) => <p class="sidebar-region-note">Hidden by {hostLabel(h())}.</p>}</Show>
-          {/* The chats folder missing: said, never a list that only looks short (§app.chat-homes/move-folder). */}
+          {/* The chats folder missing: said, never a list that only looks short (§app.chat-homes/chats-folder). */}
           <ChatsFolderMissing />
           <Show when={props.error}>
             <div class="transcript-banner">

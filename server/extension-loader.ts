@@ -398,7 +398,7 @@ const noteStart = (id: string) => {
 export const programStartedAt = (id: string): number | undefined => startedAt.get(id);
 export const programNotFound = (id: string): string | undefined => notFound.get(id);
 
-/** Programs that read chats, stopped for a Chats folder move (§app.chat-homes/move-folder): none starts until released. */
+/** Programs that read chats, stopped for a Chats folder move (§app.chat-homes/chats-folder): none starts until released. */
 const heldForMove = new Set<string>();
 
 /**

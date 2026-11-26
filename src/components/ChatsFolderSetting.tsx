@@ -30,7 +30,7 @@ function usePolling(): void {
 }
 
 /**
- * Settings → General's **Chats folder** row, in "Chats · this computer" (§app.chat-homes/move-folder): the folder every
+ * Settings → General's **Chats folder** row, in "Chats · this computer" (§app.chat-homes/chats-folder): the folder every
  * chat's home is in, and Change…, which moves them all to another. Set by a variable, the row says so and offers no
  * Change…. A folder that is missing, a move that runs, stopped partway or failed, each says so here.
  */

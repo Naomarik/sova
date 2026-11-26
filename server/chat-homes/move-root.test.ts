@@ -1,4 +1,4 @@
-// The Chats folder move (§app.chat-homes/move-folder): the whole homes folder copied, each file checked, the paths in it
+// The Chats folder move (§app.chat-homes/chats-folder): the whole homes folder copied, each file checked, the paths in it
 // rewritten, the marker written last, the server switched; refused, cancelled and interrupted moves leave the old folder
 // in force. A scratch agent dir and homes folders, stand-in deps for the chat processes; no server.
 import { scratchAgentDir, dropScratchAgentDir } from "../testing/scratch-agent-dir";

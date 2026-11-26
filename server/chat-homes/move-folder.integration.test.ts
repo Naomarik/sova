@@ -1,5 +1,5 @@
 // Run: pnpm test:int -- server/chat-homes/move-folder.integration.test.ts
-// The Chats folder move on a whole hermetic server with the stand-in model (§app.chat-homes/move-folder): an idle open
+// The Chats folder move on a whole hermetic server with the stand-in model (§app.chat-homes/chats-folder): an idle open
 // chat (its process running) and a compressed chat move with the whole homes folder; only the page's own click starts
 // it; afterwards the list shows each chat once from the new folder, the idle chat's next prompt (sent to its old path,
 // as a tab still open on it would) writes under the new folder, a new chat lands there, and the old folder is kept.

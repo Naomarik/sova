@@ -24,7 +24,7 @@ export interface NewChatPlace {
  */
 export function newChatPlace(cwd: string, id?: string, on: boolean = chatHomesOn()): NewChatPlace | null {
   if (!on || !homesRootAvailable()) return null;
-  // While a Chats folder move runs, no chat is made in either folder (§app.chat-homes/move-folder).
+  // While a Chats folder move runs, no chat is made in either folder (§app.chat-homes/chats-folder).
   const held = moveHold();
   if (held) throw new Error(held);
   const sid = id ?? mintSessionId(cwd);

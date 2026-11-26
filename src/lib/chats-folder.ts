@@ -1,4 +1,4 @@
-// Settings → General's Chats folder (§app.chat-homes/move-folder): the folder this computer keeps its chats in, read
+// Settings → General's Chats folder (§app.chat-homes/chats-folder): the folder this computer keeps its chats in, read
 // once and again while a move runs, and the words its row, its dialog and the chat list's warning say.
 import { createSignal } from "solid-js";
 import type { ChatsFolderInfo, ChatsFolderMove, ChatsFolderPreview } from "../../shared/chats-folder";

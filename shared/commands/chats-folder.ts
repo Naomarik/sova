@@ -1,4 +1,4 @@
-// The Chats folder (§app.chat-homes/move-folder): where this computer keeps its chats, what a move to another folder
+// The Chats folder (§app.chat-homes/chats-folder): where this computer keeps its chats, what a move to another folder
 // would do, and the move itself, which only your click on this computer's page starts or cancels: a script, a chat, an
 // extension's key or another computer is refused with where to click, and nothing is moved.
 import type { CommandEntry } from "./types.ts";

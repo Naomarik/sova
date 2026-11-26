@@ -31,7 +31,7 @@ const control = (cmd) => writeFileSync(join(root, "control"), cmd);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const exe = process.env.CHROMIUM_BIN ?? ["/usr/bin/chromium", "/usr/bin/google-chrome-stable"].find(existsSync);
-const browser = await chromium.launch({ executablePath: exe, headless: true, args: ["--no-sandbox"] });
+const browser = await chromium.launch({ executablePath: exe, headless: true, args: ["--no-sandbox", "--disable-gpu"] });
 const shots = [];
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: "light", serviceWorkers: "block" });

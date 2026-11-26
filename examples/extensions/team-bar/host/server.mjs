@@ -133,7 +133,7 @@ function listen() {
     return;
   }
   ws.addEventListener("message", (m) => {
-    if (/"session\.(created|changed|labelled)"/.test(String(m.data))) setTimeout(pass, 300);
+    if (/"session\.(created|changed)"/.test(String(m.data))) setTimeout(pass, 300);
   });
   ws.addEventListener("close", () => setTimeout(listen, 5000));
   ws.addEventListener("error", () => {});

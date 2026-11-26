@@ -123,6 +123,7 @@ export {
 } from "./chat-manager";
 import { fetchSessionTimings } from "./reply-facts";
 import { moveHold } from "./chat-homes/move-root";
+import { rebaseHomePath } from "./chat-homes/root";
 
 export { failureReply, refusalOf };
 
@@ -472,7 +473,10 @@ export const setChatStartGuard = (fn: ((path: string) => string | null) | null):
 /** Why the chat at `path` starts nowhere here (Transport's guard), or null. */
 export const chatStartRefusal = (path: string): string | null => startGuard?.(path) ?? null;
 
-export async function acquireChatHandle(path: string, force = false): Promise<ChatHandle> {
+export async function acquireChatHandle(at: string, force = false): Promise<ChatHandle> {
+  // A path under the folder the chats were in before a Chats folder move (a wake record, a crash marker, a share) opens
+  // the chat where it is now, never its file left in the old folder (§app.chat-homes/chats-folder).
+  const path = rebaseHomePath(at);
   // The server's router: every chat in a process of its own (it waits for the chat's own take-back,
   // if a previous server left it running).
   if (!router) throw new Error("no chat router: the server hosts no chat in its process");

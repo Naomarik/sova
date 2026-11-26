@@ -10,6 +10,7 @@ import { after, beforeEach, describe, test } from "node:test";
 import { CHAT_HOMES_ROOT_ENV, HOMES_ENV, homesRoot, homesRootInfo, MARKER_FILE, onHomesRootSwitch, rebaseHomePath, resetHomesMemoForTests } from "./root";
 import { cancelMove, chatsFolderInfo, currentMove, JOURNAL_FILE, liveSyncOf, MOVE_STATE_FILE, moveHold, moveSettled, type MoveDeps, previewMove, recoverMove, resetMoveForTests, startMove, SUBFOLDER, targetOf } from "./move-root";
 import { sessionPathShape } from "../paths";
+import { acquireChatHandle, setChatRouter, type ChatHandle } from "../chat-handle";
 
 const state = join(scratchAgentDir, "sova");
 const ID = "019a0000-0000-7000-8000-00000000aaaa";
@@ -244,5 +245,60 @@ describe("a move", () => {
     recoverMove(() => {});
     assert.equal(currentMove()!.phase, "done");
     assert.equal(JSON.parse(readFileSync(join(state, "compressed-sessions.json"), "utf8")).chats[ARCHIVED].archive, join(to, `${ARCHIVED}.tar.gz`));
+  });
+
+  test("refused while a background job a chat started still runs in the chats folder; one that ended or is gone doesn't hold it", async () => {
+    const jobs = join(state, "background-jobs", encodeURIComponent(ID));
+    mkdirSync(jobs, { recursive: true });
+    const conv = join(from, ID, "sessions", `2026-01-01T00-00-00-000Z_${ID}.jsonl`);
+    const job = { v: 1, id: "j1", sessionId: ID, path: conv, kind: "kept", command: "pnpm run dev", cwd: "/tmp", unit: "sova-job-x-j1.scope", driver: "systemd", startedAt: Date.now(), bootId: "b" };
+    writeFileSync(join(jobs, "j1.json"), JSON.stringify(job));
+    try {
+      const d = deps();
+      const r = await startMove(to, d);
+      assert.ok(!r.ok);
+      assert.match(r.error, /1 background job that chats started is still running: pnpm run dev\. It writes in your chats folder/);
+      assert.deepEqual(d.calls, [], "nothing stopped");
+      assert.equal(existsSync(to), false);
+      assert.match((await previewMove(to, d)).refusal ?? "", /pnpm run dev/);
+      // Its unit gone (the keeper hasn't swept it yet): not a reason to wait.
+      assert.equal((await previewMove(to, deps({ jobAlive: async () => false }))).refusal, undefined);
+      writeFileSync(join(jobs, "j1.json"), JSON.stringify({ ...job, ended: { at: Date.now(), how: "exited", card: "wake" } }));
+      assert.equal((await previewMove(to, d)).refusal, undefined);
+    } finally {
+      rmSync(join(state, "background-jobs"), { recursive: true, force: true });
+    }
+  });
+
+  test("the state root's records naming a chat's file (shares, jobs, wakes, a crash marker) name it in the new folder; an old path opens it there", async () => {
+    const conv = (root: string) => join(root, ID, "sessions", `2026-01-01T00-00-00-000Z_${ID}.jsonl`);
+    const put = (file: string, v: unknown) => (mkdirSync(join(file, ".."), { recursive: true }), writeFileSync(file, JSON.stringify(v)));
+    const files = {
+      shares: join(state, "session-shares.json"),
+      job: join(state, "background-jobs", encodeURIComponent(ID), "j2.json"),
+      wake: join(state, "wake-nudges", `${ID}.jobs.json`),
+      inflight: join(state, "chats", "inflight", `${ID}.json`),
+    };
+    put(files.shares, { version: 1, shares: [{ id: "s1", sessionId: ID, sessionPath: conv(from) }] });
+    put(files.job, { v: 1, id: "j2", sessionId: ID, path: conv(from), kind: "kept", command: "x", cwd: "/tmp", unit: "u", driver: "systemd", startedAt: 1, bootId: "b", ended: { at: 2, how: "exited", card: "wake" } });
+    put(files.wake, { v: 1, source: "jobs", sessionId: ID, path: conv(from), items: [{ id: "j2", at: 2 }], syncedAt: 2 });
+    put(files.inflight, { v: 1, path: conv(from), since: 1 });
+    try {
+      assert.ok((await startMove(to, deps())).ok);
+      await moveSettled();
+      assert.equal(currentMove()!.phase, "done", currentMove()!.error);
+      for (const [name, f] of Object.entries(files)) {
+        const text = readFileSync(f, "utf8");
+        assert.ok(text.includes(conv(to)) && !text.includes(from), `${name}: ${text}`);
+      }
+      // The net under every chat open (a wake keeper's, a crash resume's): an old path opens the chat where it is now.
+      const opened: string[] = [];
+      setChatRouter({ ready: async () => {}, get: () => undefined, all: () => [], acquire: async (p: string) => (opened.push(p), {} as ChatHandle), close: async () => false });
+      await acquireChatHandle(conv(from));
+      assert.deepEqual(opened, [conv(to)]);
+    } finally {
+      setChatRouter(null);
+      for (const f of Object.values(files)) rmSync(f, { force: true });
+    }
   });
 });

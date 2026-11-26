@@ -5,6 +5,7 @@
  * and POST /api/chats-folder/move/cancel. The move itself is move-root.ts; this wires it to the running server.
  */
 import type { Hono } from "hono";
+import { jobAlive } from "../background-jobs";
 import { rehomeWorkerChats, stopEveryChatProcess, workingChatPaths } from "../chat-host";
 import { holdChatReaders, releaseChatReaders } from "../extension-loader";
 import { sessionsChanged } from "../list-generation";
@@ -17,6 +18,7 @@ const log = (line: string) => console.log(`[chats-folder] ${line}`);
 
 export const liveMoveDeps: MoveDeps = {
   working: () => workingChatPaths().map((p) => cachedTitleOf(p) || p),
+  jobAlive: (j) => jobAlive(j),
   stopChats: (message) => stopEveryChatProcess(message),
   holdReaders: holdChatReaders,
   releaseReaders: releaseChatReaders,

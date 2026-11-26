@@ -247,7 +247,7 @@ function ChatsFolderDialog(props: { start: string; onClose: () => void }) {
                 </>
               }
             >
-              <FolderPicker start={folder()} recents={[]} onPick={pick} onClose={() => setPicking(false)} />
+              <FolderPicker start={folder()} recents={[]} emptyHint="You can still move your chats here." onPick={pick} onClose={() => setPicking(false)} />
             </Show>
             <div aria-live="polite" class="stack-2">
               <Show when={preview()}>

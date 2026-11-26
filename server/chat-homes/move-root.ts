@@ -22,6 +22,8 @@ import { closeSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, open
 import { lstat, mkdir, open, readdir, readlink, rename, rm, symlink, utimes, chmod } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import type { ChatsFolderInfo, ChatsFolderMove, ChatsFolderPreview } from "../../shared/chats-folder";
+import { JOBS_DIR_NAME, readAllJobs, runningJobs, type JobRecord } from "../../pi-config/extensions/subagents/job-store.ts";
+import { WAKE_DIR_NAME } from "../../pi-config/extensions/subagents/wake-store.ts";
 import { mapDeep, relocateConversation, type PathMap } from "../harness/pi/relocate";
 import { agentRoot, stateRoot } from "../state-root";
 import { markOwned, RECENT_WRITE_MS, recentForeignWriteAgeSec } from "../write-guard";
@@ -38,6 +40,8 @@ const CHUNK = 1 << 20;
 export interface MoveDeps {
   /** The chats and helpers running a turn now: their titles (or paths). */
   working(): string[];
+  /** Whether a background job whose record hasn't ended still runs (its unit or cgroup); left out, every such record counts. */
+  jobAlive?(job: JobRecord): Promise<boolean>;
   /** Stop every chat process, idle ones included; resolves to how many are left. */
   stopChats(message: string): Promise<number>;
   /** Stop the programs that read chats, and start them again. */
@@ -248,7 +252,22 @@ function lockedWhy(): string | null {
   return info.source === "env" ? `${info.env} sets your chats folder, so it can't be changed here. Change the variable and restart Sova instead.` : null;
 }
 
-function refusalFor(target: string, bytes: number, deps: Pick<MoveDeps, "working"> | null, resuming: boolean): string | null {
+/**
+ * The background jobs a chat started that still run in the chats folder (§app.chat-homes/chats-folder): a job keeps the
+ * environment of the chat that started it (its home, its shared folder) and its record names the chat's file there, so
+ * after the switch it would go on writing the old folder. Their commands, for the refusal.
+ */
+export async function jobsInFolder(from: string, alive?: (job: JobRecord) => Promise<boolean>): Promise<string[]> {
+  const out: string[] = [];
+  for (const j of runningJobs(readAllJobs(join(stateRoot(), JOBS_DIR_NAME)))) {
+    if (![j.path, j.cwd, j.output, j.scratch].some((p) => typeof p === "string" && within(p, from))) continue;
+    if (alive && !(await alive(j).catch(() => true))) continue;
+    out.push(j.command);
+  }
+  return out;
+}
+
+function refusalFor(target: string, bytes: number, deps: Pick<MoveDeps, "working"> | null, resuming: boolean, jobs: readonly string[] = []): string | null {
   const locked = lockedWhy();
   if (locked) return locked;
   if (running && ACTIVE.has(running.move.phase)) return `Your chats are already moving to ${running.move.to}.`;
@@ -269,6 +288,10 @@ function refusalFor(target: string, bytes: number, deps: Pick<MoveDeps, "working
   if (free !== null && free < bytes + 64 * 1024 * 1024) return `That disk has ${fmtBytes(free)} free, and your chats need ${fmtBytes(bytes)}. Nothing was moved.`;
   const busy = deps?.working() ?? [];
   if (busy.length) return `${busy.length === 1 ? "1 chat is" : `${busy.length} chats are`} working: ${busy.slice(0, 3).join(", ")}${busy.length > 3 ? "…" : ""}. Wait for ${busy.length === 1 ? "it" : "them"} to finish or stop ${busy.length === 1 ? "it" : "them"}, then move.`;
+  if (jobs.length) {
+    const one = jobs.length === 1;
+    return `${one ? "1 background job" : `${jobs.length} background jobs`} that chats started ${one ? "is" : "are"} still running: ${jobs.slice(0, 3).map((c) => (c.length > 60 ? `${c.slice(0, 59)}…` : c)).join(", ")}${jobs.length > 3 ? "…" : ""}. ${one ? "It writes" : "They write"} in your chats folder, so stop ${one ? "it" : "them"} in ${one ? "its chat" : "their chats"}, then move.`;
+  }
   return null;
 }
 
@@ -285,14 +308,15 @@ export function chatsFolderInfo(): ChatsFolderInfo {
   return { path: info.root, source: info.source, ...(info.env ? { env: info.env } : {}), exists: info.exists, ...(locked ? { locked } : {}), ...(move ? { move } : {}), ...(prev.length ? { movedFrom: prev } : {}) };
 }
 
-export async function previewMove(picked: string, deps: Pick<MoveDeps, "working"> | null): Promise<ChatsFolderPreview> {
+export async function previewMove(picked: string, deps: Pick<MoveDeps, "working" | "jobAlive"> | null): Promise<ChatsFolderPreview> {
   if (!picked || !isAbsolute(picked)) return { target: picked, chats: 0, files: 0, bytes: 0, free: null, refusal: "Pick a folder." };
   const from = homesRoot();
   const target = interruptedTo(canonical(picked)) ? canonical(picked) : targetOf(picked);
   const entries = existsSync(from) ? await walkAsync(from) : [];
   const bytes = entries.reduce((n, e) => n + e.size, 0);
   const sync = liveSyncOf(target);
-  const refusal = refusalFor(target, bytes, deps, interruptedTo(target));
+  const jobs = existsSync(from) ? await jobsInFolder(from, deps?.jobAlive) : [];
+  const refusal = refusalFor(target, bytes, deps, interruptedTo(target), jobs);
   return { target, chats: chatCount(from, entries), files: entries.length, bytes, free: freeAt(target), ...(sync ? { liveSync: sync } : {}), ...(refusal ? { refusal } : {}) };
 }
 
@@ -508,18 +532,35 @@ function stillCopied(to: string, e: Entry, j: JournalLine | undefined): boolean 
 // ---- after the marker ---------------------------------------------------------------------------------------------
 
 /**
- * The state root's records that name a chat's files by their place in the homes folder: compressed chats
- * (`compressed-sessions.json`) and Transport's records (`transport/*.json`), rewritten to the new folder. Run after
+ * The state root's records that name a chat's files by their place in the homes folder, rewritten to the new folder:
+ * compressed chats (`compressed-sessions.json`), shares (`session-shares.json`), Transport's records, background jobs'
+ * records, the state root's wake records and crash-resume markers. (`owned-writes.json` keeps the old files' stamps,
+ * which guard only them; the moved conversations written moments ago are marked in the new folder.) Run after
  * the marker names it, and again at a start that finds a move switched but not finished: a second run changes nothing.
  */
 export function rewriteStateRecords(from: string, to: string): number {
   const map: PathMap = [[from, to]];
-  const files = [join(stateRoot(), "compressed-sessions.json")];
-  try {
-    for (const n of readdirSync(join(stateRoot(), "transport"))) if (n.endsWith(".json")) files.push(join(stateRoot(), "transport", n));
-  } catch {
-    // no transports
-  }
+  const state = stateRoot();
+  const files = [join(state, "compressed-sessions.json"), join(state, "session-shares.json")];
+  const jsonIn = (dir: string, depth = 1) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return; // none
+    }
+    for (const n of names) {
+      const p = join(dir, n);
+      if (n.endsWith(".json")) files.push(p);
+      else if (depth > 1) jsonIn(p, depth - 1);
+    }
+  };
+  // Transport's records, the background jobs' (by chat), the state root's own wake records (and their cancels), and
+  // a crashed chat's resume marker: each names a chat's file by its place.
+  jsonIn(join(state, "transport"));
+  jsonIn(join(state, JOBS_DIR_NAME), 2);
+  jsonIn(join(state, WAKE_DIR_NAME), 2);
+  jsonIn(join(state, "chats", "inflight"));
   let n = 0;
   for (const f of files) {
     let text: string;
@@ -552,7 +593,8 @@ export async function startMove(picked: string, deps: MoveDeps): Promise<StartAn
   const from = homesRoot();
   const entries = existsSync(from) ? await walkAsync(from) : [];
   const bytes = entries.reduce((n, e) => n + e.size, 0);
-  const why = refusalFor(to, bytes, deps, resuming);
+  const jobs = existsSync(from) ? await jobsInFolder(from, deps.jobAlive) : [];
+  const why = refusalFor(to, bytes, deps, resuming, jobs);
   if (why) return { ok: false, status: 409, error: why };
   const prior = resuming ? readState() : null;
   const move: ChatsFolderMove = {

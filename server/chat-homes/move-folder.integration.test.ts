@@ -132,6 +132,19 @@ test("an idle open chat and a compressed chat move with the whole folder; afterw
     assert.equal(statSync(a.path).size, oldSize, "the old folder is never written");
     await until("a's process on the new folder", async () => chatProcessRoots(s.agentDir, s.pid).includes(to));
 
+    // Nothing in the state folder names the old folder any more, but the write guard's stamps of the old files (they
+    // guard only those) and the move's own records (the marker's movedFrom, the move's state).
+    const naming: string[] = [];
+    const scan = (d: string) => {
+      for (const n of readdirSync(d, { withFileTypes: true })) {
+        const p = join(d, n.name);
+        if (p === from || p === to || p.includes("/chats/code/")) continue;
+        if (n.isDirectory()) scan(p);
+        else if (n.isFile() && statSync(p).size < 5e6 && readFileSync(p, "utf8").includes(from)) naming.push(p.slice(s.agentDir.length + 1));
+      }
+    };
+    scan(s.agentDir);
+    assert.deepEqual(naming.sort(), ["sova/chat-homes-move.json", "sova/chat-homes.json", "sova/owned-writes.json"]);
     // A new chat lands under the new folder.
     const c = (await call("POST", "/api/sessions", { cwd: s.work })).body as { id: string; path: string };
     assert.ok(c.path.startsWith(`${to}/${c.id}/`), c.path);

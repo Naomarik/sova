@@ -3,7 +3,7 @@ import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
 import { builtOnceOpen } from "../lib/built-once";
 import { projectSummaryKey, remember } from "../lib/page-cache";
-import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, useContext } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, AttentionItem, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
@@ -66,6 +66,8 @@ import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTo
 import { rowBranchStatus } from "../lib/branch-status";
 import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
 import { RowPlaceView } from "./RowPlace";
+import { OwnerMark, PersonMenu } from "./ListPlace";
+import { effectivePersonFilter, ListPlaceContext, OwnerContext, ownerOf, passesPersonFilter, PERSON_FILTER_KEY, type OwnerOfRow } from "../lib/list-place";
 import { orgHref } from "../lib/orgs-route";
 import { inLocalProjectsRegion, projectBlocks, projectOpenCount, PROJECTS_KEY } from "../lib/project-region";
 import { projectHref, projectSessionHref, PROJECTS_HREF } from "../lib/projects-route";
@@ -290,6 +292,10 @@ export function SessionRow(props: {
   detail?: { text: string; title: string } | null;
 }) {
   const s = () => props.session;
+  /** Its owner mark (lib/list-place): the slot exists only under the pane's owner context, which is
+      there only while an extension declares people. Without it nothing is made: no computation. */
+  const owners = useContext(OwnerContext);
+  const ownerSlot = owners ? <Show when={owners(s())}>{(o) => <OwnerMark person={o().person} self={o().self} />}</Show> : undefined;
   /** The row's own remote mark: one row answers for itself, never its
       group's first row. */
   const mark = () => remoteMarkOf(s());
@@ -621,6 +627,8 @@ export function SessionRow(props: {
             </div>
           </Show>
           <div class="list-line list-meta-row">
+            {/* Its owner (the list place): any host's row, by the label key this computer's declaration names. */}
+            {ownerSlot}
             <Show when={hostOf(s().path)}>{(h) => <HostMark host={h()} />}</Show>
             <Show when={mark()}>
               {(m) => (
@@ -1271,6 +1279,22 @@ export function Sidebar(props: {
   };
   // "Open Through This Host" in the mesh details: the filter takes that host (a fresh ask each time).
   createEffect(on(hostFilterAsk, (ask) => ask && chooseHostFilter(ask.value), { defer: true }));
+  /** The person menu (lib/list-place), only while an extension declares people: its choice as
+      remembered (read from storage only once there is a declaration), and what applies, which
+      reads Everyone (null) while the declaration doesn't name that person. */
+  const listPlace = useContext(ListPlaceContext);
+  const [storedPerson, setStoredPerson] = createSignal<string | null | undefined>(undefined);
+  const personFilter = createMemo(() => {
+    const d = listPlace.declaration();
+    if (!d) return null;
+    const stored = storedPerson();
+    return effectivePersonFilter(stored === undefined ? readKey(localStorage, PERSON_FILTER_KEY) : stored, d);
+  });
+  const choosePerson = (value: string | null) => {
+    setStoredPerson(value);
+    if (value === null) removeKey(localStorage, PERSON_FILTER_KEY);
+    else writeKey(localStorage, PERSON_FILTER_KEY, value);
+  };
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
   let search!: HTMLInputElement;
@@ -1442,7 +1466,12 @@ export function Sidebar(props: {
   /** `all()` narrowed by the host filter only (no query): what each region's "of {total}" counts. */
   const hostPool = createMemo(() => {
     const h = hostFilter();
-    return h === null ? all() : all().filter((s) => passesHostFilter(h, s.path));
+    const pool = h === null ? all() : all().filter((s) => passesHostFilter(h, s.path));
+    // The person menu narrows the same pool (lib/list-place); Everyone, or no declaration, leaves it whole.
+    const p = personFilter();
+    if (p === null) return pool;
+    const d = listPlace.declaration();
+    return pool.filter((s) => passesPersonFilter(d, p, s));
   });
   const hits = createMemo(() => {
     const q = query().trim().toLowerCase();
@@ -2057,7 +2086,7 @@ export function Sidebar(props: {
   const SearchCount = () => (
     <p class="search-count visually-hidden" id="session-count" aria-live="polite">
       <Show when={props.sessions}>
-        <Show when={query().trim() || hostFilter() !== null} fallback={`${all().length} sessions`}>
+        <Show when={query().trim() || hostFilter() !== null || personFilter() !== null} fallback={`${all().length} sessions`}>
           {hits().length} of {all().length} sessions
         </Show>
       </Show>
@@ -2072,6 +2101,8 @@ export function Sidebar(props: {
       <Show when={hostFilterShown()}>
         <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
       </Show>
+      {/* Only while an extension declares people (lib/list-place): one person's chats, or Everyone. */}
+      <Show when={listPlace.declaration()}>{(d) => <PersonMenu declaration={d()} value={personFilter()} onChange={choosePerson} />}</Show>
       {/* The monitor button takes the gear's exact markup, so the two stack in one column. */}
       <div class="sidebar-foot-row">
         <a
@@ -2536,61 +2567,9 @@ export function Sidebar(props: {
     );
   };
 
-  /** Line 3's place: what extensions add to rows, asked per list (never per row), handed to every row. */
-  const rowChips = useRowAdditions({ sessions: () => props.sessions });
-
-  return (
-    <RowPlaceContext.Provider value={rowChips}>
-    <aside ref={aside} class="app-sidebar" aria-label="Sessions">
-      {/* Collapsed, the pane's own body is not in the DOM at all — nothing hidden-but-readable. */}
-      <Show when={!collapsed()} fallback={<Spine />}>
-        <div class="sidebar-head">
-          <BrandLink />
-          {/* A phone's way to the overview (§app.shell/overview): wide, it is always beside the list. */}
-          <Show when={!props.unfolded}>
-            <button type="button" class="button button-icon button-ghost sidebar-overview" aria-label="Overview" title="Overview" onClick={openOverview}>
-              <Icon name="grid" />
-            </button>
-          </Show>
-          <span class="sidebar-spacer" />
-          <button type="button" class="button" onClick={() => props.onNew()}>
-            <Icon name="plus" />
-            New Session
-          </button>
-          <Show when={props.unfolded}>
-            <button
-              ref={collapseToggle}
-              type="button"
-              class="button button-icon sidebar-spine-toggle"
-              aria-expanded="true"
-              title="Collapse sessions pane · Ctrl/⌘+B"
-              aria-label="Collapse sessions pane"
-              onClick={() => setCollapsed(true)}
-            >
-              <Icon name="panel-collapse" />
-            </button>
-          </Show>
-        </div>
-
-        <div class="sidebar-search" role="search">
-          <label class="visually-hidden" for="session-search">
-            Search sessions
-          </label>
-          {/* One toolbar line at every width: the search field on the left, the Overseer split
-              button on the right; focus or a query gives the field the whole line. The count stays
-              in the DOM, visually hidden, as the field's description and the live count. */}
-          <div class="sidebar-toolbar">
-            <SearchCount />
-            <SearchField />
-            <Show when={!searchWide()}>
-              <OverseerSplit />
-            </Show>
-          </div>
-        </div>
-
-        {/* Only the user scrolls this list (lib/list-scroll-hold): the first row on screen holds still through every
-            refresh and every section that opens or closes on its own. */}
-        <nav ref={(el) => onCleanup(holdListScroll(el))} class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
+  /** The session list's whole body, inside its scroll box (drawn under the owner context while a declaration exists). */
+  const ListBody = () => (
+    <>
           {/* A host that keeps its sessions from this one has no rows here (§mesh.peers/grants). */}
           <Show when={hiddenHost()}>{(h) => <p class="sidebar-region-note">Hidden by {hostLabel(h())}.</p>}</Show>
           <Show when={props.error}>
@@ -3079,6 +3058,78 @@ export function Sidebar(props: {
             </details>
           </Show>
 
+    </>
+  );
+  const hasDeclaration = createMemo(() => listPlace.declaration() !== null);
+  /** A row's owner and whether it is you, by the declaration (reactive: it changes with the declaration). */
+  const ownerOfRow: OwnerOfRow = (s) => {
+    const d = listPlace.declaration();
+    const person = ownerOf(d, s);
+    return person ? { person, self: person.id === d!.self } : undefined;
+  };
+
+  /** Line 3's place: what extensions add to rows, asked per list (never per row), handed to every row. */
+  const rowChips = useRowAdditions({ sessions: () => props.sessions });
+
+  return (
+    <RowPlaceContext.Provider value={rowChips}>
+    <aside ref={aside} class="app-sidebar" aria-label="Sessions">
+      {/* Collapsed, the pane's own body is not in the DOM at all — nothing hidden-but-readable. */}
+      <Show when={!collapsed()} fallback={<Spine />}>
+        <div class="sidebar-head">
+          <BrandLink />
+          {/* A phone's way to the overview (§app.shell/overview): wide, it is always beside the list. */}
+          <Show when={!props.unfolded}>
+            <button type="button" class="button button-icon button-ghost sidebar-overview" aria-label="Overview" title="Overview" onClick={openOverview}>
+              <Icon name="grid" />
+            </button>
+          </Show>
+          <span class="sidebar-spacer" />
+          <button type="button" class="button" onClick={() => props.onNew()}>
+            <Icon name="plus" />
+            New Session
+          </button>
+          <Show when={props.unfolded}>
+            <button
+              ref={collapseToggle}
+              type="button"
+              class="button button-icon sidebar-spine-toggle"
+              aria-expanded="true"
+              title="Collapse sessions pane · Ctrl/⌘+B"
+              aria-label="Collapse sessions pane"
+              onClick={() => setCollapsed(true)}
+            >
+              <Icon name="panel-collapse" />
+            </button>
+          </Show>
+        </div>
+
+        <div class="sidebar-search" role="search">
+          <label class="visually-hidden" for="session-search">
+            Search sessions
+          </label>
+          {/* One toolbar line at every width: the search field on the left, the Overseer split
+              button on the right; focus or a query gives the field the whole line. The count stays
+              in the DOM, visually hidden, as the field's description and the live count. */}
+          <div class="sidebar-toolbar">
+            <SearchCount />
+            <SearchField />
+            <Show when={!searchWide()}>
+              <OverseerSplit />
+            </Show>
+          </div>
+        </div>
+
+        {/* Only the user scrolls this list (lib/list-scroll-hold): the first row on screen holds still through every
+            refresh and every section that opens or closes on its own. */}
+        <nav ref={(el) => onCleanup(holdListScroll(el))} class="sidebar-list pane" aria-label="Session list" aria-busy={props.sessions === undefined && props.loading ? "true" : undefined}>
+          {/* The rows take an owner slot only while an extension declares people (lib/list-place): the
+              list is drawn again once when one appears or goes, so without one no row does any of it. */}
+          <Show when={hasDeclaration()} fallback={<ListBody />}>
+            <OwnerContext.Provider value={ownerOfRow}>
+              <ListBody />
+            </OwnerContext.Provider>
+          </Show>
         </nav>
         {/* Portalled: the full-screen overlay a dragged row opens, and its New group dialog. */}
         <DropOverlay groups={sessionGroups()} counts={groupCounts()} onDrop={onOverlayDrop} onCreate={(d, name) => void createAndMove(d, name)} />

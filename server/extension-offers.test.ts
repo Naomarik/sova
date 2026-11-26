@@ -62,7 +62,7 @@ describe("offersOf", () => {
   });
 
   test("the places and the path a place asks", () => {
-    assert.deepEqual([...SCREEN_PLACES], ["reply", "row", "card"]);
+    assert.deepEqual([...SCREEN_PLACES], ["reply", "row", "card", "list"]);
     assert.equal(screenPath("reply"), "/api/screens/reply");
     assert.equal(offersPlace({ screens: ["reply"] }, "reply"), true);
     assert.equal(offersPlace({ commands: [{ name: "a", label: "A" }] }, "reply"), false);

@@ -106,6 +106,7 @@ import type {
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import { WIRE_PARAM, type ClaudeCatalogInfo, type ChatProfileState, type ProfileSwitchResult, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
+import { withLabels } from "./labels-ask";
 import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
@@ -244,7 +245,7 @@ export const resumePairing = (pairing: string) =>
   request<{ pair: PairView }>("/api/sessions/pairs/resume", { method: "POST", body: JSON.stringify({ pairing }) });
 /** The list and the feed version it is at (`X-Sova-List-Version`; null from a server without it). */
 export const listSessionsVersioned = async () => {
-  const { body, headers } = await requestWithHeaders<SessionSummary[]>("/api/sessions");
+  const { body, headers } = await requestWithHeaders<SessionSummary[]>(withLabels("/api/sessions"));
   return { rows: body, at: parseListVersion(headers.get(LIST_VERSION_HEADER)) };
 };
 export const sessionsDir = () => request<SessionsDirInfo>("/api/sessions/dir");
@@ -439,7 +440,7 @@ export const shortenSessionTitles = (dryRun = false) =>
   });
 
 /** One session by id, listed or not (the list omits sessions with no user message). 404: no file has that id. */
-export const getSessionSummaryById = (id: string) => request<SessionSummary>(`/api/sessions/summary?id=${encodeURIComponent(id)}`);
+export const getSessionSummaryById = (id: string) => request<SessionSummary>(withLabels(`/api/sessions/summary?id=${encodeURIComponent(id)}`));
 
 /** The Overseer: its current file (created on first ask), old files, and the entry button's counts. */
 export const getOverseer = () => request<OverseerInfo>("/api/overseer");
@@ -1239,7 +1240,7 @@ export const putMeshLanRelay = (relay: LanRelayPut) => request<LanStatus>("/api/
 export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");
 
 /** Every peer's own session list, through the proxy. Only asked for while a peer is configured. */
-export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions", meshReadInit(true));
+export const fetchMeshSessions = () => request<MeshSessions>(withLabels("/api/mesh/sessions"), meshReadInit(true));
 
 /** This host's mesh settings, with the fields only its own page uses (shared/mesh-local.ts). */
 export const getMeshSettings = () => request<MeshLocalSettings>("/api/mesh/settings");

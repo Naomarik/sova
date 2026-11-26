@@ -63,14 +63,14 @@ createServer((req, res) => {
 
 ## Things it adds to Sova's screens
 
-- Change: chips under replies, a chip on session rows, one status line on its home card, and rows in a session's ⋯ menu.
-- Lives: its description file (`"screens": ["reply", "row", "card"]`, and `"menu": "session"` on a command), plus answers from its backend at `/api/screens/<place>`. Sova draws what the backend answers as data.
-- Approves: the person, in the review. They hide any of them from the extension's page with Hide Under Replies, Hide on Session Rows or Hide on Home Card.
+- Change: chips under replies, a chip on session rows, one status line on its home card, rows in a session's ⋯ menu, and a list of people for the session list (a person menu and a 2-letter owner mark on each row, read from a label it sets).
+- Lives: its description file (`"screens": ["reply", "row", "card", "list"]`, and `"menu": "session"` on a command), plus answers from its backend at `/api/screens/<place>`. Sova draws what the backend answers as data.
+- Approves: the person, in the review. They hide any of them from the extension's page with Hide Under Replies, Hide on Session Rows, Hide on Home Card or Hide People in Session List.
 - By: OK.
 - Live: now. Three bad answers in a row stop Sova asking until the page reloads.
 - Check: open a chat on this computer and see the chip, the line or the menu row.
 
-Limits: 3 chips per extension and 6 under a reply; 1 chip per extension and 2 on a row; 8 extension rows in the menu; a home card line of 60 plain characters. A backend answers within 2 seconds.
+Limits: 3 chips per extension and 6 under a reply; 1 chip per extension and 2 on a row; 8 extension rows in the menu; a home card line of 60 plain characters; 32 people in the list. A backend answers within 2 seconds.
 
 ## Its own commands
 

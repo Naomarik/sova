@@ -204,10 +204,42 @@ export function createRowAnswers(
   update: (bySession: ReadonlyMap<string, RowChip[]>) => void,
   opts: { timeoutMs?: number; minMs?: number; clock?: RowClock } = {},
 ) {
+  return createPlaceAnswers(
+    policy,
+    (raw, ext) => {
+      const v = validateRowAnswer(raw, ext);
+      return { answer: v.bySession, bad: v.bad, malformed: v.malformed };
+    },
+    (answers) => {
+      const bySession = new Map<string, RowChip[]>();
+      for (const [, got] of answers)
+        for (const [session, chips] of got) {
+          let row = bySession.get(session);
+          if (!row) bySession.set(session, (row = []));
+          for (const c of chips) if (row.length < ROW_CHIPS_PER_ROW) row.push(c);
+        }
+      update(bySession);
+    },
+    opts,
+  );
+}
+
+/**
+ * Any per-list place's lane (the row place's, the list place's, src/lib/list-place.ts): the asking,
+ * the pacing, the timeout, the supersede and the policy of createRowAnswers above, over an answer
+ * `validate` reads. `update` gets each answer kept, extensions in `sources` order, off and muted ones
+ * left out, whenever one lands or a switch or mute changes them.
+ */
+export function createPlaceAnswers<A>(
+  policy: SlotPolicy,
+  validate: (raw: unknown, ext: RowExtension) => { answer: A; bad: boolean; malformed: boolean },
+  update: (answers: ReadonlyArray<readonly [RowExtension, A]>) => void,
+  opts: { timeoutMs?: number; minMs?: number; clock?: RowClock } = {},
+) {
   const timeoutMs = opts.timeoutMs ?? SLOT_TIMEOUT_MS;
   const minMs = opts.minMs ?? ROW_ASK_MIN_MS;
   const clock = opts.clock ?? PAGE_CLOCK;
-  const got = new Map<string, Map<string, RowChip[]>>();
+  const got = new Map<string, A>();
   const out = new Map<string, AbortController>();
   const last = new Map<string, number>();
   const waiting = new Map<string, unknown>();
@@ -216,16 +248,12 @@ export function createRowAnswers(
 
   const draw = () => {
     if (stopped) return;
-    const bySession = new Map<string, RowChip[]>();
+    const answers: (readonly [RowExtension, A])[] = [];
     for (const { ext } of order) {
-      if (policy.isOff(ext.id) || policy.isMuted(ext.id)) continue;
-      for (const [session, chips] of got.get(ext.id) ?? []) {
-        let row = bySession.get(session);
-        if (!row) bySession.set(session, (row = []));
-        for (const c of chips) if (row.length < ROW_CHIPS_PER_ROW) row.push(c);
-      }
+      if (policy.isOff(ext.id) || policy.isMuted(ext.id) || !got.has(ext.id)) continue;
+      answers.push([ext, got.get(ext.id)!]);
     }
-    update(bySession);
+    update(answers);
   };
   const unsubscribe = policy.subscribe(draw);
 
@@ -252,11 +280,11 @@ export function createRowAnswers(
         clock.clearTimeout(timer);
         if (!current()) return;
         out.delete(id);
-        const v = validateRowAnswer(raw, src.ext);
+        const v = validate(raw, src.ext);
         policy.note(id, !v.bad);
         // A malformed answer is dropped whole: the last good one stays. A partly bad one draws the rest.
         if (!v.malformed) {
-          got.set(id, v.bySession);
+          got.set(id, v.answer);
           draw();
         }
       },

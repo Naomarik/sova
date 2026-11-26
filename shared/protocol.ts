@@ -4746,7 +4746,8 @@ export interface ExtensionCommandInfo {
 /** A place on Sova's screens that Sova's own features and extensions both add to: "reply", under a
     delivered message; "row", line 3 of a session row in the sessions pane (src/lib/row-place.ts);
     "card", the status line of an extension's home card (src/lib/card-place.ts). All ext-contract-v1.16. */
-export type ScreenPlace = "reply" | "row" | "card";
+/** `list` since v1.21: a declaration about the sessions pane's whole list (src/lib/list-place.ts). */
+export type ScreenPlace = "reply" | "row" | "card" | "list";
 
 // ---------------------------------------------------------------------------
 // Mesh: other Sova hosts on the tailnet (server/mesh/). The allowlist is `<state root>/peers.json`;

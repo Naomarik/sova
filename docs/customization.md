@@ -434,7 +434,9 @@ within 2 seconds, with at most 1 MB of JSON keyed by session id (a session's `id
   worktree state such as `merged` or `ready to merge`, a host state such as `down` or `hidden`) is
   dropped too.
 - One chip from your extension on a row, at most 2 on a row from every extension, first extensions
-  first. Only rows of sessions on this machine show chips.
+  first. Only rows of sessions on this machine show chips. (A label you set on a chat is another
+  matter: Sova draws one on any host's row, but only the owner label your own list declaration names;
+  see **The session list's people** below.)
 - A late, malformed or oversized answer is dropped, and your last good answer stays drawn. After 3
   bad answers in a row Sova stops asking until the page reloads. The user can hide your chips from
   your extension's page (`Hide on Session Rows`), kept apart from `Hide Under Replies`.
@@ -453,6 +455,50 @@ never on a later poll, and draws what you answer as data:
 - Answer within 2 seconds, with at most 64 KB. A late, malformed or oversized answer draws nothing;
   after 3 in a row Sova stops asking until the page reloads. The user can hide the line from your
   page (`Hide on Home Card`). While your backend is down, Sova doesn't ask.
+
+**The session list's people** (extension contract v1.21). With `"screens": ["list"]`, your backend
+says who the people in the list are, and which of your labels on a chat (`POST /api/sessions/labels`)
+names its owner. From that, Sova draws two things of its own: a person menu in the sessions pane's
+foot, beside the host menu, with Everyone first, which narrows the list to one person's chats the way
+the host menu narrows it to one host's, and remembers the choice in this browser; and a round mark
+with the owner's 2 letters at the start of each row's meta line, on this host's rows and a linked
+computer's alike, yours highlighted. The mark does nothing when pressed. Row status is unchanged. Sova
+asks for the whole list at once, exactly as for row chips (when the pane has its list, when your
+extension appears or its title changes, and after the list changes at most once every 10 seconds):
+`GET /ext/<id>/api/screens/list`, with no query, through the proxy. Answer within 2 seconds, with at
+most 64 KB of JSON:
+
+```json
+{ "people": [
+    { "id": "kim", "name": "Kim Ortega", "initials": "KO", "callers": ["operator"] },
+    { "id": "lee", "name": "Lee Varga", "initials": "LV", "callers": ["peer:<node id>"] } ],
+  "ownerKey": "owner",
+  "ownerExt": "team-bar",
+  "self": "kim" }
+```
+
+- A chat's owner is the value of its `ownerKey` label under `ownerExt` (your own extension's id when
+  you leave it out), and that value is a person's `id`. A chat with no such label, or one naming a
+  person you didn't list, has no mark and shows only under Everyone.
+- `people`: 1 to 32. `id` is 1 to 64 of `A-Z a-z 0-9 . _ -`; `name` is at most 40 plain characters;
+  `initials` is exactly 2 letters or digits (drawn upper-case); `callers`, at most 8, are the callers
+  that person types as, matched exactly: `operator` for this machine's own page, `peer:<node id>` for
+  a linked computer. A chat's transcript then says whose a message from another computer was. A bad
+  person is left out alone; a second person with the same `id` too.
+- `ownerKey` follows the label key rule (1 to 32 of `a-z 0-9 -`, starting with a letter or digit).
+  `self`, optional, is one of your people's ids: that person is "you". A bad `ownerKey`, `ownerExt` or
+  `self`, or no good person at all, drops the whole answer.
+- Answer `204` (or `null`) when you have no people to declare: that is no fault, and the menu and
+  the marks go until you declare again.
+- Only the first extension (in the list's order) with a good answer is used: there is one person menu.
+- Labels are on the rows only while a declaration names them: the page then asks for exactly that
+  `<ownerExt>:<ownerKey>` pair, and a linked computer's rows carry it too. A label from another
+  computer is drawn only because your declaration names its key; no other label of a chat is drawn.
+  Without any extension naming `list`, Sova asks nothing, keeps no timer, and every row and every
+  list read is exactly what it was.
+- A late, malformed or oversized answer is dropped, and your last good answer stays. After 3 bad
+  answers in a row Sova stops asking until the page reloads. The user can turn the people off from
+  your extension's page (`Hide People in Session List`).
 
 **Cards and drawings in chats** (extension contract v1.17). An entry may add card types and
 drawing kinds to chat transcripts, with the meanings and rules of a project's own

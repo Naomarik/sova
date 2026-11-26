@@ -79,6 +79,14 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
   as the row always drew its badge, then `RowAdded`, plain text, never a control: the row is the
   link). The pane (`Sidebar.tsx`) runs the one lane and hands it to every row through
   `RowPlaceContext`.
+- The list place, `list`, a declaration about the whole list (`§app.extensions/list-place`, contract
+  v1.21): `src/lib/list-place.ts` (the validator: people with 2 letters and callers, the owner label
+  key, you; the lane, `createPlaceAnswers` in `row-place.ts` with the row place's pacing, timeout and
+  mute, its own switch under `LIST_OFF_KEY`; the first good declaration wins; it alone says which
+  label pair the row reads carry, `src/lib/labels-ask.ts`), `src/components/ListPlace.tsx` (Sova's own
+  owner mark on a row, any host's, and the person menu in the pane's foot beside the host menu).
+  App runs the one lane and hands it down through `ListPlaceContext` (the transcript reads its
+  callers). With no extension naming `list`: no request, no timer, no node, and today's URLs.
 - Menu places: a menu Sova's own items and extensions both add to. Today there is one, `session`,
   the Agents board row's ⋯ menu: `src/lib/menu-place.ts` (built-ins, which commands are entries
   (`"menu": "session"` on a manifest command, `MENU_PLACES` in `shared/extension-offers.ts`), the

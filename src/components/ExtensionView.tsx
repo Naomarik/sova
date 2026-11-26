@@ -7,6 +7,7 @@ import { extFrameSrc, extHref, extRouteFromHash, MAXIMIZED, parseExtMessage, sub
 import { additionsMuted, additionsOff, slotPolicy } from "../lib/reply-place";
 import { rowAdditionsMuted, rowAdditionsOff, rowPolicy } from "../lib/row-place";
 import { offersPlace } from "../../shared/extension-offers";
+import { listPlaceMuted, listPlaceOff, listPolicy } from "../lib/list-place";
 import { cardLineMuted, cardLineOff, cardLines, cardPolicy, createCardAdditions, type CardLine } from "../lib/card-place";
 import { Chip, Icon } from "./ui";
 import "../extensions.css";
@@ -221,6 +222,9 @@ export function ExtensionView(props: {
                 <Show when={offersPlace(info().offers, "card") && !cardLineOff(info().id) && cardLineMuted(info().id)}>
                   <span>Hidden on its home card until you reload: what it sent broke Sova's rules for it.</span>
                 </Show>
+                <Show when={offersPlace(info().offers, "list") && !listPlaceOff(info().id) && listPlaceMuted(info().id)}>
+                  <span>Its people are off the session list until you reload: what it sent broke Sova's rules for them.</span>
+                </Show>
               </p>
             )}
           </Show>
@@ -241,6 +245,12 @@ export function ExtensionView(props: {
         <Show when={offersPlace(props.info?.offers, "card")}>
           <button type="button" class="button button-sm button-ghost" onClick={() => cardPolicy.setOff(props.id, !cardLineOff(props.id))}>
             {cardLineOff(props.id) ? "Show on Home Card" : "Hide on Home Card"}
+          </button>
+        </Show>
+        {/* The same switch for its people on the session list (lib/list-place), only for one that declares them. */}
+        <Show when={offersPlace(props.info?.offers, "list")}>
+          <button type="button" class="button button-sm button-ghost" onClick={() => listPolicy.setOff(props.id, !listPlaceOff(props.id))}>
+            {listPlaceOff(props.id) ? "Show People in Session List" : "Hide People in Session List"}
           </button>
         </Show>
         {/* Its transcript cards' trust (§chat.transcript-cards/trust), only for one that declares cards. */}

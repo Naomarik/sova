@@ -405,7 +405,8 @@
   "place": {
    "reply": "extensions",
    "row": "extensions",
-   "card": "extensions"
+   "card": "extensions",
+   "list": "extensions"
   },
   "doc": {
    "settings:sova/settings.json": "computers",

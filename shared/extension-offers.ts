@@ -13,7 +13,7 @@ import { COMMANDS_MAX, extCommand, extCommandsFrom, extOverseerKeys } from "./co
 
 /** Every place an extension may add to, in the order Sova draws them. An unknown name is dropped
     (a newer extension on an older Sova). */
-export const SCREEN_PLACES = ["reply", "row", "card"] as const satisfies readonly ScreenPlace[];
+export const SCREEN_PLACES = ["reply", "row", "card", "list"] as const satisfies readonly ScreenPlace[];
 
 /** Every menu a command may declare itself an entry of (`"menu": "session"` on the command: the
     Agents board row's ⋯ menu, src/lib/menu-place.ts). Any other value leaves the command out of every menu, never out

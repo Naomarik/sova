@@ -5240,7 +5240,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       // Sova's own machine-facing chats (the merge thread, its reviewers, the release thread): no reply shape (§chat.mode-menu/reply-shape).
       // Those and the special loadouts (the Overseer's own chat): no built-in helper profile while no default is chosen.
       // A Transport agent's chat (§app.transport/agent): its sandbox On from its first tool call, confined to its scope.
-      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}), ...(agentLaunchFlags(stateRoot(), read.id) ?? {}), ...(sovaNamedKind(snap) ? { replyShapeOff: true } : {}), ...(special || sovaNamedKind(snap) ? { noHelperProfile: true } : {}) }),
+      flags: () => ({ ...sessionFlags(cwd, outline, linkTools, launch.data ?? undefined), ...(sovaNamedKind(snap) === "merge-thread" ? MERGE_THREAD_FLAGS : {}), ...(agentLaunchFlags(stateRoot(), read.id, path) ?? {}), ...(sovaNamedKind(snap) ? { replyShapeOff: true } : {}), ...(special || sovaNamedKind(snap) ? { noHelperProfile: true } : {}) }),
       // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
       // setActiveTools or re-registration brings a removed tool back.
       exclude: (present) => (profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : []),

@@ -5,8 +5,8 @@
 // every confined chat. Hidden from it besides the policy's own list: this device's host values (host.json), the
 // transport records that carry the source's, the chat homes and the other projects registered here.
 // Node builtins only: server/chat-manager.ts reads the launch flags from here.
-import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 
 /** The scope, in the sandbox extension's ParentScope shape (pi-config/extensions/sandbox/policy.ts). */
 export interface AgentScope {
@@ -64,28 +64,123 @@ export function agentScope(input: { folder: string; trees?: readonly string[]; h
 /** `<stateRoot>/transport-agent.json`: the agents' records (server/transport/agent.ts keeps them). */
 export const preparedFile = (root: string) => join(root, "transport-agent.json");
 
-/** The transport whose agent chat `sessionId` is, or null: not a Transport agent's chat here. */
-export function agentTidOf(root: string, sessionId: string): string | null {
+/** A Transport agent's own mark, kept with its chat: `<home>/chat/transport-agent.json` in the chat's home, written
+    with the device's record and never read or written by the agent itself (the homes are hidden from its tools). It
+    keeps the chat an agent's, confined, when the device's record is gone or can't be read. */
+export const AGENT_MARK = join("chat", "transport-agent.json");
+
+/** What a Transport agent's chat is recorded as, in the device's record or its own mark. */
+export interface AgentMark {
+  v: 1;
+  tid: string;
+  at: number;
+  scope?: AgentScope;
+}
+
+/** The home of the chat `sessionId` from its session file (`<home>/sessions/<file>`, the home named for the chat and
+    holding its home.json), or null: no home (a chat from before homes, or with the Chat homes switch off). */
+export function agentHomeOf(sessionId: string, sessionPath?: string): string | null {
+  if (!sessionPath) return null;
+  const dir = dirname(resolve(sessionPath));
+  if (basename(dir) !== "sessions") return null;
+  const home = dirname(dir);
+  return basename(home) === sessionId && existsSync(join(home, "home.json")) ? home : null;
+}
+
+type Reading = { kind: "none" } | { kind: "unreadable"; why: string } | { kind: "ok"; value: unknown };
+
+/** A JSON file: none when it isn't there, unreadable when it is but can't be read or parsed. */
+function readJson(file: string): Reading {
   try {
-    const tid = (JSON.parse(readFileSync(preparedFile(root), "utf8")) as { agents?: Record<string, { tid?: unknown }> }).agents?.[sessionId]?.tid;
-    return typeof tid === "string" ? tid : null;
-  } catch {
-    return null;
+    return { kind: "ok", value: JSON.parse(readFileSync(file, "utf8")) };
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException)?.code;
+    return code === "ENOENT" || code === "ENOTDIR" ? { kind: "none" } : { kind: "unreadable", why: e instanceof Error ? e.message : String(e) };
   }
 }
 
-/** The open flags of a Transport agent's chat (server/chat-manager.ts): its sandbox On with its scope, which the
-    chat can't lower. A chat recorded as an agent whose scope can't be read is held at the read-only level with its
-    folder never writable: it never runs unconfined. Null: not a Transport agent's chat. */
-export function agentLaunchFlags(root: string, sessionId: string): { sandboxOn: true; extra: Record<string, string> } | { sandboxOn: true; sandboxReadOnly: true; cwdNotWritable: true } | null {
-  let rec: { scope?: AgentScope } | undefined;
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** The device's record of the agents' chats: none, unreadable (there but not a record this code reads), or each agent
+    chat's entry by session id. */
+export function readAgentRecords(root: string): { kind: "none" } | { kind: "unreadable"; why: string } | { kind: "ok"; agents: Record<string, unknown> } {
+  const r = readJson(preparedFile(root));
+  if (r.kind !== "ok") return r;
+  const v = r.value;
+  if (!isObj(v) || v.v !== 1 || !isObj(v.agents) || !isObj(v.projects)) return { kind: "unreadable", why: "not a record of this version" };
+  return { kind: "ok", agents: v.agents };
+}
+
+const validScope = (s: unknown): AgentScope | null =>
+  isObj(s) && s.version === 1 && Array.isArray(s.writable) && s.writable.every((w) => typeof w === "string") && typeof s.workspaceRoot === "string" ? (s as unknown as AgentScope) : null;
+
+/** Write the chat's own mark into its home, replacing it whole (a rename), only when it changed. */
+export function writeAgentMark(home: string, mark: AgentMark): void {
+  const file = join(home, AGENT_MARK);
+  const text = `${JSON.stringify(mark, null, 2)}\n`;
   try {
-    rec = (JSON.parse(readFileSync(preparedFile(root), "utf8")) as { agents?: Record<string, { scope?: AgentScope }> }).agents?.[sessionId];
+    if (readFileSync(file, "utf8") === text) return;
   } catch {
-    return null;
+    // none yet
   }
-  if (!rec) return null;
-  const s = rec.scope;
-  if (!s || s.version !== 1 || !Array.isArray(s.writable) || typeof s.workspaceRoot !== "string") return { sandboxOn: true, sandboxReadOnly: true, cwdNotWritable: true };
-  return { sandboxOn: true, extra: { "sandbox-parent": JSON.stringify(s) } };
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, text, { mode: 0o600 });
+  renameSync(tmp, file);
+}
+
+/** Whether a transport record here names `sessionId` as its agent (routes.ts keeps `ext.agent.sessionId`): the last
+    word on a chat without a mark of its own when the device's record can't be read. */
+function namedByTransport(root: string, sessionId: string): boolean {
+  const dir = join(root, "transport");
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return false;
+  }
+  for (const n of names) {
+    if (!n.endsWith(".json")) continue;
+    const r = readJson(join(dir, n));
+    if (r.kind === "ok" && isObj(r.value) && isObj(r.value.ext) && isObj(r.value.ext.agent) && r.value.ext.agent.sessionId === sessionId) return true;
+  }
+  return false;
+}
+
+/** What the chat `sessionId` (its session file at `sessionPath`) stands as: null, not a Transport agent's chat; else its
+    transport (null when no readable record names it) and its scope (null when none can be read: it is then held
+    read-only). Any record saying it is an agent's makes it one: its own mark in its home (an unreadable one counts),
+    the device's record, or, when that can't be read or is gone, a transport record naming it. */
+export const agentStanding = (root: string, sessionId: string, sessionPath?: string): AgentStanding | null => agentStandingAt(root, sessionId, agentHomeOf(sessionId, sessionPath));
+
+export interface AgentStanding {
+  tid: string | null;
+  scope: AgentScope | null;
+}
+
+/** agentStanding with the chat's home given (null: none). */
+export function agentStandingAt(root: string, sessionId: string, home: string | null): AgentStanding | null {
+  const mark = home ? readJson(join(home, AGENT_MARK)) : ({ kind: "none" } as const);
+  const own = mark.kind === "ok" && isObj(mark.value) && typeof mark.value.tid === "string" ? mark.value : null;
+  const file = readAgentRecords(root);
+  const rec = file.kind === "ok" && isObj(file.agents[sessionId]) ? (file.agents[sessionId] as Record<string, unknown>) : null;
+  const named = !!own || !!rec || mark.kind === "unreadable" || (mark.kind === "ok" && !own) || (file.kind !== "ok" && namedByTransport(root, sessionId));
+  if (!named) return null;
+  if (file.kind === "unreadable") console.warn(`[transport] ${preparedFile(root)} can't be read (${file.why}): ${sessionId} is held as a Transport agent's chat from its other records`);
+  const tid = typeof own?.tid === "string" ? own.tid : typeof rec?.tid === "string" ? rec.tid : null;
+  return { tid, scope: validScope(own?.scope) ?? validScope(rec?.scope) };
+}
+
+/** The transport whose agent chat `sessionId` is, or null: not a Transport agent's chat here, or none can be read. */
+export const agentTidOf = (root: string, sessionId: string, sessionPath?: string): string | null => agentStanding(root, sessionId, sessionPath)?.tid ?? null;
+
+/** The open flags of a Transport agent's chat (server/chat-manager.ts): its sandbox On with its scope, which the
+    chat can't lower. A chat any record names as an agent's whose scope can't be read (its records unreadable, gone or
+    without one) is held at the read-only level with its folder never writable: it never runs unconfined. Null: not a
+    Transport agent's chat. */
+export function agentLaunchFlags(root: string, sessionId: string, sessionPath?: string): { sandboxOn: true; extra: Record<string, string> } | { sandboxOn: true; sandboxReadOnly: true; cwdNotWritable: true } | null {
+  const s = agentStanding(root, sessionId, sessionPath);
+  if (!s) return null;
+  if (!s.scope) return { sandboxOn: true, sandboxReadOnly: true, cwdNotWritable: true };
+  return { sandboxOn: true, extra: { "sandbox-parent": JSON.stringify(s.scope) } };
 }

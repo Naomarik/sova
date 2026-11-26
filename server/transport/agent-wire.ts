@@ -8,7 +8,7 @@ import { delimiter, join } from "node:path";
 import type { Hono } from "hono";
 import { acquireChatHandle, type ChatHandle, isSessionBusy, onAgentSettled } from "../chat-handle";
 import { meshSelf } from "../mesh";
-import { homesRoot } from "../chat-homes/root";
+import { chatHome, hasHome, homesRoot } from "../chat-homes/root";
 import { ClaudeLogins, credentialsMtime, loginEnabled, readAccountsState } from "../../pi-config/extensions/claude-code/accounts.ts";
 import { inheritedEnv } from "../project-services/env-allow";
 import { hostVars as hostVarsOf, hostVarsFile } from "../project-services/store";
@@ -300,7 +300,7 @@ export function liveAgentDeps(app: Pick<Hono, "request">, onAgent?: (tid: string
       (await import("../session-titles")).writeAutoTitle(json.id, title);
       // Its scope before its first open: the open's flags read it (agent-scope.ts agentLaunchFlags), so no tool call
       // of it ever runs unconfined.
-      markAgent(stateRoot(), json.id, tid, Date.now(), scope);
+      markAgent(stateRoot(), json.id, tid, Date.now(), scope, json.path);
       const chat = await acquireChatHandle(json.path);
       // No modes of this device's defaults: only its brief and its own tools (transport_setup asks on its card).
       await applyAgentModes(chat);
@@ -390,7 +390,7 @@ export function transportHelpers(app: Pick<Hono, "request">, onAgent?: (tid: str
     interruptWaiting,
     /** The dialog's Busy helpers: those of the chat working now. */
     busyHelpers: async (chatId: string) => busyOf(await safeDeps.helpers(chatId)).map((h) => ({ id: h.chatId, name: h.name })),
-    isTransportAgent: (sessionId: string) => isTransportAgent(stateRoot(), sessionId),
+    isTransportAgent: (sessionId: string) => isTransportAgent(stateRoot(), sessionId, hasHome(sessionId) ? chatHome(sessionId) : null),
     /** transport_setup's run: the agent's asks, put on its card, and the arrived running copy (agent.ts). */
     setupRun: (sessionId: string, params: Record<string, unknown>) =>
       params.op === "downloads"

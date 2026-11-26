@@ -23,7 +23,7 @@ import { adminAsked, adminDone, type AgentAsks, cleanCommand, cleanDownloads, cl
 import { agentArrivedMissing, agentBrief, agentCopyFailed, agentPrivateValues, agentStillMissing } from "./agent-prompt";
 import { type CopyDeps, copyChecks, type CopyPlan, copyPlan, type CopyReading, copyStartText, type CopyView, copyViewOf, copyWaiting, oneAtATime, readCopy, restartOf } from "./arrival-copy";
 import { cleanOutsidePath, outsideRefusal, outsideShown, writeOutside } from "./outside-file";
-import { type AgentScope, agentScope, preparedFile, toolDirsToMake } from "./agent-scope";
+import { type AgentScope, agentHomeOf, agentScope, agentStandingAt, preparedFile, readAgentRecords, toolDirsToMake, writeAgentMark } from "./agent-scope";
 import { lacksRepo, projectComesFrom, withoutCredentials } from "./git-snapshot";
 import { miseTools, readSetupDef, type SetupDef } from "./setup-def";
 
@@ -397,14 +397,21 @@ export { preparedFile };
 export const projectKey = (p: ProjectRef): string =>
   p.firstCommit ? `commit:${p.firstCommit}` : p.remotes[0] ? `remote:${normRemote(p.remotes[0])}` : `path:${createHash("sha256").update(resolve(p.path)).digest("hex").slice(0, 16)}`;
 
+/** The device's record. One that is there but can't be read is never taken for an empty one: a read of it throws
+    (PreparedUnreadable), so nothing is written over it and no agent's recorded scope is lost; its agents' chats are
+    held read-only meanwhile (agent-scope.ts agentStanding). */
 function readPrepared(root: string): PreparedFile {
-  try {
-    const j = JSON.parse(readFileSync(preparedFile(root), "utf8")) as PreparedFile;
-    if (j?.v === 1 && j.projects && j.agents) return j;
-  } catch {
-    // none yet, or unreadable: start over (it only saves a later check)
+  const r = readAgentRecords(root);
+  if (r.kind === "unreadable") throw new PreparedUnreadable(root, r.why);
+  if (r.kind === "none") return { v: 1, projects: {}, agents: {} };
+  return JSON.parse(readFileSync(preparedFile(root), "utf8")) as PreparedFile;
+}
+
+/** The device's record can't be read: Sova won't write over it. */
+export class PreparedUnreadable extends Error {
+  constructor(root: string, why: string) {
+    super(`The Transport agents' record ${preparedFile(root)} can't be read (${why}), so Sova won't write over it. Fix or move that file, then press Retry.`);
   }
-  return { v: 1, projects: {}, agents: {} };
 }
 
 function writePrepared(root: string, f: PreparedFile): void {
@@ -427,11 +434,15 @@ function markPrepared(root: string, p: ProjectRef, tid: string, at: number): voi
   writePrepared(root, f);
 }
 
-/** Record session `sessionId` as transport `tid`'s agent, keeping the scope it was confined to (or recording `scope`). */
-export function markAgent(root: string, sessionId: string, tid: string, at: number, scope?: AgentScope): void {
+/** Record session `sessionId` (its file at `sessionPath`) as transport `tid`'s agent, keeping the scope it was confined
+    to (or recording `scope`): in the device's record and, for a chat with a home, in its own mark there first. */
+export function markAgent(root: string, sessionId: string, tid: string, at: number, scope?: AgentScope, sessionPath?: string): void {
   const f = readPrepared(root);
   const was = f.agents[sessionId];
-  f.agents[sessionId] = { tid, at: was?.at ?? at, ...((scope ?? was?.scope) ? { scope: scope ?? was!.scope } : {}) };
+  const entry = { tid, at: was?.at ?? at, ...((scope ?? was?.scope) ? { scope: scope ?? was!.scope } : {}) };
+  const home = agentHomeOf(sessionId, sessionPath);
+  if (home) writeAgentMark(home, { v: 1, ...entry });
+  f.agents[sessionId] = entry;
   writePrepared(root, f);
 }
 
@@ -443,7 +454,10 @@ function saveAgent(deps: Pick<AgentDeps, "stateRoot" | "onAgent">, tid: string, 
   const f = readPrepared(root);
   (f.byTransport ??= {})[tid] = a;
   const was = f.agents[a.sessionId];
-  f.agents[a.sessionId] = { tid, at: a.startedAt, ...(was?.scope ? { scope: was.scope } : {}) };
+  const entry = { tid, at: a.startedAt, ...(was?.scope ? { scope: was.scope } : {}) };
+  const home = agentHomeOf(a.sessionId, a.path);
+  if (home) writeAgentMark(home, { v: 1, ...entry });
+  f.agents[a.sessionId] = entry;
   writePrepared(root, f);
   try {
     deps.onAgent?.(tid, a);
@@ -452,8 +466,9 @@ function saveAgent(deps: Pick<AgentDeps, "stateRoot" | "onAgent">, tid: string, 
   }
 }
 
-/** Whether session `sessionId` is a Transport agent's chat: a transport refuses it (§app.transport/start). */
-export const isTransportAgent = (root: string, sessionId: string): boolean => !!readPrepared(root).agents[sessionId];
+/** Whether session `sessionId` (its home `home`, when it has one) is a Transport agent's chat: a transport refuses it
+    (§app.transport/start). Any of its records says so (agent-scope.ts agentStanding). */
+export const isTransportAgent = (root: string, sessionId: string, home: string | null = null): boolean => agentStandingAt(root, sessionId, home) !== null;
 
 // ---- the model ----------------------------------------------------------------------------------
 
@@ -647,7 +662,7 @@ async function startAgent(req: PrepareRequest, checks: AgentCheck[], deps: Agent
     ...(copies?.length ? { copies } : {}),
   });
   const chat = await deps.startChat({ cwd: folder, title, prompt, model: choice.model, thinking: choice.thinking, tid: req.tid, scope });
-  markAgent(root, chat.id, req.tid, deps.now(), scope);
+  markAgent(root, chat.id, req.tid, deps.now(), scope, chat.path);
   // After arrival the chat is here (a Move leaves only its Moved row there): a link joins two devices, so none is made.
   const linked: { linkId: string } | { error: string } = arrived
     ? { error: "the chat has arrived on this device" }
@@ -818,7 +833,7 @@ export async function afterArrival(asked: PrepareRequest & { privateFiles: strin
         deps.onBlocked?.(req.tid, unconfinedRefusal(deps.device(), unconfined));
         return [];
       }
-      markAgent(deps.stateRoot(), agent.sessionId, req.tid, deps.now(), scope);
+      markAgent(deps.stateRoot(), agent.sessionId, req.tid, deps.now(), scope, agent.path);
       if (!deps.busy(agent.path)) await deps.reopen?.(agent.path).catch(() => undefined);
     }
     const said = [...(setup.length ? [agentArrivedMissing(source, setup)] : []), ...(hits.length ? [agentPrivateValues(source, hits)] : []), ...(copyFailed.length ? [agentCopyFailed(source, copyFailed)] : [])].join("\n\n");
@@ -1091,7 +1106,7 @@ export async function allowDownloads(deps: AgentDeps, tid: string, planId: unkno
   const widened = widenedScope(scope, base ?? [], hosts);
   const why = await deps.confine(widened).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
   if (why) return { ok: false, status: 500, error: `The agent's sandbox can't take the new sites (${why}). Nothing was allowed.` };
-  markAgent(root, a.sessionId, tid, deps.now(), widened);
+  markAgent(root, a.sessionId, tid, deps.now(), widened, a.path);
   const next: AgentState = { ...a, state: "working", downloads: { ...plan, state: "allowed", allowedAt: deps.now() } };
   saveAgent(deps, tid, next);
   return { ok: true, agent: next, ...handOnChecked(deps, tid, a.path, downloadsAllowed(plan.items), true) };

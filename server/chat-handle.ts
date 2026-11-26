@@ -778,7 +778,7 @@ export async function servedToolsForChat(chatId: ChatId, sessionId: string, know
   if (kind !== null && kind !== "powers") return decls;
   // Then its `card` tool when its snapshot has a type the agent may raise (§chat.transcript-cards/card-tool), and a
   // Transport agent's own `transport_setup` (§app.transport/agent), for that chat only.
-  const extra = [...(await sessionOfferTools(sessionId, chatId)), ...(await sessionCardTools(sessionId, chatId)), ...(kind === null && agentTidOf(stateRoot(), sessionId) ? [transportSetupTool(sessionId)] : [])];
+  const extra = [...(await sessionOfferTools(sessionId, chatId)), ...(await sessionCardTools(sessionId, chatId)), ...(kind === null && agentTidOf(stateRoot(), sessionId, chatId) ? [transportSetupTool(sessionId)] : [])];
   if (!extra.length) return decls;
   serveTools(chatId, extra);
   return [...decls, ...extra.map(declOfTool)];

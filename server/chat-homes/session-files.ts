@@ -2,9 +2,11 @@
  * Every homed conversation file, for the session list's full build (§app.chat-homes/change-log): from the homes
  * index, not one folder read per home. A home's `sessions/` folder is read again only when something says it changed:
  * a line of the change log names the home (a new chat, a fork, a helper, an arrival, a delete), or the session feed's
- * watch noted a file in it (noteHomeSessionPath). The backstop sweep reads every one: BACKSTOP_MS after the last, when
- * lines may have gone by unread, and shortly after a start that began from the index on disk. A file made in a home
- * with neither (a program writing there behind Sova's back) is listed at that sweep: late, never lost.
+ * watch noted a file in it (noteHomeSessionPath). The backstop sweep reads every active home: BACKSTOP_MS after the
+ * last, when lines may have gone by unread, and shortly after a start that began from the index on disk. A file made
+ * in an active home with neither (a program writing there behind Sova's back) is listed at that sweep: late, never
+ * lost. An archived chat's home is read from the index alone (every change to it goes through Sova, which logs it);
+ * one the index doesn't hold yet is read once, and every one when lines may have gone by unread.
  *
  * The index is kept in `<homes root>/.index.json` (changes.ts) so a restart starts from it; a missing, torn or unknown
  * one is rebuilt by reading every home once.
@@ -12,7 +14,7 @@
 import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { BACKSTOP_MS } from "./records";
+import { BACKSTOP_MS, isHomeArchived } from "./records";
 import { homeIdOfPath, homesRoot, isHomeSessionFile, listHomeIds, onHomesRootSwitch } from "./root";
 import { appendChange, onChanges, pollChanges, readIndex, startTail, tailCursor, writeIndex, type IndexedHome } from "./changes";
 
@@ -80,7 +82,9 @@ export async function homeSessionFiles(): Promise<string[]> {
   pollChanges(root);
   const cursor = tailCursor(root);
   const now = Date.now();
-  const full = s.sweepNow || now - s.sweptAt >= BACKSTOP_MS || now < s.sweptAt;
+  // Lines may have gone by unread, or no index: every home, an archived chat's too. Else the timed sweep: active ones.
+  const everything = s.sweepNow;
+  const full = everything || now - s.sweptAt >= BACKSTOP_MS || now < s.sweptAt;
   if (full) {
     sessionFilesIo.sweeps++;
     s.sweptAt = now;
@@ -94,7 +98,8 @@ export async function homeSessionFiles(): Promise<string[]> {
     ids.map(async (id, i) => {
       const dir = join(root, id, "sessions");
       const held = s.homes.get(id);
-      if (!full && held && !dirty.has(id)) {
+      // An archived chat's home is read from the index even at the sweep: every change to it goes through Sova.
+      if (held && !dirty.has(id) && (!full || (!everything && isHomeArchived(id)))) {
         sessionFilesIo.fromIndex++;
         out[i] = held.files.map((f) => join(dir, f));
         return;

@@ -1,5 +1,6 @@
 // What many homes cost (§app.chat-homes/change-log): a "not a home" answer is kept until something says otherwise, the
-// open-record indexes read only the home that changed, and an archived chat's helpers are read when first asked about.
+// open-record indexes read only the home that changed, an archived chat's home is never swept (every change to it goes
+// through Sova and its line), and an archived chat's helpers are read when first asked about.
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,7 +14,9 @@ const HOMES = process.env.SOVA_CHAT_HOMES;
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
 const { ensureChatHome, hasHome, homeIo, noteHomeArrived, sweepHomeNegatives } = await import("./root");
-const { homeArrived, homeOf, resetHomeRecordsForTest } = await import("./records");
+const { expireHomeRecordChecksForTest, expireHomeRecordSweepForTest, homeArrived, homeOf, resetHomeRecordsForTest } = await import("./records");
+const { readSessionTitles, setSessionTitle } = await import("../session-titles");
+const { expireHomeSessionFilesSweepForTest, homeSessionFiles } = await import("./session-files");
 const { OpenRecordIndex, openIndexIo } = await import("./open-index");
 const { pollChanges, segmentFile, segments } = await import("./changes");
 const { setArchived } = await import("../archived-sessions");
@@ -119,4 +122,35 @@ test("an archived chat's finished helpers are read when first asked about, not a
   writeFileSync(join(home, "workers", `${helper}.json`), JSON.stringify(rec("ag_02")));
   assert.equal(reg.record(helper)?.parent.workerId, "ag_02", "read when first asked about");
   assert.deepEqual(reg.chatsOf(parent), [helper]);
+});
+
+test("the backstop sweep checks active homes only: an archived chat's home is read from what its lines said", async () => {
+  const active = id(70);
+  const archived = id(71);
+  for (const h of [active, archived]) {
+    ensureChatHome(h);
+    setSessionTitle(h, "Before");
+  }
+  setArchived(archived, true);
+  await homeSessionFiles();
+  // Written behind Sova's back, with no line: a record and a conversation in each.
+  for (const h of [active, archived]) {
+    const meta = join(HOMES, h, "chat", "meta.json");
+    const m = JSON.parse(readFileSync(meta, "utf8"));
+    m["session-titles.json#titles"][h] = { title: "By hand", by: "user", at: 9 };
+    writeFileSync(meta, JSON.stringify(m));
+    writeFileSync(join(HOMES, h, "sessions", `2026-11-05T00-00-00-000Z_${h}.jsonl`), "{}\n");
+  }
+  expireHomeRecordSweepForTest();
+  expireHomeSessionFilesSweepForTest();
+  const titles = readSessionTitles();
+  const files = await homeSessionFiles();
+  assert.equal(titles[active], "By hand", "the sweep reads an active home");
+  assert.equal(files.some((f) => f.includes(`2026-11-05T00-00-00-000Z_${active}`)), true);
+  assert.equal(titles[archived], "Before", "an archived chat's home is not swept");
+  assert.equal(files.some((f) => f.includes(`2026-11-05T00-00-00-000Z_${archived}`)), false);
+  // Its own line (as every write through Sova leaves) is read at the next look.
+  lineFromAnotherProcess(archived, "meta");
+  expireHomeRecordChecksForTest();
+  assert.equal(readSessionTitles()[archived], "By hand");
 });

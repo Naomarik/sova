@@ -32,9 +32,9 @@ setChatHomesRoot(homesRoot);
  * keys as they are. Every write appends a line to the homes' change log (server/chat-homes/changes.ts),
  * and a read takes the lines appended since, at most once a second (CHECK_MS): one read of the log,
  * whatever the number of homes, and a stat of each home a line names. The log is a hint: every
- * BACKSTOP_MS (and when lines may have gone by unread) a read checks every home's `chat/` folder's
- * stat as before (every write there is a rename into it), so a write that came with no line is seen
- * late, never lost.
+ * BACKSTOP_MS (and when lines may have gone by unread) a read checks every active home's `chat/`
+ * folder's stat as before (every write there is a rename into it), so a write that came with no line
+ * is seen late, never lost. An archived chat's home is not swept: every change to it goes through Sova.
  */
 
 export type HomeDoc = "meta" | "seen" | "signals";
@@ -179,14 +179,29 @@ function recheck(s: State, homeId: string, h: HomeEntry, docs: readonly HomeDoc[
   return moved;
 }
 
-/** The backstop: every home whose `chat/` folder moved since this process last read or wrote there is read again,
-    homes that came with no line are found, and every "not a home" answer is asked again. */
-function sweep(s: State): void {
+/** Whether a home's chat is archived, by its own record (`archived-sessions.json` in its meta) as this process holds it. */
+const archivedEntry = (homeId: string, h: HomeEntry): boolean => {
+  const a = h.docs.get("meta")?.["archived-sessions.json"];
+  return Array.isArray(a) && a.includes(homeId);
+};
+
+/** Whether the chat of home `homeId` is archived, as the records this process holds say (false when not read yet). */
+export function isHomeArchived(homeId: string): boolean {
+  const h = st?.homes.get(homeId);
+  return !!h && archivedEntry(homeId, h);
+}
+
+/** The backstop: every active home whose `chat/` folder moved since this process last read or wrote there is read
+    again, homes that came with no line are found, and every "not a home" answer is asked again. An archived chat's
+    home is not swept (every change to it goes through Sova, which writes its line), except when lines may have gone
+    by unread (`all`). */
+function sweep(s: State, all = false): void {
   recordsIo.sweeps++;
   s.sweptAt = Date.now();
   s.sweepNow = false;
   sweepHomeNegatives();
   for (const [homeId, h] of s.homes) {
+    if (!all && archivedEntry(homeId, h)) continue;
     const ds = stampOf(chatDir(homeId));
     if (ds === h.dirStamp) continue;
     h.dirStamp = ds;
@@ -201,7 +216,8 @@ function fresh(s: State): void {
   if (now - s.checkedAt < CHECK_MS) return;
   s.checkedAt = now;
   pollChanges(s.root);
-  if (s.sweepNow || now - s.sweptAt >= BACKSTOP_MS || now < s.sweptAt) sweep(s);
+  if (s.sweepNow) sweep(s, true);
+  else if (now - s.sweptAt >= BACKSTOP_MS || now < s.sweptAt) sweep(s);
 }
 
 const DOC_OF: Partial<Record<ChangeLine["d"], HomeDoc>> = { meta: "meta", seen: "seen", signals: "signals" };

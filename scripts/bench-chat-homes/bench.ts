@@ -1,11 +1,13 @@
 // The many-chats bench (§app.chat-homes/change-log): what reading the homes costs with thousands of them. A scratch
-// agent dir and homes folder of `homes` chats, each with its records, a conversation and two finished helpers (a fifth
-// of them archived), plus stray folders that aren't homes; then the costs that grew with every home:
+// agent dir and homes folder of `homes` chats, each with its records, a conversation and two finished helpers, `active`
+// of them not archived (the main run: 1,000 active of 5,000; all active is the worst case), plus stray folders that
+// aren't homes; then the costs that grew with every home:
 //   check     a second of list activity: the next store read after the 1 s trust ran out
 //   newChat   a new chat made and its first record written, then the open-card and open-offer indexes asked
 //   listFiles the homed conversation files for a full list build (a page connecting)
 //   start     the worker registry's start (every home's helpers)
 //   strays    500 "not a home" names asked about again
+//   sweep     the 5-minute backstop sweep of the records (only where it exists)
 // Imports only APIs the code before the change log had too, so the same file measures both (the I/O counters only
 // where they exist). Run it with scripts/bench-chat-homes/run.ts; the landing check is
 // server/chat-homes/scale.integration.test.ts.
@@ -15,6 +17,8 @@ import { join } from "node:path";
 
 export interface HomesBench {
   homes: number;
+  active: number;
+  sweepMs?: number;
   seedMs: number;
   firstLoadMs: number;
   checkMs: number;
@@ -23,7 +27,7 @@ export interface HomesBench {
   startMs: number;
   straysMs: number;
   /** Only where the change log exists. */
-  io?: { checkStats: number; newChatFolders: number; newChatFull: number; listReaddirs: number; strayManifestReads: number };
+  io?: { checkStats: number; newChatFolders: number; newChatFull: number; listReaddirs: number; strayManifestReads: number; sweepStats: number };
 }
 
 const id = (n: number) => `019a${n.toString(16).padStart(4, "0")}-0000-7000-8000-${String(n).padStart(12, "0")}`;
@@ -33,7 +37,8 @@ const avg = async (n: number, fn: (i: number) => unknown): Promise<number> => {
   return (performance.now() - t) / n;
 };
 
-export async function benchHomes(o: { homes: number; scratch?: string }): Promise<HomesBench> {
+export async function benchHomes(o: { homes: number; active?: number; scratch?: string }): Promise<HomesBench> {
+  const active = Math.min(o.active ?? o.homes, o.homes);
   const scratch = o.scratch ?? mkdtempSync(join(tmpdir(), "sova-homes-bench-"));
   const agent = join(scratch, "agent");
   const homes = join(scratch, "homes");
@@ -55,7 +60,7 @@ export async function benchHomes(o: { homes: number; scratch?: string }): Promis
     mkdirSync(join(home, "chat"), { recursive: true });
     mkdirSync(join(home, "workers"), { recursive: true });
     writeFileSync(join(home, "home.json"), JSON.stringify({ v: 1, id: sid, stateRoot: state, layout: 1, device: { id: "bench", name: "bench" }, createdAt: "2026-11-01T00:00:00.000Z" }));
-    const archived = i % 5 === 0;
+    const archived = i >= active;
     writeFileSync(join(home, "chat", "meta.json"), JSON.stringify({ version: 1, id: sid, "session-titles.json#titles": { [sid]: { title: `Chat ${i}`, by: "user", at: 1 } }, ...(archived ? { "archived-sessions.json": [sid] } : {}) }));
     writeFileSync(join(home, "chat", "seen.json"), JSON.stringify({ version: 1, id: sid, "seen.json": { [sid]: 1000 + i } }));
     const conv = join(home, "sessions", `2026-11-01T00-00-00-000Z_${sid}.jsonl`);
@@ -135,8 +140,20 @@ export async function benchHomes(o: { homes: number; scratch?: string }): Promis
   });
   const strayManifestReads = Math.round(((homeIo?.manifestReads ?? 0) - m0) / 10);
 
+  let sweepMs: number | undefined;
+  let sweepStats = 0;
+  const expireSweep = r.expireHomeRecordSweepForTest as (() => void) | undefined;
+  if (expireSweep && recordsIo) {
+    const w0 = recordsIo.stats;
+    sweepMs = await avg(5, () => {
+      expireSweep();
+      return records.homesGeneration();
+    });
+    sweepStats = Math.round((recordsIo.stats - w0) / 5);
+  }
+
   if (!o.scratch) rmSync(scratch, { recursive: true, force: true });
-  const out: HomesBench = { homes: o.homes, seedMs, firstLoadMs, checkMs, newChatMs, listFilesMs, startMs, straysMs };
-  if (recordsIo) out.io = { checkStats, newChatFolders, newChatFull, listReaddirs, strayManifestReads };
+  const out: HomesBench = { homes: o.homes, active, seedMs, firstLoadMs, checkMs, newChatMs, listFilesMs, startMs, straysMs, ...(sweepMs !== undefined ? { sweepMs } : {}) };
+  if (recordsIo) out.io = { checkStats, newChatFolders, newChatFull, listReaddirs, strayManifestReads, sweepStats };
   return out;
 }

@@ -53,6 +53,23 @@ for (const [rule, ignore] of [
   });
 }
 
+test("a source folder that only has a build folder's name (git tracks files in it) keeps sending its new files; a dependency folder inside it still stays", async () => {
+  const dir = join(root, "source-named-build");
+  mkdirSync(dir);
+  g(dir, "init", "-q", "-b", "master");
+  put(join(dir, "src", "build", "a.ts"), "export const a = 1;\n");
+  put(join(dir, "scripts", "out", "run.mjs"), "run()\n");
+  g(dir, "add", "-A");
+  g(dir, "commit", "-qm", "one");
+  put(join(dir, "src", "build", "b.ts"), "export const b = 2;\n");
+  put(join(dir, "scripts", "out", "new.mjs"), "next()\n");
+  put(join(dir, "src", "build", "node_modules", "x", "i.js"), "dep\n");
+  const s = await surveyWorktree("w", dir);
+  const loose = s.loose.map((f) => f.path).sort();
+  assert.deepEqual(loose, ["scripts/out/new.mjs", "src/build/b.ts"], "the user's new source files travel");
+  assert.deepEqual(s.left, ["src/build/node_modules"], "the dependency folder inside it stays");
+});
+
 test("Bring From never brings a file out of a device-wide download cache, a link to one included; a tool's own config beside it may", () => {
   const home = join(root, "home");
   const cached = [

@@ -339,6 +339,16 @@ export function surveyWorktree(name: string, path: string): Promise<WorktreeSurv
   return surveyTree(name, path, "", null);
 }
 
+/** Every folder (relative, with `/`) holding a file git tracks, at any depth. */
+async function trackedDirsOf(top: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const f of nul(await ok(top, ["ls-files", "-z"], "Listing tracked files"))) {
+    const parts = f.split("/");
+    for (let i = 1; i < parts.length; i++) out.add(parts.slice(0, i).join("/"));
+  }
+  return out;
+}
+
 /** A tree's survey; `key` is its path from the transported worktree ("" for that one), `base` the address its
     relative submodule URLs resolve against when it is a submodule (null: its own recorded remote). */
 async function surveyTree(name: string, path: string, key: string, base: string | null): Promise<WorktreeSurvey> {
@@ -354,18 +364,25 @@ async function surveyTree(name: string, path: string, key: string, base: string 
   const left: string[] = [];
   const nested: string[] = [];
   if (!refusal) {
+    /** The folders git tracks a file in, read once when a new file sits under a dependency or build folder's name. */
+    let held: Set<string> | null = null;
     for (const p of nul((await ok(top, ["ls-files", "-o", "--exclude-standard", "-z"], "Listing new files")))) {
       if (p.endsWith("/")) {
         nested.push(p.slice(0, -1));
         continue;
       }
-      // A file inside a dependency, cache or build folder git doesn't ignore stays with that folder (listed once).
+      // A file inside a dependency, cache or build folder git doesn't ignore stays with that folder (listed once), but
+      // only a folder git tracks nothing in: a source folder that merely has such a name (src/build, scripts/out)
+      // holds the user's work, and its new files travel as any new file does.
       const parts = p.split("/");
-      const at = parts.slice(0, -1).findIndex((x) => leftDir(x));
-      if (at >= 0) {
-        const dir = parts.slice(0, at + 1).join("/");
-        if (!left.includes(dir)) left.push(dir);
-        continue;
+      const dirs = parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join("/")).filter((d) => leftDir(d.split("/").at(-1)!));
+      if (dirs.length) {
+        held ??= await trackedDirsOf(top);
+        const dir = dirs.find((d) => !held!.has(d));
+        if (dir) {
+          if (!left.includes(dir)) left.push(dir);
+          continue;
+        }
       }
       const st = await lstat(join(top, p)).catch(() => null);
       if (st && leftEntry(parts.at(-1)!, st)) left.push(p);

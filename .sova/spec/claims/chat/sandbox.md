@@ -445,7 +445,9 @@ Each top-level chat has one folder that the chat, every worker it starts (pi or 
 any depth) and every member of its teams can read and write, confined or not. It is where they
 leave files for each other: briefs, reports, alignment files and team handover notes.
 
-- **Where.** `~/.local/state/sova/shared/<chat key>/`, where the key is the top-level chat's
+- **Where.** For a chat with a home, its home's `shared/` (§app.chat-homes/layout), the one part
+  of a home its tools may write (§app.chat-homes/sole-writer). For an older chat,
+  `~/.local/state/sova/shared/<chat key>/`, where the key is the top-level chat's
   session id reduced to `[A-Za-z0-9._-]`; a chat with no session id yet has none. An absolute
   `SOVA_SHARED_BASE` in the server's environment replaces `~/.local/state/sova/shared`, and a
   hermetic copy of Sova (`dev:hermetic`) sets it to its worktree's `.cache/sova-shared`, so its
@@ -468,10 +470,14 @@ leave files for each other: briefs, reports, alignment files and team handover n
   results of `agent_spawn` and `team_create` name it, so the parent knows where to put a brief;
   the confined agent's note names it (§chat.sandbox/confined-note); and the alignment hand-off
   names it as the place for the planning worker's alignment file (§chat.alignment/model).
-- **Kept until the chat is archived.** Archiving the top-level chat, or deleting it while it is
-  still empty, removes its shared folder; until then it stays, across reloads and server
-  restarts. Unarchiving it doesn't bring the folder back: the chat starts a new, empty one the next
-  time it needs it.
+- **A home's shared folder is kept with the chat.** Archiving a chat with a home never removes its
+  shared folder. It stays as long as the home does, and is compressed with it
+  (§app.session-list/archive-compression). Only your Delete of the chat removes it
+  (§app.chat-homes/lifetime).
+- **An older chat's is kept until the chat is archived.** Archiving an older top-level chat, or
+  deleting it while it is still empty, removes its shared folder; until then it stays, across
+  reloads and server restarts. Unarchiving it doesn't bring the folder back: the chat starts a new,
+  empty one the next time it needs it.
 
 ## §chat.sandbox/confined-note — What a confined agent is told
 

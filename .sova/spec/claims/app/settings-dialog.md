@@ -97,7 +97,14 @@ places is a count that disagrees in one of them.
   browser's: the server keeps it on this computer only. A flip saves at once and is not part of any
   form, so Save Changes neither stages nor writes it; a save that fails puts the switch back with a
   toast. Turning it off is open to any caller; turning it back on is the operator's own page only.
-- **Agents' CPU · this computer** — after Context files and skills and before Server · this machine,
+- **Chats · this computer** — after Context files and skills, under its own heading: **Chat homes**
+  and **Compress old archived chats**, both on by default, this computer's, each saved at once
+  outside every form (§app.chat-homes/switch), and the **Chats folder** row: the folder chats with
+  a home are in, a warning when it is missing, and `Change…`, which moves every home to the folder
+  you pick (§app.chat-homes/chats-folder). The move is an action that runs on its own confirm, not
+  part of any form: Save Changes neither stages nor writes it. Fixed by the server's environment,
+  the row is read-only with the reason and has no `Change…`.
+- **Agents' CPU · this computer** — after Chats and before Server · this machine,
   under its own heading: one switch, **Limit agents' CPU**, **off by default**, and when on, the box
   **Agents may use at most [N] of M cores** (§app.load-priority/ceiling). It is this computer's, kept
   by the server; the switch and the box save at once and are not part of any form, so Save Changes
@@ -981,8 +988,8 @@ waits for the dialog's Save Changes. Its words are §design.copy-deck/settings-e
 - **The review**, shown before anything is on, and again for Waiting for You and Changed, states:
   the exact program, and that it runs as you with no sandbox; that its page runs on Sova's own address and
   can do what you can, including adding other extensions; that its key opens nearly all of Sova, with its
-  calls recorded under its name; its cards, commands and what it offers the Overseer; which rules it
-  needs; and what was left out and why. A part it doesn't have is left out of the review. Nothing runs
+  calls recorded under its name; its cards, commands and what it offers the Overseer; whether it
+  reads your chats (§app.extensions/reads-chats); which rules it needs; and what was left out and why. A part it doesn't have is left out of the review. Nothing runs
   before **Install and Turn On**, or **Approve** for one already on the list. Cancel changes nothing.
 - **Once on.** The row goes to Starting and Running with no restart (§app.extensions/loader), and a toast says
   so; for an extension with cards it adds that new chats can use them and open chats keep what they started

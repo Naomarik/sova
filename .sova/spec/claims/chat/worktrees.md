@@ -243,7 +243,8 @@ as above.
 By default a worker runs on the session's agent dir. `agent_spawn {useWorktreeConfig: true}`,
 valid only for a pi worker whose cwd is inside an active worktree that has a `.agent`
 directory, runs it on `<worktree>/.agent` instead: `PI_CODING_AGENT_DIR` points there, its
-session file is still written in the parent's sessions directory (so Sova shows its
+session file is still written in the parent's sessions directory, its top-level chat's home's
+`sessions/` for a chat with a home (§app.chat-homes/new-chats) (so Sova shows its
 transcript), it runs in normal mode, with the spec minor mode only while the chat that started it
 has spec on, and the project is trusted for the run (`--approve`). A Claude Code worker, being a pi worker, may use it too. It is refused outside an
 active tracked worktree, or when the worktree has no `.agent`. Extension discovery stays off, and

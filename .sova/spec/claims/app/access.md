@@ -260,8 +260,8 @@ Every caller keeps working with no new step for the person:
 
 ## §app.access/your-click — What only your own click passes
 
-Twenty approvals are listed here. Nineteen pass only on what Sova takes for the person's own click
-in its page on this machine; the twentieth, choosing where links open, is a narrower door that a
+Twenty-one approvals are listed here. Twenty pass only on what Sova takes for the person's own click
+in its page on this machine; the twenty-first, choosing where links open, is a narrower door that a
 script holding the operator token passes too (**Where links open**, below). Both hold but for what
 the Overseer keeps and a schedule on another computer (§app.access/other-roads). Each one lets
 something act later without asking, so the ordinary roads of a chat, a script (but at that narrower
@@ -282,6 +282,7 @@ every chat.
 | Restarting Sova | `POST /api/updates/restart`, or Apply of Sova's own checkout (`POST /api/project-services/apply`, `POST /api/projects/:pid/services/apply`) | **Restart Sova** in Settings → General (the Running Copies tab offers no Apply) |
 | Updating Sova | `POST /api/updates/check`, `POST /api/updates/apply`, `PUT /api/updates/settings` | Settings → General |
 | How much CPU agents may use | `PUT /api/settings/agent-cpu` | **Limit agents' CPU** and its cores in Settings → General (§app.load-priority/ceiling) |
+| Moving your chats to another folder | `POST /api/chats-folder/move`, `POST /api/chats-folder/move/cancel` | **Move Chats**, **Resume Move** and **Cancel Move** under the Chats folder in Settings → General (§app.chat-homes/chats-folder) |
 | Opening public links to the internet | `POST /api/public-links/turn-on`, `POST /api/public-links/cloudflared/download`, `PUT` and `DELETE /api/public-links/account-token` | **Turn On** and **Download** in Settings → Public links or a share screen's prompt, and the Account token's save and remove there (§mesh.tunnel/turn-on, §mesh.tunnel/cloudflared, §mesh.tunnel/account) |
 | Starting a setup chat for public links | `POST /api/public-links/setup-chat` | **Set Up With a Chat** in an option's setup help in Settings → Public links (§mesh.tunnel/setup-chat) |
 | Choosing where links open (a narrower door) | `PUT /api/public-links`, `DELETE /api/public-links/candidate`, and `POST /api/public-links/verify` while a new address waits for its Verify | The **Where links open** list and its fields in Settings → Public links, and **Verify Address** and **Cancel** on its Waiting for verification banner (§mesh.public/setting, §mesh.public/where-links-open) |

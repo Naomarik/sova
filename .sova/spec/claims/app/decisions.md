@@ -351,8 +351,8 @@ commits, and the turn card's stored kind says what counts as this ask. Every oth
   Sova's event stream has a subscriber (§app.events/idle: it observes through these same
   comparisons), or the Overseer's background loop reads the attention digest (an Overseer exists,
   or a phone waits for its notifications; the loop reads the digest from these comparisons' list): a store written or a pane attached; anything that starts the next listing afresh
-  (§app.session-list/listing-reuse); a session file written, added or removed in a session folder
-  (an organization's included); an organization's statecharts changing; merge readiness reading a
+  (§app.session-list/listing-reuse); a session file written, added or removed in a watched session
+  folder (an organization's included; which ones are watched is §app.session-list/live-watch-scope); an organization's statecharts changing; merge readiness reading a
   new answer, including for a worktree whose Git state moved with no session-file write (a commit,
   add, checkout or branch switch there, or its base branch moving: every 5 s, the index, HEAD and
   branch and base refs of each worktree a row's readiness tracks are compared as file stamps, with

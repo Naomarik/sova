@@ -248,6 +248,36 @@
       "server/claude-pool/agent.integration.test.ts"
     ]
   },
+  "§app.claude-logins/login-ids": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.claude-logins/spawn-selection",
+      "§app.claude-logins/registry",
+      "§app.claude-logins/failover",
+      "§app.claude-logins/login-moved",
+      "§app.claude-logins/switch-login",
+      "§app.claude-logins/active-login"
+    ],
+    "code": [
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/provider/session-bridge.ts",
+      "pi-config/extensions/claude-code/provider/index.ts",
+      "pi-config/extensions/claude-code/provider/types.ts",
+      "server/claude-login-names.ts",
+      "server/transcript.ts",
+      "server/claude-login-state.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+      "server/claude-accounts.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    }
+  },
   "§app.claude-logins/login-moved": {
     "kind": "behavior",
     "requires": [
@@ -256,7 +286,7 @@
       "§app.claude-logins/failover"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "code": [
       "pi-config/extensions/claude-code/provider/session-bridge.ts",
       "pi-config/extensions/claude-code/accounts.ts",
@@ -264,9 +294,9 @@
       "pi-config/extensions/claude-code/accounts.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-24T04:43Z",
-      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§app.claude-logins/macos-keychain": {
@@ -436,7 +466,7 @@
       "§app.claude-logins/device-order"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "unreviewed",
     "code": [
       "pi-config/extensions/claude-code/accounts.ts",
       "pi-config/extensions/claude-code/provider/session-bridge.ts",
@@ -452,9 +482,9 @@
       "server/claude-table.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-07T17:40Z",
-      "source": "pi-session:a08b61c6-6f44-4ae1-ace0-ced83f26f0b0#55f8e26b"
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§app.claude-logins/stuck": {
@@ -501,7 +531,7 @@
       "§chat.composer/composer-flyout"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "code": [
       "pi-config/extensions/claude-code/accounts.ts",
       "pi-config/extensions/claude-code/provider/session-bridge.ts",
@@ -527,9 +557,9 @@
       "src/lib/claude-login.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-24T04:43Z",
-      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§app.claude-logins/switch-queue": {

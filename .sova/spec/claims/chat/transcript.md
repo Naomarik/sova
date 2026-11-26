@@ -41,7 +41,9 @@
   display headline.
 - **What the head holds.** Back, the title block, the context readout (§chat/context-window), the remote
   chips, the `TUI` chip, a 44px **Share session** icon link (`.session-share-open`, icon `share`, to
-  the share page `#/share/<id>`, §app.session-share/share-page) and Session details. No subagents or team chip (§app/insights). Nothing else: the model and the session's
+  the share page `#/share/<id>`, §app.session-share/share-page) and Session details, and, in the
+  title block under the path line while a transport from this device runs or needs you, its
+  progress line (§app.transport/progress). No subagents or team chip (§app/insights). Nothing else: the model and the session's
   own facts moved into the composer (§chat/composer, §chat/images), which is where the session is acted on.
   In Focus (§chat.transcript/focus-view) the head holds only Back (where it shows) and the title.
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
@@ -1192,8 +1194,9 @@ unchanged.
   archived; unarchive it first." and changes nothing: a mode, sandbox or subagent profile switch, a
   restored worker's resume, a message from a script, a tour, a schedule or another chat
   (`POST /api/sessions/prompt`), each a 409 where it is a request, and a message a closed tab
-  handed the server for it comes back as the session's draft. A worker's report never opens an
-  archived parent. Every way of archiving (the Archive button, a drop on the Archive tile, the
+  handed the server for it comes back as the session's draft. A chat that moved to another device
+  (its Moved row, §app.transport/moved-row) is refused with where it went instead: "This chat moved
+  to {device}; it runs there now." A worker's report never opens an archived parent. Every way of archiving (the Archive button, a drop on the Archive tile, the
   board's ⋯ menu, a project overseer's conversation pushed past its history) marks it archived,
   closes its chat quietly, cancels any report still waiting to open it, cancels its pending wake
   nudges for good (§chat.wake-nudges/archive) and stops its background jobs

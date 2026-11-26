@@ -242,6 +242,28 @@
       "source": "pi-session:915c7c2a-d21e-4992-8899-b2d3b2871536#1d2b9d7c"
     }
   },
+  "§mesh.peers/transport-ticket": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§mesh.peers/grants",
+      "§app.transport/start",
+      "§app.access/your-click"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:21Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/mesh/access.ts",
+      "server/transport/routes.ts",
+      "server/transport/store.ts",
+      "server/transport/wire.ts",
+      "server/mesh/links-transfer.ts"
+    ]
+  },
   "§mesh/peers": {
     "kind": "surface",
     "authority": "accepted",

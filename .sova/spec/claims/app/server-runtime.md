@@ -138,6 +138,10 @@ caller's own home and `~/.pi/agent`. A bare run breaks the rule of §app.server-
   removes that dir when it ends. Setting the variable in a `before` hook is too late for such paths.
 - **The archived set finds its file at each use**, under the agent dir of that moment, never at a
   path fixed when its module loaded.
+- **Chat homes too.** The scratch agent dir's setup also points `SOVA_CHAT_HOMES` at a folder
+  inside it, and so does every harness that starts a server or a chat (§app.chat-homes/location). A
+  test that starts a chat makes its home there, and the chats and workers it starts inherit the
+  folder. No test ever makes a home, or a shared folder, in the real `~/.local/state/sova`.
 - `server/merge-queue/wire-unserved.integration.test.ts`, which set its agent dir in a `before`
   hook, wrote a session file into the real sessions folder and archived it in the real
   `archived-sessions.json` when run bare; it now takes its agent dir this way and writes only into
@@ -185,7 +189,7 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
 - **`pnpm test:int -- --landing [--base <rev>]`** is what a landing runs (one of Sova's required
   merge checks, §app.merge-queue/checks):
   the whole everyday set, plus each group a landing runs when triggered (Chat processes, Merge
-  queue, Forms in a browser) only when the change since the merge base touches its triggers; Tours never run
+  queue, Forms in a browser, Many chats) only when the change since the merge base touches its triggers; Tours never run
   at landing. It prints one line per group it skipped, with its file
   count, its recorded time and why (no change to its triggers, or never at landing). `--groups
   <name,…|all>` runs only those groups' files, and given no name it is a usage error (exit 2), so a
@@ -283,6 +287,13 @@ else `/dev/shm`) and skips, saying why, only when none is writable. Its helpers 
 `*.test.helper.ts`, which no runner glob matches and the product line count leaves out; a unit check
 (`server/test-helpers.test.ts`) fails when a product file imports one. A changed test file triggers only the group it
 belongs to.
+
+**Many chats** (`homes-scale`) is `server/chat-homes/scale.integration.test.ts`, the speed test of
+5,000 chat homes (`scripts/bench-chat-homes/`), with budgets on how much reading the homes may cost
+(§app.chat-homes/change-log), run at a landing only when triggered. Its triggers are the homes code
+(`server/chat-homes/**`, `scripts/bench-chat-homes/**`), the session list's index, the open cards
+and offers, the worker registry, and the seen, archive, title and signal stores, the test setup and
+the groups module.
 
 ## §app.server-runtime/test-reuse — A test file that already passed on identical code isn't run again
 

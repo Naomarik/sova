@@ -1509,6 +1509,9 @@ same toasts.
     title under its label and clears the rename; disabled with "Not renamed." Both as the
     board's ⋯ has them.
   - A chat Sova names itself (§app.session-list/fixed-names) has none of these three rows.
+  - A compressed chat (§app.session-list/archive-compression) has no Regenerate Title: Sova never
+    reads its conversation, so there is nothing to name it from. Rename… and Reset to Original Title
+    stay.
   - **Move to Group…** turns the menu into the list of places: No group, then each group in its
     creation order with the row's current one checked, then New Group…. Picking a group files the
     session there with the group toasts ("Added to “{name}”." · "Moved to “{name}”." ·
@@ -1534,7 +1537,8 @@ same toasts.
 **Renaming is Sova's, and only Sova's.** A session's title, set by a rename (the Agents board's `Rename…`,
 §app.insights/team-cards), by the Overseer or by the automatic namer (§app.session-list/auto-titles),
 is stored by session id in
-`~/.pi/agent/sova/session-titles.json` (`POST /api/sessions/title`, `server/session-titles.ts`)
+`~/.pi/agent/sova/session-titles.json`, or for a chat with a home in that home (§app.chat-homes/layout)
+(`POST /api/sessions/title`, `server/session-titles.ts`)
 and **not one byte is written into the session's `.jsonl`** — which is what lets a session open in
 a TUI be renamed at all (the webapp must never write a file a TUI owns). Every summary the server
 hands out carries the override as `title` and the derived one as `originalTitle`, so the rename is
@@ -2449,8 +2453,8 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
   labels. One ghost `button-sm`, right-aligned in its own row under a `--color-border` rule, sits
   where a list's footer action would. The ellipsis says a dialog comes first.
 - **Picker.** Clean Up… opens a `.modal` (`role="dialog"`, focus trapped, focus starting on the
-  first action): title "Clean Up Archive", the line "Pick what to delete. You'll see how many
-  sessions match before anything is deleted.", then the three actions as `.list-row` buttons in a
+  first action): title "Clean Up Archive", the line "Pick what to delete or compress. You'll see how
+  many sessions match first.", then the three actions as `.list-row` buttons in a
   bordered `.cleanup-choices` box (`--r-lg`). Each row shows the label (`.list-title`), its scope
   (`.list-meta`, the same `cleanupScope` text as the confirm dialog), and a chevron. Accessible
   names stay "Delete Sessions Older Than 7 Days", "… 30 Days", "Delete Empty Sessions", with the
@@ -2474,7 +2478,9 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
   what it protects. The UI shows its numbers and never counts on its own. None of them ever
   matches a session in an attached organization's workspace `sessions/` (baton transcripts,
   project-overseer conversations), however old or empty; those are left out silently and are not
-  in `skipped`. See §app.session-list/cleanup-org-guard.
+  in `skipped`. See §app.session-list/cleanup-org-guard. Nor do they ever match a Moved row, whose
+  home is the safety copy of a chat that moved to another device (§app.transport/moved-row): it is
+  left out silently too.
 - **Never an organization session in the picker** (§app.session-list/ordinary-surfaces): they are
   never in the Archive, so the one-session list below never offers one.
 - **Hidden while searching.** Cleanup ignores the search, so a Clean Up… button under a
@@ -2512,7 +2518,7 @@ sessions in bulk. It uses `POST /api/sessions/cleanup` (`cleanupSessions` in `sr
 
 The bulk actions never name a row, so one bad session would sit in the Archive forever. The
 picker's second half fixes that: below the three bulk actions, when any session carries the
-archive mark, the line "Or pick one archived session to delete for good." and one `.cleanup-choice`
+archive mark, the line "Or pick one archived session to delete or compress." and one `.cleanup-choice`
 row per archived, not-live, ordinary session — newest first, titled with the session's own title, its meta
 the relative time, its accessible name `Delete “{title}”`. The bulk actions stay the first focus.
 Hidden while the Archive holds no archived row (the operator's order: archive first, delete
@@ -2543,6 +2549,36 @@ after).
 - **After.** The list refreshes like the bulk path, and the open session's deletion navigates to
   `#/` for the same reason (a transcript that can no longer load).
 - **Recorded tours.** Only a transcript actually deleted by cleanup triggers its tour cleanup (§app.tours/storage): standalone source links and previews are revoked first, then the runtime is durably tombstoned in the same synchronous turn before any await to refuse new work and cancel attempts; recording children settle before host-local jobs, private state and source editions are removed. Dry runs and refused or skipped deletions leave these alone. A successful irreversible transcript deletion remains reported as deleted if later tour cleanup fails; missing-chat tour routes remain missing 404, and startup plus a cheap periodic sweep finish residual cleanup with bounded secret-free diagnostics. The sweep starts once every session root is registered. A shutdown waits (at most 5 s) for a pass already running and starts none. The pending-cleanup diagnostic is logged once, and again only after a clean pass. A chat whose remembered transcript is still in place is confirmed without listing any session folder. With no deletion marker, a chat's tours are cleaned only when its owner is confirmed absent on two sweeps at least a minute apart that see the same session folders; the first sweep after a start never cleans on absence alone, and a chat that reappears in between keeps its tours. A chat moved by hand outside Sova's known folders is therefore treated as deleted. A leftover whose deletion Sova itself recorded is finished on the first sweep. An access refusal caused only by permission, containment, symlink, header or index uncertainty never authorizes destructive tour cleanup; a confirmed absent owner or concrete regular contained deletion marker is required. Already-reviewed destination-owned hand-off snapshots and installation-wide reusable site approvals and test-account credentials are retained.
+
+## §app.session-list/archive-compress — Compress, beside Delete in Clean Up
+
+Clean Up (§app.session-list/archive-cleanup) also compresses: the archived chats of a range, or
+one archived chat, whatever their age.
+
+- **The button.** Older Than 7 Days and Older Than 30 Days each have a second, smaller
+  button at the end of their row, just before its chevron: `Compress` (`button-sm button-ghost`,
+  accessible name "Compress Sessions Older Than 7 Days", "… 30 Days"). The row and the button are
+  siblings in the `li`, never one inside the other; every row's chevron sits at the box's edge, with
+  Compress or without. Each one-session row below has one too ("Compress “{title}”"),
+  except a row already compressed. Empty Sessions has none, since an empty session holds nothing to
+  keep. Compress sends the same request as its row, with `action: "compress"` (absent or `"delete"`
+  is a delete, as before). An `action` that is present and not one of those is a 400 with "action
+  must be delete or compress", checked with every other field before anything runs. It takes
+  only the sessions carrying the archive mark, in that range or that one path. Others, and ones
+  already compressed, are left out silently. Live, mid-turn and just-written sessions are skipped and
+  counted, as for a delete. It answers `compressedCount` and `compressedIds` in place of the deleted
+  ones. What compressing does, and how a compressed chat then shows, is
+  §app.session-list/archive-compression.
+- **The flow** is the delete flow with its own words. The confirm dialog (`alertdialog`,
+  focus on **Cancel**) is titled "Compress {n} sessions?", then the scope, then "They stay in the
+  Archive, marked Compressed. Sova won't open or search them again, and you can still delete
+  them." The skipped caption is the same. The foot is `Compress {n} Sessions` (`.button-primary`,
+  "Compressing…" while pending) · spacer · `Cancel`. With 0, the title is "0 sessions to
+  compress." and the foot only `Close`. Done: toast and announce "Compressed {n} sessions.", with
+  the skipped sentence appended when nonzero, then refresh the list. Failure: "Couldn't compress
+  sessions. Some may be compressed; the list is refreshed. {server message}". For one session the
+  scope line is the one-session line, and the body "It stays in the Archive, marked Compressed. Sova
+  won't open or search it again, and you can still delete it."
 
 ## §app.session-list/cleanup-org-guard — Cleanup never deletes organization sessions
 
@@ -2662,8 +2698,8 @@ field and the Overseer split button (§app.session-list/search).
 | State | What renders |
 |---|---|
 | Loading (first fetch, after 300ms) | 6 × `<div class="skeleton skeleton-row">` inside `.sidebar-list`, separated by `--space-2`. Put `aria-busy="true"` on the `nav`. Nothing appears before 300ms |
-| Error | `.banner.banner-error` at `--space-3` inset, with `alert-circle`. Title: "Couldn't read your sessions." Body: "`~/.pi/agent/sessions` wasn't changed. Check the server is running, then retry." `.banner-action`: `<button class="button button-sm">Retry</button>`. If rows loaded earlier, keep them visible below the banner |
-| Empty (0 sessions on disk) | `.empty`. Title: "0 sessions in `{dir}`.", `{dir}` the sessions folder of the server's own agent dir (`GET /api/sessions/dir`), with the home folder as `~` (`~/.pi/agent/sessions` on a default host); until the server has said, "0 sessions yet." Body: "Start one here, or run `pi` in a terminal. It'll show up in this list." One `.empty-action`: `New Session` (secondary) |
+| Error | `.banner.banner-error` at `--space-3` inset, with `alert-circle`. Title: "Couldn't read your sessions." Body: "Nothing in `~/.pi/agent/sessions` or your chats folder was changed. Check the server is running, then retry." `.banner-action`: `<button class="button button-sm">Retry</button>`. If rows loaded earlier, keep them visible below the banner |
+| Empty (0 sessions on disk) | `.empty`. Title: "0 sessions in `{dir}`.", `{dir}` the sessions folder of the server's own agent dir (`GET /api/sessions/dir`), with the home folder as `~` (`~/.pi/agent/sessions` on a default host); once the chats folder exists (`GET /api/chats-folder`), "0 sessions in `{dir}` or `{chats folder}`.", the chats folder written the same way, since the chats made since chat homes are kept there; until the server has said, "0 sessions yet." Body: "Start one here, or run `pi` in a terminal. It'll show up in this list." One `.empty-action`: `New Session` (secondary) |
 | No matches | `.empty`. Title: "0 of 48 match “{query}”." Body: "We search titles, folders, models, and tags." Action: `<button class="button">Clear Search</button>` |
 
 ## §app.session-list/tokens — Tokens
@@ -2873,7 +2909,8 @@ renews it every minute); otherwise it lists as above. So an idle
 server with windows open builds the list only for the feed's safety net.
 
 **Only what changed is read again.** The session feed's comparisons don't read every file. The
-folder watch names each session file written, added or removed, and the next comparison
+folder watch (over the folders §app.session-list/live-watch-scope watches) names each session file
+written, added or removed, and the next comparison
 stats and reads only those files and keeps every other session as it was last read. A listing
 opens a changed file once to build its row: its head, its outline and one window of its last
 256 KB, which the row's model, context and ending all read from (a file's first read may go
@@ -2918,3 +2955,64 @@ archived first: an archived session's file is opened only once every other sessi
 read, and the worker-mark scan follows the same order. A listing still answers once, with every
 session, archived ones included, once all are read: no caller ever gets a list with the archived
 ones missing.
+
+## §app.session-list/live-watch-scope — Only open, running and recent chats are watched live
+
+The session feed watches folders so that a change reaches the list within seconds
+(§app.decisions/push). It watches only the chats that can change soon. The rest are read on a full
+build.
+
+- **Always watched, as today:** pi's sessions folder itself, every organization's workspace
+  `sessions/`, and the live-record folder.
+- **Watched while one of its chats is open, running or recent:** each chat home's `sessions/`, and
+  each of pi's per-folder sessions folders. Open means open in a window or held by this server.
+  Running means its turn runs, a worker of its works, or a live record names it (a TUI included).
+  Recent means last active in the last 7 days. The live-record folder stays watched, so a chat that
+  starts running anywhere is watched from then on, and its writes reach the list as soon as before.
+- **The rest reach the list on a full refresh.** A write to a chat outside these folders is read at
+  the feed's once-a-minute check of the files it knows, or at its next full build, every 5 minutes
+  (§app.session-list/listing-reuse). A new file there is read at the next full build.
+- **The set follows the chats.** It is worked out again at each re-sync, once a minute. A folder
+  whose last recent chat turns 8 days old stops being watched then, and one whose chat is opened or
+  starts running is watched at once.
+- **Running out of watches is logged.** When the system refuses a watch because its file-watch
+  limit is reached, the server logs it instead of hiding it: "Session list: the system's file-watch
+  limit is reached ({error}); {n} folders aren't watched, so their changes reach the list at the next
+  full build." It logs this at most once per re-sync. The folders left out are read as unwatched
+  ones are.
+
+## §app.session-list/archive-compression — Old archived chats are compressed
+
+An archived chat you haven't used in 60 days is compressed, so it stops taking room and stops
+costing the list anything. It stays in the Archive, marked Compressed, and you can still delete
+it. Sova keeps it only for the record: it never opens, reads or searches its contents, and never
+unpacks it.
+
+- **On its own.** By default, Sova compresses every archived chat last active more than 60 days ago.
+  It does this in the background, at least once a day while the server runs, a few chats at a time,
+  never slowing the list.
+- **A Moved chat's safety copy** is compressed 7 days after its Move (§app.transport/moved-row). Its
+  row still opens the chat on the device it moved to.
+- **By hand.** Clean Up's Compress compresses the archived chats of a range, or one archived chat,
+  whatever their age (§app.session-list/archive-cleanup).
+- **What is compressed.** For a chat with a home, the whole home becomes one compressed file:
+  conversations, records, helpers, mailboxes and shared folder (§app.chat-homes/layout). For an
+  older chat, its own conversation file and its helpers' conversation files are each compressed
+  where they are. Nothing is dropped.
+- **What never is.** Only a chat carrying the archive mark is compressed. A chat is left as it is,
+  and tried again at the next pass, when it is open anywhere, live in a TUI, mid-turn, has a worker
+  or a command from shell mode running, or was just written (Clean Up's own "just written"). Organization sessions,
+  the Overseer's files and the merge queue's own chats are never compressed, as Clean Up never
+  deletes them (§app.session-list/cleanup-org-guard).
+- **In the list.** A compressed chat keeps its row in the Archive. It keeps its date section,
+  folder, title, model and tags, taken from its row as it was when compressed. Its file is never
+  read for the row. Its second line reads "{time} · Compressed". The sidebar search still finds it
+  by those kept fields.
+- **Never opened.** It is the one archived chat that doesn't open read-only
+  (§app.session-list/regions-top-and-archive, "Archiving"). Opening it, by a click, a link, a reload
+  or another device, starts and reads nothing. The transcript area shows "This chat is compressed. Sova keeps it for the record and
+  doesn't open it." It has no composer and no Unarchive. Nothing in Sova reads its conversation:
+  not the Overseer, the attention digest, the worker marks, a search of transcripts, a fork or a
+  link. A route that would read it answers "This chat is compressed, so Sova doesn't open it."
+- **Deleting it.** Clean Up's Delete, by age or of that one chat, removes its compressed files (for a
+  chat with a home, its home) like any archived chat's (§app.chat-homes/lifetime).

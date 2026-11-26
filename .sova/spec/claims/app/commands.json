@@ -25,14 +25,15 @@
       "server/mesh/access.ts",
       "server/topic-pairs.ts",
       "server/create-guide-growth.json",
-      "shared/commands/design.ts"
+      "shared/commands/design.ts",
+      "shared/commands/chats-folder.ts"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-19T07:11Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
+      "by": "omar",
+      "at": "2026-11-26T02:51Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
     }
   },
   "§app.commands/cli": {

@@ -473,7 +473,7 @@ The Overseer and every project overseer have pi's `write` and `edit`, behind the
 their read tools (§app.overseer/tools, "Files").
 
 - **Where.** Anywhere `read` may go, except Sova's and pi's own state (the agent dir, with Sova's
-  state root in it, and `~/.pi`), a folder an attached organization's project layer reserves (its
+  state root in it, `~/.pi`, and every chat home but its `shared/`, §app.chat-homes/sole-writer), a folder an attached organization's project layer reserves (its
   workspace), a secret file, and a file with more than one hard link. A project overseer writes
   only inside its project root; its attachments folder stays read-only. Each path is checked as
   written, at its realpath and at every link of a symlink chain, so a dangling link can't create a

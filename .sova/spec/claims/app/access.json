@@ -267,7 +267,7 @@
       "§app.access/click-limits"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/page-only.ts",
       "server/session-offers-routes.ts",
@@ -336,12 +336,14 @@
       "AGENTS.md",
       "server/playbook-runs/routes.ts",
       "server/networks/routes.ts",
-      "server/trusted-networks.integration.test.ts"
+      "server/trusted-networks.integration.test.ts",
+      "server/chat-homes/move-routes.ts",
+      "server/chat-homes/move-folder.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-26T16:15Z",
-      "source": "pi-session:a4cea2f9-9509-4ec5-859b-51b9f0f41d49#8e7f2d91"
+      "by": "omar",
+      "at": "2026-11-26T19:25Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#9d9ca960"
     }
   },
   "§app/access": {

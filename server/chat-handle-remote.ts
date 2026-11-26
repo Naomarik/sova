@@ -23,6 +23,7 @@ import {
 } from "./chat-handle";
 import { awaitFrame, type Link, type LinkEnd } from "./chat-runtime/link";
 import { sessionsChanged } from "./list-generation";
+import { frameMember } from "./member-frame";
 
 /** The text a call gets when the chat's process can't be reached (design §2.5). */
 export const UNREACHABLE = "The chat's process is not reachable right now.";
@@ -483,7 +484,8 @@ export class RemoteChatHandle extends ChatHandle {
   }
   private deliverClientMessage(client: ChatClient, msg: ChatClientMessage): void {
     const clientId = this.ids.get(client);
-    if (clientId && !this.ended && this.link.send({ t: "client.msg", clientId, msg })) return;
+    const member = frameMember(msg);
+    if (clientId && !this.ended && this.link.send({ t: "client.msg", clientId, msg, ...(member ? { member } : {}) })) return;
     // No process to take it (exited, stopping, or its link down): a prompt goes back to the pane.
     const refusal = unsentRefusal(msg);
     if (refusal) client.send(refusal);

@@ -437,6 +437,7 @@
    "session.list": "scripts",
    "session.get": "scripts",
    "session.read": "scripts",
+   "session.senders.get": "extensions",
    "session.create": "scripts",
    "session.title.set": "scripts",
    "session.title.reset": "scripts",

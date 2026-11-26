@@ -65,3 +65,16 @@ test("messageBody strips another session's header only when the marker says so; 
   assert.equal(messageBody("[overseer-brief] two", { kind: "overseer" }, true), "two");
 });
 
+
+test("who typed it (§app.extensions/senders): another computer's caller is someone else; this machine's page is you; every other marker wins", () => {
+  const member = (target: string, by: string, id = `w-${target}-${by}`): TranscriptItem => ({ id, kind: "info", memberMark: { targetId: target, by, label: "desk" } });
+  const rows: TranscriptItem[] = [{ id: "p", kind: "user", text: "x" }, { id: "op", kind: "user", text: "y" }, member("p", "peer:n1"), member("op", "operator")];
+  const s = sendersOf(rows);
+  assert.deepEqual(otherSender(s, "p"), { kind: "member", by: "peer:n1", label: "desk" });
+  assert.equal(otherSender(s, "op"), undefined);
+  assert.deepEqual(ownInputIds(rows), ["op"], "a linked computer's message is not what you typed here");
+  const others: TranscriptItem[] = [sessionMark("x"), { id: "o", kind: "info", overseerMark: { kind: "sent", targetId: "x" } }, { id: "b", kind: "info", batonMark: { kind: "sent", targetId: "x", by: "p_kim" } }];
+  for (const other of others)
+    for (const order of [[member("x", "peer:n1"), other], [other, member("x", "peer:n1")]])
+      assert.notEqual(sendersOf(order).get("x")!.kind, "member", `${JSON.stringify(other)} loses to a member marker`);
+});

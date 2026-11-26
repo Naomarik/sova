@@ -275,6 +275,7 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "overseer-sent", match: (it) => it.overseerMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "baton-sent", match: (it) => it.batonMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "session-sent", match: (it) => it.sessionMark?.kind === "sent", host: "page", placement: "anchored", drawsNothing: true }),
+  kind({ id: "member-sent", match: (it) => !!it.memberMark, host: "page", placement: "anchored", drawsNothing: true }),
   kind({ id: "profile-mark", match: (it) => it.profileMark, host: "page", placement: "anchored", view: { page: "profile-mark" } }),
   kind({ id: "baton", match: (it) => it.batonMark && it.batonMark.kind !== "sent" && it.batonMark, host: "page", placement: "anchored", view: { page: "baton" } }),
   kind({ id: "overseer-answer", match: (it) => it.overseerMark?.kind === "dialog-answer" && it.overseerMark, host: "page", placement: "anchored", view: { page: "overseer-answer" } }),

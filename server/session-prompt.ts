@@ -78,6 +78,8 @@ export async function promptSession(
   key?: string,
   /** The extension it is from (server/extension-sender.ts), never from a body: its header line and marker go on here (§app.extensions/name-badge). */
   fromExtension?: ExtensionSender | null,
+  /** Who sent it (server/session-senders.ts memberOfSend), set only while an active extension asks for senders. */
+  member?: { by: string; label?: string },
 ): Promise<PromptResult> {
   if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
   // Only a chat's own composer or mode menu picks Create: refused here, or the extension's refusal reaches nobody and the
@@ -105,7 +107,7 @@ export async function promptSession(
   const compacting = !chat.mirror.running && chat.mirror.compacting;
   try {
     const stamped = fromExtension ? `${outsideSentHeader(fromExtension, fromExtension.hop)}\n${text}` : text;
-    const r = await chat.send({ text: stamped, origin: "server", checkModel: true, delivery, ...(key ? { key } : {}), ...(fromExtension ? { sentBySession: fromExtension } : {}), ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
+    const r = await chat.send({ text: stamped, origin: "server", checkModel: true, delivery, ...(key ? { key } : {}), ...(fromExtension ? { sentBySession: fromExtension } : {}), ...(member ? { sentByMember: member } : {}), ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
     queued = r.queued;
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };

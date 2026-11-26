@@ -47,6 +47,17 @@ export const SESSION_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "session.senders.get",
+    label: "Show Who Typed",
+    summary: "Who started a session and who typed each of its messages, as recorded while an extension asks for it.",
+    effect: "looks",
+    params: { session: session("query", "path") },
+    route: { method: "GET", path: "/api/sessions/senders" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "session.create",
     label: "New Session",
     summary: "A new empty session in a folder, optionally with a profile and a first message.",

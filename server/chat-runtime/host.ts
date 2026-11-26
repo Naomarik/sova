@@ -81,6 +81,7 @@ import { LinkWorkerHost, DESIGN_PROTO, WORKER_PROTO } from "./worker-port";
 export { warmChatRuntime } from "../chat-manager";
 import { setReplyTimingsSource } from "../reply-facts";
 import { fallbackRule } from "../projects/folder-rule";
+import { memberOf, setFrameMember } from "../member-frame";
 
 /** `globalThis[LINK_LIVE](sessionId)`: whether a session is in a live link (the link extension asks). */
 const LINK_LIVE = Symbol.for("sova:link-live");
@@ -374,6 +375,9 @@ export class ChatRuntimeHost {
         return;
       }
       if ((f.msg.type === "prompt" || f.msg.type === "steer") && String(f.msg.text ?? "").startsWith("/")) this.log(`took a pane's ${f.msg.type} command ${String(f.msg.text).split(/\s/)[0]}`);
+      // Who typed it, as the server said beside the frame (§app.extensions/senders).
+      const member = f.member === undefined ? undefined : memberOf(f.member);
+      if (member) setFrameMember(f.msg, member);
       this.chat.handle(c, f.msg);
       this.pokeSoon();
     }));

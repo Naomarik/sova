@@ -8,7 +8,7 @@ import { proxy } from "hono/proxy";
 import { getMimeType } from "hono/utils/mime";
 import { WebSocket } from "ws";
 import { cappedWebSocket, cappedWebSocketServer, connectionRefused, errorCode } from "./runtime-quirks";
-import type { ExtensionInfo, ExtensionOffers } from "../shared/protocol";
+import type { ExtensionInfo, ExtensionOffers, RecordKind } from "../shared/protocol";
 import { declaredCommands, offersOf } from "../shared/extension-offers";
 import { extCommandsFrom, extOverseerKeys, type ExtCommandEntry } from "../shared/commands-ext";
 import { EXTENSION_CONTRACT } from "../shared/extension-contract";
@@ -296,8 +296,22 @@ function manifestEntries(): Valid[] | null {
     if (!l.active || !l.valid) continue;
     out.push(l.state === "changed" ? { ...l.valid, entry: { ...l.valid.entry, changed: true } } : l.valid);
   }
+  noteAsked(out);
   return out;
 }
+
+/** What the active list asked Sova to record, as of its last whole read (§app.extensions/senders). Every read of the
+    active list sets it: the key sync reads it every few seconds while anything is installed, and at once when the
+    list's file changes or an approval moves what is active (server/extension-keys.ts startExtensionKeys). So a hot
+    path asks it with no file read; with nothing installed it stays empty. */
+let asked: ReadonlySet<RecordKind> = new Set();
+function noteAsked(active: readonly Valid[]): void {
+  let next: Set<RecordKind> | null = null;
+  for (const v of active) for (const k of v.offers?.records ?? []) (next ??= new Set()).add(k);
+  if (next || asked.size) asked = next ?? new Set();
+}
+/** Whether an active extension asks Sova to record this, from the cached list: no file read. */
+export const recordsAsked = (kind: RecordKind): boolean => asked.has(kind);
 
 /** Every id on the list, active or not: a peer's entry never takes one. */
 export const listedIds = (): string[] => (listedExtensions() ?? []).flatMap((l) => (l.valid ? [l.valid.entry.id] : []));

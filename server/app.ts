@@ -173,6 +173,7 @@ import { readNotes, writeNotes } from "./overseer-store";
 import { problemOf } from "../shared/form-rules";
 import { NOTES_RULE } from "../shared/overseer-limits";
 import { pathOfId, promptSession } from "./session-prompt";
+import { memberOfSend, noteStartedBy, sessionSenders } from "./session-senders";
 import { parseLabelPairs, rowWithLabels, withLabels } from "./session-labels";
 import { registerLabelRoutes } from "./session-labels-routes";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
@@ -415,7 +416,7 @@ export function buildApp(deps: AppDeps) {
     // One that can't be used (turned off, not signed in) leaves it on the new-chat default, and the answer says why.
     const opened = start.opening ? await openingTaken(made.path, start.opening) : null;
     if (start.prompt?.trim()) {
-      const sent = await promptSession(made.path, start.prompt);
+      const sent = await promptSession(made.path, start.prompt, undefined, undefined, undefined, undefined, undefined, memberOfSend(c));
       if (!sent.ok) return c.json({ error: `Created the session with its profile, but its first message was refused: ${sent.error}`, session: made }, sent.status);
     }
     const summary = (await getSessionSummary(made.path)) ?? made;
@@ -448,6 +449,8 @@ export function buildApp(deps: AppDeps) {
     const path = canonicalPath(made.path); // same key resolveSessionPath() will produce
     markOwned(path); // fresh mtime is ours, not a foreign writer's
     addWebSession(made.id);
+    // Who started it, only while an active extension asks for senders (§app.extensions/senders).
+    noteStartedBy(made.id, c);
     // Seen at birth: whoever made it is looking at it, so its first reply can later read as unread.
     markSeen(made.id);
     const summary = await getSessionSummary(path);
@@ -2082,6 +2085,15 @@ export function buildApp(deps: AppDeps) {
     return c.json(pairs ? rowWithLabels(summary, pairs) : summary, 200, { "Cache-Control": "no-store" });
   }
   app.get("/api/sessions/summary", (c) => summaryById(c, c.req.query("id") ?? ""));
+  // Who started a chat and who typed each message (§app.extensions/senders): this host's own callers only, never a
+  // linked computer's to read. Recorded only while an active extension asks for senders; nothing recorded answers empty.
+  app.get("/api/sessions/senders", async (c) => {
+    if ((c.env as { meshPeer?: unknown } | undefined)?.meshPeer) return c.json({ error: "Not found" }, 404);
+    const path = resolveSessionPath(c.req.query("path") ?? null);
+    if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    return c.json(await sessionSenders(path, idOf(path)));
+  });
   // The same answer at a path-shaped URL (§mesh.links/by-id): links fill a member's path, resolve a
   // tool's `to` and poll a member's state through it. A peer on an older build answers only ?id=.
   app.get("/api/sessions/by-id/:id", (c) => summaryById(c, c.req.param("id")));
@@ -2117,7 +2129,7 @@ export function buildApp(deps: AppDeps) {
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
     }
-    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c));
+    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c), memberOfSend(c));
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });
   // Installed extensions (server/extensions.ts), with each backend's cached health.

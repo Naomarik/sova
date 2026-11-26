@@ -53,6 +53,7 @@ import { PROFILE_ENTRY, RETIRED_REMOVABLE, SESSION_SENT_ENTRY, type ProfileEntry
 import { CHAT_PROFILE_ENTRY, normalizeChatProfile, type ChatProfileEntryData } from "../../shared/profile-switch";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerMarkerData } from "../../shared/project-overseer";
 import { PROJECT_ASSISTANT_ENTRY, type ProjectAssistantMarkerData } from "../../shared/project-assistant";
+import { MEMBER_SENT_ENTRY, type MemberSentData } from "../../shared/senders";
 import {
   OVERSEER_DIALOG_ANSWER_ENTRY,
   OVERSEER_ENTRY,
@@ -181,6 +182,11 @@ export const APPROVAL_PENDING = kind<ApprovalPendingData>("sova-approval-pending
 /** Beside a user message another session sent, as the transcript's row reads it. */
 export const SESSION_SENT = kind<SessionSentData>(SESSION_SENT_ENTRY, "branch-list", (d) =>
   isObject(d) && filled(d.targetId) && typeof d.from?.sessionId === "string" ? (d as SessionSentData) : null,
+);
+
+/** Who typed a user message (§app.extensions/senders): written only while an active extension asks for `senders`. */
+export const MEMBER_SENT = kind<MemberSentData>(MEMBER_SENT_ENTRY, "branch-list", (d) =>
+  isObject(d) && filled(d.targetId) && filled(d.by) ? (d as MemberSentData) : null,
 );
 
 /** An Overseer file's marker: an Overseer file holds one (and overseer-state.json names it). */
@@ -346,7 +352,7 @@ export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", 
 /** Every registered kind, by type. */
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
-    REWIND, TOPIC_DELIVERED, SHELL_CLOSED, SHELL_RUN, FANOUT_MEMBER, PROFILE, CHAT_PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, APPROVAL_PENDING, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
+    REWIND, TOPIC_DELIVERED, SHELL_CLOSED, SHELL_RUN, FANOUT_MEMBER, PROFILE, CHAT_PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, APPROVAL_PENDING, SESSION_SENT, MEMBER_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT, DESIGN_RUN, PLAYBOOK_RUN,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,

@@ -18,6 +18,8 @@ export interface ExtensionAsks {
   /** The screens it adds to. */
   screens?: string[];
   drawings?: string[];
+  /** v1.21: what it asks Sova to record for it (shared/extension-offers.ts RECORD_KINDS). */
+  records?: string[];
 }
 
 export interface ExtensionReview {

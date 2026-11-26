@@ -9,6 +9,7 @@ import {
   EXT_CHANGED_LEAD,
   EXT_INTRO,
   EXT_KEY_LINE,
+  EXT_RECORDS_SENDERS,
   EXT_LOAD_FAILED,
   EXT_NO_MANAGER,
   EXT_NONE,
@@ -156,6 +157,12 @@ function ReviewDialog(props: { at: Reviewing; onClose: () => void; onDone: (r: E
                   <dd>{c().join(", ")}</dd>
                 </div>
               )}
+            </Show>
+            <Show when={a().records?.includes("senders")}>
+              <div>
+                <dt>Records</dt>
+                <dd>{EXT_RECORDS_SENDERS}</dd>
+              </div>
             </Show>
             <Show when={r().needs}>
               {(n) => (

@@ -76,6 +76,7 @@ import {
   RULE,
   SANDBOX,
   SESSION_SENT,
+  MEMBER_SENT,
   STATE_KINDS,
   SUBAGENT_PROFILE,
   TOUR_DETACHMENT,
@@ -249,6 +250,7 @@ const ROW_READS: Record<string, (d: any) => boolean> = {
   "sova-baton-wrapup": obj,
   [OVERSEER_SENT_ENTRY]: (d) => !!d && typeof d.targetId === "string" && !!d.targetId,
   [SESSION_SENT_ENTRY]: (d) => !!d && typeof d.targetId === "string" && !!d.targetId && typeof d.from?.sessionId === "string",
+  "sova-member-sent": (d) => obj(d) && !!s(d.targetId) && !!s(d.by),
   "sova-overseer-dialog-answer": obj,
   "align-doc": obj,
 };
@@ -277,6 +279,7 @@ const SAMPLES: Record<string, unknown[]> = {
   [PROFILE_ENTRY]: [{ v: 1, profile: null }, { v: 1, profile: { id: "p1", label: "P" } }, { v: 2, profile: null }, { v: 1, profile: {} }, null, "x", { v: 1, profile: { id: "p2" }, by: "start" }],
   [LOADOUT_ENTRY]: [{ v: 1, offContext: ["/a"], offSkills: ["s"] }, { v: 1, offContext: ["rel"], offSkills: [] }, { v: 1, offContext: [], offSkills: [] }, { v: 1 }, null],
   [SESSION_SENT_ENTRY]: [{ v: 1, targetId: "aaaa0001", from: { sessionId: "s", title: "T" }, hop: 1 }, { v: 1, targetId: "", from: { sessionId: "s" } }, { v: 1, targetId: "aaaa0002" }],
+  "sova-member-sent": [{ v: 1, targetId: "aaaa0001", by: "peer:n1" }, { v: 1, targetId: "aaaa0002", by: "" }, { v: 1, targetId: "aaaa0001", by: "operator", label: "desk" }, null],
   [OVERSEER_ENTRY]: [{ v: 1 }, null],
   [OVERSEER_SENT_ENTRY]: [{ v: 1, targetId: "aaaa0001" }, { v: 1, targetId: "aaaa0002", overseerId: "o" }, { v: 1, targetId: "" }, null],
   "sova-overseer-dialog-answer": [{ v: 1, title: "Q", answer: "A" }, null, 7],
@@ -450,14 +453,14 @@ function compare(s: Session): void {
     const today = s.branch.filter((e) => e.type === "custom" && e.customType === REWIND.type).map((e) => decodeRewindRef({ id: e.id, at: e.timestamp, data: e.data })).filter((x) => x !== null);
     assert.deepEqual(rewinds, today, at("rewinds"));
     // the per-record kinds: the records the transcript's row reads, in order; byTarget = the newest of them
-    const perRecord: StateKind<any>[] = [BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, OVERSEER_SENT, SESSION_SENT, OVERSEER_DIALOG_ANSWER, ALIGN_DOC];
+    const perRecord: StateKind<any>[] = [BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, OVERSEER_SENT, SESSION_SENT, MEMBER_SENT, OVERSEER_DIALOG_ANSWER, ALIGN_DOC];
     for (const kind of perRecord) {
       const reads = ROW_READS[kind.type]!;
       const todayRecords = s.branch.filter((e) => e.type === "custom" && e.customType === kind.type && reads(e.data));
       assert.deepEqual(b.list(kind).map((r) => r.id), todayRecords.map((e) => (typeof e.id === "string" ? e.id : null)), at(`${kind.type} records`));
       assert.ok(b.list(kind).every((r, i) => r.data === todayRecords[i]!.data), at(`${kind.type} data passed through`));
     }
-    const targeted: StateKind<any>[] = [BATON_SENT, OVERSEER_SENT, SESSION_SENT];
+    const targeted: StateKind<any>[] = [BATON_SENT, OVERSEER_SENT, SESSION_SENT, MEMBER_SENT];
     for (const kind of targeted) {
       for (const target of new Set(s.branch.map((e) => (e.data as any)?.targetId).filter((t) => typeof t === "string"))) {
         const todayNewest = s.branch.filter((e) => e.type === "custom" && e.customType === kind.type && ROW_READS[kind.type]!(e.data) && e.data.targetId === target).at(-1);
@@ -518,6 +521,7 @@ describe("the state kind registry", () => {
       "sova-loadout sova newest-on-branch",
       "sova-mcp-list sova newest-on-branch",
       "sova-mcp-note sova branch-list",
+      "sova-member-sent sova branch-list",
       "sova-memory sova newest-on-branch",
       "sova-overseer sova presence",
       "sova-overseer-dialog-answer sova branch-list",

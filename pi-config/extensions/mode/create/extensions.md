@@ -72,6 +72,15 @@ createServer((req, res) => {
 
 Limits: 3 chips per extension and 6 under a reply; 1 chip per extension and 2 on a row; 8 extension rows in the menu; a home card line of 60 plain characters; 32 people in the list. A backend answers within 2 seconds.
 
+## Who started a chat and who typed each message
+
+- Change: Sova notes, beside each chat this computer holds, which computer started it and which typed each message (`peer:<node id>` for a linked computer, `operator` for this one), never in what the model reads.
+- Lives: its description file (`"records": ["senders"]`); its backend reads them with its key at `GET /api/sessions/senders?path=<session>`.
+- Approves: the person, in the review (Records).
+- By: OK.
+- Live: from the next chat started and message typed while it's on; nothing earlier carries a caller.
+- Check: `session.senders.get --session <chat>` lists the messages typed since.
+
 ## Its own commands
 
 - Change: named actions of the extension that scripts, chips and menus can run.

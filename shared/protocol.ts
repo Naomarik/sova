@@ -456,6 +456,10 @@ export interface TranscriptItem {
       entry. Renders nothing itself; the client draws the sender header above the user row
       `targetId` (resolving by id in either arrival order) and hides that row's header line. */
   sessionMark?: { kind: "sent"; targetId: string; from: { sessionId: string; title: string }; hop: number };
+  /** Who typed the user message `targetId` (§app.extensions/senders): the invisible `sova-member-sent` entry, written
+      only while an active extension's offers name `senders`. Renders nothing itself; the client draws "From {name}"
+      above a row another computer typed, resolving by id in either arrival order. `by`: `peer:<nodeId>` or `operator`. */
+  memberMark?: { targetId: string; by: string; label?: string };
   /** The session's `sova-profile` entry (§chat.profiles/after-first-message): kind "info", drawn as
       the muted "Profile: {label}" row only once a user message is on the branch; null = Default. */
   profileMark?: { profile: SessionProfileField | null };
@@ -4727,7 +4731,12 @@ export interface ExtensionOffers {
   /** Since v1.17: its drawing kinds, each its checked declaration by its fence word `<id>.<name>`, with
       its view and guide paths inside `dist`. */
   drawings?: ExtensionDrawingOffer[];
+  /** Since v1.21: what it asks Sova to record for it (shared/extension-offers.ts RECORD_KINDS): `senders`, who started
+      each chat and who typed each message (§app.extensions/senders). */
+  records?: RecordKind[];
 }
+/** Something Sova records only while an active extension asks for it (ext-contract-v1.21). */
+export type RecordKind = "senders";
 /** An extension's drawing kind as its offers carry it (§app.extensions/views). */
 export type ExtensionDrawingOffer = Omit<import("./drawing-kinds").DrawingDecl, "guide" | "ext"> & { view: string; guide: string };
 export interface ExtensionCommandInfo {

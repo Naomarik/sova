@@ -1,4 +1,4 @@
-import { createMemo, For, Match, Show, Switch, type Component } from "solid-js";
+import { createMemo, For, Match, Show, Switch, useContext, type Component } from "solid-js";
 import type { BatonMark } from "../../shared/baton";
 import { Chip, Icon } from "./ui";
 import type { KindViewProps } from "../lib/transcript-kinds";
@@ -8,6 +8,8 @@ import { PlaybookRunMessage } from "./PlaybookRunMessage";
 import { PlaybookInlineCard } from "./PlaybookInlineCard";
 import type { RunMessageInfo } from "../../shared/playbook-run";
 import { isMergeQueueText } from "../../shared/senders";
+import { ListPlaceContext } from "../lib/list-place";
+import { memberName } from "../lib/member-sender";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import type { SettingsToolDetails } from "../../shared/project-settings";
 import { OfferCardView } from "./OfferCard";
@@ -264,6 +266,7 @@ function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref
 /** A user's turn, with who sent it when its marker says: the Overseer, a baton person, another session. */
 function UserRow(props: KindViewProps) {
   const rows = useThreadRows();
+  const people = useContext(ListPlaceContext);
   const item = props.item;
   return (
     <UserTurn
@@ -272,6 +275,7 @@ function UserRow(props: KindViewProps) {
       overseer={rows.senderOf(item.id)?.kind === "overseer"}
       mergeQueue={isMergeQueueText(item.text) || rows.senderOf(item.id)?.kind === "merge-queue"}
       sender={((s) => (s?.kind === "baton" ? rows.nameOf(s.by) : undefined))(rows.senderOf(item.id))}
+      fromMember={((s) => (s?.kind === "member" ? memberName(s, people) : undefined))(rows.senderOf(item.id))}
       fromSession={((s) => (s?.kind === "session" && !isMergeQueueText(item.text) ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : s?.kind === "extension" ? { sessionId: s.sessionId, title: s.title } : undefined))(rows.senderOf(item.id))}
       images={item.images}
       attachments={item.attachments}

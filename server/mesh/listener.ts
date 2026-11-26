@@ -168,6 +168,9 @@ export class PeerGate {
       refuseWith(socket, 403, DENIAL, { [REFUSED_HEADER]: DENIED });
       return;
     }
+    // The caller rides into the socket as it does into a request (`meshPeer`): a chat socket's prompts name it
+    // while an extension asks for senders (§app.extensions/senders).
+    (req as IncomingMessage & { meshPeer?: PeerEntry }).meshPeer = peer;
     this.deps.upgrade(req, socket, head);
   }
 

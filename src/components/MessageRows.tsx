@@ -68,6 +68,8 @@ export function UserTurn(props: {
   sender?: string;
   /** Another session sent this message (its `sova-session-sent` marker, §chat.profiles/delivery). */
   fromSession?: { sessionId: string; title: string; hop?: number };
+  /** Another computer's person typed it (its `sova-member-sent` marker, §app.extensions/senders): their name. */
+  fromMember?: string;
   /** The merge queue started this turn (Needs a fix, Send Back): its prefix is dropped, never drawn as yours. */
   mergeQueue?: boolean;
   images?: string[];
@@ -75,7 +77,7 @@ export function UserTurn(props: {
 }) {
   const fromExtension = () => (props.fromSession ? isSessionlessSender(props.fromSession.sessionId) : false);
   const author = () =>
-    fromExtension() ? (isCardSender(props.fromSession!.sessionId) ? "From a card" : "From an extension") : props.fromSession ? "From a session" : props.overseer ? "Overseer" : props.mergeQueue ? "Merge queue" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
+    fromExtension() ? (isCardSender(props.fromSession!.sessionId) ? "From a card" : "From an extension") : props.fromSession ? "From a session" : props.overseer ? "Overseer" : props.mergeQueue ? "Merge queue" : props.fromMember ? `From ${props.fromMember}` : (props.sender ?? AUTHOR[props.origin ?? "client"]);
   // A decision's answer (§chat.merge-queue/decision): the user's own words, and the merge queue's held note that went
   // with them in the same turn, folded under them, never drawn as the user's.
   const held = () => (props.fromSession || props.mergeQueue ? null : splitHeldNote(props.text));

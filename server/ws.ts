@@ -25,6 +25,8 @@ import { llmInflight } from "./llm-inflight";
 import { idOf } from "./sessions-index";
 import { sessionsChanged } from "./list-generation";
 import { extensionSocketRoute, upgradeExtensionSocket } from "./extensions";
+import { setFrameMember } from "./member-frame";
+import { memberOfSocket } from "./session-senders";
 import { meshUpgrade } from "./mesh";
 import { EVENTS_PATH } from "../shared/events";
 import { upgradeEventsSocket } from "./events-ws";
@@ -102,6 +104,8 @@ interface ChatSocketOpts {
   unwatched?: boolean;
   /** The Stop Command entry's recording socket: its one `shell_stop` goes through, whoever asked. */
   stopsCommand?: boolean;
+  /** The linked computer a peer-listener socket came from (server/mesh/listener.ts): who typed its prompts. */
+  peer?: { nodeId: string; label: string };
 }
 
 async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string, opts: ChatSocketOpts = {}): Promise<void> {
@@ -282,6 +286,12 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       return;
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
+    // Who typed it, beside the frame, only while an active extension asks for senders (§app.extensions/senders): this
+    // machine's page, or a linked computer's relayed through its peer. A program's socket names no one.
+    if (msg.type === "prompt" || msg.type === "steer") {
+      const member = memberOfSocket(who, opts.peer);
+      if (member) setFrameMember(msg, member);
+    }
     held.sent(msg);
     if (chat) toChat(chat, msg);
     else if (!retractEarly(msg)) early.push(msg);
@@ -648,7 +658,8 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
     }
     if (route === "/ws/chat") {
       const refused = writingRefused(url.searchParams.get(COMPOSER_PARAM)) ?? undefined;
-      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail), { notPage: pageSockets.get(req), ...(pageSockets.get(req) === undefined && !req.headers[RELAYED_HEADER.toLowerCase()] ? { unwatched: true } : {}), ...(refused ? { refused } : {}) }).catch((err) => {
+      const peer = (req as IncomingMessage & { meshPeer?: { nodeId: string; label: string } }).meshPeer;
+      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail), { notPage: pageSockets.get(req), ...(pageSockets.get(req) === undefined && !req.headers[RELAYED_HEADER.toLowerCase()] ? { unwatched: true } : {}), ...(refused ? { refused } : {}), ...(peer ? { peer: { nodeId: peer.nodeId, label: peer.label } } : {}) }).catch((err) => {
         console.error("[ws/chat]", err);
         ws.close(4500, "internal");
       });

@@ -17,8 +17,9 @@ import { markOwned } from "../write-guard";
 import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
 import { registerArrivedHome } from "../chat-homes/place";
 import { homeArrived } from "../chat-homes/records";
+import { GROUP_ASSIGN_FIELD } from "../session-groups";
 import { compressedChats, dropCompressed, sidecarOf } from "../archive-compress/store";
-import { dropStages, git, havesOf, type KeptFile, lacksRepo, projectComesFrom, publishTrees, rebuildWorktrees, remoteReachable, SnapshotError, type StagedTree, withoutCredentials } from "./git-snapshot";
+import { dropStages, git, havesOf, type KeptFile, lacksRepo, projectComesFrom, type PublishJournal, publishTrees, rebuildWorktrees, remoteReachable, SnapshotError, type StagedTree, withoutCredentials } from "./git-snapshot";
 import { afterArrival, knob, prepareDestination, type PrepareRequest } from "./hooks";
 import { verifyHome, type PackageManifest } from "./package";
 import { findConversation, relocateHome, sessionIdOfName } from "./relocate";
@@ -113,11 +114,20 @@ const pulls = new Pulls({
   log: (line) => log(line.replace(/^\[links\] /, "")),
 });
 
+/** `p` with every link resolved: its nearest existing folder's real path, then the rest as named (a folder not made
+    yet under a link still resolves to where the link points). */
 const canonical = (p: string): string => {
-  try {
-    return realpathSync(p);
-  } catch {
-    return resolve(p);
+  let at = resolve(p);
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(at), ...rest.reverse());
+    } catch {
+      const up = dirname(at);
+      if (up === at) return resolve(p);
+      rest.push(at.slice(up.length).replace(/^\//, ""));
+      at = up;
+    }
   }
 };
 const within = (p: string, dir: string) => p === dir || p.startsWith(`${dir}/`);
@@ -152,7 +162,8 @@ export async function takeOffer(from: { id: string; label: string }, raw: string
   if (typeof b.folder === "string" && (b.folder === "~" || b.folder.startsWith("~/"))) b.folder = join(homedir(), b.folder.slice(2));
   const why = folderRefusal(b.folder);
   if (why) return ok({ error: why }, 400);
-  for (const t of b.trees ?? []) if (typeof t.rel !== "string" || t.rel.split("/").includes("..") || isAbsolute(t.rel)) return ok({ error: "Bad worktree path" }, 400);
+  const placeWhy = placesRefusal(resolve(b.folder), b.trees, b.repoRel);
+  if (placeWhy) return ok({ error: placeWhy }, 400);
   if (b.mode === "move" && existsSync(chatHome(b.chat.id))) return ok({ error: "This device still holds a copy of this chat (its Moved row). Delete that here first." }, 409);
   createTransport({
     tid: b.tid,
@@ -179,6 +190,28 @@ export async function takeOffer(from: { id: string; label: string }, raw: string
   log(`${b.tid}: offered by ${from.label} (${b.mode} of ${b.chat.id})`);
   void prepare(b.tid);
   return ok({ ok: true });
+}
+
+/**
+ * Why an offer's other places may not be used here, or null (§app.transport/arrival): every worktree goes inside the
+ * chosen folder's parent, named relative to it, and the repository's folder is named relative to that parent too;
+ * each passes the folder's own check (inside this user's home, never in Sova's own state), links resolved.
+ */
+export function placesRefusal(folder: string, trees: unknown, repoRel: unknown): string | null {
+  const parent = dirname(folder);
+  if (trees !== undefined && !Array.isArray(trees)) return "Bad worktree path";
+  for (const t of (trees ?? []) as { rel?: unknown }[]) {
+    const rel = t?.rel;
+    if (typeof rel !== "string" || rel.includes("\0") || rel.split("/").includes("..") || isAbsolute(rel)) return "Bad worktree path";
+    if (!rel) continue;
+    const target = resolve(parent, rel);
+    const why = folderRefusal(target);
+    if (why) return why;
+    if (!within(canonical(target), canonical(parent))) return `${target} isn't inside ${parent} on this device.`;
+  }
+  if (repoRel === null || repoRel === undefined) return null;
+  if (typeof repoRel !== "string" || !repoRel || repoRel.includes("\0") || isAbsolute(repoRel)) return "Bad repository path";
+  return folderRefusal(resolve(parent, repoRel));
 }
 
 /** What an offer carries of the project besides its code (project-carry.ts), as the record keeps it (`ext.carry`). */
@@ -294,8 +327,57 @@ async function prepare(tid: string): Promise<void> {
 }
 
 function needsYou(tid: string, reason: string): void {
+  // Cancelled meanwhile (a step it stopped failing on its way out): it stays cancelled.
+  if (readTransport(tid)?.state === "cancelled") return void log(`${tid}: stopped by Cancel: ${reason}`);
   log(`${tid}: needs you: ${reason}`);
   updateTransport(tid, { state: "needs-you", needsYou: { reason, at: new Date().toISOString() } });
+}
+
+/**
+ * One step at a time per transport here: arrive (pull, check, rebuild), commit (publish, open) and Cancel's removal each
+ * wait for the one before, so none runs over another's files (§app.transport/switch).
+ */
+const lanes = new Map<string, Promise<unknown>>();
+function inLane<T>(tid: string, fn: () => Promise<T>): Promise<T> {
+  const run = (lanes.get(tid) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.then(
+    () => {},
+    () => {},
+  );
+  lanes.set(tid, tail);
+  void tail.then(() => {
+    if (lanes.get(tid) === tail) lanes.delete(tid);
+  });
+  return run;
+}
+
+/** The commit running (or waiting its turn) per transport: the source's commit posted again while one runs (its
+    request timed out there) gets the same answer, never a second publish. */
+const committing = new Map<string, Promise<{ status: number; body: unknown }>>();
+
+/** What the publish of transport `r` moved so far, by each tree's folder (`ext.publish`). */
+const publishOf = (r: TransportRecord): { begun: string[]; done: string[] } => {
+  const p = ((r.ext ?? {}) as { publish?: { begun?: string[]; done?: string[] } }).publish;
+  return { begun: p?.begun ?? [], done: p?.done ?? [] };
+};
+
+/** The journal publishTrees keeps in the transport's record: each write is on disk before the move it announces. */
+function journalOf(tid: string): PublishJournal {
+  const add = (key: "begun" | "done", target: string) =>
+    void updateTransport(tid, (r) => {
+      const p = publishOf(r);
+      return p[key].includes(target) ? {} : { ext: { publish: { ...p, [key]: [...p[key], target] } } };
+    });
+  return { read: () => publishOf(readTransport(tid)!), begin: (t) => add("begun", t), done: (t) => add("done", t) };
+}
+
+/** Whether anything of transport `r` is in place here already: a tree moved into its folder (or its move begun and its
+    stage gone), or the home renamed in. Cancel can't take that back; Retry finishes it. */
+function publishedAny(r: TransportRecord): boolean {
+  const p = publishOf(r);
+  const staged = ((r.ext ?? {}) as { staged?: StagedTree[] }).staged ?? [];
+  if (p.done.length || p.begun.some((t) => staged.some((s) => s.target === t && !existsSync(s.stage)))) return true;
+  return !!r.arrivedId && r.steps.verified !== undefined && !existsSync(join(incomingOf(r.tid), "home")) && existsSync(chatHome(r.arrivedId));
 }
 
 /** The source's package is ready (POST …/ready): pull it, check it, rebuild in staging. */
@@ -303,22 +385,39 @@ export function packageReady(from: { id: string }, tid: string, b: ReadyBody): {
   const r = readTransport(tid);
   if (!r || r.side !== "destination" || r.peer !== from.id) return ok({ error: "No such transport" }, 404);
   if (!/^[0-9a-f]{64}$/.test(String(b?.sha256)) || !Number.isSafeInteger(b?.size) || b.size <= 0) return ok({ error: "Bad package" }, 400);
-  if (r.steps.verified && r.pkg?.sha256 === b.sha256) return ok({ ok: true, again: true });
+  if ((r.steps.verified || arriving.get(tid) === b.sha256) && r.pkg?.sha256 === b.sha256) return ok({ ok: true, again: true });
+  if (r.state === "cancelled") return ok({ error: "It was cancelled here." }, 409);
+  // A new package can't replace one that is being published, or partly is.
+  if (committing.has(tid) || r.steps.published || publishedAny(r)) return ok({ error: "It is already being put in place here." }, 409);
   updateTransport(tid, { pkg: { sha256: b.sha256, size: b.size }, state: "sending", needsYou: undefined, steps: { ...r.steps, pulled: undefined, staged: undefined, verified: undefined } });
   void arrive(tid);
   return ok({ ok: true });
 }
 
-const arriving = new Set<string>();
+/** The package each transport's arrival runs (or waits its turn) for: one run per package. */
+const arriving = new Map<string, string>();
 
-/** Pull, check, rebuild, relocate: everything but the publish. Safe to run again (a retry continues). */
-async function arrive(tid: string): Promise<void> {
-  if (arriving.has(tid)) return;
-  arriving.add(tid);
+/** Pull, check, rebuild, relocate: everything but the publish. Safe to run again (a retry continues). In the
+    transport's lane; a new package while one runs waits for it, and the old run records nothing for the new one. */
+function arrive(tid: string): Promise<void> {
+  const sha = readTransport(tid)?.pkg?.sha256;
+  if (!sha || arriving.get(tid) === sha) return Promise.resolve();
+  arriving.set(tid, sha);
+  return inLane(tid, () => arriveNow(tid)).finally(() => {
+    if (arriving.get(tid) === sha) arriving.delete(tid);
+  });
+}
+
+async function arriveNow(tid: string): Promise<void> {
   try {
     let r = readTransport(tid);
-    if (!r?.pkg) return;
+    if (!r?.pkg || r.state === "cancelled" || r.state === "needs-you" || r.steps.verified) return;
     const pkg = r.pkg;
+    // A newer package came (or Cancel) while this one ran: what this run did is for nothing, and says nothing.
+    const stale = () => {
+      const now = readTransport(tid);
+      if (!now || now.state === "cancelled" || now.pkg?.sha256 !== pkg.sha256) throw new StaleArrival();
+    };
     const at = incomingOf(tid);
     // A run that died after the relocation began left the staged home rewritten (a file maybe half written):
     // it no longer matches the package's hashes, so the package is pulled and unpacked again.
@@ -346,6 +445,7 @@ async function arrive(tid: string): Promise<void> {
         },
       });
       await knob(tid, "pulled");
+      stale();
       stepDone(tid, "pulled", { state: "checking", received: pkg.size });
     }
     const manifest = JSON.parse(await readFile(join(at, "package.json"), "utf8")) as PackageManifest;
@@ -366,7 +466,8 @@ async function arrive(tid: string): Promise<void> {
     if (manifest.worktrees.length)
       staged = await rebuildWorktrees({ repo, codeDir: join(at, "code"), tid, metas: manifest.worktrees.map((w) => w.meta), targets, ours: ((cur.ext ?? {}) as { absentAtOffer?: string[] }).absentAtOffer ?? [], ...(makeRepo ? { makeRepo } : {}), origin });
     await knob(tid, "staged");
-    stepDone(tid, "staged", { ext: { staged, targets } });
+    stale();
+    stepDone(tid, "staged", { ext: { staged, targets, publish: { begun: [], done: [] } } });
     // The home, pointed at this device: a Copy's conversations get ids of their own.
     const ids: Record<string, string> = {};
     if (cur.mode === "copy") for (const n of await readdir(join(at, "home", "sessions")).catch(() => [] as string[])) {
@@ -391,17 +492,21 @@ async function arrive(tid: string): Promise<void> {
     await knob(tid, "verified");
     // The source's own spellings of its folders: a private file still holding one goes to the Transport agent.
     const sourceValues = [...new Set([manifest.source.homeDir, manifest.source.home, manifest.source.agentDir, manifest.source.stateRoot, ...(manifest.chat.cwd ? [manifest.chat.cwd] : []), ...manifest.worktrees.map((w) => w.path)].filter((v): v is string => typeof v === "string" && v.length > 1))];
+    stale();
     stepDone(tid, "verified", { ext: { sourceValues }, state: "switching", arrivedId, renamed: staged.filter((s) => s.renamedFrom).map((s) => ({ from: s.renamedFrom!, to: s.branch! })) });
   } catch (err) {
+    if (err instanceof StaleArrival) return void log(`${tid}: an arrival for an older package stopped; nothing of it counts`);
     const msg = err instanceof Error ? err.message : String(err);
     // A package built on commits not here (a submodule's remote that didn't give them): a Retry asks for a new one,
     // carrying the whole history.
     if (err instanceof SnapshotError && err.reason === "needs-base") updateTransport(tid, { haves: [], ext: { subsFetch: [], repack: true } });
+    // Cancel stopped it: the record says cancelled, never needs-you.
+    if (readTransport(tid)?.state === "cancelled") return;
     needsYou(tid, msg);
-  } finally {
-    arriving.delete(tid);
   }
 }
+
+class StaleArrival extends Error {}
 
 /** The source's main checkout, from the offer's relative layout. */
 function sourceMainOf(m: PackageManifest, o: OfferExt): string | null {
@@ -411,7 +516,7 @@ function sourceMainOf(m: PackageManifest, o: OfferExt): string | null {
 }
 
 /** The home's manifest names this state root (or the home isn't listed here) and, for a Copy, its new id. */
-async function fixManifest(home: string, id: string, mode: "move" | "copy"): Promise<void> {
+export async function fixManifest(home: string, id: string, mode: "move" | "copy"): Promise<void> {
   const f = join(home, HOME_FILE);
   if (!existsSync(f)) return;
   const m = JSON.parse(await readFile(f, "utf8")) as Record<string, unknown>;
@@ -419,13 +524,15 @@ async function fixManifest(home: string, id: string, mode: "move" | "copy"): Pro
   m.stateRoot = canonical(stateRoot());
   if (mode === "copy") m.copiedFrom = { at: new Date().toISOString() };
   await writeFile(f, `${JSON.stringify(m, null, 2)}\n`, { mode: 0o600 });
-  // Group membership is dropped (§app.transport/edge-cases); a Copy's team starts idle.
+  // Group membership is dropped (§app.transport/edge-cases): its groups are this device's; its archive mark travels
+  // (an archived chat arrives archived). A Copy's team starts idle.
   const meta = join(home, "chat", "meta.json");
   if (existsSync(meta)) {
     const v = JSON.parse(await readFile(meta, "utf8")) as Record<string, unknown>;
-    delete v.group;
-    delete v.archived;
-    await writeFile(meta, `${JSON.stringify(v, null, 2)}\n`, { mode: 0o600 });
+    if (GROUP_ASSIGN_FIELD in v) {
+      delete v[GROUP_ASSIGN_FIELD];
+      await writeFile(meta, `${JSON.stringify(v, null, 2)}\n`, { mode: 0o600 });
+    }
   }
   if (mode === "copy")
     for (const n of await readdir(join(home, "workers")).catch(() => [] as string[])) {
@@ -438,18 +545,33 @@ async function fixManifest(home: string, id: string, mode: "move" | "copy"): Pro
     }
 }
 
-/** The source's commit (POST …/commit): publish, open the chat, tell it what moved. Idempotent. */
-export async function commit(from: { id: string }, tid: string, body: { stopped?: { jobs: string[]; copies: string[] }; running?: unknown; interrupted?: string[]; wrapped?: string[] }): Promise<{ status: number; body: unknown }> {
+type CommitBody = { stopped?: { jobs: string[]; copies: string[] }; running?: unknown; interrupted?: string[]; wrapped?: string[] };
+
+/** The source's commit (POST …/commit): publish, open the chat, tell it what moved. Idempotent and single-flight: one
+    runs at a time per transport, in its lane; one posted again while it runs gets its answer; after a stop partway
+    it goes on from what was moved. */
+export function commit(from: { id: string }, tid: string, body: CommitBody): Promise<{ status: number; body: unknown }> {
   const r = readTransport(tid);
-  if (!r || r.side !== "destination" || r.peer !== from.id) return ok({ error: "No such transport" }, 404);
+  if (!r || r.side !== "destination" || r.peer !== from.id) return Promise.resolve(ok({ error: "No such transport" }, 404));
+  const running = committing.get(tid);
+  if (running) return running;
+  const run = inLane(tid, () => commitNow(tid, body)).finally(() => committing.delete(tid));
+  committing.set(tid, run);
+  return run;
+}
+
+async function commitNow(tid: string, body: CommitBody): Promise<{ status: number; body: unknown }> {
+  const r = readTransport(tid);
+  if (!r) return ok({ error: "No such transport" }, 404);
   if (r.steps.opened) return ok({ ok: true, again: true, arrivedId: r.arrivedId });
+  if (r.state === "cancelled") return ok({ error: "It was cancelled here." }, 409);
   if (!r.steps.verified || !r.arrivedId) return ok({ error: "Nothing verified to publish yet" }, 409);
   try {
     await knob(tid, "decided");
     const ext = (r.ext ?? {}) as { staged?: StagedTree[] };
     if (!r.steps.published) {
       if (ext.staged?.length) {
-        const put = await publishTrees(ext.staged, tid, { from: r.peerLabel });
+        const put = await publishTrees(ext.staged, tid, { from: r.peerLabel, journal: journalOf(tid) });
         updateTransport(tid, { ext: { privateFiles: put.privateFiles, kept: put.kept } });
       }
       const home = chatHome(r.arrivedId);
@@ -735,15 +857,37 @@ export function retry(from: { id: string }, tid: string): { status: number; body
 export async function cancel(from: { id: string }, tid: string): Promise<{ status: number; body: unknown }> {
   const r = readTransport(tid);
   if (!r || r.side !== "destination" || r.peer !== from.id) return ok({ ok: true, gone: true });
-  if (r.steps.published) return ok({ error: "It already arrived here.", published: true }, 409);
+  if (r.state === "cancelled") return ok({ ok: true, again: true });
+  const refused = cancelRefusal(r);
+  if (refused) return refused;
+  // Marked first: an arrival running stops at its next step and records nothing more, and a commit after it is refused.
+  const was = r.state;
+  updateTransport(tid, { state: "cancelled", ticket: undefined, ticketBurnt: true });
   controllers.get(tid)?.abort();
   pulls.cancel(tid);
-  const staged = ((r.ext ?? {}) as { staged?: StagedTree[] }).staged ?? [];
-  await dropStages(staged, repoPathOf(r), tid).catch(() => {});
-  await rm(incomingOf(tid), { recursive: true, force: true });
-  updateTransport(tid, { state: "cancelled", ticket: undefined, ticketBurnt: true });
-  log(`${tid}: cancelled; what arrived was removed`);
-  return ok({ ok: true });
+  // The removal waits its turn: never under a running arrival's rebuild.
+  return inLane(tid, async () => {
+    const cur = readTransport(tid)!;
+    // Something was put in place after all (never by a commit: one after the mark is refused): it stays, and so does
+    // the transport.
+    if (cur.steps.published || publishedAny(cur)) {
+      updateTransport(tid, { state: was });
+      return ok({ error: "Part of it is already in place here, so it can't be cancelled; press Retry to finish it.", published: true }, 409);
+    }
+    const staged = ((cur.ext ?? {}) as { staged?: StagedTree[] }).staged ?? [];
+    await dropStages(staged, repoPathOf(cur), tid).catch(() => {});
+    await rm(incomingOf(tid), { recursive: true, force: true });
+    log(`${tid}: cancelled; what arrived was removed`);
+    return ok({ ok: true });
+  });
+}
+
+/** Why Cancel can't run on transport `r` here now, as its answer, or null. */
+function cancelRefusal(r: TransportRecord): { status: number; body: unknown } | null {
+  if (r.steps.published) return ok({ error: "It already arrived here.", published: true }, 409);
+  if (committing.has(r.tid)) return ok({ error: "It is opening here right now, so it can't be cancelled; it arrives in a moment.", publishing: true }, 409);
+  if (publishedAny(r)) return ok({ error: "Part of it is already in place here, so it can't be cancelled; press Retry to finish it.", published: true }, 409);
+  return null;
 }
 
 /** At start: transports this server was in the middle of go on from where they were. */

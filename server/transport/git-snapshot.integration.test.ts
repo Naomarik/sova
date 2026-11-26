@@ -342,6 +342,59 @@ test("a destination with no repository and no remote gets it from the package: t
   assert.equal(g(repo, "log", "--format=%s", "feat"), g(src, "log", "--format=%s", "feat"), "the whole history came");
 });
 
+test("a publish that stopped right after moving a tree (before recording it) goes on when run again: what it moved counts as done, the rest moves, the trees match", async () => {
+  for (const [i, stopAt] of ["repo", "tree"].entries()) {
+    const name = `rs${i}`;
+    const { src, wt } = projectWithChat(name);
+    const tid = `t-rs${i}`;
+    const repo = join(root, `there-${name}`, name);
+    const there = join(root, `there-${name}`, `${name}-wt`);
+    const p = await packWorktrees({ tid, trees: [await surveyWorktree(`${name}-wt`, wt)], haves: [], outDir: join(root, `pack-${name}`), repo: true });
+    const staged = await rebuildWorktrees({ repo, codeDir: join(root, `pack-${name}`), tid, metas: p.metas, targets: { [`${name}-wt`]: there }, makeRepo: { path: repo, origin: null, defaultBranch: p.repo!.defaultBranch } });
+    // The caller's journal, kept on disk: the server dies right after the move it names, before it is recorded done.
+    const rec = { begun: [] as string[], done: [] as string[] };
+    const dies = stopAt === "repo" ? repo : there;
+    const journal = {
+      read: () => rec,
+      begin: (t: string) => void rec.begun.push(t),
+      done: (t: string) => {
+        if (t === dies) throw new Error("the server stopped");
+        rec.done.push(t);
+      },
+    };
+    await assert.rejects(publishTrees(staged, tid, { journal }), /the server stopped/);
+    assert.ok(existsSync(dies), `${stopAt}: it was moved`);
+    // Run again (a Retry, or the source's commit posted again), the record as the dead run left it.
+    await publishTrees(staged, tid, { journal: { ...journal, done: (t: string) => void rec.done.push(t) } });
+    assert.equal(facts(there), facts(wt), `${stopAt}: the chat's worktree is exactly the source's`);
+    assert.equal(blobs(there), blobs(wt));
+    assert.equal(g(repo, "rev-parse", "master"), g(src, "rev-parse", "master"));
+    assert.equal(g(repo, "for-each-ref", "refs/sova"), "", "no transport refs left");
+    namedForItsFolder(repo, there);
+  }
+});
+
+test("a folder that holds other work where a tree's move began is never taken for it: the publish refuses, replacing nothing", async () => {
+  const src = join(root, "src-hb");
+  mkdirSync(src);
+  g(src, "init", "-q", "-b", "master");
+  writeFileSync(join(src, "a"), "a\n");
+  g(src, "add", "a");
+  g(src, "commit", "-qm", "a");
+  const s = await surveyWorktree("src-hb", src);
+  const p = await packWorktrees({ tid: "t-hb", trees: [s], haves: [], outDir: join(root, "pack-hb") });
+  const target = join(root, "there-hb", "src-hb");
+  const staged = await rebuildWorktrees({ repo: null, codeDir: join(root, "pack-hb"), tid: "t-hb", metas: p.metas, targets: { "src-hb": target } });
+  // Its move was begun, then the stage went (by hand) and other work stands in the folder.
+  rmSync(staged[0]!.stage, { recursive: true, force: true });
+  mkdirSync(target, { recursive: true });
+  writeFileSync(join(target, "x"), "mine\n");
+  const rec = { begun: [target], done: [] as string[] };
+  await assert.rejects(publishTrees(staged, "t-hb", { journal: { read: () => rec, begin: () => {}, done: (t) => void rec.done.push(t) } }), (e: unknown) => e instanceof SnapshotError && e.reason === "taken");
+  assert.equal(readFileSync(join(target, "x"), "utf8"), "mine\n");
+  assert.deepEqual(rec.done, []);
+});
+
 test("a remote unreachable from there: the project comes from the package too, origin the recorded URL without its credentials; the chat in its main checkout", async () => {
   const src = join(root, "ur");
   mkdirSync(src);

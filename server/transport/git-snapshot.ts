@@ -732,19 +732,39 @@ export interface StagedTree {
   code?: string;
   /** Its submodules that weren't checked out where it came from: each arrives as its gitlink only (by key). */
   uninitialised?: string[];
+  /** What its stage held once checked: a publish that died after moving it finds its folder holding exactly this. */
+  check?: HeldCheck;
+}
+
+/** A tree's checked state: its HEAD, its tracked status and (when it has changes) the snapshot they match. */
+export interface HeldCheck {
+  head: string;
+  statusSha: string;
+  snap?: string;
+}
+
+/**
+ * What a publish did so far, kept by its caller (the transport's record), by each tree's folder: begun just before its
+ * move, done after it. A run that died between the two finds the tree again: begun, its stage gone and its folder
+ * holding exactly what the stage held, it counts as moved.
+ */
+export interface PublishJournal {
+  read(): { begun: readonly string[]; done: readonly string[] };
+  begin(target: string): void;
+  done(target: string): void;
 }
 
 const stageOf = (target: string, tid: string) => join(dirname(target), `.incoming-${tid}-${basename(target)}`);
 
 /** Whether `target` already holds exactly this worktree (a retry after publish). */
-async function holds(target: string, meta: TrackedMeta): Promise<boolean> {
+async function holds(target: string, meta: HeldCheck): Promise<boolean> {
   if (!existsSync(join(target, ".git"))) return false;
   const head = (await git(target, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim();
   if (head !== meta.head || (await statusSha(target).catch(() => "")) !== meta.statusSha) return false;
   // The status names the changed files, not their content: changed files there must match the snapshot's.
   const changed = (await git(target, ["status", "--porcelain=v1", "-uno"])).stdout.trim();
   if (!changed) return true;
-  if ((await git(target, ["cat-file", "-e", `${meta.snap}^{tree}`])).code !== 0) return false;
+  if (!meta.snap || (await git(target, ["cat-file", "-e", `${meta.snap}^{tree}`])).code !== 0) return false;
   return (await git(target, ["diff", "--quiet", meta.snap, "--"])).code === 0;
 }
 
@@ -1020,7 +1040,8 @@ async function makeRepo(o: RepoFromPackage, codeDir: string, tid: string, metas:
   await ok(stage, ["read-tree", "--reset", "-u", "HEAD"], "Writing the checkout");
   await git(stage, ["update-index", "-q", "--refresh"]);
   if ((await git(stage, ["status", "--porcelain=v1", "-uall"])).stdout.trim()) throw new SnapshotError("mismatch", `${target} didn't build cleanly from the package.`);
-  return { name: basename(target), target, stage, branch: def && !taken.has(def) ? def : null, main: true };
+  const check = { head: (await ok(stage, ["rev-parse", "HEAD"], "Reading the checkout")).trim(), statusSha: await statusSha(stage) };
+  return { name: basename(target), target, stage, branch: def && !taken.has(def) ? def : null, main: true, check };
 }
 
 /** Rebuild one worktree at its stage (idempotent: a stage left by a dead attempt is replaced). */
@@ -1038,7 +1059,7 @@ async function rebuildOne(repo: string | null, codeDir: string, tid: string, met
       await ok(stage, ["symbolic-ref", "HEAD", `refs/heads/${meta.branch}`], "Checking out the branch");
     } else await ok(stage, ["update-ref", "--no-deref", "HEAD", meta.head], "Checking out the commit");
     await finishStage(stage, wo, meta);
-    return { name: meta.name, target, stage, branch: meta.branch, main: true, ...(meta.private?.length ? { private: meta.private } : {}) };
+    return { name: meta.name, target, stage, branch: meta.branch, main: true, ...(meta.private?.length ? { private: meta.private } : {}), check: checkOf(meta) };
   }
   if (!repo) throw new SnapshotError("git", `No repository there for ${meta.name}.`);
   if (existsSync(target)) throw new SnapshotError("taken", `${target} already exists there; pick another folder.`);
@@ -1057,8 +1078,10 @@ async function rebuildOne(repo: string | null, codeDir: string, tid: string, met
     await ok(repo, ["worktree", "add", "-q", "--no-checkout", stage, b.branch], "Adding the worktree");
   }
   await finishStage(stage, wo, meta);
-  return { name: meta.name, target, stage, branch: b.branch, ...(b.renamedFrom ? { renamedFrom: b.renamedFrom } : {}), main: false, ...(meta.private?.length ? { private: meta.private } : {}) };
+  return { name: meta.name, target, stage, branch: b.branch, ...(b.renamedFrom ? { renamedFrom: b.renamedFrom } : {}), main: false, ...(meta.private?.length ? { private: meta.private } : {}), check: checkOf(meta) };
 }
+
+const checkOf = (meta: TrackedMeta): HeldCheck => ({ head: meta.head, statusSha: meta.statusSha, snap: meta.snap });
 
 async function finishStage(stage: string, wo: string, meta: WorktreeMeta): Promise<void> {
   await writeTracked(stage, dirname(wo), meta);
@@ -1285,8 +1308,9 @@ function uninitialisedOf(meta: TrackedMeta): string[] {
 
 /** Move each staged tree into its folder (the main checkout first), then drop the transport's refs. A folder that
     already held the code gets the arrived loose files beside what is there (`from`: the source device, for the
-    name a kept file's arrived copy takes). Where every ticked private file landed, and what was kept. */
-export async function publishTrees(trees: readonly StagedTree[], tid: string, o: { from?: string } = {}): Promise<{ privateFiles: string[]; kept: KeptFile[] }> {
+    name a kept file's arrived copy takes). Where every ticked private file landed, and what was kept. Run again after
+    one that stopped partway (`journal`: what it moved), it moves only what it hadn't. */
+export async function publishTrees(trees: readonly StagedTree[], tid: string, o: { from?: string; journal?: PublishJournal } = {}): Promise<{ privateFiles: string[]; kept: KeptFile[] }> {
   const kept: KeptFile[] = [];
   const privateFiles: string[] = [];
   for (const t of trees) {
@@ -1294,7 +1318,7 @@ export async function publishTrees(trees: readonly StagedTree[], tid: string, o:
     const landed = t.loose ? await putLoose(t, o.from ?? "there", kept) : null;
     for (const p of t.private ?? []) privateFiles.push(join(t.target, landed?.get(p) ?? p));
   }
-  await publishStages(trees, tid);
+  await publishStages(trees, tid, o.journal);
   return { privateFiles, kept };
 }
 
@@ -1321,11 +1345,23 @@ async function nameAdminFor(target: string, common: string): Promise<void> {
   await ok(dirname(common), ["--git-dir", common, "worktree", "repair", target], "Repairing the worktree");
 }
 
-async function publishStages(trees: readonly StagedTree[], tid: string): Promise<void> {
+/** Whether an earlier publish moved `t` into place: recorded done, or begun with its stage gone and its folder holding
+    exactly what the stage held (it died between the move and the record). */
+async function movedBefore(t: StagedTree, journal: PublishJournal | undefined): Promise<boolean> {
+  if (!journal || t.stage === t.target) return false;
+  const was = journal.read();
+  if (was.done.includes(t.target)) return true;
+  if (!was.begun.includes(t.target) || existsSync(t.stage) || !t.check || !(await holds(t.target, t.check))) return false;
+  journal.done(t.target);
+  return true;
+}
+
+async function publishStages(trees: readonly StagedTree[], tid: string, journal?: PublishJournal): Promise<void> {
   const main = trees.find((t) => t.main);
   let repo: string | null = null;
   if (main) {
-    if (main.stage !== main.target) {
+    if (main.stage !== main.target && !(await movedBefore(main, journal))) {
+      journal?.begin(main.target);
       await mkdir(dirname(main.target), { recursive: true });
       // An empty folder may stand where it goes; anything put there since the rebuild is never removed.
       if (existsSync(main.target)) {
@@ -1333,15 +1369,25 @@ async function publishStages(trees: readonly StagedTree[], tid: string): Promise
         await rmdir(main.target);
       }
       await rename(main.stage, main.target);
-      // The linked stages still point at the main stage's old folder.
-      const linked = trees.filter((t) => !t.main && t.stage !== t.target).map((t) => t.stage);
-      if (linked.length) await ok(main.target, ["worktree", "repair", ...linked], "Repairing the worktrees");
+      journal?.done(main.target);
     }
+    // The linked stages still point at the main stage's old folder (again after a publish that stopped right there).
+    const linked = main.stage === main.target ? [] : trees.filter((t) => !t.main && t.stage !== t.target && existsSync(t.stage)).map((t) => t.stage);
+    if (linked.length) await ok(main.target, ["worktree", "repair", ...linked], "Repairing the worktrees");
     repo = main.target;
   }
   for (const t of trees) {
     if (t.main || t.stage === t.target) continue;
+    if (await movedBefore(t, journal)) {
+      // Moved by the run that stopped: git's records of it are finished as a move would have left them.
+      const { common } = await gitDirs(t.target);
+      await git(dirname(common), ["--git-dir", common, "worktree", "repair", t.target]);
+      await nameAdminFor(t.target, common);
+      repo ??= dirname(common);
+      continue;
+    }
     if (existsSync(t.target)) throw new SnapshotError("taken", `${t.target} exists there now; nothing was removed. Move it away or pick another folder.`);
+    journal?.begin(t.target);
     const { gitDir, common } = await gitDirs(t.stage);
     await mkdir(dirname(t.target), { recursive: true });
     // git won't move a worktree holding submodules: renamed, then git's records of it repaired.
@@ -1349,6 +1395,7 @@ async function publishStages(trees: readonly StagedTree[], tid: string): Promise
       await rename(t.stage, t.target);
       await ok(dirname(common), ["--git-dir", common, "worktree", "repair", t.target], `Moving ${t.name} into place`);
     } else await ok(dirname(common), ["--git-dir", common, "worktree", "move", t.stage, t.target], `Moving ${t.name} into place`);
+    journal?.done(t.target);
     await nameAdminFor(t.target, common);
     repo ??= dirname(common);
   }

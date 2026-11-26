@@ -8,6 +8,8 @@ import { publishFeed } from "./session-feed";
 import { splitOut, withHome } from "./chat-homes/records";
 
 const ASSIGN_FIELD = "session-groups.json#assignments";
+/** The field of a home's `chat/meta.json` holding its chats' group membership (a Transport drops it). */
+export const GROUP_ASSIGN_FIELD = ASSIGN_FIELD;
 
 /** The user's sidebar groups, and which session belongs to which.
     Sova's own data, beside the archive and web-session id lists: the session files are never touched. */

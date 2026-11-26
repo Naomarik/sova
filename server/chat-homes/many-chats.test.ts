@@ -13,12 +13,12 @@ process.env.SOVA_CHAT_HOMES = join(scratch, "homes");
 const HOMES = process.env.SOVA_CHAT_HOMES;
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
-const { ensureChatHome, hasHome, homeIo, noteHomeArrived, sweepHomeNegatives } = await import("./root");
+const { ensureChatHome, forgetHome, hasHome, homeIo, noteHomeArrived, sweepHomeNegatives } = await import("./root");
 const { expireHomeRecordChecksForTest, expireHomeRecordSweepForTest, homeArrived, homeOf, resetHomeRecordsForTest } = await import("./records");
-const { readSessionTitles, setSessionTitle } = await import("../session-titles");
+const { readSessionTitles, replaceAutoTitle, readSessionTitleRecords, setSessionTitle } = await import("../session-titles");
 const { expireHomeSessionFilesSweepForTest, homeSessionFiles } = await import("./session-files");
 const { OpenRecordIndex, openIndexIo } = await import("./open-index");
-const { pollChanges, segmentFile, segments } = await import("./changes");
+const { ChangeTail, pollChanges, segmentFile, segments } = await import("./changes");
 const { setArchived } = await import("../archived-sessions");
 const { WorkerRegistry } = await import("../chat-workers");
 const { stateRoot } = await import("../state-root");
@@ -154,4 +154,23 @@ test("the backstop sweep checks active homes only: an archived chat's home is re
   lineFromAnotherProcess(archived, "meta");
   expireHomeRecordChecksForTest();
   assert.equal(readSessionTitles()[archived], "By hand");
+});
+
+test("every change Sova makes to an archived chat leaves its line, which is why archived homes need no sweep", () => {
+  const chat = id(80);
+  ensureChatHome(chat);
+  setArchived(chat, true);
+  const tail = new ChangeTail(HOMES);
+  const said = () => tail.read().lines.filter((l) => l.h === chat).map((l) => l.d);
+  setSessionTitle(chat, "Renamed");
+  assert.deepEqual(said(), ["meta"], "a rename");
+  replaceAutoTitle(chat, "Regenerated", readSessionTitleRecords()[chat]);
+  assert.deepEqual(said(), ["meta"], "Regenerate title");
+  setArchived(chat, false);
+  assert.deepEqual(said(), ["meta"], "unarchive");
+  setArchived(chat, true);
+  assert.deepEqual(said(), ["meta"], "archive");
+  // Delete (sessions-index deletedChat) and compression (archive-compress compressHome) both forget the home this way.
+  forgetHome(chat);
+  assert.deepEqual(said(), ["gone"], "delete or compress");
 });

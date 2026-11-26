@@ -1,6 +1,6 @@
 // The many-chats bench (§app.chat-homes/change-log): what reading the homes costs with thousands of them. A scratch
 // agent dir and homes folder of `homes` chats, each with its records, a conversation and two finished helpers, `active`
-// of them not archived (the main run: 1,000 active of 5,000; all active is the worst case), plus stray folders that
+// of them not archived (the main run: 150 active of 5,000, a realistic mix; all active is the worst case, for reference), plus stray folders that
 // aren't homes; then the costs that grew with every home:
 //   check     a second of list activity: the next store read after the 1 s trust ran out
 //   newChat   a new chat made and its first record written, then the open-card and open-offer indexes asked

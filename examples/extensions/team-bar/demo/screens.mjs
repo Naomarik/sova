@@ -12,6 +12,8 @@
 //   4-from-name.png         a server chat with "From {name}" on messages typed from other computers
 //   5-phone.png             the bar at phone width
 //   6-extension-off.png     the same bar with the user part turned off
+//   7-light-menu.png        the person menu open in the light theme
+//   8-phone-foot-sheet.png  the phone's foot sheet open, with the person menu in it
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright-core";
@@ -80,8 +82,21 @@ try {
   const w = await page.evaluate(() => innerWidth);
   if (w !== 390) throw new Error(`phone width is ${w}, not 390`);
   await shot("5-phone.png");
+  await page.locator(".sidebar-footbar").first().click();
+  await page.locator("button.person-menu-trigger").first().waitFor({ timeout: 10_000 });
+  await sleep(500);
+  await shot("8-phone-foot-sheet.png");
+  await page.keyboard.press("Escape");
 
+  await page.goto(demo.kim.base + "/");
   await page.setViewportSize({ width: 1440, height: 900 });
+  await listReady(true);
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
+  await page.locator("button.person-menu-trigger").first().click();
+  await sleep(400);
+  await shot("7-light-menu.png");
+  await page.keyboard.press("Escape");
+  await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
   control("off");
   await sleep(4000);
   await page.reload();

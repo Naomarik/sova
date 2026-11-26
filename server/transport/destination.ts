@@ -410,10 +410,13 @@ function arrive(tid: string): Promise<void> {
 }
 
 async function arriveNow(tid: string): Promise<void> {
+  // The package this run is for: a failure once another replaced it is the old package's, and says nothing.
+  let ran: string | undefined;
   try {
     let r = readTransport(tid);
     if (!r?.pkg || r.state === "cancelled" || r.state === "needs-you" || r.steps.verified) return;
     const pkg = r.pkg;
+    ran = pkg.sha256;
     // A newer package came (or Cancel) while this one ran: what this run did is for nothing, and says nothing.
     const stale = () => {
       const now = readTransport(tid);
@@ -498,7 +501,8 @@ async function arriveNow(tid: string): Promise<void> {
     stale();
     stepDone(tid, "verified", { ext: { sourceValues }, state: "switching", arrivedId, renamed: staged.filter((s) => s.renamedFrom).map((s) => ({ from: s.renamedFrom!, to: s.branch! })) });
   } catch (err) {
-    if (err instanceof StaleArrival) return void log(`${tid}: an arrival for an older package stopped; nothing of it counts`);
+    if (err instanceof StaleArrival || (ran !== undefined && readTransport(tid)?.pkg?.sha256 !== ran))
+      return void log(`${tid}: an arrival for an older package stopped${err instanceof StaleArrival ? "" : ` (${err instanceof Error ? err.message : String(err)})`}; nothing of it counts`);
     const msg = err instanceof Error ? err.message : String(err);
     // A package built on commits not here (a submodule's remote that didn't give them): a Retry asks for a new one,
     // carrying the whole history.
@@ -575,7 +579,7 @@ async function commitNow(tid: string, body: CommitBody): Promise<{ status: numbe
     if (!r.steps.published) {
       if (ext.staged?.length) {
         const put = await publishTrees(ext.staged, tid, { from: r.peerLabel, journal: journalOf(tid) });
-        updateTransport(tid, { ext: { privateFiles: put.privateFiles, kept: put.kept } });
+        updateTransport(tid, { ext: { privateFiles: put.privateFiles, kept: put.kept, ...(put.changed.length ? { changedHere: put.changed } : {}) } });
       }
       const home = chatHome(r.arrivedId);
       const staged = join(incomingOf(tid), "home");
@@ -613,11 +617,13 @@ async function commitNow(tid: string, body: CommitBody): Promise<{ status: numbe
     updateTransport(tid, { path: file });
     const stopped = [...(body?.stopped?.jobs ?? []), ...(body?.stopped?.copies ?? [])];
     const renamedNotes = (readTransport(tid)?.renamed ?? []).map((x) => ` Its branch was ${x.from} there; that name was taken, so it is ${x.to}.`).join("");
-    const done = (readTransport(tid)?.ext ?? {}) as { kept?: KeptFile[]; privateFiles?: string[]; sourceValues?: string[]; targets?: Record<string, string> };
+    const done = (readTransport(tid)?.ext ?? {}) as { kept?: KeptFile[]; privateFiles?: string[]; sourceValues?: string[]; targets?: Record<string, string>; changedHere?: string[] };
     const keptNotes = (done.kept ?? []).map((k) => ` ${k.tree}/${k.path} was already here and differs, so it was kept; the one from ${r.peerLabel} is ${k.tree}/${k.beside}.`).join("");
     const bare = (((r.ext ?? {}) as { staged?: StagedTree[] }).staged ?? []).flatMap((t) => (t.uninitialised ?? []).map((k) => `${t.name}/${k}`));
     const bareNotes = bare.length ? ` ${bare.length === 1 ? `Its submodule ${bare[0]} wasn't` : `Its submodules ${bare.join(", ")} weren't`} checked out on ${r.peerLabel}, so ${bare.length === 1 ? "it" : "they"} arrived as ${bare.length === 1 ? "its commit's link" : "their commits' links"} only, not checked out here either.` : "";
-    const note = `${r.mode === "move" ? "Moved" : "Copied"} from ${r.peerLabel}.${stopped.length ? ` Stopped there: ${stopped.join(", ")}.` : ""}${renamedNotes}${keptNotes}${bareNotes}`;
+    // A tree put in place by an attempt that stopped, and changed here before the Retry: kept as it is, and said.
+    const changedNotes = (done.changedHere ?? []).map((n) => ` ${n} changed here after it arrived and before the chat opened; it was kept as it is.`).join("");
+    const note = `${r.mode === "move" ? "Moved" : "Copied"} from ${r.peerLabel}.${stopped.length ? ` Stopped there: ${stopped.join(", ")}.` : ""}${renamedNotes}${keptNotes}${bareNotes}${changedNotes}`;
     // Once only: a run that died after writing it (before "opened") finds it there.
     // Looked for only past where the conversation ended before this transport's first try (an earlier Move's note may read the same).
     const text = await readFile(file, "utf8").catch(() => "");

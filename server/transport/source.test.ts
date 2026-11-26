@@ -161,3 +161,25 @@ test("a Cancel taken while a step asks that device's status: the step never deci
   assert.ok(!readTransport(tid)?.decided, "never decided");
   assert.deepEqual(asked.filter((p) => p.endsWith("/commit")), [], "no commit sent");
 });
+
+test("once cancelled here, the commit that device then refuses can't make it Needs you", async () => {
+  const { drive } = await import("./source");
+  const { createTransport, readTransport, updateTransport } = await import("./store");
+  const tid = "tr_srccancel5";
+  createTransport({ tid, side: "source", mode: "copy", chatId: "chat-c5", sourceChatId: "chat-c5", title: "t", peer: "peer-1", peerLabel: "laptop-b", path: "/v.jsonl", folder: "~/v", state: "switching", decided: true, steps: { offered: "t", packed: "t", decided: "t" } });
+  const deps: Partial<SourceDeps> = {
+    peers: () => [{ id: "peer-1", label: "laptop-b" }],
+    moved: async () => {},
+    peerFetch: async (_peer, path) => {
+      if (!path.endsWith("/commit")) return Response.json({ tid, state: "switching", steps: { verified: "t" } });
+      // That device took the Cancel just before this commit reached it.
+      updateTransport(tid, { state: "cancelled", ticket: undefined, ticketBurnt: true });
+      return Response.json({ error: "It was cancelled here." }, { status: 409 });
+    },
+  };
+  setSourceDeps(deps as SourceDeps);
+  drive(tid);
+  await new Promise((ok) => setTimeout(ok, 200));
+  assert.equal(readTransport(tid)?.state, "cancelled");
+  assert.equal(readTransport(tid)?.needsYou, undefined);
+});

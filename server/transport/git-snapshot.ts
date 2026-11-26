@@ -1333,7 +1333,7 @@ function uninitialisedOf(meta: TrackedMeta): string[] {
     already held the code gets the arrived loose files beside what is there (`from`: the source device, for the
     name a kept file's arrived copy takes). Where every ticked private file landed, and what was kept. Run again after
     one that stopped partway (`journal`: what it moved), it moves only what it hadn't. */
-export async function publishTrees(trees: readonly StagedTree[], tid: string, o: { from?: string; journal?: PublishJournal } = {}): Promise<{ privateFiles: string[]; kept: KeptFile[] }> {
+export async function publishTrees(trees: readonly StagedTree[], tid: string, o: { from?: string; journal?: PublishJournal } = {}): Promise<{ privateFiles: string[]; kept: KeptFile[]; changed: string[] }> {
   const kept: KeptFile[] = [];
   const privateFiles: string[] = [];
   for (const t of trees) {
@@ -1341,8 +1341,8 @@ export async function publishTrees(trees: readonly StagedTree[], tid: string, o:
     const landed = t.loose ? await putLoose(t, o.from ?? "there", kept) : null;
     for (const p of t.private ?? []) privateFiles.push(join(t.target, landed?.get(p) ?? p));
   }
-  await publishStages(trees, tid, o.journal);
-  return { privateFiles, kept };
+  const changed = await publishStages(trees, tid, o.journal);
+  return { privateFiles, kept, changed };
 }
 
 /** The name git gives a worktree's records (`<common>/worktrees/<id>`) for a folder: its last part as a ref name may
@@ -1368,22 +1368,26 @@ async function nameAdminFor(target: string, common: string): Promise<void> {
   await ok(dirname(common), ["--git-dir", common, "worktree", "repair", target], "Repairing the worktree");
 }
 
-/** Whether an earlier publish moved `t` into place: recorded done, or begun with its stage gone and its folder holding
-    exactly what the stage held (it died between the move and the record). */
-async function movedBefore(t: StagedTree, journal: PublishJournal | undefined): Promise<boolean> {
+/** Whether an earlier publish moved `t` into place: recorded done, or begun with its stage gone and its folder a
+    checkout at the commit the stage held (it died between the move and the record). One whose files changed there
+    since (an edit before the Retry) is still the one it moved: kept as it is, and named in `changed`. */
+async function movedBefore(t: StagedTree, journal: PublishJournal | undefined, changed: string[]): Promise<boolean> {
   if (!journal || t.stage === t.target) return false;
   const was = journal.read();
   if (was.done.includes(t.target)) return true;
-  if (!was.begun.includes(t.target) || existsSync(t.stage) || !t.check || !(await holds(t.target, t.check))) return false;
+  if (!was.begun.includes(t.target) || existsSync(t.stage) || !t.check || !existsSync(join(t.target, ".git"))) return false;
+  if ((await git(t.target, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim() !== t.check.head) return false;
+  if (!(await holds(t.target, t.check))) changed.push(t.name);
   journal.done(t.target);
   return true;
 }
 
-async function publishStages(trees: readonly StagedTree[], tid: string, journal?: PublishJournal): Promise<void> {
+async function publishStages(trees: readonly StagedTree[], tid: string, journal?: PublishJournal): Promise<string[]> {
+  const changed: string[] = [];
   const main = trees.find((t) => t.main);
   let repo: string | null = null;
   if (main) {
-    if (main.stage !== main.target && !(await movedBefore(main, journal))) {
+    if (main.stage !== main.target && !(await movedBefore(main, journal, changed))) {
       journal?.begin(main.target);
       await mkdir(dirname(main.target), { recursive: true });
       // An empty folder may stand where it goes; anything put there since the rebuild is never removed.
@@ -1401,7 +1405,7 @@ async function publishStages(trees: readonly StagedTree[], tid: string, journal?
   }
   for (const t of trees) {
     if (t.main || t.stage === t.target) continue;
-    if (await movedBefore(t, journal)) {
+    if (await movedBefore(t, journal, changed)) {
       // Moved by the run that stopped: git's records of it are finished as a move would have left them.
       const { common } = await gitDirs(t.target);
       await git(dirname(common), ["--git-dir", common, "worktree", "repair", t.target]);
@@ -1430,6 +1434,7 @@ async function publishStages(trees: readonly StagedTree[], tid: string, journal?
     const refs = (await git(at, ["for-each-ref", "--format=delete %(refname)", `refs/sova/transport/${tid}/`])).stdout;
     if (refs.trim()) await git(at, ["update-ref", "--stdin"], { input: refs });
   }
+  return changed;
 }
 
 /** Remove what a rebuild left (Cancel, or a failed attempt): the stages, their registrations, the refs. */

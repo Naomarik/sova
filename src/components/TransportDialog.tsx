@@ -7,6 +7,7 @@ import { Portal } from "solid-js/web";
 import { sessionHrefOn } from "../lib/mesh";
 import { type BackState, moveBack, type TransportView, sizeText, startTransport, transportAct, transportBack, transportOf, transportPreview, transportsOf } from "../lib/transport-api";
 import { announce, toast } from "../lib/ui-state";
+import { type TransportErrorFrom, transportErrorBanner } from "../lib/transport-dialog-error";
 import { Select, TextField, Toggle } from "./form";
 import { type BusyChoice, TransportBusyHelpers, TransportDeviceNeeds, TransportRow, TransportWaiting } from "./TransportHelpers";
 import { Banner, Icon, trapFocus } from "./ui";
@@ -76,7 +77,7 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
   const [include, setInclude] = createSignal<Set<string>>(new Set());
   const [busy, setBusy] = createSignal<BusyChoice>("safe");
   const [model, setModel] = createSignal<string | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
+  const [error, setError] = createSignal<{ from: TransportErrorFrom; text: string } | null>(null);
   const [pending, setPending] = createSignal(false);
   const [running, setRunning] = createSignal<TransportView | null>(null);
 
@@ -114,6 +115,8 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
       setRunning(t);
       if (t.state === "done" || t.state === "cancelled" || t.state === "needs-you") {
         clearInterval(timer);
+        // A refused action's reason ("It is opening on Laptop right now…") is over once the transport ended.
+        if (t.state !== "needs-you" && error()?.from !== "start") setError(null);
         if (t.state === "done") {
           const line = STATE_WORDS(t, undefined);
           toast(line);
@@ -154,7 +157,7 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
       setRunning(r.transport);
       follow(r.tid);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError({ from: "start", text: err instanceof Error ? err.message : String(err) });
     } finally {
       setPending(false);
     }
@@ -163,12 +166,15 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
   const act = async (a: "retry" | "cancel" | "interrupt") => {
     const t = running();
     if (!t) return;
+    setError(null);
     try {
       await transportAct(t.tid, a);
       if (a === "cancel") setRunning({ ...t, state: "cancelled" });
       else follow(t.tid);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError({ from: a, text: err instanceof Error ? err.message : String(err) });
+      // A refused Cancel: it goes on (opening there, say), so the dialog keeps following it to its end.
+      if (a === "cancel") follow(t.tid);
     }
   };
 
@@ -185,7 +191,12 @@ export function TransportDialog(props: { path: string; onClose(): void }) {
           </h2>
         </div>
         <form class="modal-body" id="tr-form" onSubmit={start}>
-          <Show when={error()}>{(e) => <Banner tone="error" title="Nothing was sent." body={e()} />}</Show>
+          <Show when={error()}>
+            {(e) => {
+              const b = () => transportErrorBanner(e().from, e().text);
+              return <Banner tone="error" title={b().title} body={b().body} />;
+            }}
+          </Show>
           <Show when={base.error}>
             <Banner tone="error" title="Couldn't read this chat." body={String(base.error?.message ?? base.error)} />
           </Show>

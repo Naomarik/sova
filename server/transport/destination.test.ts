@@ -149,3 +149,31 @@ test("Cancel before anything is in place removes what arrived, and a commit afte
   assert.equal(res.status, 409, JSON.stringify(res.body));
   assert.ok(!existsSync(chatHome(id)), "nothing was published");
 });
+
+test("an arrival whose package was replaced while it pulled, then failed, stays quiet: the new package's arrival runs, no Retry needed", async () => {
+  const { packageReady, retry } = await import("./destination");
+  const tid = nextTid();
+  const id = nextId();
+  createTransport({ tid, side: "destination", mode: "copy", chatId: id, sourceChatId: id, title: "t", peer: "desk", peerLabel: "Desk", path: "", folder: join(homedir(), "proj", "r27"), state: "needs-you", ticket: "x".repeat(40), pkg: { sha256: "a".repeat(64), size: 10 }, steps: { offered: "t", prepared: "t" }, ext: { offer: { trees: [], repoRel: null, project: { remotes: [], roots: [] } } } });
+  const pulled: string[] = [];
+  setDestinationDeps({
+    peerFetch: async () => {
+      pulled.push(readTransport(tid)?.pkg?.sha256 ?? "");
+      // The source packed again while the first pull ran: its new package replaces the old one here.
+      if (pulled.length === 1) assert.deepEqual(packageReady({ id: "desk" }, tid, { sha256: "b".repeat(64), size: 10 }).body, { ok: true });
+      return Response.json({ error: "gone" }, { status: 404 });
+    },
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack: () => {},
+    openWithNote: async () => {},
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+  });
+  retry({ id: "desk" }, tid);
+  for (let i = 0; i < 300 && (pulled.length < 2 || readTransport(tid)?.state !== "needs-you"); i++) await sleep(10);
+  assert.equal(pulled.length, 2, "the new package was pulled too, by itself");
+  assert.equal(pulled[1], "b".repeat(64));
+  assert.match(readTransport(tid)?.needsYou?.reason ?? "", /won't serve/, "only the new package's own failure is said");
+});

@@ -417,6 +417,25 @@ test("a rebuild that fails partway leaves nothing beside the folders: the stages
   }
 });
 
+test("a tree moved by a publish that stopped, then edited there before the Retry, still counts as moved: kept as it is, and named", async () => {
+  const { wt } = projectWithChat("ed");
+  const tid = "t-ed";
+  const repo = join(root, "there-ed", "ed");
+  const there = join(root, "there-ed", "ed-wt");
+  const p = await packWorktrees({ tid, trees: [await surveyWorktree("ed-wt", wt)], haves: [], outDir: join(root, "pack-ed"), repo: true });
+  const staged = await rebuildWorktrees({ repo, codeDir: join(root, "pack-ed"), tid, metas: p.metas, targets: { "ed-wt": there }, makeRepo: { path: repo, origin: null, defaultBranch: p.repo!.defaultBranch } });
+  const rec = { begun: [] as string[], done: [] as string[] };
+  const journal = { read: () => rec, begin: (t: string) => void rec.begun.push(t), done: (t: string) => void rec.done.push(t) };
+  await assert.rejects(publishTrees(staged, tid, { journal: { ...journal, done: (t: string) => { if (t === there) throw new Error("the server stopped"); rec.done.push(t); } } }), /the server stopped/);
+  // Someone edits the arrived worktree before the Retry.
+  writeFileSync(join(there, "f.txt"), "f\nedited here\n");
+  const put = await publishTrees(staged, tid, { journal });
+  assert.deepEqual(put.changed, ["ed-wt"]);
+  assert.equal(readFileSync(join(there, "f.txt"), "utf8"), "f\nedited here\n", "the edit is kept");
+  assert.equal(g(there, "rev-parse", "HEAD"), g(wt, "rev-parse", "HEAD"));
+  namedForItsFolder(repo, there);
+});
+
 test("a folder that holds other work where a tree's move began is never taken for it: the publish refuses, replacing nothing", async () => {
   const src = join(root, "src-hb");
   mkdirSync(src);

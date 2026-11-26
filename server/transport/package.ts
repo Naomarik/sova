@@ -4,12 +4,13 @@
 // per worktree its code under `code/` (git-snapshot.ts). The same state packs to the same bytes.
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
-import { lstat, open, readdir, readlink, rm, stat } from "node:fs/promises";
+import { lstat, open, readdir, readlink, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { createZstdCompress } from "node:zlib";
+import { createZstdCompress, createZstdDecompress } from "node:zlib";
 import { type LooseFile, packWorktrees, type RepoMeta, type WorktreeMeta, type WorktreeSurvey } from "./git-snapshot";
-import { listTar, type TarEntry, writeTar } from "./tar";
+import { listTarStream, type TarEntry, type TarMemberHead, tarChunks, writeTar } from "./tar";
 
 export const PACKAGE_VERSION = 1;
 
@@ -213,9 +214,10 @@ export async function verifyHome(staged: string, manifest: PackageManifest): Pro
 
 /**
  * A whole folder, as it is (ignored files, build output and dependencies included, links kept as links),
- * compressed into `out` (§app.transport/moved-row: the old code folder goes into the safety copy). The
- * archive's members are read back and matched against the walk before it is kept: only then may the
- * caller remove the folder. Throws when it can't vouch for every entry.
+ * compressed into `out` (§app.transport/moved-row: the old code folder goes into the safety copy), streamed
+ * through zstd so no file is ever held whole. The archive is read back as a stream, its members matched
+ * against the walk and its bytes against what was written, before it is kept under `out`: only then may
+ * the caller remove the folder. Throws, keeping nothing, when it can't vouch for every entry.
  */
 export async function compressFolder(dir: string, out: string): Promise<{ entries: number; size: number }> {
   const base = dir.split("/").filter(Boolean).at(-1) ?? "folder";
@@ -236,12 +238,25 @@ export async function compressFolder(dir: string, out: string): Promise<{ entrie
     }
   };
   await walk("");
-  const tmp = `${out}.tar`;
-  await writeTar(tmp, entries);
+  // Written straight through zstd (no plain tar beside it), under a name of its own until it is vouched for.
+  const tmp = `${out}.part`;
+  const wrote = createHash("sha256");
   try {
-    const got = (await listTar(tmp)).map((m) => m.name.replace(/\/$/, ""));
+    await pipeline(
+      Readable.from(tarChunks(entries), { objectMode: false }),
+      new Transform({ transform: (c: Buffer, _e, done) => (wrote.update(c), done(null, c)) }),
+      createZstdCompress(),
+      createWriteStream(tmp, { mode: 0o600 }),
+    );
+    // Read back as a stream: every member there, in order, and the very bytes that were written.
+    const read = createHash("sha256");
+    let heads: TarMemberHead[] = [];
+    await pipeline(createReadStream(tmp), createZstdDecompress(), async (src: AsyncIterable<Buffer>) => {
+      heads = await listTarStream(src, (c) => read.update(c));
+    });
+    const got = heads.map((m) => m.name.replace(/\/$/, ""));
     const want = entries.map((e) => e.name);
-    if (got.length !== want.length || got.some((n, i) => n !== want[i])) throw new Error(`the archive of ${dir} doesn't hold every entry`);
+    if (got.length !== want.length || got.some((n, i) => n !== want[i]) || read.digest("hex") !== wrote.digest("hex")) throw new Error(`the archive of ${dir} doesn't hold every entry`);
     // Something wrote the folder while it was archived (a job still using it): what was kept isn't what is there.
     for (const e of entries) {
       if (e.type !== "file") continue;
@@ -259,7 +274,7 @@ export async function compressFolder(dir: string, out: string): Promise<{ entrie
     };
     await again("");
     if (now.length !== want.length || now.some((n, i) => n !== want[i])) throw new Error(`${dir} gained or lost files while it was archived`);
-    await pipeline(createReadStream(tmp), createZstdCompress(), createWriteStream(out, { mode: 0o600 }));
+    await rename(tmp, out);
     return { entries: entries.length, size: (await stat(out)).size };
   } finally {
     await rm(tmp, { force: true });

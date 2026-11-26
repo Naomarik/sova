@@ -32,6 +32,10 @@ test("a folder is kept whole: ignored files, build output, links and what came a
   const r = await compressFolder(wt, out);
   assert.equal(r.entries, 7);
   assert.deepEqual(await members(out), ["wt/.env.local", "wt/.git", "wt/after-pack.txt", "wt/link", "wt/target", "wt/target/debug", "wt/target/debug/x"]);
+  // The same folder keeps to the same bytes.
+  const again = join(root, "wt-again.tar.zst");
+  await compressFolder(wt, again);
+  assert.deepEqual(readFileSync(again), readFileSync(out));
 });
 
 test("a home's earlier safety copy and its draft never go into a package", async () => {

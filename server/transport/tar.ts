@@ -3,7 +3,7 @@
 // mtime, symlinks as links. The same files give the same bytes. A name that ustar can't hold (over
 // 100 bytes, or not ASCII) gets a pax header of its own. Read by any tar (GNU tar, bsdtar).
 import { createReadStream, type Stats } from "node:fs";
-import { lstat, open, readFile, readlink, type FileHandle } from "node:fs/promises";
+import { lstat, open, readlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 
 export type TarEntry =
@@ -50,51 +50,55 @@ function paxRecord(key: string, value: string): string {
 const fits = (s: string) => Buffer.byteLength(s) <= 100 && /^[\x20-\x7e]*$/.test(s);
 const pad = (n: number) => (n % BLOCK ? BLOCK - (n % BLOCK) : 0);
 
-/** Write `entries` as one tar at `file`. Each file is read as it is now: one that changed size
-    meanwhile is refused (the caller stops what writes it first). */
+/** The bytes of `entries` as one tar, in order, a file's body read as it streams (never whole). Each file
+    is read as it is now: one that changed size meanwhile is refused (the caller stops what writes it first). */
+export async function* tarChunks(entries: readonly TarEntry[]): AsyncGenerator<Buffer> {
+  for (const e of entries) {
+    const name = e.type === "dir" && !e.name.endsWith("/") ? `${e.name}/` : e.name;
+    const link = e.type === "symlink" ? e.target : undefined;
+    const recs: string[] = [];
+    if (!fits(name)) recs.push(paxRecord("path", name));
+    if (link !== undefined && !fits(link)) recs.push(paxRecord("linkpath", link));
+    if (recs.length) {
+      const body = Buffer.from(recs.join(""), "utf8");
+      yield header({ name: "PaxHeader", mode: 0o644, size: body.length, mtime: e.mtime, flag: "x" });
+      yield body;
+      if (pad(body.length)) yield zero.subarray(0, pad(body.length));
+    }
+    const short = fits(name) ? name : asciiStub(name);
+    const shortLink = link === undefined ? undefined : fits(link) ? link : asciiStub(link);
+    if (e.type === "dir") yield header({ name: short, mode: e.mode, size: 0, mtime: e.mtime, flag: "5" });
+    else if (e.type === "symlink") yield header({ name: short, mode: e.mode, size: 0, mtime: e.mtime, flag: "2", linkname: shortLink! });
+    else if (e.type === "data") {
+      yield header({ name: short, mode: e.mode, size: e.data.length, mtime: e.mtime, flag: "0" });
+      if (e.data.length) yield e.data;
+      if (pad(e.data.length)) yield zero.subarray(0, pad(e.data.length));
+    } else {
+      yield header({ name: short, mode: e.mode, size: e.size, mtime: e.mtime, flag: "0" });
+      let got = 0;
+      if (e.size > 0)
+        for await (const chunk of createReadStream(e.from, { start: 0, end: e.size - 1 })) {
+          got += (chunk as Buffer).length;
+          yield chunk as Buffer;
+        }
+      // A file grown since its lstat reads only its first `size` bytes: shrunk is the one change caught here.
+      if (got !== e.size) throw new Error(`${e.from} changed while it was packed (${got} of ${e.size} bytes)`);
+      if (pad(e.size)) yield zero.subarray(0, pad(e.size));
+    }
+  }
+  yield zero;
+  yield zero;
+}
+
+/** Write `entries` as one tar at `file` (tarChunks), streamed. */
 export async function writeTar(file: string, entries: readonly TarEntry[]): Promise<{ size: number }> {
   const fh = await open(file, "w", 0o600);
   let size = 0;
-  const put = async (b: Buffer) => {
-    await fh.write(b);
-    size += b.length;
-  };
   try {
-    for (const e of entries) {
-      const name = e.type === "dir" && !e.name.endsWith("/") ? `${e.name}/` : e.name;
-      const link = e.type === "symlink" ? e.target : undefined;
-      const recs: string[] = [];
-      if (!fits(name)) recs.push(paxRecord("path", name));
-      if (link !== undefined && !fits(link)) recs.push(paxRecord("linkpath", link));
-      if (recs.length) {
-        const body = Buffer.from(recs.join(""), "utf8");
-        await put(header({ name: "PaxHeader", mode: 0o644, size: body.length, mtime: e.mtime, flag: "x" }));
-        await put(body);
-        await put(zero.subarray(0, pad(body.length)));
-      }
-      const short = fits(name) ? name : asciiStub(name);
-      const shortLink = link === undefined ? undefined : fits(link) ? link : asciiStub(link);
-      if (e.type === "dir") await put(header({ name: short, mode: e.mode, size: 0, mtime: e.mtime, flag: "5" }));
-      else if (e.type === "symlink") await put(header({ name: short, mode: e.mode, size: 0, mtime: e.mtime, flag: "2", linkname: shortLink! }));
-      else if (e.type === "data") {
-        await put(header({ name: short, mode: e.mode, size: e.data.length, mtime: e.mtime, flag: "0" }));
-        await put(e.data);
-        await put(zero.subarray(0, pad(e.data.length)));
-      } else {
-        await put(header({ name: short, mode: e.mode, size: e.size, mtime: e.mtime, flag: "0" }));
-        let got = 0;
-        if (e.size > 0)
-          for await (const chunk of createReadStream(e.from, { start: 0, end: e.size - 1 })) {
-            await put(chunk as Buffer);
-            got += (chunk as Buffer).length;
-          }
-        // A file grown since its lstat reads only its first `size` bytes: shrunk is the one change caught here.
-        if (got !== e.size) throw new Error(`${e.from} changed while it was packed (${got} of ${e.size} bytes)`);
-        await put(zero.subarray(0, pad(e.size)));
-      }
+    for await (const b of tarChunks(entries)) {
+      await fh.write(b);
+      size += b.length;
     }
-    await put(zero);
-    await put(zero);
     return { size };
   } finally {
     await (fh as FileHandle).close();
@@ -136,38 +140,134 @@ const field = (b: Buffer, at: number, len: number): string => {
 };
 const num = (b: Buffer, at: number, len: number): number => parseInt(field(b, at, len).trim() || "0", 8);
 
-/** The members of a tar this writer made (ustar with pax path records), without extracting anything. */
-export async function listTar(file: string): Promise<TarMemberHead[]> {
-  const buf = await readFile(file);
-  const out: TarMemberHead[] = [];
-  let at = 0;
-  let pax: Record<string, string> = {};
-  while (at + BLOCK <= buf.length) {
-    const h = buf.subarray(at, at + BLOCK);
-    if (h.every((x) => x === 0)) break;
+/** The longest pax header read: this writer's hold a path and a link target, each far shorter. */
+const PAX_MAX = 64 * 1024;
+
+/**
+ * The members of a tar this writer made (ustar with pax path records), one header at a time: only a
+ * header block and a pax header are ever held, never a member's body. What this writer never makes is
+ * refused, so the check and the extractor can't read a name two ways: a ustar prefix (an extractor
+ * joins it to the name), another format's magic, a pax key but path and linkpath, an oversized pax header.
+ */
+class TarHeads {
+  readonly members: TarMemberHead[] = [];
+  done = false;
+  private pax: Record<string, string> = {};
+  /** A header block; answers how many bytes follow it (its body and padding), and whether they're a pax body to hand to `paxBody`. */
+  head(h: Buffer): { follow: number; pax: boolean } {
+    if (h.every((x) => x === 0)) {
+      this.done = true;
+      return { follow: 0, pax: false };
+    }
     const size = num(h, 124, 12);
     const flag = String.fromCharCode(h[156] || 0x30);
-    const body = at + BLOCK;
-    // What this writer never makes is refused, so the check and the extractor can't read a name two ways:
-    // a ustar prefix (an extractor joins it to the name), another format's magic, a pax key but path and linkpath.
     if (h.toString("latin1", 257, 263) !== "ustar\0") throw new Error("a header that isn't ustar");
     if (h[345] !== 0) throw new Error("a header with a name prefix");
     if (flag === "x") {
-      pax = {};
-      const text = buf.subarray(body, body + size).toString("utf8");
-      for (const rec of text.split("\n")) {
-        if (!rec) continue;
-        const m = /^\d+ ([^=]+)=(.*)$/.exec(rec);
-        if (!m || (m[1] !== "path" && m[1] !== "linkpath")) throw new Error(`a pax record ${JSON.stringify(rec.slice(0, 40))}`);
-        pax[m[1]!] = m[2]!;
-      }
-    } else {
-      out.push({ name: pax.path ?? field(h, 0, 100), flag, mode: num(h, 100, 8), size, linkname: pax.linkpath ?? field(h, 157, 100) });
-      pax = {};
+      if (size > PAX_MAX) throw new Error("a pax header too long");
+      return { follow: size + pad(size), pax: true };
     }
-    at = body + size + pad(size);
+    this.members.push({ name: this.pax.path ?? field(h, 0, 100), flag, mode: num(h, 100, 8), size, linkname: this.pax.linkpath ?? field(h, 157, 100) });
+    this.pax = {};
+    return { follow: size + pad(size), pax: false };
   }
-  return out;
+  /** A pax header's body (its padding may follow; a short one, at a truncated end, is read as it is). */
+  paxBody(body: Buffer, size: number): void {
+    this.pax = {};
+    for (const rec of body.subarray(0, size).toString("utf8").split("\n")) {
+      if (!rec) continue;
+      const m = /^\d+ ([^=]+)=(.*)$/.exec(rec);
+      if (!m || (m[1] !== "path" && m[1] !== "linkpath")) throw new Error(`a pax record ${JSON.stringify(rec.slice(0, 40))}`);
+      this.pax[m[1]!] = m[2]!;
+    }
+  }
+}
+
+/** The members of a tar file this writer made, without extracting anything: headers read through a file
+    handle, every body skipped by its size (a member far larger than memory costs nothing). */
+export async function listTar(file: string): Promise<TarMemberHead[]> {
+  const fh = await open(file, "r");
+  try {
+    const len = (await fh.stat()).size;
+    const r = new TarHeads();
+    const h = Buffer.alloc(BLOCK);
+    let at = 0;
+    while (!r.done && at + BLOCK <= len) {
+      await readFully(fh, h, at);
+      const { follow, pax } = r.head(h);
+      if (pax) {
+        const size = num(h, 124, 12);
+        const body = Buffer.alloc(Math.min(size, Math.max(0, len - at - BLOCK)));
+        await readFully(fh, body, at + BLOCK);
+        r.paxBody(body, size);
+      }
+      at += BLOCK + follow;
+    }
+    return r.members;
+  } finally {
+    await fh.close();
+  }
+}
+
+async function readFully(fh: FileHandle, buf: Buffer, position: number): Promise<void> {
+  let got = 0;
+  while (got < buf.length) {
+    const { bytesRead } = await fh.read(buf, got, buf.length - got, position + got);
+    if (!bytesRead) throw new Error("a tar that ends inside a header");
+    got += bytesRead;
+  }
+}
+
+/**
+ * The members of a tar arriving as a stream of chunks (a zstd archive read back, say), with the same
+ * refusals as listTar: a header or a pax header is gathered, a body is counted past, so memory stays
+ * at one chunk whatever the archive holds. `onChunk` sees every byte (to hash what was read back).
+ */
+export async function listTarStream(chunks: AsyncIterable<Buffer | Uint8Array> | Iterable<Buffer | Uint8Array>, onChunk?: (b: Buffer) => void): Promise<TarMemberHead[]> {
+  const r = new TarHeads();
+  let skip = 0;
+  /** Bytes being gathered: a header (BLOCK) or a pax body with its padding. */
+  let need = BLOCK;
+  let paxSize = -1;
+  let held: Buffer[] = [];
+  let heldLen = 0;
+  for await (const c of chunks) {
+    const chunk = Buffer.isBuffer(c) ? c : Buffer.from(c.buffer, c.byteOffset, c.byteLength);
+    onChunk?.(chunk);
+    let off = 0;
+    while (off < chunk.length && !r.done) {
+      if (skip) {
+        const n = Math.min(skip, chunk.length - off);
+        skip -= n;
+        off += n;
+        continue;
+      }
+      const n = Math.min(need - heldLen, chunk.length - off);
+      held.push(chunk.subarray(off, off + n));
+      heldLen += n;
+      off += n;
+      if (heldLen < need) break;
+      const buf = held.length === 1 ? Buffer.from(held[0]!) : Buffer.concat(held, heldLen);
+      held = [];
+      heldLen = 0;
+      if (paxSize >= 0) {
+        r.paxBody(buf, paxSize);
+        paxSize = -1;
+        need = BLOCK;
+        continue;
+      }
+      const { follow, pax } = r.head(buf);
+      if (pax && follow) {
+        paxSize = num(buf, 124, 12);
+        need = follow;
+      } else {
+        if (pax) r.paxBody(Buffer.alloc(0), 0);
+        skip = follow;
+      }
+    }
+  }
+  // Bytes after the end blocks were still read (and seen by onChunk), so a hash covers the whole stream.
+  return r.members;
 }
 
 /**

@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { scratchRoot } from "../test-scratch";
-import { checkMembers, entryOf, listTar, writeTar } from "./tar";
+import { checkMembers, entryOf, listTar, listTarStream, writeTar } from "./tar";
 
 const root = scratchRoot("sova-transport-tar-");
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -51,4 +51,36 @@ test("a header this writer never makes is refused: a ustar prefix (link, then pr
   h.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148, 8, "ascii");
   writeFileSync(join(root, "p.tar"), b);
   await assert.rejects(listTar(join(root, "p.tar")), /prefix/);
+  await assert.rejects(listTarStream([b]), /prefix/);
+});
+
+/** `buf` in pieces of `n` bytes, as a stream would hand them over. */
+function* pieces(buf: Buffer, n: number): Generator<Buffer> {
+  for (let i = 0; i < buf.length; i += n) yield buf.subarray(i, i + n);
+}
+
+test("a tar read as a stream lists what the file handle lists, however the stream cuts it, and sees every byte", async () => {
+  const src = join(root, "stream");
+  mkdirSync(join(src, "d"), { recursive: true });
+  const long = `d/${"y".repeat(150)}-ü.bin`;
+  writeFileSync(join(src, long), Buffer.alloc(1300, 7));
+  writeFileSync(join(src, "empty"), "");
+  symlinkSync(`${"t".repeat(120)}`, join(src, "far"));
+  const entries = [];
+  for (const rel of ["d", long, "empty", "far"]) entries.push((await entryOf(src, rel))!);
+  await writeTar(join(root, "s.tar"), entries);
+  const whole = readFileSync(join(root, "s.tar"));
+  const want = await listTar(join(root, "s.tar"));
+  assert.deepEqual(want.map((m) => m.name), ["d/", long, "empty", "far"]);
+  for (const n of [1, 7, 511, 512, 513, 4096, whole.length]) {
+    let seen = 0;
+    assert.deepEqual(await listTarStream(pieces(whole, n), (c) => (seen += c.length)), want, `cut every ${n} bytes`);
+    assert.equal(seen, whole.length);
+  }
+});
+
+test("a pax header longer than any this writer makes is refused, by both readers", async () => {
+  await writeTar(join(root, "x.tar"), [{ name: `${"z".repeat(70 * 1024)}`, type: "data", mode: 0o644, mtime: 0, data: Buffer.from("k") }]);
+  await assert.rejects(listTar(join(root, "x.tar")), /pax header too long/);
+  await assert.rejects(listTarStream([readFileSync(join(root, "x.tar"))]), /pax header too long/);
 });

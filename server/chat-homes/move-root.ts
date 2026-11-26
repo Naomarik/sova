@@ -21,6 +21,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { closeSync, constants, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, renameSync, rmSync, statfsSync, symlinkSync, utimesSync, writeFileSync, writeSync, accessSync, appendFileSync, realpathSync, chmodSync } from "node:fs";
 import { lstat, mkdir, open, readdir, readlink, rename, rm, symlink, utimes, chmod } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import type { ChatsFolderInfo, ChatsFolderMove, ChatsFolderPreview } from "../../shared/chats-folder";
 import { JOBS_DIR_NAME, readAllJobs, runningJobs, type JobRecord } from "../../pi-config/extensions/subagents/job-store.ts";
@@ -124,9 +125,14 @@ function nearestExisting(p: string): string {
   return at;
 }
 
-/** The working tree holding `p` (the nearest folder above it with a `.git`), or null. */
-function repositoryOf(p: string): string | null {
+/**
+ * The working tree holding `p` (the nearest folder above it with a `.git`), or null. The home folder itself and what is
+ * above it never count: dotfiles kept as a repository at `~` (yadm, a bare repo with its work tree at `~`) would refuse
+ * every folder under home.
+ */
+export function repositoryOf(p: string, home: string = canonical(homedir())): string | null {
   for (let at = p; ; ) {
+    if (at === home || within(home, at)) return null;
     if (existsSync(join(at, ".git"))) return at;
     const up = dirname(at);
     if (up === at) return null;

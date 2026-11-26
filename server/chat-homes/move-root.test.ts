@@ -8,7 +8,7 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, st
 import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import { CHAT_HOMES_ROOT_ENV, HOMES_ENV, homesRoot, homesRootInfo, MARKER_FILE, onHomesRootSwitch, rebaseHomePath, resetHomesMemoForTests } from "./root";
-import { cancelMove, chatsFolderInfo, currentMove, JOURNAL_FILE, syncIo, liveSyncOf, MOVE_STATE_FILE, moveHold, moveSettled, type MoveDeps, previewMove, recoverMove, resetMoveForTests, startMove, SUBFOLDER, targetOf } from "./move-root";
+import { cancelMove, chatsFolderInfo, currentMove, JOURNAL_FILE, repositoryOf, syncIo, liveSyncOf, MOVE_STATE_FILE, moveHold, moveSettled, type MoveDeps, previewMove, recoverMove, resetMoveForTests, startMove, SUBFOLDER, targetOf } from "./move-root";
 import { sessionPathShape } from "../paths";
 import { acquireChatHandle, setChatRouter, type ChatHandle } from "../chat-handle";
 
@@ -166,6 +166,12 @@ describe("a move", () => {
     mkdirSync(join(repo, ".git"), { recursive: true });
     assert.match((await previewMove(join(repo, "chats"), deps())).refusal ?? "", /inside a repository/);
     rmSync(repo, { recursive: true, force: true });
+    // A home kept as a dotfiles repository (~/.git) never counts, or every folder under home would be refused.
+    const home = join(outside, `home-${n}`);
+    mkdirSync(join(home, ".git"), { recursive: true });
+    mkdirSync(join(home, "code", "app", ".git"), { recursive: true });
+    assert.equal(repositoryOf(join(home, "data", "chats"), home), null);
+    assert.equal(repositoryOf(join(home, "code", "app", "chats"), home), join(home, "code", "app"));
   });
 
   test("refused while a chat works, and while a variable sets the folder: nothing stops, nothing is copied", async () => {

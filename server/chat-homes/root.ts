@@ -321,10 +321,98 @@ export function listHomeIds(): string[] {
   return names.filter(hasHome);
 }
 
+/** Where the homes root comes from: the override (read-only in Settings), the state root's marker, or the default. */
+export interface HomesRootInfo {
+  root: string;
+  source: "env" | "marker" | "default";
+  /** The variable that set it, when `source` is "env". */
+  env?: string;
+  /** The marker's file (`<state root>/chat-homes.json`). */
+  marker: string;
+  /** Whether the folder is there now (a marker naming a missing folder: a disk not mounted, a folder moved by hand). */
+  exists: boolean;
+}
+
+export function homesRootInfo(): HomesRootInfo {
+  const { root, fromMarker, overridden } = resolveRoot();
+  const fromServer = process.env[CHAT_HOMES_ROOT_ENV];
+  const env = overridden ? (fromServer && isAbsolute(fromServer) ? CHAT_HOMES_ROOT_ENV : HOMES_ENV) : undefined;
+  return { root, source: overridden ? "env" : fromMarker ? "marker" : "default", ...(env ? { env } : {}), marker: markerFile(), exists: existsSync(root) };
+}
+
+/** The state root's marker file. */
+export const markerFile = (): string => join(canonicalStateRoot(), MARKER_FILE);
+
+/**
+ * The homes folders this state root's chats were in before a Chats folder move (§app.chat-homes/move-folder), newest
+ * first: a path written while a chat lived there (an attachment in its conversation, a browser's open tab) is read as
+ * the same place in the current folder (rebaseHomePath). Read from the marker, memoized with the root.
+ */
+let previousMemo: { key: string; roots: string[] } | null = null;
+export function previousHomesRoots(): string[] {
+  const root = homesRoot();
+  const key = `${root}\0${canonicalStateRoot()}`;
+  if (previousMemo?.key === key) return previousMemo.roots;
+  let roots: string[] = [];
+  try {
+    const raw = JSON.parse(readFileSync(markerFile(), "utf8")) as { movedFrom?: unknown };
+    if (Array.isArray(raw.movedFrom)) roots = raw.movedFrom.filter((r): r is string => typeof r === "string" && isAbsolute(r) && r !== root);
+  } catch {
+    // no marker
+  }
+  previousMemo = { key, roots };
+  return roots;
+}
+
+/** `p` under an earlier homes folder of this state root, as the same path under the current one; else `p`. String only. */
+export function rebaseHomePath(p: string): string {
+  const prev = previousHomesRoots();
+  if (!prev.length || !p.startsWith("/")) return p;
+  const root = homesRoot();
+  if (p === root || p.startsWith(root + sep)) return p;
+  for (const old of prev) if (p.startsWith(old + sep)) return root + p.slice(old.length);
+  return p;
+}
+
+/** Write the marker naming `root` (atomically: written last by a Chats folder move, so a crash before it keeps the old
+    folder in force). `movedFrom` lists the folders the chats were in before, newest first. */
+export function writeMarker(root: string, movedFrom: readonly string[] = []): void {
+  const state = canonicalStateRoot();
+  mkdirSync(state, { recursive: true });
+  writeJsonAtomic(join(state, MARKER_FILE), { v: 1, homes: root, ...(movedFrom.length ? { movedFrom: [...new Set(movedFrom)].filter((r) => r !== root) } : {}) });
+}
+
+const switchListeners = new Set<() => void>();
+/** Called by switchHomesRoot after the memos here are cleared: a module holding state of the homes (records, the change
+    log and index, the worker registry) drops it, so its next read is of the new folder. Returns the unregister. */
+export function onHomesRootSwitch(fn: () => void): () => void {
+  switchListeners.add(fn);
+  return () => switchListeners.delete(fn);
+}
+
+/**
+ * The running server takes the folder the marker names now (a Chats folder move, after the marker is written): every
+ * memo of the old root goes, then each listener's. Never throws.
+ */
+export function switchHomesRoot(): void {
+  rootMemo = null;
+  previousMemo = null;
+  knownHomes.clear();
+  missingLogged.clear();
+  for (const fn of switchListeners) {
+    try {
+      fn();
+    } catch (err) {
+      console.warn("[chat-homes] a homes-root switch listener failed:", err instanceof Error ? err.message : err);
+    }
+  }
+}
+
 /** Tests only: forget the memos (the override or the state root moved under a running process). */
 export function resetHomesMemoForTests(): void {
   rootMemo = null;
   stateMemo = null;
+  previousMemo = null;
   knownHomes.clear();
   missingLogged.clear();
 }

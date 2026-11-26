@@ -146,14 +146,17 @@ export function SessionContextMenu(props: {
                       {(t) => (
                         <div class="model-menu-group" role="group" aria-label="Title">
                           <Item label="Rename…" aria={`Rename ${name()}`} icon={<Icon name="pencil" small />} stayOpen onRun={() => show("rename")} />
-                          <Item
-                            label="Regenerate Title"
-                            aria={`Regenerate the title of ${name()}`}
-                            icon={<Icon name="refresh" small />}
-                            description={t().regenerateDesc}
-                            disabled={t().regenerateDisabled}
-                            onRun={() => void regenerateSessionTitleNow(r(), props.onRefresh)}
-                          />
+                          {/* A compressed chat's conversation isn't opened, so nothing could name it again: no row. */}
+                          <Show when={t().regenerate}>
+                            <Item
+                              label="Regenerate Title"
+                              aria={`Regenerate the title of ${name()}`}
+                              icon={<Icon name="refresh" small />}
+                              description={t().regenerateDesc}
+                              disabled={t().regenerateDisabled}
+                              onRun={() => void regenerateSessionTitleNow(r(), props.onRefresh)}
+                            />
+                          </Show>
                           <Item
                             label="Reset to Original Title"
                             aria={`Reset ${name()} to its original title`}

@@ -14,6 +14,8 @@ export interface RowMenuModel {
   /** Rename…, Regenerate Title and Reset to Original Title; null for a chat Sova names itself,
       which keeps its name (the Agents board's rule): no title rows at all. */
   title: {
+    /** Whether Regenerate Title is offered: never for a compressed chat, whose conversation Sova doesn't open. */
+    regenerate: boolean;
     /** Regenerate Title's second line, and why it can't run: "" runs (the session's own regenerate isn't in flight). */
     regenerateDesc: string;
     regenerateDisabled: string;
@@ -41,6 +43,7 @@ export function rowMenuOf(
   const title = s.fixedName
     ? null
     : {
+        regenerate: !s.compressed,
         regenerateDesc: REGENERATE_TITLE_DESC,
         regenerateDisabled: regenerating ? REGENERATING_LABEL : "",
         original: s.originalTitle,

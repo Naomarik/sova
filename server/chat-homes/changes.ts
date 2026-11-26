@@ -92,6 +92,9 @@ export function appendChange(root: string, h: string, d: ChangeDoc): void {
   const line = `${JSON.stringify({ h, d, g: ++seq, p: process.pid })}\n`;
   try {
     let n = writers.get(root) ?? (segments(root).at(-1) || 1);
+    // The segment it wrote to last was removed meanwhile (the compactor, after others rolled on): never made again,
+    // where readers already past it would never read the line; the newest one is where the line goes.
+    if (writers.has(root) && !existsSync(segmentFile(root, n))) n = segments(root).at(-1) || n;
     for (let tries = 0; tries < 8; tries++) {
       // Another writer started a newer segment: write there, so readers that moved on see this line.
       while (existsSync(segmentFile(root, n + 1))) n++;
@@ -187,7 +190,13 @@ export class ChangeTail {
     readonly root: string,
     from: Cursor = logEnd(root),
   ) {
+    this.cursor = isCursor(from) ? { ...from } : logEnd(root);
+  }
+
+  /** Read again from `from` (an earlier cursor). */
+  rewind(from: Cursor): void {
     this.cursor = { ...from };
+    this.prev = null;
   }
 
   read(): { lines: ChangeLine[]; gap: boolean } {
@@ -235,6 +244,12 @@ export type ChangeListener = (root: string, lines: readonly ChangeLine[], gap: b
 const listeners = new Set<ChangeListener>();
 const tails = new Map<string, ChangeTail>();
 
+/** A cursor as it may be written: a whole segment number from 1 and a whole offset from 0. */
+export const isCursor = (c: unknown): c is Cursor => {
+  const v = c as Partial<Cursor> | null;
+  return !!v && Number.isInteger(v.seg) && v.seg! >= 1 && Number.isInteger(v.off) && v.off! >= 0;
+};
+
 /** Hear every line this process reads from now on (any root). Returns the stop. */
 export function onChanges(fn: ChangeListener): () => void {
   listeners.add(fn);
@@ -247,7 +262,10 @@ export function onChanges(fn: ChangeListener): () => void {
  * they read is missed.
  */
 export function startTail(root: string, from?: Cursor): void {
-  if (!tails.has(root)) tails.set(root, new ChangeTail(root, from));
+  const t = tails.get(root);
+  if (!t) return void tails.set(root, new ChangeTail(root, from));
+  // Asked to start earlier than the running reader is: it goes back there (every listener takes a line twice safely).
+  if (from && (from.seg < t.cursor.seg || (from.seg === t.cursor.seg && from.off < t.cursor.off))) t.rewind(from);
 }
 
 /** Read what was appended since this process last read the root's log, and tell every listener. */
@@ -294,8 +312,9 @@ export function readIndex(root: string): HomesIndex | null {
   try {
     changeIo.indexReads++;
     const v = JSON.parse(readFileSync(join(root, INDEX_NAME), "utf8")) as HomesIndex;
-    if (v?.v !== INDEX_VERSION || !v.cursor || typeof v.cursor.seg !== "number" || typeof v.cursor.off !== "number" || !v.homes || typeof v.homes !== "object") return null;
-    for (const h of Object.values(v.homes)) if (!h || !Array.isArray(h.files) || typeof h.st !== "string") return null;
+    if (v?.v !== INDEX_VERSION || !isCursor(v.cursor) || !v.homes || typeof v.homes !== "object" || Array.isArray(v.homes)) return null;
+    for (const h of Object.values(v.homes))
+      if (!h || !Array.isArray(h.files) || typeof h.st !== "string" || !h.files.every((f) => typeof f === "string" && f.endsWith(".jsonl") && !f.includes("/") && !f.startsWith("."))) return null;
     return v;
   } catch {
     return null;

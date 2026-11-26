@@ -5,7 +5,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { appendChange, ChangeTail, INDEX_NAME, isDeviceLocalHomesFile, readIndex, segmentFile, segments, setChangeLogLimitsForTest, writeIndex, type ChangeLine } from "./changes";
+import { appendChange, ChangeTail, INDEX_NAME, isDeviceLocalHomesFile, onChanges, pollChanges, readIndex, segmentFile, segments, setChangeLogLimitsForTest, startTail, writeIndex } from "./changes";
 
 const scratch = mkdtempSync(join(tmpdir(), "sova-home-changes-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -72,4 +72,50 @@ test("a missing, torn or unknown index is no index; the log and index are this d
   assert.deepEqual(readIndex(root)?.homes, { x: { files: ["a.jsonl"], st: "1:2" } });
   for (const name of [".changes.1.log", ".changes.12.log", INDEX_NAME, `${INDEX_NAME}.123.tmp`]) assert.equal(isDeviceLocalHomesFile(name), true, name);
   for (const name of ["019a0000-0000-7000-8000-000000000001", "019a.tar.gz", "changes.1.log"]) assert.equal(isDeviceLocalHomesFile(name), false, name);
+});
+
+test("an index with a bad entry or cursor is no index", () => {
+  const root = freshRoot();
+  const write = (v: unknown) => writeFileSync(join(root, INDEX_NAME), JSON.stringify(v));
+  write({ v: 1, cursor: { seg: 1, off: 0 }, homes: { x: { files: [1], st: "" } } });
+  assert.equal(readIndex(root), null, "a file name that isn't a string");
+  write({ v: 1, cursor: { seg: 1, off: 0 }, homes: { x: { files: ["../a.jsonl"], st: "" } } });
+  assert.equal(readIndex(root), null, "a file name with a separator");
+  write({ v: 1, cursor: { seg: 1, off: -5 }, homes: {} });
+  assert.equal(readIndex(root), null, "a negative offset");
+  write({ v: 1, cursor: { seg: 0, off: 0 }, homes: {} });
+  assert.equal(readIndex(root), null, "segment 0");
+  write({ v: 1, cursor: { seg: 1.5, off: 0 }, homes: {} });
+  assert.equal(readIndex(root), null, "a fractional segment");
+});
+
+test("a writer whose segment was removed writes to the newest one, never makes the removed one again", () => {
+  const root = freshRoot();
+  appendChange(root, "a", "meta"); // this process now writes to segment 1
+  // Meanwhile other writers rolled on and the compactor removed everything below 5.
+  writeFileSync(segmentFile(root, 5), "");
+  rmSync(segmentFile(root, 1));
+  appendChange(root, "b", "meta");
+  assert.deepEqual(segments(root), [5]);
+  const tail = new ChangeTail(root, { seg: 5, off: 0 });
+  assert.deepEqual(
+    tail.read().lines.map((l) => l.h),
+    ["b"],
+  );
+});
+
+test("a reader started again from an earlier cursor (the index's) reads from there", () => {
+  const root = freshRoot();
+  appendChange(root, "a", "meta");
+  const at = { seg: 1, off: 0 };
+  startTail(root);
+  appendChange(root, "b", "meta");
+  startTail(root, at);
+  const seen: string[] = [];
+  const stop = onChanges((r, lines) => {
+    if (r === root) seen.push(...lines.map((l) => l.h));
+  });
+  pollChanges(root);
+  stop();
+  assert.deepEqual(seen, ["a", "b"]);
 });

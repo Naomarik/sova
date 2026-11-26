@@ -99,6 +99,15 @@ test("the index lists exactly what the walk of every home lists, through every w
   resetHomeSessionFiles();
   assert.deepEqual(await sorted(), reference(), "after a torn index");
 
+  // An index edited by hand into a shape no writer makes: rebuilt by one walk, never a list that fails.
+  for (const bad of [{ files: [1], st: "" }, { files: ["../x.jsonl"], st: "" }])
+    for (const cursor of [{ seg: 1, off: 0 }, { seg: 1, off: -5 }]) {
+      writeFileSync(join(HOMES, INDEX_NAME), JSON.stringify({ v: 1, cursor, homes: { [id(2)]: bad } }));
+      resetHomeSessionFiles();
+      resetChangeTails();
+      assert.deepEqual(await sorted(), reference(), `after a hand-edited index (${JSON.stringify(bad)}, ${JSON.stringify(cursor)})`);
+    }
+
   // And the session list itself lists one row per homed conversation the walk finds (its own files are pi's, none here).
   const rows = (await listSessions()).map((r) => r.path).sort();
   assert.deepEqual(rows, reference().filter((p) => statSync(p).size > 0));

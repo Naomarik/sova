@@ -16,6 +16,7 @@ import { emitChatNews } from "../chat-home-events";
 import { acquireChatHandle, closeChat, setChatStartGuard } from "../chat-handle";
 import { adoptArrivedHome, forgetWorkerChats, parkWorkerChat, steerWorkerChat, workerMembersOf, workersWorkingOf } from "../chat-host";
 import { chatHome, homesRoot } from "../chat-homes/root";
+import { beginHomesWork, withHomesWork } from "../chat-homes/move-root";
 import { cancelChatWakes } from "../wake-keeper-live";
 import { readBranch } from "../harness/pi/reader";
 import { sessionsChanged } from "../list-generation";
@@ -170,6 +171,22 @@ export async function backState(r: TransportRecord, mesh: Pick<Mesh, "peerFetch"
 
 /** Move Back on this device (the chat's first one): the other device stops it, then it runs here again from its safety copy. */
 export async function moveBackToHere(r: TransportRecord, mesh: Pick<Mesh, "peerFetch">): Promise<{ ok: boolean; error?: string }> {
+  // It unpacks the safety copy into the homes folder in force at its start: never during a Chats folder move, and a
+  // move waits for it (§app.chat-homes/chats-folder).
+  let end: () => void;
+  try {
+    end = beginHomesWork(`Moving ${r.title || r.chatId} back`);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  try {
+    return await moveBackToHereNow(r, mesh);
+  } finally {
+    end();
+  }
+}
+
+async function moveBackToHereNow(r: TransportRecord, mesh: Pick<Mesh, "peerFetch">): Promise<{ ok: boolean; error?: string }> {
   const st = await backState(r, mesh);
   if (st.can !== "move") return { ok: false, error: st.reason ?? `It has changed on ${r.peerLabel}, so this copies it back as a new chat.` };
   const home = chatHome(r.chatId);
@@ -582,7 +599,8 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     .catch((err) => log(`no Transport agent in this build: ${err instanceof Error ? err.message : String(err)}`));
 
   // The device a chat moved to, asked to give it back: stop it here, park its team, and become the Moved side.
-  dest.setMoveBackHere(async (r, back) => {
+  dest.setMoveBackHere(async (r, back) => withHomesWork(`Moving ${r.title || r.chatId} back to ${r.peerLabel}`, () => moveBackFromHere(r, back)));
+  const moveBackFromHere = async (r: TransportRecord, back: { path: string }): Promise<void> => {
     const id = r.arrivedId ?? r.chatId;
     const helpers = workerMembersOf(id).map((m) => m.sid);
     for (const h of [...helpers].reverse()) await parkWorkerChat(h);
@@ -594,7 +612,7 @@ export function mountTransport(app: Hono, mesh: Mesh): void {
     await markArchived(id, r.path);
     emitChatNews({ name: "chat.removed", chat: id, home: chatHome(id) });
     sessionsChanged();
-  });
+  };
   // Safety copies past their 7 days: checked 10 minutes after start, then every 6 hours.
   const pass = () => void compressOldSafetyCopies().catch((err) => log(`safety-copy compression: ${err instanceof Error ? err.message : String(err)}`));
   setTimeout(pass, 10 * 60_000).unref?.();

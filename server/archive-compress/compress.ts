@@ -14,6 +14,7 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip, constants as zc } from "node:zlib";
 import type { SessionSummary } from "../../shared/protocol";
 import { chatHome, forgetHome, hasHome, homeIdOfPath, homesRoot } from "../chat-homes/root";
+import { withHomesWork } from "../chat-homes/move-root";
 import { forgetHomeRecords } from "../chat-homes/records";
 import { compressedChats, type CompressedChat, type CompressedFile, dropCompressed, putCompressed } from "./store";
 import { readTarGz, sameEntries, writeTarGz } from "./tar";
@@ -54,6 +55,12 @@ export function homeOfChat(path: string): string | null {
 
 /** Compresses a chat with a home: the whole home becomes `<homes root>/<id>.tar.gz`, then the home folder goes. */
 async function compressHome(id: string, row: SessionSummary, by: CompressedChat["by"]): Promise<CompressedChat> {
+  // Its archive goes beside the home in the folder in force at its start: never while a Chats folder move runs, and a
+  // move waits for it (§app.chat-homes/chats-folder).
+  return withHomesWork(`Compressing ${row.title || id}`, () => compressHomeNow(id, row, by));
+}
+
+async function compressHomeNow(id: string, row: SessionSummary, by: CompressedChat["by"]): Promise<CompressedChat> {
   const home = chatHome(id);
   const archive = join(homesRoot(), `${id}.tar.gz`);
   const tmp = `${archive}.${process.pid}.tmp`;

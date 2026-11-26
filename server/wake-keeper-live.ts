@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { dropWakeRecords, cancelWakesBefore } from "../pi-config/extensions/subagents/wake-store.ts";
 import { acquireChatHandle, chatHandle, chatsReady } from "./chat-handle";
 import { reopenWorkerChat, wakeOwnerOf, workerChatsOf } from "./chat-host";
+import { moveHold } from "./chat-homes/move-root";
 import { getSessionSummary } from "./sessions-index";
 import { LEAD_MS, TICK_MS, wakeDir, wakeDirFor, wakeDirs, WakeKeeper, wakesOn, type WakeWorker } from "./wake-keeper";
 
@@ -36,8 +37,12 @@ export function startWakeKeeper(env: NodeJS.ProcessEnv = process.env): WakeKeepe
       const s = await getSessionSummary(path).catch(() => null);
       return s ? { archived: !!s.archived, live: !!s.live } : null;
     },
-    running: (path) => !!chatHandle(path),
-    worker: wakeOwnerOf,
+    // While a Chats folder move holds every chat, a chat isn't brought back (no try spent): it is, at the next tick after.
+    running: (path) => !!moveHold() || !!chatHandle(path),
+    worker: (id) => {
+      const w = wakeOwnerOf(id);
+      return w && moveHold() ? { ...w, running: true } : w;
+    },
     open: async (path) => {
       await acquireChatHandle(path);
     },

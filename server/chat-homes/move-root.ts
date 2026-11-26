@@ -26,6 +26,7 @@ import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import type { ChatsFolderInfo, ChatsFolderMove, ChatsFolderPreview } from "../../shared/chats-folder";
 import { JOBS_DIR_NAME, readAllJobs, runningJobs, type JobRecord } from "../../pi-config/extensions/subagents/job-store.ts";
 import { WAKE_DIR_NAME } from "../../pi-config/extensions/subagents/wake-store.ts";
+import { listTransports } from "../transport/store";
 import { mapDeep, relocateConversation, type PathMap } from "../harness/pi/relocate";
 import { agentRoot, stateRoot } from "../state-root";
 import { markOwned, RECENT_WRITE_MS, recentForeignWriteAgeSec } from "../write-guard";
@@ -158,6 +159,35 @@ interface Entry {
 /** Top-level names that are this device's alone (the change log and its index, rebuilt in the new folder by one walk;
     a move's own journal): never copied. */
 const deviceLocal = (name: string): boolean => isDeviceLocalHomesFile(name) || name === JOURNAL_FILE;
+
+/** Every folder under the homes folder, by path relative to it, with its mode (an empty one too: a home's `sessions/`
+    before its first conversation). */
+function foldersSync(root: string): { rel: string; mode: number }[] {
+  const out: { rel: string; mode: number }[] = [];
+  const walk = (dir: string, rel: string) => {
+    let names: Dirent[];
+    try {
+      names = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      if (!rel && deviceLocal(n.name)) continue;
+      if (!n.isDirectory()) continue;
+      const r = rel ? `${rel}/${n.name}` : n.name;
+      let mode = 0o700;
+      try {
+        mode = lstatSync(join(dir, n.name)).mode & 0o777;
+      } catch {
+        // gone meanwhile
+      }
+      out.push({ rel: r, mode });
+      walk(join(dir, n.name), r);
+    }
+  };
+  walk(root, "");
+  return out;
+}
 
 /** Every file and link under the homes folder, by path relative to it (the device-local top-level files left out). */
 function walkSync(root: string): Entry[] {
@@ -311,6 +341,13 @@ function refusalFor(target: string, bytes: number, deps: Pick<MoveDeps, "working
   if (free !== null && free < bytes + 64 * 1024 * 1024) return `That disk has ${fmtBytes(free)} free, and your chats need ${fmtBytes(bytes)}. Nothing was moved.`;
   const busy = deps?.working() ?? [];
   if (busy.length) return `${busy.length === 1 ? "1 chat is" : `${busy.length} chats are`} working: ${busy.slice(0, 3).join(", ")}${busy.length > 3 ? "…" : ""}. Wait for ${busy.length === 1 ? "it" : "them"} to finish or stop ${busy.length === 1 ? "it" : "them"}, then move.`;
+  const transports = liveTransports();
+  if (transports.length) {
+    const one = transports.length === 1;
+    return `${one ? "A Transport" : `${transports.length} Transports`} of ${transports.slice(0, 3).join(", ")}${transports.length > 3 ? "…" : ""} ${one ? "is" : "are"} under way. Moving waits until ${one ? "it's" : "they're"} done or cancelled.`;
+  }
+  const work = [...homesWork.values()];
+  if (work.length) return `${work[0]}${work.length > 1 ? ` and ${work.length - 1} more` : ""} ${work.length > 1 ? "are" : "is"} running in your chats folder. Moving waits until it's done.`;
   if (jobs.length) {
     const one = jobs.length === 1;
     return `${one ? "1 background job" : `${jobs.length} background jobs`} that chats started ${one ? "is" : "are"} still running: ${jobs.slice(0, 3).map((c) => (c.length > 60 ? `${c.slice(0, 59)}…` : c)).join(", ")}${jobs.length > 3 ? "…" : ""}. ${one ? "It writes" : "They write"} in your chats folder, so stop ${one ? "it" : "them"} in ${one ? "its chat" : "their chats"}, then move.`;
@@ -529,7 +566,7 @@ function copyOneSync(from: string, to: string, e: Entry, map: PathMap): JournalL
   if (hashSync(part) !== sha) throw new Error(`${e.rel}: the copy doesn't match the original`);
   let out = st.size;
   const kind = rewriteKind(e.rel);
-  if (kind) {
+  if (kind && st.size < 256 * 1024 * 1024) {
     const next = rewritten(kind, readFileSync(part, "utf8"), map);
     if (next !== null) {
       writeFileSync(part, next);
@@ -618,9 +655,9 @@ export function rewriteStateRecords(from: string, to: string): number {
       else if (depth > 1) jsonIn(p, depth - 1);
     }
   };
-  // Transport's records, the background jobs' (by chat), the state root's own wake records (and their cancels), and
-  // a crashed chat's resume marker: each names a chat's file by its place.
-  jsonIn(join(state, "transport"));
+  // The background jobs' records (by chat), the state root's own wake records (and their cancels), a crashed chat's
+  // resume marker and the Transport agents' record: each names a chat's file here by its place.
+  files.push(join(state, "transport-agent.json"));
   jsonIn(join(state, JOBS_DIR_NAME), 2);
   jsonIn(join(state, WAKE_DIR_NAME), 2);
   jsonIn(join(state, "chats", "inflight"));
@@ -639,7 +676,71 @@ export function rewriteStateRecords(from: string, to: string): number {
     renameSync(tmp, f);
     n++;
   }
+  // Transport's records hold the other device's paths too (where the chat arrived there, the source's own folders),
+  // which may spell the same folder: only the fields that name this device's chat are rewritten, and moved.json (the
+  // other device's places only) is left as it is.
+  let names: string[] = [];
+  try {
+    names = readdirSync(join(state, "transport")).filter((x) => x.endsWith(".json") && x !== "moved.json");
+  } catch {
+    // no transports
+  }
+  for (const name of names) {
+    const f = join(state, "transport", name);
+    try {
+      const rec = JSON.parse(readFileSync(f, "utf8")) as { path?: unknown; ext?: { agent?: { path?: unknown } } };
+      const moved = (p: unknown): string | null => (typeof p === "string" && within(p, from) ? to + p.slice(from.length) : null);
+      const path = moved(rec.path);
+      const agent = moved(rec.ext?.agent?.path);
+      if (!path && !agent) continue;
+      if (path) rec.path = path;
+      if (agent) rec.ext!.agent!.path = agent;
+      const tmp = `${f}.${process.pid}.tmp`;
+      writeFileSync(tmp, `${JSON.stringify(rec, null, 2)}\n`, { mode: 0o600 });
+      renameSync(tmp, f);
+      n++;
+    } catch {
+      // not a record of ours
+    }
+  }
   return n;
+}
+
+// ---- other work in the homes folder --------------------------------------------------------------------------------
+
+/** Work writing the homes folder outside a chat (a compression, a Move Back), by what it is: a move waits for it. */
+const homesWork = new Map<number, string>();
+let workSeq = 0;
+
+/**
+ * Begin work that writes the homes folder by a path it takes at its start (a chat's compression, a Move Back): refused
+ * with the hold's sentence while a move runs, and while it runs a move is refused (it would finish in the old folder
+ * after the copy). Returns its end.
+ */
+export function beginHomesWork(what: string): () => void {
+  const held = moveHold();
+  if (held) throw new Error(held);
+  const id = ++workSeq;
+  homesWork.set(id, what);
+  return () => void homesWork.delete(id);
+}
+
+/** `fn` as homes work (beginHomesWork), ended however it ends. */
+export async function withHomesWork<T>(what: string, fn: () => Promise<T>): Promise<T> {
+  const end = beginHomesWork(what);
+  try {
+    return await fn();
+  } finally {
+    end();
+  }
+}
+
+/** A Transport here that isn't done or cancelled: its home is staged beside the homes folder (`<root>.incoming`) or
+    still to be packed from it, by paths taken as it goes. */
+function liveTransports(): string[] {
+  return listTransports()
+    .filter((r) => r.state !== "done" && r.state !== "cancelled")
+    .map((r) => r.title || r.chatId);
 }
 
 // ---- the move -----------------------------------------------------------------------------------------------------
@@ -777,6 +878,8 @@ async function run(move: ChatsFolderMove, deps: MoveDeps, made: boolean): Promis
     move.files = last.length;
     move.copiedFiles = last.length;
     move.copiedBytes = move.bytes = last.reduce((n, e) => n + e.size, 0);
+    // Every folder too, an empty one included (a home whose first conversation isn't written yet).
+    for (const d of foldersSync(from)) mkdirSync(join(to, d.rel), { recursive: true, mode: d.mode });
     fsyncTree(to);
     writeMarker(to, [from, ...previousHomesRoots()]);
     switchHomesRoot();

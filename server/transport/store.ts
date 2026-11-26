@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { stateRoot } from "../state-root";
+import { moveHold } from "../chat-homes/move-root";
 
 export type TransportMode = "move" | "copy";
 export type TransportSide = "source" | "destination";
@@ -146,6 +147,10 @@ function activeIndex(): Map<string, TransportRecord> {
 export const resetActiveIndex = (): void => void (active = null);
 
 export function createTransport(r: Omit<TransportRecord, "v" | "createdAt" | "updatedAt" | "attempt" | "steps"> & { steps?: TransportRecord["steps"] }): TransportRecord {
+  // No Transport starts, either way, while a Chats folder move runs: its home would be staged or packed by the folder
+  // in force at its start (§app.chat-homes/chats-folder).
+  const held = moveHold();
+  if (held) throw new Error(held);
   const now = new Date().toISOString();
   const rec: TransportRecord = { v: 1, attempt: 1, steps: {}, ...r, createdAt: now, updatedAt: now };
   write(rec);

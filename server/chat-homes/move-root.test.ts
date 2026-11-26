@@ -8,9 +8,11 @@ import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, st
 import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import { CHAT_HOMES_ROOT_ENV, HOMES_ENV, homesRoot, homesRootInfo, MARKER_FILE, onHomesRootSwitch, rebaseHomePath, resetHomesMemoForTests } from "./root";
-import { cancelMove, chatsFolderInfo, currentMove, JOURNAL_FILE, repositoryOf, syncIo, liveSyncOf, MOVE_STATE_FILE, moveHold, moveSettled, type MoveDeps, previewMove, recoverMove, resetMoveForTests, startMove, SUBFOLDER, targetOf } from "./move-root";
+import { beginHomesWork, cancelMove, chatsFolderInfo, currentMove, JOURNAL_FILE, repositoryOf, syncIo, liveSyncOf, MOVE_STATE_FILE, moveHold, moveSettled, type MoveDeps, previewMove, recoverMove, resetMoveForTests, startMove, SUBFOLDER, targetOf } from "./move-root";
 import { sessionPathShape } from "../paths";
 import { acquireChatHandle, setChatRouter, type ChatHandle } from "../chat-handle";
+import { createTransport, newTid, resetActiveIndex } from "../transport/store";
+import { compressChat } from "../archive-compress/compress";
 
 const state = join(scratchAgentDir, "sova");
 const ID = "019a0000-0000-7000-8000-00000000aaaa";
@@ -347,5 +349,79 @@ describe("a move", () => {
     assert.ok(seen.slice(0, marker).includes(`file ${join(to, ID, "workers", `${WORKER}.json`)}.sova-part`), seen.join("\n"));
     for (const d of [to, join(to, ID), join(to, ID, "sessions"), join(to, ID, "workers"), join(to, ID, "chat", "attachments"), join(to, "..")].map((p) => join(p)))
       assert.ok(seen.slice(0, marker).includes(`dir ${d}`), `${d} flushed before the marker`);
+  });
+
+  test("a Transport under way, or work writing the homes folder (a compression, a Move Back), holds the move; none starts during one", async () => {
+    const tdir = join(state, "transport");
+    mkdirSync(tdir, { recursive: true });
+    const tid = newTid();
+    const rec = { v: 1, tid, side: "destination", mode: "move", chatId: ID, sourceChatId: ID, title: "Fix the build", peer: "p", peerLabel: "laptop", path: join(from, ID, "sessions", "x.jsonl"), folder: "/w", state: "checking", steps: { verified: "t" }, attempt: 1, createdAt: "t", updatedAt: "t" };
+    writeFileSync(join(tdir, `${tid}.json`), JSON.stringify(rec));
+    resetActiveIndex();
+    try {
+      const r = await startMove(to, deps());
+      assert.ok(!r.ok);
+      assert.match(r.error, /A Transport of Fix the build is under way/);
+      assert.equal(existsSync(to), false);
+      writeFileSync(join(tdir, `${tid}.json`), JSON.stringify({ ...rec, state: "done" }));
+      // A compression running: the move waits for it.
+      const end = beginHomesWork("Compressing Old chat");
+      assert.match((await previewMove(to, deps())).refusal ?? "", /Compressing Old chat is running in your chats folder/);
+      end();
+      // During a move: no compression, Move Back or Transport starts.
+      let release!: () => void;
+      const gate = new Promise<void>((r2) => (release = r2));
+      assert.ok((await startMove(to, deps({ stopChats: async () => (await gate, 0) }))).ok);
+      assert.throws(() => beginHomesWork("Compressing x"), /Your chats are moving to/);
+      // A chat's compression itself: refused before it reads anything.
+      const row = { id: ID, title: "Old chat", path: join(from, ID, "sessions", `2026-01-01T00-00-00-000Z_${ID}.jsonl`) };
+      await assert.rejects(compressChat(row as never, [], "user"), /Your chats are moving to/);
+      assert.throws(() => createTransport({ ...rec, tid: newTid(), state: "preparing" } as never), /Your chats are moving to/);
+      release();
+      await moveSettled();
+      assert.equal(currentMove()!.phase, "done", currentMove()!.error);
+    } finally {
+      rmSync(tdir, { recursive: true, force: true });
+      resetActiveIndex();
+    }
+  });
+
+  test("Transport's records: only this device's chat paths move (the other device's spellings and moved.json stay); the agents' record moves", async () => {
+    const tdir = join(state, "transport");
+    mkdirSync(tdir, { recursive: true });
+    const here = join(from, ID, "sessions", "a.jsonl");
+    // The other device's place, spelled under the same folder (the default folder is a hash of a state root's path).
+    const there = join(from, "019a0000-0000-7000-8000-0000000000ee", "sessions", "b.jsonl");
+    writeFileSync(join(tdir, "tr_done.json"), JSON.stringify({ v: 1, tid: "tr_done", state: "done", path: here, ext: { agent: { path: here }, sourceValues: [from], arrivedPath: there } }));
+    writeFileSync(join(tdir, "moved.json"), JSON.stringify({ v: 1, moved: { [ID]: { arrivedPath: there } } }));
+    const movedBefore = readFileSync(join(tdir, "moved.json"), "utf8");
+    writeFileSync(join(state, "transport-agent.json"), JSON.stringify({ v: 1, projects: { k: { path: "/w/p", at: 1 } }, agents: { [ID]: { path: here } } }));
+    try {
+      assert.ok((await startMove(to, deps())).ok);
+      await moveSettled();
+      assert.equal(currentMove()!.phase, "done", currentMove()!.error);
+      const t = JSON.parse(readFileSync(join(tdir, "tr_done.json"), "utf8"));
+      assert.equal(t.path, join(to, ID, "sessions", "a.jsonl"));
+      assert.equal(t.ext.agent.path, join(to, ID, "sessions", "a.jsonl"));
+      assert.deepEqual(t.ext.sourceValues, [from], "the other device's values are kept");
+      assert.equal(t.ext.arrivedPath, there);
+      assert.equal(readFileSync(join(tdir, "moved.json"), "utf8"), movedBefore);
+      const a = JSON.parse(readFileSync(join(state, "transport-agent.json"), "utf8"));
+      assert.equal(a.agents[ID].path, join(to, ID, "sessions", "a.jsonl"));
+      assert.equal(a.projects.k.path, "/w/p");
+    } finally {
+      rmSync(tdir, { recursive: true, force: true });
+      rmSync(join(state, "transport-agent.json"), { force: true });
+    }
+  });
+
+  test("an empty folder moves too (a home whose first conversation isn't written yet)", async () => {
+    const fresh = "019a0000-0000-7000-8000-00000000dddd";
+    mkdirSync(join(from, fresh, "sessions"), { recursive: true });
+    writeFileSync(join(from, fresh, "home.json"), "{}");
+    assert.ok((await startMove(to, deps())).ok);
+    await moveSettled();
+    assert.equal(currentMove()!.phase, "done", currentMove()!.error);
+    assert.ok(statSync(join(to, fresh, "sessions")).isDirectory());
   });
 });

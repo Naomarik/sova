@@ -105,7 +105,9 @@ export async function pass() {
     if (!people.length) return;
     for (const row of await listChats()) {
       if (ownerOf(row) || (unknownUntil.get(row.id) ?? 0) > Date.now()) continue;
-      // A helper chat follows the chat that started it (Sova reads the parent's labels for it).
+      // A helper chat gets no owner label of its own: it follows the chat that started it. Sova's page
+      // gives it its parent's owner (src/lib/list-place.ts ownerIdOf follows `workerOf`, among the rows
+      // the page holds), so the person menu and the avatar treat it as that person's.
       if (row.workerOf) continue;
       const person = personOf(people, await startedBy(row));
       if (!person) {

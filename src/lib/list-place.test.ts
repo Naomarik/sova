@@ -9,7 +9,9 @@ import {
   labelPairs,
   LIST_PEOPLE_MAX,
   listExtensions,
+  OWNER_HOPS_MAX,
   ownerOf,
+  parentLookup,
   passesPersonFilter,
   personOfCaller,
   sameDeclaration,
@@ -17,6 +19,7 @@ import {
   validPerson,
   type ListDeclaration,
 } from "./list-place";
+import * as mesh from "./mesh";
 type SessionSummary = import("../../shared/protocol").SessionSummary;
 
 const ext = { id: "team-bar", title: "Team bar" };
@@ -130,6 +133,45 @@ describe("a row, read by the declaration", () => {
     assert.equal(ownerOf(decl, row({ labels: { "team-bar": { owner: "zed" } } })), undefined);
     assert.equal(ownerOf(decl, row()), undefined);
     assert.equal(ownerOf(null, row({ labels: { "team-bar": { owner: "lee" } } })), undefined, "no declaration: nothing read");
+  });
+
+  test("a helper chat follows the chat that started it: its parent's owner is its owner", () => {
+    const parent = row({ id: "p-1", path: "/state/sessions/p.jsonl", labels: { "team-bar": { owner: "kim" } } });
+    const helper = row({ id: "h-1", path: "/state/sessions/h.jsonl", workerSession: true, workerOf: { id: "p-1", path: "/state/sessions/p.jsonl" } });
+    const up = parentLookup([parent, helper]);
+    assert.equal(passesPersonFilter(decl, "kim", helper, up), true);
+    assert.equal(passesPersonFilter(decl, "lee", helper, up), false);
+    assert.equal(ownerOf(decl, helper, up)?.name, "Kim Ortega");
+    // Its own label, when it has one, wins.
+    const own = row({ ...helper, labels: { "team-bar": { owner: "lee" } } });
+    assert.equal(ownerOf(decl, own, parentLookup([parent, own]))?.id, "lee");
+    // A helper of a helper climbs on, within the bound.
+    const deep = row({ id: "h-2", path: "/state/sessions/h2.jsonl", workerSession: true, workerOf: { id: "h-1", path: "/state/sessions/h.jsonl" } });
+    assert.equal(ownerOf(decl, deep, parentLookup([parent, helper, deep]))?.id, "kim");
+  });
+
+  test("a helper chat whose parent the page doesn't hold stays unowned; a loop or a long chain ends", () => {
+    const helper = row({ id: "h-1", workerSession: true, workerOf: { id: "gone", path: "/state/sessions/gone.jsonl" } });
+    const up = parentLookup([helper]);
+    assert.equal(ownerOf(decl, helper, up), undefined);
+    assert.equal(passesPersonFilter(decl, "kim", helper, up), false);
+    assert.equal(ownerOf(decl, helper), undefined, "no lookup: its own labels only");
+    // A parent on another host is not this host's chat of the same id.
+    const parent = row({ id: "p-1", path: "/peer/sessions/p.jsonl", labels: { "team-bar": { owner: "kim" } } });
+    const local = row({ id: "h-3", workerSession: true, workerOf: { id: "p-1", path: "/state/sessions/p.jsonl" } });
+    mesh.noteHost("/peer/sessions/p.jsonl", "peer-1");
+    assert.equal(ownerOf(decl, local, parentLookup([parent, local])), undefined);
+    // Two helpers naming each other: the walk stops.
+    const a = row({ id: "a", workerSession: true, workerOf: { id: "b", path: "" } });
+    const b = row({ id: "b", workerSession: true, workerOf: { id: "a", path: "" } });
+    assert.equal(ownerOf(decl, a, parentLookup([a, b])), undefined);
+    // A chain longer than OWNER_HOPS_MAX parents is cut.
+    const chain = Array.from({ length: OWNER_HOPS_MAX + 2 }, (_, i) =>
+      row({ id: `c${i}`, ...(i === 0 ? { labels: { "team-bar": { owner: "kim" } } } : { workerSession: true as const, workerOf: { id: `c${i - 1}`, path: "" } }) }),
+    );
+    const chainUp = parentLookup(chain);
+    assert.equal(ownerOf(decl, chain[OWNER_HOPS_MAX]!, chainUp)?.id, "kim", "exactly the bound: found");
+    assert.equal(ownerOf(decl, chain[OWNER_HOPS_MAX + 1]!, chainUp), undefined, "past it: unowned");
   });
 
   test("the person menu: Everyone first, a choice only while the declaration names that person", () => {

@@ -67,7 +67,7 @@ import { rowBranchStatus } from "../lib/branch-status";
 import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
 import { RowPlaceView } from "./RowPlace";
 import { OwnerMark, PersonMenu } from "./ListPlace";
-import { effectivePersonFilter, ListPlaceContext, OwnerContext, ownerOf, passesPersonFilter, PERSON_FILTER_KEY, type OwnerOfRow } from "../lib/list-place";
+import { effectivePersonFilter, ListPlaceContext, OwnerContext, ownerOf, parentLookup, passesPersonFilter, PERSON_FILTER_KEY, type OwnerOfRow } from "../lib/list-place";
 import { orgHref } from "../lib/orgs-route";
 import { inLocalProjectsRegion, projectBlocks, projectOpenCount, PROJECTS_KEY } from "../lib/project-region";
 import { projectHref, projectSessionHref, PROJECTS_HREF } from "../lib/projects-route";
@@ -1290,6 +1290,9 @@ export function Sidebar(props: {
     const stored = storedPerson();
     return effectivePersonFilter(stored === undefined ? readKey(localStorage, PERSON_FILTER_KEY) : stored, d);
   });
+  /** A helper chat's parent among every row the page holds (lib/list-place parentLookup): its owner is
+      its parent's. Built only while a declaration exists: without one there is no map and no work. */
+  const parentOf = createMemo(() => (listPlace.declaration() ? parentLookup(props.sessions ?? []) : undefined));
   const choosePerson = (value: string | null) => {
     setStoredPerson(value);
     if (value === null) removeKey(localStorage, PERSON_FILTER_KEY);
@@ -1471,7 +1474,8 @@ export function Sidebar(props: {
     const p = personFilter();
     if (p === null) return pool;
     const d = listPlace.declaration();
-    return pool.filter((s) => passesPersonFilter(d, p, s));
+    const up = parentOf();
+    return pool.filter((s) => passesPersonFilter(d, p, s, up));
   });
   const hits = createMemo(() => {
     const q = query().trim().toLowerCase();
@@ -3065,7 +3069,7 @@ export function Sidebar(props: {
   /** A row's owner and whether it is you, by the declaration (reactive: it changes with the declaration). */
   const ownerOfRow: OwnerOfRow = (s) => {
     const d = listPlace.declaration();
-    const person = ownerOf(d, s);
+    const person = ownerOf(d, s, parentOf());
     return person ? { person, self: person.id === d!.self } : undefined;
   };
 

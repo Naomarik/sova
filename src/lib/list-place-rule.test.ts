@@ -54,7 +54,9 @@ test("the owner mark is drawn once, on the row, and the person menu once, in the
 test("a chat's labels are read only through the local declaration's key (the row-chips amendment)", () => {
   const readers = files.filter((x) => /\.labels\?\.\[/.test(x.src)).map((x) => x.f);
   assert.deepEqual(readers, ["lib/list-place.ts"], "nothing on the page reads row.labels except the list place");
-  assert.match(src("lib/list-place.ts"), /s\.labels\?\.\[decl\.ownerExt\]\?\.\[decl\.ownerKey\]/);
+  assert.match(src("lib/list-place.ts"), /row\.labels\?\.\[decl\.ownerExt\]\?\.\[decl\.ownerKey\]/);
+  // A helper chat's owner is its parent's, followed through `workerOf` with a bound.
+  assert.match(src("lib/list-place.ts"), /hops >= OWNER_HOPS_MAX/);
   // Today's answered chips stay this host's only.
   assert.match(src("lib/row-place.ts"), /return chips && hostOf\(s\.path\) === null \? chips : undefined;/);
 });
@@ -64,7 +66,9 @@ test("the person filter narrows the host filter's pool, in the same memo, and le
   const pool = side.slice(side.indexOf("const hostPool = createMemo("), side.indexOf("const hits = createMemo("));
   assert.match(pool, /passesHostFilter\(h, s\.path\)/);
   assert.match(pool, /if \(p === null\) return pool;/);
-  assert.match(pool, /passesPersonFilter\(d, p, s\)/);
+  assert.match(pool, /passesPersonFilter\(d, p, s, up\)/);
+  // The parent lookup is built only while a declaration exists: no map, no work without one.
+  assert.match(src("components/Sidebar.tsx"), /const parentOf = createMemo\(\(\) => \(listPlace\.declaration\(\) \? parentLookup\(props\.sessions \?\? \[\]\) : undefined\)\);/);
   assert.equal(side.match(/passesPersonFilter\(/g)?.length, 1);
 });
 

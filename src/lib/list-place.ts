@@ -21,6 +21,7 @@ import { offersPlace, screenPath } from "../../shared/extension-offers";
 import { createSlotPolicy, readCappedJson, type SlotPolicy, type SlotStorage } from "./reply-slot";
 import { createPlaceAnswers, sameRowExtensions, type RowClock, type RowExtension, type RowSource } from "./row-place";
 import { labelsAsk, setLabelsAsk } from "./labels-ask";
+import { hostOf } from "./mesh";
 
 /** People read from one answer; the rest make it bad. */
 export const LIST_PEOPLE_MAX = 32;
@@ -132,16 +133,41 @@ export function listExtensions(list: readonly ExtensionInfo[] | undefined): RowE
 export const personOfCaller = (decl: ListDeclaration | null | undefined, caller: string): ListPerson | undefined =>
   decl ? decl.people.find((p) => p.callers.includes(caller)) : undefined;
 
-/** A row's owner label as the declaration names it (any host's row: the key is the local declaration's). */
-export const ownerIdOf = (decl: ListDeclaration, s: SessionSummary): string | undefined => {
-  const v = s.labels?.[decl.ownerExt]?.[decl.ownerKey];
-  return typeof v === "string" ? v : undefined;
+/** Parents followed from a helper chat to the chat that owns it, at most (lib/merge-chat's bound). */
+export const OWNER_HOPS_MAX = 8;
+
+/** A helper chat's parent among the rows the page holds (its `workerOf`: same host, same id), or undefined. */
+export type ParentOf = (s: SessionSummary) => SessionSummary | undefined;
+
+/** The parent lookup over the page's rows: one map, built by the caller only while a declaration exists. */
+export function parentLookup(rows: readonly SessionSummary[]): ParentOf {
+  const key = (host: string | null, id: string) => `${host ?? ""}\n${id}`;
+  const byKey = new Map<string, SessionSummary>();
+  for (const r of rows) byKey.set(key(hostOf(r.path), r.id), r);
+  return (s) => (s.workerOf ? byKey.get(key(hostOf(s.path), s.workerOf.id)) : undefined);
+}
+
+/**
+ * A row's owner label as the declaration names it (any host's row: the key is the local declaration's).
+ * A helper chat with no owner label of its own follows the chat that started it (`workerOf`, through
+ * `parentOf`), at most OWNER_HOPS_MAX parents up: its parent's owner is its owner. A parent the page
+ * doesn't hold leaves it unowned.
+ */
+export const ownerIdOf = (decl: ListDeclaration, s: SessionSummary, parentOf?: ParentOf): string | undefined => {
+  let row: SessionSummary | undefined = s;
+  for (let hops = 0; row; hops++) {
+    const v = row.labels?.[decl.ownerExt]?.[decl.ownerKey];
+    if (typeof v === "string") return v;
+    if (!parentOf || !row.workerOf || hops >= OWNER_HOPS_MAX) return undefined;
+    row = parentOf(row);
+  }
+  return undefined;
 };
 
-/** A row's owner, when the label names a declared person. */
-export const ownerOf = (decl: ListDeclaration | null | undefined, s: SessionSummary): ListPerson | undefined => {
+/** A row's owner, when the label (its own, or its parent's for a helper chat) names a declared person. */
+export const ownerOf = (decl: ListDeclaration | null | undefined, s: SessionSummary, parentOf?: ParentOf): ListPerson | undefined => {
   if (!decl) return undefined;
-  const id = ownerIdOf(decl, s);
+  const id = ownerIdOf(decl, s, parentOf);
   return id === undefined ? undefined : decl.people.find((p) => p.id === id);
 };
 
@@ -150,8 +176,8 @@ export const effectivePersonFilter = (stored: string | null, decl: ListDeclarati
   stored !== null && decl?.people.some((p) => p.id === stored) ? stored : null;
 
 /** Whether a row passes the person menu's choice (null: Everyone, every row). */
-export const passesPersonFilter = (decl: ListDeclaration | null | undefined, person: string | null, s: SessionSummary): boolean =>
-  person === null || !decl || ownerIdOf(decl, s) === person;
+export const passesPersonFilter = (decl: ListDeclaration | null | undefined, person: string | null, s: SessionSummary, parentOf?: ParentOf): boolean =>
+  person === null || !decl || ownerIdOf(decl, s, parentOf) === person;
 
 /** The `<extension id>:<key>` pairs a declaration reads (lib/labels-ask), or null. */
 export const labelPairs = (d: ListDeclaration | null): string | null => (d ? `${d.ownerExt}:${d.ownerKey}` : null);

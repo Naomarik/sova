@@ -2410,6 +2410,9 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       continue;
     }
     const packed = compressedAt(path);
+    // A Moved row (its safety copy and kept worktrees with it) goes only by your own Delete of it: the deletes by age
+    // and of empty sessions never match it, compressed or not.
+    if (!compress && req.mode !== "paths" && movedOf(packed && packed.row.path === path ? packed.id : idOf(path))) continue;
     if (packed && packed.row.path === path) {
       // A compressed chat: compress leaves it out silently; Delete removes its compressed files.
       if (compress || req.mode === "husks") continue;

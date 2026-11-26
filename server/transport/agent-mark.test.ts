@@ -1,4 +1,4 @@
-// The Transport agent's confinement fails closed (§app.transport/agent "Confined"): the chat keeps its own mark in its
+// The Transport agent's confinement fails closed: the chat keeps its own mark in its
 // home, a device record that is gone or can't be read never opens an agent's chat unconfined, and an unreadable record
 // is never written over.
 import { dropScratchAgentDir } from "../testing/scratch-agent-dir";

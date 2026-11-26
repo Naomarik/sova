@@ -284,7 +284,7 @@ test("the notes the door kept out aren't written, and the token's still are", as
 
 test("the served list says the contract's number", async () => {
   const body = (await call("GET", "/api/commands", asKey())).body;
-  assert.equal(body.server.extensionContract, 20);
+  assert.equal(body.server.extensionContract, 21);
 });
 
 test("card news over /ws/events with the key: raised, changed, answered, no data; a status card updates in place", async () => {

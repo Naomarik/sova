@@ -51,7 +51,13 @@ import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { wireRequestChats } from "./owner-request-chat";
-import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, indexedSessionPaths, lastListedRows, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { hotFolders } from "./session-watch-scope";
+import { startArchiveCompression } from "./archive-compress/start";
+import { serverStart } from "./project-services/self-host";
+import { markServerRunning } from "./archive-compress/server-mark";
+import { homeIdOfPath, homeSessionsDirs, isHomeSessionsDir } from "./chat-homes/root";
+import { viewedIds } from "./seen";
 import { startScheduleKeeper } from "./schedule-routes";
 import { cancelChatWakes, startWakeKeeper } from "./wake-keeper-live";
 import { monitorJobs, startJobKeeper, stopJobsOf, sweepJobs } from "./background-jobs";
@@ -81,6 +87,7 @@ import { MessageLabeller } from "./message-labeller";
 import { messageLabelStore } from "./message-labels";
 import { configureSessionFeed, nudgeMarks, publishFeed, sessionFeed } from "./session-feed";
 import { startEvents } from "./events";
+import { onChatNews } from "./chat-home-events";
 import { onAttentionNotified } from "./attention-memo";
 import { configureLlmInflight } from "./llm-inflight";
 import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/extensions/llm-inflight/tracker.ts";
@@ -224,6 +231,8 @@ function startRetirement(): Retirer | null {
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   setAuthPort(info.port);
+  // The backup and rollback commands refuse while this server runs (scripts/chat-homes).
+  markServerRunning(info.port, serverStart().startedAt);
   // The first start's approvals and a reading of what is approved, before anything is answered,
   // then each active extension's own key, kept in step with the list.
   startExtensionLoader();
@@ -315,6 +324,8 @@ startResourceMonitor({
 startBudgetRecount();
 // The automatic session namer's sweep (off until Settings turns it on), nudged by summary lines.
 autoTitleSweep.start();
+// Archived chats older than 60 days are compressed in the background (Settings → automatic compression, on by default).
+startArchiveCompression();
 onSummaryLineChanged(() => autoTitleSweep.nudge());
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
@@ -329,11 +340,51 @@ const events = startEvents({
   holdFeed: () => sessionFeed()?.add(() => {}) ?? null,
   isHosted: (path) => chatHandle(path) !== undefined,
   idOf,
+  onChatNews,
+  // A worker's or team member's conversation names its parent's top-level chat: its home's id, read from the path,
+  // else (an older chat) the worker registry's map, in memory.
+  chatOf: (id, path) => {
+    const home = homeIdOfPath(path);
+    if (home) return home;
+    let at = id;
+    for (let i = 0; i < 8; i++) {
+      const parent = wakeOwnerOf(at)?.parentSessionId;
+      if (!parent || parent === at) break;
+      at = parent;
+    }
+    return at;
+  },
 });
 // Change-driven (§app.decisions/push): it compares when a watched input or an in-process store
 // changes, an org statechart moves or something the digest lists changes, and pushes the digest
 // and the Overseer's state built from its own list.
 let feedChanged: (() => void) | null = null;
+// §app.session-list/live-watch-scope: the open (a socket on it), held and live-recorded chats'
+// folders, plus every folder with a chat active in the last 7 days by the last listing's rows.
+const activeSessionFolders = (): Set<string> => {
+  const files: string[] = chatHandles().map((c) => c.path);
+  for (const r of readLiveRecords({ includeOwn: true })) if (r.sessionFile) files.push(r.sessionFile);
+  const byId = indexedSessionPaths();
+  for (const id of viewedIds()) {
+    const p = byId.get(id);
+    if (p) files.push(p);
+  }
+  return hotFolders({ rows: [], active: files });
+};
+const liveWatchScope = {
+  active: activeSessionFolders,
+  // Each chat home's sessions/ (§app.chat-homes/new-chats), under the same scope rule; a home made since the last
+  // resync is taken as soon as one of its chats is active.
+  folders: homeSessionsDirs,
+  accepts: isHomeSessionsDir,
+  hot: () => {
+    // Nothing listed yet (the first sync, at the feed's start): every folder, as before.
+    if (lastListedRows().size === 0) return null;
+    const hot = hotFolders({ rows: lastListedRows().values(), active: [] });
+    for (const d of activeSessionFolders()) hot.add(d);
+    return hot;
+  },
+};
 onOrgChange(() => feedChanged?.());
 configureSessionFeed({
   // Re-reads only the session files the watch named since the last build (with a full sweep).
@@ -342,7 +393,7 @@ configureSessionFeed({
   watch: (changed) => {
     feedChanged = changed;
     const tracked = trackSessionFiles();
-    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs, checkQueueViews], files: tracked.note });
+    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs, checkQueueViews], files: tracked.note, scope: liveWatchScope });
     const offAttention = onAttentionNotified(changed);
     return () => {
       feedChanged = null;

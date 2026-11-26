@@ -231,6 +231,7 @@ export type CommandId =
   | "usage.time"
   | "usage.today"
   | "usage.session"
+  | "chat.usage"
   | "usage.sessions"
   | "usage.prices"
   | "usage.prices.refresh"
@@ -304,7 +305,25 @@ export type CommandId =
   | "design.remove"
   | "design.restore"
   | "design.history"
-  | "design.delete";
+  | "design.delete"
+  | "transport.preview"
+  | "transport.list"
+  | "transport.get"
+  | "transport.back"
+  | "transport.start"
+  | "transport.retry"
+  | "transport.cancel"
+  | "transport.interrupt"
+  | "transport.move-back"
+  | "transport.host-values"
+  | "transport.allow-downloads"
+  | "transport.admin-done"
+  | "transport.bring-file"
+  | "transport.placed-file"
+  | "chats-folder.get"
+  | "chats-folder.preview"
+  | "chats-folder.move"
+  | "chats-folder.cancel";
 
 /** Each command's params, as its catalogue entry declares them. */
 export interface CommandParams {
@@ -645,6 +664,8 @@ export interface CommandParams {
     "paths"?: string[];
     /** Only list what would be deleted */
     "dry-run"?: boolean;
+    /** delete (the default) or compress: compress the archived ones instead */
+    "action"?: "delete" | "compress";
   };
   /** Name sessions with the title model, as Auto-title does; --redo replaces one session's title. (changes something; needs the card's owner trusted) */
   "session.title.auto": {
@@ -4579,6 +4600,11 @@ export interface CommandParams {
     /** The session id */
     "sid": string;
   };
+  /** One chat's spending and time, split by its conversations: the chat, then each helper. (only looks; needs the card's owner trusted) */
+  "chat.usage": {
+    /** The chat's id (its session id) */
+    "chat": string;
+  };
   /** Several sessions' spending, by session id. (only looks; needs the card's owner trusted) */
   "usage.sessions": {
     /** Session ids, comma-separated */
@@ -5016,6 +5042,108 @@ export interface CommandParams {
     /** The design's label (A, B, … AA) */
     "label": string;
   };
+  /** What a transport of a chat would carry and leave, and why it can't start now; with `peer`, that device's answer. (only looks; needs the card's owner trusted) */
+  "transport.preview": {
+    /** The chat, by its path */
+    "session"?: string;
+    /** One of your devices, by its peer id */
+    "peer"?: string;
+  };
+  /** This device's transports, a chat's only with `session` (its id). (only looks; needs the card's owner trusted) */
+  "transport.list": {
+    /** The chat's id */
+    "chat"?: string;
+  };
+  /** One transport: its state, its steps, and what it needs from you. (only looks; needs the card's owner trusted) */
+  "transport.get": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Whether a Moved row can come back: Move Back, Copy Back, or why neither. (only looks; needs the card's owner trusted) */
+  "transport.back": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Only your click on this device's page starts one; anything else is refused and nothing is sent. (changes something; needs the card's owner trusted) */
+  "transport.start": {
+    /** The chat, by its path */
+    "session"?: string;
+    /** The device, by its peer id */
+    "peer": string;
+    /** Move or Copy */
+    "mode": "move" | "copy";
+    /** The folder on that device */
+    "folder": string;
+  };
+  /** Only your click: continue a transport that needs you from what already arrived. (changes something; needs the card's owner trusted) */
+  "transport.retry": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Only your click: stop a transport and remove what arrived on the other device; the chat carries on here. (changes something; needs the card's owner trusted) */
+  "transport.cancel": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Only your click: stop the helpers a Move waits for, so it goes on. (changes something; needs the card's owner trusted) */
+  "transport.interrupt": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Only your click: bring a Moved chat back here while nothing happened to it there. (changes something; needs the card's owner trusted) */
+  "transport.move-back": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+  };
+  /** Only your click on this device's page: set the host values an arrived transport's card asks for, in this device's host.json for the project. (changes something; needs the card's owner trusted) */
+  "transport.host-values": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** Each asked host value's name and its value */
+    "values": unknown;
+  };
+  /** Only your click on a device's page: let the Transport agent download what its card lists, from exactly the sites listed. (changes something; needs the card's owner trusted) */
+  "transport.allow-downloads": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** The download list's id (dl_…), as the card shows it */
+    "plan": string;
+  };
+  /** Only your click on a device's page: tell the Transport agent you ran the command its card shows, which it can't run itself. (changes something; needs the card's owner trusted) */
+  "transport.admin-done": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** The command's id (ad_…), as the card shows it */
+    "step": string;
+  };
+  /** Only your click on a device's page: copy the one file the Transport agent's card names from the device the chat came from to the same path in this home, once, never over a file already there. (changes something; needs the card's owner trusted) */
+  "transport.bring-file": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** The file's id (of_…), as the card shows it */
+    "file": string;
+  };
+  /** Only your click on a device's page: tell the Transport agent you put the file its card names in place yourself. (changes something; needs the card's owner trusted) */
+  "transport.placed-file": {
+    /** The transport's id (tr_…) */
+    "transport": string;
+    /** The file's id (of_…), as the card shows it */
+    "file": string;
+  };
+  /** The folder this computer keeps its chats in, whether a variable sets it, whether it is there, and the latest move. (only looks; needs the card's owner trusted) */
+  "chats-folder.get": Record<string, never>;
+  /** What moving every chat to a folder would copy (chats, files, size, free space there, a live-sync service it is in), or why it can't. (only looks; needs the card's owner trusted) */
+  "chats-folder.preview": {
+    /** The folder to move every chat to (a new or empty one; one that holds files gets a sova-chats folder inside it) */
+    "folder": string;
+  };
+  /** Only your click in Settings → General moves your chats; anything else is refused and nothing is moved. (changes something; needs the card's owner trusted) */
+  "chats-folder.move": {
+    /** The folder to move every chat to (a new or empty one; one that holds files gets a sova-chats folder inside it) */
+    "folder": string;
+  };
+  /** Only your click cancels a move, before it switches to the new folder; your chats stay where they were. (changes something; needs the card's owner trusted) */
+  "chats-folder.cancel": Record<string, never>;
 }
 
 /** Whether each command only looks or changes something; a view runs either only once its owner is trusted. */
@@ -5248,6 +5376,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "usage.time": "looks",
   "usage.today": "looks",
   "usage.session": "looks",
+  "chat.usage": "looks",
   "usage.sessions": "looks",
   "usage.prices": "looks",
   "usage.prices.refresh": "changes",
@@ -5322,4 +5451,22 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "design.restore": "changes",
   "design.history": "looks",
   "design.delete": "changes",
+  "transport.preview": "looks",
+  "transport.list": "looks",
+  "transport.get": "looks",
+  "transport.back": "looks",
+  "transport.start": "changes",
+  "transport.retry": "changes",
+  "transport.cancel": "changes",
+  "transport.interrupt": "changes",
+  "transport.move-back": "changes",
+  "transport.host-values": "changes",
+  "transport.allow-downloads": "changes",
+  "transport.admin-done": "changes",
+  "transport.bring-file": "changes",
+  "transport.placed-file": "changes",
+  "chats-folder.get": "looks",
+  "chats-folder.preview": "looks",
+  "chats-folder.move": "changes",
+  "chats-folder.cancel": "changes",
 };

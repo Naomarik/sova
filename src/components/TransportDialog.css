@@ -1,0 +1,22 @@
+/* The Transport dialog (§app.transport/dialog): flat sections under eyebrow headings, as the Share sheet's, never
+   boxes inside the sheet. A size sits in a column of its own at its line's end; a file's box, path and size share
+   one 44px row, the whole row the target. */
+.transport-dialog .modal-body > * { flex: none; }
+.transport-dialog :is(h3, h4, p) { margin: 0; }
+/* A sub-heading inside a section ("After it arrives"): the section's eyebrow, set off from the rows above it. */
+.transport-dialog .transport-subhead { margin-top: var(--space-3); }
+.transport-panel { display: flex; flex-direction: column; gap: var(--space-5); }
+.transport-status { margin: 0; color: var(--color-ink); }
+.transport-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.transport-row { display: flex; align-items: baseline; gap: var(--space-3); }
+.transport-row-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.transport-row-sub { display: block; margin-top: 2px; font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); color: var(--color-ink-muted); }
+.transport-rows-label { margin: 0; color: var(--color-ink-2); }
+.transport-size { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.transport-files { list-style: none; margin: 0; padding: 0; }
+.transport-files > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
+.transport-files .toggle { justify-content: flex-start; }
+.transport-files .toggle > span:last-child { flex: 1; min-width: 0; }
+.transport-file { display: flex; align-items: baseline; gap: var(--space-3); }
+.transport-file-path { flex: 1; min-width: 0; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); color: var(--color-ink); }
+.transport-dialog section > .field { margin-top: var(--space-2); }

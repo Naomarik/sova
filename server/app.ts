@@ -1,6 +1,7 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
+import { createNewChatFile } from "./chat-homes/place";
 import { registerJobRoutes } from "./background-jobs-routes";
 import { chatHostHealth } from "./chat-host";
 import { holderAlive, readLock } from "./chat-runtime/writer-lock";
@@ -75,6 +76,7 @@ import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
 import { registerUsageRoutes } from "./usage-routes";
+import { registerChatUsageRoutes } from "./chat-usage-routes";
 import { sessionFeed } from "./session-feed";
 import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, listSessionsAfresh, onSessionArchived } from "./sessions-index";
@@ -84,7 +86,7 @@ import { fixedNameRefusal } from "../shared/fixed-names";
 import { rowsOf } from "./transcript";
 import { parsePiBranchYielding, readBranch, unknownEntries } from "./harness/pi/reader";
 import { contextOfBranch } from "./harness/pi/usage";
-import { appendToClosedFile, createSessionFile, type NewSessionFile } from "./harness/pi/state";
+import { appendToClosedFile, type NewSessionFile } from "./harness/pi/state";
 import { modelCheck, modelCheckStatus } from "./harness/pi/model-sync";
 import { claudeCatalogInfo } from "./claude-models-sync";
 import { reapplyModelLevels } from "./harness/pi/open";
@@ -94,6 +96,7 @@ import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { configureCleanup, worktreesSummary } from "./worktree-cleanup";
+import { compressedGuard } from "./archive-compress/guard";
 import { realRetireDeps, removeFinished, restoreRetired } from "./worktree-retire";
 import { retirementViewOf } from "./worktree-retire-view";
 import { cleanupAnswer, pendingWhileOff, removeGate, summaryWhileOff, viewWhileOff } from "./cleanup-switch";
@@ -152,6 +155,8 @@ import { mountResync } from "./mesh/resync";
 import { areasForbid, probePeer } from "./mesh/hello";
 import { LINK_LIVE, meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
+import { mountTransport } from "./transport/routes";
+import { mountChatsFolder } from "./chat-homes/move-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinksSource } from "./link-delivery";
 import { linkSandbox, linkSandboxOf } from "./link-sandbox";
 import { mountSync } from "./sync";
@@ -203,7 +208,7 @@ import { setCreateSettingsRun } from "./create-settings-tool";
 import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
-import { actsAsExtension, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal } from "./extension-doors";
+import { actsAsExtension, answerWithoutDrafts, EXTENSION_DRAFT_REFUSAL, EXTENSION_FIRST_PROMPT, extensionDoorRefusal, extensionFrameRefusal, isDraftRead, mayActAsExtension } from "./extension-doors";
 import { extensionSenderOf } from "./extension-sender";
 import { registerUpdatesRoutes } from "./updates/routes";
 
@@ -283,7 +288,14 @@ export function buildApp(deps: AppDeps) {
       audited?.(403, closed.route);
       return c.json({ error: closed.error, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
     }
+    // A chat's unsent draft never reaches an extension (§app.extensions/reads-chats): not its route, nor a word of it in any answer.
+    const extension = mayActAsExtension(c) && actsAsExtension(c);
+    if (extension && isDraftRead(c.req.method, new URL(c.req.url).pathname)) {
+      audited?.(403, "/api/sessions/draft");
+      return c.json({ error: EXTENSION_DRAFT_REFUSAL, extensionRefused: true }, 403, { [SERVER_HEADER]: "sova" });
+    }
     await next();
+    if (extension) c.res = await answerWithoutDrafts(c.res);
     try {
       c.res.headers.set(SERVER_HEADER, "sova");
     } catch {
@@ -320,6 +332,9 @@ export function buildApp(deps: AppDeps) {
     const incoming = (c.env as { incoming?: IncomingMessage } | undefined)?.incoming;
     return incoming && isDirectLocal(incoming) ? next() : gzip(c, next);
   });
+
+  // A compressed chat is never opened or read: a route asked about one answers 409 (§app.session-list/archive-compression).
+  app.use("/api/*", compressedGuard());
 
   app.onError((err, c) => {
     // Sharing is off (§mesh.public/sharing-off): a link store refused before writing anything.
@@ -433,7 +448,8 @@ export function buildApp(deps: AppDeps) {
     // exists on disk (listable, watchable, openable by path).
     let made: { path: string; id: string };
     try {
-      made = createSessionFile({ cwd: resolve(cwd), ...(seed ? { seed } : {}) });
+      // A new chat's conversation goes into its own home while the Chat homes switch is on (§app.chat-homes/new-chats).
+      made = createNewChatFile({ cwd: resolve(cwd), ...(seed ? { seed } : {}) });
     } catch (err) {
       const noFile = "SessionManager did not produce a session file";
       if (err instanceof Error && err.message === noFile) return c.json({ error: noFile }, 500);
@@ -564,6 +580,7 @@ export function buildApp(deps: AppDeps) {
   });
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
+  registerChatUsageRoutes(app);
   registerProjectRoutes(app);
   // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
   registerProjectServiceRoutes(app);
@@ -860,7 +877,7 @@ export function buildApp(deps: AppDeps) {
   // deleting. Live, mid-turn and just-written sessions are always skipped and counted in the response;
   // paths mode also refuses anything without the archive mark, with the reason per path.
   app.post("/api/sessions/cleanup", async (c) => {
-    let body: { mode?: unknown; minAgeDays?: unknown; paths?: unknown; dryRun?: unknown };
+    let body: { mode?: unknown; minAgeDays?: unknown; paths?: unknown; dryRun?: unknown; action?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -870,14 +887,17 @@ export function buildApp(deps: AppDeps) {
     // Every field that is present is checked before anything runs: a dryRun that isn't a boolean is
     // refused, never read as a real run.
     if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
+    // §app.session-list/archive-compress: "compress" compresses the archived ones instead; absent or "delete" deletes.
+    if (body.action !== undefined && body.action !== "delete" && body.action !== "compress") return c.json({ error: "action must be delete or compress" }, 400);
+    const action = body.action === "compress" ? ("compress" as const) : undefined;
     if (body.mode !== "age" && body.mode !== "husks" && body.mode !== "paths") return c.json({ error: 'mode must be "husks", "paths", or "age"' }, 400);
     if (body.minAgeDays !== undefined && body.minAgeDays !== 7 && body.minAgeDays !== 30) return c.json({ error: "minAgeDays must be 7 or 30" }, 400);
     const validPaths = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.length <= 100 && v.every((p) => typeof p === "string");
     if (body.paths !== undefined && !validPaths(body.paths)) return c.json({ error: "paths must be 1–100 session paths" }, 400);
     const dryRun = body.dryRun === true;
     if (body.mode === "age" && (body.minAgeDays === 7 || body.minAgeDays === 30))
-      return c.json(await cleanupSessions({ mode: "age", minAgeDays: body.minAgeDays, dryRun }));
-    if (body.mode === "husks") return c.json(await cleanupSessions({ mode: "husks", dryRun }));
+      return c.json(await cleanupSessions({ mode: "age", minAgeDays: body.minAgeDays, dryRun, action }));
+    if (body.mode === "husks") return c.json(await cleanupSessions({ mode: "husks", dryRun, action }));
     if (body.mode === "paths") {
       if (!validPaths(body.paths)) return c.json({ error: "paths must be 1–100 session paths" }, 400);
       // Each path validated exactly like the archive route's, so nothing outside the sessions dir
@@ -888,7 +908,7 @@ export function buildApp(deps: AppDeps) {
         if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
         paths.push(path);
       }
-      return c.json(await cleanupSessions({ mode: "paths", paths, dryRun }));
+      return c.json(await cleanupSessions({ mode: "paths", paths, dryRun, action }));
     }
     return c.json({ error: 'mode must be "husks", "paths", or "age" with minAgeDays 7 or 30' }, 400);
   });
@@ -2174,6 +2194,10 @@ export function buildApp(deps: AppDeps) {
     homedir,
     protectedRoots: () => [stateRoot(), SESSIONS_DIR],
   });
+  // Transport a chat to another of your devices (server/transport/routes.ts): /api/transport*, /api/peer/transport/*.
+  mountTransport(app, meshApi);
+  // Settings → General's Chats folder: where this computer keeps its chats, and the move to another (server/chat-homes/move-routes.ts).
+  mountChatsFolder(app);
   // The link extension asks this, by session id, whether a hosted session is in a live link now:
   // a session that joins one gets the link tools at its next request (§mesh.links/tools).
   (globalThis as Record<symbol, unknown>)[LINK_LIVE] = (id: string) => meshLinks.inLiveLink(id);

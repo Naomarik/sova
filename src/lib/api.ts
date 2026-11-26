@@ -1,3 +1,4 @@
+import type { ChatsFolderInfo, ChatsFolderMove, ChatsFolderPreview } from "../../shared/chats-folder";
 import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
 import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
@@ -534,6 +535,14 @@ export const getWebSettings = () => request<WebSettings>("/api/settings");
 export const putWebSettings = (settings: Partial<WebSettings>) =>
   request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
 
+/** Settings → General's Chats folder (server/chat-homes/move-routes.ts): where this computer keeps its chats. */
+export const getChatsFolder = () => request<ChatsFolderInfo>("/api/chats-folder", { cache: "no-store" });
+/** What a move of every chat to `path` would do, or why it can't. */
+export const previewChatsFolder = (path: string) => request<ChatsFolderPreview>(`/api/chats-folder/preview?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+/** Move Chats: answers once the move has started; its progress is getChatsFolder's `move`. */
+export const moveChatsFolder = (path: string) => request<{ move: ChatsFolderMove }>("/api/chats-folder/move", { method: "POST", body: JSON.stringify({ path }) });
+export const cancelChatsFolderMove = () => request<{ ok: true }>("/api/chats-folder/move/cancel", { method: "POST" });
+
 /** This machine's updates: what runs, the last check, the job. Always this host's own. */
 export const getUpdates = () => request<UpdatesState>("/api/updates", { cache: "no-store" });
 /** Check Now: answers once the check is done. */
@@ -890,7 +899,7 @@ function refusalsOf(body: unknown): BatchRefusal[] | null {
 }
 
 /** POST /api/sessions/cleanup `{ mode:"paths" }`: named session paths, e.g. one archived row. */
-export type PathsCleanupRequest = { mode: "paths"; paths: string[] };
+export type PathsCleanupRequest = { mode: "paths"; paths: string[]; action?: "compress" };
 
 /** One cleanup response, read leniently (`parseCleanupResult`), plus what paths mode refused. */
 export interface CleanupResponse extends CleanupResult {

@@ -6,13 +6,18 @@
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { agentRoot } from "../state-root";
+import { homeDirOf } from "../chat-homes/records";
 import type { NodeRef, TreeNode } from "./tree";
 
 export const memoryRoot = (): string => join(agentRoot(), "sova", "memory");
 const SAFE_ID = /^[A-Za-z0-9._-]{1,128}$/;
-export function memoryDir(sessionId: string, root = memoryRoot()): string {
+/** A chat's memory folder. A chat with a home keeps it in `<home>/chat/memory/<session id>/`, as do the
+    workers under it; `root` names another root outright (tests). */
+export function memoryDir(sessionId: string, root?: string): string {
   if (!SAFE_ID.test(sessionId)) throw new Error(`not a session id: ${sessionId}`);
-  return join(root, sessionId);
+  if (root !== undefined) return join(root, sessionId);
+  const home = homeDirOf(sessionId);
+  return join(home ? join(home, "chat", "memory") : memoryRoot(), sessionId);
 }
 
 /** What `state.json` keeps: the view (chat) and the compaction view, each with its batch flag and cached prefix. */
@@ -180,7 +185,9 @@ export class MemoryStore {
 }
 
 /** Remove a chat's memory (its chat was deleted or archived). Best-effort; never throws. */
-export function removeMemory(sessionId: string, root = memoryRoot()): void {
+export function removeMemory(sessionId: string, root?: string): void {
+  // A home's memory goes only with its chat's own Delete (the whole home).
+  if (root === undefined && homeDirOf(sessionId)) return;
   try {
     rmSync(memoryDir(sessionId, root), { recursive: true, force: true });
   } catch {
@@ -190,7 +197,7 @@ export function removeMemory(sessionId: string, root = memoryRoot()): void {
 
 /** A fork's memory starts as a copy of its source's (§chat.memory/log); the fork's own branch then keeps
     what still matches it. Nothing happens when the source has none or the fork already has its own. */
-export function copyMemory(fromSessionId: string, toSessionId: string, root = memoryRoot()): void {
+export function copyMemory(fromSessionId: string, toSessionId: string, root?: string): void {
   try {
     const from = memoryDir(fromSessionId, root);
     const to = memoryDir(toSessionId, root);

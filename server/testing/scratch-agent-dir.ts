@@ -13,12 +13,17 @@ export const scratchAgentDir = realpathSync(mkdtempSync(join(tmpdir(), "sova-age
 mkdirSync(join(scratchAgentDir, "sova"), { recursive: true });
 mkdirSync(join(scratchAgentDir, "sessions"), { recursive: true });
 const inherited = process.env.PI_CODING_AGENT_DIR;
+const inheritedHomes = process.env.SOVA_CHAT_HOMES;
 process.env.PI_CODING_AGENT_DIR = scratchAgentDir;
+// Chat homes (server/chat-homes/root.ts) in the scratch dir too, never ~/.local/state/sova/chats.
+process.env.SOVA_CHAT_HOMES = join(scratchAgentDir, "chat-homes");
 
 /** Removes the scratch agent dir and puts back the PI_CODING_AGENT_DIR it found, so a later file in the
     same process never works in a deleted folder; call it from the test's `after`. */
 export function dropScratchAgentDir(): void {
   if (inherited === undefined) delete process.env.PI_CODING_AGENT_DIR;
   else process.env.PI_CODING_AGENT_DIR = inherited;
+  if (inheritedHomes === undefined) delete process.env.SOVA_CHAT_HOMES;
+  else process.env.SOVA_CHAT_HOMES = inheritedHomes;
   rmSync(scratchAgentDir, { recursive: true, force: true });
 }

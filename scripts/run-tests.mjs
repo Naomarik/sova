@@ -152,6 +152,9 @@ const GLOBS = [
   "server/mcp/*.test.ts",
   "server/tours/*.test.ts",
   "server/design/*.test.ts",
+  "server/chat-homes/*.test.ts",
+  "server/archive-compress/*.test.ts",
+  "server/transport/*.test.ts",
   "server/playbook-runs/*.test.ts",
   "server/share/*.test.ts",
   "server/share/tunnel/*.test.ts",
@@ -795,6 +798,8 @@ function hermeticEnv(tier) {
     // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
     SOVA_CHAT_CODE: "live",
+    // Chat homes (server/chat-homes/root.ts): in the throwaway root, never the real ~/.local/state/sova/chats.
+    SOVA_CHAT_HOMES: path.join(root, "chat-homes"),
     TMPDIR: tmp,
     TMP: tmp,
     TEMP: tmp,

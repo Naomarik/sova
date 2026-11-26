@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { ASK_KINDS, type AskKind, type DecisionProviderId, TURN_OUTCOMES, type TurnOutcome } from "../shared/protocol";
 import type { Answer } from "./decide";
 import { stateRoot } from "./state-root";
+import { splitOut, withHome } from "./chat-homes/records";
 
 /**
  * The per-turn outcomes (§app.decisions/attention-signals): every turn card's answers, kept by
@@ -53,7 +54,15 @@ function cleanRecord(v: unknown): TurnOutcomeRecord | null {
   };
 }
 
+/** A chat with a home keeps its outcomes in `<home>/chat/signals.json` (server/chat-homes/records.ts). */
+const FIELD = "turn-outcomes.json#sessions";
+
 function load(file: string): OutcomesFile {
+  const data = loadFile(file);
+  return { version: 1, sessions: withHome(data.sessions, "signals", FIELD) };
+}
+
+function loadFile(file: string): OutcomesFile {
   const out: OutcomesFile = { version: 1, sessions: Object.create(null) };
   try {
     const v = JSON.parse(readFileSync(file, "utf8"));
@@ -69,7 +78,12 @@ function load(file: string): OutcomesFile {
   return out;
 }
 
-function write(file: string, data: OutcomesFile): void {
+function write(file: string, data: OutcomesFile, only?: string): void {
+  const { legacy, legacyChanged } = splitOut(data.sessions, "signals", FIELD, { only });
+  if (legacyChanged) writeFile(file, { version: 1, sessions: legacy });
+}
+
+function writeFile(file: string, data: OutcomesFile): void {
   try {
     mkdirSync(dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
@@ -107,7 +121,7 @@ export function recordTurnOutcome(sessionId: string, base: Parameters<typeof out
   list.push(rec);
   list.sort((x, y) => x.replyAt - y.replyAt);
   data.sessions[sessionId] = list.slice(-KEEP_PER_SESSION);
-  write(file, data);
+  write(file, data, sessionId);
 }
 
 /** A session's kept turn outcomes, oldest first. */
@@ -124,9 +138,10 @@ export function latestOutcome(sessionId: string, atOrBefore?: number, file = tur
 /** Drop the sessions not in `keep` (the listed ones). An empty listing is a failed one: nothing dropped. */
 export function pruneTurnOutcomes(keep: ReadonlySet<string>, file = turnOutcomesFile()): void {
   if (!keep.size) return;
-  const data = load(file);
+  // Only the server-wide file is pruned: nothing in a chat home is deleted on its own (§app.chat-homes/lifetime).
+  const data = loadFile(file);
   const gone = Object.keys(data.sessions).filter((id) => !keep.has(id));
   if (!gone.length) return;
   for (const id of gone) delete data.sessions[id];
-  write(file, data);
+  writeFile(file, data);
 }

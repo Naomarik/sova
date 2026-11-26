@@ -1,0 +1,912 @@
+// The destination's side of a transport (§app.transport/arrival, §app.transport/switch): it takes the
+// source's offer (a sessions route, with the click that started it proven back), gets ready (the
+// Transport agent, when there is one), pulls the package with the one-time ticket, checks every file,
+// rebuilds every worktree and points the home at this device, all in staging, and publishes only when
+// the source sends its commit: the worktrees go to their folders and the home appears in one rename.
+// A failure leaves nothing published; Cancel removes what arrived.
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { TRANSPORT_AGENT_NOTE, type TransportAgentNote } from "../../shared/transport-agent-card";
+import { Pulls, TransferError } from "../mesh/links-transfer";
+import { tarMembers } from "../mesh/tar-list";
+import { stateRoot, agentRoot } from "../state-root";
+import { markOwned } from "../write-guard";
+import { chatHome, HOME_FILE, homesRoot } from "../chat-homes/root";
+import { registerArrivedHome } from "../chat-homes/place";
+import { homeArrived } from "../chat-homes/records";
+import { GROUP_ASSIGN_FIELD } from "../session-groups";
+import { compressedChats, dropCompressed, sidecarOf } from "../archive-compress/store";
+import { dropStages, git, havesOf, type KeptFile, lacksRepo, projectComesFrom, type PublishJournal, publishTrees, rebuildWorktrees, remoteReachable, SnapshotError, type StagedTree, withoutCredentials } from "./git-snapshot";
+import { afterArrival, knob, prepareDestination, type PrepareRequest } from "./hooks";
+import { verifyHome, type PackageManifest } from "./package";
+import { findConversation, relocateHome, sessionIdOfName } from "./relocate";
+import { createTransport, logName, readTransport, stepDone, type TransportRecord, updateTransport } from "./store";
+import { checkMembers } from "./tar";
+import { type AgentView, agentViewOf, type OfferBody, peerPath, type ReadyBody, type StatusBody, TICKET_HEADER } from "./wire";
+import { type CarriedSettings, type HostAsk, hostAsksOf, parseCarried, parseHostCarry, pickHostValues } from "./project-carry";
+
+const log = (line: string) => console.log(`[transport] ${line}`);
+
+/** This server's code root: where a worker's extensions load from here. */
+const OWN_CODE = resolve(import.meta.dirname, "..", "..");
+
+/** What the destination needs from the rest of the server (the real ones in routes.ts; tests swap them). */
+export interface DestinationDeps {
+  peerFetch(peerId: string, path: string, init?: RequestInit): Promise<Response>;
+  /** Whether the source really minted this click proof for this body (asked back once, burnt). */
+  clickProven(peerId: string, proof: string, body: string): Promise<boolean>;
+  /** After the home is in place: list it, track its helpers. */
+  adopt(homeId: string): void;
+  /** The chat came back to a device it once moved away from: that old Moved mark goes. */
+  cameBack(homeId: string): void;
+  /** The arrived chat opened, its note written (no turn starts). */
+  openWithNote(path: string, text: string): Promise<void>;
+  /** A helper told to carry on (it moved while working). */
+  tellHelper(chatId: string, text: string, key: string): Promise<void>;
+  /** The note a moved helper hears. */
+  helperNote(device: string, interrupted: boolean): string;
+  /** Bring a moved chat's usage cut in, apart from this device's own records: what it counted. */
+  importUsage(bytes: Buffer, from: string): Record<string, number>;
+  /** The arrived chat's title here (its own, carried in its home); null: unknown. */
+  titleOf?(path: string): Promise<string | null>;
+  /** Put the Transport agent's card in the arrived chat (a note that starts no turn). */
+  noteAgentCard?(path: string, text: string, card: AgentCardNote): Promise<boolean>;
+  /** The project arrived at `root`: register it here with the carried settings unless a project here has that root
+      (project-carry.ts registerArrived). */
+  registerArrived?(root: string, settings: CarriedSettings | null): Promise<{ registered: string } | { already: string } | { error: string }>;
+  /** The host value names this device holds for the project at `root` (its host.json); read only. */
+  hostHeld?(root: string): Set<string>;
+  /** Write host values for the project at `root` into this device's host.json: only on your Save on the card. */
+  writeHostValues?(root: string, values: Record<string, string>): void;
+}
+
+/** The Transport agent's card in a chat (§app.transport/agent): the transport it reads, the agent's title and device. */
+export type AgentCardNote = TransportAgentNote;
+
+/** The note type of the Transport agent's card (server/transcript.ts draws it). */
+export const AGENT_CARD_NOTE = TRANSPORT_AGENT_NOTE;
+
+/** Whether conversation `text` already holds transport `tid`'s agent card (it travelled with the chat, or was put once). */
+export const hasAgentCard = (text: string, tid: string): boolean => text.split("\n").some((l) => l.includes(`"${AGENT_CARD_NOTE}"`) && l.includes(`"${tid}"`));
+
+let deps: DestinationDeps | null = null;
+export const setDestinationDeps = (d: DestinationDeps): void => void (deps = d);
+const need = (): DestinationDeps => {
+  if (!deps) throw new Error("Transport isn't wired on this server.");
+  return deps;
+};
+
+/** Staging, beside the homes root (the same filesystem, so the publishing rename is one step) and outside every
+    home, which only Sova's own records and a chat's shared folder fill. */
+export const incomingRoot = (): string => `${homesRoot()}.incoming`;
+const incomingOf = (tid: string) => join(incomingRoot(), tid);
+
+/**
+ * The chat comes home to a device where its old copy was compressed (a Moved row's safety copy after 7 days): that
+ * compressed copy would hide the arrived chat and keep it from opening. It is moved aside, never deleted, to
+ * `<homes root>.superseded/<id>-<tid>.tar.gz` with its entry beside it, and its entry leaves the list.
+ */
+async function supersedeCompressed(id: string, tid: string): Promise<void> {
+  const e = compressedChats()[id];
+  if (!e) return;
+  const aside = `${homesRoot()}.superseded`;
+  mkdirSync(aside, { recursive: true, mode: 0o700 });
+  const base = join(aside, `${id}-${tid}`);
+  await writeFile(`${base}.compressed.json`, `${JSON.stringify(e, null, 2)}\n`, { mode: 0o600 });
+  if (e.kind === "home" && e.archive && existsSync(e.archive)) {
+    await rename(e.archive, `${base}.tar.gz`);
+    await rm(sidecarOf(e.archive), { force: true });
+  }
+  dropCompressed(id);
+  log(`${tid}: its earlier compressed copy here is kept aside at ${base}.*`);
+}
+
+const pulls = new Pulls({
+  root: () => join(stateRoot(), "transport"),
+  fetchTar: async ({ offerId, senderNodeId, path, headers, signal }) => {
+    const r = readTransport(offerId);
+    if (!r?.ticket) throw new TransferError("internal", "This transport has no ticket here.");
+    return need().peerFetch(senderNodeId, path, { headers: { ...headers, [TICKET_HEADER]: r.ticket }, signal });
+  },
+  log: (line) => log(line.replace(/^\[links\] /, "")),
+});
+
+/** `p` with every link resolved: its nearest existing folder's real path, then the rest as named (a folder not made
+    yet under a link still resolves to where the link points). */
+const canonical = (p: string): string => {
+  let at = resolve(p);
+  const rest: string[] = [];
+  for (;;) {
+    try {
+      return join(realpathSync(at), ...rest.reverse());
+    } catch {
+      const up = dirname(at);
+      if (up === at) return resolve(p);
+      rest.push(at.slice(up.length).replace(/^\//, ""));
+      at = up;
+    }
+  }
+};
+const within = (p: string, dir: string) => p === dir || p.startsWith(`${dir}/`);
+
+/** Why a folder the source named may not be used here, or null: absolute, under this user's home, never in Sova's own state. */
+export function folderRefusal(folder: unknown): string | null {
+  if (typeof folder !== "string" || !isAbsolute(folder) || folder.includes("\0")) return "The folder must be an absolute path on that device.";
+  const f = resolve(folder);
+  // Where it really is: a link on the way (one not made yet under it too) is followed.
+  const real = canonical(f);
+  const home = canonical(homedir());
+  if (!within(real, home)) return `${folder} isn't inside this device's home folder.`;
+  for (const own of [stateRoot(), agentRoot(), homesRoot()].map(canonical)) if (within(f, own) || within(real, own) || within(own, f)) return `${folder} is inside Sova's own state on this device.`;
+  return null;
+}
+
+const ok = (body: unknown, status = 200) => ({ status, body });
+
+/** The source's offer (POST /api/peer/transport/offer), from peer `from`. */
+export async function takeOffer(from: { id: string; label: string }, raw: string, proof: string): Promise<{ status: number; body: unknown }> {
+  let b: OfferBody;
+  try {
+    b = JSON.parse(raw) as OfferBody;
+  } catch {
+    return ok({ error: "Bad offer" }, 400);
+  }
+  if (b?.v !== 1 || !/^tr_[a-z0-9]{6,32}$/.test(String(b.tid)) || typeof b.ticket !== "string" || b.ticket.length < 32 || (b.mode !== "move" && b.mode !== "copy") || !b.chat?.id) return ok({ error: "Bad offer" }, 400);
+  const known = readTransport(b.tid);
+  if (known) return known.peer === from.id ? ok({ ok: true, again: true }) : ok({ error: "Not yours" }, 403);
+  // A person pressed it on the source's own page: the source minted a proof over this very offer, asked back once.
+  if (!proof || !(await need().clickProven(from.id, proof, raw))) return ok({ error: "Only you start a transport, from this device's page. Nothing was sent." }, 403);
+  // `~/…` is this device's home.
+  if (typeof b.folder === "string" && (b.folder === "~" || b.folder.startsWith("~/"))) b.folder = join(homedir(), b.folder.slice(2));
+  const why = folderRefusal(b.folder);
+  if (why) return ok({ error: why }, 400);
+  const placeWhy = placesRefusal(resolve(b.folder), b.trees, b.repoRel);
+  if (placeWhy) return ok({ error: placeWhy }, 400);
+  if (b.mode === "move" && existsSync(chatHome(b.chat.id))) return ok({ error: "This device still holds a copy of this chat (its Moved row). Delete that here first." }, 409);
+  createTransport({
+    tid: b.tid,
+    side: "destination",
+    mode: b.mode,
+    chatId: b.chat.id,
+    sourceChatId: b.chat.id,
+    title: b.chat.title,
+    peer: from.id,
+    peerLabel: b.sourceLabel || from.label,
+    path: "",
+    folder: resolve(b.folder),
+    state: "preparing",
+    ticket: b.ticket,
+    // The folders that aren't here yet: one the Transport agent then makes is this transport's to take over.
+    ext: {
+      absentAtOffer: (b.trees ?? []).map((t) => (t.rel ? resolve(dirname(resolve(b.folder)), t.rel) : resolve(b.folder))).filter((p) => !existsSync(p)),
+      offer: { trees: b.trees, repoRel: b.repoRel, project: b.project, ...(b.model ? { model: b.model } : {}), ...(typeof b.chatModel === "string" && b.chatModel.length < 200 ? { chatModel: b.chatModel } : {}) },
+      // The source's host values (for the declared names only) and its settings for the project: never in a view or a log.
+      ...carryOf(b),
+    },
+  });
+  stepDone(b.tid, "offered");
+  log(`${b.tid}: offered by ${from.label} (${b.mode} of ${b.chat.id})`);
+  void prepare(b.tid);
+  return ok({ ok: true });
+}
+
+/**
+ * Why an offer's other places may not be used here, or null (§app.transport/arrival): every worktree goes inside the
+ * chosen folder's parent, named relative to it, and the repository's folder is named relative to that parent too;
+ * each passes the folder's own check (inside this user's home, never in Sova's own state), links resolved.
+ */
+export function placesRefusal(folder: string, trees: unknown, repoRel: unknown): string | null {
+  const parent = dirname(folder);
+  if (trees !== undefined && !Array.isArray(trees)) return "Bad worktree path";
+  for (const t of (trees ?? []) as { rel?: unknown }[]) {
+    const rel = t?.rel;
+    if (typeof rel !== "string" || rel.includes("\0") || rel.split("/").includes("..") || isAbsolute(rel)) return "Bad worktree path";
+    if (!rel) continue;
+    const target = resolve(parent, rel);
+    const why = folderRefusal(target);
+    if (why) return why;
+    if (!within(canonical(target), canonical(parent))) return `${target} isn't inside ${parent} on this device.`;
+  }
+  if (repoRel === null || repoRel === undefined) return null;
+  if (typeof repoRel !== "string" || !repoRel || repoRel.includes("\0") || isAbsolute(repoRel)) return "Bad repository path";
+  return folderRefusal(resolve(parent, repoRel));
+}
+
+/** What an offer carries of the project besides its code (project-carry.ts), as the record keeps it (`ext.carry`). */
+function carryOf(b: OfferBody): { carry?: { host?: { names: string[]; values: Record<string, string> }; settings?: CarriedSettings } } {
+  const host = parseHostCarry(b.host);
+  const settings = parseCarried(b.projectSettings);
+  return host || settings ? { carry: { ...(host ? { host } : {}), ...(settings ? { settings } : {}) } } : {};
+}
+const carryOfRecord = (r: TransportRecord) => (((r.ext ?? {}) as { carry?: ReturnType<typeof carryOf>["carry"] }).carry ?? {}) as NonNullable<ReturnType<typeof carryOf>["carry"]>;
+
+/** The project's folder here: the repository (beside the chat's folder when its tree is a linked worktree). */
+const projectRootOf = (r: TransportRecord): string => repoPathOf(r) ?? r.folder;
+
+interface OfferExt {
+  trees: OfferBody["trees"];
+  repoRel: string | null;
+  project: OfferBody["project"];
+  model?: string;
+  chatModel?: string;
+}
+/** The chat's own tree (the folder) first, as the Transport agent reads the list. */
+const ownFirst = <T extends { rel: string }>(trees: readonly T[]): T[] => [...trees].sort((a, b) => (a.rel === "" ? 0 : 1) - (b.rel === "" ? 0 : 1));
+const offerOf = (r: TransportRecord): OfferExt => (r.ext?.offer ?? { trees: [], repoRel: null, project: { remotes: [], roots: [] } }) as OfferExt;
+
+/** Where the repository is here for a chat whose tree is a linked worktree; null when the package builds it whole. */
+function repoPathOf(r: TransportRecord): string | null {
+  const o = offerOf(r);
+  if (o.trees.some((t) => t.main) || o.repoRel === null) return null;
+  return resolve(dirname(r.folder), o.repoRel);
+}
+
+const controllers = new Map<string, AbortController>();
+
+const fromSourceOf = (r: TransportRecord): boolean => !!((r.ext ?? {}) as { fromSource?: boolean }).fromSource;
+const subsFetchOf = (r: TransportRecord): string[] => ((r.ext ?? {}) as { subsFetch?: string[] }).subsFetch ?? [];
+
+/** The offered submodules whose remotes answer from here, asking for nothing (each at once, so within one wait): for
+    those only what their remotes lack travels; every other one comes with its history (§app.transport/package). */
+async function fetchableSubmodules(r: TransportRecord): Promise<string[]> {
+  const subs = offerOf(r).project.submodules;
+  if (!Array.isArray(subs)) return [];
+  const list = subs.filter((s) => s && typeof s.key === "string" && typeof s.url === "string" && s.url).slice(0, 64);
+  const ok = await Promise.all(list.map((s) => remoteReachable(withoutCredentials(s.url)).catch(() => false)));
+  return list.filter((_, i) => ok[i]).map((s) => s.key);
+}
+
+/** What the Transport agent is asked for transport `r`, before arrival and after it alike: the same project (its
+    remotes, its root commit and its folder here), so the checks after arrival know the repository it made as this
+    project's even with no remote recorded. */
+function requestOf(r: TransportRecord, fromSource: boolean, title = r.title): PrepareRequest {
+  const o = offerOf(r);
+  return {
+    tid: r.tid,
+    sourcePeer: r.peer,
+    sourceLabel: r.peerLabel,
+    sourceChatId: r.sourceChatId,
+    title,
+    project: { remotes: o.project.remotes, ...(o.project.roots[0] ? { firstCommit: o.project.roots[0] } : {}), path: repoPathOf(r) ?? r.folder },
+    worktrees: ownFirst(o.trees).map((t) => ({ name: t.name, branch: t.branch, ...(typeof t.head === "string" && /^[0-9a-f]{40,64}$/.test(t.head) ? { head: t.head } : {}) })),
+    ...(o.model ? { model: o.model } : {}),
+    ...(o.chatModel ? { chatModel: o.chatModel } : {}),
+    ...(fromSource ? { fromSource: true } : {}),
+    trees: o.trees.map((t) => (t.rel ? resolve(dirname(r.folder), t.rel) : r.folder)),
+  };
+}
+
+/**
+ * Whether the project comes from the source (§app.transport/package): this device lacks the repository at its folder
+ * and can't get it by clone: no remote is recorded, none answers from here, or a Retry finds it still missing after
+ * preparation stopped (the Transport agent's clone failed). Once decided it stays so while the folder lacks it.
+ */
+async function projectFromSource(r: TransportRecord, folder: string): Promise<boolean> {
+  const o = offerOf(r);
+  if (!o.trees.length || !lacksRepo(folder)) return false;
+  if (fromSourceOf(r) || r.attempt > 1) return true;
+  return (await projectComesFrom(folder, o.project.remotes)) === "from-source";
+}
+
+/** Get ready (the Transport agent, when one is wired), then tell the source the commits here. */
+async function prepare(tid: string): Promise<void> {
+  const r = readTransport(tid);
+  if (!r) return;
+  const ctl = new AbortController();
+  controllers.set(tid, ctl);
+  try {
+    const o = offerOf(r);
+    const repo = repoPathOf(r);
+    const fromSource = await projectFromSource(r, repo ?? r.folder);
+    if (fromSource !== fromSourceOf(r)) updateTransport(tid, { ext: { fromSource } });
+    if (fromSource) log(`${tid}: the project comes from ${r.peerLabel}: it isn't here and can't be cloned here`);
+    const p = await prepareDestination(requestOf(r, fromSource), { signal: ctl.signal });
+    if ("needsYou" in p) return void needsYou(tid, p.needsYou);
+    // From the source: nothing is made here before arrival, which builds the repository from the package.
+    if (repo && !fromSource) {
+      if (existsSync(repo)) {
+        if (!existsSync(join(repo, ".git"))) return void needsYou(tid, `${repo} exists here and isn't a git repository`);
+        const roots = (await git(repo, ["rev-list", "--max-parents=0", "HEAD"])).stdout.split("\n").filter(Boolean);
+        if (o.project.roots.length && roots.length && !roots.some((x) => o.project.roots.includes(x))) return void needsYou(tid, `${repo} here holds another project`);
+      } else {
+        mkdirSync(repo, { recursive: true });
+        await git(repo, ["init", "-q"]);
+      }
+    }
+    const subsFetch = await fetchableSubmodules(r);
+    if (subsFetch.length) log(`${tid}: ${subsFetch.length} submodule(s) come by their remotes here`);
+    await knob(tid, "prepared");
+    stepDone(tid, "prepared", { haves: repo && !fromSource ? await havesOf(repo) : [], state: "preparing", ext: { subsFetch } });
+  } catch (err) {
+    needsYou(tid, err instanceof Error ? err.message : String(err));
+  } finally {
+    controllers.delete(tid);
+  }
+}
+
+function needsYou(tid: string, reason: string): void {
+  // Cancelled meanwhile (a step it stopped failing on its way out): it stays cancelled.
+  if (readTransport(tid)?.state === "cancelled") return void log(`${tid}: stopped by Cancel: ${reason}`);
+  log(`${tid}: needs you: ${reason}`);
+  updateTransport(tid, { state: "needs-you", needsYou: { reason, at: new Date().toISOString() } });
+}
+
+/**
+ * One step at a time per transport here: arrive (pull, check, rebuild), commit (publish, open) and Cancel's removal each
+ * wait for the one before, so none runs over another's files (§app.transport/switch).
+ */
+const lanes = new Map<string, Promise<unknown>>();
+function inLane<T>(tid: string, fn: () => Promise<T>): Promise<T> {
+  const run = (lanes.get(tid) ?? Promise.resolve()).then(fn, fn);
+  const tail = run.then(
+    () => {},
+    () => {},
+  );
+  lanes.set(tid, tail);
+  void tail.then(() => {
+    if (lanes.get(tid) === tail) lanes.delete(tid);
+  });
+  return run;
+}
+
+/** The commit running (or waiting its turn) per transport: the source's commit posted again while one runs (its
+    request timed out there) gets the same answer, never a second publish. */
+const committing = new Map<string, Promise<{ status: number; body: unknown }>>();
+
+/** What the publish of transport `r` moved so far, by each tree's folder (`ext.publish`). */
+const publishOf = (r: TransportRecord): { begun: string[]; done: string[] } => {
+  const p = ((r.ext ?? {}) as { publish?: { begun?: string[]; done?: string[] } }).publish;
+  return { begun: p?.begun ?? [], done: p?.done ?? [] };
+};
+
+/** The journal publishTrees keeps in the transport's record: each write is on disk before the move it announces. */
+function journalOf(tid: string): PublishJournal {
+  const add = (key: "begun" | "done", target: string) =>
+    void updateTransport(tid, (r) => {
+      const p = publishOf(r);
+      return p[key].includes(target) ? {} : { ext: { publish: { ...p, [key]: [...p[key], target] } } };
+    });
+  return { read: () => publishOf(readTransport(tid)!), begin: (t) => add("begun", t), done: (t) => add("done", t) };
+}
+
+/** Whether anything of transport `r` is in place here already: a tree moved into its folder (or its move begun and its
+    stage gone), or the home renamed in. Cancel can't take that back; Retry finishes it. */
+function publishedAny(r: TransportRecord): boolean {
+  const p = publishOf(r);
+  const staged = ((r.ext ?? {}) as { staged?: StagedTree[] }).staged ?? [];
+  if (p.done.length || p.begun.some((t) => staged.some((s) => s.target === t && !existsSync(s.stage)))) return true;
+  return !!r.arrivedId && r.steps.verified !== undefined && !existsSync(join(incomingOf(r.tid), "home")) && existsSync(chatHome(r.arrivedId));
+}
+
+/** The source's package is ready (POST …/ready): pull it, check it, rebuild in staging. */
+export function packageReady(from: { id: string }, tid: string, b: ReadyBody): { status: number; body: unknown } {
+  const r = readTransport(tid);
+  if (!r || r.side !== "destination" || r.peer !== from.id) return ok({ error: "No such transport" }, 404);
+  if (!/^[0-9a-f]{64}$/.test(String(b?.sha256)) || !Number.isSafeInteger(b?.size) || b.size <= 0) return ok({ error: "Bad package" }, 400);
+  if ((r.steps.verified || arriving.get(tid) === b.sha256) && r.pkg?.sha256 === b.sha256) return ok({ ok: true, again: true });
+  if (r.state === "cancelled") return ok({ error: "It was cancelled here." }, 409);
+  // A new package can't replace one that is being published, or partly is.
+  if (committing.has(tid) || r.steps.published || publishedAny(r)) return ok({ error: "It is already being put in place here." }, 409);
+  // What arrived of an earlier package goes with its steps: the new pull counts from nothing (§app.transport/progress).
+  updateTransport(tid, { pkg: { sha256: b.sha256, size: b.size }, state: "sending", needsYou: undefined, received: undefined, steps: { ...r.steps, pulled: undefined, staged: undefined, verified: undefined } });
+  void arrive(tid);
+  return ok({ ok: true });
+}
+
+/** The package each transport's arrival runs (or waits its turn) for: one run per package. */
+const arriving = new Map<string, string>();
+
+/** Pull, check, rebuild, relocate: everything but the publish. Safe to run again (a retry continues). In the
+    transport's lane; a new package while one runs waits for it, and the old run records nothing for the new one. */
+function arrive(tid: string): Promise<void> {
+  const sha = readTransport(tid)?.pkg?.sha256;
+  if (!sha || arriving.get(tid) === sha) return Promise.resolve();
+  arriving.set(tid, sha);
+  return inLane(tid, () => arriveNow(tid)).finally(() => {
+    if (arriving.get(tid) === sha) arriving.delete(tid);
+  });
+}
+
+async function arriveNow(tid: string): Promise<void> {
+  // The package this run is for: a failure once another replaced it is the old package's, and says nothing.
+  let ran: string | undefined;
+  try {
+    let r = readTransport(tid);
+    if (!r?.pkg || r.state === "cancelled" || r.state === "needs-you" || r.steps.verified) return;
+    const pkg = r.pkg;
+    ran = pkg.sha256;
+    // A newer package came (or Cancel) while this one ran: what this run did is for nothing, and says nothing.
+    const stale = () => {
+      const now = readTransport(tid);
+      if (!now || now.state === "cancelled" || now.pkg?.sha256 !== pkg.sha256) throw new StaleArrival();
+    };
+    const at = incomingOf(tid);
+    // A run that died after the relocation began left the staged home rewritten (a file maybe half written):
+    // it no longer matches the package's hashes, so the package is pulled and unpacked again.
+    if (r.steps.pulled && !r.steps.verified && (r.ext as { relocating?: string } | undefined)?.relocating === pkg.sha256) {
+      log(`${tid}: the last attempt stopped while relocating; pulling the package again`);
+      r = updateTransport(tid, { steps: { ...r.steps, pulled: undefined, staged: undefined }, received: undefined, ext: { relocating: "" } })!;
+    }
+    if (!r.steps.pulled) {
+      await rm(at, { recursive: true, force: true });
+      mkdirSync(at, { recursive: true, mode: 0o700 });
+      await pulls.pull({
+        offerId: tid,
+        linkId: tid,
+        from: r.peer,
+        path: peerPath.package(tid),
+        snapshot: pkg,
+        resolvedDest: at,
+        rootNames: ["package.json", "home", "code", "usage.json"],
+        // Only while this package is still the one: an older pull's last chunk never puts its count back.
+        onProgress: (p) => void updateTransport(tid, (cur) => (cur.pkg?.sha256 === pkg.sha256 ? { received: p.received } : {})),
+        prescan: async (members) => {
+          const all: { name: string; flag: string; mode: number }[] = [];
+          for await (const m of members) all.push({ name: m.name, flag: m.type === "file" ? "0" : m.type === "dir" ? "5" : m.type === "symlink" ? "2" : "?", mode: 0 });
+          const why = checkMembers(all);
+          if (why) throw new TransferError("protected", `The package was refused: ${why}.`);
+        },
+      });
+      await knob(tid, "pulled");
+      stale();
+      stepDone(tid, "pulled", { state: "checking", received: pkg.size });
+    }
+    const manifest = JSON.parse(await readFile(join(at, "package.json"), "utf8")) as PackageManifest;
+    if (manifest.tid !== tid) throw new Error("The package is another transport's.");
+    const bad = await verifyHome(at, manifest);
+    if (bad) throw new Error(bad);
+    // The worktrees, rebuilt beside their folders and checked (nothing in place yet).
+    const cur = readTransport(tid)!;
+    const o = offerOf(cur);
+    const targets: Record<string, string> = {};
+    for (const t of o.trees) targets[t.name] = t.rel ? resolve(dirname(cur.folder), t.rel) : cur.folder;
+    const repo = repoPathOf(cur);
+    // The project from the source: the repository is made from the package (its recorded remote as origin, no credentials).
+    const fromSource = fromSourceOf(cur);
+    const origin = fromSource && o.project.remotes[0] ? withoutCredentials(o.project.remotes[0]) : null;
+    const makeRepo = fromSource && repo && lacksRepo(repo) ? { path: repo, origin, defaultBranch: manifest.repo?.defaultBranch ?? null } : undefined;
+    let staged: StagedTree[] = [];
+    if (manifest.worktrees.length)
+      staged = await rebuildWorktrees({ repo, codeDir: join(at, "code"), tid, metas: manifest.worktrees.map((w) => w.meta), targets, ours: ((cur.ext ?? {}) as { absentAtOffer?: string[] }).absentAtOffer ?? [], ...(makeRepo ? { makeRepo } : {}), origin });
+    // Recorded at once, before anything may stop this run: Cancel's removal (after it, in the lane) finds every stage.
+    updateTransport(tid, { ext: { staged, targets, publish: { begun: [], done: [] } } });
+    await knob(tid, "staged");
+    stale();
+    stepDone(tid, "staged");
+    // The home, pointed at this device: a Copy's conversations get ids of their own.
+    const ids: Record<string, string> = {};
+    if (cur.mode === "copy") for (const n of await readdir(join(at, "home", "sessions")).catch(() => [] as string[])) {
+      const id = sessionIdOfName(n);
+      if (id) ids[id] = randomUUID();
+    }
+    const arrivedId = ids[manifest.chat.id] ?? manifest.chat.id;
+    const home = chatHome(arrivedId);
+    const map: [string, string][] = [[manifest.source.home, home]];
+    for (const w of manifest.worktrees) if (targets[w.name]) map.push([w.path, targets[w.name]!]);
+    const chatTree = manifest.worktrees.find((w) => o.trees.find((t) => t.name === w.name)?.rel === "");
+    if (!chatTree && manifest.chat.cwd) map.push([manifest.chat.cwd, cur.folder]);
+    if (repo && manifest.worktrees[0]) {
+      const srcMain = sourceMainOf(manifest, o);
+      if (srcMain) map.push([srcMain, repo]);
+    }
+    const broad: [string, string][] = [[manifest.source.agentDir, agentRoot()], [manifest.source.stateRoot, canonical(stateRoot())], [manifest.source.homeDir, homedir()]];
+    updateTransport(tid, { ext: { relocating: pkg.sha256 } });
+    const moved = await relocateHome(join(at, "home"), { map, ids, code: OWN_CODE, broad });
+    await fixManifest(join(at, "home"), arrivedId, cur.mode);
+    log(`${tid}: relocated ${moved.conversations} conversations, ${moved.workers} helper records, ${moved.records} records`);
+    await knob(tid, "verified");
+    // The source's own spellings of its folders: a private file still holding one goes to the Transport agent.
+    const sourceValues = [...new Set([manifest.source.homeDir, manifest.source.home, manifest.source.agentDir, manifest.source.stateRoot, ...(manifest.chat.cwd ? [manifest.chat.cwd] : []), ...manifest.worktrees.map((w) => w.path)].filter((v): v is string => typeof v === "string" && v.length > 1))];
+    stale();
+    stepDone(tid, "verified", { ext: { sourceValues }, state: "switching", arrivedId, renamed: staged.filter((s) => s.renamedFrom).map((s) => ({ from: s.renamedFrom!, to: s.branch! })) });
+  } catch (err) {
+    if (err instanceof StaleArrival || (ran !== undefined && readTransport(tid)?.pkg?.sha256 !== ran))
+      return void log(`${tid}: an arrival for an older package stopped${err instanceof StaleArrival ? "" : ` (${err instanceof Error ? err.message : String(err)})`}; nothing of it counts`);
+    const msg = err instanceof Error ? err.message : String(err);
+    // A package built on commits not here (a submodule's remote that didn't give them): a Retry asks for a new one,
+    // carrying the whole history.
+    if (err instanceof SnapshotError && err.reason === "needs-base") updateTransport(tid, { haves: [], ext: { subsFetch: [], repack: true } });
+    // Cancel stopped it: the record says cancelled, never needs-you.
+    if (readTransport(tid)?.state === "cancelled") return;
+    needsYou(tid, msg);
+  }
+}
+
+class StaleArrival extends Error {}
+
+/** The source's main checkout, from the offer's relative layout. */
+function sourceMainOf(m: PackageManifest, o: OfferExt): string | null {
+  const own = o.trees.find((t) => t.rel === "");
+  const w = own ? m.worktrees.find((x) => x.name === own.name) : null;
+  return w && o.repoRel !== null ? resolve(dirname(w.path), o.repoRel) : null;
+}
+
+/** The home's manifest names this state root (or the home isn't listed here) and, for a Copy, its new id. */
+export async function fixManifest(home: string, id: string, mode: "move" | "copy"): Promise<void> {
+  const f = join(home, HOME_FILE);
+  if (!existsSync(f)) return;
+  const m = JSON.parse(await readFile(f, "utf8")) as Record<string, unknown>;
+  m.id = id;
+  m.stateRoot = canonical(stateRoot());
+  if (mode === "copy") m.copiedFrom = { at: new Date().toISOString() };
+  await writeFile(f, `${JSON.stringify(m, null, 2)}\n`, { mode: 0o600 });
+  // Group membership is dropped (§app.transport/edge-cases): its groups are this device's; its archive mark travels
+  // (an archived chat arrives archived). A Copy's team starts idle.
+  const meta = join(home, "chat", "meta.json");
+  if (existsSync(meta)) {
+    const v = JSON.parse(await readFile(meta, "utf8")) as Record<string, unknown>;
+    if (GROUP_ASSIGN_FIELD in v) {
+      delete v[GROUP_ASSIGN_FIELD];
+      await writeFile(meta, `${JSON.stringify(v, null, 2)}\n`, { mode: 0o600 });
+    }
+  }
+  if (mode === "copy")
+    for (const n of await readdir(join(home, "workers")).catch(() => [] as string[])) {
+      const p = join(home, "workers", n);
+      const rec = JSON.parse(await readFile(p, "utf8")) as { state?: string };
+      if (rec.state === "open") {
+        rec.state = "idle";
+        await writeFile(p, `${JSON.stringify(rec)}\n`, { mode: 0o600 });
+      }
+    }
+}
+
+type CommitBody = { stopped?: { jobs: string[]; copies: string[] }; running?: unknown; interrupted?: string[]; wrapped?: string[] };
+
+/** The source's commit (POST …/commit): publish, open the chat, tell it what moved. Idempotent and single-flight: one
+    runs at a time per transport, in its lane; one posted again while it runs gets its answer; after a stop partway
+    it goes on from what was moved. */
+export function commit(from: { id: string }, tid: string, body: CommitBody): Promise<{ status: number; body: unknown }> {
+  const r = readTransport(tid);
+  if (!r || r.side !== "destination" || r.peer !== from.id) return Promise.resolve(ok({ error: "No such transport" }, 404));
+  const running = committing.get(tid);
+  if (running) return running;
+  const run = inLane(tid, () => commitNow(tid, body)).finally(() => committing.delete(tid));
+  committing.set(tid, run);
+  return run;
+}
+
+async function commitNow(tid: string, body: CommitBody): Promise<{ status: number; body: unknown }> {
+  const r = readTransport(tid);
+  if (!r) return ok({ error: "No such transport" }, 404);
+  if (r.steps.opened) return ok({ ok: true, again: true, arrivedId: r.arrivedId });
+  if (r.state === "cancelled") return ok({ error: "It was cancelled here." }, 409);
+  if (!r.steps.verified || !r.arrivedId) return ok({ error: "Nothing verified to publish yet" }, 409);
+  try {
+    await knob(tid, "decided");
+    const ext = (r.ext ?? {}) as { staged?: StagedTree[] };
+    if (!r.steps.published) {
+      if (ext.staged?.length) {
+        const put = await publishTrees(ext.staged, tid, { from: r.peerLabel, journal: journalOf(tid) });
+        updateTransport(tid, { ext: { privateFiles: put.privateFiles, kept: put.kept, ...(put.changed.length ? { changedHere: put.changed } : {}) } });
+      }
+      const home = chatHome(r.arrivedId);
+      const staged = join(incomingOf(tid), "home");
+      if (existsSync(staged)) {
+        if (existsSync(home)) throw new Error("This device already has a chat with that id.");
+        await supersedeCompressed(r.arrivedId, tid);
+        await rename(staged, home);
+      }
+      // Its cost, before it is listed: kept apart from this device's own records (a retry counts it once).
+      const usage = join(incomingOf(tid), "usage.json");
+      if (existsSync(usage))
+        try {
+          const n = need().importUsage(await readFile(usage), r.peerLabel);
+          log(`${tid}: usage brought in: ${Object.entries(n).map(([k, v]) => `${v} ${k}`).join(", ")}`);
+        } catch (err) {
+          log(`${tid}: its usage records weren't brought in: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      // Listed (its home.json names this state root), the list bumped, chat.created said; then its helpers tracked.
+      // Every store sees its records (archive mark, origin, seen, names, cards…) now, not at the next restart.
+      homeArrived(r.arrivedId);
+      if (!registerArrivedHome(r.arrivedId)) throw new Error("The arrived home isn't this device's (its home.json).");
+      need().adopt(r.arrivedId);
+      await knob(tid, "published");
+      stepDone(tid, "published");
+      await rm(incomingOf(tid), { recursive: true, force: true });
+    }
+    // A chat coming home to a device it once moved away from: that old Moved mark would keep it from opening (also on a Retry).
+    need().cameBack(r.arrivedId);
+    const home = chatHome(r.arrivedId);
+    const file = await findConversation(home, r.arrivedId);
+    if (!file) throw new Error("The arrived chat's conversation isn't in its home.");
+    // This server wrote every conversation of the home (the arrival's relocation): its write guard must not take
+    // them for a foreign process's and refuse the chat's next prompt.
+    for (const n of await readdir(join(home, "sessions")).catch(() => [] as string[])) if (n.endsWith(".jsonl")) markOwned(join(home, "sessions", n));
+    updateTransport(tid, { path: file });
+    const stopped = [...(body?.stopped?.jobs ?? []), ...(body?.stopped?.copies ?? [])];
+    const renamedNotes = (readTransport(tid)?.renamed ?? []).map((x) => ` Its branch was ${x.from} there; that name was taken, so it is ${x.to}.`).join("");
+    const done = (readTransport(tid)?.ext ?? {}) as { kept?: KeptFile[]; privateFiles?: string[]; sourceValues?: string[]; targets?: Record<string, string>; changedHere?: string[] };
+    const keptNotes = (done.kept ?? []).map((k) => ` ${k.tree}/${k.path} was already here and differs, so it was kept; the one from ${r.peerLabel} is ${k.tree}/${k.beside}.`).join("");
+    const bare = (((r.ext ?? {}) as { staged?: StagedTree[] }).staged ?? []).flatMap((t) => (t.uninitialised ?? []).map((k) => `${t.name}/${k}`));
+    const bareNotes = bare.length ? ` ${bare.length === 1 ? `Its submodule ${bare[0]} wasn't` : `Its submodules ${bare.join(", ")} weren't`} checked out on ${r.peerLabel}, so ${bare.length === 1 ? "it" : "they"} arrived as ${bare.length === 1 ? "its commit's link" : "their commits' links"} only, not checked out here either.` : "";
+    // A tree put in place by an attempt that stopped, and changed here before the Retry: kept as it is, and said.
+    const changedNotes = (done.changedHere ?? []).map((n) => ` ${n} changed here after it arrived and before the chat opened; it was kept as it is.`).join("");
+    const note = `${r.mode === "move" ? "Moved" : "Copied"} from ${r.peerLabel}.${stopped.length ? ` Stopped there: ${stopped.join(", ")}.` : ""}${renamedNotes}${keptNotes}${bareNotes}${changedNotes}`;
+    // Once only: a run that died after writing it (before "opened") finds it there.
+    // Looked for only past where the conversation ended before this transport's first try (an earlier Move's note may read the same).
+    const text = await readFile(file, "utf8").catch(() => "");
+    const from = ((readTransport(tid)?.ext ?? {}) as { noteFrom?: number }).noteFrom ?? (updateTransport(tid, { ext: { noteFrom: Buffer.byteLength(text) } }), Buffer.byteLength(text));
+    const said = Buffer.from(text).subarray(from).toString("utf8").split("\n").some((l) => l.includes('"sova-transport-arrival"') && l.includes(JSON.stringify(note).slice(1, -1)));
+    if (!said) await need().openWithNote(file, note);
+    await knob(tid, "opened");
+    await registerHere(tid);
+    // The host values this device lacks for the project are yours to set, on the card, prefilled with the source's.
+    const asks = hostAsksOf(carryOfRecord(r).host ?? null, need().hostHeld?.(projectRootOf(r)) ?? new Set());
+    if (asks.length || hostAsksOfRecord(readTransport(tid)!).length) updateTransport(tid, { ext: { hostAsk: asks } });
+    // What is left to set up here goes to the Transport agent now (its turn goes on by itself): what it took on is
+    // said to the source, and its card is in the chat (once: a card that travelled with the chat stays the one).
+    // Ready means the app runs: the copies the source ran for the chat (the services its switch stopped), each on its
+    // tree here, else the project's own copy of the chat's tree.
+    const own = ownFirst(offerOf(r).trees)[0];
+    const setup = await afterArrival({
+      ...requestOf(r, fromSourceOf(r), (await need().titleOf?.(file).catch(() => null)) || r.title),
+      privateFiles: done.privateFiles ?? [],
+      sourceValues: done.sourceValues ?? [],
+      copies: copiesHere(body?.running, done.targets ?? {}),
+      ownTree: r.folder,
+      ...(own?.branch ? { ownName: (readTransport(tid)?.renamed ?? []).find((x) => x.from === own.branch)?.to ?? own.branch } : {}),
+    });
+    await putAgentCard(tid, file);
+    // Its size once the notes are in: any later growth is a turn here, and Move Back is gone (§app.transport/moved-row).
+    stepDone(tid, "opened", { state: "done", ext: { openedPrint: await fingerprint(readTransport(tid)!), ...(setup.length ? { settingUp: setup } : {}) } });
+    // A moved team carries on: each helper that was working is told it moved; an idle one stays idle.
+    if (r.mode === "move")
+      for (const [list, interrupted] of [[body?.interrupted ?? [], true], [body?.wrapped ?? [], false]] as const)
+        for (const chatId of list) await need().tellHelper(chatId, need().helperNote(r.peerLabel, interrupted), `${tid}:moved:${chatId}`).catch((err) => log(`${tid}: ${chatId} wasn't told it moved: ${err instanceof Error ? err.message : String(err)}`));
+    log(`${logName(r)}: arrived as ${r.arrivedId}${setup.length ? `; setting up ${setup.join(", ")}` : ""}`);
+    return ok({ ok: true, arrivedId: r.arrivedId, ...(setup.length ? { settingUp: setup } : {}) });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    needsYou(tid, msg);
+    return ok({ error: msg }, 500);
+  }
+}
+
+/** The source's running copies (its commit's `running`: each tree by its name in the package, the copy's name and the
+    services that ran), each on its tree here; one whose tree didn't arrive is left out. Checked, never trusted. */
+export function copiesHere(raw: unknown, targets: Record<string, string>): { tree: string; name: string; services?: string[] }[] {
+  if (!Array.isArray(raw)) return [];
+  const name = (v: unknown) => (typeof v === "string" && /^[\w./@+-]{1,200}$/.test(v) ? v : null);
+  return raw.slice(0, 20).flatMap((x) => {
+    const o = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
+    const tree = typeof o.tree === "string" ? targets[o.tree] : undefined;
+    const n = name(o.name);
+    if (!tree || !n || !Object.hasOwn(targets, o.tree as string)) return [];
+    const services = Array.isArray(o.services) ? o.services.filter((v): v is string => typeof v === "string" && /^[a-z][a-z0-9-]{0,62}$/i.test(v)).slice(0, 32) : [];
+    return [{ tree, name: n, ...(services.length ? { services } : {}) }];
+  });
+}
+
+/** The transport's agent as its record keeps it (`ext.agent`, the onAgent hook's), or null. */
+const agentOfRecord = (r: TransportRecord): AgentView | null => {
+  const a = ((r.ext ?? {}) as { agent?: AgentView }).agent;
+  return a && typeof a.sessionId === "string" && typeof a.path === "string" ? a : null;
+};
+
+/** The host values transport `r`'s card still asks for here. */
+const hostAsksOfRecord = (r: TransportRecord): HostAsk[] => ((r.ext ?? {}) as { hostAsk?: HostAsk[] }).hostAsk ?? [];
+
+/** After arrival: the card goes in the arrived chat `file`, unless one is there, when the agent works here for
+    transport `tid`, couldn't start (no confinement here), or a host value is to be asked. */
+async function putAgentCard(tid: string, file: string): Promise<void> {
+  const r = readTransport(tid);
+  if (!r || !need().noteAgentCard) return;
+  const a = agentOfRecord(r);
+  const working = !!a && a.state !== "ready";
+  const blocked = typeof ((r.ext ?? {}) as { agentBlocked?: string }).agentBlocked === "string";
+  const asks = hostAsksOfRecord(r).length;
+  // The running copy starting here (§app.transport/agent "Ready means the app runs"): its card links to it once it runs.
+  const copy = ((r.ext ?? {}) as { copy?: { state?: string } }).copy;
+  const copying = !!copy && copy.state !== "none";
+  if (!working && !blocked && !asks && !copying) return;
+  if (hasAgentCard(await readFile(file, "utf8").catch(() => ""), tid)) return;
+  const device = a?.device ?? "this device";
+  const title = a?.title ?? `Transport: ${r.title}`;
+  const text = working
+    ? `The Transport agent "${title}" is setting up this project on ${device}.`
+    : blocked
+      ? `The Transport agent couldn't start on ${device}.`
+      : asks
+        ? `This project needs ${asks === 1 ? "1 host value" : `${asks} host values`} set on ${device}.`
+        : `This project's running copy is starting on ${device}.`;
+  await need()
+    .noteAgentCard!(file, text, { tid, title, device })
+    .catch((err: unknown) => log(`${tid}: its agent's card wasn't put in the chat: ${err instanceof Error ? err.message : String(err)}`));
+}
+
+/** The project arrived: registered here with the source's settings for it, unless a project here has its root
+    (§app.transport/arrival). Once per transport; what happened is logged, never a setting's value. */
+async function registerHere(tid: string): Promise<void> {
+  const r = readTransport(tid);
+  if (!r || !need().registerArrived || ((r.ext ?? {}) as { registration?: string }).registration) return;
+  const root = projectRootOf(r);
+  const res = await need().registerArrived!(root, carryOfRecord(r).settings ?? null);
+  const said = "registered" in res ? `registered as ${res.registered}` : "already" in res ? `already ${res.already}` : `not registered: ${res.error}`;
+  log(`${tid}: the project at ${root}: ${said}`);
+  updateTransport(tid, { ext: { registration: "registered" in res ? res.registered : "already" in res ? "already" : "failed" } });
+}
+
+/** Your Save on the Transport card (POST /api/transport/:tid/host-values): the host values it asks, written into this
+    device's host.json for the project, and the card asks only for what is left. Values are never logged. */
+export function saveHostValues(tid: string, given: unknown): { ok: true; left: HostAsk[] } | { ok: false; status: 400 | 404 | 409; error: string } {
+  const r = readTransport(tid);
+  if (!r || r.side !== "destination") return { ok: false, status: 404, error: "No such transport here" };
+  const asked = hostAsksOfRecord(r);
+  if (!asked.length || !need().writeHostValues) return { ok: false, status: 409, error: "This transport asks for no host values here." };
+  const picked = pickHostValues(asked, given);
+  if (typeof picked === "string") return { ok: false, status: 400, error: picked };
+  need().writeHostValues!(projectRootOf(r), picked);
+  const left = asked.filter((a) => !(a.name in picked));
+  updateTransport(tid, { ext: { hostAsk: left } });
+  log(`${tid}: ${Object.keys(picked).length} host value(s) set by you for ${projectRootOf(r)}`);
+  return { ok: true, left };
+}
+
+/** How far it is (GET …/:tid). */
+export async function statusOf(from: { id: string }, tid: string): Promise<StatusBody> {
+  const r = readTransport(tid);
+  if (!r || r.side !== "destination" || r.peer !== from.id) return { tid, state: "unknown", steps: {} };
+  return {
+    tid,
+    state: r.state,
+    steps: r.steps as Record<string, string>,
+    ...(r.steps.prepared ? { haves: r.haves ?? [], ...(fromSourceOf(r) ? { fromSource: true } : {}), ...(subsFetchOf(r).length ? { subsFetch: subsFetchOf(r) } : {}) } : {}),
+    ...(agentOfRecord(r) ? { agent: agentViewOf(agentOfRecord(r)!) } : {}),
+    ...(((r.ext ?? {}) as { settingUp?: string[] }).settingUp?.length ? { settingUp: ((r.ext ?? {}) as { settingUp: string[] }).settingUp } : {}),
+    ...(r.needsYou ? { needsYou: r.needsYou.reason } : {}),
+    ...(r.received !== undefined ? { received: r.received } : {}),
+    ...(r.arrivedId ? { arrivedId: r.arrivedId } : {}),
+    ...(r.renamed?.length ? { renamed: r.renamed } : {}),
+    // Once stopped here for a Move Back, its parked helpers and closed chat change the fingerprint: that is no turn, and
+    // the device it came from must be able to ask again (it answers again) until it runs there.
+    ...(r.steps.opened && r.path ? { path: r.path, ...(movedBackOf(r) ? { movedBack: true } : { turned: await turnedHere(r) }) } : {}),
+  };
+}
+
+/** What a chat's turns change here: every conversation, its shared folder, mailboxes and helper records, and each
+    arrived worktree's HEAD and tracked status. */
+export async function fingerprint(r: TransportRecord): Promise<string> {
+  const home = chatHome(r.arrivedId ?? r.chatId);
+  const parts: string[] = [];
+  const walk = (dir: string, rel: string) => {
+    let names: string[];
+    try {
+      names = readdirSync(join(dir, rel)).sort();
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      const p = rel ? `${rel}/${n}` : n;
+      const st = lstatSafe(join(dir, p));
+      if (!st) continue;
+      if (st.isDirectory()) walk(dir, p);
+      else parts.push(`${p} ${st.size} ${Math.floor(st.mtimeMs)}`);
+    }
+  };
+  for (const d of ["sessions", "shared", "teams", "workers"]) walk(home, d);
+  const targets = ((r.ext ?? {}) as { targets?: Record<string, string> }).targets ?? {};
+  for (const t of Object.values(targets).sort()) {
+    const head = (await git(t, ["rev-parse", "-q", "--verify", "HEAD"])).stdout.trim();
+    const status = (await git(t, ["status", "--porcelain=v1", "-z", "-uno"])).stdout;
+    parts.push(`${t} ${head} ${createHash("sha256").update(status).digest("hex")}`);
+  }
+  return createHash("sha256").update(parts.join("\n")).digest("hex");
+}
+
+const lstatSafe = (p: string) => {
+  try {
+    return lstatSync(p);
+  } catch {
+    return null;
+  }
+};
+
+
+/** Whether anything happened to the arrived chat here since it opened: a turn of the chat or any helper, a file in its
+    shared folder, its mailboxes or records, or its worktrees (§app.transport/moved-row: Move Back only while nothing did). */
+async function turnedHere(r: TransportRecord): Promise<boolean> {
+  const was = ((r.ext ?? {}) as { openedPrint?: string }).openedPrint;
+  return was === undefined || (await fingerprint(r)) !== was;
+}
+
+const movedBackOf = (r: TransportRecord): boolean => !!((r.ext ?? {}) as { movedBack?: string }).movedBack;
+
+/** What Move Back does here (the device the chat is on): stop it, become the Moved side. Injected by routes.ts. */
+export interface MoveBackHere {
+  (r: TransportRecord, back: { path: string }): Promise<void>;
+}
+let moveBackHere: MoveBackHere | null = null;
+export const setMoveBackHere = (fn: MoveBackHere): void => void (moveBackHere = fn);
+
+/** Move Back, asked by the device the chat came from (POST …/move-back), with the click that pressed it there proven back:
+    only while nothing happened here. */
+export async function moveBack(from: { id: string }, tid: string, raw: string, proof: string): Promise<{ status: number; body: unknown }> {
+  const r = readTransport(tid);
+  if (!r || r.side !== "destination" || r.peer !== from.id || r.mode !== "move" || !r.steps.opened) return ok({ error: "No such transport" }, 404);
+  // A person pressed Move Back on that device's own page: it minted a proof over this very request, asked back once.
+  if (!proof || !(await need().clickProven(from.id, proof, raw))) return ok({ error: "Only you move a chat back, from that device's page. Nothing changed here." }, 403);
+  if (movedBackOf(r)) return ok({ ok: true, again: true });
+  let body: { path?: unknown };
+  try {
+    body = (JSON.parse(raw) ?? {}) as { path?: unknown };
+  } catch {
+    return ok({ error: "Bad request" }, 400);
+  }
+  if (await turnedHere(r)) return ok({ error: "It has changed here since it arrived, so only a Copy can bring it back.", turned: true }, 409);
+  if (typeof body?.path !== "string") return ok({ error: "Bad request" }, 400);
+  try {
+    await moveBackHere!(r, { path: body.path });
+    updateTransport(tid, { ext: { movedBack: new Date().toISOString() } });
+    log(`${tid}: moved back to ${r.peerLabel}`);
+    return ok({ ok: true });
+  } catch (err) {
+    return ok({ error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+}
+
+/** Retry (POST …/retry): continue from what arrived. */
+export function retry(from: { id: string }, tid: string): { status: number; body: unknown } {
+  const r = readTransport(tid);
+  if (!r || r.side !== "destination" || r.peer !== from.id) return ok({ error: "No such transport" }, 404);
+  if (r.state === "done" || r.state === "cancelled") return ok({ ok: true, state: r.state });
+  // The package lacked commits this device can't get: drop it and wait for the new one the source packs.
+  if (((r.ext ?? {}) as { repack?: boolean }).repack && !r.steps.verified) {
+    updateTransport(tid, { needsYou: undefined, state: "preparing", attempt: r.attempt + 1, pkg: undefined, received: undefined, steps: { ...r.steps, pulled: undefined, staged: undefined, verified: undefined }, ext: { repack: false } });
+    return ok({ ok: true, repack: true });
+  }
+  updateTransport(tid, { needsYou: undefined, state: r.steps.verified ? "switching" : r.pkg ? "sending" : "preparing", attempt: r.attempt + 1 });
+  if (!r.steps.prepared) void prepare(tid);
+  else if (r.pkg && !r.steps.verified) void arrive(tid);
+  return ok({ ok: true });
+}
+
+/** Cancel (POST …/cancel): what arrived is removed; refused once the chat is published here. */
+export async function cancel(from: { id: string }, tid: string): Promise<{ status: number; body: unknown }> {
+  const r = readTransport(tid);
+  if (!r || r.side !== "destination" || r.peer !== from.id) return ok({ ok: true, gone: true });
+  if (r.state === "cancelled") return ok({ ok: true, again: true });
+  const refused = cancelRefusal(r);
+  if (refused) return refused;
+  // Marked first: an arrival running stops at its next step and records nothing more, and a commit after it is refused.
+  const was = r.state;
+  updateTransport(tid, { state: "cancelled", ticket: undefined, ticketBurnt: true });
+  controllers.get(tid)?.abort();
+  pulls.cancel(tid);
+  // The removal waits its turn: never under a running arrival's rebuild.
+  return inLane(tid, async () => {
+    const cur = readTransport(tid)!;
+    // Something was put in place after all (never by a commit: one after the mark is refused): it stays, and so does
+    // the transport.
+    if (cur.steps.published || publishedAny(cur)) {
+      updateTransport(tid, { state: was });
+      return ok({ error: "Part of it is already in place here, so it can't be cancelled; press Retry to finish it.", published: true }, 409);
+    }
+    const staged = ((cur.ext ?? {}) as { staged?: StagedTree[] }).staged ?? [];
+    await dropStages(staged, repoPathOf(cur), tid).catch(() => {});
+    await rm(incomingOf(tid), { recursive: true, force: true });
+    log(`${tid}: cancelled; what arrived was removed`);
+    return ok({ ok: true });
+  });
+}
+
+/** Why Cancel can't run on transport `r` here now, as its answer, or null. */
+function cancelRefusal(r: TransportRecord): { status: number; body: unknown } | null {
+  if (r.steps.published) return ok({ error: "It already arrived here.", published: true }, 409);
+  if (committing.has(r.tid)) return ok({ error: "It is opening here right now, so it can't be cancelled; it arrives in a moment.", publishing: true }, 409);
+  if (publishedAny(r)) return ok({ error: "Part of it is already in place here, so it can't be cancelled; press Retry to finish it.", published: true }, 409);
+  return null;
+}
+
+/** At start: transports this server was in the middle of go on from where they were. */
+export function resumeDestinations(list: readonly TransportRecord[]): void {
+  for (const r of list) {
+    if (r.side !== "destination" || r.state === "done" || r.state === "cancelled" || r.state === "needs-you") continue;
+    if (!r.steps.prepared) void prepare(r.tid);
+    else if (r.pkg && !r.steps.verified) void arrive(r.tid);
+  }
+}
+

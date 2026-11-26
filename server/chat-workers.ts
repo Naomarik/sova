@@ -5,7 +5,7 @@
 // its link), and each worker's events go back to whoever watches it, from a ring kept per worker. A
 // record per worker, written before its process starts, outlives the server: the next one knows what
 // each recorded process is.
-import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isNoAnswer, NO_ANSWER, type WorkerCursor, type WorkerFeedFrame, type WorkerHost, type WorkerKind, type WorkerRef, type WorkerSpec, type WorkerStart, type WorkerState } from "../shared/chat-runtime";
 import type { FrameOf } from "../shared/chat-runtime-wire";
@@ -19,8 +19,13 @@ import { crashResumeOn, crashSkip } from "./chat-runtime/crash";
 import type { InflightMarker } from "./chat-runtime/inflight";
 import { joinedText, toHEntry } from "./harness/pi/reader";
 import { createWorkerSession } from "./harness/pi/worker-session";
+import { placedByParent } from "./chat-homes/place";
+import { homeOf, membersFromRegistry, registerHomeMember, reloadHome, setHelperRecordSource } from "./chat-homes/records";
+import { appendChange } from "./chat-homes/changes";
+import { chatHome, hasHome, homeIdOfPath, homeOfSessionFile, homesRoot, listHomeIds } from "./chat-homes/root";
 import { logAutoResume } from "./overseer-store";
 import { stateRoot } from "./state-root";
+import { movedOf } from "./transport/moved";
 
 /** Frames kept per worker for its watchers (a re-watch from a cursor replays from here). */
 export const WORKER_RING_MAX = 2000;
@@ -33,6 +38,8 @@ const DEATH_LINES = 20;
 const DEATH_BYTES = 2048;
 
 export const workersDir = () => join(stateRoot(), "chats", "workers");
+/** A homed chat's helpers' records (§app.chat-homes/lifetime): `<home>/workers/`, beside their conversations. */
+export const homeWorkersDir = (homeId: string) => join(chatHome(homeId), "workers");
 
 /** A parent chat, as its link or its binding names it. */
 type Parent = { sessionId: string; path: string };
@@ -159,6 +166,8 @@ export class WorkerRegistry {
   private readonly keys = new Map<string, string>();
   private readonly starting = new Map<string, Promise<WorkerRef>>();
   private readonly dir: () => string;
+  /** The real registry also keeps and reads records in chat homes (a test's own folder does not). */
+  private readonly homes: boolean;
   private readonly now: () => number;
 
   constructor(
@@ -174,12 +183,21 @@ export class WorkerRegistry {
     } = {},
   ) {
     this.dir = o.dir ?? workersDir;
+    this.homes = o.dir === undefined;
     this.now = o.now ?? Date.now;
     this.autoResume = o.autoResume ?? crashResumeOn;
     this.openParent = o.openParent ?? ((path) => acquireChatHandle(path));
     this.archived = o.archived ?? isArchived;
     this.logResume = o.logResume ?? logAutoResume;
     for (const rec of this.readAll()) this.track(rec);
+    if (this.homes) membersFromRegistry();
+    // Clean Up and compression ask the registry, not the disk, whether a helper is still in use.
+    // An archived chat's helpers are read when first asked about (wake): the in-use check reads them all first.
+    if (this.homes)
+      setHelperRecordSource(() => {
+        this.wakeAll();
+        return [...this.live.values()].map((l) => l.rec);
+      });
   }
   private readonly autoResume: () => boolean;
   private readonly openParent: (path: string) => Promise<unknown>;
@@ -188,17 +206,114 @@ export class WorkerRegistry {
 
   // ---- records ------------------------------------------------------------------------------------
 
-  private file = (chatId: string) => join(this.dir(), `${encodeURIComponent(chatId)}.json`);
+  /** A helper's record sits in the home holding its conversation (its top chat's, at any depth), else in the server's folder. */
+  private dirOf(rec: Pick<WorkerRecord, "path">): string {
+    const home = this.homes ? homeOfSessionFile(rec.path) : null;
+    return home ? join(home, "workers") : this.dir();
+  }
   private write(rec: WorkerRecord): void {
-    mkdirSync(this.dir(), { recursive: true, mode: 0o700 });
-    const f = this.file(rec.chatId);
+    const dir = this.dirOf(rec);
+    if (dir !== this.dir()) {
+      const home = homeIdOfPath(rec.path)!;
+      // A home removed by its chat's Delete is never made again by a helper's late write.
+      if (!hasHome(home)) return;
+      // Its records (seen, signals, attachments…) go to the same home from its first write (server/chat-homes/records.ts).
+      registerHomeMember(rec.chatId, home);
+    }
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const f = join(dir, `${encodeURIComponent(rec.chatId)}.json`);
+    const first = dir !== this.dir() && !existsSync(f);
     writeFileSync(`${f}.tmp`, `${JSON.stringify(rec)}\n`, { mode: 0o600 });
     renameSync(`${f}.tmp`, f);
+    // A new helper of a homed chat: its record and its conversation are new in that home (the change log).
+    if (first) {
+      const home = homeIdOfPath(rec.path)!;
+      appendChange(homesRoot(), home, "workers");
+      appendChange(homesRoot(), home, "sessions");
+    }
   }
+  /** Every record, the server's folder and every home's, all before any chat opens: server start decides "worker or
+      ordinary chat" by whether a record is loaded. Finished helpers' records are kept and loaded too, except an
+      archived chat's: only their names are read (each helper's home is known), the records when first asked about. */
   private readAll(): WorkerRecord[] {
+    const out = this.readDir(this.dir());
+    if (this.homes) out.push(...this.readHomes());
+    return out;
+  }
+  /** Every home's records, an archived chat's deferred (wake). A home whose chat moved to another device is a safety
+      copy here: its helpers aren't this server's (§app.transport/moved-row). */
+  private readHomes(): WorkerRecord[] {
+    const out: WorkerRecord[] = [];
+    this.deferred.clear();
+    for (const id of listHomeIds()) {
+      if (movedOf(id)) continue;
+      const dir = homeWorkersDir(id);
+      if (!this.archived(id)) {
+        out.push(...this.readDir(dir));
+        continue;
+      }
+      let names: string[];
+      try {
+        names = readdirSync(dir);
+      } catch {
+        continue; // no helpers
+      }
+      let any = false;
+      for (const n of names)
+        if (n.endsWith(".json")) {
+          any = true;
+          try {
+            registerHomeMember(decodeURIComponent(n.slice(0, -5)), id);
+          } catch {
+            // not a name of ours
+          }
+        }
+      if (any) this.deferred.set(id, dir);
+    }
+    return out;
+  }
+  /** Archived chats' homes whose helpers' records are not read yet, by home id. */
+  private readonly deferred = new Map<string, string>();
+  private booted = false;
+  /** Read the deferred records of the home holding `id` (a helper, or a chat), if it has any. */
+  private wakeFor(id: string | undefined): void {
+    if (!this.deferred.size || !id) return;
+    const home = this.deferred.has(id) ? id : homeOf(id);
+    if (home) this.wake(home);
+  }
+  private wake(homeId: string): void {
+    const dir = this.deferred.get(homeId);
+    if (dir === undefined) return;
+    this.deferred.delete(homeId);
+    for (const rec of this.readDir(dir)) {
+      if (this.live.has(rec.chatId)) continue;
+      const l = this.track(rec);
+      // As settleBoot did for every record read at the start.
+      if (this.booted && l.rec.state === "open") this.set(l, { state: "idle" });
+    }
+  }
+  private wakeAll(): void {
+    for (const id of [...this.deferred.keys()]) this.wake(id);
+  }
+  /** A home that arrived from outside (Transport): its helpers' records are tracked now, as a start would have. Records
+      already tracked are left as they are. Returns how many were new. */
+  adoptHome(homeId: string): number {
+    if (!this.homes) return 0;
+    this.deferred.delete(homeId);
+    reloadHome(homeId);
+    let n = 0;
+    for (const rec of this.readDir(homeWorkersDir(homeId))) {
+      if (this.live.has(rec.chatId)) continue;
+      this.track(rec);
+      n++;
+    }
+    return n;
+  }
+  /** One folder's records; a home's helpers are known to belong to it from here on. */
+  private readDir(dir: string): WorkerRecord[] {
     let names: string[];
     try {
-      names = readdirSync(this.dir());
+      names = readdirSync(dir);
     } catch {
       return [];
     }
@@ -206,8 +321,12 @@ export class WorkerRegistry {
     for (const n of names) {
       if (!n.endsWith(".json")) continue;
       try {
-        const rec = JSON.parse(readFileSync(join(this.dir(), n), "utf8")) as WorkerRecord;
-        if (rec?.v === 1 && rec.chatId && rec.path) out.push(rec);
+        const rec = JSON.parse(readFileSync(join(dir, n), "utf8")) as WorkerRecord;
+        if (rec?.v === 1 && rec.chatId && rec.path) {
+          out.push(rec);
+          const home = this.homes ? homeIdOfPath(rec.path) : null;
+          if (home) registerHomeMember(rec.chatId, home);
+        }
       } catch {
         // half-written or foreign: not a worker of ours
       }
@@ -241,10 +360,12 @@ export class WorkerRegistry {
 
   /** The record of worker chat `chatId` (the router's launch env reads its spec). */
   record(chatId: string): WorkerRecord | undefined {
+    this.wakeFor(chatId);
     return this.live.get(chatId)?.rec;
   }
   /** Whether `chatId` is a worker chat's (its process is the registry's, never an ordinary chat). */
   has(chatId: string): boolean {
+    this.wakeFor(chatId);
     return this.live.has(chatId);
   }
 
@@ -261,6 +382,7 @@ export class WorkerRegistry {
   }
 
   private get(chatId: string): Live {
+    this.wakeFor(chatId);
     const l = this.live.get(chatId);
     if (!l) throw new Error(`No worker chat ${chatId} on this server.`);
     return l;
@@ -272,6 +394,7 @@ export class WorkerRegistry {
   start(req: WorkerStart): Promise<WorkerRef> {
     const pending = this.starting.get(req.key);
     if (pending) return pending;
+    this.wakeFor(req.spec.parent.sessionId);
     const known = this.keys.get(req.key);
     if (known) {
       const l = this.live.get(known)!;
@@ -285,7 +408,8 @@ export class WorkerRegistry {
   }
 
   private async startNew(req: WorkerStart): Promise<WorkerRef> {
-    const file = createWorkerSession(req.session, req.spec.cwd);
+    // A helper of a chat with a home writes into that home, at any depth (§app.chat-homes/new-chats).
+    const file = createWorkerSession(placedByParent(req.session, req.spec.parent.path), req.spec.cwd);
     const rec: WorkerRecord = {
       v: 1,
       chatId: file.sessionId,
@@ -388,11 +512,87 @@ export class WorkerRegistry {
 
   /** The workers of parent session `parentSessionId` whose records have not ended. */
   list(parentSessionId: string): WorkerRef[] {
+    this.wakeFor(parentSessionId);
     return [...this.live.values()].filter((l) => l.rec.parent.sessionId === parentSessionId && l.rec.state !== "ended").map((l) => this.ref(l));
+  }
+
+  /** Whether worker chat `chatId` runs a turn now (starting, running or compacting): what a Move waits on (§app.transport/safe-transport). */
+  working(chatId: string): boolean {
+    this.wakeFor(chatId);
+    const l = this.live.get(chatId);
+    if (!l) return false;
+    const s = this.stateOf(l).status;
+    return s === "running" || s === "starting";
+  }
+
+  /** Helpers being parked (a Move's switch): their process's end is no crash and no idle stop. */
+  private readonly parking = new Set<string>();
+
+  /**
+   * A Move's switch (§app.transport/switch): the worker's process stopped and its record left idle, never
+   * ended, so it comes back waiting on the device its chat moves to. True when it was running a turn.
+   */
+  async park(chatId: string): Promise<boolean> {
+    this.wakeFor(chatId);
+    const l = this.live.get(chatId);
+    if (!l || l.rec.state === "ended") return false;
+    const wasRunning = this.working(chatId);
+    this.cancelSettle(l);
+    this.parking.add(chatId);
+    try {
+      if (l.handle && !l.handle.closed) await this.procs.stop(l.rec).catch((err) => log(`${chatId}: park stop failed: ${err instanceof Error ? err.message : String(err)}`));
+      l.handle = null;
+      if (l.rec.state !== "idle") this.set(l, { state: "idle" });
+      this.broadcast(l, { t: "ended", cause: "idle" });
+      this.stateChanged(l);
+    } finally {
+      this.parking.delete(chatId);
+    }
+    return wasRunning;
+  }
+
+  /** Every helper whose record hasn't ended (a Chats folder move parks them all: §app.chat-homes/chats-folder). */
+  unendedIds(): string[] {
+    return [...this.live.values()].filter((l) => l.rec.state !== "ended").map((l) => l.rec.chatId);
+  }
+
+  /**
+   * After a Chats folder move switched the homes root: every helper whose record was read from a home of `oldRoot`
+   * leaves memory, and every home's records are read again from the current root (their paths rewritten by the move).
+   * Returns how many records are tracked from the homes now.
+   */
+  rehome(oldRoot: string): number {
+    if (!this.homes) return 0;
+    for (const [id, l] of this.live) {
+      if (!l.rec.path.startsWith(oldRoot + "/")) continue;
+      this.cancelSettle(l);
+      this.live.delete(id);
+      this.keys.delete(l.rec.key);
+    }
+    let n = 0;
+    for (const rec of this.readHomes()) {
+      if (this.live.has(rec.chatId)) continue;
+      this.track(rec);
+      n++;
+    }
+    membersFromRegistry();
+    return n;
+  }
+
+  /** After a Move: these helpers leave this server's memory; their records' files stay as they are (the safety copy). */
+  forget(chatIds: readonly string[]): void {
+    for (const id of chatIds) {
+      const l = this.live.get(id);
+      if (!l) continue;
+      this.cancelSettle(l);
+      this.live.delete(id);
+      this.keys.delete(l.rec.key);
+    }
   }
 
   /** Stop every worker of parent session `parentSessionId` (it was archived or deleted). */
   async stopAllOf(parentSessionId: string, reason: string): Promise<void> {
+    this.wakeFor(parentSessionId);
     // Every report still waiting to open the parent, an ended worker's included.
     for (const l of this.live.values()) if (l.rec.parent.sessionId === parentSessionId) this.cancelSettle(l);
     await Promise.all([...this.live.values()].filter((l) => l.rec.parent.sessionId === parentSessionId && l.rec.state !== "ended").map((l) => this.stop(l.rec.chatId, reason)));
@@ -400,6 +600,7 @@ export class WorkerRegistry {
 
   /** The keeper's view of worker chat `chatId`, if it is one. */
   wakeOwner(chatId: string): WakeOwner | undefined {
+    this.wakeFor(chatId);
     const l = this.live.get(chatId);
     if (!l) return undefined;
     return {
@@ -420,6 +621,7 @@ export class WorkerRegistry {
 
   /** Every worker chat of parent session `parentSessionId`, ended ones too. */
   chatsOf(parentSessionId: string): string[] {
+    this.wakeFor(parentSessionId);
     return [...this.live.values()].filter((l) => l.rec.parent.sessionId === parentSessionId).map((l) => l.rec.chatId);
   }
 
@@ -577,6 +779,7 @@ export class WorkerRegistry {
 
   /** A process this server took back whose mirror says it is a worker (a server restart): the record's. */
   adopt(handle: RemoteChatHandle): boolean {
+    this.wakeFor(handle.mirror.sessionId);
     const l = this.live.get(handle.mirror.sessionId);
     if (!l) return false;
     this.attach(l, handle);
@@ -637,6 +840,7 @@ export class WorkerRegistry {
   onExit(chatId: string, cause: string): void {
     const l = this.live.get(chatId);
     if (!l || l.rec.state === "ended") return;
+    if (this.parking.has(chatId)) return; // parked for a Move: park() records it idle
     if (cause === "reload") return; // the replacement takes the handle over
     l.handle = null;
     if (cause === "archived") return; // a stop the registry asked for: stop() records it
@@ -657,6 +861,7 @@ export class WorkerRegistry {
   died(d: ChatDeath, marker: InflightMarker | null): void {
     const l = this.live.get(d.chatId);
     if (!l || l.rec.state === "ended") return;
+    if (this.parking.has(d.chatId)) return; // parked for a Move: park() records it idle
     // A reopen is in flight (this death's resume, or a late second report of the same death): the
     // process now starting is not the one that died.
     if (l.opening) return log(`${d.chatId}: a death reported while it reopens; ignored`);
@@ -694,6 +899,7 @@ export class WorkerRegistry {
 
   /** At boot, after the take-back: a record with no process that ended in order waits, idle. */
   settleBoot(): void {
+    this.booted = true;
     for (const l of this.live.values()) {
       if (l.rec.state === "ended" || l.opening || (l.handle && !l.handle.closed)) continue;
       if (l.rec.state === "open") this.set(l, { state: "idle" });

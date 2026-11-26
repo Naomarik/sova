@@ -1255,6 +1255,28 @@ Numbers: on a copy of 70 real worktrees with drafts, the same 70 answers; every 
     against today's core on master, from separate runs: about +14%.
   - Not measured: agents' behaviour with best-part rows; the live server path.
 
+### 2026-11-26
+
+**`agree` finds a go-ahead in a Sova chat's home** (branch `feat/chat-home-spikes`, alignment al_7; not on master yet).
+
+- Goal 1 (decide before building): a chat agrees the promises its user decided. Since chat homes, a Sova chat's
+  conversation (and its helpers') is in `<homes root>/<chat id>/sessions/*.jsonl`, never under the agent dir, so
+  every such chat's own `pi-session:` source failed `agree-source-unresolved` and nothing could be stamped.
+  Constraint 1 holds: the homes root is one more place looked in, never instead of the agent dir; where Sova never
+  ran it is absent and the answer is as before.
+- Changed:
+  - `core/sova-spec-draft.mjs`. A `pi-session:` source resolves in the chat's own home first (its id names the
+    home), then any other home's flat `sessions/` (a helper's file is in its top chat's home), then
+    `$PI_CODING_AGENT_DIR/sessions` as before. The homes root is resolved as Sova does, without importing it:
+    an absolute `$SOVA_CHAT_HOMES_ROOT`, else `$SOVA_CHAT_HOMES`; else the folder the state root's
+    `chat-homes.json` names (state root `$SOVA_CHAT_STATE_ROOT`, else `<agent dir>/sova`); else
+    `~/.local/state/sova/chats/<12 hex of sha256(canonical state root)>`. The refusal names both places.
+  - `DRAFTS.md` (`agree-source-unresolved`), `tests/agree-command.test.mjs` (each of the four ways to the root, a
+    helper in another home, the agent dir beside homes, a relative root ignored; the fixture drops Sova's
+    chat-home variables).
+- §: computed at landing with `sova-spec.mjs foreign`. Expected: §tools.spec/agree-command.
+- Numbers: none; a resolver fix with no ranking or size effect.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration

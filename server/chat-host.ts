@@ -3,6 +3,7 @@
 // (server/chat-runtime/supervisor.ts) and talked to through a RemoteChatHandle. Installed into chat-handle.ts as
 // its router (setChatRouter), so ws.ts and every caller of acquireChatHandle/chatHandle/chatHandles
 // reach a chat the same way wherever it runs.
+import { CHAT_HOME_ENV, CHAT_HOMES_ROOT_ENV, homeOfSessionFile, homesRoot } from "./chat-homes/root";
 import { bringBackForChat, needsBringBack } from "./worktree-retire-notes";
 import { processEnded } from "./worktree-retire-gate";
 import { randomUUID } from "node:crypto";
@@ -74,7 +75,7 @@ import { reattachDescribers } from "./design/describe";
 import { type WakeOwner, type WorkerProcesses, type WorkerRecord, WorkerRegistry } from "./chat-workers";
 import { installCoordinatorRegistry, reattachCoordinators } from "./design/coordinator";
 import { WAKE_DIR_ENV, WAKE_WORKER_ENV } from "../pi-config/extensions/subagents/wake-store.ts";
-import { wakeDir, wakesOn } from "./wake-keeper";
+import { wakeDir, wakeDirFor, wakesOn } from "./wake-keeper";
 import { jobCardsEnv, jobsEnv } from "./background-jobs";
 import { readWorkerNice } from "./process-priority";
 import type { Driver } from "./project-services/drivers";
@@ -253,7 +254,9 @@ export class ChatHostRouter {
           extra: {
             ...withoutLoginContext(w?.spec.env),
             SOVA_CHAT_STATE_ROOT: stateRoot(),
-            ...(wakesOn() ? { [WAKE_DIR_ENV]: wakeDir() } : {}),
+            [CHAT_HOMES_ROOT_ENV]: homesRoot(),
+            ...(homeOfSessionFile(c.sessionPath) ? { [CHAT_HOME_ENV]: homeOfSessionFile(c.sessionPath)! } : {}),
+            ...(wakesOn() ? { [WAKE_DIR_ENV]: wakeDirFor(c.chatId) } : {}),
             ...(w?.kind === "worker" ? { [WAKE_WORKER_ENV]: "1" } : {}),
             // A chat in a systemd unit keeps what its commands leave running (§app.background-jobs/where).
             ...jobsEnv(host?.driver),
@@ -919,6 +922,34 @@ export class ChatHostRouter {
     return true;
   }
 
+  /**
+   * A Chats folder move (§app.chat-homes/chats-folder): every chat process stops, idle ones included, since each holds
+   * the homes folder it started with. Helpers are parked (their records stay idle, never ended), every other chat is
+   * closed with `message` for its panes, and any process still recorded with no handle is stopped. Resolves to how
+   * many processes are left (0 unless one refused to stop).
+   */
+  async stopEveryProcess(message: string): Promise<number> {
+    for (const id of this.workers.unendedIds()) await this.workers.park(id).catch((err: unknown) => log(`${id}: park failed: ${err instanceof Error ? err.message : String(err)}`));
+    for (const h of [...this.remotes.values()]) if (!h.closed && !this.workerPaths.has(h.path)) await this.close(h.path, message).catch((err: unknown) => log(`${h.path}: close failed: ${err instanceof Error ? err.message : String(err)}`));
+    for (const r of this.sup.list()) {
+      this.sup.expectExit(r.chatId, "archived");
+      await this.sup.stop(r.chatId, "archived").catch(() => {});
+    }
+    return this.sup.list().length;
+  }
+
+  /** Whether any chat or helper runs a turn now (starting, running or compacting). */
+  workingChats(): string[] {
+    const out: string[] = [];
+    for (const h of this.remotes.values()) {
+      if (h.closed) continue;
+      const m = h.mirror;
+      if (m.running || m.starting || m.compacting) out.push(h.path);
+    }
+    for (const id of this.workers.unendedIds()) if (this.workers.working(id)) out.push(this.workers.record(id)?.path ?? id);
+    return [...new Set(out)];
+  }
+
   // ---- worker chats (§app.chat-processes/workers) ----------------------------------------------------
 
   /** Start worker chat `rec` in a process of its own and open it as its loadout; a process that does
@@ -1112,5 +1143,82 @@ export function workerChatsOf(sessionId: string): string[] {
   return router?.workers.chatsOf(sessionId) ?? [];
 }
 
+/** The live workers under session `sessionId` at any depth (a helper's own helpers too), with whether each
+    runs a turn now (Safe Transport). `parent`: the chat that started it. */
+export function workersWorkingOf(sessionId: string): { chatId: string; workerId: string; working: boolean; parent: string }[] {
+  const w = router?.workers;
+  if (!w) return [];
+  const out: ReturnType<typeof workersWorkingOf> = [];
+  const seen = new Set<string>([sessionId]);
+  const queue = [sessionId];
+  while (queue.length && out.length < 2000) {
+    const at = queue.shift()!;
+    for (const r of w.list(at)) {
+      if (seen.has(r.chatId)) continue;
+      seen.add(r.chatId);
+      out.push({ chatId: r.chatId, workerId: r.workerId, working: w.working(r.chatId), parent: at });
+      queue.push(r.chatId);
+    }
+  }
+  return out;
+}
+
+/** Steer worker chat `chatId` (it reads it at its next step, or starts a turn when idle). */
+export async function steerWorkerChat(chatId: string, text: string, key: string): Promise<void> {
+  await router?.workers.send(chatId, { text, delivery: "steer", key });
+}
+
+/** Abort worker chat `chatId`'s turn: its chat stays. */
+export async function abortWorkerChat(chatId: string): Promise<void> {
+  await router?.workers.abort(chatId);
+}
+
+/** Every worker and team member under session `sessionId` at any depth, ended ones included, as their records say. */
+export function workerMembersOf(sessionId: string): { sid: string; path: string; workerId: string; kind: string; parent: string; env: Readonly<Record<string, string>> }[] {
+  const out: ReturnType<typeof workerMembersOf> = [];
+  const seen = new Set<string>([sessionId]);
+  const queue = [sessionId];
+  while (queue.length && out.length < 2000) {
+    const at = queue.shift()!;
+    for (const id of router?.workers.chatsOf(at) ?? []) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const rec = router?.workers.record(id);
+      if (!rec) continue;
+      out.push({ sid: id, path: rec.path, workerId: rec.parent.workerId, kind: rec.kind, parent: at, env: rec.spec.env ?? {} });
+      queue.push(id);
+    }
+  }
+  return out;
+}
+
 /** The handle `chatHandle` finds, if it is a chat process's (tests, health). */
 export const isRemote = (path: string): boolean => chatHandle(path)?.where === "process";
+
+/** A Move's switch: worker chat `chatId`'s process stopped, its record idle (§app.transport/switch). True when it was working. */
+export async function parkWorkerChat(chatId: string): Promise<boolean> {
+  return (await router?.workers.park(chatId)) ?? false;
+}
+
+/** After a Move: these worker chats leave this server's memory; their records stay on disk as the safety copy. */
+export function forgetWorkerChats(chatIds: readonly string[]): void {
+  router?.workers.forget(chatIds);
+}
+
+/** A Chats folder move: stop every chat process (ChatHostRouter.stopEveryProcess); the count left running. */
+export async function stopEveryChatProcess(message: string): Promise<number> {
+  return (await router?.stopEveryProcess(message)) ?? 0;
+}
+
+/** The session files of every chat and helper running a turn now. */
+export const workingChatPaths = (): string[] => router?.workingChats() ?? [];
+
+/** After a Chats folder move switched the homes root: the helpers' records are read again from the new one. */
+export function rehomeWorkerChats(oldRoot: string): number {
+  return router?.workers.rehome(oldRoot) ?? 0;
+}
+
+/** A home that arrived from another device (Transport): its helpers' records are tracked now. */
+export function adoptArrivedHome(homeId: string): number {
+  return router?.workers.adoptHome(homeId) ?? 0;
+}

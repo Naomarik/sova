@@ -18,7 +18,12 @@ export interface ExtensionAsks {
   /** The screens it adds to. */
   screens?: string[];
   drawings?: string[];
+  /** It reads every chat on this computer (`reads: ["chats"]`, §app.extensions/reads-chats). */
+  readsChats?: boolean;
 }
+
+/** An entry or description that says `reads: ["chats"]`, exactly. */
+export const readsChats = (raw: { reads?: unknown }): boolean => Array.isArray(raw.reads) && raw.reads.length === 1 && raw.reads[0] === "chats";
 
 export interface ExtensionReview {
   id: string;

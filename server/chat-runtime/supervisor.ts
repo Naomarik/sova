@@ -179,6 +179,10 @@ export const CHAT_PROCESS_ENV = [
   "SOVA_CHAT_UNIT",
   "SOVA_CHAT_BUILD",
   "SOVA_CHAT_STATE_ROOT",
+  // CHAT_HOMES_ROOT_ENV: the server's homes root (server/chat-homes/root.ts).
+  "SOVA_CHAT_HOMES_ROOT",
+  // CHAT_HOME_ENV: the home a homed chat's (or helper's) conversation is in.
+  "SOVA_CHAT_HOME",
   "SOVA_CHAT_LIVE_ROOT",
   "SOVA_CHAT_COPIES_ROOT",
   "SOVA_WAKE_DIR",

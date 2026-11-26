@@ -3,7 +3,9 @@
  * (pi or Claude Code, any depth) and every team member can read and write. It holds briefs,
  * reports, alignment files and team handover notes.
  *
- * It lives under the user's state dir, `~/.local/state/sova/shared/<session key>` (a hermetic
+ * A chat with a home (Sova's chat homes) keeps it in its home, `<home>/shared/`, and it stays there
+ * when the chat is archived: only the chat's own Delete removes it, with the home. An older chat's
+ * lives under the user's state dir, `~/.local/state/sova/shared/<session key>` (a hermetic
  * server's: `$SOVA_SHARED_BASE/<session key>`, see SHARED_BASE_ENV): outside the
  * agent dir (read-only to every confined agent, and the home of code Sova loads) and outside every
  * repository (nothing stray shows in a branch). Sova never loads code from it.
@@ -17,7 +19,7 @@
  *
  * Node builtins only, no pi imports: the server imports it.
  */
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
@@ -50,11 +52,35 @@ export function sharedBase(home: string = homedir(), env: Record<string, string 
 	return own && isAbsolute(own) ? own : join(home, ".local", "state", "sova", "shared");
 }
 
-/** The shared folder of the chat whose session key (or id) is `sessionKey`. */
+/** The homes folder a chat process is told (`SOVA_CHAT_HOMES_ROOT`, the server's resolved one; else the
+    `SOVA_CHAT_HOMES` override, absolute); the server names its own through setChatHomesRoot. */
+export const CHAT_HOMES_ROOT_ENV = "SOVA_CHAT_HOMES_ROOT";
+export const CHAT_HOMES_ENV = "SOVA_CHAT_HOMES";
+/** The home of a chat process's chat, or of the root chat above a worker or team member. */
+export const CHAT_HOME_ENV = "SOVA_CHAT_HOME";
+
+let homesRootOf: (() => string) | undefined;
+
+/** The server resolves its homes folder from its state root (server/chat-homes/root.ts) and names it here. */
+export function setChatHomesRoot(fn: () => string): void {
+	homesRootOf = fn;
+}
+
+/** The home of the chat whose key is `key` (its `home.json` is there, server/chat-homes/root.ts HOME_FILE), or undefined: a chat from before homes. */
+export function chatHomeDirOf(key: string, env: Record<string, string | undefined> = process.env): string | undefined {
+	const fromEnv = env[CHAT_HOMES_ROOT_ENV] || env[CHAT_HOMES_ENV];
+	const root = homesRootOf?.() ?? (fromEnv && isAbsolute(fromEnv) ? fromEnv : undefined);
+	if (!root || !key) return undefined;
+	const dir = join(root, key);
+	return existsSync(join(dir, "home.json")) ? dir : undefined;
+}
+
+/** The shared folder of the chat whose session key (or id) is `sessionKey`: `<home>/shared` for a chat with a home. */
 export function chatSharedFolder(sessionKey: string, home: string = homedir()): string {
 	const key = sessionDirKey(sessionKey, "");
 	if (!key) throw new Error("a shared folder needs a session key");
-	return join(sharedBase(home), key);
+	const own = chatHomeDirOf(key);
+	return own ? join(own, "shared") : join(sharedBase(home), key);
 }
 
 /**
@@ -63,7 +89,10 @@ export function chatSharedFolder(sessionKey: string, home: string = homedir()): 
  * climb out to; a missing folder is fine. False when removing failed (logged by the caller).
  */
 export function removeChatSharedFolder(sessionKey: string, home: string = homedir()): boolean {
-	if (!sessionDirKey(sessionKey, "")) return true;
+	const key = sessionDirKey(sessionKey, "");
+	if (!key) return true;
+	// A home's shared folder is kept when its chat is archived; the chat's own Delete removes the whole home.
+	if (chatHomeDirOf(key)) return true;
 	try {
 		rmSync(chatSharedFolder(sessionKey, home), { recursive: true, force: true });
 		return true;

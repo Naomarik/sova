@@ -35,7 +35,7 @@ import { open, lstat, mkdir, writeFile, rename, link, unlink, rm, readdir, rmdir
 import { constants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { resolve, join, dirname, posix, relative } from "node:path";
+import { resolve, join, dirname, posix, relative, isAbsolute, basename } from "node:path";
 import { realpathSync, existsSync, mkdtempSync, writeFileSync, rmSync, readdirSync, readFileSync, openSync, readSync, closeSync } from "node:fs";
 import { tmpdir, hostname, homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -607,7 +607,8 @@ function refProblem(v) {
   if (typeof v === "string" && REF_RE.test(v) && (!v.startsWith("pi-session:") || PI_REF_RE.test(v))) return null;
   return `${JSON.stringify(v)} is not a reference: a source is scheme:locator with no spaces (pi-session:<session id>#<entry id>, a URL, chat:c1#m3), never a description of where the go-ahead was given`;
 }
-// A `pi-session:<session id>#<entry id>` source must point back at a real user message: a session file under
+// A `pi-session:<session id>#<entry id>` source must point back at a real user message: a session file in a Sova chat
+// home's flat `sessions/` (the homes root as Sova resolves it, see chatHomesRoot) or under
 // ${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions, at any depth, named `…_<session id>.jsonl` or whose header line carries
 // that id, holding an entry with that id of type `message` and role `user`. Only this scheme is resolved: every other
 // one (a URL, chat:…) is checked for its form alone, for projects whose go-ahead lives outside pi. → null | what is wrong
@@ -618,13 +619,42 @@ function piSourceProblem(v) {
   if (!resolvedSources.has(v)) resolvedSources.set(v, resolvePiSource(m[1], m[2]));
   return resolvedSources.get(v);
 }
-function piSessionsDir() {
+function piAgentDir() {
   const raw = process.env.PI_CODING_AGENT_DIR?.trim(), home = homedir();
-  const dir = !raw ? join(home, ".pi", "agent") : raw === "~" ? home : raw.startsWith("~/") ? join(home, raw.slice(2)) : raw;
-  return join(dir, "sessions");
+  return !raw ? join(home, ".pi", "agent") : raw === "~" ? home : raw.startsWith("~/") ? join(home, raw.slice(2)) : raw;
+}
+const piSessionsDir = () => join(piAgentDir(), "sessions");
+// A path made canonical through its nearest existing ancestor (a root not made yet keeps one spelling).
+function canonicalDeep(p) {
+  const rest = [];
+  for (let at = resolve(p); ;) {
+    try { return join(realpathSync(at), ...rest.reverse()); } catch {
+      const up = dirname(at);
+      if (up === at) return resolve(p);
+      rest.push(basename(at)); at = up;
+    }
+  }
+}
+// Where Sova keeps its chats' homes (`<root>/<chat id>/sessions/*.jsonl`), resolved as Sova does, for a project that
+// isn't Sova too: $SOVA_CHAT_HOMES_ROOT (what Sova hands each chat process), else $SOVA_CHAT_HOMES, when absolute;
+// else the folder the state root's `chat-homes.json` names (the state root: $SOVA_CHAT_STATE_ROOT, else
+// <agent dir>/sova); else ~/.local/state/sova/chats/<12 hex of sha256(canonical state root)>.
+function chatHomesRoot() {
+  for (const k of ["SOVA_CHAT_HOMES_ROOT", "SOVA_CHAT_HOMES"]) { const v = process.env[k]; if (v && isAbsolute(v)) return v; }
+  const state = canonicalDeep(process.env.SOVA_CHAT_STATE_ROOT || join(piAgentDir(), "sova"));
+  try { const m = JSON.parse(readFileSync(join(state, "chat-homes.json"), "utf8")); if (typeof m?.homes === "string" && isAbsolute(m.homes)) return m.homes; } catch { /* no marker */ }
+  return join(homedir(), ".local", "state", "sova", "chats", createHash("sha256").update(state).digest("hex").slice(0, 12));
 }
 function resolvePiSource(sessionId, entryId) {
-  const dir = piSessionsDir(), files = [];
+  const dir = piSessionsDir(), homes = chatHomesRoot();
+  const jsonl = (d) => { try { return readdirSync(d, { withFileTypes: true }).filter((e) => e.isFile() && e.name.endsWith(".jsonl")).map((e) => join(d, e.name)); } catch { return []; } };
+  // The chat's own home first (its id names it), then every other home's (a helper's file is in its top chat's home),
+  // then pi's agent dir, walked to depth 8.
+  const own = /^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$/.test(sessionId) ? join(homes, sessionId) : null;
+  const files = own ? jsonl(join(own, "sessions")) : [];
+  let homeNames = [];
+  try { homeNames = readdirSync(homes, { withFileTypes: true }).filter((e) => e.isDirectory() && join(homes, e.name) !== own).map((e) => e.name); } catch { /* no homes */ }
+  for (const n of homeNames) files.push(...jsonl(join(homes, n, "sessions")));
   const walk = (d, depth) => {
     let list;
     try { list = readdirSync(d, { withFileTypes: true }); } catch { return; }
@@ -644,8 +674,9 @@ function resolvePiSource(sessionId, entryId) {
     } catch { return undefined; } finally { if (fd !== undefined) closeSync(fd); }
   };
   const file = files.find((f) => f.endsWith(`_${sessionId}.jsonl`)) ?? files.find((f) => headerId(f) === sessionId);
-  const need = `it needs pi-session:<session id>#<entry id> of a user message in a session under ${dir}`;
-  if (!file) return `pi-session:${sessionId}#${entryId} does not resolve: no session ${sessionId} under ${dir}; ${need}`;
+  const where = `${join(homes, "<chat id>", "sessions")} or ${dir}`;
+  const need = `it needs pi-session:<session id>#<entry id> of a user message in a session under ${where}`;
+  if (!file) return `pi-session:${sessionId}#${entryId} does not resolve: no session ${sessionId} under ${where}; ${need}`;
   let text;
   try { text = readFileSync(file, "utf8"); } catch { return `pi-session:${sessionId}#${entryId} does not resolve: its session file can't be read; ${need}`; }
   for (const line of text.split("\n")) {

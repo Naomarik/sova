@@ -184,6 +184,28 @@ export const GROUPS = [
     landing: "triggered",
     triggers: [...RETIRE_LAB, ...TEST_SETUP, ...SELF],
   },
+  {
+    name: "homes-scale",
+    title: "Many chats",
+    // The 5,000-home bench (scripts/bench-chat-homes): what reading the homes costs stays flat as chats grow.
+    files: ["server/chat-homes/scale.integration.test.ts"],
+    except: [],
+    landing: "triggered",
+    triggers: [
+      "server/chat-homes/**",
+      "scripts/bench-chat-homes/**",
+      "server/sessions-index.ts",
+      "server/session-offers.ts",
+      "server/transcript-cards.ts",
+      "server/chat-workers.ts",
+      "server/seen.ts",
+      "server/archived-sessions.ts",
+      "server/session-titles.ts",
+      "server/signals-store.ts",
+      ...TEST_SETUP,
+      ...SELF,
+    ],
+  },
 ];
 
 /** The name of the everyday set: every integration file in no group. */

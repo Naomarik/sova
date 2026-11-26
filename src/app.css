@@ -1539,6 +1539,13 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .agent-cpu-row { display: flex; align-items: center; gap: var(--space-3); }
 .agent-cpu-row > .input { flex: 0 1 6rem; min-width: 0; }
 .agent-cpu-of { color: var(--color-ink-2); }
+/* Access → Networks: "Add a range" [10.224.0.0/22] [Trust Range…], wrapping under the box when narrow. */
+.access-range-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.access-range-row > .input { flex: 1 1 12rem; min-width: 0; }
+/* Access → Networks rows: an address and range wrap rather than cut off; the chip and button drop under it when narrow. */
+.access-net-row { flex-wrap: wrap; row-gap: var(--space-2); }
+.access-net-main { flex: 1 1 14rem; min-width: 0; }
+.access-net-meta { white-space: normal; overflow-wrap: anywhere; }
 .settings-updates-running { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .settings-updates-version { font-weight: var(--fw-medium); }
 .settings-updates-sha { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }

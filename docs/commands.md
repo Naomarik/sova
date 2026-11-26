@@ -13,11 +13,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 666 |
+| Routes registered | 670 |
 | Routes a catalogue entry points at | 228 |
 | Catalogue entries | 302 |
 | Class: Peer protocol | 39 |
-| Class: Auth | 4 |
+| Class: Auth | 8 |
 | Class: Share pages | 0 |
 | Class: Extension proxy | 5 |
 | Class: Transport and frames | 1 |
@@ -422,12 +422,16 @@ Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer li
 | `ALL /peer/:id/api/*` | full |
 | `ALL /peer/:id/ws/*` | full |
 
-### Auth (4)
+### Auth (8)
 
 Pairing, unlocking and the token: how a browser gets in, not something done once inside.
 
 | Route | Mesh need |
 | --- | --- |
+| `GET /api/auth/networks` | full |
+| `POST /api/auth/networks/check` | full |
+| `POST /api/auth/networks/trust` | full |
+| `POST /api/auth/networks/untrust` | full |
 | `POST /api/auth/pair` | full |
 | `GET /api/auth/status` | full |
 | `GET /api/auth/token` | full |

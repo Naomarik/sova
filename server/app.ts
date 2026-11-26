@@ -191,6 +191,7 @@ import { dismissChat, undoDismissal } from "./needs-you-dismissed";
 import { resourceMonitor } from "./resource-monitor";
 import { routeOpName } from "./stall-recorder-route";
 import { opEnd, opStart, stallRecording } from "./stall-recorder";
+import { registerNetworkRoutes } from "./networks/routes";
 import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
 import { notPage, pageOnlyRefusal, personWatching, yourClickBody, yourClickRefusal } from "./page-only";
@@ -338,6 +339,8 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/auth/token", revealToken);
   // Gated like everything else: 200 means this browser's cookie is good, a 401 that it is locked.
   app.get("/api/auth/status", (c) => c.json({ ok: true }));
+  // The Access page's networks (server/networks/routes.ts): local-only; trusting is the operator's own click.
+  registerNetworkRoutes(app);
   // The folder this server lists sessions from (its agent dir's), which the empty list names.
   app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
   // Updates: what runs, the daily check, and the operator's upgrade.

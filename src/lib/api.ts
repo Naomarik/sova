@@ -160,6 +160,7 @@ import { upgradeLegacyRows } from "./legacy-rows";
 import { COMPOSER_QUERY } from "./wire-stamp";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
+import type { NetworksView, RangeCheck, TrustBody, UntrustBody } from "../../shared/networks";
 import type { PlaybookCardEdits, PlaybookRunOpenBody, PlaybookRunView } from "../../shared/playbook-run";
 
 /**
@@ -228,7 +229,16 @@ async function requestWithHeaders<T>(url: string, init?: RequestInit): Promise<{
 }
 
 export const mintAccessCode = () =>
-  request<{ code: string; expiresAt: string; links?: { label: string; url: string }[] }>("/api/auth/pair", { method: "POST" });
+  request<{ code: string; expiresAt: string; links?: { label: string; url: string; kind?: "tailscale" | "trusted" | "here"; secure?: boolean }[] }>("/api/auth/pair", { method: "POST" });
+
+// ---- trusted networks (the Access page's Networks card): local-only; trusting is the page's own click ----
+export const getNetworks = () => request<NetworksView>("/api/auth/networks", { cache: "no-store" });
+export const checkRange = (range: string) =>
+  request<RangeCheck>("/api/auth/networks/check", { method: "POST", body: JSON.stringify({ range }) });
+export const trustRange = (body: TrustBody) =>
+  request<NetworksView>("/api/auth/networks/trust", { method: "POST", body: JSON.stringify(body) });
+export const untrustRange = (body: UntrustBody) =>
+  request<NetworksView>("/api/auth/networks/untrust", { method: "POST", body: JSON.stringify(body) });
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");

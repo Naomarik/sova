@@ -660,26 +660,30 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
 }
 
 export function attachWebSockets(server: Server): void {
-  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    // The main listener's gate (server/auth.ts upgradeAllowed): the token, and the Host and Origin
-    // rules, before any socket is dispatched. Not in upgradeSovaSocket: the peer listener calls
-    // that directly, and a peer is answered by its Tailscale identity.
-    if (refuseUpgrade(req, socket)) return;
-    const url = new URL(req.url ?? "/", "http://localhost");
-    // Sova's event stream (server/events-ws.ts): this listener only, never the peer's.
-    if (url.pathname === EVENTS_PATH) return upgradeEventsSocket(req, socket, head);
-    // An extension's own socket, forwarded to its backend (server/extensions.ts).
-    const ext = extensionSocketRoute(url.pathname);
-    if (ext) {
-      upgradeExtensionSocket(req, socket, head, ext[0], ext[1], url.search);
-      return;
-    }
-    // A session on another host, forwarded to it (server/mesh/proxy.ts); never while the mesh is off.
-    if (meshUpgrade(req, socket, head, url)) return;
-    pageSockets.set(req, notPageSocket((n) => {
-      const v = req.headers[n];
-      return Array.isArray(v) ? v.join(n === "cookie" ? "; " : ", ") : v;
-    }));
-    upgradeSovaSocket(req, socket, head);
-  });
+  server.on("upgrade", mainListenerUpgrade);
+}
+
+/** An upgrade on the main listener, or on a trusted network's listener after its source check
+    (server/networks/listeners.ts): the same gate and the same dispatch. */
+export function mainListenerUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+  // The main listener's gate (server/auth.ts upgradeAllowed): the token, and the Host and Origin
+  // rules, before any socket is dispatched. Not in upgradeSovaSocket: the peer listener calls
+  // that directly, and a peer is answered by its Tailscale identity.
+  if (refuseUpgrade(req, socket)) return;
+  const url = new URL(req.url ?? "/", "http://localhost");
+  // Sova's event stream (server/events-ws.ts): this listener only, never the peer's.
+  if (url.pathname === EVENTS_PATH) return upgradeEventsSocket(req, socket, head);
+  // An extension's own socket, forwarded to its backend (server/extensions.ts).
+  const ext = extensionSocketRoute(url.pathname);
+  if (ext) {
+    upgradeExtensionSocket(req, socket, head, ext[0], ext[1], url.search);
+    return;
+  }
+  // A session on another host, forwarded to it (server/mesh/proxy.ts); never while the mesh is off.
+  if (meshUpgrade(req, socket, head, url)) return;
+  pageSockets.set(req, notPageSocket((n) => {
+    const v = req.headers[n];
+    return Array.isArray(v) ? v.join(n === "cookie" ? "; " : ", ") : v;
+  }));
+  upgradeSovaSocket(req, socket, head);
 }

@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { lstat, open, readdir, readlink, rename, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createZstdCompress, createZstdDecompress } from "node:zlib";
@@ -212,12 +212,23 @@ export async function verifyHome(staged: string, manifest: PackageManifest): Pro
   return null;
 }
 
+async function flush(p: string, how: "r" | "r+"): Promise<void> {
+  const fh = await open(p, how);
+  try {
+    await fh.sync();
+  } finally {
+    await fh.close();
+  }
+}
+/** Flush a file's data, or a folder's entries, to the disk (a test watches the order). */
+export const keepIo = { file: (file: string): Promise<void> => flush(file, "r+"), dir: (dir: string): Promise<void> => flush(dir, "r") };
+
 /**
  * A whole folder, as it is (ignored files, build output and dependencies included, links kept as links),
  * compressed into `out` (§app.transport/moved-row: the old code folder goes into the safety copy), streamed
  * through zstd so no file is ever held whole. The archive is read back as a stream, its members matched
  * against the walk and its bytes against what was written, before it is kept under `out`: only then may
- * the caller remove the folder. Throws, keeping nothing, when it can't vouch for every entry.
+ * the caller remove the folder, flushed to the disk first. Throws, keeping nothing, when it can't vouch for every entry.
  */
 export async function compressFolder(dir: string, out: string): Promise<{ entries: number; size: number }> {
   const base = dir.split("/").filter(Boolean).at(-1) ?? "folder";
@@ -274,7 +285,11 @@ export async function compressFolder(dir: string, out: string): Promise<{ entrie
     };
     await again("");
     if (now.length !== want.length || now.some((n, i) => n !== want[i])) throw new Error(`${dir} gained or lost files while it was archived`);
+    // On the disk before the caller may remove the folder: the archive's bytes, then the rename that names it, so a
+    // power loss right after can't leave neither the folder nor its archive.
+    await keepIo.file(tmp);
     await rename(tmp, out);
+    await keepIo.dir(dirname(out));
     return { entries: entries.length, size: (await stat(out)).size };
   } finally {
     await rm(tmp, { force: true });

@@ -3,12 +3,12 @@
 // build output, a file written after packing), and a home's earlier safety copy never travels again.
 import "../testing/scratch-agent-dir";
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { zstdDecompressSync } from "node:zlib";
 import { scratchRoot } from "../test-scratch";
-import { buildPackage, compressFolder, verifyHome } from "./package";
+import { buildPackage, compressFolder, keepIo, verifyHome } from "./package";
 import { listTar } from "./tar";
 
 const root = scratchRoot("sova-transport-package-");
@@ -36,6 +36,23 @@ test("a folder is kept whole: ignored files, build output, links and what came a
   const again = join(root, "wt-again.tar.zst");
   await compressFolder(wt, again);
   assert.deepEqual(readFileSync(again), readFileSync(out));
+});
+
+test("a folder's archive is on the disk before compressFolder returns (the caller removes the folder next): its bytes, then the rename naming it", async () => {
+  const wt = join(root, "flushed");
+  mkdirSync(wt);
+  writeFileSync(join(wt, "a.txt"), "a\n");
+  const out = join(root, "flushed.tar.zst");
+  const seen: string[] = [];
+  const was = { ...keepIo };
+  keepIo.file = (f) => (seen.push(`file ${f} archive-named:${existsSync(out)}`), was.file(f));
+  keepIo.dir = (d) => (seen.push(`dir ${d} archive-named:${existsSync(out)}`), was.dir(d));
+  try {
+    await compressFolder(wt, out);
+  } finally {
+    Object.assign(keepIo, was);
+  }
+  assert.deepEqual(seen, [`file ${out}.part archive-named:false`, `dir ${root} archive-named:true`]);
 });
 
 test("a home's earlier safety copy and its draft never go into a package", async () => {

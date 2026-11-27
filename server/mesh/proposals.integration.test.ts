@@ -150,3 +150,25 @@ test("an extension proposes, the person confirms, a computer links, and the exte
     late.close();
   }
 });
+
+test("a link removed on the Mesh page and paired again there by hand, same id and fingerprint, is no longer the extension's", async () => {
+  const other = mintLanIdentity();
+  const pairing = { id: "co-again", label: "Again", role: "accept", pin: other.pin };
+  // The extension's link, confirmed by the person.
+  const [, made] = await api<{ proposal: MeshProposal }>("POST", "/api/mesh/proposals", KEY, { kind: "pair", role: "accept", peer: pairing.id, fingerprint: other.pin, grant: "presence" });
+  assert.equal((await api<{ proposal: MeshProposal }>("POST", `/api/mesh/proposals/${made.proposal.id}/confirm`, PAGE, {}))[0], 200);
+  // Removed by hand on the Mesh page, then paired again by hand: same id, same fingerprint. Nothing reads in between.
+  assert.equal((await api("DELETE", `/api/mesh/lan/pairings/${pairing.id}`, PAGE))[0], 200);
+  const [s] = await api("POST", "/api/mesh/lan/pairings", PAGE, pairing);
+  assert.equal(s, 200);
+  // The extension can neither remove nor change it, and it stays.
+  const [us, unpair] = await api<{ error?: string; proposal?: MeshProposal }>("POST", "/api/mesh/proposals", KEY, { kind: "unpair", peer: pairing.id });
+  assert.equal(us, 403, JSON.stringify(unpair));
+  const [gs] = await api("POST", "/api/mesh/proposals", KEY, { kind: "grant", peer: pairing.id, grant: "none" });
+  assert.equal(gs, 403);
+  const lan = (await api<LanStatus>("GET", "/api/mesh/lan", KEY))[1];
+  assert.deepEqual(lan.pairings.map((x) => x.id), [pairing.id], "the hand-made link stays");
+  const [, mine] = await api<{ links: Array<{ peer: string }> }>("GET", "/api/mesh/proposals", KEY);
+  assert.deepEqual(mine.links, [], "and isn't listed as the extension's");
+  await api("DELETE", `/api/mesh/lan/pairings/${pairing.id}`, PAGE);
+});

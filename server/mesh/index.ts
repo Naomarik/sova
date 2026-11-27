@@ -48,7 +48,7 @@ import { lanNodeId } from "./lan-cert";
 import { bootBuild } from "./build-id";
 import { cleanBuild } from "./lan-handoff-protocol";
 import { applyLanPairing, applyLanRelay, lanRoutes, removeLanPairing, type LanRouteDeps } from "./lan-routes";
-import { MeshProposals, proposalRoutes } from "./proposals";
+import { forgetLinks, goneLinks, MeshProposals, proposalRoutes } from "./proposals";
 import type { MeshProposalsFeed } from "../../shared/mesh-proposals";
 import { publishFeed } from "../session-feed";
 import { readExtensions } from "../extensions";
@@ -476,8 +476,13 @@ export function updatePeers(change: (config: PeersConfig) => PeersConfig | { err
   if ("error" in v) return { error: v.error, status: 400 };
   writePeers(v.config);
   reload();
+  forgetGoneLinks(base.config, v.config);
   return v;
 }
+
+const proposalLinksFile = (): string => join(stateRoot(), "mesh-proposals.json");
+/** A pairing that went (or was paired again) is no extension's any more (§mesh.lan/proposals). */
+const forgetGoneLinks = (before: PeersConfig, after: PeersConfig): void => forgetLinks(proposalLinksFile(), goneLinks(before.peers, after.peers));
 
 /** The sentence refusing what a host does on its own with peer `id`, when both list their areas and
     this host reads it as Update needed (§mesh.compatibility/host-acts); else null. */
@@ -758,6 +763,7 @@ export async function applyMeshPeers(body: { peers?: unknown; grants?: unknown }
   if (opts.dry) return { status: 200, body: null };
   writePeers(v.config);
   reload();
+  forgetGoneLinks(base.config, v.config);
   applyPairingGrants(grants.set, grants.removed);
   return { status: 200, body: await meshInfo() };
 }
@@ -1029,7 +1035,7 @@ export function meshProposals(): MeshProposals {
     setRelay: (relay, opts) => applyLanRelay(relay ? { ...relay, exposure: "lan" } : null, lanDeps, opts),
     titleOf: (id) => readExtensions().find((e) => e.id === id)?.title?.trim() || id,
     publish: (waiting) => publishFeed({ type: "mesh_proposals", proposals: waiting }),
-    linksFile: () => join(stateRoot(), "mesh-proposals.json"),
+    linksFile: proposalLinksFile,
   });
   return proposals;
 }

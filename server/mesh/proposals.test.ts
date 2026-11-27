@@ -40,7 +40,7 @@ function rig(opts: { pairResult?: Result } = {}) {
       if (peers.some((p) => p.id === b.id)) return { status: 400, body: { error: `${b.id} is already a host here` } };
       if (o?.dry) return OK;
       if (opts.pairResult) return opts.pairResult;
-      peers.push({ id: b.id, label: b.label, nodeId: `lan:${b.pin.toLowerCase()}`, lan: b.role === "dial" ? { role: "dial", pin: b.pin, host: b.host!, port: b.port! } : { role: "accept", pin: b.pin } } as unknown as PeerEntry);
+      peers.push({ id: b.id, label: b.label, nodeId: `lan:${b.pin.toLowerCase()}`, pairedAt: now, lan: b.role === "dial" ? { role: "dial", pin: b.pin, host: b.host!, port: b.port! } : { role: "accept", pin: b.pin } } as unknown as PeerEntry);
       grants.set(b.id, { preset: b.grant as MeshPreset });
       return OK;
     },
@@ -156,13 +156,34 @@ describe("an extension touches only the links it made", () => {
     assert.deepEqual(r.calls, []);
   });
 
-  test("a note whose link was removed some other way is forgotten, so a new link with that id isn't the extension's", async () => {
+  test("a link removed some other way and paired again, with another fingerprint or the very same one, isn't the extension's", async () => {
+    for (const pin of [PIN2, PIN]) {
+      const r = rig();
+      await linked(r, "company");
+      const was = r.peers.splice(0, 1)[0]!; // removed on the Mesh page, with nothing read since
+      r.tick(1);
+      r.peers.push({ id: "co-omar", label: "x", nodeId: `lan:${pin.toLowerCase()}`, pairedAt: (was as { pairedAt: number }).pairedAt + 1, lan: { role: "accept", pin } } as unknown as PeerEntry);
+      for (const body of [{ kind: "unpair", peer: "co-omar" }, { kind: "grant", peer: "co-omar", grant: "none" }]) assert.equal((await r.store.propose("company", body)).status, 403, `${pin === PIN ? "same" : "other"} fingerprint, ${body.kind}`);
+      assert.equal(r.peers.length, 1, "the hand-made link stays");
+      assert.deepEqual(r.store.links("company"), []);
+      assert.deepEqual(JSON.parse(readFileSync(r.linksFile, "utf8")).links, {});
+    }
+  });
+
+  test("a pairing that goes, or is paired again, is forgotten at once by whatever route wrote peers.json", async () => {
+    const { forgetLinks, goneLinks } = await import("./proposals");
+    const at = (id: string, nodeId: string, pairedAt: number) => ({ id, nodeId, pairedAt }) as unknown as PeerEntry;
+    const before = [at("a", "lan:1", 1), at("b", "lan:2", 2), at("c", "lan:3", 3)];
+    assert.deepEqual(goneLinks(before, [at("a", "lan:1", 1), at("b", "lan:2", 9)]), ["b", "c"], "b paired again, c gone; a untouched");
+    assert.deepEqual(goneLinks(before, before), []);
     const r = rig();
     await linked(r, "company");
-    r.peers.splice(0, 1); // removed on the Mesh page
-    r.peers.push({ id: "co-omar", label: "x", nodeId: `lan:${PIN2.toLowerCase()}`, lan: { role: "accept", pin: PIN2 } } as unknown as PeerEntry);
-    assert.equal((await r.store.propose("company", { kind: "unpair", peer: "co-omar" })).status, 403);
-    assert.deepEqual(JSON.parse(readFileSync(r.linksFile, "utf8")).links, {});
+    await linked(r, "company", "presence", "co-dana");
+    forgetLinks(r.linksFile, ["co-omar"]);
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(r.linksFile, "utf8")).links), ["co-dana"]);
+    const missing = join(scratchAgentDir, "no-such-links.json");
+    forgetLinks(missing, ["co-dana"]);
+    assert.equal(existsSync(missing), false, "no file is made when there is none");
   });
 
   test("a store no extension asked holds nothing: no file, no frame", () => {

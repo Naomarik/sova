@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Context, Hono } from "hono";
 import { grantCaps, MESH_CAPS, MESH_PRESETS, type MeshGrant, type MeshPreset } from "../../shared/mesh-access";
@@ -60,10 +60,16 @@ interface Kept extends MeshProposal {
   pin?: string;
 }
 
+/** Which extension made which link: by the pairing itself (its id, node id and the moment it was paired), so a link
+    removed and paired again by hand, same id and fingerprint, is never the extension's. */
 interface LinksFile {
   version: 1;
-  links: Record<string, { extension: string; nodeId: string }>;
+  links: Record<string, { extension: string; nodeId: string; pairedAt: number }>;
 }
+
+/** The note `owner` is of exactly this pairing. */
+const sameInstance = (owner: LinksFile["links"][string] | undefined, link: PeerEntry): boolean =>
+  !!owner && owner.nodeId === link.nodeId && typeof owner.pairedAt === "number" && owner.pairedAt === link.pairedAt;
 
 const LABEL_MAX = 80;
 const KEEP_MAX = 200;
@@ -113,7 +119,7 @@ export class MeshProposals {
     const file = this.readLinks();
     return this.deps
       .peers()
-      .filter((p) => file.links[p.id]?.extension === extension && file.links[p.id]!.nodeId === p.nodeId)
+      .filter((p) => file.links[p.id]?.extension === extension && sameInstance(file.links[p.id], p))
       .map((p) => ({ peer: p.id, label: p.label ?? p.id, nodeId: p.nodeId, grant: this.deps.grantOf(p.id).preset }));
   }
 
@@ -148,7 +154,7 @@ export class MeshProposals {
     // Gone already (removed on the Mesh page, say): 404, so the extension can read it as done.
     if (!link) return refuse(404, NO_SUCH_LINK);
     const owner = this.readLinks().links[peer];
-    if (!owner || owner.extension !== extension || owner.nodeId !== link.nodeId) return refuse(403, NOT_ITS_LINK);
+    if (!owner || owner.extension !== extension || !sameInstance(owner, link)) return refuse(403, NOT_ITS_LINK);
 
     if (kind === "unpair") {
       const r = this.deps.unpair(peer);
@@ -252,7 +258,7 @@ export class MeshProposals {
     else if (p.kind === "grant") {
       const link = this.deps.peers().find((x) => x.id === p.peer);
       const owner = this.readLinks().links[p.peer!];
-      if (!link || !owner || owner.extension !== p.extension.id || owner.nodeId !== link.nodeId) error = `${p.peer} is no longer a link ${p.extension.title} made.`;
+      if (!link || !owner || owner.extension !== p.extension.id || !sameInstance(owner, link)) error = `${p.peer} is no longer a link ${p.extension.title} made.`;
       else {
         const r = this.deps.setGrant(p.peer!, p.grant!);
         if (r.status !== 200) error = errorOf(r);
@@ -279,7 +285,9 @@ export class MeshProposals {
       if (setRelay) this.deps.setRelay(null);
       return errorOf(r);
     }
-    this.noteLink(p.peer!, p.extension.id, lanNodeId(p.pin!));
+    const made = this.deps.peers().find((x) => x.id === p.peer && x.nodeId === lanNodeId(p.pin!));
+    // No stamp to tie it to: noted as no one's, so the extension can't touch it later (never the other way round).
+    if (made?.pairedAt !== undefined) this.noteLink(p.peer!, p.extension.id, made.nodeId, made.pairedAt);
     return null;
   }
 
@@ -364,7 +372,7 @@ export class MeshProposals {
       return file;
     }
     const peers = this.deps.peers();
-    const kept = Object.fromEntries(Object.entries(file.links).filter(([id, l]) => isObj(l) && peers.some((p) => p.id === id && p.nodeId === l.nodeId)));
+    const kept = Object.fromEntries(Object.entries(file.links).filter(([id, l]) => isObj(l) && peers.some((p) => p.id === id && sameInstance(l, p))));
     if (Object.keys(kept).length !== Object.keys(file.links).length) this.writeLinks({ version: 1, links: kept });
     return { version: 1, links: kept };
   }
@@ -374,17 +382,38 @@ export class MeshProposals {
     writeFileAtomic(this.deps.linksFile(), `${JSON.stringify(file, null, 2)}\n`);
   }
 
-  private noteLink(peer: string, extension: string, nodeId: string): void {
+  private noteLink(peer: string, extension: string, nodeId: string, pairedAt: number): void {
     const file = this.readLinks();
-    this.writeLinks({ version: 1, links: { ...file.links, [peer]: { extension, nodeId } } });
+    this.writeLinks({ version: 1, links: { ...file.links, [peer]: { extension, nodeId, pairedAt } } });
   }
 
   private forgetLink(peer: string): void {
-    const file = this.readLinks();
-    if (!(peer in file.links)) return;
-    const { [peer]: _gone, ...links } = file.links;
-    this.writeLinks({ version: 1, links });
+    forgetLinks(this.deps.linksFile(), [peer]);
   }
+}
+
+/**
+ * A pairing went, by whatever route (the Mesh page, a card, the peers list): its note goes with it, at once, so nothing
+ * can take it for a later pairing. Reads the file only when there is one; a server no extension asked has none.
+ */
+export function forgetLinks(file: string, peers: readonly string[]): void {
+  if (!peers.length || !existsSync(file)) return;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return;
+  }
+  if (!isObj(raw) || !isObj(raw.links)) return;
+  const links = raw.links as LinksFile["links"];
+  if (!peers.some((p) => Object.hasOwn(links, p))) return;
+  const kept = Object.fromEntries(Object.entries(links).filter(([id]) => !peers.includes(id)));
+  writeFileAtomic(file, `${JSON.stringify({ version: 1, links: kept }, null, 2)}\n`);
+}
+
+/** The ids of `before`'s pairings that `after` no longer holds as the same pairing (gone, or paired again). */
+export function goneLinks(before: readonly PeerEntry[], after: readonly PeerEntry[]): string[] {
+  return before.filter((p) => !after.some((q) => q.id === p.id && q.nodeId === p.nodeId && q.pairedAt === p.pairedAt)).map((p) => p.id);
 }
 
 const decided = (r: Result, now: number): Pick<Kept, "state" | "decidedAt" | "error"> => (r.status === 200 ? { state: "applied", decidedAt: now } : { state: "failed", decidedAt: now, error: errorOf(r) });

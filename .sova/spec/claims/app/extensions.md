@@ -442,7 +442,13 @@ approvals only the user's click passes refuse a key already (§app.access/your-c
   `/api/mode/command` (turning align off would end an alignment's wait with no answer);
   `/api/session-offers/choose`; `/api/attention/dismiss`; a project's `draft-specs/:sid/approve` and
   `/build`, `setup/merge` and `runtime/merge`; a tour's `jobs/:jobId/approve` and `/approve-all`;
-  `/api/schedules/revoke`; and everything under `/api/baton`, `/api/orgs`, `/api/outreach` and `/api/mesh`.
+  `/api/schedules/revoke`; and everything under `/api/baton`, `/api/orgs`, `/api/outreach` and `/api/mesh`,
+  but proposing and withdrawing at `/api/mesh/proposals`, which widens nothing until the person confirms it
+  in Sova's own dialog or has let that extension link without asking (§mesh.lan/proposal-dialog,
+  §mesh.lan/proposal-trust); that confirm and decline stay refused.
+- **Linking without asking.** A key never turns on **Let {name} link computers without asking**, for
+  its own extension or another (§mesh.lan/proposal-trust): only the person's click in Sova's page does
+  (§app.access/your-click), so an extension can't spare itself the dialog.
 - **Settings.** "Sova's settings are the user's. Nothing changed.", on any write under `/api/settings`, and
   to `/api/push/settings`, a project's `settings/undo` and its `settings/cards/:card/withdraw`.
   `PUT /api/settings/overseer` says "An extension can't change the Overseer's settings. Nothing was saved."
@@ -574,7 +580,8 @@ to it, and nothing on it is live until it is approved.
   each new view build hash afresh, without holding up other
   requests. The running program goes on with its old code until it stops, and it won't start again until
   approved. Approving re-reads the description file into the entry, records the new version, and restarts
-  the program if the extension is on. A new version with no program stops the old one. An extension that is off stays off, and while off it isn't active, though
+  the program if the extension is on. While the row reads Changed, **Let {name} link computers without
+  asking** does nothing, and approving again turns it off (§mesh.lan/proposal-trust). A new version with no program stops the old one. An extension that is off stays off, and while off it isn't active, though
   its row reads Changed.
 - **Folder Not Found.** A folder that is gone stops the program and takes the extension out of active.
   Its entry, approval and data stay. When the folder is back unchanged, it is as it was; changed, it reads
@@ -588,8 +595,8 @@ to it, and nothing on it is live until it is approved.
   You and return on Turn On. Its place on the list, data and approval stay, so Turn On brings it back
   without another review unless it changed.
 - **Remove.** All of Turn Off, and the entry leaves the list with its approval. Old cards show "{title} is
-  no longer installed.", open cards close, and its card trust is forgotten, so another extension using
-  the id later inherits nothing. The folder stays. Its data, `<state root>/extension-data/<id>`, stays
+  no longer installed.", open cards close, and its card trust is forgotten, and so is letting it link
+  computers without asking, so another extension using the id later inherits nothing. The folder stays. Its data, `<state root>/extension-data/<id>`, stays
   unless **Also delete its data** is ticked, and the folder is never touched either way. Removing an entry
   whose id isn't valid only takes it off the list: no unit, cards or data folder is touched.
 - **An id is never a path unless it is valid.** An id no valid entry can have (`.`, `..`, anything with a slash)
@@ -602,7 +609,8 @@ to it, and nothing on it is live until it is approved.
   stops serving, forwarding and its key when it is off or removed, but the process is yours to stop, and the
   row says so.
 - **Who may.** Only your own page changes any of this (§app.access/your-click). Adding, approving, Turn
-  On, Turn Off, Remove, Choose Folder, and starting or stopping a program refuse a chat, a script, an
+  On, Turn Off, Remove, Choose Folder, starting or stopping a program, and turning **Let {name} link
+  computers without asking** on or off refuse a chat, a script, an
   extension's key, the Overseer and another computer, and each refusal says where to click. A request whose
   `Referer` is a page under `/ext/` is refused the same way, which stops accidents, not a hostile page
   (§app.extensions/trust). None of it is a catalogue command or an agent tool, and the only command here
@@ -611,7 +619,7 @@ to it, and nothing on it is live until it is approved.
   it asks for, and needs `full` from another computer, since it names folders and commands;
   `GET /api/extensions/:id/log` is the same, and answers 404 unless the id is on the list or among the units.
   `POST /api/extensions/inspect` reads a folder, and with
-  `POST /api/extensions/install`, `POST /api/extensions/:id/approve|folder|on|off|program` and
+  `POST /api/extensions/install`, `POST /api/extensions/:id/approve|folder|on|off|program|link-trust` and
   `DELETE /api/extensions/:id` it answers only your own page. `GET /api/extensions` stays as it was for its
   callers (§app.extensions/list).
 

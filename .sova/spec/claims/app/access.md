@@ -260,8 +260,8 @@ Every caller keeps working with no new step for the person:
 
 ## §app.access/your-click — What only your own click passes
 
-Twenty-one approvals are listed here. Twenty pass only on what Sova takes for the person's own click
-in its page on this machine; the twenty-first, choosing where links open, is a narrower door that a
+Twenty-three approvals are listed here. Twenty-two pass only on what Sova takes for the person's own click
+in its page on this machine; the twenty-third, choosing where links open, is a narrower door that a
 script holding the operator token passes too (**Where links open**, below). Both hold but for what
 the Overseer keeps and a schedule on another computer (§app.access/other-roads). Each one lets
 something act later without asking, so the ordinary roads of a chat, a script (but at that narrower
@@ -287,10 +287,12 @@ every chat.
 | Starting a setup chat for public links | `POST /api/public-links/setup-chat` | **Set Up With a Chat** in an option's setup help in Settings → Public links (§mesh.tunnel/setup-chat) |
 | Choosing where links open (a narrower door) | `PUT /api/public-links`, `DELETE /api/public-links/candidate`, and `POST /api/public-links/verify` while a new address waits for its Verify | The **Where links open** list and its fields in Settings → Public links, and **Verify Address** and **Cancel** on its Waiting for verification banner (§mesh.public/setting, §mesh.public/where-links-open) |
 | Adding or changing an extension | `POST /api/extensions/inspect`, `/install`, `/:id/approve`, `/:id/folder`, `/:id/on`, `/:id/off`, `/:id/program`, `DELETE /api/extensions/:id` | Settings → Extensions |
+| Letting an extension link computers without asking | `POST /api/extensions/:id/link-trust`, on or off | **Let {name} link computers without asking** on its row in Settings → Extensions (§mesh.lan/proposal-trust) |
 | A design run's brief | `POST /api/design/runs/:run/brief/start`, and `/brief/edit`, `/brief/answers`, `/brief/conflict`, `/brief/link`, `/brief/image` and `/brief/not-this-screen` | **Start**, **Edit**, **Go With Recommendations** or **Send Answers**, **Keep My Prompt** or **Rewrite It**, a link's use, an image's Use tick, and **Not This Screen**, on the Lookbook's brief (§chat.design-mode/brief-start, §chat.design-mode/brief-layers, §chat.design-mode/brief-questions, §chat.design-mode/link-modes, §chat.design-mode/brief-images) |
 | Answering a Lookbook Creative Director's question | `POST /api/design/coordinator/answer`, and a message to it that carries images (`POST /api/design/coordinator/message`) | The question on the Creative Director's card: starting or stopping a copy, opening a site, a sign-in or more than 12 designs in a turn; and images pasted into its box (§chat.design-mode/project-reach, §chat.design-mode/sites, §chat.design-mode/own-images) |
 | A chat's design images | `POST /api/design/assets/own`, `POST /api/design/assets/signed-in-consent`, `PATCH /api/design/images/:name`, `POST /api/design/images/:name/describe` | Bringing your own image in, the yes to capturing a signed-in page, an image's kind or note, and **Describe Again**, on the Lookbook card (§chat.design-mode/own-images, §chat.design-mode/link-sign-in, §chat.design-mode/brief-images) |
 | A playbook run's Start, and its defaults | `POST /api/playbook-runs/:run/start`, `/defaults` | **Start**, **Save as My Defaults** on its card (§chat.playbooks/start) |
+| Linking a computer an extension proposed, or giving it more access | `POST /api/mesh/proposals/:id/confirm` and `/decline` | **Link Computer**, **Give Access** or **Decline** in Sova's own dialog (§mesh.lan/proposal-dialog) |
 | Landing a branch, answering the merge queue, and taking a branch off it | every merge verb on the user's route but the reads and `merge.try` (`merge.add`, `merge.answer`, `merge.cancel`, pause, resume, Start Fresh, clear, setup, and the merge thread's `merge.restart`, `merge.test` and `merge.names`…: `POST /api/project-services/merge.*` and the queue's own routes), the Overseer's coding-worktree Merge (`POST /api/projects/:pid/overseer/worktrees/merge`) and Merge Branch on a proposed run (`POST /api/projects/:pid/runtime/merge`) | **Land**, a decision's answers (Accept, Land Anyway, Try Again, Land) and **Remove from Queue** or **Cancel**, on the branch's card, its Worktrees rows, the Merge Queue tab or the landing bar; or the person's own words in the branch's chat ("land it", §chat.worktrees/land-own-word, and an answer sent from its message box, §chat.merge-queue/decision); **Merge Branch** on the project page's coding worktree rows and on a proposed run |
 
 - **Who is refused.** A request with the Overseer's sender mark, a chat's key, the token in a header
@@ -317,7 +319,7 @@ every chat.
   could do them, but for what an extension's key is refused (§app.extensions/not-you). So
   `session.sandbox.set` and `project.overseer.settings.set` stay commands, and answer a lowering or
   a power turned On with this refusal (§app.commands/catalogue). Extensions are the exception: Turn
-  Off and Remove stay at the page too, as everything that changes an MCP server does
+  Off, Remove and turning off **Let {name} link computers without asking** stay at the page too, as everything that changes an MCP server does
   (§app.mcp/reads), so a misled chat can't quietly turn one off. The agents' CPU ceiling is another:
   tightening it stays at the page too, so a misled chat can't slow every agent. **Stop Trusting** a
   network only narrows, so it stays open to whoever can reach that local-only route
@@ -408,8 +410,9 @@ can't tell from the person's own click or word.
 - **An installed extension's page.** An extension's page passes as your click, by the same origin
   and cookie: its script can reach every door above without you, so installing one is a trust
   decision. The badge on what it sends guards against accidents and stops none of this
-  (§app.extensions/page-badge). At the extension door alone, a request whose `Referer` is a page
-  under `/ext/` is refused too (§app.extensions/loader). That too stops an accident, not a hostile
+  (§app.extensions/page-badge). At the extension door and at Link Computer alone, a request whose
+  `Referer` is a page under `/ext/` is refused too (§app.extensions/loader, §mesh.lan/proposal-dialog), and
+  Link Computer's button acts only on a click the browser marks as the person's. That too stops an accident, not a hostile
   page, which can leave the `Referer` off.
 - **How strong this is.** The approvals stop a chat following its instructions. They don't stop a
   program on this computer deliberately posing as your browser. Telling your page from a program is

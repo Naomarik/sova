@@ -338,12 +338,13 @@
       "server/networks/routes.ts",
       "server/trusted-networks.integration.test.ts",
       "server/chat-homes/move-routes.ts",
-      "server/chat-homes/move-folder.integration.test.ts"
+      "server/chat-homes/move-folder.integration.test.ts",
+      "server/extension-link-trust.test.ts"
     ],
     "agreed": {
       "by": "omar",
-      "at": "2026-11-26T19:25Z",
-      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#9d9ca960"
+      "at": "2026-11-27T19:29Z",
+      "source": "pi-session:01a21e43-3887-76d0-807e-b8d7c390416a#0e50851f"
     }
   },
   "§app/access": {

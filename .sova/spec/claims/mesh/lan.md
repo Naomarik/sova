@@ -14,7 +14,9 @@ both sides, stays on local-network addresses. Both hosts then treat each other a
 other through the other's peer gate and are held to the other's grants (§mesh.peers/grants), so a
 new pairing sees nothing until granted more than presence. Unlike a tailnet peer
 (§mesh.peers/allowlist, §mesh.peers/listener), a dial-out pairing is named by its key's pin, never by
-a Tailscale identity, and its calls never touch the tailnet listener.
+a Tailscale identity, and its calls never touch the tailnet listener. An installed extension can
+propose such a pairing too; Sova asks the person in its own dialog, unless they have let that
+extension link computers without asking (§mesh.lan/proposals).
 
 ## §mesh.lan/identity — Each host's key, and its pin
 
@@ -82,7 +84,9 @@ a Tailscale identity, and its calls never touch the tailnet listener.
 ## §mesh.lan/pairing — Pairing on the Mesh page
 
 - A Create chat can prepare a pairing on a card; the person types the fingerprint into the card itself
-  (§chat.create-mode/settings-cards).
+  (§chat.create-mode/settings-cards). An extension's program can propose one, which waits for the
+  person's click in Sova's own dialog unless they have let that extension link without asking
+  (§mesh.lan/proposals).
 - The Mesh page's Dial-out pairings card shows this host's fingerprint (with Copy Fingerprint), this
   host as a relay (its address and port, where it is reached from, and whether it listens now and for
   how many dial-out hosts), and each pairing: what it is (relay
@@ -170,6 +174,114 @@ a Tailscale identity, and its calls never touch the tailnet listener.
   for 30 s): its connections end at once, and the relay reads as not listening until it is back.
 - Removing a pairing, on either side, ends its connections at once, with every request and socket
   in them, and drops its grant.
+
+## §mesh.lan/proposals — An extension proposes a link, Sova asks you
+
+An installed extension's program, calling with its own key (§app.extensions/backend-key), can propose
+a change to this computer's dial-out pairings. Sova applies what only takes access away at once, and
+asks the person in its own dialog before anything that gives a computer more, unless the person has
+let that extension link computers without asking. With no extension
+asking, nothing of this runs: no file is read or written, no frame is sent, no timer runs.
+
+- **What can be proposed** (`POST /api/mesh/proposals`, a key only; a page, a script, a chat or a peer
+  is refused 403):
+  - `key`: make this computer's own key if it has none, so it has a fingerprint to give. Applied at
+    once: it gives no one anything. The answer carries the fingerprint.
+  - `pair`: a new pairing, as Pair a Host makes one (§mesh.lan/pairing): its id and label, `dial`
+    (the other computer's address and port) or `accept`, the other computer's fingerprint, and its
+    grant here, one of the presets (§mesh.peers/grants). An `accept` proposal may also name where
+    this computer listens as a relay, a local-network address and port (§mesh.lan/pairing), when it
+    has none yet; when it already has one, a different one is refused. Always waits for the person,
+    but from an extension let link without asking (§mesh.lan/proposal-trust).
+    Everything a pairing from the Mesh page is checked for is checked when it is proposed and again
+    when it is applied (an id or fingerprint already here, this computer's own fingerprint, an
+    address the relay rules refuse).
+  - `grant`: another preset for a link this extension made. Applied at once when it gives that
+    computer nothing it lacks now; waits for the person when it gives any capability more, but from
+    an extension let link without asking (§mesh.lan/proposal-trust).
+  - `unpair`: remove a link this extension made. Applied at once: its connections end and its grant
+    goes, as removing it on the Mesh page does.
+- **Only its own links.** An extension changes or removes only the links made by its own proposals
+  that the person confirmed, or that were applied with no dialog (§mesh.lan/proposal-trust); any other computer is refused 403, and a link that is no longer here is a
+  404 (the extension may read it as already gone). Sova notes which extension made a
+  link (`<state root>/mesh-proposals.json`, written only when such a link is made or goes), tied to that
+  very pairing: its id, its fingerprint and the moment it was paired. The note goes at once when the
+  pairing goes by any route (the Mesh page, a card, the list of linked computers), and a note that no
+  longer matches a pairing counts for nothing. So a link removed on the Mesh page and paired again
+  there by hand, with the same id and fingerprint, is the person's: the extension can't change or
+  remove it.
+- **Its life.** A proposal is kept in memory only: a restart forgets it, and the extension proposes
+  again. One waits 15 minutes, then reads `expired`. The extension may withdraw one that waits
+  (`DELETE /api/mesh/proposals/:id`). Sending the same pairing again while it waits answers the one
+  that waits, with its old terms: to change them the extension withdraws it first. An extension has at most 10 waiting; more are refused 409. A confirmed proposal that
+  can't be applied (the fingerprint got paired meanwhile, the address no longer this computer's)
+  reads `failed` with why, and changes nothing.
+- **What it reads.** `GET /api/mesh/proposals` gives a key its own proposals (those waiting, and
+  those decided in the last hour) and the links it made that are still here; `GET
+  /api/mesh/proposals/:id` one of them. The page reads every proposal there too, but a dialog never
+  waits on that read: each change is pushed to every open page as a `mesh_proposals` frame on the
+  session feed carrying all waiting proposals, and a page that connects is sent one only when any
+  wait.
+
+- §mesh.lan/proposal-dialog — Sova asks in its own dialog
+- §mesh.lan/proposal-trust — An extension you let link without asking
+
+## §mesh.lan/proposal-dialog — Sova asks in its own dialog
+
+What gives a computer more waits for the person's answer in a dialog of Sova's own, in its own page
+(§mesh.lan/proposals), unless the person has let that extension link without asking
+(§mesh.lan/proposal-trust).
+
+- **Sova's dialog.** While a proposal waits, every open Sova page shows it in a dialog of Sova's own,
+  over whatever is open, the extension's own page included, and over Sova's toasts, so a toast never
+  covers its buttons (on a phone the toasts sit on the sheet's foot). A toast that runs out while
+  hidden behind the dialog is not shown again; one still timing out shows again once the dialog
+  closes. The dialog says which extension asks (with its one line
+  of why, at most 200 characters, quoted as its own words, when it gave one), the computer's
+  name and id, who dials whom and at what address (and where this computer will listen, when the
+  proposal sets that), the fingerprint to check by eye, and what the computer may do here in the
+  preset's words (from what to what, for a grant). For `sessions` and `full` it says plainly that this
+  is in effect full access to this computer: that computer can read and drive every chat here, and
+  through them run commands as you. One click applies it: **Link Computer** (a pairing) or **Give
+  Access** (a grant); **Decline** refuses it. Several waiting are shown one at a time, oldest first,
+  with how many wait. The dialog closes in every page once the proposal is answered, withdrawn or
+  expired.
+- **Read before answered.** Each time a request appears, also when the next waiting one takes the
+  place of one just answered, run out or withdrawn, the keyboard moves to the dialog itself, not to a
+  button, and its buttons do nothing for about a second (shown as not yet available), so a key press
+  or click meant for something else can't answer a request not yet read.
+- **Only your click.** Confirm and Decline (`POST /api/mesh/proposals/:id/confirm` and `/decline`)
+  pass only from the person's own page (§app.access/your-click); the extension's key is refused at
+  both. The dialog's buttons act only on a click the browser marks as the person's, never on a
+  script's `click()`, and a confirm whose `Referer` is a page under `/ext/`, or sent from a frame, is
+  refused. That stops an accident or a careless extension page, not a hostile one, whose page runs on
+  Sova's origin with the person's login (§app.access/click-limits, §app.extensions/trust).
+
+## §mesh.lan/proposal-trust — An extension you let link without asking
+
+The person can spare one extension Sova's dialog (§mesh.lan/proposal-dialog), at any access level,
+until they take it back or approve that extension again.
+
+- **The switch.** In Settings → Extensions each extension's row that is on has a switch, **Let {name}
+  link computers without asking**, off at first (§app.settings-dialog/extensions). Only the person's
+  own click in Sova's page turns it on or off (§app.access/your-click): an extension's key, a chat, a
+  script, the Overseer, another computer and a page under `/ext/` are refused
+  (§app.extensions/not-you). It can be turned off at any time.
+- **While it is on**, that extension's `pair` and `grant` proposals are applied at once, at any preset,
+  `sessions` and `full` included, with no dialog, after the same checks a confirm makes; the answer
+  reads `applied` (one that fails reads `failed` with why). No dialog or toast shows it. The link is
+  that extension's exactly as a confirmed one is (§mesh.lan/proposals). An extension without it still
+  gets the dialog.
+- **Tied to what you approved.** It turns on only for an extension that is on, as approved now, and
+  counts only for that approval: while the extension's row reads Changed (its files are no longer what
+  was approved) or it is off, it does nothing, and approving it again, a new version or another folder
+  included, turns it off for good. On a list the server's environment names, whose rows never read
+  Changed, it holds for the entry and its code as they read when it was turned on, and does nothing
+  once the code differs. Remove forgets it (§app.extensions/loader). It is kept in
+  `<state root>/extension-link-trust.json`, outside every repository, and never copies to another
+  computer.
+- **Each computer decides for itself.** A link made with no dialog at all needs the switch on for that
+  extension on both computers; where it is off, that computer's dialog still asks.
 
 ## §mesh.lan/as-a-peer — A pairing is a peer like any other
 

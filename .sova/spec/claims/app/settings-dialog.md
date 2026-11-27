@@ -1000,6 +1000,9 @@ waits for the dialog's Save Changes. Its words are §design.copy-deck/settings-e
   the row offers **Open Updates** (§app/updates). Either one, with Settings already open, switches the tab to
   General and brings Server · this machine into view, with Updates just below it.
 - **Remove** asks first, inline, with **Also delete its data**, unticked (§app.extensions/loader).
+- **Linking without asking.** A row that is on (Stopped, Starting or Running) has a second switch,
+  **Let {name} link computers without asking**, off at first, with one line under it saying what it
+  allows (§mesh.lan/proposal-trust). It applies at once, as every switch here does.
 - **Other computers.** Peers' extensions are in a group of their own as Not Installed Here, with the computer's
   name and no actions (§mesh.sync/categories). Installing one means doing it on this computer from a
   folder here.

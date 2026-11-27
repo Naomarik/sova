@@ -194,7 +194,9 @@
       "server/extension-doors.test.ts",
       "docs/customization.md",
       "docs/commands.md",
-      "server/extension-program-rules.integration.test.ts"
+      "server/extension-program-rules.integration.test.ts",
+      "server/extension-link-trust.ts",
+      "server/extension-link-trust.test.ts"
     ],
     "agreed": {
       "by": "Omar (user)",
@@ -301,12 +303,14 @@
       "server/transcript-cards-routes.ts",
       "server/extension-doors.test.ts",
       "server/extension-cards.test.ts",
-      "server/extension-openings.integration.test.ts"
+      "server/extension-openings.integration.test.ts",
+      "server/extension-routes.ts",
+      "server/extension-link-trust.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-06T21:52Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+      "by": "omar",
+      "at": "2026-11-27T19:29Z",
+      "source": "pi-session:01a21e43-3887-76d0-807e-b8d7c390416a#0e50851f"
     }
   },
   "§app.extensions/offers": {

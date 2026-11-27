@@ -128,6 +128,104 @@
       "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
+  "§mesh.lan/proposal-dialog": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "src/components/MeshProposalDialog.tsx",
+      "src/lib/answer-hold.ts",
+      "src/lib/answer-hold.browser.test.ts",
+      "src/components/ui.tsx",
+      "src/lib/mesh-proposals.ts",
+      "src/lib/mesh-proposals.test.ts",
+      "src/App.tsx",
+      "src/mesh.css",
+      "server/mesh/proposals.ts",
+      "server/mesh/lan-routes.ts",
+      "server/page-only.ts",
+      "server/mesh/proposals.integration.test.ts"
+    ],
+    "requires": [
+      "§app.access/your-click",
+      "§app.access/click-limits"
+    ],
+    "evidence": "verified",
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-27T19:41Z",
+      "source": "pi-session:01a21e43-3887-76d0-807e-b8d7c390416a#0e50851f"
+    }
+  },
+  "§mesh.lan/proposal-trust": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/extension-link-trust.ts",
+      "server/extension-link-trust.test.ts",
+      "server/extension-routes.ts",
+      "server/extension-loader.ts",
+      "shared/extension-loader.ts",
+      "server/mesh/proposals.ts",
+      "server/mesh/index.ts",
+      "server/mesh/proposals.test.ts",
+      "server/mesh/proposals.integration.test.ts",
+      "server/page-only.ts",
+      "src/components/ExtensionsSettings.tsx",
+      "src/components/McpServers.css",
+      "src/lib/api.ts",
+      "docs/customization.md",
+      "server/extension-doors.test.ts",
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md"
+    ],
+    "requires": [
+      "§mesh.lan/proposal-dialog",
+      "§app.access/your-click",
+      "§app.extensions/loader",
+      "§app.extensions/not-you"
+    ],
+    "evidence": "verified",
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-27T19:41Z",
+      "source": "pi-session:01a21e43-3887-76d0-807e-b8d7c390416a#0e50851f"
+    }
+  },
+  "§mesh.lan/proposals": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/mesh/proposals.ts",
+      "server/mesh/proposals.test.ts",
+      "server/mesh/proposals.integration.test.ts",
+      "server/mesh/lan-routes.ts",
+      "server/mesh/index.ts",
+      "server/extension-doors.ts",
+      "server/page-only.ts",
+      "server/session-feed.ts",
+      "shared/mesh-proposals.ts",
+      "shared/protocol.ts",
+      "src/lib/mesh-proposals.ts",
+      "src/lib/session-feed.ts",
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md",
+      "docs/customization.md"
+    ],
+    "requires": [
+      "§mesh.lan/pairing",
+      "§mesh.peers/grants",
+      "§app.extensions/backend-key",
+      "§app.access/your-click",
+      "§mesh.lan/proposal-dialog",
+      "§mesh.lan/proposal-trust"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-27T19:29Z",
+      "source": "pi-session:01a21e43-3887-76d0-807e-b8d7c390416a#0e50851f"
+    },
+    "evidence": "verified"
+  },
   "§mesh.lan/relay-listener": {
     "kind": "behavior",
     "authority": "accepted",

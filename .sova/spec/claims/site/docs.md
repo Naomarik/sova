@@ -247,6 +247,36 @@ turns you start, its memory switch, its notes, ideas and to-dos, and its setting
 ready to land points to Land; it never lands a branch itself. When it turns on a project's own mode, that
 counts as the approval of the mode's tools and commands, never its hooks.
 
+## §site.docs/chats-folder — Where your chats are kept (`/docs/chats-folder/`)
+
+A Features page: each new chat's home holding everything that is its own, and chats from before
+homes staying where they are; which chats get a home and that their helpers write into it, the
+exceptions; no file in pi's sessions folder, so pi's terminal resume doesn't list them; only Sova
+writing a home's records, the shared folder the exception, and a home staying until your Delete; the
+Chat homes switch, on by default; the Chats folder's default place, the row and Change…, the move
+dialog (an empty or new folder or a new `sova-chats` inside, counts and free space, the live-sync
+warning), what refuses a move, everything stopping while it runs, each file checked before the one
+switch, Cancel Move and Resume Move, the old folder kept; a missing Chats folder said, never a short
+list; a folder the environment sets can't be changed; only your own click; old archived chats
+compressed after 60 days, kept in the Archive marked Compressed, never opened, the switch that turns
+the pass off and Clean Up's Compress; the change log keeping a long list cheap.
+
+## §site.docs/transport — Transport a chat to another device (`/docs/transport/`)
+
+A Features page: Transport… sending a whole chat (home, code with unfinished changes, team) to
+another of your devices, Copy and Move, the original running until the destination proves it opens,
+never on two devices; where it starts and that only your click on this device's page does, the
+one-time ticket and the destination's own sessions grant; what refuses it; the dialog (Move or Copy,
+device, folder, what travels, private files git ignores and large new files, what stays here, what
+that device still needs and the agent's model, the project coming from this device when that device
+can't clone it); Safe Transport or Interrupt and Move for busy helpers; the steps it follows, the
+Sending meter and the chat header's line; the Transport agent (setup checks first, only the
+project's build tools, its sandbox and the PATH left read-only, its card and Open Agent Chat, once
+per device); a Move's switch and arrival; the Moved row, the read-only safety copy and the
+worktrees packed into it and removed, the ones that stay; Move Back for 7 days with no turn there,
+Copy Back after one, the safety copy compressed after 7 days; a Copy as a new chat with its own idle
+team.
+
 ## §site.docs/playbooks-and-schedules — Playbooks and schedules (`/docs/playbooks-and-schedules/`)
 
 Running a playbook from the composer's Playbooks dialog, which lists the project's playbooks first,

@@ -110,7 +110,10 @@ layout, controls, defaults, notifications, noticeable timing, data kept or delet
 safety), a change of meaning to something you agreed, or anything the branch's task never decided.
 Either the merge thread or the branch's chat can raise it, and neither can overrule the other.
 Each decision sends one notification, and shows on the branch's card at the bottom of its chat, in
-the Merge Queue tab's **Needs you** and in the sidebar's landing bar:
+the Merge Queue tab's **Needs you**, on the run's own page and in the sidebar's landing bar, which
+answers it in place after one confirmation. Opening the queue while a branch waits for you opens
+**Needs you**. After an answer or a Land, a message says what the queue did: queued and its place
+in line, or approved and waiting for a fix, and why.
 
 - **Behaviour differs**: the main branch's side, the branch's side and the merge thread's
   proposal, with **Accept** when it proposed a resolution.
@@ -155,6 +158,10 @@ card points to it.
 <!-- screen: merge-queue-tab | A project's Merge Queue tab: the main branch at its commit, the branch being checked with its meter, the branches waiting in line, and the recent landings with their notes. -->
 
 Each run has a page of its own: the branch, the commit that was tested, its verdict in plain words (and, for a red run, whose failure it is), then every check with why it ran, its time and its **Log**. Nothing merges from a run until every check passes.
+The verdict also says where the branch stands now: waiting for you, its place in line, waiting for a
+fix, back with its chat, checking or landed. While the branch waits for your decision at that run,
+a **Waiting for you** block under the verdict shows the decision with its answers, as **Needs you**
+does, and **Remove from Queue**.
 It also says whether the run reused the merge copy's installed packages and build output, or was a
 clean run. **Clean Run** checks the same commit again from nothing; the queue makes one clean run a
 week by itself.

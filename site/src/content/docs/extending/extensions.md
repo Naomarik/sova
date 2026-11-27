@@ -22,8 +22,9 @@ moves or changes it.
 
 **The review** comes before anything is on. It names the exact program, and says it runs as you with
 no sandbox; that the extension's page runs on Sova's own address and can do what you can; its cards,
-commands and what it offers the Overseer; which version of Sova's extension rules it needs; and what
-was left out and why. Nothing runs until **Install and Turn On**. Cancel changes nothing.
+commands and what it offers the Overseer; whether it reads your chats (every chat on this computer:
+conversations, titles, tags, memory, attachments and helpers' work, never your unsent drafts); which
+version of Sova's extension rules it needs; and what was left out and why. Nothing runs until **Install and Turn On**. Cancel changes nothing.
 
 ## What each row says
 
@@ -76,6 +77,15 @@ An extension can hear what happens, show things, ask you with a card and say thi
 under its own name. A message it sends shows **From an extension** with its name, and it can never act
 as you: it can't send your messages, answer your alignment questions, approve anything or turn a
 project mode on.
+
+## Linking computers
+
+An extension's program can propose linking this computer to another one. A proposal that only takes
+access away applies at once; one that gives a computer more opens Sova's own dialog for you to
+confirm. A row that is on has a second switch, **Let {name} link computers without asking**, off at
+first: on, that extension's proposals apply without the dialog. Only your own click turns it on or
+off, never the extension's key. When the extension's code changes the switch does nothing until you
+approve it again, and approving again turns it off.
 
 ## Other computers
 

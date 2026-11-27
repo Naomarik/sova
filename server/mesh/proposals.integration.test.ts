@@ -3,7 +3,7 @@
 // connecting to the pairing that confirm made. The page hears each change on the session feed, and a page that
 // connects is sent the waiting proposals only while any wait. The store's rules and the doors: proposals.test.ts.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -171,4 +171,48 @@ test("a link removed on the Mesh page and paired again there by hand, same id an
   const [, mine] = await api<{ links: Array<{ peer: string }> }>("GET", "/api/mesh/proposals", KEY);
   assert.deepEqual(mine.links, [], "and isn't listed as the extension's");
   await api("DELETE", `/api/mesh/lan/pairings/${pairing.id}`, PAGE);
+});
+
+test("an extension the person lets link without asking: its full-access pairing is made at once, as its own, with no dialog; turned off, it asks again", async () => {
+  // The extension on as approved, as Install leaves it (its code as the background pass reads it).
+  const gate = await import("../extension-gate");
+  const fp = await import("../extension-fingerprint");
+  const dist = join(tmp, "company-dist");
+  mkdirSync(dist, { recursive: true });
+  writeFileSync(join(dist, "index.html"), "<!doctype html><title>stub</title>");
+  const raw = { id: "company", title: "Company", description: "A test double", icon: "branch", dist };
+  writeFileSync(join(tmp, "agent", "sova", "extensions.json"), JSON.stringify({ version: 1, extensions: [raw] }));
+  const folders = fp.codeFoldersOf(raw);
+  const entry = gate.entryHash(raw);
+  const code = fp.codeHashNow(folders);
+  const sig = fp.codeSigNow(folders);
+  gate.recordApproval("company", { version: gate.versionOf(entry, code), entry, code, sig });
+  gate.setCodeReading("company", { sig, code });
+
+  // Its own key can't turn the switch on; the person's page can.
+  assert.equal((await api("POST", "/api/extensions/company/link-trust", KEY, { on: true }))[0], 403);
+  const [ts, turned] = await api("POST", "/api/extensions/company/link-trust", PAGE, { on: true });
+  assert.equal(ts, 200, JSON.stringify(turned));
+
+  const other = mintLanIdentity();
+  const [s, made] = await api<{ proposal: MeshProposal }>("POST", "/api/mesh/proposals", KEY, { kind: "pair", role: "accept", peer: "co-trusted", fingerprint: other.pin, grant: "full" });
+  assert.equal(s, 200, JSON.stringify(made));
+  assert.equal(made.proposal.state, "applied", "no dialog: applied at propose time");
+  const joining = await page();
+  assert.deepEqual(joining.frames, [], "nothing waits, so a page that connects is sent nothing");
+  joining.close();
+  const lan = (await api<LanStatus>("GET", "/api/mesh/lan", KEY))[1];
+  assert.deepEqual(lan.pairings.map((x) => x.id), ["co-trusted"]);
+  const [, access] = await api<{ peers: Array<{ id: string; grant?: { preset: string } }> }>("GET", "/api/mesh/access", PAGE);
+  assert.equal(access.peers.find((x) => x.id === "co-trusted")?.grant?.preset, "full");
+  const [, mine] = await api<{ links: Array<{ peer: string; grant: string }> }>("GET", "/api/mesh/proposals", KEY);
+  assert.deepEqual(mine.links.map((l) => [l.peer, l.grant]), [["co-trusted", "full"]], "the extension's own link, as a confirmed one is");
+
+  // Off from the page: the next one waits for the dialog again.
+  assert.equal((await api("POST", "/api/extensions/company/link-trust", PAGE, { on: false }))[0], 200);
+  const another = mintLanIdentity();
+  const [, waits] = await api<{ proposal: MeshProposal }>("POST", "/api/mesh/proposals", KEY, { kind: "pair", role: "accept", peer: "co-asks", fingerprint: another.pin, grant: "presence" });
+  assert.equal(waits.proposal.state, "waiting");
+  assert.equal((await api("DELETE", `/api/mesh/proposals/${waits.proposal.id}`, KEY))[0], 200);
+  assert.equal((await api<{ proposal: MeshProposal }>("POST", "/api/mesh/proposals", KEY, { kind: "unpair", peer: "co-trusted" }))[1].proposal.state, "applied");
 });

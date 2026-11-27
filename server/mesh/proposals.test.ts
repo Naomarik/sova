@@ -19,13 +19,14 @@ const PIN2 = "FEDCBA9876543210FEDCBA9876543210";
 const OK: Result = { status: 200, body: {} };
 
 /** A mesh in memory: peers, grants and a relay, changed only through the deps the store calls. */
-function rig(opts: { pairResult?: Result } = {}) {
+function rig(opts: { pairResult?: Result; trusted?: string[] } = {}) {
   let now = 1_000_000;
   const peers: PeerEntry[] = [];
   const grants = new Map<string, MeshGrant>();
   let relay: { host: string; port: number } | null = null;
   const calls: string[] = [];
   const published: MeshProposal[][] = [];
+  const trusted = new Set(opts.trusted ?? []);
   const linksFile = join(scratchAgentDir, `links-${Math.random().toString(36).slice(2)}.json`);
   const deps: ProposalDeps = {
     now: () => now,
@@ -63,6 +64,7 @@ function rig(opts: { pairResult?: Result } = {}) {
       return OK;
     },
     titleOf: (id) => `Title of ${id}`,
+    trusted: (ext) => trusted.has(ext),
     publish: (w) => published.push(w),
     linksFile: () => linksFile,
   };
@@ -70,7 +72,7 @@ function rig(opts: { pairResult?: Result } = {}) {
   const tick = (ms: number) => {
     now += ms;
   };
-  return { store, deps, peers, grants, calls, published, linksFile, tick, setRelay: (r: typeof relay) => (relay = r), get relay() { return relay; } };
+  return { store, deps, peers, grants, calls, published, linksFile, tick, trusted, setRelay: (r: typeof relay) => (relay = r), get relay() { return relay; } };
 }
 
 const proposalOf = (r: Result): MeshProposal => (r.body as { proposal: MeshProposal }).proposal;
@@ -119,6 +121,42 @@ describe("what waits for the person and what applies at once", () => {
         }
       }
     }
+  });
+
+  test("an extension the person lets link without asking: its pairs and widening grants apply at once at any preset, the link its own; another extension still waits", async () => {
+    for (const grant of MESH_PRESETS) {
+      const r = rig({ trusted: ["company"] });
+      const res = await r.store.propose("company", pairBody({ grant, relay: { host: "192.168.1.5", port: 7443 } }));
+      const p = proposalOf(res);
+      assert.equal(p.state, "applied", `${grant}: ${errOf(res)}`);
+      assert.deepEqual(r.calls, ["pair:dry co-omar", "relay:dry 192.168.1.5:7443", "relay 192.168.1.5:7443", "pair co-omar"], `${grant}: the confirm's checks and steps`);
+      assert.equal(r.grants.get("co-omar")!.preset, grant);
+      assert.deepEqual(r.store.links("company").map((l) => l.peer), ["co-omar"], `${grant}: the link is the extension's, as a confirmed one is`);
+      assert.deepEqual(r.published, [], `${grant}: nothing waits, so no page is told anything`);
+      assert.deepEqual(r.store.waiting(), []);
+      // Its own link: a widening grant to any preset applies at once too; it can narrow and remove it as ever.
+      for (const to of MESH_PRESETS) assert.equal(proposalOf(await r.store.propose("company", { kind: "grant", peer: "co-omar", grant: to })).state, "applied", `${grant} → ${to}`);
+      assert.equal(proposalOf(await r.store.propose("company", { kind: "unpair", peer: "co-omar" })).state, "applied");
+
+      const other = await r.store.propose("acme", pairBody({ peer: "co-sara", fingerprint: PIN2, grant }));
+      assert.equal(proposalOf(other).state, "waiting", `${grant}: trust is per extension`);
+    }
+  });
+
+  test("a trusted widening is checked as a confirm is: another's link is still refused, and one that can't be applied reads failed with no note", async () => {
+    const r = rig({ trusted: ["company"] });
+    await linked(r, "acme", "presence");
+    const res = await r.store.propose("company", { kind: "grant", peer: "co-omar", grant: "full" });
+    assert.equal(res.status, 403);
+    assert.equal(errOf(res), NOT_ITS_LINK);
+    assert.equal(r.grants.get("co-omar")!.preset, "presence");
+
+    const f = rig({ trusted: ["company"], pairResult: { status: 409, body: { error: "the pairing broke" } } });
+    const p = proposalOf(await f.store.propose("company", pairBody()));
+    assert.equal(p.state, "failed");
+    assert.equal(p.error, "the pairing broke");
+    assert.deepEqual(f.store.links("company"), []);
+    assert.equal(existsSync(f.linksFile), false, "no link noted");
   });
 
   test("unpair applies at once, and the extension's note of the link goes with it", async () => {

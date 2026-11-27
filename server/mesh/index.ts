@@ -52,6 +52,7 @@ import { forgetLinks, goneLinks, MeshProposals, proposalRoutes } from "./proposa
 import type { MeshProposalsFeed } from "../../shared/mesh-proposals";
 import { publishFeed } from "../session-feed";
 import { readExtensions } from "../extensions";
+import { linkTrusted } from "../extension-link-trust";
 import { loginKindsPin } from "../sync/logins-merge";
 import { problemOf } from "../../shared/form-rules";
 import { FRONT_DOOR_RULE, HOST_LABEL_RULE } from "../../shared/mesh-limits";
@@ -1045,6 +1046,7 @@ export function meshProposals(): MeshProposals {
     setGrant: (peer, preset) => applyMeshAccess({ peer, grant: { preset } }),
     setRelay: (relay, opts) => applyLanRelay(relay ? { ...relay, exposure: "lan" } : null, lanDeps, opts),
     titleOf: (id) => readExtensions().find((e) => e.id === id)?.title?.trim() || id,
+    trusted: linkTrusted,
     publish: (waiting) => publishFeed({ type: "mesh_proposals", proposals: waiting }),
     linksFile: proposalLinksFile,
   });

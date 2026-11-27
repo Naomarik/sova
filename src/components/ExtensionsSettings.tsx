@@ -1,7 +1,7 @@
 import { createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { ExtensionInspect, ExtensionReview, ExtensionRow, ExtensionsInstalled } from "../../shared/extension-loader";
-import { ApiError, approveExtension, chooseExtensionFolder, extensionProgram, getExtensionLog, getExtensionsInstalled, getUpdates, inspectExtension, installExtension, removeExtension, turnExtensionOff, turnExtensionOn } from "../lib/api";
+import { ApiError, approveExtension, chooseExtensionFolder, extensionProgram, getExtensionLog, getExtensionsInstalled, getUpdates, inspectExtension, installExtension, removeExtension, setExtensionLinkTrust, turnExtensionOff, turnExtensionOn } from "../lib/api";
 import {
   asksCards,
   EXT_APPROVE_CHANGED,
@@ -356,6 +356,18 @@ function Row(props: { row: ExtensionRow; through?: string; onChange: () => void;
       </div>
       <Show when={r().line}>
         <p class={r().state === "not-usable" || r().state === "stopped" || r().state === "folder-not-found" ? "field-error mcp-note" : "field-hint mcp-note"}>{r().line}</p>
+      </Show>
+      <Show when={r().linkTrust !== undefined && !props.through}>
+        <div class="ext-link-trust">
+          <Toggle
+            switch
+            label={`Let ${r().title} link computers without asking`}
+            hint="It may then add or widen links to other computers, full access included, with no dialog."
+            checked={!!r().linkTrust}
+            disabled={busy()}
+            onChange={(on) => void act(() => setExtensionLinkTrust(r().key, on))}
+          />
+        </div>
       </Show>
       <Show when={!props.through}>
         <div class="button-row ext-row-actions">

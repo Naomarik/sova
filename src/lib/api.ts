@@ -1918,6 +1918,8 @@ export const approveExtension = (id: string, version: string) => extPost(extPath
 export const chooseExtensionFolder = (id: string, folder: string, version: string) => extPost(extPath(id, "/folder"), { folder, version });
 export const turnExtensionOn = (id: string) => extPost(extPath(id, "/on"));
 export const turnExtensionOff = (id: string) => extPost(extPath(id, "/off"));
+/** "Let {title} link computers without asking" (§mesh.lan/proposals): your own click only. */
+export const setExtensionLinkTrust = (id: string, on: boolean) => extPost(extPath(id, "/link-trust"), { on });
 export const extensionProgram = (id: string, action: "start" | "restart" | "stop") => extPost(extPath(id, "/program"), { action });
 export const removeExtension = (id: string, deleteData: boolean) => request<{ ok: true }>(extPath(id), { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deleteData }) });
 

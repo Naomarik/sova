@@ -23,7 +23,9 @@ import { localRequest } from "./proxy";
 /**
  * An extension proposes, Sova asks (§mesh.lan/proposals). An installed extension's program, by its own key, proposes a
  * change to this computer's dial-out pairings; what only takes access away is applied at once, and what gives a
- * computer more waits for the person's click in Sova's own dialog. Proposals live in memory only. Nothing here runs
+ * computer more waits for the person's click in Sova's own dialog, unless the person lets that extension link computers
+ * without asking (Settings → Extensions, server/extension-link-trust.ts): then it is applied at once, by the same
+ * code a confirm runs, and the link is the extension's just as a confirmed one is. Proposals live in memory only. Nothing here runs
  * until an extension asks: no file is read, no frame sent, no timer set (the one timer runs only while one waits).
  */
 
@@ -44,6 +46,8 @@ export interface ProposalDeps {
   setGrant(peer: string, preset: MeshPreset): Result;
   setRelay(relay: { host: string; port: number } | null, opts?: { dry?: boolean }): Result;
   titleOf(extension: string): string;
+  /** The person lets this extension link computers without asking (read at propose time only). */
+  trusted(extension: string): boolean;
   /** Every proposal that waits, after each change. */
   publish(waiting: MeshProposal[]): void;
   /** Which extension made which link (`<state root>/mesh-proposals.json`). */
@@ -170,7 +174,7 @@ export class MeshProposals {
     const to = grantCaps({ preset: grant });
     const widens = MESH_CAPS.some((c) => to[c] && !was[c]);
     const fields = { ...base, peer, label: link.label ?? peer, grant, from: before.preset, widens, fullAccess: FULL_ACCESS_PRESETS.includes(grant) };
-    if (widens) return this.wait(fields);
+    if (widens) return this.deps.trusted(extension) ? this.applyNow(fields) : this.wait(fields);
     const r = this.deps.setGrant(peer, grant);
     return { status: 200, body: { proposal: publicOf(this.keep({ ...fields, ...decided(r, now) })) } };
   }
@@ -210,7 +214,7 @@ export class MeshProposals {
         if (r.status !== 200) return refuse(r.status === 400 ? 400 : 409, errorOf(r));
       }
     }
-    return this.wait({
+    const fields: Omit<Kept, "state"> = {
       ...base,
       peer,
       label,
@@ -222,7 +226,20 @@ export class MeshProposals {
       grant,
       widens: true,
       fullAccess: FULL_ACCESS_PRESETS.includes(grant),
-    });
+    };
+    return this.deps.trusted(base.extension.id) ? this.applyNow(fields) : this.wait(fields);
+  }
+
+  /** A trusted extension's widening: applied now as a confirm applies it, never shown as waiting. */
+  private async applyNow(fields: Omit<Kept, "state">): Promise<Result> {
+    const p = this.keep({ ...fields, state: "applied" });
+    const error = p.kind === "pair" ? await this.applyPair(p) : this.applyGrant(p);
+    p.decidedAt = this.deps.now();
+    if (error) {
+      p.state = "failed";
+      p.error = error;
+    }
+    return { status: 200, body: { proposal: publicOf(p) } };
   }
 
   /** The extension takes back one that waits. */
@@ -255,17 +272,18 @@ export class MeshProposals {
     p.state = "applied";
     let error: string | null = null;
     if (p.kind === "pair") error = await this.applyPair(p);
-    else if (p.kind === "grant") {
-      const link = this.deps.peers().find((x) => x.id === p.peer);
-      const owner = this.readLinks().links[p.peer!];
-      if (!link || !owner || owner.extension !== p.extension.id || !sameInstance(owner, link)) error = `${p.peer} is no longer a link ${p.extension.title} made.`;
-      else {
-        const r = this.deps.setGrant(p.peer!, p.grant!);
-        if (r.status !== 200) error = errorOf(r);
-      }
-    }
+    else if (p.kind === "grant") error = this.applyGrant(p);
     this.decide(p, error ? { state: "failed", error } : { state: "applied" });
     return { status: error ? 409 : 200, body: error ? { error, proposal: publicOf(p) } : { proposal: publicOf(p) } };
+  }
+
+  /** A widening grant, on a link that is still this extension's own pairing; why not, or null when applied. */
+  private applyGrant(p: Kept): string | null {
+    const link = this.deps.peers().find((x) => x.id === p.peer);
+    const owner = this.readLinks().links[p.peer!];
+    if (!link || !owner || owner.extension !== p.extension.id || !sameInstance(owner, link)) return `${p.peer} is no longer a link ${p.extension.title} made.`;
+    const r = this.deps.setGrant(p.peer!, p.grant!);
+    return r.status === 200 ? null : errorOf(r);
   }
 
   private async applyPair(p: Kept): Promise<string | null> {

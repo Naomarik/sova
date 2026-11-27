@@ -98,6 +98,7 @@ const DOORS = {
   publicLinks: "Only the user changes where links open. Ask them to pick it in Settings → Public links. Nothing was changed.",
   trustNetwork: "Only the user trusts a network. Ask them to press Trust on the Access page. Nothing was trusted.",
   meshProposal: "Only the user links a computer or gives it more access. Ask them to answer the dialog Sova shows in its page. Nothing changed.",
+  linkTrust: "Only the user lets an extension link computers without asking. Ask them to turn it on in Settings → Extensions. Nothing changed.",
 } as const;
 export type YourClickDoor = keyof typeof DOORS | { projectTool: string } | { cardsOf: string };
 

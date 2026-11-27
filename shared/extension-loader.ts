@@ -62,6 +62,8 @@ export interface ExtensionRow {
   on?: boolean;
   hasProgram?: boolean;
   hasCards?: boolean;
+  /** "Let {title} link computers without asking" (§mesh.lan/proposals): present on a row that is on, as approved. */
+  linkTrust?: boolean;
 }
 
 export interface ExtensionsInstalled {

@@ -162,14 +162,24 @@ where, §chat.design-mode/setup-card, §chat.design-mode/model-picker, §chat.de
 through Start Creative Director and Lookbook · Brief to Start; how a link is used; how skills reach a run (only the skills you name, by
 name or by folder, with nothing loaded by itself; shown on Setup and, when you named some, on the
 brief's Design skills line; the Creative Director choosing which reach the designers and reading
-files you point it to, and designers reading only inside those skills, §chat.design-mode/skills); a Screenshots section on pasted screenshots (only your own
+files you point it to, its brief saying which file covers which part of the page, and designers
+reading only inside those skills, SKILL.md first and any other file at any point, the tile saying
+Reading the design skill meanwhile and a page already on the tile staying on show; asking your chat
+to add or take off a skill until Start on the brief, Sova telling the Creative Director itself, the
+brief's Design skills line and estimate following at once and Start waiting while the Creative
+Director takes the change in, a late skill not found reported by your chat,
+§chat.design-mode/skills); a Screenshots section on pasted screenshots (only your own
 images can be one, the helper marks the kind and you can change it; up to 8 measured colours as
 swatches with hex values; words for designers drafted by a helper, tuned by the Creative Director,
 yours always winning; Rebuild This Screen or Just Its Feel before Start, at most 4 reference
 pictures a design with Rebuild screenshots first and the rest as words only; every designer gets
 the words, and a screenshot is never put in the page, §chat.design-mode/own-images,
 §chat.design-mode/brief-start); and working with designs: statuses and cost, a page
-being written, Google Fonts only, Open and Chat (changing a design by telling it in its chat, an
+being written (in one go or in steps, as the designer chooses, adding to it, changing an earlier
+part or reading it back, the tile following what it has written and redrawing in place when an
+earlier part changes, keeping the old picture until the new one is painted, and Sova checking the
+page at hand-in and sending it back to be fixed if something is wrong,
+§chat.design-mode/building-in-steps), Google Fonts only, Open and Chat (changing a design by telling it in its chat, an
 ended session starting again from its saved page; on a phone the chat folded to a bar with its
 latest message, one tap away, §chat.design-mode/chat-placement), More with Stop and Remove (a stopped design's
 still and Start Again, the folded Removed section and Restore, §chat.design-mode/stop-remove), the

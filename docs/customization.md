@@ -391,6 +391,16 @@ asks the person in its own dialog before anything that gives a computer more. Wi
 - Each answers `{proposal}`; `proposal.state` is `waiting`, `applied`, `declined`, `withdrawn`, `expired` (15
   minutes) or `failed` (with `error`). Read one with `GET /api/mesh/proposals/:id`, yours and your links with
   `GET /api/mesh/proposals`, and withdraw one that waits with `DELETE /api/mesh/proposals/:id`.
+- Sending the same pairing again while it waits (same `peer` and `fingerprint`) answers the one that waits, with
+  its old terms. To change a waiting request's terms (grant, role, address, relay), withdraw it first, then send
+  the new one.
+- The person can let your extension link computers without asking: **Let {title} link computers without asking**
+  in Settings → Extensions, off at first. Only their own click in Sova's page turns it on or off; your key and your
+  page are refused. While it is on, your `pair` and widening `grant` proposals are applied at once, at any preset,
+  after the same checks a confirm makes, and answer `applied` (or `failed` with `error`), never `waiting`; the link
+  is yours just as a confirmed one is. It holds for the version the person approved: approving your extension
+  again (a new version, another folder) turns it off, and it does nothing while your row reads Changed. Each
+  computer decides for itself, so handle `waiting` and `applied` alike on both sides.
 - Only the person answers: confirm and decline are Sova's page's own, refused to your key, and refused from
   your page (a `Referer` under `/ext/`, a frame). Don't build your own confirm button: point the person at
   Sova's dialog. `sessions` and `full` are in effect full access to the computer, and the dialog says so.

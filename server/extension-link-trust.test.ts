@@ -104,6 +104,18 @@ describe("it holds for the version approved when it was turned on", () => {
     assert.equal(linkTrusted("company"), true);
   });
 
+  test("on a list the server's environment names, the trust holds for the code as it read when turned on", async () => {
+    process.env.SOVA_EXTENSIONS_FILE = listFile;
+    try {
+      assert.equal((await turn(true)).status, 200);
+      assert.equal(linkTrusted("company"), true);
+      gate.setCodeReading("company", { sig: "s2", code: "c2" });
+      assert.equal(linkTrusted("company"), false, "its code changed with the entry as it was: no longer trusted");
+    } finally {
+      delete process.env.SOVA_EXTENSIONS_FILE;
+    }
+  });
+
   test("an extension that isn't on as approved can't be trusted", async () => {
     gate.forgetApproval("company");
     const res = await turn(true);

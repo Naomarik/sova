@@ -1,13 +1,13 @@
 // Settings → Extensions' "Let {name} link computers without asking" (§mesh.lan/proposals): which extensions the
 // person lets add and widen links to other computers with no dialog. `<state root>/extension-link-trust.json`
 // (0600, written whole), outside every repository. Each trust is tied to what was approved when it was turned on
-// (the approval's version and moment; on a list the server's environment names, the entry as it reads), so
+// (the approval's version and moment; on a list the server's environment names, the entry and its code as read), so
 // approving the extension again, or a new version, turns it off for good, and while the row reads Changed (its
 // code isn't what was approved) it does nothing. Remove forgets it. Read only when an extension proposes a link or
 // the screen draws its rows; a server whose extensions never ask writes nothing.
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { approvalOf, entryHash, trustDecided } from "./extension-gate";
+import { approvalOf, codeReadingOf, entryHash, trustDecided } from "./extension-gate";
 import { listedExtension } from "./extensions";
 import { stateRoot } from "./state-root";
 import { writeFileAtomic } from "./sync/logins-stores";
@@ -39,8 +39,9 @@ function write(file: LinkTrustFile): void {
 function approvalKey(id: string): string | null {
   const l = listedExtension(id);
   if (!l?.valid || l.state !== "on") return null;
-  // A list the server's environment names counts as approved as it reads, with no approval kept.
-  if (process.env.SOVA_EXTENSIONS_FILE || !trustDecided()) return `list:${entryHash(l.raw)}`;
+  // A list the server's environment names counts as approved as it reads, with no approval kept: the trust is for the
+  // entry and its code as the background pass last read them, so changed code reads as not trusted.
+  if (process.env.SOVA_EXTENSIONS_FILE || !trustDecided()) return `list:${entryHash(l.raw)}:${codeReadingOf(id)?.code ?? ""}`;
   const a = approvalOf(id);
   return a ? `${a.version}@${a.at}` : null;
 }

@@ -58,33 +58,38 @@ export function toolCatalogue(tools: { name: string; promptSnippet?: string; des
   return tools.map((t) => `- \`${t.name}\`: ${t.promptSnippet ?? t.description.split(". ")[0]}`).join("\n");
 }
 
+/** What promptSession may say about a send besides its text (each described on the function below). */
+export interface PromptOptions {
+  /** The current Overseer's id, vouched for by `overseerSender`. */
+  sentBy?: string;
+  /** How it joins a running turn's queue (default a follow-up). */
+  delivery?: PromptDelivery;
+  /** Present: a project overseer's sova_send; `id` names its conversation when known. */
+  projectOverseer?: { id: string | undefined };
+  /** The send's key (§app.chat-processes/server-messages): sent again, it is accepted once. */
+  key?: string;
+  /** The extension it is from (server/extension-sender.ts), never from a body: its header line and marker go on here (§app.extensions/name-badge). */
+  fromExtension?: ExtensionSender | null;
+  /** Who sent it (server/session-senders.ts memberOfSend), set only while an active extension asks for senders. */
+  member?: { by: string; label?: string };
+}
+
 /**
  * POST /api/sessions/prompt: one message to one session, as its composer would send it. Idle (even
  * with subagents working) it starts a turn; mid-turn, or while a compaction runs, it joins the
  * session's queue as `delivery` (default a follow-up behind the turn; "steer" goes into the turn at
  * its next step), visible and removable there. With `sentBy` (the current Overseer's id, vouched
  * for by `overseerSender`) the message is marked as the Overseer's in the target's file once it
- * enters the context. `opts.projectOverseer`: a project overseer's sova_send (Sova's own statechart effect,
+ * enters the context. `projectOverseer`: a project overseer's sova_send (Sova's own statechart effect,
  * in-process, never a request), marked the same way, naming its conversation when known
  * (§app.overseer/sent-marker), so it never counts as the user's answer (§chat.alignment/session-mark).
  */
-export async function promptSession(
-  path: string,
-  text: string,
-  sentBy?: string,
-  delivery: PromptDelivery = "followUp",
-  opts?: { projectOverseer: string | undefined },
-  /** The send's key (§app.chat-processes/server-messages): sent again, it is accepted once. */
-  key?: string,
-  /** The extension it is from (server/extension-sender.ts), never from a body: its header line and marker go on here (§app.extensions/name-badge). */
-  fromExtension?: ExtensionSender | null,
-  /** Who sent it (server/session-senders.ts memberOfSend), set only while an active extension asks for senders. */
-  member?: { by: string; label?: string },
-): Promise<PromptResult> {
+export async function promptSession(path: string, text: string, options: PromptOptions = {}): Promise<PromptResult> {
+  const { sentBy, delivery = "followUp", projectOverseer, key, fromExtension, member } = options;
   if (!text.trim()) return { ok: false, status: 400, error: "text must not be blank" };
   // Only a chat's own composer or mode menu picks Create: refused here, or the extension's refusal reaches nobody and the
   // sender is told it went (§chat.create-mode/per-chat-only).
-  if (typedMajorMode(text) === "create") return { ok: false, status: 409, error: sentBy ? createNotNamed("the Overseer") : opts ? createNotNamed("a project overseer") : CREATE_NOT_SENT };
+  if (typedMajorMode(text) === "create") return { ok: false, status: 409, error: sentBy ? createNotNamed("the Overseer") : projectOverseer ? createNotNamed("a project overseer") : CREATE_NOT_SENT };
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
   const overseerId = sentBy && sentBy === readOverseerState()?.current ? sentBy : undefined;
@@ -110,7 +115,7 @@ export async function promptSession(
   const compacting = !chat.mirror.running && chat.mirror.compacting;
   try {
     const stamped = fromExtension ? `${outsideSentHeader(fromExtension, fromExtension.hop)}\n${text}` : text;
-    const r = await chat.send({ text: stamped, origin: "server", checkModel: true, delivery, ...(key ? { key } : {}), ...(fromExtension ? { sentBySession: fromExtension } : {}), ...(member ? { sentByMember: member } : {}), ...(overseerId ? { sentByOverseer: { overseerId } } : opts ? { sentByOverseer: opts.projectOverseer ? { overseerId: opts.projectOverseer } : {} } : {}) });
+    const r = await chat.send({ text: stamped, origin: "server", checkModel: true, delivery, ...(key ? { key } : {}), ...(fromExtension ? { sentBySession: fromExtension } : {}), ...(member ? { sentByMember: member } : {}), ...(overseerId ? { sentByOverseer: { overseerId } } : projectOverseer ? { sentByOverseer: projectOverseer.id ? { overseerId: projectOverseer.id } : {} } : {}) });
     queued = r.queued;
   } catch (err) {
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };

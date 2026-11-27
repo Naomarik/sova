@@ -471,7 +471,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.equal(slash.status, 400);
     assert.match(((await slash.json()) as { error: string }).error, /Send words; use op clear to clear it\./);
     const { path } = await po.ensureProjectOverseer(project.id);
-    const viaPrompt = await sessionPrompt.promptSession(path, "hello", OVERSEER_ID);
+    const viaPrompt = await sessionPrompt.promptSession(path, "hello", { sentBy: OVERSEER_ID });
     assert.deepEqual(viaPrompt, { ok: false, status: 409, error: "That is a project overseer's own conversation." });
     mkdirSync(join(root, "proj-b"), { recursive: true });
     const other = await orgs.addProject(org.id, { name: "Fresh", root: join(root, "proj-b") });

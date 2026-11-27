@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SessionLabels, SessionSummary } from "../shared/protocol";
+import { LABEL_KEY_RE, validExtId } from "../shared/session-labels";
 import { stateRoot } from "./state-root";
 
 /**
@@ -14,16 +15,12 @@ import { stateRoot } from "./state-root";
  * and with an empty store a request that names some does no per-row work either (withLabels).
  */
 
-/** A label key: the manual tags' rule. */
-export const LABEL_KEY_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 /** Keys one extension may keep on one chat. */
 export const LABEL_KEYS_MAX = 8;
 /** A value's length, after trimming. */
 export const LABEL_VALUE_MAX = 64;
 /** Pairs one request may name. */
 export const LABEL_PAIRS_MAX = 16;
-/** An extension id as the loader takes it (server/extensions.ts EXTENSION_ID_RE), bounded. */
-const EXT_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
 // Plain text: no control characters, no line breaks.
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
@@ -54,14 +51,12 @@ export function cleanLabelValue(v: unknown): string | null {
   return t;
 }
 
-const validExt = (id: string): boolean => EXT_ID_RE.test(id) && id !== "." && id !== "..";
-
 function cleanSession(v: unknown): SessionLabels | null {
   if (!isObj(v)) return null;
   const out: SessionLabels = Object.create(null);
   let any = false;
   for (const [ext, kv] of Object.entries(v)) {
-    if (!validExt(ext) || !isObj(kv)) continue;
+    if (!validExtId(ext) || !isObj(kv)) continue;
     const keys: Record<string, string> = Object.create(null);
     let n = 0;
     for (const [k, val] of Object.entries(kv)) {
@@ -163,7 +158,7 @@ export function cleanLabelChanges(v: unknown): LabelChanges | string {
  * result would hold more than LABEL_KEYS_MAX keys (nothing is written then). A change that changes nothing writes nothing and tells no one.
  */
 export function setLabels(id: string, path: string, ext: string, changes: LabelChanges): { labels: Record<string, string>; changed: boolean } | string {
-  if (!validExt(ext)) return "not an extension id";
+  if (!validExtId(ext)) return "not an extension id";
   const clean = cleanLabelChanges(changes);
   if (typeof clean === "string") return clean;
   const before = readStore().sessions[id]?.[ext] ?? {};
@@ -223,9 +218,6 @@ export function allLabels(): Record<string, SessionLabels> {
   return out;
 }
 
-/** Whether any session holds a label now. */
-export const labelsHeld = (): boolean => readStore().count > 0;
-
 // --- the declaration: which pairs a request reads --------------------------------------------
 
 /** The (extension, key) pairs a request names, canonical (sorted) so one filter is one `key`. */
@@ -251,7 +243,7 @@ export function parseLabelPairs(raw: string | null | undefined): LabelPairs | nu
     if (i <= 0 || i !== p.lastIndexOf(":")) return null;
     const ext = p.slice(0, i);
     const key = p.slice(i + 1);
-    if (!validExt(ext) || !LABEL_KEY_RE.test(key)) return null;
+    if (!validExtId(ext) || !LABEL_KEY_RE.test(key)) return null;
     set.add(`${ext}:${key}`);
     let keys = byExt.get(ext);
     if (!keys) byExt.set(ext, (keys = new Set()));

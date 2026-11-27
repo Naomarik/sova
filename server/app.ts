@@ -200,7 +200,7 @@ import { resourceMonitor } from "./resource-monitor";
 import { routeOpName } from "./stall-recorder-route";
 import { opEnd, opStart, stallRecording } from "./stall-recorder";
 import { registerNetworkRoutes } from "./networks/routes";
-import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
+import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, listenerPeer, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
 import { notPage, pageOnlyRefusal, personWatching, yourClickBody, yourClickRefusal } from "./page-only";
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
@@ -434,7 +434,7 @@ export function buildApp(deps: AppDeps) {
     // One that can't be used (turned off, not signed in) leaves it on the new-chat default, and the answer says why.
     const opened = start.opening ? await openingTaken(made.path, start.opening) : null;
     if (start.prompt?.trim()) {
-      const sent = await promptSession(made.path, start.prompt, undefined, undefined, undefined, undefined, undefined, memberOfSend(c));
+      const sent = await promptSession(made.path, start.prompt, { member: memberOfSend(c) });
       if (!sent.ok) return c.json({ error: `Created the session with its profile, but its first message was refused: ${sent.error}`, session: made }, sent.status);
     }
     const summary = (await getSessionSummary(made.path)) ?? made;
@@ -618,7 +618,7 @@ export function buildApp(deps: AppDeps) {
   // The notice is held while the chat is busy (never queued behind its turn) and dropped once that wait has ended.
   setTourNeedsYou(tourSignInNotifier({
     pathOf: pathOfId,
-    prompt: (path, text, key) => promptSession(path, text, undefined, "followUp", undefined, key),
+    prompt: (path, text, key) => promptSession(path, text, { delivery: "followUp", key }),
     busy: (path) => { const m = chatHandle(path)?.mirror; return !!m && !m.closed && (m.running || m.compacting || m.starting); },
     stillWaiting: (jobId, since) => ensureTourToolRuntime().stillWaitingSignIn(jobId, since),
     log: (line) => console.warn(line),
@@ -629,7 +629,7 @@ export function buildApp(deps: AppDeps) {
   const chatBusy = (m: { closed: boolean; running: boolean; compacting: boolean; starting: boolean } | undefined) => !!m && !m.closed && (m.running || m.compacting || m.starting);
   setTourResumed(tourResumedNotifier({
     pathOf: pathOfId,
-    prompt: (path, text, key) => promptSession(path, text, undefined, "followUp", undefined, key),
+    prompt: (path, text, key) => promptSession(path, text, { delivery: "followUp", key }),
     busy: (path) => chatBusy(chatHandle(path)?.mirror),
     busyOf: (sessionId) => chatBusy(chatHandleById(sessionId)?.mirror),
     stillContinuing: (jobId, at) => ensureTourToolRuntime().stillContinuing(jobId, at),
@@ -2111,7 +2111,7 @@ export function buildApp(deps: AppDeps) {
   // Who started a chat and who typed each message (§app.extensions/senders): this host's own callers only, never a
   // linked computer's to read. Recorded only while an active extension asks for senders; nothing recorded answers empty.
   app.get("/api/sessions/senders", async (c) => {
-    if ((c.env as { meshPeer?: unknown } | undefined)?.meshPeer) return c.json({ error: "Not found" }, 404);
+    if (listenerPeer(c)) return c.json({ error: "Not found" }, 404);
     const path = resolveSessionPath(c.req.query("path") ?? null);
     if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
@@ -2152,7 +2152,7 @@ export function buildApp(deps: AppDeps) {
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
     }
-    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c), memberOfSend(c));
+    const r = await promptSession(path, body.text, { sentBy: overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), delivery: body.delivery, fromExtension: extensionSenderOf(c), member: memberOfSend(c) });
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });
   // Installed extensions (server/extensions.ts), with each backend's cached health.

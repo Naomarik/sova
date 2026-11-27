@@ -11,7 +11,7 @@ import { MEMBER_SENT } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
 import { readBranch } from "./harness/pi/reader";
 import { stateRoot } from "./state-root";
-import { extensionCaller, showsToken, TOKEN_HEADER } from "./auth";
+import { listenerPeer, requestExtension } from "./auth";
 import { recordsAsked } from "./extensions";
 import type { MemberCaller } from "./member-frame";
 import { EXTENSION_SENDER_PREFIX, OPERATOR_CALLER, peerCaller } from "../shared/senders";
@@ -32,10 +32,9 @@ export const sendersAsked = (): boolean => recordsAsked("senders");
  * else this machine's operator (its page, its token, a chat or the Overseer on it).
  */
 export function callerOf(c: Context): MemberCaller {
-  const peer = (c.env as { meshPeer?: { nodeId: string; label: string } } | undefined)?.meshPeer;
+  const peer = listenerPeer(c);
   if (peer) return { by: peerCaller(peer.nodeId), ...(peer.label ? { label: peer.label } : {}) };
-  const token = c.req.header(TOKEN_HEADER);
-  const ext = token !== undefined && !showsToken(token) ? extensionCaller(token) : null;
+  const ext = requestExtension(c);
   if (ext) return { by: `${EXTENSION_SENDER_PREFIX}${ext}` };
   return { by: OPERATOR_CALLER };
 }

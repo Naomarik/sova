@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { extensionCaller, showsToken, TOKEN_HEADER } from "./auth";
+import { listenerPeer, requestExtension } from "./auth";
 import { allLabels, cleanLabelChanges, labelsOf, setLabels } from "./session-labels";
 
 /**
@@ -16,14 +16,7 @@ import { allLabels, cleanLabelChanges, labelsOf, setLabels } from "./session-lab
 const SESSION_ID_RE = /^[\w-]{1,100}$/;
 const NO_STORE = { "Cache-Control": "no-store" };
 
-const fromPeer = (c: Context): boolean => !!(c.env as { meshPeer?: unknown } | undefined)?.meshPeer;
-
-/** The extension whose key this request shows, or null (the token, a cookie, a peer, nothing). */
-function keyExtension(c: Context): string | null {
-  if (fromPeer(c)) return null;
-  const token = c.req.header(TOKEN_HEADER);
-  return token !== undefined && !showsToken(token) ? extensionCaller(token) : null;
-}
+const fromPeer = (c: Context): boolean => !!listenerPeer(c);
 
 async function jsonBody(c: Context): Promise<Record<string, unknown> | null> {
   try {
@@ -43,7 +36,7 @@ export function registerLabelRoutes(app: Hono<any>, deps: { pathOfId: (id: strin
     if (typeof body.id !== "string" || !SESSION_ID_RE.test(body.id)) return c.json({ error: "id must be a session id" }, 400);
     const changes = cleanLabelChanges(body.labels);
     if (typeof changes === "string") return c.json({ error: changes }, 400);
-    const ext = keyExtension(c);
+    const ext = requestExtension(c);
     if (!ext) return c.json({ error: "Only an extension's key sets labels (x-sova-token: its key)." }, 403);
     const path = await deps.pathOfId(body.id);
     if (!path) return c.json({ error: "No session with that id" }, 404);

@@ -488,7 +488,7 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     if (!path) throw new Error("That session is not on this host.");
     const applied = e.mode ? await applyCodingMode(path, e.mode as CodingModeSwitch) : null;
     // The project overseer's message, marked as an Overseer's (§app.overseer/sent-marker): never the operator's answer.
-    const r = await overseer.promptSession(path, str(e.text), undefined, "followUp", { projectOverseer: projectOverseerIdOf(host, e) });
+    const r = await overseer.promptSession(path, str(e.text), { delivery: "followUp", projectOverseer: { id: projectOverseerIdOf(host, e) } });
     if (!r.ok) throw new Error(r.error);
     return { queued: r.queued, ...(applied ? { modeApplies: applied.applies, modeNow: applied.mode, profile: applied.profile } : {}) };
   });

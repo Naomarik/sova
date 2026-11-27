@@ -1519,7 +1519,7 @@ function resumeDeps(isRunning: (path: string) => boolean = running): ResumeDeps 
     },
     freeSlots: () => freeSlotsWith(isRunning),
     prompt: async (path, text, key) => {
-      const r = await promptSession(path, text, readOverseerState()?.current, "followUp", undefined, key);
+      const r = await promptSession(path, text, { sentBy: readOverseerState()?.current, delivery: "followUp", key });
       if (!r.ok) throw new Error(r.error);
       host.started(path, true);
     },

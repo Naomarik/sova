@@ -27,6 +27,8 @@ export const RECORD_KINDS = ["senders"] as const satisfies readonly RecordKind[]
 
 /** Names past this many in `screens` are never read. */
 const SCREENS_READ_MAX = 16;
+/** Names past this many in `records` are never read. */
+const RECORDS_MAX = 16;
 
 /** The path on an extension's proxied backend that a place asks: GET `/ext/<id>` + this. */
 export const screenPath = (place: ScreenPlace): string => `/api/screens/${place}`;
@@ -86,7 +88,7 @@ export function offersOf(extId: string, raw: { commands?: unknown; screens?: unk
   if (raw.records !== undefined) {
     if (!Array.isArray(raw.records)) dropped.push("records is not an array");
     else {
-      const named = new Set(raw.records.slice(0, SCREENS_READ_MAX));
+      const named = new Set(raw.records.slice(0, RECORDS_MAX));
       const records = RECORD_KINDS.filter((k) => named.has(k));
       if (records.length < raw.records.length) dropped.push(`${raw.records.length - records.length} of its records`);
       if (records.length) offers.records = records;

@@ -18,6 +18,7 @@
 import { createContext, createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js";
 import type { ExtensionInfo, SessionSummary } from "../../shared/protocol";
 import { offersPlace, screenPath } from "../../shared/extension-offers";
+import { LABEL_KEY_RE, validExtId } from "../../shared/session-labels";
 import { createSlotPolicy, readCappedJson, type SlotPolicy, type SlotStorage } from "./reply-slot";
 import { createPlaceAnswers, sameRowExtensions, type RowClock, type RowExtension, type RowSource } from "./row-place";
 import { labelsAsk, setLabelsAsk } from "./labels-ask";
@@ -59,10 +60,6 @@ export interface ListDeclaration {
 }
 
 const PERSON_ID_RE = /^[A-Za-z0-9_.-]{1,64}$/;
-/** The server's extension id rule (shared/commands-ext.ts). */
-const EXT_ID_RE = /^[A-Za-z0-9._-]{1,64}$/;
-/** A label key (the labels store's rule). */
-export const LABEL_KEY_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const INITIALS_RE = /^[\p{L}\p{N}]{2}$/u;
 /** Letters, digits, spaces and plain punctuation: the chip rule (src/lib/row-place.ts). */
 const PLAIN = /^[\p{L}\p{N} .,:;!?()/+#%_'-]+$/u;
@@ -99,7 +96,7 @@ export function validateListAnswer(raw: unknown, ext: RowExtension): { answer: L
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return malformed;
   const r = raw as Record<string, unknown>;
   if (typeof r.ownerKey !== "string" || !LABEL_KEY_RE.test(r.ownerKey)) return malformed;
-  if (r.ownerExt !== undefined && (typeof r.ownerExt !== "string" || !EXT_ID_RE.test(r.ownerExt) || r.ownerExt === "." || r.ownerExt === "..")) return malformed;
+  if (r.ownerExt !== undefined && (typeof r.ownerExt !== "string" || !validExtId(r.ownerExt))) return malformed;
   if (!Array.isArray(r.people)) return malformed;
   let bad = r.people.length > LIST_PEOPLE_MAX;
   const people: ListPerson[] = [];

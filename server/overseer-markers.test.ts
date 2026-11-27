@@ -326,7 +326,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     const path = make("pl1");
     const before = readFileSync(path, "utf8");
     liveRecord("p-other-pl1.json", process.ppid, path);
-    const r = await sessionPrompt.promptSession(path, "do it", "x");
+    const r = await sessionPrompt.promptSession(path, "do it", { sentBy: "x" });
     assert.equal(r.ok, false);
     assert.match(!r.ok ? r.error : "", /open in a terminal/);
     assert.equal(readFileSync(path, "utf8"), before);
@@ -337,7 +337,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     liveRecord(`p${process.pid}-pl2.json`, process.pid, path, 1);
     const chat = await acquireChat(path, true);
     stubModel(chat);
-    const r = await sessionPrompt.promptSession(path, "check the build", await ov());
+    const r = await sessionPrompt.promptSession(path, "check the build", { sentBy: await ov() });
     assert.deepEqual(r, { ok: true, queued: false, kind: "prompt" });
     await until(() => userRows(path).some(([t, m]) => t === "check the build" && m));
     await piSession(chat).waitForIdle();
@@ -346,7 +346,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
 
   test("mid-turn, a follow-up by default: queued behind the turn as the Overseer's, then delivered and marked", async () => {
     const t = await midTurn("pl4");
-    const r = await sessionPrompt.promptSession(t.path, "then run the tests", await ov());
+    const r = await sessionPrompt.promptSession(t.path, "then run the tests", { sentBy: await ov() });
     assert.deepEqual(r, { ok: true, queued: true, kind: "followUp" });
     const row = t.snaps.at(-1)?.find((i) => i.text === "then run the tests");
     assert.deepEqual(row && [row.kind, row.origin, row.overseer], ["followUp", "server", true]);
@@ -363,7 +363,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
 
   test("mid-turn with delivery steer: queued as a steer, and it enters the running turn marked", async () => {
     const t = await midTurn("pl5");
-    const r = await sessionPrompt.promptSession(t.path, "stop and use pnpm", await ov(), "steer");
+    const r = await sessionPrompt.promptSession(t.path, "stop and use pnpm", { sentBy: await ov(), delivery: "steer" });
     assert.deepEqual(r, { ok: true, queued: true, kind: "steer" });
     assert.deepEqual(t.snaps.at(-1)?.map((i) => [i.kind, i.origin, i.overseer]), [["steer", "server", true]]);
     t.release();
@@ -387,7 +387,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
       return h ?? Promise.resolve();
     });
     // A prompt that starts a turn.
-    assert.deepEqual(await sessionPrompt.promptSession(path, "land it", await ov()), { ok: true, queued: false, kind: "prompt" });
+    assert.deepEqual(await sessionPrompt.promptSession(path, "land it", { sentBy: await ov() }), { ok: true, queued: false, kind: "prompt" });
     await until(() => seen.length > 0);
     await piSession(chat).waitForIdle();
     assert.deepEqual(seen, [{ text: "land it", sentBy: "the Overseer" }]);
@@ -396,8 +396,8 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     hold = new Promise<void>((r) => (release = r));
     void chat.acceptPrompt("a long task").turn;
     await until(() => piSession(chat).isStreaming && seen.length === 2);
-    await sessionPrompt.promptSession(path, "merge it", await ov(), "steer");
-    await sessionPrompt.promptSession(path, "land it now", await ov());
+    await sessionPrompt.promptSession(path, "merge it", { sentBy: await ov(), delivery: "steer" });
+    await sessionPrompt.promptSession(path, "land it now", { sentBy: await ov() });
     release();
     await until(() => seen.some((s) => s.text === "land it now"));
     await piSession(chat).waitForIdle();
@@ -406,8 +406,8 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
 
   test("a queued Overseer message taken back leaves no marker and no pending mark: a held one by Remove, a handed one by Stop", async () => {
     const t = await midTurn("pl6");
-    await sessionPrompt.promptSession(t.path, "first", await ov());
-    await sessionPrompt.promptSession(t.path, "maybe later", await ov());
+    await sessionPrompt.promptSession(t.path, "first", { sentBy: await ov() });
+    await sessionPrompt.promptSession(t.path, "maybe later", { sentBy: await ov() });
     const [first, later] = t.snaps.at(-1)!.map((i) => i.id);
     // The first is handed to the SDK (it holds nothing else), so its mark is pending; the second
     // follow-up is held behind it, unmarked.
@@ -431,7 +431,7 @@ describe("POST /api/sessions/prompt's rule (promptSession)", () => {
     const t = await midTurn("pl8");
     // The user's own steer first, then the Overseer's with the same words: both are in pi at once.
     t.chat.acceptPrompt("ok", undefined, "client", "c-ok", { delivery: "steer" });
-    const r = await sessionPrompt.promptSession(t.path, "ok", await ov(), "steer");
+    const r = await sessionPrompt.promptSession(t.path, "ok", { sentBy: await ov(), delivery: "steer" });
     assert.deepEqual(r, { ok: true, queued: true, kind: "steer" });
     await until(() => t.steered.length === 2);
     t.release();

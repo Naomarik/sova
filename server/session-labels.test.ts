@@ -76,7 +76,7 @@ describe("the store", () => {
     L.setLabels("s1", "/s/s1.jsonl", "beta", { owner: null });
     assert.equal(L.labelsOf("s1"), undefined);
     assert.deepEqual(JSON.parse(readFileSync(storeFile, "utf8")), { version: 1, sessions: {} });
-    assert.equal(L.labelsHeld(), false);
+    assert.deepEqual(L.allLabels(), {});
   });
   test("at most LABEL_KEYS_MAX keys per extension per chat: the write that passes it writes nothing", () => {
     const eight = Object.fromEntries(Array.from({ length: L.LABEL_KEYS_MAX }, (_, i) => [`k${i}`, "v"]));

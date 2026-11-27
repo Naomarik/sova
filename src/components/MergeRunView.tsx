@@ -1,11 +1,12 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js";
 import { relativeTime } from "../lib/format";
 import { attribution, clock, sentence, short, sourceTag, stepCounts, stepDetail, stepMark, stepTime, unattributedWhy, verdictChip, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
-import { answerEntry, cancelEntry, mergeChanged, readLog, readRun, refusal } from "../lib/merge-queue-client";
+import { mergeChanged, readLog, readRun } from "../lib/merge-queue-client";
+import { answersAtRun, answersHere, nowWords } from "../lib/merge-answers";
+import { EntryDecision } from "./EntryDecision";
 import { createFollowedRead, createRunRead, logFollow } from "../lib/merge-run";
-import type { MergeAnswer } from "../../shared/merge-queue";
-import { announce, home, toast } from "../lib/ui-state";
-import { mergeQueueTabHref, pipelineHref, projectSessionHref, type QueueTab } from "../lib/projects-route";
+import { home } from "../lib/ui-state";
+import { mergeQueueTabHref, mergeRunHref, pipelineHref, projectSessionHref, type QueueTab } from "../lib/projects-route";
 import { Banner, Icon } from "./ui";
 import { type ChatOf, FromChat } from "./MergeQueueTab";
 import { ReviewerLinks } from "./MergeQueueChats";
@@ -55,14 +56,22 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
     const v = props.view;
     return r ? ([...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].find((e) => e.id === r.entry) ?? v.recent.find((l) => l.entry.id === r.entry)?.entry) : undefined;
   };
+  /** The run's entry waits for your answer, and this is the run it waits at: its question and answers show here. */
+  const waiting = () => {
+    const e = entry();
+    const r = run();
+    return e && r && answersAtRun(e, r.id) ? e : undefined;
+  };
+  // A branch that waits for you is listed under Needs you: Back goes there unless the address names the tab it came from.
+  const back = () => mergeQueueTabHref(props.projectId, props.from ?? (entry() && answersHere(entry()!) ? "needs-you" : undefined));
   return (
     <div class="stack mq-run" aria-labelledby="mq-run-title">
       {/* Back to Queue is the arrow before the path, never a third action that wraps onto a line of its own. */}
       <nav class="mq-crumbs text-caption" aria-label="Breadcrumb">
-        <a class="button button-sm button-ghost button-icon mq-back" href={mergeQueueTabHref(props.projectId, props.from)} aria-label="Back to Queue" title="Back to Queue">
+        <a class="button button-sm button-ghost button-icon mq-back" href={back()} aria-label="Back to Queue" title="Back to Queue">
           <Icon name="chevron-left" small />
         </a>
-        <a href={mergeQueueTabHref(props.projectId, props.from)}>Merge queue</a>
+        <a href={back()}>Merge queue</a>
         <span aria-hidden="true"> › </span>
         <span>{run()?.branch ?? props.runId}</span>
         <Show when={isDry()}>
@@ -147,7 +156,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               </button>
               <Show when={props.view.thread}>
                 {(t) => (
-                  <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, t().path ?? t().session)}>
+                  <a class="button button-sm button-ghost" href={t().path ? projectSessionHref(props.projectId, t().path!) : `#/sid/${encodeURIComponent(t().session)}`}>
                     <Icon name="chat" small />
                     Open Merge Thread
                   </a>
@@ -158,11 +167,15 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               <AllLogs run={r()} />
             </Show>
             <Show when={press.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
-            <Show when={isDry()} fallback={<Verdict projectId={props.projectId} run={r()} target={props.view.target} unattributed={entry()?.state === "unattributed"} brokenFix={props.view.heads.targetBrokenFix} />}>
+            <Show when={isDry()} fallback={<Verdict projectId={props.projectId} run={r()} target={props.view.target} unattributed={entry()?.state === "unattributed"} brokenFix={props.view.heads.targetBrokenFix} now={nowWords(entry(), r().id)} />}>
               <DryRunVerdict projectId={props.projectId} run={r()} trial={trial()} target={props.view.target} title={title} offer={fixOfferOf(props.view, r())} />
             </Show>
             <Show when={entry()?.state === "unattributed" && (entry()!.run ?? r().id) === r().id && entry()}>
               {(e) => <Unattributed projectId={props.projectId} entry={e()} target={props.view.target} />}
+            </Show>
+            {/* Any decision it waits on: the Needs you row's question and answers (EntryDecision). */}
+            <Show when={!isDry() && waiting()}>
+              {(e) => <EntryDecision projectId={props.projectId} root={props.view.root} target={props.view.target} entry={e()} view={props.view} chatOf={props.chatOf} />}
             </Show>
             <Show when={entry()?.conflict}>
               {(c) => (
@@ -224,29 +237,9 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
   );
 }
 
-/** Can't tell whose failure: what failed on both sides, and your answers (merge verbs; nothing goes to the chat):
- *  Land Anyway, Try Again and Remove from Queue. */
+/** Can't tell whose failure: what failed on both sides. Its answers (Land Anyway, Try Again, Remove from Queue) are the
+ *  decision block's below it (EntryDecision), as on the Needs you row. */
 function Unattributed(props: { projectId: string; entry: MergeEntry; target: string }) {
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const remove = () => answer(null, `Removed ${props.entry.branch} from the merge queue.`);
-  const answer = async (a: MergeAnswer | null, done: string) => {
-    if (busy()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const no = refusal(a === null ? await cancelEntry(props.entry) : await answerEntry(props.entry, a));
-      if (no) setError(no);
-      else {
-        toast(done);
-        announce(done);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <div class="banner banner-warn mq-unattributed" role="status">
       <Icon name="alert-circle" class="banner-icon" />
@@ -254,18 +247,6 @@ function Unattributed(props: { projectId: string; entry: MergeEntry; target: str
         <p class="banner-title">Can't tell whose failure. Nothing landed; {props.target} didn't move.</p>
         <p class="banner-body">{unattributedWhy(props.entry.reason, props.target)} Nobody is blamed. Land Anyway lands the commit it tested; Try Again checks it afresh.</p>
         <UnclearChecks projectId={props.projectId} unclear={props.entry.unclear} target={props.target} />
-        <Show when={error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
-        <div class="button-row mq-card-actions">
-          <button type="button" class="button button-sm button-primary" aria-label={`Land ${props.entry.branch} anyway`} disabled={busy()} onClick={() => void answer("land-anyway", `Landing ${props.entry.branch} anyway.`)}>
-            Land Anyway
-          </button>
-          <button type="button" class="button button-sm" aria-label={`Try ${props.entry.branch} again`} disabled={busy()} onClick={() => void answer("try-again", `Checking ${props.entry.branch} again.`)}>
-            Try Again
-          </button>
-          <button type="button" class="button button-sm" aria-label={`Remove ${props.entry.branch} from the merge queue`} disabled={busy()} onClick={() => void remove()}>
-            Remove from Queue
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -323,7 +304,7 @@ function DryRunVerdict(props: { projectId: string; run: MergeRun; trial?: MergeT
 }
 
 /** The verdict banner and, for a red run, whose failure it is. */
-function Verdict(props: { projectId: string; run: MergeRun; target: string; /** Its own banner says it: no generic line above it. */ unattributed?: boolean; brokenFix?: Record<string, FixOffer> }) {
+function Verdict(props: { projectId: string; run: MergeRun; target: string; /** Its own banner says it: no generic line above it. */ unattributed?: boolean; brokenFix?: Record<string, FixOffer>; /** Where its entry stands now (lib/merge-answers nowWords): `at`, the run its answers wait at, is linked. */ now?: { text: string; at?: string } }) {
   const press = usePress();
   const r = () => props.run;
   const rows = () => attribution(r());
@@ -334,7 +315,23 @@ function Verdict(props: { projectId: string; run: MergeRun; target: string; /** 
         <Banner tone="error" title={`${r().branch} broke ${failedStep()?.label ?? "a check"}. It didn't land; ${props.target} didn't move.`} body={`${sentence(r().why) || "It passes on the target alone and fails with this branch."} It went back to its chat with the log.`} />
       </Show>
       <Show when={r().verdict === "failed" && r().blame === "resolution"}>
-        <Banner tone="warn" title="The merge thread's resolution failed a check." body={`${sentence(r().why)} It comes back to you; the branch isn't blamed.`.trim()} />
+        <Banner
+          tone="warn"
+          title="The merge thread's resolution failed a check."
+          body={
+            <>
+              {[sentence(r().why), "The branch isn't blamed.", props.now?.text].filter(Boolean).join(" ")}
+              <Show when={props.now?.at}>
+                {(at) => (
+                  <>
+                    {" "}
+                    <a href={mergeRunHref(props.projectId, at(), "needs-you")}>Open Its Newest Run</a>
+                  </>
+                )}
+              </Show>
+            </>
+          }
+        />
       </Show>
       <Show when={r().verdict === "failed" && (r().blame === "master" || r().blame === "flaky")}>
         <Banner tone="warn" title={r().blame === "master" ? `Red on ${props.target} too.` : "Flaky: it passed on a rerun."} body={`${sentence(r().why)} Noted on the landing; it doesn't block.`.trim()} />

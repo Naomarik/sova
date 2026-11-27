@@ -1872,6 +1872,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-row > .list-main { flex: 1 1 16rem; min-width: 0; }
 .mq-row .list-title { flex-wrap: wrap; white-space: normal; }
 .mq-row .list-meta { white-space: normal; overflow-wrap: anywhere; margin-top: var(--space-1); }
+/* The run page's decision block (EntryDecision) says its lines whole, as the Needs you row does. */
+.mq-decision .list-meta { white-space: normal; overflow-wrap: anywhere; margin: 0; }
 .mq-row .list-meta .icon { vertical-align: -3px; }
 .mq-pos { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--r-full); background: var(--color-sunken); font-size: var(--fs-caption); color: var(--color-ink-2); }
 .mq-row-act { flex: none; }

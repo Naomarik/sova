@@ -1258,7 +1258,8 @@ for (const width of [1280, 390]) {
       // A confirmed Land queues the branch, and the card is still there to say what became of it.
       await confirmLand(o, row, "sova/fix-cart", "Land 2 Commits");
       await called(o, "merge.add");
-      await page.getByText("Queued sova/fix-cart.").first().waitFor();
+      // Its words say where the queue put it (the stand-in answers "queued" with no place).
+      await page.getByText("Queued sova/fix-cart · in line.").first().waitFor();
       assert.equal(await kept(), 3, "the card stays open after Land");
       await noSideScroll(page);
       // Only these close it: the name again (and Escape and a press outside, above).
@@ -1566,9 +1567,11 @@ for (const width of [1280, 390]) {
       assert.match(await words(page.locator(".mq-run .cluster").first()), /Can't tell whose failure · waiting for you/);
       assert.equal(await page.getByText("Nothing has merged from this run.").count(), 0, "the banner says it, once");
       await expectWhy(bt);
-      await ban.getByRole("button", { name: "Try feat/slow-build again" }).click();
+      // Its answers are the decision block's under the banner, as on the Needs you row (EntryDecision).
+      const block = page.locator(".mq-decision");
+      await block.getByRole("button", { name: "Try feat/slow-build again" }).click();
       await until("try again from the run page", () => o.calls.filter((x) => x.verb === "merge.answer" && x.body.answer === "try-again").length >= 2);
-      await ban.getByRole("button", { name: "Remove feat/slow-build from the merge queue" }).click();
+      await block.getByRole("button", { name: "Remove feat/slow-build from the merge queue" }).click();
       await until("remove from the run page", () => o.calls.some((x) => x.verb === "merge.cancel" && x.body.entry === "me_u"));
       await noRestartOrLive(page, ".mq-run");
       await noSideScroll(page);

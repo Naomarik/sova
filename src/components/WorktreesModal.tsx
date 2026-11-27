@@ -3,6 +3,7 @@ import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
 import { landConfirmWords, modalHead, queueRow, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, land, refusal, type LandOptions } from "../lib/merge-queue-client";
+import { answerDone, landDone } from "../lib/merge-answers";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, home, toast } from "../lib/ui-state";
 import { removeWorktree } from "../lib/api";
@@ -275,7 +276,8 @@ export function WorktreeQueueRow(props: {
     confirm.open("discard");
   };
 
-  const run = async (what: string, call: () => Promise<{ ok: boolean; error?: { message: string } } & object>, done: string) => {
+  /** `done`: the words once it went through, or how to read them off the queue's answer (what it really did). */
+  const run = async <R extends { ok: boolean; error?: { message: string } }>(what: string, call: () => Promise<R>, done: string | ((r: R) => string)) => {
     if (busy()) return;
     setBusy(true);
     setError(null);
@@ -286,8 +288,9 @@ export function WorktreeQueueRow(props: {
         setError(no);
         announce(`${what} refused: ${no}`);
       } else {
-        toast(done);
-        announce(done);
+        const words = typeof done === "string" ? done : done(r);
+        toast(words);
+        announce(words);
         props.onChanged?.();
       }
     } catch (err) {
@@ -300,8 +303,8 @@ export function WorktreeQueueRow(props: {
   // same confirmation as every Land.
   const doLand = (o: LandOptions = {}) =>
     row().decision
-      ? void run("Land", () => answerEntry(e(), "land"), `Queued ${w().branch}.`)
-      : void run("Land", () => land(w().path, { ...o, commit: shownCommit(w()) }), `Queued ${w().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
+      ? void run("Land", () => answerEntry(e(), "land"), (r) => answerDone("land", w().branch, r.merge?.entry))
+      : void run("Land", () => land(w().path, { ...o, commit: shownCommit(w()) }), (r) => landDone(w().branch, r.merge?.entry, `${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}`));
   const e = () => entry()!;
   // A refusal belongs to the commit it was said for: a newer head reads afresh, never an older one's words
   // (§chat.worktrees/newest-commit).

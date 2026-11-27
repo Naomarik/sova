@@ -7,7 +7,8 @@ import { WAITING_FOR_USER, entryStateWords, type MergeEntry, type MergeQueueView
 import type { ReleaseRecord, ReleaseStep } from "../../shared/release";
 import type { LandingQueueCut, LandingReleaseCut } from "../../shared/merge-queue";
 import { mins, pausedTitle, short } from "./merge-queue";
-import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision } from "./merge-standing";
+import { DECISION_ACTION_LABEL, DECISION_LABEL, openDecision, type DecisionAction } from "./merge-standing";
+import { answerAria, answerConfirm, BAR_ANSWERS, entryAnswers, waitingTitle } from "./merge-answers";
 
 // ---- the inputs -----------------------------------------------------------------------------------
 
@@ -53,18 +54,28 @@ export interface LandingLine {
   tone?: LandingTone;
   href?: string;
 }
-/** An action in the detail: done in place (Resume Queue, Continue, Retry Step), or a link to the tab that does it. */
+/** The entry an answer acts on: what the routing reads (lib/merge-queue-client sendAnswer). */
+export type AnsweredEntry = Pick<MergeEntry, "id" | "branch" | "commit" | "state"> & { decision?: MergeEntry["decision"] };
+/** An action in the detail: done in place (Resume Queue, Continue, Retry Step, and a waiting entry's answers after one
+    confirm), or a link to the tab that does it. */
 export type LandingAction =
   | { kind: "resume"; label: "Resume Queue"; root: string }
+  | { kind: "answer"; label: string; answer: DecisionAction; root: string; entry: AnsweredEntry; confirm: { title: string; line: string; confirm: string }; aria: string; primary?: true }
   | { kind: "continue"; label: "Continue"; root: string; release: string; step: string; stepLabel: string }
   | { kind: "retry"; label: "Retry Step"; root: string; release: string; step: string; stepLabel: string }
   | { kind: "link"; label: string; href: string; primary?: true; place?: true; aria?: string };
+
+/** Which wait an answer answers: the entry's decision (a later decision is a new wait), else its state at its commit. */
+export const answeredKey = (a: Extract<LandingAction, { kind: "answer" }>): string => `${a.entry.id}:${a.entry.decision?.id ?? `${a.entry.state}@${a.entry.commit}`}`;
+/** The actions with every answer to a wait already answered left out: its buttons go at once, before the queue's next
+    frame reaches the bar, and stay gone if the detail closes and opens again meanwhile. */
+export const withoutAnswered = (actions: LandingAction[], answered: ReadonlySet<string>): LandingAction[] => actions.filter((a) => a.kind !== "answer" || !answered.has(answeredKey(a)));
 
 /** A place to go: a link that only navigates (drawn as a text link on the places row, never a button). */
 const place = (label: string, href: string, aria: string): LandingAction => ({ kind: "link", label, href, place: true, aria });
 const branchChat = (session: string) => place("Branch Chat", chatIdHref(session), "Open the branch chat");
 const checks = (root: string, run: string) => place("Checks", queueHref(root, run), "View the checks");
-const queue = (root: string) => place("Queue", queueHref(root), "Open the merge queue");
+const queue = (root: string, tab?: "needs-you") => place("Queue", queueHref(root, undefined, tab), "Open the merge queue");
 /** The things that do something (buttons, first), then the places to go (links), as the detail draws them. */
 export function splitActions(actions: LandingAction[]): { doing: LandingAction[]; places: Extract<LandingAction, { kind: "link" }>[] } {
   const isPlace = (a: LandingAction): a is Extract<LandingAction, { kind: "link" }> => a.kind === "link" && !!a.place;
@@ -119,7 +130,10 @@ export interface LandingReduction {
 
 const PROJECTS_HREF = "#/projects";
 const enc = encodeURIComponent;
-export const queueHref = (pid: string, run?: string): string => `${PROJECTS_HREF}/${pid}/merge-queue${run ? `/${run}` : ""}`;
+/** The Merge Queue tab (`tab`: one of its tabs; Ready to land is the bare address), or one run of it opened from that tab. */
+export const queueHref = (pid: string, run?: string, tab?: "needs-you"): string => `${PROJECTS_HREF}/${pid}/merge-queue${tab ? `/${tab}` : ""}${run ? `/${run}` : ""}`;
+/** Where a branch that waits for you opens: its run, from the Needs you tab, else that tab, where it is listed. */
+const waitingHref = (pid: string, e: Pick<MergeEntry, "run">): string => queueHref(pid, e.run, "needs-you");
 export const releasesHref = (pid: string): string => `${PROJECTS_HREF}/${pid}/releases`;
 export const chatIdHref = (id: string): string => `#/sid/${enc(id)}`;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -268,26 +282,18 @@ const conflictsOf = (q: LandingQueueCut): MergeEntry[] => q.needsYou.filter((e) 
 /** One needs-you entry, in the Merge Queue tab's words: branch, then one line of why. */
 const needsLine = (e: MergeEntry, pid: string): LandingLine => {
   const d = openDecision(e);
-  if (d) return { text: `${e.branch} · ${heldDryRunLabel(e)?.replace(/ · waiting for you$/, "") ?? DECISION_LABEL[d.kind]}: ${stripDot(d.question)}`, tone: "warn", href: queueHref(pid, e.run) };
-  return { text: `${e.branch} · ${stripDot(entryStateWords(e))}${e.reason ? `: ${stripDot(e.reason)}` : ""}`, tone: "warn", href: queueHref(pid, e.run) };
+  if (d) return { text: `${e.branch} · ${heldDryRunLabel(e)?.replace(/ · waiting for you$/, "") ?? DECISION_LABEL[d.kind]}: ${stripDot(d.question)}`, tone: "warn", href: waitingHref(pid, e) };
+  return { text: `${e.branch} · ${stripDot(entryStateWords(e))}${e.reason ? `: ${stripDot(e.reason)}` : ""}`, tone: "warn", href: waitingHref(pid, e) };
 };
 
-/** The buttons an entry that waits for the user offers: each opens the Merge Queue tab at the entry (q3). */
-function needsActions(e: MergeEntry, pid: string): LandingAction[] {
-  const href = queueHref(pid, e.run);
-  // A decision's own answers on the queue (Remove from Queue stays on the tab's row); none is a Send Back.
-  const d = openDecision(e);
-  if (d) return decisionActions(d).filter((a) => a !== "remove").map((a, i) => ({ kind: "link", label: DECISION_ACTION_LABEL[a], href, ...(i === 0 ? { primary: true } : {}) }));
-  switch (e.state) {
-    case "behaviour-differs":
-      return e.conflict?.proposal ? [{ kind: "link", label: "Accept", href, primary: true }] : [];
-    case "unattributed":
-      return [{ kind: "link", label: "Land Anyway", href, primary: true }, { kind: "link", label: "Try Again", href }];
-    case "drafts-changed":
-      return [{ kind: "link", label: "Land", href, primary: true }];
-    default:
-      return [];
-  }
+/** The answers an entry that waits for the user offers in the bar: each acts right there after one confirm, through
+    the Needs you row's own routing (lib/merge-answers BAR_ANSWERS; Remove from Queue stays on the row and the run page).
+    The private names' Send Back is that decision's own answer, never a failure's send-back. */
+function needsActions(e: MergeEntry, root: string, target: string): LandingAction[] {
+  const entry: AnsweredEntry = { id: e.id, branch: e.branch, commit: e.commit, state: e.state, ...(e.decision ? { decision: e.decision } : {}) };
+  return entryAnswers(e)
+    .filter((a) => BAR_ANSWERS[a])
+    .map((a, i) => ({ kind: "answer", label: DECISION_ACTION_LABEL[a], answer: a, root, entry, confirm: answerConfirm(a, e, target), aria: answerAria(a, e.branch), ...(i === 0 ? { primary: true } : {}) }));
 }
 
 const waitingCount = (q: LandingQueueCut | null): LandingCount | undefined => {
@@ -388,15 +394,17 @@ function mergeNeedsBar(p: LandingProjectInput, q: LandingQueueCut, needs: MergeE
     kind: "merge-needs",
     tone: "warn",
     icon: "alert-circle",
-    title: stripDot(heldDryRunLabel(e) ?? entryStateWords(e)),
+    // The decision's own words ("A fix needs your OK"), as the tab's row says them.
+    title: stripDot(heldDryRunLabel(e) ?? waitingTitle(e)),
     sub: `${e.branch}${e.reason ? ` · ${stripDot(e.reason)}` : ""}`,
     ...(rest > 0 ? { count: { text: `+${rest}`, label: `${rest} more need${rest === 1 ? "s" : ""} you` } } : {}),
     segments: [],
-    // The face says the first one already: the detail lists the others.
-    lines: [...needs.slice(1).map((x) => needsLine(x, p.id)), ...conflictsOf(q).map((x) => ({ text: `${x.branch} · conflict being judged` })), ...nextLines(q)],
+    // The face says the first one already: its question, then the others.
+    lines: [...(openDecision(e) ? [{ text: stripDot(openDecision(e)!.question) }] : []), ...needs.slice(1).map((x) => needsLine(x, p.id)), ...conflictsOf(q).map((x) => ({ text: `${x.branch} · conflict being judged` })), ...nextLines(q)],
     peek: [...(rest > 0 ? [{ text: `${rest} more need${rest === 1 ? "s" : ""} you`, tone: "warn" as const }] : []), ...nextLines(q).slice(0, 1)],
-    actions: [...needsActions(e, p.id), ...(e.session ? [branchChat(e.session)] : []), queue(p.id)],
-    oneLine: `${p.name} · ${e.branch} · ${stripDot(entryStateWords(e))}`,
+    // The card is about a branch that waits for you: Queue opens Needs you, where it is listed.
+    actions: [...needsActions(e, p.root, q.target), ...(e.session ? [branchChat(e.session)] : []), queue(p.id, "needs-you")],
+    oneLine: `${p.name} · ${e.branch} · ${stripDot(waitingTitle(e))}`,
   };
 }
 

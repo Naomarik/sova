@@ -371,7 +371,7 @@ const beyond = [
         <div class="section-head section-head-center">
           <span class="eyebrow">How it works</span>
           <h2 class="h-section" id="how-title">A server, and a process for every chat, on your machine.</h2>
-          <p class="lead">A server and a web app, plus a process per chat that runs the pi coding agent. Chats use pi's own agent directory: your sessions, logins, and extensions.</p>
+          <p class="lead">A server and a web app, plus a process per chat that runs the pi coding agent. Chats use pi's own agent directory: your sessions, logins, and extensions. Each new chat keeps its files in a folder of its own, in a Chats folder you can move.</p>
         </div>
         <div class="arch">
           <div class="arch-node">
@@ -393,7 +393,7 @@ const beyond = [
           <div class="arch-link arch-link-down"><span>reads and writes</span></div>
           <div class="arch-node">
             <h3><Icon name="folder" size={18} />~/.pi/agent</h3>
-            <p>pi's agent directory. Sova's own state lives in <code>sova/</code>.</p>
+            <p>pi's agent directory. Sova's own state lives in <code>sova/</code>; new chats live in the Chats folder (Settings → General).</p>
             <ul class="arch-list"><li>sessions/</li><li>auth.json</li><li>extensions/</li><li>sova/</li></ul>
           </div>
           <div class="arch-provider"><Icon name="external" size={16} /><span>Model requests go from each chat's process to your configured provider. Tools and extensions may use the network too.</span></div>

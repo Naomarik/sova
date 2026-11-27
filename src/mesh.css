@@ -109,6 +109,8 @@
    This dialog only; every other modal stays under the toasts. A toast still timing out shows again after. */
 .scrim.mesh-proposal-scrim { z-index: 61; }
 .modal.mesh-proposal { z-index: 62; }
+/* The dialog takes the keyboard itself when a request appears (no button is pressed by a stray key); it is no control, so no ring. */
+.modal.mesh-proposal:focus { outline: none; }
 /* A bottom sheet on a phone, as every modal is; a capped dialog from 768px. */
 @media (min-width: 768px) { .mesh-proposal { max-width: min(560px, calc(100vw - var(--space-6))); } }
 .mesh-proposal .modal-head { flex-wrap: wrap; gap: var(--space-2); }

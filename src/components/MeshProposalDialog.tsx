@@ -1,5 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { answerCounts, createAnswerHold } from "../lib/answer-hold";
 import { answerMeshProposal, dropMeshProposal, FULL_ACCESS_SENTENCE, proposalText, waitingMeshProposals } from "../lib/mesh-proposals";
 import { Banner, trapFocus } from "./ui";
 
@@ -7,7 +8,10 @@ import { Banner, trapFocus } from "./ui";
  * Sova's own dialog for an extension's mesh proposal (§mesh.lan/proposals): over whatever is open, the extension's
  * page included, one proposal at a time, oldest first. Its buttons act only on a click the browser marks as the
  * person's (`isTrusted`), never a script's `click()`; the server refuses an extension page's own call besides. That
- * guards against an accident or a careless page, not a hostile one (§app.access/click-limits).
+ * guards against an accident or a careless page, not a hostile one (§app.access/click-limits). Each time the request
+ * shown changes (it appears, or the next one takes the place of one answered, run out or withdrawn), the keyboard
+ * moves to the dialog itself and both buttons do nothing for a moment (`createAnswerHold`): a second click, or a key
+ * press meant for the composer behind, never answers a request not yet read.
  */
 export function MeshProposalDialog() {
   const first = () => waitingMeshProposals()[0];
@@ -16,10 +20,14 @@ export function MeshProposalDialog() {
   const [error, setError] = createSignal<{ id: string; message: string } | null>(null);
   /** A confirm that couldn't be applied is decided, so it leaves the waiting list: why stays here until closed. */
   const [failed, setFailed] = createSignal<{ title: string; message: string } | null>(null);
+  let dialog: HTMLDivElement | undefined;
+  // Tied to the request's id, not to the dialog mounting: the dialog stays while one request follows another.
+  const held = createAnswerHold(() => first()?.id, { onNew: () => queueMicrotask(() => dialog?.focus({ preventScroll: true })) });
+  const inert = () => busy() || held();
 
   const answer = async (e: MouseEvent, id: string, how: "confirm" | "decline") => {
     // A script's element.click() or dispatchEvent is untrusted: only the person's own click answers.
-    if (!e.isTrusted || busy()) return;
+    if (!answerCounts(e, { busy: busy(), held: held() })) return;
     setBusy(true);
     setError(null);
     try {
@@ -66,7 +74,10 @@ export function MeshProposalDialog() {
         return (
           <Portal>
             <div class="scrim mesh-proposal-scrim" />
-            <div class="modal mesh-proposal" role="alertdialog" aria-modal="true" aria-labelledby="mesh-proposal-title" aria-describedby="mesh-proposal-what" data-proposal={p().id} ref={(el) => trapFocus(el)}>
+            <div class="modal mesh-proposal" role="alertdialog" aria-modal="true" aria-labelledby="mesh-proposal-title" aria-describedby="mesh-proposal-what" data-proposal={p().id} tabindex="-1" ref={(el) => {
+              dialog = el;
+              trapFocus(el, { focus: "root" });
+            }}>
               <div class="sheet-grip" aria-hidden="true" />
               <div class="modal-head">
                 <h2 class="modal-title" id="mesh-proposal-title">
@@ -116,10 +127,10 @@ export function MeshProposalDialog() {
                 <Show when={error()?.id === p().id ? error() : null}>{(e) => <Banner tone="error" title={e().message} />}</Show>
               </div>
               <div class="modal-foot">
-                <button type="button" class="button button-ghost" aria-disabled={busy() ? "true" : undefined} onClick={(e) => void answer(e, p().id, "decline")}>
+                <button type="button" class="button button-ghost" aria-disabled={inert() ? "true" : undefined} onClick={(e) => void answer(e, p().id, "decline")}>
                   Decline
                 </button>
-                <button type="button" class="button button-primary" aria-disabled={busy() ? "true" : undefined} onClick={(e) => void answer(e, p().id, "confirm")}>
+                <button type="button" class="button button-primary" aria-disabled={inert() ? "true" : undefined} onClick={(e) => void answer(e, p().id, "confirm")}>
                   {busy() ? "Applying…" : text().action}
                 </button>
               </div>

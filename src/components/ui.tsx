@@ -233,8 +233,9 @@ export function GlobalRegions() {
   );
 }
 
-/** Keeps Tab inside `root` and returns focus to whatever was focused before, on cleanup. */
-export function trapFocus(root: HTMLElement) {
+/** Keeps Tab inside `root` and returns focus to whatever was focused before, on cleanup. It focuses the first control,
+    or with `focus: "root"` the dialog itself, so a key press meant for the page behind it presses nothing. */
+export function trapFocus(root: HTMLElement, opts: { focus?: "first" | "root" } = {}) {
   const opener = document.activeElement as HTMLElement | null;
   const focusables = () => [...root.querySelectorAll<HTMLElement>("button, input, textarea, select, [href], [tabindex]:not([tabindex='-1'])")].filter(
     (el) => !el.hasAttribute("disabled") && el.tabIndex >= 0 && el.offsetParent !== null,
@@ -242,7 +243,7 @@ export function trapFocus(root: HTMLElement) {
   const previousTabIndex = root.getAttribute("tabindex");
   if (previousTabIndex === null) root.tabIndex = -1;
   queueMicrotask(() => {
-    if (root.isConnected && !root.contains(document.activeElement)) (focusables()[0] ?? root).focus();
+    if (root.isConnected && !root.contains(document.activeElement)) ((opts.focus === "root" ? null : focusables()[0]) ?? root).focus();
   });
   const onKey = (e: KeyboardEvent) => {
     if (e.key !== "Tab") return;

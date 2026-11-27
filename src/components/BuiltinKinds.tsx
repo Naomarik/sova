@@ -21,6 +21,7 @@ import type { TourCardDetails } from "../../shared/tour";
 import type { DesignCardDetails } from "../lib/design-rows";
 import { DesignCard } from "./DesignCard";
 import { OwnerRequestNote } from "./OwnerRequestNote";
+import { TransportAgentCard } from "./TransportAgentCard";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
 import type { McpNote } from "../../shared/mcp";
@@ -60,6 +61,7 @@ export const BUILTIN_VIEWS = {
   design: (props: KindViewProps<DesignCardDetails>) => <DesignCard runId={props.value.runId} />,
   // An owner request a Start Chat put at the top (§app.project-assistant/request-chat).
   "owner-request": (props: KindViewProps<NonNullable<TranscriptItem["ownerRequest"]>>) => <OwnerRequestNote card={props.value} />,
+  "transport-agent": (props: KindViewProps<NonNullable<TranscriptItem["transportAgent"]>>) => <TransportAgentCard card={props.value} />,
   "handoff-run": (props: KindViewProps<HandoffRunInfo>) => <HandoffRunRow run={props.value} text={props.item.text ?? ""} />,
   "mcp-note": (props: KindViewProps<McpNote>) => <McpNoteRow note={props.value} />,
   "approval-pending": (props: KindViewProps<NonNullable<TranscriptItem["approvalPending"]>>) => <ApprovalPendingRow item={props.value} text={props.item.text ?? ""} path={props.limitPath} />,

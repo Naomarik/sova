@@ -7,10 +7,11 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { dirname, join } from "node:path";
 import { approvalOf, approvedIds, codeReadingOf, entryHash, forgetApproval, forgetCodeReading, migrateTrust, recordApproval, setCodeReading, versionOf, type ExtensionApproval } from "./extension-gate";
 import { codeFoldersOf, codeHash, codeHashNow, codeSig, codeSigNow } from "./extension-fingerprint";
-import type { ExtensionInspect, ExtensionReview } from "../shared/extension-loader";
+import { readsChats, type ExtensionInspect, type ExtensionReview } from "../shared/extension-loader";
 import { asksOf, readDescription } from "./extension-description";
 import { extensionKeys, realClock, SYNC_MS, wakeExtensionKeys } from "./extension-keys";
 import { clearHealthOf, contractWords, extensionsFile, listedExtension, listedExtensions, tellPeersOfExtensions, validExtensionId, type ListedExtension } from "./extensions";
+import { chatsDirForExtensions, removeExtensionFolders } from "./extension-chats";
 import { extensionDataDir, freePort, ProgramNotFound, programStatus, programUnits, startProgram, stopProgram } from "./extension-program";
 import { releaseViewWaiters } from "./card-views";
 import { cardOwnersChanged, closeCardsOfExtension, setCardsTrusted } from "./transcript-cards";
@@ -152,7 +153,8 @@ async function startNow(raw: Record<string, unknown>, restart: boolean, you: boo
   }
   noteStart(id);
   try {
-    await startProgram({ id, run: raw.run as string[], folder: raw.folder as string, api: raw.api as string });
+    const chatsDir = readsChats(raw) ? chatsDirForExtensions() : null;
+    await startProgram({ id, run: raw.run as string[], folder: raw.folder as string, api: raw.api as string, ...(chatsDir ? { chatsDir } : {}) });
     notFound.delete(id);
   } catch (err) {
     if (!(err instanceof ProgramNotFound)) throw err;
@@ -351,7 +353,10 @@ async function forget(id: string, deleteData = false): Promise<void> {
   if (!real) return;
   setCardsTrusted(`ext:${id}`, false);
   closeCardsOfExtension(id);
-  if (deleteData) rmSync(extensionDataDir(id), { recursive: true, force: true });
+  if (deleteData) {
+    rmSync(extensionDataDir(id), { recursive: true, force: true });
+    removeExtensionFolders(id);
+  }
 }
 
 /** Remove. `key`: an id, or `~<place>` for a dropped entry with none. The folder is never touched. */
@@ -393,11 +398,37 @@ const noteStart = (id: string) => {
 export const programStartedAt = (id: string): number | undefined => startedAt.get(id);
 export const programNotFound = (id: string): string | undefined => notFound.get(id);
 
+/** Programs that read chats, stopped for a Chats folder move (§app.chat-homes/chats-folder): none starts until released. */
+const heldForMove = new Set<string>();
+
+/**
+ * A Chats folder move: every program that reads chats (it was handed the homes folder as SOVA_CHATS_DIR) stops and
+ * stays stopped until releaseChatReaders. Resolves to their ids.
+ */
+export async function holdChatReaders(): Promise<string[]> {
+  const ids: string[] = [];
+  for (const l of listedExtensions() ?? []) {
+    if (!l.valid || !hasRun(l.raw) || !readsChats(l.raw)) continue;
+    const id = l.valid.entry.id;
+    heldForMove.add(id);
+    ids.push(id);
+    await stopIfRunning(id).catch((err: unknown) => console.warn(`[extensions] ${id}: stop for the chats folder move failed: ${(err as Error).message}`));
+  }
+  return ids;
+}
+
+/** After the move (or its cancel): the held programs start again, each handed the homes folder in force now. */
+export async function releaseChatReaders(): Promise<void> {
+  const ids = [...heldForMove];
+  heldForMove.clear();
+  for (const id of ids) await watchProgram(id);
+}
+
 /** One failed program, while what it runs is what you approved. Read again in its turn: a stop may have come first. */
 const watchProgram = (id: string): Promise<void> =>
   oneAtATime(id, async () => {
     const l = listedExtension(id);
-    if (!l || l.state !== "on" || !hasRun(l.raw) || typeof l.raw.api !== "string" || stopped.has(id) || notFound.has(id)) return;
+    if (!l || l.state !== "on" || !hasRun(l.raw) || typeof l.raw.api !== "string" || stopped.has(id) || notFound.has(id) || heldForMove.has(id)) return;
     const st = await programStatus(id);
     if (st.state === "active" || st.state === "activating") return;
     const recent = (recentStarts.get(id) ?? []).filter((t) => Date.now() - t < START_WINDOW_MS);

@@ -13,7 +13,7 @@
 // drains a backlog, while the callbacks fire as the bytes leave, on both runtimes.
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { type GapFrame, WITH_COMMANDS } from "../shared/events";
+import { type GapFrame, ONLY_HOSTED, WITH_COMMANDS } from "../shared/events";
 import { cursorOf, type Entry, type EventHub, eventHub } from "./events";
 import { cappedWebSocketServer } from "./runtime-quirks";
 
@@ -200,7 +200,9 @@ export function serveEvents(ws: EventsSocket, search: URLSearchParams, hub: Even
   // `?with=command.ran` adds the command frames (§app.command-audit/record); any other `with` is
   // ignored, so every socket that connects today connects the same way.
   const commands = search.get("with") === WITH_COMMANDS;
-  const sub = hub.subscribe({ deliver: (e) => outbox.push(e), ...(commands ? { commands: true as const } : {}) }, c.cursor);
+  // `?only=hosted`: only the events Sova raises itself; it never holds the session feed (§app.events/idle).
+  const hostedOnly = search.get("only") === ONLY_HOSTED;
+  const sub = hub.subscribe({ deliver: (e) => outbox.push(e), ...(commands ? { commands: true as const } : {}), ...(hostedOnly ? { hostedOnly: true as const } : {}) }, c.cursor);
   if ("error" in sub) return refuse(sub.error);
   outbox.direct(sub.hello);
   outbox.replay(sub.replay);

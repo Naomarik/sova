@@ -1,7 +1,7 @@
 import { CREATE_NOT_SENT, createNotNamed } from "../shared/profiles";
 import { typedMajorMode } from "./mode-state";
 import { statSync } from "node:fs";
-import { acquireChatHandle } from "./chat-handle";
+import { acquireChatHandle, chatStartRefusal } from "./chat-handle";
 import { readOverseerState } from "./overseer-store";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { getSessionSummary, idOf, indexedSessionPaths, listSessionFiles } from "./sessions-index";
@@ -94,6 +94,9 @@ export async function promptSession(
   if (s.baton) return { ok: false, status: 409, error: "That is a baton session: only its participants write in it." };
   if (fromExtension && queueChatRole(s.profile)) return { ok: false, status: 409, error: EXTENSION_CARD_DOORS.sendToQueueChat };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
+  // A chat that moved away (its Moved row is archived), or is in a Move's switch, says where (§app.transport/switch).
+  const moving = chatStartRefusal(path);
+  if (moving) return { ok: false, status: 409, error: moving };
   // An archived chat starts for no message (§chat.transcript/instant-open, "An archived chat").
   if (s.archived) return { ok: false, status: 409, error: ARCHIVED_REFUSAL };
   let chat;

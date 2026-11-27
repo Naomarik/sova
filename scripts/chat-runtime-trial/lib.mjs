@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket } from "ws";
 import { ancestors, darwin, table, withEnv } from "./procs.mjs";
@@ -149,13 +149,16 @@ export async function startMock({ port, log, step }) {
 /** The mock's log as records. */
 export const mockLog = (file) => (existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 
+/** The trial's chat homes (server/chat-homes/root.ts): beside the scratch agent dir, never in it, never real state. */
+export const homesOf = (agent) => join(dirname(agent), "chat-homes");
+
 /** The server's environment: the scratch agent dir, the knobs, and nothing that names a real login
     or key (only the mock, or an auth.json copied in, may answer). `driver`:
     "detached" or "systemd" (then `slice` is the stand-in slice); `idleMs`, `build`, `failBoot`. */
 export function serverEnv({ agent, port, driver, slice, idleMs, build, failBoot, claude, extra = {} }) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("CLAUDE") && !/_API_KEY$|_AUTH_TOKEN$/.test(k) && !k.startsWith("SOVA_")));
   // No network: no price fetch, no usage poll (it would ask Claude with whatever login it finds).
-  Object.assign(env, { PORT: String(port), PI_CODING_AGENT_DIR: agent, SOVA_PRICES_FETCH: "off", SOVA_USAGE_POLL: "off" });
+  Object.assign(env, { PORT: String(port), PI_CODING_AGENT_DIR: agent, SOVA_CHAT_HOMES: homesOf(agent), SOVA_PRICES_FETCH: "off", SOVA_USAGE_POLL: "off" });
   // `claude`: fakeClaude()'s dirs: the fake first on PATH, its login as the default one.
   if (claude) Object.assign(env, { PATH: `${claude.claudeBin}:${env.PATH ?? ""}`, CLAUDE_CONFIG_DIR: claude.claudeLogin });
   if (driver === "detached") env[KNOBS.driver] = "detached";

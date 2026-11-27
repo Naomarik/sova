@@ -668,6 +668,7 @@ export const SESSION_ENTRIES: CommandEntry[] = [
       "min-age-days": { type: "integer", description: "With age: 7 or 30", in: "body", key: "minAgeDays" },
       paths: { type: "list", description: "With paths: archived session paths, comma-separated (at most 100)", in: "body" },
       "dry-run": { type: "boolean", description: "Only list what would be deleted", in: "body", key: "dryRun" },
+      action: { type: "string", description: "delete (the default) or compress: compress the archived ones instead", in: "body", enum: ["delete", "compress"] },
     },
     route: { method: "POST", path: "/api/sessions/cleanup" },
     sessionKey: null,

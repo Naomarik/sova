@@ -5,6 +5,7 @@
 // lifecycle events numbered per runtime; browser frames passed through. Today the chat runs in this
 // process: a call runs the chat's method at once (its guards run at the moment of the call, exactly
 // as a direct call did) and its answer comes back as a reply.
+import { COMPRESSED_REFUSAL, compressedAt } from "./archive-compress/store";
 import type { ProfileSwitchTarget } from "../shared/profile-switch";
 import { createSettingsTool } from "./create-settings-tool";
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -87,6 +88,8 @@ import { describerTools } from "./design/describe";
 import { sessionOfferTools } from "./session-offers-tool";
 import { offerNoteFor } from "./session-offers";
 import { sessionCardTools } from "./transcript-cards-tool";
+import { agentTidOf } from "./transport/agent-scope";
+import { transportSetupTool } from "./transport/agent-tool";
 import { cardNoteFor } from "./transcript-cards";
 import { withMergeCardNote } from "./merge-queue/card-note";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
@@ -119,6 +122,8 @@ export {
   warmChatRuntime,
 } from "./chat-manager";
 import { fetchSessionTimings } from "./reply-facts";
+import { moveHold } from "./chat-homes/move-root";
+import { rebaseHomePath } from "./chat-homes/root";
 
 export { failureReply, refusalOf };
 
@@ -462,10 +467,25 @@ export type { SessionMarks, SpecialKind } from "./chat-manager";
  * Get (or open) the chat for a session file. Refused (BusyError) when a TUI owns it, or unless
  * `force`, when another process may be writing it; ConfigError when it can't be opened at all.
  */
-export async function acquireChatHandle(path: string, force = false): Promise<ChatHandle> {
+let startGuard: ((path: string) => string | null) | null = null;
+/** Transport's say on starting a chat (§app.transport/switch): a Moved chat, or one in a Move's switch, starts nowhere here. */
+export const setChatStartGuard = (fn: ((path: string) => string | null) | null): void => void (startGuard = fn);
+/** Why the chat at `path` starts nowhere here (Transport's guard), or null. */
+export const chatStartRefusal = (path: string): string | null => startGuard?.(path) ?? null;
+
+export async function acquireChatHandle(at: string, force = false): Promise<ChatHandle> {
+  // A path under the folder the chats were in before a Chats folder move (a wake record, a crash marker, a share) opens
+  // the chat where it is now, never its file left in the old folder (§app.chat-homes/chats-folder).
+  const path = rebaseHomePath(at);
   // The server's router: every chat in a process of its own (it waits for the chat's own take-back,
   // if a previous server left it running).
   if (!router) throw new Error("no chat router: the server hosts no chat in its process");
+  // A compressed chat never starts (§app.session-list/archive-compression): its file is gone, and a start would make an empty one.
+  if (compressedAt(path)) throw new Error(COMPRESSED_REFUSAL);
+  // A Chats folder move holds every chat until its switch (§app.chat-homes/chats-folder).
+  const why = moveHold() ?? startGuard?.(path);
+  // Read only, as an archived chat is: a pane keeps its rows and is told closed; a request answers 409 with the reason.
+  if (why) throw Object.assign(new ArchivedError(), { message: why });
   return router.acquire(path, force);
 }
 
@@ -762,8 +782,9 @@ export function servedCoordinatorTools(chatId: ChatId, parentSessionId: string):
 export async function servedToolsForChat(chatId: ChatId, sessionId: string, known: () => string | undefined, kind: string | null): Promise<ServerToolDecl[]> {
   const decls = servedToolsFor(chatId, sessionId, known, kind === "powers", kind === null);
   if (kind !== null && kind !== "powers") return decls;
-  // Then its `card` tool when its snapshot has a type the agent may raise (§chat.transcript-cards/card-tool).
-  const extra = [...(await sessionOfferTools(sessionId, chatId)), ...(await sessionCardTools(sessionId, chatId))];
+  // Then its `card` tool when its snapshot has a type the agent may raise (§chat.transcript-cards/card-tool), and a
+  // Transport agent's own `transport_setup` (§app.transport/agent), for that chat only.
+  const extra = [...(await sessionOfferTools(sessionId, chatId)), ...(await sessionCardTools(sessionId, chatId)), ...(kind === null && agentTidOf(stateRoot(), sessionId, chatId) ? [transportSetupTool(sessionId)] : [])];
   if (!extra.length) return decls;
   serveTools(chatId, extra);
   return [...decls, ...extra.map(declOfTool)];

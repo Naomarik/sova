@@ -94,7 +94,8 @@ test("a Claude Code worker a chat started: its read's result reaches its model w
   assert.match(parent.reply, /Started 1 background/, parent.reply);
   let reply = "";
   for (const end = Date.now() + 60_000; Date.now() < end && !reply; await sleep(250)) {
-    const files = execFileSync("grep", ["-rl", "--include=*.jsonl", "deep/d.txt", join(s.agentDir, "sessions")], { encoding: "utf8" }).split("\n").filter((f) => f && f !== parent.path);
+    // A worker's file is in pi's folder, or beside its parent in the parent's chat home (§app.chat-homes/new-chats).
+    const files = execFileSync("grep", ["-rl", "--include=*.jsonl", "deep/d.txt", join(s.agentDir, "sessions"), dirname(parent.path)], { encoding: "utf8" }).split("\n").filter((f) => f && f !== parent.path);
     for (const f of files) {
       const said1 = said(lastReply(f));
       if (said1.startsWith("Fake tool result")) reply = said1;

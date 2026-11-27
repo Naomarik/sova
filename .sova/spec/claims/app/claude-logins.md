@@ -173,7 +173,32 @@ starts again — after a restart, a model change, a rewind — it keeps its curr
 recorded) login while that login is still usable, else it takes the first usable one, and says so
 (§app.claude-logins/login-moved). When no
 login is usable, it keeps that login, else the order's first: that is how it behaved before, and
-the failure it meets is the one it would have met.
+the failure it meets is the one it would have met. A new chat's entries name logins by id only (§app.claude-logins/login-ids).
+
+## §app.claude-logins/login-ids — A new chat's login entries hold no email
+
+A new Claude Code chat's hidden `claude-login` entries (§app.claude-logins/spawn-selection) name
+each login only by its id (`login`, and `from` on a switch). They hold no email, label, name or
+note text that names a login. So a chat's conversation file, which its home keeps and other
+devices may one day read (§app/chat-homes), carries no account's email.
+
+- **What an entry keeps.** The login ids, the reason (`limit`, `auth`, `manual` or `moved`, with
+  which of the moved cases it was) and the time a limit resets, enough to word the note again. A
+  chat moved off its project's or organization's login (§app.claude-logins/project-login) also keeps
+  whose login it was and that project's or organization's display name, so the note can name it; an
+  entry never keeps a login's label or email. Each entry also keeps the id of the device that wrote
+  it (its registry id, never a name), so a chat that moved here can tell (§app.claude-logins/login-moved).
+- **Each device names them itself.** The note row in the chat, and the notification in a TUI, are
+  worded where they are shown, from that device's own list of logins and the mesh pool's
+  (§app.claude-logins/registry). Each login appears under the name the device's notices give it:
+  its label, else its email, else its id. A login that device doesn't know reads "a login not on
+  this device". The words are otherwise the ones the switch notes already use
+  (§app.claude-logins/failover, §app.claude-logins/login-moved, §app.claude-logins/switch-login).
+- **Which chats.** Every Claude Code chat started from now on, its workers included, whether it
+  gets a home (§app.chat-homes/new-chats) or not. An older chat keeps writing and showing its entries as today: its existing entries keep the
+  labels and text they hold, and Sova never rewrites them.
+- **Which login a chat is on** is still read from its newest entry's `login`
+  (§app.claude-logins/active-login), so nothing else changes.
 
 ## §app.claude-logins/failover — Moving to the next login on a limit or a failed sign-in
 
@@ -279,10 +304,13 @@ removed, was turned off, or is limited or needs sign-in — the chat does not ch
 the mesh on, if that login is free at the keeper and ready, this device first borrows it back by
 name, once (§app.claude-logins/borrow-return); when that works the chat stays on it and nothing is
 shown. Otherwise the child starts on the next usable login (§app.claude-logins/spawn-selection) and
-the session gets a `claude-login` entry with `reason: "moved"`, `from`, `fromLabel` and the text
+the session gets a `claude-login` entry with `reason: "moved"`, `from` (and, in a chat from before
+login ids, `fromLabel`, §app.claude-logins/login-ids) and the text
 `Claude: switched {from} → {to} ({from} {left this device | returned to the keeper | was removed |
 is off in Settings → Accounts | is limited until {time} | needs sign-in})`; the chat shows it as a note row and a TUI as a
-notification, like a failover's. A limit or failed sign-in met in a turn keeps its own note
+notification, like a failover's. In a chat whose newest entry another device wrote (it moved here, §app.transport), a
+login that would read as left, removed or returned to the keeper reads `{from} is not usable on this device`
+instead, since it never left from here; an entry that names no device keeps the words above. A limit or failed sign-in met in a turn keeps its own note
 (§app.claude-logins/failover); a pick keeps `reason: "manual"` (§app.claude-logins/switch-login);
 a chat that starts off its project's login gets a note of its own (§app.claude-logins/project-login).
 The chat does not go back by itself when its old login is free again.
@@ -307,7 +335,8 @@ chat to another Claude login at any time.
 - **A pick.** The chat moves to that login now: its idle Claude Code process stops, and its next
   turn starts one on the picked login the way a model change restarts it (the history folded into
   one message, so that turn has no prompt cache). The session gets a `claude-login` entry with
-  `reason: "manual"`, `from`, `fromLabel` and the text `Claude: switched {from} → {to} (chosen by
+  `reason: "manual"`, `from` (and, in a chat from before login ids, `fromLabel`,
+  §app.claude-logins/login-ids) and the text `Claude: switched {from} → {to} (chosen by
   you)`; the chat shows it as a note row and the label moves at once. Before the chat's first
   message the note waits (§chat.transcript/states): the empty screen stays and the composer's
   label carries the pick. A chat that has no Claude

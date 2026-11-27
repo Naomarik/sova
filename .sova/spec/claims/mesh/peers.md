@@ -144,6 +144,16 @@ list, which says "Hidden by {host}" when filtered to it; the host menu says "hid
 New Session's Host choice disables it. The Mesh page shows, for each peer, what this host can
 see there, as learned from that peer's answers, never from anything the peer claims.
 
+## §mesh.peers/transport-ticket — A transport ticket, the one exception to grants
+
+A transport ticket (§app.transport/start) is the one thing that lets a peer fetch from this host
+what its grant doesn't cover. It lets the one device it names fetch the one chat it was minted for,
+and only that chat's package. It works once, until that package is verified, the transport is
+cancelled, or it fails for good. Only your own click on this host's page mints one
+(§app.access/your-click). A peer can't raise its grant with it, and it opens nothing else: no list,
+no transcript, no socket. The route it reaches belongs to no grant, and every other request from
+that peer is judged by its grant as before (§mesh.peers/grants).
+
 ## §mesh.peers/remote-commands — Running a command on a peer
 
 A script on this host runs a catalogue command on a peer with `sova run <id> --host

@@ -75,8 +75,8 @@ describe("cursor and resume", () => {
     f.chat("/s/a.jsonl", "closed");
     f.chat("/s/a.jsonl", "settled");
     assert.deepEqual(a.got, [
-      { type: "event", seq: 2, at: 42, name: "turn.started", source: "hosted", id: "a", path: "/s/a.jsonl" },
-      { type: "event", seq: 3, at: 42, name: "turn.ended", source: "hosted", id: "a", path: "/s/a.jsonl" },
+      { type: "event", seq: 2, at: 42, name: "turn.started", source: "hosted", id: "a", path: "/s/a.jsonl", chat: "a" },
+      { type: "event", seq: 3, at: 42, name: "turn.ended", source: "hosted", id: "a", path: "/s/a.jsonl", chat: "a" },
     ]);
     hub.close();
   });
@@ -197,7 +197,7 @@ describe("observed events", () => {
     hub.seeList([row("a"), row("b"), row("c")]);
     assert.equal(a.got.length, 0, "baseline only");
     hub.seeList([row("a", { title: "A" }), row("b", { tags: { user: ["x"] } }), row("d"), row("c", { archived: true })]);
-    const at = (id: string) => ({ id, path: `/s/${id}.jsonl`, source: "observed" });
+    const at = (id: string) => ({ id, path: `/s/${id}.jsonl`, source: "observed", chat: id });
     assert.deepEqual(a.got, [
       { type: "event", seq: 2, at: 1, name: "session.renamed", ...at("a"), from: "a", title: "A" },
       { type: "event", seq: 3, at: 1, name: "session.tagged", ...at("b"), tags: { user: ["x"] } },
@@ -321,7 +321,7 @@ describe("card news (§app.events/card-news)", () => {
     assert.equal(fns.size, 1);
     for (const fn of fns) fn(news);
     const frame = JSON.parse(got.at(-1)!.json) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(frame).sort(), ["at", "card", "cardType", "id", "name", "path", "seq", "source", "type"]);
+    assert.deepEqual(Object.keys(frame).sort(), ["at", "card", "cardType", "chat", "id", "name", "path", "seq", "source", "type"]);
     assert.equal(frame.name, "card.answered");
     assert.equal(frame.source, "hosted");
     if ("leave" in sub) sub.leave();
@@ -329,5 +329,56 @@ describe("card news (§app.events/card-news)", () => {
   });
   test("sova watch prints nothing for them", () => {
     for (const name of ["card.raised", "card.changed", "card.answered"]) assert.equal(fromStreamFrame({ type: "event", seq: 1, name, id: "s", path: "/p" }, "st"), null, name);
+  });
+});
+
+describe("a chat's events (§app.events/names, §app.events/idle)", () => {
+  test("a session's event names its top-level chat: a worker's names its parent's; chat news is recorded while someone listens", () => {
+    const news = new Set<(n: { name: "chat.created" | "chat.removed"; chat: string; home?: string }) => void>();
+    const f = sources({ chatOf: (id) => (id === "w1" ? "lead" : id), onChatNews: (fn) => (news.add(fn), () => news.delete(fn)) });
+    const hub = new EventHub(f.s, { now: () => 7 });
+    assert.equal(news.size, 0, "asleep: no listener");
+    const a = subscribed(hub);
+    f.chat("/s/w1.jsonl", "started");
+    f.chat("/s/lead.jsonl", "settled");
+    news.forEach((fn) => fn({ name: "chat.created", chat: "lead", home: "/homes/lead" }));
+    news.forEach((fn) => fn({ name: "chat.removed", chat: "old" }));
+    assert.deepEqual(a.got, [
+      { type: "event", seq: 2, at: 7, name: "turn.started", source: "hosted", id: "w1", path: "/s/w1.jsonl", chat: "lead" },
+      { type: "event", seq: 3, at: 7, name: "turn.ended", source: "hosted", id: "lead", path: "/s/lead.jsonl", chat: "lead" },
+      { type: "event", seq: 4, at: 7, name: "chat.created", source: "hosted", chat: "lead", home: "/homes/lead" },
+      { type: "event", seq: 5, at: 7, name: "chat.removed", source: "hosted", chat: "old" },
+    ]);
+    hub.close();
+    assert.equal(news.size, 0);
+  });
+
+  test("?only=hosted never holds the session feed and never gets an observed event; a full subscriber still does", async () => {
+    const f = sources();
+    const hub = new EventHub(f.s, { lingerMs: 20 });
+    const h = hub.subscribe({ ...collector().sub, hostedOnly: true }, null);
+    if ("error" in h) throw new Error(h.error);
+    const hosted: EventsServerFrame[] = [];
+    const h2 = hub.subscribe({ deliver: (e) => hosted.push(JSON.parse(e.json)), hostedOnly: true }, null);
+    if ("error" in h2) throw new Error(h2.error);
+    assert.equal(f.feedHolds(), 0, "a hosted-only subscriber holds no feed");
+    hub.seeList([row("a")]);
+    hub.seeList([row("a"), row("b")]);
+    f.chat("/s/a.jsonl", "started");
+    assert.deepEqual(hosted.map((e) => (e.type === "event" ? e.name : e.type)), ["turn.started"], "no list was compared, no observed event");
+    const full = subscribed(hub);
+    assert.equal(f.feedHolds(), 1, "a full subscriber holds it");
+    hub.seeList([row("a")]);
+    hub.seeList([row("a"), row("c")]);
+    assert.deepEqual(full.got.map((e) => (e.type === "event" ? e.name : `${e.type}:${"reason" in e ? e.reason : ""}`)), ["session.created"]);
+    assert.ok(!hosted.some((e) => e.type === "event" && "source" in e && e.source === "observed"), "the hosted-only subscriber never sees it");
+    const resumed = hub.subscribe({ ...collector().sub, hostedOnly: true }, { stream: hub.stream, since: 0 });
+    if ("error" in resumed) throw new Error(resumed.error);
+    assert.ok(!parse(resumed.replay).some((e) => e.type === "event" && "source" in e && e.source === "observed"), "nor on a resume");
+    full.leave();
+    await wait(40);
+    assert.equal(f.feedHolds(), 0, "released a linger after the last full subscriber left");
+    assert.ok(hub.running, "the hub itself stays awake for the hosted-only ones");
+    hub.close();
   });
 });

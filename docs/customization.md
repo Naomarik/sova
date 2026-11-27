@@ -202,6 +202,35 @@ moves, changes or deletes it. A folder is an extension when it holds `sova-exten
 - **An older Sova ignores `off`: after a downgrade it serves an off entry that has a `dist` and an `api`.** It also
   drops an entry with no `dist` or no `api`, on that computer's list and from what a peer shares.
 
+### Reading your chats (extension contract v1.21)
+
+An extension that syncs or studies your chats says so in its description file with `"reads": ["chats"]`, the
+only value the key takes, and `"needsContract": "1.21"`. It is a disclosure, not a wall: every program you run
+can read your files.
+
+- **The review says it** before the approve button: "Reads every chat on this computer: conversations as
+  written, titles, tags, memory, attachments and helpers' work. It never gets your unsent drafts." Changing
+  `reads` is a new version and asks again.
+- **Its program gets `SOVA_CHATS_DIR`**, this Sova's chat homes folder: one folder per chat, named by the chat's
+  id, holding its conversations (`sessions/*.jsonl`, the chat's and every helper's), its records and its
+  `shared/` folder. One that doesn't declare the key doesn't get the variable.
+- **It reads, it doesn't edit.** A chat's own records change only through Sova's routes and commands (rename,
+  tag, archive, `session.send`), as you would. It writes freely in `<SOVA_CHATS_DIR>/<chat id>/ext/<its id>/`,
+  its own folder in that chat (made by its first write; Sova never reads it), which travels with the chat and goes
+  when you delete the chat. Remove with **Also delete its data** also clears that folder from every chat.
+- **Never the unsent draft.** No route, command, event or answer its key reaches includes what you have typed
+  and not sent: `GET /api/sessions/draft` refuses it, and a list row's draft preview is left out.
+- **Events instead of watching files.** On `/ws/events` every session and card event also carries `chat`, its
+  top-level chat's id (a worker's or team member's turn names its parent chat), and `chat.created` (with `home`,
+  its folder) and `chat.removed` say when a chat comes and goes. Open the socket with `?only=hosted` to hear only
+  what Sova raises itself (turns of the chats it runs, cards, `chat.*`, `attention.changed`): such a socket
+  never keeps the session list's reader running, so it costs nothing while no chat works. Its `seq` skips the
+  observed events it doesn't get, with no `gap`.
+- **A chat's usage on request.** `GET /api/chats/<chat id>/usage` (`sova run chat.usage --chat <id>`) answers one
+  row per conversation (the chat, then each worker and team member) with its spend and tokens by model and its
+  agent time, plus your time and the time it waited for you on the chat's own row, and a total. It is read from
+  this computer's stores each time; nothing is copied into the chat.
+
 ### The list
 
 Everything above writes one entry in `~/.pi/agent/sova/extensions.json` (set `SOVA_EXTENSIONS_FILE` to use another
@@ -456,7 +485,7 @@ never on a later poll, and draws what you answer as data:
   after 3 in a row Sova stops asking until the page reloads. The user can hide the line from your
   page (`Hide on Home Card`). While your backend is down, Sova doesn't ask.
 
-**Labels on a chat** (extension contract v1.21). Your backend may keep a few short labels of its own on
+**Labels on a chat** (extension contract v1.22). Your backend may keep a few short labels of its own on
 any chat on this computer, such as who owns it, and read them back. They are kept beside the chat
 (`<state root>/session-labels.json`), never in its file, and nothing reaches the model. Only your key sets
 them, and only under your own extension's id: Sova's token, a page and a linked computer are refused (403).
@@ -485,7 +514,7 @@ GET /api/sessions/labels                   → { "sessions": { "<session id>": {
   extension sees no change from a server whose extension labels its chats. Sova's own page names a pair
   only while a list declaration (below) names its owner label.
 
-**The session list's people** (extension contract v1.21). With `"screens": ["list"]`, your backend
+**The session list's people** (extension contract v1.22). With `"screens": ["list"]`, your backend
 says who the people in the list are, and which of your labels on a chat (`POST /api/sessions/labels`)
 names its owner. From that, Sova draws two things of its own: a person menu in the sessions pane's
 foot, beside the host menu, with Everyone first, which narrows the list to one person's chats the way
@@ -531,7 +560,7 @@ most 64 KB of JSON:
   answers in a row Sova stops asking until the page reloads. The user can turn the people off from
   your extension's page (`Hide People in Session List`).
 
-**Who started a chat and who typed each message** (extension contract v1.21). With `"records": ["senders"]`
+**Who started a chat and who typed each message** (extension contract v1.22). With `"records": ["senders"]`
 (the review says so under **Records**), Sova records, while your extension is on, who started each chat it
 makes and who typed each message sent into a chat on this computer. A caller is `peer:<node id>` for a linked
 computer (its mesh node identity, which a rename doesn't change; a page on that computer typing through its

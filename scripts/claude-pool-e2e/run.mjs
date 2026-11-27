@@ -273,7 +273,7 @@ async function main() {
   const a2 = await waitAnswer("vps", chat, 2);
   check(a2.includes(beta.id), `the same turn answered on beta, skipping gamma (same account): "${a2}"`);
   const sw = loginEntries("vps", chat).find((e) => e.from === alpha.id);
-  check(sw && sw.reason === "limit" && /switched/.test(sw.text ?? ""), `the chat records the switch: "${sw?.text}"`);
+  check(sw && sw.reason === "limit" && sw.text === undefined && !JSON.stringify(sw).includes("@"), `the chat records the switch by login id, with no email: ${JSON.stringify(sw)}`);
   await waitFor("alpha back at the keeper", async () => !hasCreds("vps", alpha.id) && hasCreds("desk", alpha.id), 60_000);
   const pAlpha = (await pool("desk")).logins.find((l) => l.id === alpha.id);
   check(pAlpha.holder.free && pAlpha.standing.state === "limited", "alpha is free at desk, limited until its reset");

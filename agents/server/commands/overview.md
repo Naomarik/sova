@@ -80,7 +80,7 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
   link). The pane (`Sidebar.tsx`) runs the one lane and hands it to every row through
   `RowPlaceContext`.
 - The list place, `list`, a declaration about the whole list (`§app.extensions/list-place`, contract
-  v1.21): `src/lib/list-place.ts` (the validator: people with 2 letters and callers, the owner label
+  v1.22): `src/lib/list-place.ts` (the validator: people with 2 letters and callers, the owner label
   key, you; the lane, `createPlaceAnswers` in `row-place.ts` with the row place's pacing, timeout and
   mute, its own switch under `LIST_OFF_KEY`; the first good declaration wins; it alone says which
   label pair the row reads carry, `src/lib/labels-ask.ts`, kept per browser under `sova:labels-read`

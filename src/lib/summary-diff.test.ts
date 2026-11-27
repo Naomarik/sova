@@ -29,6 +29,8 @@ const full = (): Required<SessionSummary> => ({
   jobsRunning: 1,
   origin: "web",
   archived: false,
+  compressed: true,
+  moved: { to: "b", peer: "b", tid: "tr_x", at: "2026-01-01T00:00:00Z" },
   align: { openDocs: 2, openQuestions: 3, questionDocs: 1, lead: { id: "al_1", title: "Export" } },
   groupId: "g",
   parent: "/s/p.jsonl",

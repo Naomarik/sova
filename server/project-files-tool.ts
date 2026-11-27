@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import type { ProjectFileRow } from "../shared/project-files";
 import { bytesHere, bytesPath, dedupeName, deleteFile, FileRefusal, fileOf, fileRows, sizeWords } from "./project-files";
 import { stateRoot } from "./state-root";
+import { isHomeOwnState } from "./chat-homes/root";
 
 /**
  * The project overseer's `sova_files` (§app.project-overseer/files): list the files people sent
@@ -96,6 +97,8 @@ export async function copyIntoWorktree(projectId: string, id: string, sessionId:
     }
     if (within(r, target)) throw new FileRefusal(409, "refused", "That place is Sova's own: nothing was copied.");
   }
+  // A chat home outside its shared/ is Sova's own too (§app.chat-homes/sole-writer).
+  if (isHomeOwnState(target)) throw new FileRefusal(409, "refused", "That place is Sova's own: nothing was copied.");
   if (copySandbox) {
     const why = await copySandbox(sessionId, target);
     if (why) throw new FileRefusal(409, "refused", `That session's sandbox would refuse the write (${why}): nothing was copied.`);

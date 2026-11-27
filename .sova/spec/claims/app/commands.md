@@ -51,7 +51,7 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.update`, `project.archive`, `project.unarchive`, `project.preview.off`,
   `project.worktree.list`, `project.worktree.merge`, `project.worktree.remove`,
   `project.files.list`, `project.costs`, `targets.list`, `folders.list`, `cwds.list`, `files.list`,
-  `models.favorite`, `usage.costs`, `usage.performance`, `usage.today`, `usage.session`,
+  `models.favorite`, `usage.costs`, `usage.performance`, `usage.today`, `usage.session`, `chat.usage`,
   `usage.sessions`, `usage.prices`, `usage.prices.refresh`, `insights.usage`,
   `insights.usage.history`, `insights.agents`, `insights.worktrees`, `insights.session.workers`,
   `insights.session.inbox`,
@@ -88,6 +88,9 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   Stop Dry Run (§app.merge-queue/dry-runs), `project.merge-queue.fix` and `project.merge-queue.fix.new-chat`
   Fix and Fix in New Chat (§app.merge-queue/fix), and `project.verb.merge.stop-try` the verb
   `merge.stop-try`, the stop verb (§app.project-services/merge-verbs).
+  `chats-folder.get`, `chats-folder.preview`, `chats-folder.move` and `chats-folder.cancel` are the
+  Chats folder row, its dialog's preview, Move Chats and Cancel Move (§app.chat-homes/chats-folder);
+  the move and its cancel pass only on your own click (§app.access/your-click).
   `attention.dismiss` and `attention.undismiss` are Needs you's Dismiss and its Undo
   (§app.session-list/needs-you-dismiss), `meshNeed` `full`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new

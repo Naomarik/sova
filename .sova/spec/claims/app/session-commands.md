@@ -29,7 +29,8 @@ control sends to the route named, so every answer and refusal is the route's own
 - `worker.resume` (`POST /api/workers/resume`): resume one restored subagent worker of a held chat.
 - `session.cleanup` (`POST /api/sessions/cleanup`): delete session files for good, by age (7 or 30
   days), as empty husks, or the named archived sessions; live, busy and just-written ones are
-  skipped, and a dry run only lists what would go.
+  skipped, and a dry run only lists what would go. With `action: "compress"` it compresses the
+  archived sessions of that range or those paths instead (§app.session-list/archive-cleanup).
 - `session.title.auto` (`POST /api/sessions/auto-title`): name the given sessions with the title
   model, as Auto-title does; with redo, replace one session's title.
 - `session.title.shorten` (`POST /api/sessions/shorten-titles`): rename this host's long generated

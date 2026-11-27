@@ -618,6 +618,29 @@ export class Queries {
     };
   }
 
+  /** One conversation's own calls (no worker's), summed and by model (§app.extensions/chat-usage). */
+  ownSpend(sid: string): { spend: UsageSpend; models: UsageModelRow[] } {
+    const acc = new Acc();
+    const models = new Map<string, { provider: string; model: string; asked: string | null; requested: Set<string>; acc: Acc; pricing: Pricing }>();
+    this.eachEntry(new Set([sid]), (e) => {
+      acc.merge(e.acc);
+      const m = get(models, `${e.provider}\u001f${e.model}\u001f${e.asked ?? ""}`, () => ({ provider: e.provider, model: e.model, asked: e.asked, requested: new Set<string>(), acc: new Acc(), pricing: new Pricing() }));
+      for (const r of e.requested) m.requested.add(r);
+      m.acc.merge(e.acc);
+      m.pricing.merge(e.pricing);
+    });
+    return {
+      spend: acc.spend(),
+      models: [...models.values()].map((m): UsageModelRow => ({ provider: m.provider, model: m.model, ...identity(m.model, m.asked, m.requested), ...m.acc.spend(), ...m.pricing.out(this.name) })).sort((a, b) => b.usd - a.usd),
+    };
+  }
+
+  /** The ledger's own record of a session's parent and worker id, if it has one. */
+  ownerOf(sid: string): { parent: string | null; worker: string | null } | null {
+    const o = this.ledger.owners.get(sid);
+    return o ? { parent: o.parent ?? null, worker: o.worker ?? null } : null;
+  }
+
   sessions(q: { sids: string[] }): UsageSessionsTotals {
     const out: UsageSessionsTotals["sessions"] = {};
     for (const sid of q.sids) {

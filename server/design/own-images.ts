@@ -6,7 +6,7 @@ import { createInterface } from "node:readline";
 import { DESIGN_ASSET_LIMITS, type DesignAsset, type DesignAssetSkipped } from "../../shared/design-assets";
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, relative } from "node:path";
-import { attachmentsRoot, checkTmpImage, readTmpImage } from "../attachments";
+import { attachmentsRoot, checkTmpImage, isAttachmentPath, readTmpImage } from "../attachments";
 import { chooseTourBrowser } from "../tours/browser";
 import { resolveTourContext, tourCallerBySession } from "../tours/context";
 import { sniffImage, sniffRaster } from "../tours/page-capture";
@@ -191,7 +191,7 @@ export async function readAttachedImages(paths: readonly string[], opts: { share
     const what = named(raw);
     const p = raw.trim();
     const inTmp = isAbsolute(p) && dirname(p) === "/tmp";
-    const inAttachments = inside(attachmentsRoot(), p);
+    const inAttachments = inside(attachmentsRoot(), p) || isAttachmentPath(p);
     // A sandboxed chat's /tmp is its own session tmp: a picture it saved there is read from that folder, by the same rules.
     if (opts.chatTmp && isAbsolute(p) && inside("/tmp", normalize(p))) {
       const own = join(opts.chatTmp, relative("/tmp", normalize(p)));

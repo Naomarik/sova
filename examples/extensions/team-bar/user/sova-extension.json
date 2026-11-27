@@ -4,7 +4,7 @@
   "title": "Team Bar",
   "description": "Who owns each chat: a person filter and owner avatars in the session bar (demonstration, made-up people)",
   "icon": "filter",
-  "needsContract": "1.21",
+  "needsContract": "1.22",
   "backend": { "run": ["node", "server.mjs"] },
   "screens": ["list"]
 }

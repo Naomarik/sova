@@ -21,7 +21,7 @@ export const SCREEN_PLACES = ["reply", "row", "card", "list"] as const satisfies
 export const MENU_PLACES = ["session"] as const satisfies readonly NonNullable<ExtensionCommandInfo["menu"]>[];
 export type MenuPlace = (typeof MENU_PLACES)[number];
 
-/** Everything Sova records only while an active extension's `records` names it (ext-contract-v1.21): `senders`, who
+/** Everything Sova records only while an active extension's `records` names it (ext-contract-v1.22): `senders`, who
     started each chat and who typed each message (§app.extensions/senders). An unknown name is dropped. */
 export const RECORD_KINDS = ["senders"] as const satisfies readonly RecordKind[];
 

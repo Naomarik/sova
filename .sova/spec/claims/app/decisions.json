@@ -281,7 +281,7 @@
   "§app.decisions/push": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/ws.ts",
       "server/session-feed.ts",
@@ -317,9 +317,9 @@
       "§app.decisions/list-rows"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-11-02T10:50Z",
-      "source": "pi-session:01a18cb0-f0e4-7660-9a5a-04c677298d6a#b28c43e2"
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§app.decisions/session-tags": {

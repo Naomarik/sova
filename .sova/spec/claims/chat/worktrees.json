@@ -704,7 +704,7 @@
       "§chat.worktrees/workers"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/subagents/index.ts",
       "pi-config/extensions/subagents/runner.ts",
@@ -725,8 +725,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-13T05:15Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
+      "at": "2026-11-24T11:21Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§chat/worktrees": {

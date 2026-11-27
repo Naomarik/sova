@@ -6,7 +6,7 @@ any of a built UI (a folder with an `index.html`), a program that runs on this m
 adds to Sova's screens and chats. Sova shows it as a card on the landing page and as a page at
 `#/ext/<id>`, serves its UI and forwards its API and sockets from Sova's own
 origin, and knows nothing about what it does. The host is generic: no extension is named, special
-cased or shipped by Sova. The interface is `ext-contract-v1.20`; any change to it is a version bump
+cased or shipped by Sova. The interface is `ext-contract-v1.21`; any change to it is a version bump
 agreed with the extensions built on it. v1.15 added what an extension offers (§app.extensions/offers)
 and what it adds under replies (§app.commands/reply-slot). v1.16 added each backend's own key
 (§app.extensions/backend-key), a command's `menu` key (§app.extensions/session-menu), and the `row`
@@ -22,6 +22,10 @@ narrowed what a key does: a message it sends carries its extension's name
 v1.20 added the folder and its description file (§app.extensions/folder), the list Sova writes and what you
 approve (§app.extensions/loader), the program Sova runs (§app.extensions/program), and entries with no
 page or no program. A hand-written entry still works once it is approved.
+v1.21 added the extension that reads your chats (§app.extensions/reads-chats), a chat's usage on request
+(§app.extensions/chat-usage), the `chat` field and the `chat.*` events (§app.events/names) and the socket
+that hears only what Sova raises (§app.events/idle), additions only: an extension that declares none of
+them sees no change but the `chat` field on its events.
 
 An extension is a guest with a name badge. It can hear what happens, show things, ask the user with a
 card and say things to a chat, always under its own name. It can never be the user.
@@ -331,7 +335,8 @@ operator's token (since `ext-contract-v1.16`).
   too), behind the same host and
   cross-site rules, except `/api/auth/*`, which answers `403`: a key never pairs a device, reveals the
   token or sets a cookie. It also stops at the doors that would count as the user
-  (§app.extensions/not-you), and what it sends into a chat carries its extension's name
+  (§app.extensions/not-you), it never gets a chat's unsent draft (§app.extensions/reads-chats), and what
+  it sends into a chat carries its extension's name
   (§app.extensions/name-badge). Full power includes starting a chat, so revoking a key stops the key, not
   what it already did.
 - **Where it opens nothing.** The peer listener never reads it: a peer's request is answered by the
@@ -498,7 +503,8 @@ folder stays where it is: Sova points at it and never copies, moves, changes or 
 - **What it says.** Required: `version: 1`, `id`, `title` and `needsContract`. All else is optional, so a
   folder can be a page alone, a program alone, or cards drawn only from Sova's own parts. `id`, `title`,
   `description` and `icon` follow §app.extensions/manifest. `commands`, `screens`, `cards` and `drawings`
-  mean what they mean in a list entry, with `dist` read as `page`.
+  mean what they mean in a list entry, with `dist` read as `page`. `reads`, optional, is `["chats"]` or
+  absent, and is the only value it takes (§app.extensions/reads-chats).
 - **What it needs from Sova.** `needsContract` is the extension rules it needs, a string `"<major>.<minor>"`
   (a string because `1.20` as a number is `1.2`), compared part by part as numbers with this Sova's
   `ext-contract-v<major>.<minor>`. Higher than this Sova's is **Needs a Newer Sova**, and nothing runs.
@@ -624,7 +630,8 @@ It runs as you with no sandbox, and the review says so before anything is on.
   60 s, then it stays Stopped until you press Start. It never restarts one that reads Changed.
 - **What it is given.** It runs from the extension's folder, with the same small allow-listed environment
   and Sova's `PATH`, plus `PORT` (the port in its `api`), `SOVA_URL` (where to call Sova), `SOVA_EXTENSION_ID`,
-  `SOVA_EXTENSION_KEY_FILE` (§app.extensions/backend-key) and `SOVA_EXTENSION_DATA_DIR`
+  `SOVA_EXTENSION_KEY_FILE` (§app.extensions/backend-key), `SOVA_CHATS_DIR` for one that reads chats
+  (§app.extensions/reads-chats) and `SOVA_EXTENSION_DATA_DIR`
   (`<state root>/extension-data/<id>`, made for it, kept apart by the key file's name rule when ids differ
   only in case). Sova's token is not in it. A bare program name is looked for on that `PATH`, through mise's
   shims. `node` always has an answer, `SOVA_NODE` and then Sova's own runtime, because a service's `PATH`
@@ -797,3 +804,59 @@ change.
   card runs none of its code and is unchanged.
 - **Its own trust.** Its cards ask to act, and are trusted, by its id, apart from any project's
   (§chat.transcript-cards/trust); its page says so while they are, with **Stop Trusting Cards**.
+
+## §app.extensions/reads-chats — An extension that reads your chats
+
+An extension that says `"reads": ["chats"]` in its description file (§app.extensions/folder) may read
+every chat home on this computer (§app/chat-homes). It is a disclosure, not a wall: every program
+you run can read your files. The install screen states it plainly, and Sova gives the extension what
+it needs to read the chats well.
+
+- **On the review.** The review (§app.settings-dialog/extensions) adds one row, **Chats**, to what the
+  extension asks for, above the closing "Install only what you trust." and the approve button: "Reads
+  every chat on this computer: conversations as written, titles, tags, memory, attachments and
+  helpers' work. It never gets your unsent drafts." A change of `reads` is a new
+  version, and asks again (§app.extensions/loader).
+- **What it is given.** Its program gets `SOVA_CHATS_DIR`, this server's homes folder
+  (§app.chat-homes/location). One that doesn't declare the key doesn't get it.
+- **Reading.** It reads any file of any home, conversations as written, with nothing redacted. The
+  one exception is the unsent draft. Sova never hands an extension a chat's draft: no route, command,
+  event or answer its key reaches includes it, and it is not in any home: it stays in Sova's own
+  drafts store (§app.chat-homes/layout). Sova can't stop a program running as you from opening that
+  store either, as the review's trust lines already say (§app.extensions/trust).
+- **Changing.** It changes a chat's own records only through Sova's routes and commands, as you
+  would. That covers titles, tags, groups, archiving and the like. It never edits a record's file
+  (§app.chat-homes/sole-writer).
+- **Its own folder in each chat.** It writes freely in `<home>/ext/<id>/`, its folder for that chat,
+  and in the chat's `shared/`. Sova makes the folder at its first write through
+  `SOVA_CHATS_DIR/<chat id>/ext/<id>/`, and never reads or runs code from it. The folder travels with
+  the chat (§app.transport/package) and goes when you delete the chat (§app.chat-homes/lifetime).
+  Remove with **Also delete its data** ticked also removes the extension's folder from every home.
+- **No file watching needed.** What changes in a chat reaches the extension as events
+  (§app.events/names). A program that watches the homes folder itself can, at its own cost.
+
+## §app.extensions/chat-usage — A chat's usage and time, on request
+
+Sova answers what one chat has cost and how long it took, split by its helpers, when it is asked. It
+never keeps a second copy for that.
+
+- **The question.** `GET /api/chats/:id/usage`, and the catalogue look `chat.usage`, answer for one
+  top-level chat. Each of its conversations gets one row: the chat itself, then each worker and team
+  member by id, name and role. Each row gives:
+  - its spend and tokens from the usage ledger (§app.insights/usage-ledger), by model;
+  - its agent time, the time its turns ran;
+  - for the chat itself, your time on it (§app.subagents-pane/time-spent-record) and its waiting
+    time. Waiting is the time from a turn ending, or a card being raised, until your next message or
+    answer.
+  
+  A total line sums them.
+- **Cut on request.** The answer is read from this computer's own stores for that chat alone, each
+  time it is asked. It is never written into the home, and never copied per chat.
+- **Who may ask.** Your own page, a script with Sova's token, and an extension's key
+  (§app.extensions/backend-key). A peer may ask with the sessions grant (§mesh.peers/grants). It is a
+  look: it changes nothing.
+- **An older chat** is answered the same way, from its own records where they are.
+- **A moved chat.** What its conversations spent on another device, carried with it by Transport
+  (§app.transport/package), shows on each row as spent elsewhere, naming the devices, and is in the
+  chat's total. It is kept apart from this device's own records, so Costs, Time and Today here never
+  count it. A record this device wrote itself, on a chat that comes back, is counted once.

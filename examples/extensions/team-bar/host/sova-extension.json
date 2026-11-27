@@ -4,7 +4,7 @@
   "title": "Team Bar (host mode)",
   "description": "For a shared server: labels each chat with the person who owns it, and asks Sova to record who typed each message (demonstration, made-up people)",
   "icon": "building",
-  "needsContract": "1.21",
+  "needsContract": "1.22",
   "backend": { "run": ["node", "server.mjs"] },
   "records": ["senders"]
 }

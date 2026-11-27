@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { createNewChatFile } from "./chat-homes/place";
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { createSessionFile, type NewSessionFile } from "./harness/pi/state";
+import type { NewSessionFile } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
 import { readAlignScan } from "./align-state";
 import { acquireChatHandle, isSessionBusy, onAgentSettled, setOpeningChoice } from "./chat-handle";
@@ -267,7 +268,8 @@ export function buildSetupEnded(projectId: string, sid: string, ms = 120_000): P
 async function makeSessionFile(cwd: string, sessionId: string, seed?: NewSessionFile["seed"]): Promise<string> {
   const cwdError = await validateNewSessionCwd(cwd);
   if (cwdError) throw new Error(cwdError);
-  const path = canonicalPath(createSessionFile({ cwd: resolve(cwd), id: sessionId, ...(seed?.length ? { seed } : {}) }).path);
+  // Its own home while the Chat homes switch is on (§app.chat-homes/new-chats).
+  const path = canonicalPath(createNewChatFile({ cwd: resolve(cwd), id: sessionId, ...(seed?.length ? { seed } : {}) }).path);
   markOwned(path);
   addWebSession(sessionId);
   markSeen(sessionId);

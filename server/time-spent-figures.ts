@@ -102,3 +102,25 @@ export function alignFacts(items: readonly TranscriptItem[]): AlignFacts[] {
   }
   return [...docs.values()];
 }
+
+/**
+ * The time a chat waited for you (§app.extensions/chat-usage): from the agent's last entry of a turn (a reply that
+ * didn't stop to use a tool) until your next message. A message an extension or a worker's report puts in front of
+ * the model first starts the agent again, so that stretch was no wait for you and is not counted.
+ */
+export function waitingMs(branch: readonly HEntry[]): number {
+  let endAt: number | null = null;
+  let ms = 0;
+  for (const e of branch) {
+    const t = e.at ? Date.parse(e.at) : NaN;
+    if (!Number.isFinite(t)) continue;
+    if (e.kind === "assistant") endAt = e.stop === "toolUse" ? null : t;
+    else if (e.kind === "tool-result") endAt = null;
+    else if (e.kind === "note" && e.inMessage) endAt = null;
+    else if (e.kind === "user") {
+      if (endAt !== null) ms += Math.max(0, t - endAt);
+      endAt = null;
+    }
+  }
+  return ms;
+}

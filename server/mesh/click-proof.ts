@@ -71,6 +71,18 @@ export async function clickProofFor(c: Context, peerId: string, tail: string, no
   return id;
 }
 
+/**
+ * A proof for a request this host sends on its own because a click on its page started it (a transport's offer,
+ * §app.transport/start): the caller has already judged the click (pageOnlyRefusal). Bound to `peerId` and to the
+ * exact body; the peer asks it back once over /api/peer/click-proof, as for a relayed click.
+ */
+export function mintClickProof(peerId: string, body: string, now = Date.now()): string {
+  forget(now);
+  const id = randomBytes(32).toString("base64url");
+  minted.set(id, { peer: peerId, digest: digestOf(body), until: now + TTL_MS });
+  return id;
+}
+
 /** The peer's question: true once, for the peer it was minted for and the body it was minted over. Any asking burns it. */
 export function takeClick(proof: unknown, peerId: string, digest: unknown, now = Date.now()): boolean {
   if (typeof proof !== "string" || typeof digest !== "string") return false;

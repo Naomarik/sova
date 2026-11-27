@@ -10,8 +10,13 @@ screen changes. Each frame is one JSON object; the socket ignores anything a cli
 - A frame of `type: "event"` carries `seq`, `at` (when this server recorded it, ms epoch) and a
   `name`: `session.created`, `session.removed`, `session.renamed`, `session.tagged`,
   `session.archived`, `turn.started`, `turn.ended`, `attention.changed`, `card.raised`,
-  `card.changed` or `card.answered` (§app.events/card-news). Session and turn events name the session
-  by `id` and `path`.
+  `card.changed` or `card.answered` (§app.events/card-news), or `chat.created` and `chat.removed`.
+  Session and turn events name the session by `id` and `path`. Every event about a session, or
+  about a card in one, also carries `chat`, the id of its top-level chat: the chat's own id for the chat
+  itself, its parent chat's for a worker's or team member's conversation. `chat.created` comes once,
+  when a new chat's home is made (§app.chat-homes/new-chats). `chat.removed` comes once, when a chat
+  is deleted or leaves this device by a Move (§app.transport/switch). Each carries the `chat` and,
+  for a chat with a home, `home`, its folder.
 - `turn.started` and `turn.ended` with `source: "hosted"` come from the chats Sova runs: one
   `turn.started` when a run begins and one `turn.ended` when it settles, each exactly once per run.
 - Every other session and turn event has `source: "observed"`: it is the difference between two
@@ -38,8 +43,8 @@ Since `ext-contract-v1.19`, the stream says what happens to a chat's transcript 
 - `card.changed`: an open card got new data or was marked done.
 - `card.answered`: an answer was recorded, at once or gathered, before any send or command its button
   then does.
-- **Ids and type, never content.** Each carries the session's `id` and `path`, `card` (`cd_N`),
-  `cardType` and `source: "hosted"`. It never carries the card's data or its answer: a reader that wants
+- **Ids and type, never content.** Each carries the session's `id`, `path` and `chat`
+  (§app.events/names), `card` (`cd_N`), `cardType` and `source: "hosted"`. It never carries the card's data or its answer: a reader that wants
   them asks `session.card.get`.
 - **Exactly once, whoever acted.** One event per act, whether the agent's `card` tool, a catalogue command
   or the page did it.
@@ -83,6 +88,12 @@ Since `ext-contract-v1.19`, the stream says what happens to a chat's transcript 
   within that time resumes with nothing missed.
 - While it runs, it reads the session list only through the session feed's own reads: one more
   subscriber never adds a list read.
+- A socket opened with `?only=hosted` hears only the events Sova raises itself: hosted `turn.*`,
+  card news, `attention.changed`, `chat.created` and `chat.removed`. It never gets an observed
+  event, and its `seq` passes over theirs with no `gap` (a resume replays the same way). It never
+  starts or holds the session feed: while only such sockets listen, the stream reads no list and
+  compares none, so a program that listens this way, an extension's, costs only the events
+  themselves. A socket without it gets everything, as before.
 
 ## §app.events/listeners — Only on this machine's own door
 

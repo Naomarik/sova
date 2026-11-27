@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { linkPiConfigExtensions } from "./testing/agent-dir";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
@@ -77,15 +77,17 @@ async function sendIn(cwd: string, model: string, text: string): Promise<string>
 }
 
 type WorkerRec = { kind: string; path: string; parent?: { path?: string; workerId?: string }; spec?: { cwd?: string } };
-/** The server's worker records (§app.chat-processes/workers) whose parent is `parentPath`. */
+/** The server's worker records (§app.chat-processes/workers) whose parent is `parentPath`: in the server's folder, or,
+    for a chat in a chat home (`<home>/sessions/<file>`), in that home's `workers/` (§app.chat-homes). */
 function workersOf(parentPath: string): WorkerRec[] {
-  const dir = join(s.agentDir, "sova", "chats", "workers");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((f) => f.endsWith(".json"))
+  const dirs = [join(s.agentDir, "sova", "chats", "workers")];
+  if (basename(dirname(parentPath)) === "sessions") dirs.push(join(dirname(dirname(parentPath)), "workers"));
+  return dirs
+    .filter((dir) => existsSync(dir))
+    .flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => join(dir, f)))
     .flatMap((f) => {
       try {
-        return [JSON.parse(readFileSync(join(dir, f), "utf8")) as WorkerRec];
+        return [JSON.parse(readFileSync(f, "utf8")) as WorkerRec];
       } catch {
         return [];
       }
@@ -228,7 +230,12 @@ test("the project's login limited: a new chat moves on, and its note names that 
     assert.equal(c.first.login, C, "the next login with room that no other project keeps");
     assert.equal(c.first.from, A);
     assert.equal(c.first.reason, "moved");
-    assert.match(c.first.text ?? "", new RegExp(`^Claude: using ${C}@example\\.com \\(project Acme's login ${A}@example\\.com is limited until `));
+    // A new chat's entry names logins by id (§app.claude-logins/login-ids): no email or text; the server words the note.
+    assert.equal(c.first.text, undefined);
+    assert.doesNotMatch(JSON.stringify(c.first), /@/);
+    const rows = (await api("GET", `/api/transcript?path=${encodeURIComponent(c.path)}`)).body.items as { loginNote?: boolean; text?: string }[];
+    const note = rows.find((it) => it.loginNote)?.text ?? "";
+    assert.match(note, new RegExp(`^Claude: using ${C}@example\\.com \\(project Acme's login ${A}@example\\.com is limited until `));
   } finally {
     writeFileSync(join(s.agentDir, "claude-accounts-state.json"), JSON.stringify({ version: 1, logins: {} }));
   }

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { SESSION_TITLE_MAX, type SessionTitleBy } from "../shared/protocol";
 import { sessionsChanged } from "./list-generation";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 
 /**
  * The user's own titles for sessions (POST /api/sessions/title), keyed by session id like the
@@ -67,7 +68,26 @@ function parseStored(v: unknown): StoredTitle | null {
   return { title, by, ...(typeof r.at === "number" && Number.isFinite(r.at) ? { at: r.at } : {}) };
 }
 
+/** The titles of chats with a home are in `<home>/chat/meta.json`, as the file would hold them. */
+const FIELD = "session-titles.json#titles";
+type Written = string | { title: string; by: SessionTitleBy; at?: number };
+const written = (t: StoredTitle): Written => (t.legacy ? t.title : { title: t.title, by: t.by, ...(t.at !== undefined ? { at: t.at } : {}) });
+
 function load(): Record<string, StoredTitle> {
+  const out: Record<string, StoredTitle> = loadFile();
+  const merged = withHome<StoredTitle | Written>(out, "meta", FIELD);
+  // A home's entry is the written form: parse it like the file's (once per entry object read).
+  for (const [id, v] of Object.entries(merged)) if (!(id in out)) {
+    const t = typeof v === "object" && v ? (parsedHome.get(v) ?? parsedHome.set(v, parseStored(v)).get(v)!) : parseStored(v);
+    if (t) merged[id] = t;
+    else delete merged[id];
+  }
+  return merged as Record<string, StoredTitle>;
+}
+
+const parsedHome = new WeakMap<object, StoredTitle | null>();
+
+function loadFile(): Record<string, StoredTitle> {
   // No prototype: an id is a plain key, and "__proto__" must stay one.
   const out: Record<string, StoredTitle> = Object.create(null);
   try {
@@ -93,27 +113,37 @@ const plain = (records: Record<string, StoredTitle>): Record<string, string> => 
 
 let records = load();
 let titles = plain(records);
+let titlesGen = homesGeneration();
 
 /** Atomic (tmp + rename), then the in-memory maps are refreshed to what was written. */
-function save(next: Record<string, StoredTitle>): void {
-  mkdirSync(dirname(file()), { recursive: true });
-  const tmp = `${file()}.${process.pid}.tmp`;
-  const out: Record<string, string | { title: string; by: SessionTitleBy; at?: number }> = {};
-  for (const [id, t] of Object.entries(next)) out[id] = t.legacy ? t.title : { title: t.title, by: t.by, ...(t.at !== undefined ? { at: t.at } : {}) };
-  writeFileSync(tmp, JSON.stringify({ version: 2, titles: out }));
-  renameSync(tmp, file());
+function save(next: Record<string, StoredTitle>, only?: string): void {
+  const { legacy, legacyChanged } = splitOut<StoredTitle | Written>(next, "meta", FIELD, { only, toDisk: written as (v: StoredTitle | Written) => Written });
+  if (legacyChanged) {
+    mkdirSync(dirname(file()), { recursive: true });
+    const tmp = `${file()}.${process.pid}.tmp`;
+    const out: Record<string, Written> = {};
+    for (const [id, t] of Object.entries(legacy as Record<string, StoredTitle>)) out[id] = written(t);
+    writeFileSync(tmp, JSON.stringify({ version: 2, titles: out }));
+    renameSync(tmp, file());
+  }
   sessionsChanged();
   records = next;
+  titlesGen = homesGeneration();
   titles = plain(next);
 }
 
 const remember = (next: Record<string, StoredTitle>) => {
   records = next;
   titles = plain(next);
+  titlesGen = homesGeneration();
 };
 
 /** The titles as last read or written by this process, with no file read (for per-tick use). */
-export const memoSessionTitles = (): Readonly<Record<string, string>> => titles;
+export const memoSessionTitles = (): Readonly<Record<string, string>> => {
+  // A home's title from outside (an arrived chat, another process) is read at once, even by a memo reader.
+  if (titlesGen !== homesGeneration()) remember(load());
+  return titles;
+};
 
 /** Every stored title. Reads the file, so a listing sees another server instance's writes. */
 export function readSessionTitles(): Record<string, string> {
@@ -128,7 +158,10 @@ export function readSessionTitleRecords(): Readonly<Record<string, StoredTitle>>
 }
 
 /** The records as last read or written by this process, with no file read. */
-export const memoSessionTitleRecords = (): Readonly<Record<string, StoredTitle>> => records;
+export const memoSessionTitleRecords = (): Readonly<Record<string, StoredTitle>> => {
+  if (titlesGen !== homesGeneration()) remember(load());
+  return records;
+};
 
 /**
  * Set or clear ONE session's title; `null` clears it, whoever set it. `by` is who is setting it
@@ -145,7 +178,7 @@ export function setSessionTitle(id: string, title: string | null, by: Exclude<Se
       return null;
     }
     delete next[id];
-    save(next);
+    save(next, id);
     return null;
   }
   const cur = next[id];
@@ -154,7 +187,7 @@ export function setSessionTitle(id: string, title: string | null, by: Exclude<Se
     return title;
   }
   next[id] = { title, by, at: now };
-  save(next);
+  save(next, id);
   return title;
 }
 
@@ -176,7 +209,7 @@ export function writeAutoTitle(id: string, title: string, opts: { redo?: boolean
     return true;
   }
   next[id] = { title, by: "auto", at: opts.now ?? Date.now() };
-  save(next);
+  save(next, id);
   return true;
 }
 
@@ -201,7 +234,7 @@ export function replaceAutoTitle(id: string, title: string, seen: StoredTitle | 
     return true;
   }
   next[id] = { title, by: "auto", at: opts.now ?? Date.now() };
-  save(next);
+  save(next, id);
   return true;
 }
 

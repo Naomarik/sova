@@ -230,13 +230,23 @@ async function everyDrawingDraws(page: Page, decoder: Page, when: string) {
     const want = i % 2 === 0 ? METER_H : SPARK_H;
     await until(`drawing ${i + 1} to take its drawn height (${when})`, async () => Math.round((await box.boundingBox())?.height ?? 0) === want);
     // On screen, the marker must show: read back from screenshots until it does (the page itself
-    // paints a region it just scrolled to only once it has laid out the rows it had skipped).
-    await box.evaluate((e) => e.scrollIntoView({ block: "center" }));
+    // paints a region it just scrolled to only once it has laid out the rows it had skipped). Each
+    // try scrolls the drawing back into view first and reads it only when its box is wholly on
+    // screen: while the thread loads it keeps following the newest message, which can carry the
+    // drawing off screen between the scroll and the screenshot.
     const area = want * Math.round((await box.boundingBox())!.width);
+    const view = page.viewportSize()!;
     const t0 = Date.now();
     let marked = 0;
-    while ((marked = await markedPixels(decoder, await page.screenshot({ clip: (await box.boundingBox())! }))) < area * 0.8 && Date.now() - t0 < 10_000);
-    assert.ok(marked > area * 0.8, `drawing ${i + 1} (${DRAWN[i]}) painted ${marked} of ${area} pixels (${when})`);
+    let seen = false;
+    do {
+      await box.evaluate((e) => e.scrollIntoView({ block: "center" }));
+      const at = await box.boundingBox();
+      if (!at || at.x < 0 || at.y < 0 || at.x + at.width > view.width || at.y + at.height > view.height) continue;
+      seen = true;
+      marked = await markedPixels(decoder, await page.screenshot({ clip: at }));
+    } while (!(marked > area * 0.8) && Date.now() - t0 < 10_000);
+    assert.ok(marked > area * 0.8, `drawing ${i + 1} (${DRAWN[i]}) painted ${marked} of ${area} pixels (${when})${seen ? "" : "; its box was never wholly on screen"}`);
   }
 }
 

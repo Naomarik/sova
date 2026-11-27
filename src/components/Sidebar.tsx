@@ -1,4 +1,6 @@
 import { AutomationsShelf } from "./AutomationsShelf";
+import { ChatsFolderMissing } from "./ChatsFolderSetting";
+import { chatsFolderInfo, folderMissing } from "../lib/chats-folder";
 import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
 import { builtOnceOpen } from "../lib/built-once";
@@ -645,6 +647,10 @@ export function SessionRow(props: {
             </Show>
             <p class="list-meta">
               {relativeTime(s().lastActiveAt, props.now)}
+              {/* §app.session-list/archive-compression: kept for the record, never opened. */}
+              <Show when={s().compressed}>{" · Compressed"}</Show>
+              {/* §app.transport/moved-row: it runs on the other device now. */}
+              <Show when={s().moved}>{(m) => ` · Moved to ${m().to}`}</Show>
               {/* A shut-down chat whose background job still runs (§app.background-jobs/pane): its
                   end will wake the chat. The server sends the count only while the chat has no process. */}
               <Show when={!s().chat && (s().jobsRunning ?? 0) > 0}>
@@ -1459,6 +1465,11 @@ export function Sidebar(props: {
   const sessionsDir = () => {
     const d = dirInfo();
     return d ? tildePath(d.sessionsDir, d.home) : null;
+  };
+  /** The chats folder, named beside it once it is there: chats made since chat homes live in it. */
+  const homesDir = () => {
+    const d = dirInfo(), c = chatsFolderInfo();
+    return d && c?.exists ? tildePath(c.path, d.home) : null;
   };
   // Labels for remote groups: refetched only when the set of targets the list uses changes.
   const usedTargets = createMemo(
@@ -2576,6 +2587,8 @@ export function Sidebar(props: {
     <>
           {/* A host that keeps its sessions from this one has no rows here (§mesh.peers/grants). */}
           <Show when={hiddenHost()}>{(h) => <p class="sidebar-region-note">Hidden by {hostLabel(h())}.</p>}</Show>
+          {/* The chats folder missing: said, never a list that only looks short (§app.chat-homes/chats-folder). */}
+          <ChatsFolderMissing />
           <Show when={props.error}>
             <div class="transcript-banner">
               <Banner
@@ -2583,7 +2596,7 @@ export function Sidebar(props: {
                 title="Couldn't read your sessions."
                 body={
                   <>
-                    <code>~/.pi/agent/sessions</code> wasn't changed. Check the server is running, then retry. <span class="text-muted">({props.error})</span>
+                    Nothing in <code>~/.pi/agent/sessions</code> or your chats folder was changed. Check the server is running, then retry. <span class="text-muted">({props.error})</span>
                   </>
                 }
                 action={
@@ -2601,13 +2614,22 @@ export function Sidebar(props: {
             </div>
           </Show>
 
-          <Show when={props.sessions && all().length === 0}>
+          <Show when={props.sessions && all().length === 0 && !folderMissing(chatsFolderInfo())}>
             <div class="empty">
               <p class="empty-title">
                 <Show when={sessionsDir()} fallback="0 sessions yet.">
                   {(dir) => (
                     <>
-                      0 sessions in <code>{dir()}</code>.
+                      0 sessions in <code>{dir()}</code>
+                      <Show when={homesDir()}>
+                        {(homes) => (
+                          <>
+                            {" or "}
+                            <code>{homes()}</code>
+                          </>
+                        )}
+                      </Show>
+                      .
                     </>
                   )}
                 </Show>

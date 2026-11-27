@@ -41,6 +41,8 @@ export function FolderPicker(props: {
   remote?: { target: string; name: string };
   /** The peer whose folders these are (New Session's Host); left out, this host's. */
   host?: string | null;
+  /** What a folder with no subfolders can still be used for, after "No subfolders in <folder>." (default: a new session's). */
+  emptyHint?: string;
   onPick(path: string): void;
   onClose(): void;
 }) {
@@ -155,7 +157,7 @@ export function FolderPicker(props: {
       if (l.status === 404) return "This folder doesn't exist. Pick another one.";
       return `Couldn't list this folder. ${l.message}`;
     }
-    if (l.listing.entries.length === 0) return `No subfolders in ${hereName()}. You can still start the session here.`;
+    if (l.listing.entries.length === 0) return `No subfolders in ${hereName()}. ${props.emptyHint ?? "You can still start the session here."}`;
     if (q && rows().length === 0) return `0 of ${l.listing.entries.length} match “${q}”.`;
     if (l.listing.truncated) return `Showing the first ${l.listing.entries.length} folders, A to Z. Filter to narrow them.`;
     return null;

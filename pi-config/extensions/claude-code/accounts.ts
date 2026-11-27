@@ -156,6 +156,11 @@ export interface ClaudeLoginSwitch {
 	failure?: ClaudeAccountFailure;
 	/** `moved`: the session's login stopped being usable here without a failure or a pick (it left, was removed…). */
 	reason?: "moved";
+	/** `moved`: why `from` can't run here (ClaudeLogins.absence's `code`), and until when, for `limited`. */
+	cause?: LoginGoneCause;
+	until?: number;
+	/** `moved` off the project's (or organization's) login: whose it is; `from` is that login. */
+	prefer?: { source: "project" | "org"; name?: string };
 	/** "Claude: switched A → B (5h limit, resets 15:00)" · "… (chosen by you)" · "… (A left this device)". */
 	text: string;
 }
@@ -666,9 +671,9 @@ export type LeavingReason = "limit" | "auth" | "user" | "pin" | "idle" | "keeper
 export interface LoginLeaving { v: 1; at: number; reason: LeavingReason }
 const LEAVING_REASONS: readonly LeavingReason[] = ["limit", "auth", "user", "pin", "idle", "keeper", "removed", "superseded"];
 /** What a `moved` note says of a login leaving for `reason` (limit and auth name the standing instead). */
-const LEAVING_CAUSES: Record<LeavingReason, string> = {
-	limit: "is limited", auth: "needs sign-in", user: "left this device", pin: "left this device",
-	idle: "left this device", keeper: "returned to the keeper", removed: "was removed", superseded: "left this device",
+const LEAVING_CAUSES: Record<LeavingReason, LoginGoneCause> = {
+	limit: "limited", auth: "auth", user: "left", pin: "left",
+	idle: "left", keeper: "keeper", removed: "removed", superseded: "left",
 };
 
 /** The login's `.sova-leaving` mark, or undefined. Unreadable = leaving (fail closed). */
@@ -973,16 +978,72 @@ export function switchText(from: ClaudeLoginChoice, to: ClaudeLoginChoice, failu
 }
 /** A switch the user picked in the composer. */
 export function manualSwitchText(from: ClaudeLoginChoice, to: ClaudeLoginChoice): string {
-	return `Claude: switched ${from.label} → ${to.label} (chosen by you)`;
+	return manualWords(from.label, to.label);
 }
+const manualWords = (from: string, to: string) => `Claude: switched ${from} → ${to} (chosen by you)`;
 /** A move the session's login forced on it (it left, was removed, …): `cause` as ClaudeLogins.absence gives it. */
 export function movedText(from: ClaudeLoginChoice, to: ClaudeLoginChoice, cause: string): string {
-	return `Claude: switched ${from.label} → ${to.label} (${from.label} ${cause})`;
+	return movedWords(from.label, to.label, cause);
 }
+const movedWords = (from: string, to: string, cause: string) => `Claude: switched ${from} → ${to} (${from} ${cause})`;
 /** A chat that starts off its project's login: `label` and `cause` as ClaudeLogins.absence gives them for it. */
-export function preferenceText(to: ClaudeLoginChoice, prefer: ClaudeLoginPreference, label: string, cause: string): string {
+export function preferenceText(to: ClaudeLoginChoice, prefer: Pick<ClaudeLoginPreference, "source"> & { name?: string }, label: string, cause: string): string {
+	return preferenceWords(to.label, prefer, label, cause);
+}
+function preferenceWords(to: string, prefer: { source: "project" | "org"; name?: string }, label: string, cause: string): string {
 	const whose = `${prefer.source === "org" ? "organization" : "project"}${prefer.name ? ` ${prefer.name}` : ""}'s login`;
-	return `Claude: using ${to.label} (${whose} ${label} ${cause})`;
+	return `Claude: using ${to} (${whose} ${label} ${cause})`;
+}
+
+/**
+ * Why a chat's login can't run here (ClaudeLogins.absence), as a `moved` entry keeps it
+ * (§app.claude-logins/login-ids): left (returned for idleness, by Return, for a pin), returned to the
+ * keeper, removed, off in Settings, limited (until `resetsAt`), needing sign-in, or not usable here.
+ */
+export type LoginGoneCause = "left" | "keeper" | "removed" | "off" | "limited" | "auth" | "unusable";
+const GONE_CAUSES: readonly LoginGoneCause[] = ["left", "keeper", "removed", "off", "limited", "auth", "unusable"];
+/** What a `moved` note says after the login's name: "left this device", "is limited until 15:00"… */
+export function causeText(cause: LoginGoneCause, until?: number, now = Date.now()): string {
+	switch (cause) {
+		case "left": return "left this device";
+		case "keeper": return "returned to the keeper";
+		case "removed": return "was removed";
+		case "off": return "is off in Settings → Accounts";
+		case "limited": return until ? `is limited until ${clock(until, now)}` : "is limited";
+		case "auth": return "needs sign-in";
+		default: return "is not usable on this device";
+	}
+}
+/** What a device calls a login it doesn't know, in a note worded there (§app.claude-logins/login-ids). */
+export const UNKNOWN_LOGIN_NAME = "a login not on this device";
+
+/**
+ * A `claude-login` entry's note, worded where it is shown (§app.claude-logins/login-ids): an older
+ * entry's own `text` as it was written; a newer one's from its ids and codes, each login named by
+ * `name` (this device's notice name, else UNKNOWN_LOGIN_NAME). Undefined: the entry is no switch.
+ */
+export function loginNoteText(data: unknown, name: (id: string) => string, now = Date.now()): string | undefined {
+	if (!data || typeof data !== "object") return undefined;
+	const d = data as Record<string, unknown>;
+	if (typeof d.login !== "string" || typeof d.from !== "string") return undefined;
+	// An older entry (it names its logins) shows only its own text, as it always did.
+	if (typeof d.text === "string" || typeof d.label === "string" || typeof d.fromLabel === "string")
+		return typeof d.text === "string" && d.text.trim() ? d.text : undefined;
+	const from = name(d.from), to = name(d.login);
+	const resetsAt = typeof d.resetsAt === "number" && Number.isFinite(d.resetsAt) ? d.resetsAt : undefined;
+	if (d.reason === "limit" || d.reason === "auth") {
+		const failure: ClaudeAccountFailure = { kind: d.reason, ...(resetsAt ? { resetsAt } : {}), ...(typeof d.window === "string" ? { window: d.window } : {}) };
+		return `Claude: switched ${from} → ${to} (${failureReason(failure, now)})`;
+	}
+	if (d.reason === "manual") return manualWords(from, to);
+	if (d.reason === "moved") {
+		const cause = causeText(GONE_CAUSES.includes(d.cause as LoginGoneCause) ? d.cause as LoginGoneCause : "unusable", resetsAt, now);
+		const p = d.project as { source?: unknown; name?: unknown } | undefined;
+		if (p && (p.source === "project" || p.source === "org"))
+			return preferenceWords(to, { source: p.source, ...(typeof p.name === "string" ? { name: p.name.slice(0, 200) } : {}) }, from, cause);
+		return movedWords(from, to, cause);
+	}
+	return `Claude: switched ${from} → ${to}`;
 }
 
 /** A ClaudeLoginContext from untrusted input, or undefined when it says nothing usable. */
@@ -1240,27 +1301,38 @@ export class ClaudeLogins {
 	 * names (`cause` follows the login's name: "left this device", "is limited until 15:00"…), and
 	 * whether the keeper has it free to take back (the pool is on, nobody holds it, and it is ready).
 	 */
-	absence(id: string): { label: string; cause: string; free: boolean } | undefined {
+	absence(id: string): { label: string; cause: string; code: LoginGoneCause; until?: number; free: boolean } | undefined {
 		const accounts = this.accounts();
 		const record = accounts.logins.find((l) => l.id === id);
 		const label = record?.label ?? this.identityOf(id, accounts)?.email ?? (id === DEFAULT_LOGIN_ID ? "default" : id);
-		const gone = (cause: string, free = false) => ({ label, cause, free });
+		const gone = (code: LoginGoneCause, free = false, until?: number) =>
+			({ label, cause: causeText(code, until, this.now()), code, ...(until !== undefined ? { until } : {}), free });
 		if (id !== DEFAULT_LOGIN_ID) {
-			if (!record) return gone("was removed");
+			if (!record) return gone("removed");
 			const pool = this.pool;
 			if (!heldHere(record.device, this.device, pool)) {
-				if (record.device !== null) return gone("left this device");
-				return gone("returned to the keeper", pool && record.enabled && this.readinessOf(id).state === "ready");
+				if (record.device !== null) return gone("left");
+				return gone("keeper", pool && record.enabled && this.readinessOf(id).state === "ready");
 			}
 			const leaving = readLeaving(this.agentDir, id);
 			if (leaving && leaving.reason !== "limit" && leaving.reason !== "auth") return gone(LEAVING_CAUSES[leaving.reason]);
 		}
-		if (!loginEnabled(accounts, this.device, id)) return gone("is off in Settings → Accounts");
+		if (!loginEnabled(accounts, this.device, id)) return gone("off");
 		const ready = this.readinessOf(id);
-		if (ready.state === "limited") return gone(`is limited until ${clock(ready.until, this.now())}`);
-		if (ready.state === "auth") return gone("needs sign-in");
-		if (this.leaving(id)) return gone("left this device");
+		if (ready.state === "limited") return gone("limited", false, ready.until);
+		if (ready.state === "auth") return gone("auth");
+		if (this.leaving(id)) return gone("left");
 		return undefined;
+	}
+	/**
+	 * What this device's notices call login `id` (§app.claude-logins/login-ids): its label, else its
+	 * email, else its id, from the registry (the pool's logins included); undefined for a login this
+	 * device doesn't know. `default` is always known.
+	 */
+	noticeName(id: string, accounts = this.accounts()): string | undefined {
+		const record = accounts.logins.find((l) => l.id === id);
+		if (!record && id !== DEFAULT_LOGIN_ID) return undefined;
+		return record?.label ?? this.identityOf(id, accounts)?.email ?? id;
 	}
 	/** Chat `session` picked login `id` by hand: the pool never returns it for idleness while that stands. */
 	markPick(id: string, session: string): void {
@@ -1345,18 +1417,35 @@ export const CLAUDE_LOGIN_ENTRY = "claude-login";
 export interface ClaudeLoginEntry {
 	v: 1;
 	login: string;
+	/** Older chats only (§app.claude-logins/login-ids): the login's name as the writing device called it. */
 	label?: string;
 	/** Present on a switch (a failover, or the user's pick): the login it left. */
 	from?: string;
+	/** Older chats only, like `label`. */
 	fromLabel?: string;
 	/** `manual`: the user picked it in the composer. `moved`: its login stopped being usable here (it left, was removed…). */
 	reason?: "limit" | "auth" | "manual" | "moved";
+	/** A limit's reset (`limit`), or until when `from` is limited (`moved`, cause `limited`). */
 	resetsAt?: number;
-	/** The notice, as the chat shows it. */
+	/** `limit`: the limit's window (`five_hour`, …), when the stream said. */
+	window?: string;
+	/** `moved`: why `from` couldn't run (LoginGoneCause). */
+	cause?: LoginGoneCause;
+	/** `moved` off the project's or organization's login (`from`): whose it is. */
+	project?: { source: "project" | "org"; name?: string };
+	/** The registry id of the device that wrote it (thisDeviceId; never a name or email). A chat whose newest entry
+	    another device wrote (it moved here) says its login "is not usable on this device", not that it left. */
+	device?: string;
+	/** Older chats only: the notice, as the chat shows it. Newer entries are worded where shown (loginNoteText). */
 	text?: string;
 }
-export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch): ClaudeLoginEntry {
-	return {
+/**
+ * The entry for a session now on `to`, after `change` if it switched. A new chat's entry names
+ * logins by id only (§app.claude-logins/login-ids); `labels`: the session is from before login ids
+ * (legacyLoginEntries), so its entries keep today's labels and text.
+ */
+export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch, opts: { labels?: boolean; device?: string } = {}): ClaudeLoginEntry {
+	if (opts.labels) return {
 		v: 1, login: to.id, label: to.label,
 		...(change ? {
 			from: change.from.id, fromLabel: change.from.label, reason: change.failure?.kind ?? change.reason ?? "manual",
@@ -1364,6 +1453,44 @@ export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch)
 			text: change.text,
 		} : {}),
 	};
+	const device = opts.device ? { device: opts.device } : {};
+	if (!change) return { v: 1, login: to.id, ...device };
+	const resetsAt = change.failure ? change.failure.resetsAt : change.cause === "limited" ? change.until : undefined;
+	return {
+		v: 1, login: to.id, from: change.from.id, reason: change.failure?.kind ?? change.reason ?? "manual",
+		...(resetsAt ? { resetsAt } : {}),
+		...(change.failure?.window ? { window: change.failure.window } : {}),
+		...(change.reason === "moved" ? { cause: change.cause ?? "unusable" } : {}),
+		...(change.reason === "moved" && change.prefer ? { project: { source: change.prefer.source, ...(change.prefer.name ? { name: change.prefer.name } : {}) } } : {}),
+		...device,
+	};
+}
+/** The device that wrote the newest `claude-login` entry among `entries` (oldest first), when it says (§app.claude-logins/login-moved). */
+export function recordedLoginDevice(entries: readonly unknown[]): string | undefined {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const e = entries[i] as { type?: unknown; customType?: unknown; data?: any };
+		if (e?.type === "custom" && e.customType === CLAUDE_LOGIN_ENTRY && typeof e.data?.login === "string")
+			return typeof e.data.device === "string" && e.data.device ? e.data.device : undefined;
+	}
+	return undefined;
+}
+/**
+ * Whether a session is from before login ids (§app.claude-logins/login-ids): this session itself
+ * wrote a `claude-login` entry with a label, i.e. one stamped no earlier than its own header
+ * (`startedAt`, the header's timestamp). A fork or copy of an older chat carries the source's
+ * entries with their own, earlier times, so it is a new chat and writes ids only. Without a start
+ * time, any labelled entry counts. Such a session keeps writing labelled entries.
+ */
+export function legacyLoginEntries(entries: readonly unknown[], startedAt?: string): boolean {
+	const start = startedAt ? Date.parse(startedAt) : Number.NaN;
+	for (const raw of entries) {
+		const e = raw as { type?: unknown; customType?: unknown; data?: any; timestamp?: unknown };
+		if (e?.type !== "custom" || e.customType !== CLAUDE_LOGIN_ENTRY || typeof e.data?.label !== "string") continue;
+		if (Number.isNaN(start)) return true;
+		const at = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : Number.NaN;
+		if (!Number.isNaN(at) && at >= start) return true;
+	}
+	return false;
 }
 /** The newest `claude-login` entry's login among `entries` (a session branch, oldest first). */
 export function recordedLogin(entries: readonly unknown[]): string | undefined {

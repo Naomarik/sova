@@ -18,9 +18,14 @@ export interface ExtensionAsks {
   /** The screens it adds to. */
   screens?: string[];
   drawings?: string[];
-  /** v1.21: what it asks Sova to record for it (shared/extension-offers.ts RECORD_KINDS). */
+  /** It reads every chat on this computer (`reads: ["chats"]`, §app.extensions/reads-chats). */
+  readsChats?: boolean;
+  /** v1.22: what it asks Sova to record for it (shared/extension-offers.ts RECORD_KINDS). */
   records?: string[];
 }
+
+/** An entry or description that says `reads: ["chats"]`, exactly. */
+export const readsChats = (raw: { reads?: unknown }): boolean => Array.isArray(raw.reads) && raw.reads.length === 1 && raw.reads[0] === "chats";
 
 export interface ExtensionReview {
   id: string;

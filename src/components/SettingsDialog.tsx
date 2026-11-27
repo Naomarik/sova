@@ -73,6 +73,7 @@ import { BatonSettingsSection } from "./BatonSettings";
 import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
 import { ServerSettingsSection } from "./ServerSettings";
+import { ChatStorageSection } from "./ChatStorageSetting";
 import { AgentCpuSection } from "./AgentCpuSettings";
 import { ContextApprovalSection } from "./ContextApprovalSetting";
 import { UpdatesSettingsSection } from "./UpdatesSettings";
@@ -435,7 +436,8 @@ function ExperimentalPanel() {
  * line between it and Models, and the reason the sidebar's Recent region has no control of its own:
  * a count that could be set in two places would disagree in one of them. The Updates section at the
  * bottom is the machine's, Save-gated like every server-backed form (UpdatesSettings.tsx); above it,
- * the agents' CPU ceiling (AgentCpuSettings.tsx), then the machine's server and Restart Sova (ServerSettings.tsx).
+ * where new chats are kept and whether old archived ones are compressed (ChatStorageSetting.tsx), the agents' CPU
+ * ceiling (AgentCpuSettings.tsx), then the machine's server and Restart Sova (ServerSettings.tsx).
  */
 function GeneralPanel() {
   /**
@@ -494,6 +496,7 @@ function GeneralPanel() {
         onChange={setShowSummaries}
       />
       <ContextApprovalSection />
+      <ChatStorageSection />
       <AgentCpuSection />
       <ServerSettingsSection />
       <UpdatesSettingsSection />

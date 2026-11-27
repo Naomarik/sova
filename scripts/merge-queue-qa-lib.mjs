@@ -145,6 +145,7 @@ export class SovaUnderTest {
         ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(SOVA_|PI_|CLAUDE)/.test(k))),
         PORT: String(this.port),
         PI_CODING_AGENT_DIR: this.agent,
+        SOVA_CHAT_HOMES: `${this.agent}/chat-homes`,
         SOVA_UPDATES_CHECK: "off",
         SOVA_GIT_MAINTENANCE: "off",
         SOVA_AGENT_CPU: "off",

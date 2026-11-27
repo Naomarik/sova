@@ -20,9 +20,18 @@ test("rowMenuOf: a self-named chat has no title rows; Regenerate waits on its ow
   assert.equal(running.regenerateDisabled, "Regenerating title…");
 });
 
+test("rowMenuOf: a compressed chat offers no Regenerate Title (its conversation isn't opened), and keeps Rename and Reset", () => {
+  assert.equal(rowMenuOf(row(), ARCHIVES, NO_NOTE).title!.regenerate, true);
+  assert.equal(rowMenuOf(row({ archived: true }), { kind: "none" }, NO_NOTE).title!.regenerate, true, "an archived chat still can");
+  const packed = rowMenuOf(row({ archived: true, compressed: true, originalTitle: "first words" }), { kind: "none" }, NO_NOTE).title!;
+  assert.equal(packed.regenerate, false);
+  assert.deepEqual([packed.original, packed.resetDisabled], ["first words", ""], "Rename and Reset stay");
+});
+
 test("rowMenuOf: Archive and Move to Group refuse exactly what the drop panel refuses, in its words", () => {
   assert.deepEqual(rowMenuOf(row(), ARCHIVES, NO_NOTE).archive, { label: "Archive", act: "archive", disabled: "" });
   assert.deepEqual(rowMenuOf(row({ archived: true }), { kind: "none" }, NO_NOTE).archive, { label: "Unarchive", act: "unarchive", disabled: "" });
+  assert.equal(rowMenuOf(row({ archived: true, compressed: true }), { kind: "none" }, NO_NOTE).archive.act, null, "a compressed chat has no Unarchive");
   assert.deepEqual(rowMenuOf(row(), { kind: "blocked", reason: "its turn is running" }, NO_NOTE).archive, { label: "Archive", act: null, disabled: "Can't archive: its turn is running" });
   assert.equal(rowMenuOf(row(), { kind: "none" }, NO_NOTE).archive.disabled, "Already in the Archive.");
   const note = "Groups hold this host's sessions only. That one lives on box.";

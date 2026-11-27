@@ -1,6 +1,6 @@
 # Team Bar: a demonstration extension
 
-An example of a Sova extension that uses three openings of extension contract v1.21 to give a team's
+An example of a Sova extension that uses three openings of extension contract v1.22 to give a team's
 session bar a person filter, owner avatars and "From {name}" on messages typed from someone else's
 computer. Every person in it is made up. Sova never installs it by itself: it is here so Sova's own
 checks and demonstrations keep using the openings.

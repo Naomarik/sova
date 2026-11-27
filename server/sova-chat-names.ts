@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { cleanSessionTitle } from "./session-titles";
 import { sessionsChanged } from "./list-generation";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 import type { SovaNamedKind } from "../shared/fixed-names";
 
 /**
@@ -21,7 +22,11 @@ export interface SovaChatName {
 const KINDS: readonly SovaNamedKind[] = ["merge-thread", "merge-reviewer", "release"];
 const file = (): string => join(stateRoot(), "sova-chat-names.json");
 
-function load(): Record<string, SovaChatName> {
+/** A chat with a home keeps its name in `<home>/chat/meta.json` (server/chat-homes/records.ts). */
+const FIELD = "sova-chat-names.json#names";
+const load = (): Record<string, SovaChatName> => withHome(loadFile(), "meta", FIELD);
+
+function loadFile(): Record<string, SovaChatName> {
   const out: Record<string, SovaChatName> = Object.create(null);
   try {
     const v = JSON.parse(readFileSync(file(), "utf8")) as { names?: Record<string, unknown> };
@@ -38,10 +43,11 @@ function load(): Record<string, SovaChatName> {
 
 let names = load();
 let loadedFrom = file();
+let namesGen = homesGeneration();
 
 /** The names as last read or written here, with no file read (per-tick use). Re-read when the state root moved. */
 export function memoSovaChatNames(): Readonly<Record<string, SovaChatName>> {
-  if (loadedFrom !== file()) readSovaChatNames();
+  if (loadedFrom !== file() || namesGen !== homesGeneration()) readSovaChatNames();
   return names;
 }
 
@@ -49,6 +55,7 @@ export function memoSovaChatNames(): Readonly<Record<string, SovaChatName>> {
 export function readSovaChatNames(): Readonly<Record<string, SovaChatName>> {
   loadedFrom = file();
   names = load();
+  namesGen = homesGeneration();
   return names;
 }
 
@@ -65,10 +72,13 @@ export function setSovaChatName(id: string, kind: SovaNamedKind, raw: string): b
     return true;
   }
   next[id] = { kind, name };
-  mkdirSync(dirname(file()), { recursive: true });
-  const tmp = `${file()}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify({ version: 1, names: next }));
-  renameSync(tmp, file());
+  const { legacy, legacyChanged } = splitOut(next, "meta", FIELD, { only: id });
+  if (legacyChanged) {
+    mkdirSync(dirname(file()), { recursive: true });
+    const tmp = `${file()}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ version: 1, names: legacy }));
+    renameSync(tmp, file());
+  }
   names = next;
   loadedFrom = file();
   sessionsChanged();

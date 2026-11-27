@@ -1,0 +1,385 @@
+{
+  "§app.transport/agent": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app/transport",
+      "§mesh/links",
+      "§app/project-setup",
+      "§app.project-services/instances",
+      "§app.project-setup/trust"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "server/transport/agent.ts",
+      "server/transport/agent-prompt.ts",
+      "server/transport/agent-wire.ts",
+      "src/components/TransportHelpers.tsx",
+      "server/transport/agent.test.ts",
+      "server/transport/destination.ts",
+      "server/transport/source.ts",
+      "server/transport/hooks.ts",
+      "server/transport/wire.ts",
+      "server/transport/routes.ts",
+      "shared/transport-agent-card.ts",
+      "server/transcript.ts",
+      "src/components/TransportAgentCard.tsx",
+      "src/components/BuiltinKinds.tsx",
+      "src/lib/transcript-kinds.ts",
+      "src/components/TransportDialog.tsx",
+      "server/transport/arrival-agent.test.ts",
+      "server/transport/agent-scope.ts",
+      "server/transport/project-carry.ts",
+      "server/transport/project-carry.test.ts",
+      "server/chat-manager.ts",
+      "server/project-services/store.ts",
+      "server/transport/store.ts",
+      "src/components/TransportAgentCard.css",
+      "src/lib/transport-api.ts",
+      "server/transport/agent-asks.ts",
+      "server/transport/agent-tool.ts",
+      "server/transport/agent-asks.test.ts",
+      "server/chat-handle.ts",
+      "server/chat-handle.test.ts",
+      "shared/commands/transport.ts",
+      "src/lib/transport-card-actions.ts",
+      "src/lib/transport-card-actions.test.ts",
+      "server/transport/arrival-copy.ts",
+      "server/transport/arrival-copy.test.ts",
+      "server/transport/outside-file.ts",
+      "server/transport/outside-file.test.ts",
+      "server/transport/agent-modes.test.ts",
+      "server/transport/caches-stay.test.ts"
+    ]
+  },
+  "§app.transport/agent-sandbox": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.transport/agent",
+      "§chat/sandbox",
+      "§app.access/your-click"
+    ],
+    "code": [
+      "server/transport/agent-scope.ts",
+      "server/transport/agent.ts",
+      "server/transport/agent-prompt.ts",
+      "server/transport/agent-tool.ts",
+      "server/transport/agent-asks.ts",
+      "server/chat-manager.ts",
+      "server/transport/agent-mark.test.ts",
+      "server/transport/agent-wire.ts",
+      "server/chat-handle.ts",
+      "server/transport/agent-path.test.ts",
+      "server/transport/agent-asks.test.ts",
+      "server/transport/agent.test.ts",
+      "server/transport/wire.ts",
+      "src/components/TransportAgentCard.tsx",
+      "src/lib/transport-api.ts",
+      "server/transport/agent-deps-rule.test.ts",
+      "server/transport/outside-file.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    }
+  },
+  "§app.transport/arrival": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/transport",
+      "§app.transport/package",
+      "§app.worker-restore/worker-record"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "server/transport/git-snapshot.ts",
+      "server/transport/destination.ts",
+      "server/transport/relocate.ts",
+      "server/harness/pi/relocate.ts",
+      "server/transport/relocate.test.ts",
+      "server/chat-workers.ts",
+      "server/chat-host.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "server/transport/git-snapshot.integration.test.ts",
+      "server/transport/project-carry.ts",
+      "server/transport/project-carry.test.ts",
+      "server/transport/source.ts",
+      "server/transport/routes.ts",
+      "server/transport/wire.ts",
+      "server/transport/arrival-agent.test.ts",
+      "server/transport/tar.ts",
+      "server/transport/tar.test.ts",
+      "server/transport/tar-memory.test.ts",
+      "server/transport/destination.test.ts",
+      "server/transport/destination.integration.test.ts",
+      "server/transport/source.test.ts"
+    ]
+  },
+  "§app.transport/copy": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/transport",
+      "§app.transport/package"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/transport/destination.ts",
+      "server/transport/relocate.ts",
+      "server/transport/relocate.test.ts"
+    ]
+  },
+  "§app.transport/dialog": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app/transport",
+      "§app.transport/package",
+      "§app.transport/agent",
+      "§app.transport/safe-transport",
+      "§app.transport/edge-cases",
+      "§design.copy-deck/transport"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T03:34Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "src/components/TransportDialog.tsx",
+      "src/lib/transport-api.ts",
+      "src/components/SessionContextMenu.tsx",
+      "server/transport/source.ts",
+      "src/components/TransportHelpers.tsx",
+      "server/transport/setup-def.ts",
+      "server/transport/agent.ts",
+      "server/transport/routes.ts",
+      "server/transport/agent.test.ts",
+      "src/components/TransportDialog.css",
+      "src/lib/transport-dialog-error.ts",
+      "src/lib/transport-dialog-error.test.ts"
+    ]
+  },
+  "§app.transport/edge-cases": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/transport",
+      "§app.claude-logins/login-moved",
+      "§app.claude-logins/switch-cost"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/transport/git-snapshot.ts",
+      "server/transport/destination.ts",
+      "server/session-groups.ts",
+      "server/transport/destination.test.ts"
+    ]
+  },
+  "§app.transport/moved-row": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/transport",
+      "§app.transport/switch",
+      "§app.session-list/archive-compression",
+      "§app.chat-homes/lifetime"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "server/transport/moved.ts",
+      "server/transport/routes.ts",
+      "server/transport/package.ts",
+      "server/transport/package.test.ts",
+      "server/transport/moved.test.ts",
+      "server/sessions-index.ts",
+      "shared/protocol.ts",
+      "src/components/Sidebar.tsx",
+      "src/components/SessionView.tsx",
+      "src/lib/session-context-menu.ts",
+      "src/components/TransportDialog.tsx",
+      "src/lib/transport-api.ts",
+      "server/transport/destination.ts",
+      "server/transport/retire.ts",
+      "server/transport/retire.integration.test.ts",
+      "server/transport/retire.test.ts",
+      "server/transport/tar.ts",
+      "server/transport/tar.test.ts",
+      "server/transport/tar-memory.test.ts",
+      "server/cleanup-moved-guard.test.ts"
+    ]
+  },
+  "§app.transport/package": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app/transport",
+      "§app.chat-homes/layout",
+      "§mesh.links/transfer",
+      "§app/project-setup"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T12:10Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "server/transport/git-snapshot.ts",
+      "server/transport/tar.ts",
+      "server/transport/git-snapshot.integration.test.ts",
+      "server/transport/package.ts",
+      "server/transport/source.ts",
+      "server/transport/destination.ts",
+      "server/transport/wire.ts",
+      "server/transport/hooks.ts",
+      "server/transport/left-links.test.ts",
+      "server/transport/caches-stay.test.ts"
+    ]
+  },
+  "§app.transport/progress": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.transport/dialog",
+      "§app.transport/agent"
+    ],
+    "code": [
+      "server/transport/progress.ts",
+      "server/transport/progress.test.ts",
+      "server/transport/source.ts",
+      "src/lib/transport-progress.ts",
+      "src/lib/transport-progress.test.ts",
+      "src/lib/transport-follow.ts",
+      "src/lib/transport-api.ts",
+      "src/components/TransportProgress.tsx",
+      "src/components/TransportProgress.css",
+      "src/components/TransportDialog.tsx",
+      "src/components/SessionView.tsx",
+      "server/transport/destination.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T12:31Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    }
+  },
+  "§app.transport/safe-transport": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app/transport",
+      "§app.transport/switch"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/transport/safe-transport.ts",
+      "server/transport/agent-wire.ts",
+      "server/chat-workers.ts",
+      "server/chat-host.ts",
+      "src/components/TransportHelpers.tsx",
+      "server/transport/safe-transport.test.ts"
+    ]
+  },
+  "§app.transport/start": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/transport",
+      "§app.access/your-click",
+      "§mesh.peers/grants",
+      "§mesh.compatibility/update-needed",
+      "§app.session-list/row-menu",
+      "§mesh.peers/transport-ticket"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:21Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/transport/source.ts",
+      "server/transport/routes.ts",
+      "server/transport/store.ts",
+      "server/mesh/click-proof.ts"
+    ]
+  },
+  "§app.transport/switch": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/transport",
+      "§app.transport/arrival",
+      "§app.transport/safe-transport",
+      "§app.background-jobs/stopping",
+      "§app.chat-processes/workers",
+      "§app.events/names"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:21Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/transport/source.ts",
+      "server/transport/destination.ts",
+      "server/transport/hooks.ts",
+      "server/chat-workers.ts",
+      "server/transport/store.ts",
+      "server/transport/arrival-copy.test.ts",
+      "server/transport/arrival-agent.test.ts"
+    ]
+  },
+  "§app/transport": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/chat-homes",
+      "§mesh/peers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    }
+  }
+}

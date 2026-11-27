@@ -18,6 +18,7 @@ import { resolveSessionPolicy } from "../pi-config/extensions/sandbox/session-po
 import { restoreActive } from "../pi-config/extensions/sandbox/state.ts";
 import type { TarMember } from "./mesh/tar-list";
 import { worktreesOf } from "./worktrees-state";
+import { isHomeOwnState } from "./chat-homes/root";
 
 type Entry = { type: string; customType?: string; data?: unknown };
 
@@ -125,6 +126,8 @@ export async function prescan(
     let up = real.get(parent);
     if (up === undefined) real.set(parent, (up = canonicalize(parent ? join(dest, parent) : dest)));
     const at = join(up, basename(abs));
+    if (isHomeOwnState(abs) || isHomeOwnState(at))
+      return { reason: "protected", path: abs, message: `${abs} is inside a chat's home, which a transfer never writes outside its shared folder; nothing was extracted.` };
     const q = prot.find((r) => isWithin(at, r));
     if (q) return { reason: "protected", path: abs, message: `${abs} would be written into Sova's own state (${q}) through a link on disk; nothing was extracted.` };
     if (sb.on && "policy" in sb) {

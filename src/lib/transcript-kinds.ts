@@ -157,7 +157,7 @@ export interface LiveForm {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "design" | "owner-request" | "handoff-run" | "mcp-note" | "approval-pending" | "overseer-answer" | "profile-mark" | "lookbook-item" | "lookbook" | "brief" | "playbook-run" | "playbook-card" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "shell" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "design" | "owner-request" | "transport-agent" | "handoff-run" | "mcp-note" | "approval-pending" | "overseer-answer" | "profile-mark" | "lookbook-item" | "lookbook" | "brief" | "playbook-run" | "playbook-card" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -312,6 +312,8 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   kind({ id: "report", match: (it) => it.kind === "report" && it.report, host: "page", placement: "anchored", view: { page: "report" } }),
   // An owner request a Start Chat put at the top (§app.project-assistant/request-chat).
   kind({ id: "owner-request", match: (it) => it.kind === "info" && it.ownerRequest, host: "page", placement: "anchored", view: { page: "owner-request" } }),
+  // The Transport agent's card, in the chat it gets a device ready for (§app.transport/agent).
+  kind({ id: "transport-agent", match: (it) => it.kind === "info" && it.transportAgent, host: "page", placement: "anchored", view: { page: "transport-agent" } }),
   kind({ id: "handoff-run", match: (it) => it.kind === "info" && it.handoffRun, host: "page", placement: "anchored", view: { page: "handoff-run" } }),
   // A server's failure in this chat, with its link (§app.mcp/in-a-chat).
   kind({ id: "mcp-note", match: (it) => it.kind === "info" && it.mcpNote, host: "page", placement: "anchored", view: { page: "mcp-note" } }),

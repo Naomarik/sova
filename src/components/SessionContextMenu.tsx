@@ -7,7 +7,7 @@
  * drop panel's archive, Undo and groups (lib/drag-overlay), the Agents board menu's titles
  * (lib/session-actions, lib/auto-title), the board's Copy Path. The rules are lib/session-context-menu.
  */
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import type { SessionSummary } from "../../shared/protocol";
 import { regeneratingTitle } from "../lib/auto-title";
 import { archiveDragOf, archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
@@ -20,10 +20,15 @@ import { groupNameOf, loadSessionGroups, quoted, sessionGroups } from "../lib/se
 import { copyText, localRunning } from "../lib/ui-state";
 import { createContextMenu } from "./ContextMenu";
 import { TitleField } from "./TitleField";
+import { TransportDialog } from "./TransportDialog";
 import { Icon } from "./ui";
 
 /** The session rows' menu, keyed by the session's path. */
 export const sessionMenu = createContextMenu<string>();
+
+/** The chat whose Transport dialog is open (§app.transport/dialog), drawn beside the menu so it outlives it. */
+const [transporting, setTransporting] = createSignal<string | null>(null);
+export const openTransport = (path: string): void => void setTransporting(path);
 
 /** The row as the drop panel sees it: the same refusals and the same toasts. */
 function dragOf(row: SessionSummary): DragInfo {
@@ -58,6 +63,8 @@ export function SessionContextMenu(props: {
   onNewGroup(d: DragInfo): void;
 }) {
   return (
+    <>
+    <Show when={transporting()}>{(p) => <TransportDialog path={p()} onClose={() => setTransporting(null)} />}</Show>
     <sessionMenu.Panel live={(path) => props.rows.some((r) => r.path === path)}>
       {(path, api) => {
         const row = createMemo(() => {
@@ -139,14 +146,17 @@ export function SessionContextMenu(props: {
                       {(t) => (
                         <div class="model-menu-group" role="group" aria-label="Title">
                           <Item label="Rename…" aria={`Rename ${name()}`} icon={<Icon name="pencil" small />} stayOpen onRun={() => show("rename")} />
-                          <Item
-                            label="Regenerate Title"
-                            aria={`Regenerate the title of ${name()}`}
-                            icon={<Icon name="refresh" small />}
-                            description={t().regenerateDesc}
-                            disabled={t().regenerateDisabled}
-                            onRun={() => void regenerateSessionTitleNow(r(), props.onRefresh)}
-                          />
+                          {/* A compressed chat's conversation isn't opened, so nothing could name it again: no row. */}
+                          <Show when={t().regenerate}>
+                            <Item
+                              label="Regenerate Title"
+                              aria={`Regenerate the title of ${name()}`}
+                              icon={<Icon name="refresh" small />}
+                              description={t().regenerateDesc}
+                              disabled={t().regenerateDisabled}
+                              onRun={() => void regenerateSessionTitleNow(r(), props.onRefresh)}
+                            />
+                          </Show>
                           <Item
                             label="Reset to Original Title"
                             aria={`Reset ${name()} to its original title`}
@@ -172,6 +182,9 @@ export function SessionContextMenu(props: {
                         }}
                       />
                       <Item label="Copy Path" aria={`Copy the path of ${name()}`} icon={<Icon name="copy" small />} onRun={() => void copyText(r().path, "Copied path.")} />
+                      <Show when={hostOf(r().path) === null && !r().archived}>
+                        <Item label="Transport…" aria={`Transport ${name()} to another device`} icon={<Icon name="external" small />} onRun={() => openTransport(r().path)} />
+                      </Show>
                       <Item
                         label={v().m.archive.label}
                         aria={`${v().m.archive.label} ${name()}`}
@@ -194,5 +207,6 @@ export function SessionContextMenu(props: {
         );
       }}
     </sessionMenu.Panel>
+    </>
   );
 }

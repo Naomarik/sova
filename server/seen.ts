@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 
 /**
  * When the user last had each session in front of them: `<stateRoot>/seen.json`, `{[id]: ms}`.
@@ -17,8 +18,13 @@ import { sessionsChanged } from "./list-generation";
  */
 const seenFile = () => join(stateRoot(), "seen.json");
 
-/** A stamp never goes backwards: a slower writer's older stamp loses to a newer one. */
+/** A stamp never goes backwards: a slower writer's older stamp loses to a newer one. A chat with a home
+    keeps its stamp in `<home>/chat/seen.json` (server/chat-homes/records.ts). */
 function load(file: string): Record<string, number> {
+  return withHome(loadFile(file), "seen", "seen.json");
+}
+
+function loadFile(file: string): Record<string, number> {
   try {
     const v = JSON.parse(readFileSync(file, "utf8"));
     if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
@@ -30,15 +36,17 @@ function load(file: string): Record<string, number> {
   }
 }
 
-let cache: { file: string; at: number; map: Record<string, number> } | null = null;
+let cache: { file: string; at: number; gen: number; map: Record<string, number> } | null = null;
 const CACHE_MS = 1000;
 
 /** The whole store; cached ~1s, since every listing reads it. */
 export function readSeen(file = seenFile()): Record<string, number> {
   const now = Date.now();
-  if (cache && cache.file === file && now - cache.at < CACHE_MS) return cache.map;
+  // A home's change from outside (an arrived home, another process) is read at once, not after the second.
+  const gen = homesGeneration();
+  if (cache && cache.file === file && cache.gen === gen && now - cache.at < CACHE_MS) return cache.map;
   const map = load(file);
-  cache = { file, at: now, map };
+  cache = { file, at: now, gen: homesGeneration(), map };
   return map;
 }
 
@@ -48,12 +56,15 @@ export function markSeen(id: string, at = Date.now(), file = seenFile()): void {
     const next = load(file);
     if ((next[id] ?? 0) >= at) return;
     next[id] = at;
-    mkdirSync(dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(next));
-    renameSync(tmp, file);
+    const { legacy, legacyChanged } = splitOut(next, "seen", "seen.json", { only: id });
+    if (legacyChanged) {
+      mkdirSync(dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(legacy));
+      renameSync(tmp, file);
+    }
     sessionsChanged();
-    cache = { file, at: Date.now(), map: next };
+    cache = { file, at: Date.now(), gen: homesGeneration(), map: next };
   } catch (err) {
     console.warn("[seen] write failed:", err instanceof Error ? err.message : String(err));
   }
@@ -71,6 +82,9 @@ export function trackViewer(id: string, delta: 1 | -1): void {
   sessionsChanged();
   markSeen(id);
 }
+
+/** The sessions with a socket open on them now (§app.session-list/live-watch-scope's "open"). */
+export const viewedIds = (): string[] => [...viewing.keys()];
 
 /** A socket is open on it right now: it is in front of the user, so it is seen as of now. */
 export function isViewing(id: string): boolean {

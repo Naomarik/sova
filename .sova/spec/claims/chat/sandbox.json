@@ -190,7 +190,7 @@
       "§teams.defaults/handover"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/sandbox/shared-folder.ts",
       "pi-config/extensions/sandbox/policy.ts",
@@ -209,8 +209,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-11T14:15Z",
-      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
+      "at": "2026-11-24T11:21Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§chat.sandbox/states": {

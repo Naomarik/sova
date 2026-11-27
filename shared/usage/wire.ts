@@ -279,3 +279,42 @@ export interface UsageSessionsTotals {
   /** Per asked sid with any record: its total and its workers' part. Absent = nothing recorded. */
   sessions: Record<string, { total: UsageSpend; workers: UsageSpend }>;
 }
+
+/** GET /api/chats/:id/usage (§app.extensions/chat-usage): one top-level chat's usage and time, cut from this
+    computer's own stores each time it is asked, never kept. One row per conversation: the chat, then each
+    worker and team member. */
+export interface ChatUsageRow {
+  sid: string;
+  /** `chat` for the chat itself, `member` for a team member, else the worker's kind (`worker`, `explain`, …). */
+  role: string;
+  /** A worker's id in its parent chat (`ag_NN`); a team member's role. Absent for the chat. */
+  name?: string;
+  /** The session it was started from. Absent for the chat. */
+  parent?: string;
+  /** Its own model calls, every model summed. */
+  spend: UsageSpend;
+  /** Its own model calls by model. */
+  models: UsageModelRow[];
+  /** Seconds its turns ran: measured replies and tool runs, overlaps counted once, worker waits left out. */
+  agent: number;
+  /** The chat itself only: your seconds at it, and the seconds it waited for you. */
+  you?: number;
+  waiting?: number;
+  /** What it spent on other devices, come with the chat by Transport: counted in this chat's figures only,
+      never in this device's own totals. Absent when nothing came. */
+  elsewhere?: { devices: string[]; spend: UsageSpend; models: UsageModelRow[]; agent: number; you?: number };
+}
+export interface ChatUsage {
+  chat: string;
+  device: UsageDevice;
+  asOf: number;
+  rows: ChatUsageRow[];
+  /** Everything, this device's and what came from elsewhere; `elsewhere` is the part spent on other devices. */
+  total: { spend: UsageSpend; agent: number; you: number; waiting: number; elsewhere?: { devices: string[]; spend: UsageSpend; agent: number; you: number } };
+}
+/** What the server asks the usage helper (op `chat`): the conversations it knows and the chat's waiting. */
+export interface ChatUsageAsk {
+  sid: string;
+  members: { sid: string; role: string; name?: string; parent?: string }[];
+  waiting: number;
+}

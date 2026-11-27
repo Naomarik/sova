@@ -67,6 +67,39 @@
       "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
     }
   },
+  "§app.extensions/chat-usage": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/extensions",
+      "§app.extensions/backend-key",
+      "§app.insights/usage-ledger",
+      "§app.subagents-pane/time-spent-record",
+      "§mesh.peers/grants"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/chat-usage-routes.ts",
+      "server/usage-helper/chat.ts",
+      "server/usage-helper/query.ts",
+      "server/usage-helper/service.ts",
+      "shared/usage/wire.ts",
+      "server/time-spent-figures.ts",
+      "server/chat-host.ts",
+      "server/mesh/access.ts",
+      "shared/commands/other.ts",
+      "server/usage-helper/chat.test.ts",
+      "server/usage-helper/moved.ts",
+      "server/usage-helper/cut.ts",
+      "server/usage-export.ts",
+      "server/usage-export.test.ts"
+    ]
+  },
   "§app.extensions/design-css": {
     "kind": "behavior",
     "requires": [
@@ -84,7 +117,7 @@
   "§app.extensions/folder": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "requires": [
       "§app.extensions/manifest",
       "§app.extensions/offers",
@@ -101,9 +134,9 @@
       "pi-config/extensions/mode/create/extensions.md"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-11-06T21:55Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§app.extensions/list": {
@@ -352,7 +385,7 @@
   "§app.extensions/program": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "requires": [
       "§app.extensions/loader",
       "§app.extensions/backend-key",
@@ -365,13 +398,50 @@
       "server/extension-loader.test.ts",
       "server/extension-loader.integration.test.ts",
       "docs/customization.md",
-      "server/extension-program-rules.integration.test.ts"
+      "server/extension-program-rules.integration.test.ts",
+      "server/extension-reads-chats.test.ts"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-11-06T21:55Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
+  },
+  "§app.extensions/reads-chats": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/extensions",
+      "§app.extensions/folder",
+      "§app.extensions/loader",
+      "§app.extensions/trust",
+      "§app.settings-dialog/extensions",
+      "§app.chat-homes/location",
+      "§app.chat-homes/sole-writer",
+      "§app.chat-homes/lifetime",
+      "§app.events/names",
+      "§app.transport/package"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/extension-description.ts",
+      "shared/extension-loader.ts",
+      "server/extension-program.ts",
+      "server/extension-loader.ts",
+      "server/extension-chats.ts",
+      "server/extension-doors.ts",
+      "server/app.ts",
+      "server/ws.ts",
+      "src/components/ExtensionsSettings.tsx",
+      "src/lib/extensions-settings.ts",
+      "server/extension-reads-chats.test.ts",
+      "docs/customization.md"
+    ]
   },
   "§app.extensions/row-chips": {
     "kind": "behavior",

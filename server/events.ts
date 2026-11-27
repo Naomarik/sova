@@ -29,6 +29,9 @@ export interface Entry {
   bytes: number;
   /** A command frame (announce): seq 0, never kept; a socket's queue drops these first. */
   command?: true;
+  /** From the session feed's reads (an observed event, or the feed's restart marker): a hosted-only
+      subscriber never gets it. */
+  observed?: true;
 }
 
 /** What a list row gives the observed diff (structural: SessionSummary fits). */
@@ -52,6 +55,10 @@ export interface EventSources {
   onLabelled?(fn: (e: { id: string; path: string; extension: string }) => void): () => void;
   /** Hold the session feed's loop running as one client does; null when there is no feed. */
   holdFeed(): (() => void) | null;
+  /** A chat made or removed as a whole (server/chat-home-events.ts); left out: no such news. */
+  onChatNews?(fn: (n: { name: "chat.created" | "chat.removed"; chat: string; home?: string }) => void): () => void;
+  /** The top-level chat a session belongs to (itself, or its parent's); left out: itself. */
+  chatOf?(id: string, path: string): string;
   /** Does this server hold the session's chat (its turns are hosted events)? */
   isHosted(path: string): boolean;
   idOf(path: string): string;
@@ -71,6 +78,8 @@ export interface Subscriber {
   deliver(entry: Entry): void;
   /** It asked for command frames (`?with=command.ran`, §app.command-audit/record). */
   commands?: true;
+  /** `?only=hosted` (§app.events/idle): only the events Sova raises itself; it never holds the feed. */
+  hostedOnly?: true;
 }
 
 /** A resume cursor, as a socket's query gives it. */
@@ -102,6 +111,9 @@ export class EventHub {
   private offs: (() => void)[] = [];
   private baseline: Map<string, WatchedSession> | null = null;
   private linger: ReturnType<typeof setTimeout> | null = null;
+  /** The session feed held for the subscribers that hear observed events; null: not held. */
+  private feedRelease: (() => void) | null = null;
+  private feedLinger: ReturnType<typeof setTimeout> | null = null;
   private attention: ReturnType<typeof setTimeout> | null = null;
   private lastErrorLog = 0;
   private readonly now: () => number;
@@ -122,6 +134,11 @@ export class EventHub {
 
   get subscribers(): number {
     return this.subs.size;
+  }
+
+  /** Whether the hub holds the session feed now (a subscriber that hears observed events, or its linger). */
+  get holdsFeed(): boolean {
+    return this.feedRelease !== null;
   }
 
   /** How many subscribers asked for command frames (none: announce() has nothing to do). */
@@ -160,16 +177,20 @@ export class EventHub {
         for (const e of this.ring) if (e.seq > cursor.since) replay.push(e);
       }
     }
+    // Before it joins: a restart marker the hold records is for later resumes, not for this subscriber.
+    if (!sub.hostedOnly) this.holdFeedNow();
     this.subs.add(sub);
+    const shown = sub.hostedOnly ? replay.filter((e) => !e.observed) : replay;
     let left = false;
     return {
       hello: JSON.stringify(this.hello()),
-      replay,
+      replay: shown,
       leave: () => {
         if (left) return;
         left = true;
         this.subs.delete(sub);
         if (this.subs.size === 0) this.lingerThenSleep();
+        else if (!sub.hostedOnly && ![...this.subs].some((s) => !s.hostedOnly)) this.lingerThenReleaseFeed();
       },
     };
   }
@@ -179,7 +200,7 @@ export class EventHub {
    * and never throws, so nothing here can stop the browser's feed.
    */
   seeList = <T extends readonly ListedRow[]>(list: T): T => {
-    if (!this.awake) return list;
+    if (!this.awake || !this.feedRelease) return list;
     try {
       this.observe(list);
     } catch (err) {
@@ -189,9 +210,12 @@ export class EventHub {
   };
 
   /** Record an event: numbered, kept, handed to every subscriber. */
-  record(body: StreamEventBody): void {
+  record(body: StreamEventBody, observed = false): void {
     const seq = ++this.seq;
-    this.keep(entryOf(seq, { type: "event", seq, at: this.now(), ...body } as StreamEvent));
+    // A session's event names its top-level chat (§app.events/names): a lookup in memory, only while awake.
+    const chat = "id" in body && !("chat" in body && body.chat) ? (this.sources.chatOf?.(body.id, body.path) ?? body.id) : undefined;
+    const entry = entryOf(seq, { type: "event", seq, at: this.now(), ...body, ...(chat ? { chat } : {}) } as StreamEvent);
+    this.keep(observed ? { ...entry, observed: true } : entry);
   }
 
   /**
@@ -228,12 +252,47 @@ export class EventHub {
     const maxBytes = this.o.ringBytes ?? RING_BYTES;
     while (this.ring.length > max || (this.ringBytes > maxBytes && this.ring.length)) this.ringBytes -= this.ring.shift()!.bytes;
     for (const s of this.subs) {
+      if (entry.observed && s.hostedOnly) continue;
       try {
         s.deliver(entry);
       } catch (err) {
         this.warn(`a subscriber failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+  }
+
+  /** Hold the session feed for the subscribers that hear observed events. A hold taken while the hub was
+      already awake records its own restart marker, seen only by them: what the list did meanwhile went unseen. */
+  private holdFeedNow(): void {
+    if (this.feedLinger) {
+      clearTimeout(this.feedLinger);
+      this.feedLinger = null;
+    }
+    if (this.feedRelease) return;
+    const release = this.sources.holdFeed();
+    this.feedRelease = release ?? (() => {});
+    if (this.seq > 0 && this.ring.at(-1)?.json.includes('"unobserved"') !== true) {
+      const seq = ++this.seq;
+      this.keep({ ...entryOf(seq, { type: "gap", reason: "unobserved", from: seq, to: seq } satisfies GapFrame), observed: true });
+    }
+  }
+
+  private releaseFeed(): void {
+    if (this.feedLinger) clearTimeout(this.feedLinger);
+    this.feedLinger = null;
+    const release = this.feedRelease;
+    this.feedRelease = null;
+    this.baseline = null;
+    release?.();
+  }
+
+  private lingerThenReleaseFeed(): void {
+    if (this.feedLinger || !this.feedRelease) return;
+    this.feedLinger = setTimeout(() => {
+      this.feedLinger = null;
+      if (![...this.subs].some((s) => !s.hostedOnly)) this.releaseFeed();
+    }, this.o.lingerMs ?? LINGER_MS);
+    this.feedLinger.unref?.();
   }
 
   private wake(): void {
@@ -260,12 +319,12 @@ export class EventHub {
     this.offs.push(this.sources.onAttention(guard("an attention note", () => this.attentionSoon())));
     if (this.sources.onCard) this.offs.push(this.sources.onCard(guard("a card's news", (e) => this.record({ ...e, source: "hosted" }))));
     if (this.sources.onLabelled) this.offs.push(this.sources.onLabelled(guard("a label's news", (e) => this.record({ name: "session.labelled", id: e.id, path: e.path, extension: e.extension, source: "hosted" }))));
-    const release = this.sources.holdFeed();
-    if (release) this.offs.push(release);
+    if (this.sources.onChatNews) this.offs.push(this.sources.onChatNews(guard("a chat's news", (n) => this.record({ name: n.name, source: "hosted", chat: n.chat, ...(n.home ? { home: n.home } : {}) }))));
   }
 
   private sleep(): void {
     this.awake = false;
+    this.releaseFeed();
     for (const off of this.offs.splice(0)) off();
     this.baseline = null;
     if (this.attention) clearTimeout(this.attention);
@@ -306,12 +365,12 @@ export class EventHub {
     if (!before) return;
     for (const w of diffSessions(before, rows)) {
       const at = { id: w.id, path: w.path, source: "observed" as const };
-      if (w.event === "created") this.record({ name: "session.created", ...at, title: w.title ?? "" });
-      else if (w.event === "removed") this.record({ name: "session.removed", ...at });
-      else if (w.event === "renamed") this.record({ name: "session.renamed", ...at, from: w.from ?? "", title: w.title ?? "" });
-      else if (w.event === "tagged") this.record({ name: "session.tagged", ...at, tags: w.tags ?? null });
-      else if (w.event === "archived") this.record({ name: "session.archived", ...at, archived: w.archived ?? false });
-      else this.record({ name: w.event, ...at });
+      if (w.event === "created") this.record({ name: "session.created", ...at, title: w.title ?? "" }, true);
+      else if (w.event === "removed") this.record({ name: "session.removed", ...at }, true);
+      else if (w.event === "renamed") this.record({ name: "session.renamed", ...at, from: w.from ?? "", title: w.title ?? "" }, true);
+      else if (w.event === "tagged") this.record({ name: "session.tagged", ...at, tags: w.tags ?? null }, true);
+      else if (w.event === "archived") this.record({ name: "session.archived", ...at, archived: w.archived ?? false }, true);
+      else this.record({ name: w.event, ...at }, true);
     }
   }
 

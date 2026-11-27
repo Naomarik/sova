@@ -94,7 +94,8 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   besides the main checkout's; only the main checkout's saved value counts, and this machine's own
   copy limit, when one is set, overrides it, §app.project-services/instances), **`host`**
   (names of host variables the templates may read as `${host.NAME}`, kept in Sova's state, never
-  in the repo), and **`deploy`**, how the project ships (§app.project-services/deploy).
+  in the repo; set per device in its `host.json` by the operator, by hand or with `Save Values` on a
+  Transport card, never by an agent, §app.transport/agent), and **`deploy`**, how the project ships (§app.project-services/deploy).
 - **`share`** (optional): `{endpoints?, maxDays?, allow?}`, what a running copy may share
   (§app.project-services/share). `endpoints` lists `"<service>.<port>"`, each a declared port of a
   checkout service (never a shared service's), each once, at most 20 (none when absent); `maxDays` is

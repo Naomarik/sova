@@ -1,0 +1,187 @@
+// After arrival (§app.transport/agent, §app.transport/arrival): the Transport agent is asked for the same project as
+// before it (its root commit included, so the repository the arrival made reads as this project's with no remote),
+// under the arrived chat's own title; its card goes into the arrived chat once, before Move Back's fingerprint; and
+// what it sets up reaches the source, so the Move's done line says the setup is under way.
+import { dropScratchAgentDir } from "../testing/scratch-agent-dir";
+import assert from "node:assert/strict";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { after, test } from "node:test";
+import { TRANSPORT_AGENT_NOTE } from "../../shared/transport-agent-card";
+import { setAfterArrival, type PrepareRequest } from "./hooks";
+import { createTransport, updateTransport } from "./store";
+
+after(dropScratchAgentDir);
+
+const ROOT = "a".repeat(40);
+
+test("after arrival: the agent gets the project's root commit and the arrived chat's title, its card goes into the chat once, and the source hears what it sets up", async () => {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const dest = await import("./destination");
+  const id = "0199aaaa-0000-7000-8000-0000000000a1";
+  const tid = "tr_after001";
+  const home = ensureChatHome(id);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  const file = join(home, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", id })}\n`);
+  createTransport({
+    tid, side: "destination", mode: "move", chatId: id, sourceChatId: id, title: "fix the motors please, they stall at", peer: "desk", peerLabel: "Desk", path: "", folder: "/x", state: "switching", arrivedId: id,
+    steps: { offered: "t", prepared: "t", pulled: "t", staged: "t", verified: "t", decided: "t", published: "t" },
+    // No remote recorded: only the root commit knows the repository the arrival made as this project's.
+    ext: { fromSource: true, offer: { trees: [], repoRel: null, project: { remotes: [], roots: [ROOT] } } },
+  });
+  const asked: PrepareRequest[] = [];
+  setAfterArrival((req) => {
+    asked.push(req);
+    // The agent starts and is kept on the record (routes.ts's onAgent does this live).
+    updateTransport(tid, { ext: { agent: { sessionId: "ag-1", path: "/agent.jsonl", title: `Transport: ${req.title}`, device: "Air", state: "working", checks: [{ id: "tool:mise", ok: false, detail: "mise isn't installed for this user" }] } } });
+    return ["mise", "node_modules"];
+  });
+  const cards: { path: string; card: unknown }[] = [];
+  dest.setDestinationDeps({
+    peerFetch: async () => new Response("{}"),
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack: () => {},
+    openWithNote: async (p, text) => appendFileSync(p, `${JSON.stringify({ type: "custom_message", customType: "sova-transport-arrival", content: text })}\n`),
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+    titleOf: async () => "Motors stall fix",
+    noteAgentCard: async (p, text, card) => {
+      cards.push({ path: p, card });
+      appendFileSync(p, `${JSON.stringify({ type: "custom_message", customType: TRANSPORT_AGENT_NOTE, content: text, details: card })}\n`);
+      return true;
+    },
+  });
+  const res = await dest.commit({ id: "desk" }, tid, {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0]!.project.firstCommit, ROOT, "the same project as the prepare: its root commit");
+  assert.equal(asked[0]!.fromSource, true);
+  assert.equal(asked[0]!.title, "Motors stall fix", "the arrived chat's own title, not its first line");
+  assert.deepEqual(cards, [{ path: file, card: { tid, title: "Transport: Motors stall fix", device: "Air" } }]);
+  assert.deepEqual((res.body as { settingUp?: string[] }).settingUp, ["mise", "node_modules"]);
+  const s = await dest.statusOf({ id: "desk" }, tid);
+  assert.deepEqual(s.settingUp, ["mise", "node_modules"], "the source reads it with the opened step");
+  assert.equal(s.agent?.state, "working");
+  assert.equal(s.turned, false, "the card is in before Move Back's fingerprint: no turn here");
+  assert.ok(dest.hasAgentCard(readFileSync(file, "utf8"), tid));
+  assert.ok(!dest.hasAgentCard(readFileSync(file, "utf8"), "tr_other01"));
+  setAfterArrival(null);
+});
+
+test("the card's note is an info row carrying its card; details that don't read fall back to the plain row", async () => {
+  const { rowsOfEntry } = await import("../transcript");
+  const base = { id: "n1", parentId: null, kind: "note" as const, noteType: TRANSPORT_AGENT_NOTE, content: "The Transport agent …", display: true, inMessage: false };
+  const card = { tid: "tr_after001", title: "Transport: Motors stall fix", device: "Air" };
+  const [row] = rowsOfEntry({ ...base, details: card } as never);
+  assert.equal(row?.kind, "info");
+  assert.deepEqual(row?.transportAgent, card);
+  const [plain] = rowsOfEntry({ ...base, details: { tid: "nope" } } as never);
+  assert.equal(plain?.transportAgent, undefined);
+  assert.equal(plain?.text, "The Transport agent …");
+});
+
+test("after arrival: the project is registered with the carried settings, the card asks for each host value this device lacks prefilled with the source's, and only your Save writes them", async () => {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const dest = await import("./destination");
+  const { publicView, readTransport } = await import("./store");
+  const id = "0199aaaa-0000-7000-8000-0000000000b2";
+  const tid = "tr_hostask01";
+  const home = ensureChatHome(id);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  const file = join(home, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", id })}\n`);
+  const settings = { v: 1, name: "Motors", overseer: { version: 1, watch: false } };
+  createTransport({
+    tid, side: "destination", mode: "copy", chatId: id, sourceChatId: id, title: "t", peer: "desk", peerLabel: "Desk", path: "", folder: "/home/v/motors", state: "switching", arrivedId: id,
+    steps: { offered: "t", prepared: "t", pulled: "t", staged: "t", verified: "t", decided: "t", published: "t" },
+    ext: { offer: { trees: [], repoRel: null, project: { remotes: [], roots: [ROOT] } }, carry: { host: { names: ["DB_URL", "PORT_BASE"], values: { DB_URL: "postgres://desk/motors", PORT_BASE: "5400" } }, settings } },
+  });
+  setAfterArrival(() => []);
+  const registered: [string, unknown][] = [];
+  const written: [string, Record<string, string>][] = [];
+  const cards: string[] = [];
+  dest.setDestinationDeps({
+    peerFetch: async () => new Response("{}"),
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack: () => {},
+    openWithNote: async (p, text) => appendFileSync(p, `${JSON.stringify({ type: "custom_message", customType: "sova-transport-arrival", content: text })}\n`),
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+    noteAgentCard: async (p, text, card) => {
+      cards.push(text);
+      appendFileSync(p, `${JSON.stringify({ type: "custom_message", customType: TRANSPORT_AGENT_NOTE, content: text, details: card })}\n`);
+      return true;
+    },
+    registerArrived: async (root, s) => (registered.push([root, s]), { registered: "prj_new00001" }),
+    hostHeld: () => new Set(["PORT_BASE"]),
+    writeHostValues: (root, values) => void written.push([root, values]),
+  });
+  const res = await dest.commit({ id: "desk" }, tid, {});
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(registered, [["/home/v/motors", settings]]);
+  const r = readTransport(tid)!;
+  assert.deepEqual((r.ext as { hostAsk?: unknown }).hostAsk, [{ name: "DB_URL", value: "postgres://desk/motors" }], "only what this device lacks, prefilled with the source's");
+  assert.deepEqual(cards, ["This project needs 1 host value set on this device."], "its card is in the chat though no agent runs");
+  assert.equal(written.length, 0, "nothing writes a host value but your Save");
+  const view = publicView(r) as { ext?: Record<string, unknown> };
+  assert.equal(view.ext?.carry, undefined, "the source's values and settings never reach a page");
+  assert.ok(!JSON.stringify(view).includes("5400"));
+  // A second commit (a retry) registers nothing again.
+  await dest.commit({ id: "desk" }, tid, {});
+  assert.equal(registered.length, 1);
+  assert.deepEqual(dest.saveHostValues(tid, { PORT_BASE: "1" }), { ok: false, status: 400, error: "PORT_BASE isn't a host value this transport asks for" });
+  assert.deepEqual(dest.saveHostValues(tid, { DB_URL: "postgres://air/motors" }), { ok: true, left: [] });
+  assert.deepEqual(written, [["/home/v/motors", { DB_URL: "postgres://air/motors" }]]);
+  assert.deepEqual((readTransport(tid)!.ext as { hostAsk?: unknown }).hostAsk, []);
+  setAfterArrival(null);
+});
+
+test("after arrival: the running copies the source stopped at the switch are asked for, each on its tree here with its services; one whose tree didn't arrive is left out", async () => {
+  const { ensureChatHome } = await import("../chat-homes/root");
+  const dest = await import("./destination");
+  const id = "0199aaaa-0000-7000-8000-0000000000c3";
+  const tid = "tr_copies01";
+  const home = ensureChatHome(id);
+  mkdirSync(join(home, "sessions"), { recursive: true });
+  writeFileSync(join(home, "sessions", `2026-01-01T00-00-00-000Z_${id}.jsonl`), `${JSON.stringify({ type: "session", id })}\n`);
+  createTransport({
+    tid, side: "destination", mode: "move", chatId: id, sourceChatId: id, title: "t", peer: "desk", peerLabel: "Desk", path: "", folder: "/home/v/.worktrees/motors-feat", state: "switching", arrivedId: id,
+    steps: { offered: "t", prepared: "t", pulled: "t", staged: "t", verified: "t", decided: "t", published: "t" },
+    ext: {
+      offer: { trees: [{ name: "motors-feat", branch: "feat/x", main: false, rel: "" }, { name: "motors-api", branch: "api", main: false, rel: ".worktrees/motors-api" }], repoRel: "motors", project: { remotes: [], roots: [ROOT] } },
+      targets: { "motors-feat": "/home/v/.worktrees/motors-feat", "motors-api": "/home/v/.worktrees/motors-api" },
+    },
+  });
+  const asked: PrepareRequest[] = [];
+  setAfterArrival((req) => void asked.push(req));
+  dest.setDestinationDeps({
+    peerFetch: async () => new Response("{}"),
+    clickProven: async () => true,
+    adopt: () => {},
+    cameBack: () => {},
+    openWithNote: async (p, text) => appendFileSync(p, `${JSON.stringify({ type: "custom_message", customType: "sova-transport-arrival", content: text })}\n`),
+    tellHelper: async () => {},
+    helperNote: () => "",
+    importUsage: () => ({}),
+  });
+  const running = [
+    { tree: "motors-feat", name: "feat/x", services: ["web", "worker"] },
+    { tree: "motors-api", name: "api", services: ["api"] },
+    { tree: "gone", name: "gone", services: ["web"] },
+    { tree: "__proto__", name: "x", services: [] },
+  ];
+  const res = await dest.commit({ id: "desk" }, tid, { stopped: { jobs: [], copies: ["feat/x", "api"] }, running });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(asked[0]!.copies, [
+    { tree: "/home/v/.worktrees/motors-feat", name: "feat/x", services: ["web", "worker"] },
+    { tree: "/home/v/.worktrees/motors-api", name: "api", services: ["api"] },
+  ]);
+  assert.equal(asked[0]!.ownTree, "/home/v/.worktrees/motors-feat", "with none, the chat's own tree's copy");
+  assert.equal(asked[0]!.ownName, "feat/x");
+  setAfterArrival(null);
+});

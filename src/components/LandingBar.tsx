@@ -8,7 +8,9 @@ import { Portal } from "solid-js/web";
 import { FLOAT_GAP_MOUSE, FLOAT_GAP_TOUCH, floatAbove } from "../lib/float-card";
 import { createHoldGesture } from "../lib/hold-select";
 import { splitActions, type LandingAction, type LandingBarModel, type LandingProjectBar, type LandingSegment } from "../lib/landing-bar";
-import { refusal, resumeQueue } from "../lib/merge-queue-client";
+import { refusal, resumeQueue, sendAnswer } from "../lib/merge-queue-client";
+import { answerDone } from "../lib/merge-answers";
+import { LandConfirmBox } from "./WorktreesModal";
 import { noteReleaseChanged, releaseRefusal, runReleaseVerb } from "../lib/releases-client";
 import { announce, toast } from "../lib/ui-state";
 import { Icon, trapFocus } from "./ui";
@@ -179,10 +181,15 @@ function usePeek(suppress: () => boolean) {
   return { peek, hide, bind, echo };
 }
 
-/** One action: in place (Resume Queue, Continue, Retry Step) or a link to the tab that takes it. */
-function Action(props: { action: LandingAction; onDone?: () => void }) {
+type AnswerAction = Extract<LandingAction, { kind: "answer" }>;
+/** An answer's key: the same answer to the same entry across the model's rebuilds (one a second). */
+const answerKey = (a: AnswerAction) => `${a.entry.id}:${a.answer}`;
+
+/** One action: in place (Resume Queue, Continue, Retry Step; an answer asks first, `onAsk`) or a link to the tab that
+    takes it. */
+function Action(props: { action: LandingAction; onDone?: () => void; onAsk?: (a: AnswerAction) => void; busy?: boolean }) {
   const [busy, setBusy] = createSignal(false);
-  const run = async (a: Exclude<LandingAction, { kind: "link" }>) => {
+  const run = async (a: Exclude<LandingAction, { kind: "link" | "answer" }>) => {
     if (busy()) return;
     setBusy(true);
     try {
@@ -212,6 +219,12 @@ function Action(props: { action: LandingAction; onDone?: () => void }) {
         {a.label}
       </a>
     );
+  if (a.kind === "answer")
+    return (
+      <button type="button" class={`button button-sm${a.primary ? " button-primary" : ""}`} data-answer={answerKey(a)} aria-label={a.aria} aria-busy={props.busy ? "true" : undefined} aria-disabled={props.busy ? "true" : undefined} onClick={() => !props.busy && props.onAsk?.(a)}>
+        {a.label}
+      </button>
+    );
   const name = a.kind === "resume" ? a.label : a.kind === "continue" ? `Continue after ${a.stepLabel}` : `Retry ${a.stepLabel}`;
   return (
     <button type="button" class="button button-sm button-primary" aria-label={name} aria-busy={busy() ? "true" : undefined} aria-disabled={busy() ? "true" : undefined} onClick={() => void run(a)}>
@@ -220,14 +233,74 @@ function Action(props: { action: LandingAction; onDone?: () => void }) {
   );
 }
 
+/**
+ * A waiting entry's answers in the detail (al_1 q1): a press asks once, in the card ("Land feat/x at 20e78aa?", the
+ * answer's own word and Not Yet), then acts right there through the Needs you row's routing (sendAnswer). Busy while it
+ * goes; then one line in the card says what the queue really did (the live region reads it out), or the queue's
+ * refusal, word for word.
+ */
+function createAnswerFlow(actions: () => LandingAction[]) {
+  const [asking, setAsking] = createSignal<string | null>(null);
+  const [busy, setBusy] = createSignal(false);
+  const [note, setNote] = createSignal<{ text: string; tone: "done" | "error" } | null>(null);
+  // Entries just answered: their buttons go at once, not when the queue's next frame reaches the bar.
+  const [answered, setAnswered] = createSignal<ReadonlySet<string>>(new Set());
+  let root: HTMLElement | undefined;
+  const open = () => actions().find((a): a is AnswerAction => a.kind === "answer" && answerKey(a) === asking());
+  // The entry left (answered elsewhere, or it moved on): nothing is left to confirm.
+  createEffect(() => {
+    if (asking() && !busy() && !open()) setAsking(null);
+  });
+  const back = (key: string) => requestAnimationFrame(() => root?.querySelector<HTMLElement>(`[data-answer="${CSS.escape(key)}"]`)?.focus());
+  const ask = (a: AnswerAction) => {
+    setNote(null);
+    setAsking(answerKey(a));
+  };
+  const cancel = () => {
+    const k = asking();
+    setAsking(null);
+    if (k) back(k);
+  };
+  const confirm = async () => {
+    const a = open();
+    if (!a || busy()) return;
+    setBusy(true);
+    try {
+      const r = await sendAnswer(a.entry, a.answer, a.root);
+      if (!r.ok) {
+        const no = refusal(r)!;
+        setNote({ text: no, tone: "error" });
+        announce(no);
+      } else {
+        const words = answerDone(a.answer, a.entry.branch, r.entry);
+        setAnswered(new Set([...answered(), a.entry.id]));
+        // The card's line says it (a toast would cover the phone sheet's buttons); the live region reads it out.
+        setNote({ text: words, tone: "done" });
+        announce(words);
+      }
+    } catch (err) {
+      const no = err instanceof Error ? err.message : String(err);
+      setNote({ text: no, tone: "error" });
+      announce(no);
+    } finally {
+      setBusy(false);
+      setAsking(null);
+    }
+  };
+  /** The actions to draw: an answered entry's answers left out. */
+  const shown = (list: LandingAction[]) => list.filter((a) => a.kind !== "answer" || !answered().has(a.entry.id));
+  return { open, busy, note, ask, cancel, confirm, shown, ref: (el: HTMLElement) => (root = el) };
+}
+
 /** The detail: the top project's lines and actions, then every other busy project, one line each. */
 export function LandingDetail(props: { model: LandingBarModel; onNavigate?: () => void; id?: string }) {
   const top = () => props.model.top;
   const others = stable(() => props.model.all.slice(1));
   const lines = stable(() => props.model.top.lines);
   const actions = stable(() => props.model.top.actions);
+  const flow = createAnswerFlow(actions);
   return (
-    <div class="landing-detail" id={props.id}>
+    <div class="landing-detail" id={props.id} ref={flow.ref}>
       <Show when={props.model.all.length > 1}>
         <p class="landing-detail-project">{top().name}</p>
       </Show>
@@ -248,10 +321,24 @@ export function LandingDetail(props: { model: LandingBarModel; onNavigate?: () =
           </For>
         </ul>
       </Show>
-      <Show when={splitActions(actions()).doing.length > 0}>
-        <div class="landing-actions">
-          <For each={splitActions(actions()).doing}>{(a) => <Action action={a} onDone={props.onNavigate} />}</For>
-        </div>
+      <Show when={flow.note()}>
+        {(n) => (
+          <p class={`landing-note landing-note-${n().tone}`} role={n().tone === "error" ? "alert" : "status"}>
+            {n().text}
+          </p>
+        )}
+      </Show>
+      <Show
+        when={flow.open()}
+        fallback={
+          <Show when={flow.shown(splitActions(actions()).doing).length > 0}>
+            <div class="landing-actions">
+              <For each={flow.shown(splitActions(actions()).doing)}>{(a) => <Action action={a} onDone={props.onNavigate} onAsk={flow.ask} busy={flow.busy()} />}</For>
+            </div>
+          </Show>
+        }
+      >
+        {(a) => <LandConfirmBox label={a().aria} title={a().confirm.title} line={a().confirm.line} confirm={a().confirm.confirm} cancel="Not Yet" busy={flow.busy()} onConfirm={() => void flow.confirm()} onCancel={flow.cancel} />}
       </Show>
       <Show when={splitActions(actions()).places.length > 0}>
         <nav class="landing-places" aria-label="Go to">
@@ -379,6 +466,8 @@ export function LandingBarRow(props: { model: LandingBarModel }) {
 function holdFocus(el: HTMLElement, close: () => void): void {
   const key = (e: KeyboardEvent) => {
     if (e.key !== "Escape") return;
+    // An answer's open confirm takes its own Escape (Not Yet); the panel stays.
+    if ((e.target as Element | null)?.closest?.(".wt-queue-confirm")) return;
     e.stopPropagation();
     close();
   };

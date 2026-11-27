@@ -1,15 +1,14 @@
 import { createContext, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, useContext, type JSX } from "solid-js";
 import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } from "./MergeQueueChats";
 import type { ChatRef } from "../lib/merge-chat";
-import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
 import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, WAITING_RULING_LINE, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, needsYouOf, withItsChat } from "../lib/merge-queue";
-import { DECISION_ACTION_LABEL, DECISION_LABEL, decisionActions, openDecision, STANDING_LINE, standingWords, answeredInChat, type DecisionAction } from "../lib/merge-standing";
-import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
+import { DECISION_LABEL, openDecision, STANDING_LINE, standingWords } from "../lib/merge-standing";
+import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
-import { cardActionDone, cardActionRoute } from "../lib/merge-queue-card";
-import { mergeQueueTabHref, mergeRunHref, pipelineHref, projectSessionHref, projectTabHref, type QueueTab } from "../lib/projects-route";
-import { announce, toast } from "../lib/ui-state";
+import { chatHref, createEntryAnswers, DecisionButtons, DecisionLines, useAct } from "./EntryDecision";
+import { landDone } from "../lib/merge-answers";
+import { mergeQueueTabHref, mergeRunHref, pipelineHref, projectTabHref, type QueueTab } from "../lib/projects-route";
 import { MergeRunView } from "./MergeRunView";
 import { LandedHistory } from "./pipeline/LandedHistory";
 import { LocalBehind, RequestRow, type RequestEntry } from "./MergeQueueRequests";
@@ -29,6 +28,9 @@ import { heldCount, heldHasContent, HeldList, RetiredList, RetirementLists, Reti
 import { DRY_RUN_NOW_LINE, dryRunActions, dryRunChip, dryRunFact, failureLine, landFirstLine, runsFirst, scopeWords, tookWords, heldDryRunLabel, nth, trialChip, trialLine, waitingIdOf, whoStarted, type BranchDryRun } from "../lib/dry-run";
 import { DryRunButton, DryRunLines, DryRunWhat, FixNewChatButton, FixSplit, runDryRunPress, usePress, type FixTarget } from "./DryRun";
 import type { MergeTrial, MergeTrialWaiting } from "../../shared/merge-queue";
+
+/** Shared with the run page and the queue chats (EntryDecision): the chat link and one action's pending state. */
+export { chatHref, useAct };
 
 /** How often the tab reads the queue while it shows (a run's steps move by the second). */
 const POLL_MS = 4000;
@@ -140,12 +142,6 @@ export type ChatOf = (id: string) => ChatRef | undefined;
 /** A chat's readiness readings of its worktrees, by its id (lib/merge-queue chatTreesOf); undefined: not known. */
 export type TreesOf = (id: string) => WorktreeReadiness[] | undefined;
 
-/** Where a chat recorded by its id opens: its own route when the list carries it, else the id route the app resolves. */
-export const chatHref = (projectId: string, id: string, chatOf?: ChatOf): string => {
-  const c = chatOf?.(id);
-  return c ? projectSessionHref(projectId, c.path) : `#/sid/${encodeURIComponent(id)}`;
-};
-
 /** "from <chat>": a link to the branch's own chat when the entry knows it (the run's page). */
 export function FromChat(props: { projectId: string; entry: Pick<MergeEntry, "session">; chatOf?: ChatOf }) {
   return (
@@ -225,38 +221,6 @@ function QueueReview(props: { projectId: string; branch: string; scope: DiffScop
       }
     />
   );
-}
-
-/** One action button with its pending state; a refusal shows under the row and is announced. */
-export function useAct(onChanged: () => void) {
-  const [busy, setBusy] = createSignal<string | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
-  const run = async (key: string, call: () => Promise<{ ok: boolean; error?: { message: string } }>, done: string) => {
-    if (busy()) return;
-    setBusy(key);
-    setError(null);
-    try {
-      const no = refusal(await call());
-      if (no) {
-        setError(no);
-        announce(no);
-      } else {
-        toast(done);
-        announce(done);
-        onChanged();
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(null);
-    }
-  };
-  /** Nothing was sent: say why where the row shows its errors. */
-  const fail = (why: string) => {
-    setError(why);
-    announce(why);
-  };
-  return { busy, error, run, fail };
 }
 
 function QueueBody(props: { projectId: string; view: MergeQueueView; tab?: QueueTab; refreshed?: () => number; toStrip(): boolean; chatOf?: ChatOf; treesOf?: TreesOf; setup: SetupPoll; onChanged(): void }) {
@@ -1068,45 +1032,21 @@ function EntryFix(props: { projectId: string; target: string; entry: MergeEntry;
  *  Land Anyway in Fix's menu (§app.project-setup/trial). */
 const heldOnDryRun = (e: MergeEntry): boolean => !!e.dryRunHold && e.dryRunHold.commit === e.commit;
 
-/** The row's own words once an answer went through; the private names' answers say theirs (cardActionDone). */
-const ROW_DONE: Partial<Record<MergeAnswer, (branch: string) => string>> = {
-  accept: (b) => `Accepted the resolution for ${b}.`,
-  "land-anyway": (b) => `Landing ${b} anyway.`,
-  "try-again": (b) => `Checking ${b} again.`,
-  land: (b) => `Queued ${b}.`,
-};
-
 /** An entry that waits for you: a decision (its question, its choices, its answers on the queue, Answer in Chat when
  *  it is answered in words), or a state that waits from before decisions; or a conflict the merge thread is judging.
- *  Remove from Queue on each. No row has a text box or a re-land, and no Send Back but a Private names decision's. */
+ *  Remove from Queue on each. No row has a text box or a re-land, and no Send Back but a Private names decision's. The
+ *  decision block and its answers are the run page's too (EntryDecision). */
 function NeedsYouRow(props: { projectId: string; root: string; target: string; entry: MergeEntry; chatOf?: ChatOf; view?: MergeQueueView; onChanged(): void }) {
   const e = () => props.entry;
-  const act = useAct(props.onChanged);
+  const answers = createEntryAnswers({ projectId: props.projectId, root: () => props.root, entry: e, threadPath: () => props.view?.thread?.path, onChanged: props.onChanged });
+  const act = answers.act;
+  const doAct = answers.doAct;
+  const actions = answers.actions;
   const runHref = useRunHref();
   const fixPress = usePress(props.onChanged);
   const decision = () => openDecision(e());
-  /** The answers on the queue: the decision's, else the state's own. Remove from Queue always last. */
   // The merge thread rules on whose failure it is first: nothing to answer yet, only Remove from Queue.
   const ruling = () => !!e().waitingRuling;
-  const actions = (): DecisionAction[] => {
-    if (ruling()) return ["remove"];
-    const d = decision();
-    if (d) return decisionActions(d);
-    switch (e().state) {
-      case "behaviour-differs":
-        return e().conflict?.proposal ? ["accept", "remove"] : ["remove"];
-      case "unattributed":
-        return ["land-anyway", "try-again", "remove"];
-      case "drafts-changed":
-        return ["land", "remove"];
-      default:
-        return ["remove"];
-    }
-  };
-  const inChat = () => {
-    const d = decision();
-    return d ? answeredInChat(d) : e().state === "behaviour-differs" || e().state === "needs-user";
-  };
   const chip = (): { label: string; tone: "warn" | "info" } => {
     if (ruling()) return { label: "Waiting for the merge thread", tone: "info" };
     const d = decision();
@@ -1127,26 +1067,6 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
       default:
         return { label: "Conflict", tone: "warn" };
     }
-  };
-  const sides = () => decision()?.sides ?? (e().state === "behaviour-differs" ? e().conflict : undefined);
-  // The card's own routing (cardActionRoute): a decision's answers, Allow, Send Back and Ask the Merge Thread
-  // included, go to merge.answer; merge.add only for a Land with no decision; anything else sends nothing and says so.
-  const doAct = (a: DecisionAction) => {
-    const b = e().branch;
-    const route = cardActionRoute(a, !!decision());
-    if (route.verb === "none") return act.fail(route.why);
-    if (route.verb === "cancel") return void act.run(a, () => cancelEntry(e()), `Removed ${b} from the merge queue.`);
-    // A Drafts changed entry from before decisions re-approves at the commit it waits at.
-    if (route.verb === "land") return void act.run(a, () => landBranch(props.root, b, { commit: e().commit }), `Queued ${b}.`);
-    const done = ROW_DONE[route.answer]?.(b) ?? cardActionDone(a, b);
-    // Ask the Merge Thread: open its chat once the queue took the answer, as the run's step does.
-    const path = props.view?.thread?.path;
-    const call = async () => {
-      const r = await answerEntry(e(), route.answer);
-      if (r.ok && a === "ask-thread" && path) queueMicrotask(() => (location.hash = projectSessionHref(props.projectId, path)));
-      return r;
-    };
-    return void act.run(a, call, done);
   };
   return (
     <li
@@ -1170,44 +1090,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
           </Show>
         </p>
         <BranchSummaryView summary={e().summary} projectId={props.projectId} branch={e().branch} />
-        <Show when={decision()}>
-          {(d) => (
-            <>
-              <p class="list-meta mq-question">
-                {d().question}
-                <Show when={d().cantSettle}>
-                  <span class="text-muted"> · can't be settled without you</span>
-                </Show>
-              </p>
-              <Show when={d().choices.length}>
-                <p class="list-meta">
-                  <span class="text-muted">Choices:</span> {d().choices.join(" · ")}
-                </p>
-              </Show>
-              <Show when={d().heldNote}>
-                <p class="list-meta text-muted">The merge queue's note to the chat isn't sent yet: it goes with your answer.</p>
-              </Show>
-            </>
-          )}
-        </Show>
-        <Show when={sides()}>
-          {(c) => (
-            <dl class="mq-sides">
-              <div>
-                <dt class="text-eyebrow">{props.target}</dt>
-                <dd>{c().ours}</dd>
-              </div>
-              <div>
-                <dt class="text-eyebrow">This branch</dt>
-                <dd>{c().theirs}</dd>
-              </div>
-              <div>
-                <dt class="text-eyebrow">Merge thread proposes</dt>
-                <dd>{c().proposal}</dd>
-              </div>
-            </dl>
-          )}
-        </Show>
+        <DecisionLines entry={e()} target={props.target} />
         <Show when={!decision() && e().state === "review-flagged"}>
           <p class="list-meta">{e().review?.text ?? e().reason ?? "The review found something that blocks it."}</p>
         </Show>
@@ -1245,41 +1128,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
           <EntryFix projectId={props.projectId} target={props.target} entry={e()} press={fixPress} chatOf={props.chatOf} onLand={actions().includes("land") ? () => doAct("land") : undefined} onLandAnyway={heldOnDryRun(e()) && actions().includes("land-anyway") ? () => doAct("land-anyway") : undefined} />
         </Show>
         {/* Fix took Land's place; a Land's held dry run moves Land Anyway into Fix's menu and Try Again beside it. */}
-        <For each={actions().filter((a) => a !== "remove" && !(e().failure && a === "land") && !(e().failure && heldOnDryRun(e()) && (a === "land-anyway" || a === "try-again")))}>
-          {(a) => (
-            <button
-              type="button"
-              class={`button button-sm${a === "try-again" ? "" : " button-primary"}`}
-              aria-label={a === "accept" ? `Accept the resolution for ${e().branch}` : a === "land-anyway" ? `Land ${e().branch} anyway` : a === "try-again" ? `Try ${e().branch} again` : `Land ${e().branch}`}
-              disabled={!!act.busy()}
-              aria-busy={act.busy() === a ? "true" : undefined}
-              onClick={(ev) => {
-                ev.stopPropagation();
-                doAct(a);
-              }}
-            >
-              {DECISION_ACTION_LABEL[a]}
-            </button>
-          )}
-        </For>
-        <Show when={inChat() && e().session}>
-          <a class="button button-sm" href={chatHref(props.projectId, e().session!, props.chatOf)} aria-label={`Answer about ${e().branch} in its chat`} title="You answer in the chat's message box." onClick={(ev) => ev.stopPropagation()}>
-            Answer in Chat
-          </a>
-        </Show>
-        <button
-          type="button"
-          class="button button-sm"
-          aria-label={`Remove ${e().branch} from the merge queue`}
-          title="Takes it off the queue. Its branch, folder, commits and drafts stay."
-          disabled={!!act.busy()}
-          onClick={(ev) => {
-            ev.stopPropagation();
-            doAct("remove");
-          }}
-        >
-          Remove from Queue
-        </button>
+        <DecisionButtons projectId={props.projectId} entry={e()} answers={answers} chatOf={props.chatOf} show={(a) => !(e().failure && a === "land") && !(e().failure && heldOnDryRun(e()) && (a === "land-anyway" || a === "try-again"))} />
       </div>
     </li>
   );
@@ -1398,7 +1247,7 @@ function ReadyRow(props: { projectId: string; root: string; target?: string; how
   // Land names no chat: the server records the branch's owner by the same rule that put this row's chat here
   // (server/merge-queue/owners.ts).
   const doLand = (o: LandOptions = {}) =>
-    void act.run("land", () => landBranch(props.root, r().branch, { ...o, commit: r().commit }), `Queued ${r().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
+    void act.run("land", () => landBranch(props.root, r().branch, { ...o, commit: r().commit }), (res) => landDone(r().branch, res.merge?.entry, `${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}`));
   // The chip is the branch's chat's own readiness reading (Land's offer doesn't rest on it: the row is Ready to land,
   // not approved, by git's reading of the branch).
   const chip = () => readyRowChip(r(), r().session ? props.treesOf?.(r().session!) : undefined);

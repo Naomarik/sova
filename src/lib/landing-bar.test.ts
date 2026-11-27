@@ -1,9 +1,11 @@
 // The landing bar's reduction (al_1): which project, its words, its step track, its actions.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { MergeEntry, MergeRun, RunStep } from "../../shared/merge-queue";
+import type { MergeDecision, MergeDecisionAction, MergeEntry, MergeRun, RunStep } from "../../shared/merge-queue";
 import type { ReleaseRecord, ReleaseStep } from "../../shared/release";
-import { INVALID_TITLE, reduceLanding, splitActions, runSegments, runNow, SHOWN_MS, type LandingProjectInput, type LandingQueueCut, type LandingReleaseCut } from "./landing-bar";
+import { INVALID_TITLE, reduceLanding, splitActions, runSegments, runNow, SHOWN_MS, type LandingAction, type LandingProjectInput, type LandingQueueCut, type LandingReleaseCut } from "./landing-bar";
+import { BAR_ANSWERS, entryAnswers } from "./merge-answers";
+import { DECISION_ACTION_LABEL, DECISION_LABEL } from "./merge-standing";
 
 const NOW = Date.parse("2026-11-05T12:00:00Z");
 const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString();
@@ -162,9 +164,13 @@ test("merge needs-you while a landing runs: no chip and no count on the running 
   assert.ok(!b.name.includes("needs you"), b.name);
   assert.ok(!b.top.peek.some((l) => l.text.includes("feat/flag")));
   assert.ok(b.top.lines.some((l) => l.text.startsWith("feat/flag · Can't tell whose failure")));
+  // Its line opens the Needs you tab, where it is listed (its run from there when it has one); the bar's own Queue is
+  // about the landing, so it stays Ready to land.
+  assert.ok(b.top.lines.some((l) => l.href === "#/projects/prj_a/merge-queue/needs-you"));
+  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.label === "Queue" && a.href === "#/projects/prj_a/merge-queue"));
 });
 
-test("merge needs-you with nothing running takes the whole bar, in the tab's words, its actions opening the tab", () => {
+test("merge needs-you with nothing running takes the whole bar, in the tab's words: answers as buttons, places as links", () => {
   const q = queue({ needsYou: [entry({ id: "me_9", branch: "feat/flag", state: "unattributed", run: "mr_7" })] });
   const b = bar([proj({ queue: q })])!;
   assert.equal(b.top.kind, "merge-needs");
@@ -172,15 +178,83 @@ test("merge needs-you with nothing running takes the whole bar, in the tab's wor
   assert.equal(b.top.title, "Can't tell whose failure · waiting for you");
   assert.equal(b.top.sub, "feat/flag");
   assert.ok(!b.top.lines.some((l) => l.text.startsWith("feat/flag")), "the detail doesn't repeat the face");
-  const labels = b.top.actions.map((a) => a.label);
-  assert.deepEqual(labels.slice(0, 2), ["Land Anyway", "Try Again"]);
-  assert.ok(!labels.includes("Send Back"), "no Send Back anywhere (al_3)");
-  for (const a of b.top.actions) assert.equal(a.kind, "link");
-  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.href === "#/projects/prj_a/merge-queue/mr_7"));
   const { doing, places } = splitActions(b.top.actions);
   assert.deepEqual(doing.map((a) => a.label), ["Land Anyway", "Try Again"], "the things that do something: buttons, their own row");
   assert.deepEqual(places.map((a) => a.label), ["Queue"], "the places to go: one row of links");
   assert.ok(places.every((a) => a.aria?.startsWith("Open")), "each place keeps a full accessible name");
+});
+
+/** What the bar may offer for a branch that waits for you (al_1 q1, q3), as faults: each answer either acts right there
+    (after its confirm) with an answer the Needs you row and the run page offer that entry, or is a link to one of those
+    screens, where a control of the same label waits; every answer the bar acts on is offered; every way to the queue
+    opens Needs you (its run from there), never Ready to land. The screens' controls are entryAnswers (both draw
+    DecisionButtons over it, entry-decision.test.ts). */
+function barFaults(e: MergeEntry, actions: LandingAction[]): string[] {
+  const out: string[] = [];
+  const offered = entryAnswers(e);
+  const onScreen = offered.map((a) => DECISION_ACTION_LABEL[a]);
+  const needsYou = `#/projects/prj_a/merge-queue/needs-you${e.run ? `/${e.run}` : ""}`;
+  const { doing, places } = splitActions(actions);
+  for (const a of doing) {
+    if (a.kind === "answer") {
+      if (a.entry.id !== e.id) out.push(`${a.label}: answers another entry`);
+      if (!offered.includes(a.answer)) out.push(`${a.label}: ${a.answer} isn't one of the entry's answers`);
+      if (a.label !== DECISION_ACTION_LABEL[a.answer] || a.confirm.confirm !== a.label) out.push(`${a.label}: not the answer's own word`);
+      if (!BAR_ANSWERS[a.answer]) out.push(`${a.label}: not an answer the bar acts on`);
+    } else if (a.kind === "link") {
+      if (!onScreen.includes(a.label)) out.push(`${a.label}: its screen offers no control of that label`);
+      if (a.href !== needsYou) out.push(`${a.label}: opens ${a.href}, not ${needsYou}`);
+    } else out.push(`${a.label}: not a waiting entry's action`);
+  }
+  for (const a of offered) if (BAR_ANSWERS[a] && !doing.some((x) => x.kind === "answer" && x.answer === a)) out.push(`${DECISION_ACTION_LABEL[a]}: offered on the row, missing from the bar`);
+  for (const p of places) if (p.href.includes("/merge-queue") && !p.href.includes("/merge-queue/needs-you")) out.push(`${p.label}: opens ${p.href}, not Needs you`);
+  return out;
+}
+
+test("a branch waiting for you, every decision kind and every state from before decisions: the bar's answers act in place or open a screen that offers them, and every way to the queue opens Needs you", () => {
+  const KINDS = Object.keys(DECISION_LABEL) as MergeDecision["kind"][];
+  const ACTIONS = Object.keys(DECISION_ACTION_LABEL) as MergeDecisionAction[];
+  const decided = (kind: MergeDecision["kind"], actions: MergeDecisionAction[]) => ({ state: "needs-user" as const, decision: { id: "dc_1", kind, question: "Which way?", choices: [], raisedBy: "queue" as const, actions, at: iso(0) } });
+  const shapes: Partial<MergeEntry>[] = [
+    ...KINDS.flatMap((k) => [[], ACTIONS, ...ACTIONS.map((a) => [a])].map((acts) => decided(k, acts))),
+    { state: "behaviour-differs", conflict: { files: ["a.ts"], verdict: "behaviour-differs", ours: "x", theirs: "y", proposal: "z", commit: SHA } as MergeEntry["conflict"] },
+    { state: "behaviour-differs" },
+    { state: "unattributed" },
+    { state: "drafts-changed" },
+    { state: "needs-user" },
+    { state: "request-review" },
+  ];
+  let checked = 0;
+  for (const shape of shapes)
+    for (const run of [undefined, "mr_7"]) {
+      const e = entry({ id: "me_w", branch: "feat/w", session: "s_w", ...shape, ...(run ? { run } : {}) });
+      const b = bar([proj({ queue: queue({ needsYou: [e] }) })]);
+      const what = `${e.decision ? `${e.decision.kind} [${e.decision.actions.join(",")}]` : e.state}${run ? " with a run" : ""}`;
+      assert.ok(b, `${what}: it waits for you, so it takes the bar`);
+      assert.deepEqual(barFaults(e, b.top.actions), [], what);
+      if (e.decision) assert.equal(b.top.title, DECISION_LABEL[e.decision.kind], `${what}: the title is the decision's own words`);
+      checked++;
+    }
+  assert.ok(checked >= 100, `${checked} cases`);
+  // The rule catches what it forbids: an answer that only links to Ready to land, an answer the entry doesn't offer, a
+  // Queue link to Ready to land, an answer the row offers but the bar leaves out.
+  const e = entry({ id: "me_w", branch: "feat/w", state: "unattributed", run: "mr_7" });
+  const good = bar([proj({ queue: queue({ needsYou: [e] }) })])!.top.actions;
+  const answer = good.find((a) => a.kind === "answer")!;
+  assert.ok(barFaults(e, [{ kind: "link", label: "Land Anyway", href: "#/projects/prj_a/merge-queue/mr_7" }, ...good.slice(1)]).length);
+  assert.ok(barFaults(e, [{ ...answer, answer: "land", label: "Land", confirm: { ...answer.confirm, confirm: "Land" } } as LandingAction, ...good.slice(1)]).length);
+  assert.ok(barFaults(e, [...good.filter((a) => a.label !== "Queue"), { kind: "link", label: "Queue", href: "#/projects/prj_a/merge-queue", place: true }]).length);
+  assert.ok(barFaults(e, good.slice(1)).length);
+});
+
+test("an answer in the bar asks first: what it does, at which commit, with the answer's own word and Not Yet's choice", () => {
+  const fixOk = entry({ id: "me_f", branch: "feat/x", commit: "20e78aa".padEnd(40, "0"), state: "needs-user", decision: { id: "dc_2", kind: "fix-ok", question: "The fix changes more than was asked. Land it?", choices: [], raisedBy: "queue", actions: ["land"], at: iso(0) } });
+  const b = bar([proj({ queue: queue({ needsYou: [fixOk] }) })])!;
+  const land = b.top.actions.find((a) => a.kind === "answer")!;
+  assert.equal(land.kind === "answer" && land.confirm.title, "Land feat/x at 20e78aa?");
+  assert.equal(land.kind === "answer" && land.root, "/r/a");
+  assert.ok(b.top.lines.some((l) => l.text === "The fix changes more than was asked. Land it?"), "the face's decision: its question in the detail");
+  assert.ok(!b.top.actions.some((a) => a.label === "Remove from Queue"), "Remove from Queue stays on the row and the run page");
 });
 
 test("several merge needs-you with nothing running: the first takes the bar, the rest one short count", () => {

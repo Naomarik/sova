@@ -7,6 +7,7 @@ import type { MergeAnswer, MergeCard, MergeReport, ReviewCard as MergeReviewCard
 import type { VerbResult } from "../../shared/project-contract";
 import { fixFailure, type LandingRouteResult, runMergeVerb, startDryRun, stopDryRun } from "./api";
 import type { MergeEntry, MergeQueueView } from "./merge-queue-types";
+import { cardActionRoute } from "./merge-queue-card";
 
 const [changed, setChanged] = createSignal(0);
 /** Bumped after every action and on the feed's `merge_queue` frame: readers reload on it. */
@@ -99,6 +100,19 @@ export const fixIt = (project: string, body: { branch?: string; commit?: string;
 export const cancelEntry = (e: Pick<MergeEntry, "id">) => act(null, "merge.cancel", { entry: e.id });
 /** The user's answer to an entry that waits for them, a click on Sova's page: Accept, Land Anyway, Try Again. */
 export const answerEntry = (e: Pick<MergeEntry, "id">, answer: MergeAnswer) => act(null, "merge.answer", { entry: e.id, answer });
+/**
+ * One answer to an entry that waits for you, through the card's own routing (cardActionRoute): Remove from Queue to
+ * merge.cancel, a decision's answers to merge.answer, a Land with no decision (Drafts changed from before decisions) to
+ * merge.add at the commit it waits at; anything else is refused here and sends nothing. The Needs you row, the run page
+ * and the landing bar all answer through this. `root`: the project's main checkout. Answers the entry as the queue left
+ * it, so the words can say what really happened.
+ */
+export async function sendAnswer(e: Pick<MergeEntry, "id" | "branch" | "commit"> & { decision?: MergeEntry["decision"] }, a: string, root: string): Promise<{ ok: boolean; error?: { message: string }; entry?: MergeEntry }> {
+  const route = cardActionRoute(a, !!(e.decision && !e.decision.answered));
+  if (route.verb === "none") return { ok: false, error: { message: route.why } };
+  const r = route.verb === "cancel" ? await cancelEntry(e) : route.verb === "land" ? await landBranch(root, e.branch, { commit: e.commit }) : await answerEntry(e, route.answer);
+  return r.ok ? { ok: true, ...(report(r)?.entry ? { entry: report(r)!.entry } : {}) } : { ok: false, error: { message: refusal(r)! } };
+}
 export const pauseQueue = (project: string) => act(project, "merge.pause", {});
 /** Start Fresh: the merge thread is retired (archived once its turn ends); the next event starts a new one. */
 export const startFreshThread = (project: string) => act(project, "merge.fresh", {});

@@ -134,6 +134,11 @@
 .landing-line-error { color: var(--status-error); }
 .landing-line a { color: inherit; }
 .landing-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* An answer's confirm takes the actions' row; what the queue did (or its refusal) is one line above it. */
+.landing-detail > .wt-queue-confirm { margin-top: 0; text-align: left; }
+.landing-detail > .wt-queue-confirm .wt-queue-confirm-act { justify-content: flex-start; }
+.landing-note { margin: 0; overflow-wrap: anywhere; color: var(--color-ink); }
+.landing-note-error { color: var(--status-error); }
 .landing-places { display: flex; flex-wrap: nowrap; gap: var(--space-3); min-width: 0; overflow: hidden; }
 .landing-place {
   flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

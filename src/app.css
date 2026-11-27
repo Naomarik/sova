@@ -272,7 +272,14 @@ html, body { overflow: clip; overscroll-behavior: none; }
   border: 0;
   border-radius: 0;
 }
-.cleanup-choices > li:not(:last-child) > .cleanup-choice { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.cleanup-choices > li:not(:last-child) { border-bottom: var(--stroke-thin) solid var(--color-border); }
+/* A row and its Compress button (§app.session-list/archive-compress): siblings, never nested, sharing one grid cell.
+   The row keeps the whole width, so every row's chevron sits on one line at the box's edge, a row with Compress or
+   without; Compress sits just before the chevron, and the row's text leaves it room. */
+.cleanup-choice-item { display: grid; align-items: center; }
+.cleanup-choice-item > * { grid-area: 1 / 1; }
+.cleanup-compress { justify-self: end; margin-inline-end: calc(var(--space-4) + 16px + var(--space-2)); }
+.cleanup-choice-item:has(> .cleanup-compress) .list-main { padding-inline-end: calc(5.5rem + var(--space-2)); }
 .cleanup-choice .list-title,
 .cleanup-choice .list-meta { display: block; }
 /* The scope is the point of the row: wrap it on a narrow sheet rather than cut it. */
@@ -1539,6 +1546,13 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .agent-cpu-row { display: flex; align-items: center; gap: var(--space-3); }
 .agent-cpu-row > .input { flex: 0 1 6rem; min-width: 0; }
 .agent-cpu-of { color: var(--color-ink-2); }
+/* Access → Networks: "Add a range" [10.224.0.0/22] [Trust Range…], wrapping under the box when narrow. */
+.access-range-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.access-range-row > .input { flex: 1 1 12rem; min-width: 0; }
+/* Access → Networks rows: an address and range wrap rather than cut off; the chip and button drop under it when narrow. */
+.access-net-row { flex-wrap: wrap; row-gap: var(--space-2); }
+.access-net-main { flex: 1 1 14rem; min-width: 0; }
+.access-net-meta { white-space: normal; overflow-wrap: anywhere; }
 .settings-updates-running { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .settings-updates-version { font-weight: var(--fw-medium); }
 .settings-updates-sha { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }

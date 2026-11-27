@@ -1,0 +1,264 @@
+{
+  "§app.chat-homes/change-log": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.chat-homes/layout",
+      "§app.session-list/live-watch-scope",
+      "§app.transport/package"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "server/chat-homes/changes.ts",
+      "server/chat-homes/session-files.ts",
+      "server/chat-homes/open-index.ts",
+      "server/chat-homes/records.ts",
+      "server/chat-homes/root.ts",
+      "server/chat-homes/place.ts",
+      "server/chat-workers.ts",
+      "server/session-offers.ts",
+      "server/transcript-cards.ts",
+      "server/sessions-index.ts",
+      "scripts/bench-chat-homes/bench.ts",
+      "scripts/bench-chat-homes/run.ts",
+      "scripts/test-groups.mjs",
+      "server/chat-homes/changes.test.ts",
+      "server/chat-homes/changes.integration.test.ts",
+      "server/chat-homes/many-chats.test.ts",
+      "server/chat-homes/records.test.ts",
+      "server/chat-homes/session-files.test.ts",
+      "server/chat-homes/scale.integration.test.ts"
+    ]
+  },
+  "§app.chat-homes/chats-folder": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.chat-homes/location",
+      "§app.settings-dialog/general",
+      "§app.transport/switch",
+      "§app.extensions/reads-chats",
+      "§app.session-list/archive-compression"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "server/chat-homes/move-root.ts",
+      "server/chat-homes/move-routes.ts",
+      "server/chat-homes/root.ts",
+      "shared/chats-folder.ts",
+      "shared/commands/chats-folder.ts",
+      "src/components/ChatsFolderSetting.tsx",
+      "src/components/ChatsFolderSetting.css",
+      "src/lib/chats-folder.ts",
+      "src/lib/api.ts",
+      "server/chat-host.ts",
+      "server/chat-workers.ts",
+      "server/extension-loader.ts",
+      "server/sessions-index.ts",
+      "server/session-feed-watch.ts",
+      "server/chat-handle.ts",
+      "server/chat-homes/place.ts",
+      "server/paths.ts",
+      "server/attachments.ts",
+      "server/page-only.ts",
+      "server/mesh/access.ts",
+      "server/app.ts",
+      "server/chat-homes/move-root.test.ts",
+      "server/chat-homes/move-folder.integration.test.ts",
+      "src/components/FolderPicker.tsx",
+      "server/chat-homes/overseer-finds-homes.integration.test.ts"
+    ]
+  },
+  "§app.chat-homes/layout": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.chat-homes/location",
+      "§chat.sandbox/shared-folder"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "server/chat-homes/records.ts",
+      "server/seen.ts",
+      "server/session-titles.ts",
+      "server/archived-sessions.ts",
+      "server/web-sessions.ts",
+      "server/sova-chat-names.ts",
+      "server/session-names.ts",
+      "server/session-tags.ts",
+      "server/session-groups.ts",
+      "server/signals-store.ts",
+      "server/turn-outcomes.ts",
+      "server/worker-checks.ts",
+      "server/align-triage.ts",
+      "server/merge-followup.ts",
+      "server/attachments.ts",
+      "shared/tmp-paths.ts",
+      "server/memory/store.ts",
+      "server/session-offers.ts",
+      "server/transcript-cards.ts",
+      "server/team-inbox.ts",
+      "server/wake-keeper.ts",
+      "server/wake-keeper-live.ts",
+      "server/background-jobs.ts",
+      "server/chat-workers.ts",
+      "pi-config/extensions/sandbox/shared-folder.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "server/design/own-images.ts",
+      "server/chat-homes/root.ts"
+    ]
+  },
+  "§app.chat-homes/lifetime": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.chat-homes/layout",
+      "§app.session-list/archive-cleanup",
+      "§app.session-list/archive-org-guard",
+      "§app.session-list/archive-compression"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "server/sessions-index.ts",
+      "server/chat-workers.ts",
+      "server/chat-homes/records.ts",
+      "pi-config/extensions/sandbox/shared-folder.ts",
+      "server/memory/store.ts",
+      "server/turn-outcomes.ts",
+      "server/cleanup-moved-guard.test.ts",
+      "server/chat-homes/many-chats.test.ts"
+    ]
+  },
+  "§app.chat-homes/location": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app/chat-homes",
+      "§app.server-runtime/test-agent-fence"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    },
+    "code": [
+      "server/chat-homes/root.ts",
+      "server/chat-host.ts",
+      "server/chat-runtime/supervisor.ts",
+      "scripts/test-env.mjs",
+      "scripts/run-tests.mjs",
+      "server/testing/scratch-agent-dir.ts",
+      "server/testing/hermetic-server.ts",
+      "package.json",
+      "src/lib/chats-folder.ts",
+      "src/components/Sidebar.tsx",
+      "src/components/ChatsFolderSetting.tsx"
+    ]
+  },
+  "§app.chat-homes/new-chats": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.chat-homes/layout",
+      "§app.chat-processes/workers",
+      "§app.projects/folder-sessions",
+      "§app/session-list"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:19Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/chat-workers.ts",
+      "server/chat-homes/records.ts",
+      "server/chat-homes/place.ts",
+      "server/chat-homes/root.ts",
+      "server/harness/pi/state.ts",
+      "server/harness/pi/fork.ts",
+      "server/app.ts",
+      "server/build-loadout.ts",
+      "server/session-fork-routes.ts",
+      "server/paths.ts",
+      "server/sessions-index.ts",
+      "server/tours/ownership.ts",
+      "server/index.ts",
+      "pi-config/extensions/subagents/index.ts"
+    ]
+  },
+  "§app.chat-homes/sole-writer": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.chat-homes/layout",
+      "§chat.sandbox/what-on-enforces",
+      "§chat.sandbox/off-is-today",
+      "§app.overseer/file-writes",
+      "§app.project-overseer/files",
+      "§mesh.links/offers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:19Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    },
+    "code": [
+      "server/chat-homes/records.ts",
+      "server/chat-homes/root.ts",
+      "server/overseer-deny.ts",
+      "server/project-files-tool.ts",
+      "server/mesh/links-transfer.ts",
+      "server/link-sandbox.ts"
+    ]
+  },
+  "§app.chat-homes/switch": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "server/web-settings.ts",
+      "shared/protocol.ts",
+      "src/components/ChatStorageSetting.tsx",
+      "src/components/SettingsDialog.tsx",
+      "server/chat-homes/place.ts"
+    ],
+    "requires": [
+      "§app.chat-homes/new-chats",
+      "§app.settings-dialog/general",
+      "§app.session-list/archive-compression"
+    ]
+  },
+  "§app/chat-homes": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:19Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    }
+  }
+}

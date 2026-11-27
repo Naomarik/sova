@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { ASK_KINDS, type AskKind, type DecisionProviderId, type SessionSignals, type SessionSummary, type SignalKind, TURN_OUTCOMES, type TurnCard, type TurnOutcome } from "../shared/protocol";
 import type { Answer } from "./decide";
 import { stateRoot } from "./state-root";
+import { homesGeneration, splitOut, withHome } from "./chat-homes/records";
 import { sessionsChanged } from "./list-generation";
 
 /**
@@ -107,8 +108,18 @@ export const signalsFile = () => join(stateRoot(), "signals.json");
 
 const isRec = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
 
-/** Tolerant read: a malformed file or record is dropped, never thrown. */
+/** A chat with a home keeps its entries (its own and its workers') in `<home>/chat/signals.json`
+    (server/chat-homes/records.ts), one field per map of this file. */
+const PARTS = ["sessions", "workers", "stalls"] as const;
+const field = (part: (typeof PARTS)[number]) => `signals.json#${part}`;
+
 function load(file: string): SignalsFile {
+  const data = loadFile(file);
+  return { version: 1, sessions: withHome(data.sessions, "signals", field("sessions")), workers: withHome(data.workers, "signals", field("workers")), stalls: withHome(data.stalls, "signals", field("stalls")) };
+}
+
+/** Tolerant read: a malformed file or record is dropped, never thrown. */
+function loadFile(file: string): SignalsFile {
   try {
     const v = JSON.parse(readFileSync(file, "utf8"));
     if (!isRec(v) || v.version !== 1) return empty();
@@ -136,14 +147,15 @@ function load(file: string): SignalsFile {
   }
 }
 
-let cache: { file: string; at: number; data: SignalsFile } | null = null;
+let cache: { file: string; at: number; gen: number; data: SignalsFile } | null = null;
 const CACHE_MS = 1000;
 
 export function readSignals(file = signalsFile()): SignalsFile {
   const now = Date.now();
-  if (cache && cache.file === file && now - cache.at < CACHE_MS) return cache.data;
+  const gen = homesGeneration();
+  if (cache && cache.file === file && cache.gen === gen && now - cache.at < CACHE_MS) return cache.data;
   const data = load(file);
-  cache = { file, at: now, data };
+  cache = { file, at: now, gen: homesGeneration(), data };
   return data;
 }
 
@@ -152,12 +164,21 @@ export function updateSignals(fn: (data: SignalsFile) => void, file = signalsFil
   const data = load(file);
   fn(data);
   try {
-    mkdirSync(dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify(data));
-    renameSync(tmp, file);
+    const out: SignalsFile = empty();
+    let legacyChanged = false;
+    for (const part of PARTS) {
+      const split = splitOut<any>(data[part], "signals", field(part));
+      out[part] = split.legacy;
+      legacyChanged ||= split.legacyChanged;
+    }
+    if (legacyChanged) {
+      mkdirSync(dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify(out));
+      renameSync(tmp, file);
+    }
     sessionsChanged();
-    cache = { file, at: Date.now(), data };
+    cache = { file, at: Date.now(), gen: homesGeneration(), data };
   } catch (err) {
     console.warn("[signals] write failed:", err instanceof Error ? err.message : String(err));
   }

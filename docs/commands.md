@@ -13,11 +13,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 666 |
-| Routes a catalogue entry points at | 228 |
-| Catalogue entries | 302 |
-| Class: Peer protocol | 39 |
-| Class: Auth | 4 |
+| Routes registered | 704 |
+| Routes a catalogue entry points at | 247 |
+| Catalogue entries | 321 |
+| Class: Peer protocol | 54 |
+| Class: Auth | 8 |
 | Class: Share pages | 0 |
 | Class: Extension proxy | 5 |
 | Class: Transport and frames | 1 |
@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 22 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 13 |
-| Hand-written tool specs | 156 |
+| Hand-written tool specs | 157 |
 
 ## Catalogue entries
 
@@ -269,6 +269,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `usage.time` | Usage Time | looks | `GET /api/usage/time` | sessions |
 | `usage.today` | Usage Today | looks | `GET /api/usage/today` | sessions |
 | `usage.session` | Session Usage | looks | `GET /api/usage/session` | sessions |
+| `chat.usage` | Chat Usage | looks | `GET /api/chats/:id/usage` | sessions |
 | `usage.sessions` | Sessions Usage | looks | `POST /api/usage/sessions` | admin |
 | `usage.prices` | Model Prices | looks | `GET /api/usage/prices` | sessions |
 | `usage.prices.refresh` | Refresh Prices | changes | `POST /api/usage/prices/refresh` | admin |
@@ -343,6 +344,24 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `design.restore` | Restore a Design | changes | `POST /api/design/:label/restore` | full |
 | `design.history` | Read Lookbook History | looks | `GET /api/design/history` | full |
 | `design.delete` | Delete a Design | changes | `DELETE /api/design/:label` | full |
+| `transport.preview` | Preview Transport | looks | `GET /api/transport/preview` | full |
+| `transport.list` | List Transports | looks | `GET /api/transport` | full |
+| `transport.get` | Show Transport | looks | `GET /api/transport/:tid` | full |
+| `transport.back` | Show Move Back | looks | `GET /api/transport/:tid/back` | full |
+| `transport.start` | Start Transport | changes | `POST /api/transport` | full |
+| `transport.retry` | Retry Transport | changes | `POST /api/transport/:tid/retry` | full |
+| `transport.cancel` | Cancel Transport | changes | `POST /api/transport/:tid/cancel` | full |
+| `transport.interrupt` | Interrupt and Move | changes | `POST /api/transport/:tid/interrupt` | full |
+| `transport.move-back` | Move Back | changes | `POST /api/transport/:tid/move-back` | full |
+| `transport.host-values` | Save Host Values | changes | `POST /api/transport/:tid/host-values` | full |
+| `transport.allow-downloads` | Allow Downloads | changes | `POST /api/transport/:tid/allow-downloads` | full |
+| `transport.admin-done` | Done (Command Run) | changes | `POST /api/transport/:tid/admin-done` | full |
+| `transport.bring-file` | Bring From Device | changes | `POST /api/transport/:tid/bring-file` | full |
+| `transport.placed-file` | I Placed It Myself | changes | `POST /api/transport/:tid/placed-file` | full |
+| `chats-folder.get` | Show Chats Folder | looks | `GET /api/chats-folder` | full |
+| `chats-folder.preview` | Preview Chats Folder Move | looks | `GET /api/chats-folder/preview` | full |
+| `chats-folder.move` | Move Chats | changes | `POST /api/chats-folder/move` | full |
+| `chats-folder.cancel` | Cancel Chats Folder Move | changes | `POST /api/chats-folder/move/cancel` | full |
 
 ## Pending routes
 
@@ -376,7 +395,7 @@ class, leaves it, and a new route never joins it.
 
 ## Not-a-command classes
 
-### Peer protocol (39)
+### Peer protocol (54)
 
 Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer listener's door, never the operator's actions.
 
@@ -419,15 +438,34 @@ Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer li
 | `POST /api/peer/sync/extensions` | sync.extensions |
 | `GET /api/peer/sync/manifest` | sync.docs |
 | `POST /api/peer/sync/push` | sync.docs |
+| `GET /api/peer/transport/:tid` | sessions |
+| `POST /api/peer/transport/:tid/admin-done` | sessions |
+| `POST /api/peer/transport/:tid/allow-downloads` | sessions |
+| `POST /api/peer/transport/:tid/bring-file` | sessions |
+| `POST /api/peer/transport/:tid/cancel` | sessions |
+| `POST /api/peer/transport/:tid/commit` | sessions |
+| `POST /api/peer/transport/:tid/move-back` | sessions |
+| `POST /api/peer/transport/:tid/outside-file` | sessions |
+| `GET /api/peer/transport/:tid/package` | ticket |
+| `POST /api/peer/transport/:tid/placed-file` | sessions |
+| `POST /api/peer/transport/:tid/ready` | sessions |
+| `POST /api/peer/transport/:tid/retry` | sessions |
+| `GET /api/peer/transport/hello` | sessions |
+| `POST /api/peer/transport/needs` | sessions |
+| `POST /api/peer/transport/offer` | sessions |
 | `ALL /peer/:id/api/*` | full |
 | `ALL /peer/:id/ws/*` | full |
 
-### Auth (4)
+### Auth (8)
 
 Pairing, unlocking and the token: how a browser gets in, not something done once inside.
 
 | Route | Mesh need |
 | --- | --- |
+| `GET /api/auth/networks` | full |
+| `POST /api/auth/networks/check` | full |
+| `POST /api/auth/networks/trust` | full |
+| `POST /api/auth/networks/untrust` | full |
 | `POST /api/auth/pair` | full |
 | `GET /api/auth/status` | full |
 | `GET /api/auth/token` | full |
@@ -910,6 +948,11 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/attention/dismiss` | full | `attention.dismiss` |
 | `GET /api/audit` | full | `audit.list` |
 | `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.shell.list`, `chat.shell.stop`, `chat.stop` |
+| `GET /api/chats-folder` | full | `chats-folder.get` |
+| `POST /api/chats-folder/move` | full | `chats-folder.move` |
+| `POST /api/chats-folder/move/cancel` | full | `chats-folder.cancel` |
+| `GET /api/chats-folder/preview` | full | `chats-folder.preview` |
+| `GET /api/chats/:id/usage` | sessions | `chat.usage` |
 | `GET /api/cwds` | sessions | `cwds.list` |
 | `GET /api/design` | full | `design.list` |
 | `DELETE /api/design/:label` | full | `design.delete` |
@@ -1120,6 +1163,20 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/targets` | sessions | `targets.list` |
 | `GET /api/time-spent` | sessions | `session.time-spent` |
 | `GET /api/transcript` | sessions | `session.read` |
+| `GET /api/transport` | full | `transport.list` |
+| `POST /api/transport` | full | `transport.start` |
+| `GET /api/transport/:tid` | full | `transport.get` |
+| `POST /api/transport/:tid/admin-done` | full | `transport.admin-done` |
+| `POST /api/transport/:tid/allow-downloads` | full | `transport.allow-downloads` |
+| `GET /api/transport/:tid/back` | full | `transport.back` |
+| `POST /api/transport/:tid/bring-file` | full | `transport.bring-file` |
+| `POST /api/transport/:tid/cancel` | full | `transport.cancel` |
+| `POST /api/transport/:tid/host-values` | full | `transport.host-values` |
+| `POST /api/transport/:tid/interrupt` | full | `transport.interrupt` |
+| `POST /api/transport/:tid/move-back` | full | `transport.move-back` |
+| `POST /api/transport/:tid/placed-file` | full | `transport.placed-file` |
+| `POST /api/transport/:tid/retry` | full | `transport.retry` |
+| `GET /api/transport/preview` | full | `transport.preview` |
 | `POST /api/updates/restart` | full | `server.restart` |
 | `GET /api/usage/costs` | sessions | `usage.costs` |
 | `GET /api/usage/performance` | sessions | `usage.performance` |
@@ -1206,4 +1263,5 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/topics.ts` | 2 | `queue_push`, `queue_open` |
 | `server/tours/tools.ts` | 3 | `<computed: RECORD_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>`, `<computed: SHOW_TOUR_TOOL>` |
 | `server/transcript-cards-tool.ts` | 1 | `<computed: CARD_TOOL>` |
+| `server/transport/agent-tool.ts` | 1 | `transport_setup` |
 | `server/vis-check.ts` | 1 | `vis_check` |

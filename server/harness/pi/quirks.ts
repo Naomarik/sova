@@ -680,6 +680,35 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi exports a credential write under its own lock; the given path's lock goes once no pi through 1.5.0 writes here (every chat reloaded, the terminal on 1.5.1 or later)",
   },
   {
+    id: "P49",
+    name: "session-id-in-file-name",
+    kind: "semantic",
+    relies:
+      "A session's id is read from its file name, the part after the last `_` of `<timestamp>_<id>.jsonl` (about 80 readers, sessions-index `idOf`), so a chat home's flat `sessions/` folder holds the lead and every helper under pi's own names. `SessionManager.create(cwd, dir, {id})` and `forkFrom(src, cwd, dir)` name the file that way in the folder given, and an in-memory manager mints the same kind of id before any file exists (`mintSessionId`), so a chat's id names its home first.",
+    pi: ["SessionManager.create", "SessionManager.forkFrom", "SessionManager.inMemory", "SessionManager.getSessionId"],
+    where: [
+      { file: "server/sessions-index.ts", symbol: "idOf" },
+      { file: "server/harness/pi/state.ts", symbol: "mintSessionId" },
+      { file: "server/harness/pi/fork.ts", symbol: "forkSessionFile" },
+    ],
+    canary: "P49 session-id-in-file-name: create, an id minted in memory, and forkFrom name the file <timestamp>_<id>.jsonl in the folder given, the id being the header's, and touch no other folder",
+    retireWhen: "never while Sova reads a session's id from its file name; a manifest-per-conversation would retire it",
+  },
+  {
+    id: "P50",
+    name: "relocated-session-file",
+    kind: "semantic",
+    relies:
+      "A conversation that moves to another device is rewritten outside pi (`relocateConversation`): its `session` header's `cwd` and `parentSession` (a Copy's `id` too, with the file renamed to `<timestamp>_<new id>.jsonl`) and the `data` of its `custom` entries, every other line kept byte for byte. pi then opens the file as it is: `SessionManager.open` takes the header's id and cwd as the session's, and the branch's entries are the same.",
+    pi: ["SessionManager.open", "SessionManager.getSessionId", "SessionManager.getCwd"],
+    where: [
+      { file: "server/harness/pi/relocate.ts", symbol: "relocateConversation" },
+      { file: "server/transport/relocate.ts", symbol: "relocateHome" },
+    ],
+    canary: 'P50 relocated-session-file: a file whose header cwd and id were rewritten outside pi, renamed to the new id, opens with SessionManager.open under the new id and cwd, its branch intact',
+    retireWhen: "pi offers a way to reopen a session in another folder (and under another id) without editing its file",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

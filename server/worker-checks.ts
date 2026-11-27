@@ -8,6 +8,7 @@ import { exclusionReason } from "./attention-signals";
 import { DecisionError, type DecisionProvider, type JsonObject, type Question } from "./decide";
 import { parseReport, parseTeamMessage, TEAM_REPORT_TYPE } from "./reports";
 import { stateRoot } from "./state-root";
+import { splitOut, withHome } from "./chat-homes/records";
 import { COMPLETION_TYPE } from "./worker-sessions";
 
 /**
@@ -64,7 +65,11 @@ export interface WorkerReport {
 
 const isRec = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
 
-function load(file: string): Record<string, CheckRecord> {
+/** A chat with a home keeps its workers' checks in `<home>/chat/signals.json` (server/chat-homes/records.ts). */
+const FIELD = "worker-checks.json#checks";
+const load = (file: string): Record<string, CheckRecord> => withHome(loadFile(file), "signals", FIELD);
+
+function loadFile(file: string): Record<string, CheckRecord> {
   const out: Record<string, CheckRecord> = Object.create(null);
   try {
     const v = JSON.parse(readFileSync(file, "utf8"));
@@ -80,8 +85,10 @@ function load(file: string): Record<string, CheckRecord> {
   return out;
 }
 
-function save(file: string, checks: Record<string, CheckRecord>): void {
+function save(file: string, only: string, next: Record<string, CheckRecord>): void {
   try {
+    const { legacy: checks, legacyChanged } = splitOut(next, "signals", FIELD, { only });
+    if (!legacyChanged) return;
     mkdirSync(dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify({ version: 1, checks }));
@@ -163,7 +170,7 @@ export async function workerChecks(s: SessionSummary, branch: readonly HEntry[],
         rec = { report: r.entry, at: (deps.now ?? Date.now)(), provider: res.provider, model: res.model, outcome: o.choice as WorkerReportOutcome, unverified: u.p };
         checks = load(file);
         checks[key] = rec;
-        save(file, checks);
+        save(file, key, checks);
       } catch (err) {
         if (err instanceof DecisionError && err.failure === "bad-request") console.error("[worker-checks] question rejected:", err.message);
         continue;

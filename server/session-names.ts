@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { stateRoot } from "./state-root";
+import { splitOut, withHome } from "./chat-homes/records";
 import type { SessionSummary } from "../shared/protocol";
 
 /**
@@ -42,8 +43,15 @@ export function cleanAlias(raw: unknown): string | null {
   return t;
 }
 
+/** A chat with a home keeps its alias in `<home>/chat/meta.json` (server/chat-homes/records.ts). */
+const FIELD = "session-aliases.json#aliases";
+
 /** id → alias. Missing or corrupt: none. Read fresh each call (a small file; the tools are rare). */
 export function readAliases(path = file()): Record<string, string> {
+  return withHome(readAliasFile(path), "meta", FIELD);
+}
+
+function readAliasFile(path: string): Record<string, string> {
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as { aliases?: Record<string, unknown> };
     const out: Record<string, string> = {};
@@ -80,9 +88,11 @@ export function setAlias(id: string, raw: string, path = file()): string | null 
     if (holder && holder !== id) return `The alias "${clean}" already names session ${holder}; pick another, or clear that one first.`;
     aliases[id] = clean;
   }
+  const { legacy, legacyChanged } = splitOut(aliases, "meta", FIELD, { only: id });
+  if (!legacyChanged) return null;
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify({ version: 1, aliases })}\n`);
+  writeFileSync(tmp, `${JSON.stringify({ version: 1, aliases: legacy })}\n`);
   renameSync(tmp, path);
   return null;
 }

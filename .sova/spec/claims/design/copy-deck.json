@@ -8,6 +8,37 @@
       "src/components/TimeTab.tsx"
     ]
   },
+  "§design.copy-deck/archive-compression": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "requires": [
+      "§app.session-list/archive-compress",
+      "§app.session-list/archive-compression"
+    ],
+    "code": [
+      "src/components/ArchiveCleanup.tsx",
+      "src/components/Sidebar.tsx",
+      "src/components/SessionView.tsx",
+      "server/archive-compress/store.ts",
+      "server/app.ts",
+      "src/lib/session-context-menu.ts"
+    ]
+  },
+  "§design.copy-deck/chats-folder": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.chat-homes/chats-folder"
+    ],
+    "code": [
+      "src/components/ChatsFolderSetting.tsx",
+      "src/lib/chats-folder.ts",
+      "server/chat-homes/move-root.ts",
+      "server/page-only.ts"
+    ]
+  },
   "§design.copy-deck/composer": {
     "kind": "note",
     "authority": "accepted",
@@ -718,6 +749,27 @@
     "kind": "note",
     "authority": "accepted",
     "evidence": "reviewed"
+  },
+  "§design.copy-deck/transport": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app/transport"
+    ],
+    "code": [
+      "src/components/TransportDialog.tsx",
+      "server/transport/source.ts",
+      "src/components/TransportHelpers.tsx",
+      "src/components/TransportAgentCard.tsx",
+      "server/transport/destination.ts",
+      "server/transport/retire.ts",
+      "server/transport/routes.ts",
+      "src/lib/transport-dialog-error.ts",
+      "server/transport/outside-file.ts",
+      "src/lib/transport-progress.ts",
+      "src/components/TransportProgress.tsx"
+    ]
   },
   "§design.copy-deck/where-links-open": {
     "kind": "note",

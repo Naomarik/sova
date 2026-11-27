@@ -249,8 +249,10 @@ project mode.
 
 ## §site.docs/phone — Check in from your phone (`/docs/phone/`)
 
-Reaching Sova from a phone over the tailnet, pairing it with a one-use code, installing it as an
-app, and following sessions that are open in a terminal.
+Reaching Sova from a phone over the tailnet or a network trusted on the Access page, pairing it with
+a one-use code from a QR that points at the address picked for it (and what a phone misses at a
+trusted network's plain http address), installing it as an app, and following sessions that are
+open in a terminal.
 
 ## §site.docs/change-direction — Change direction (`/docs/change-direction/`)
 

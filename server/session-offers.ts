@@ -2,7 +2,7 @@ import { cardSenderHeaders } from "./extension-sender";
 import { CARD_SENDER_PREFIX } from "../shared/senders";
 import { execFile } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { buildRequest, findCommand } from "../shared/commands-catalog";
 import type { SessionSignals, SessionSummary } from "../shared/protocol";
 import {
@@ -38,6 +38,8 @@ import { recordActed } from "./message-labels";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
+import { homeDirOf, homeGeneration, homeOf, noteHomeFileWritten } from "./chat-homes/records";
+import { OpenRecordIndex } from "./chat-homes/open-index";
 import { draftProofVia, draftsLeft } from "./spec-drafts-state";
 import { queueTargetOfTree } from "./worktrees";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
@@ -189,13 +191,17 @@ const lastOf = <T>(list: readonly T[], ok: (x: T) => boolean): T | undefined => 
 
 export const offersDir = () => join(stateRoot(), "session-offers");
 const SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
-const recordFile = (sessionId: string) => join(offersDir(), `${sessionId}.json`);
+/** A chat with a home keeps its record in `<home>/chat/offers/<session id>.json`. */
+const recordFile = (sessionId: string) => {
+  const home = homeDirOf(sessionId);
+  return join(home ? join(home, "chat", "offers") : offersDir(), `${sessionId}.json`);
+};
 const countsFile = () => join(offersDir(), "counts.json");
 
-const records = new Map<string, { dir: string; rec: SessionRecord | null }>();
+const records = new Map<string, { dir: string; rec: SessionRecord | null; gen: number }>();
 
 function writeAtomic(file: string, data: unknown): void {
-  mkdirSync(offersDir(), { recursive: true });
+  mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`);
   renameSync(tmp, file);
@@ -205,7 +211,9 @@ function readRecord(sessionId: string): SessionRecord | null {
   if (!SESSION_ID_RE.test(sessionId)) return null;
   const dir = offersDir();
   const hit = records.get(sessionId);
-  if (hit && hit.dir === dir) return hit.rec;
+  // Its home arrived, was forgotten or written by another process since: its record is read again.
+  const gen = homeGeneration(sessionId);
+  if (hit && hit.dir === dir && hit.gen === gen) return hit.rec;
   let rec: SessionRecord | null = null;
   try {
     const raw = JSON.parse(readFileSync(recordFile(sessionId), "utf8")) as Record<string, unknown>;
@@ -245,7 +253,7 @@ function readRecord(sessionId: string): SessionRecord | null {
   } catch {
     // missing or unreadable: none
   }
-  records.set(sessionId, { dir, rec });
+  records.set(sessionId, { dir, rec, gen });
   return rec;
 }
 
@@ -273,19 +281,16 @@ function openEntryOf(rec: SessionRecord): { title: string; at: number; name: str
 
 function saveRecord(rec: SessionRecord): void {
   writeAtomic(recordFile(rec.sessionId), rec);
-  records.set(rec.sessionId, { dir: offersDir(), rec });
-  if (openIndex && openIndex.dir === offersDir()) {
-    const open = openEntryOf(rec);
-    if (open) openIndex.open.set(rec.sessionId, open);
-    else openIndex.open.delete(rec.sessionId);
-  }
+  records.set(rec.sessionId, { dir: offersDir(), rec, gen: homeGeneration(rec.sessionId) });
+  noteHomeFileWritten(rec.sessionId, "offers");
+  openIndex.put(rec.sessionId, openEntryOf(rec), homeOf(rec.sessionId));
   sessionsChanged();
 }
 
 /** Tests: forget what was read. */
 export function resetOffersForTest(): void {
   records.clear();
-  openIndex = null;
+  openIndex.reset();
   inflight.clear();
 }
 
@@ -930,28 +935,21 @@ export function offerNoteFor(sessionId: string): string | null {
   return `Offer ${card.id} (${card.name}): the user pressed "${card.choice.label}". ${card.outcome.state === "done" ? "It ran" : "It failed"}: ${card.outcome.text ?? ""}`.trim();
 }
 
-let openIndex: { dir: string; open: Map<string, { title: string; at: number; name: string; root: string }> } | null = null;
+/** The chats with an open offer, from one index of every record (only a changed home's folder is read again). */
+const openIndex = new OpenRecordIndex<{ title: string; at: number; name: string; root: string }>(
+  "offers",
+  offersDir,
+  (id) => {
+    const rec = readRecord(id);
+    return rec ? openEntryOf(rec) : undefined;
+  },
+  (n) => n === "counts.json",
+);
 
 /** The session's open offer: its Needs you item (§app.overseer/attention-digest, `offer-waiting`) and, while idle, its
     asks-you mark (§app.decisions/asks-user). Read from one index of every record. */
 export function openOfferOf(sessionId: string): { title: string; at: number } | undefined {
-  const dir = offersDir();
-  if (!openIndex || openIndex.dir !== dir) {
-    openIndex = { dir, open: new Map() };
-    let names: string[] = [];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      names = [];
-    }
-    for (const n of names) {
-      if (!n.endsWith(".json") || n === "counts.json") continue;
-      const rec = readRecord(n.slice(0, -5));
-      const open = rec ? openEntryOf(rec) : undefined;
-      if (rec && open) openIndex.open.set(rec.sessionId, open);
-    }
-  }
-  const hit = openIndex.open.get(sessionId);
+  const hit = openIndex.get(sessionId);
   if (!hit) return undefined;
   // An offer that left the file stops at once: its open card is withdrawn.
   if (!liveOffer(readOffersFile(hit.root), hit.name)) {
@@ -959,7 +957,7 @@ export function openOfferOf(sessionId: string): { title: string; at: number } | 
     if (rec) {
       for (const c of rec.cards) if (c.state === "open") c.state = "withdrawn";
       saveRecord(rec);
-    } else openIndex.open.delete(sessionId);
+    } else openIndex.delete(sessionId);
     return undefined;
   }
   return { title: hit.title, at: hit.at };

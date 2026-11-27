@@ -245,7 +245,7 @@
   "§app.project-overseer/files": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app/file-intake",
       "§app.project-overseer/tools",
@@ -258,7 +258,12 @@
       "server/overseer-org-part.ts",
       "server/project-overseer-prompt.md",
       "server/app.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    }
   },
   "§app.project-overseer/gaps": {
     "kind": "behavior",

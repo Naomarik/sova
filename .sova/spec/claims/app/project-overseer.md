@@ -1338,7 +1338,8 @@ a plain name again. A branch in any other state has no popover: its name does no
     started (`sova_list_sessions`), addressed as everywhere else, and must have its own worktree on
     this host ("That coding session has no worktree of its own on this host: copy into one that
     does."). Refused when `incoming` is a link or resolves outside the worktree, when the target
-    is under Sova's own state or sessions folders, or where that session's sandbox would refuse
+    is under Sova's own state or sessions folders or in a chat home outside its `shared/`
+    (§app.chat-homes/sole-writer), or where that session's sandbox would refuse
     the write (its reason). It adds `/incoming/` to the repository's `info/exclude` once, so the
     copy never counts as an uncommitted change (Merge Branch and Remove Worktree stay possible). In
     a turn the operator did not start it needs the power `codingPrompt` On with no brake (else the

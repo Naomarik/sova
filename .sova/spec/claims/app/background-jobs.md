@@ -124,7 +124,8 @@ Nothing runs forever.
 
 - **Stop** gives a job 15 s to finish, then ends everything left in it. It wakes nothing
   (§app.background-jobs/end-card).
-- **Archiving or deleting a chat** stops its jobs and those of its workers.
+- **Archiving or deleting a chat** stops its jobs and those of its workers. So does a Move's switch
+  (§app.transport/switch): the chat is told on arrival which ones were stopped.
 - **Stopping a worker** stops that worker's jobs. Its idle stop doesn't.
 - **The time limit** stops a job after 24 hours (§app.background-jobs/limits).
 - **`bun scripts/stop-chats.ts`** stops every job of the state root along with its chats.

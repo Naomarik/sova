@@ -39,6 +39,7 @@ import { Banner, CopyButton, Icon } from "./ui";
 import { BackgroundJobsSection } from "./BackgroundJobs";
 import { sessionHref } from "./Sidebar";
 import { MoveToGroupMenu } from "./Groups";
+import { openTransport } from "./SessionContextMenu";
 import { ChangesDialog } from "./ChangesViewer";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
 import type { SessionShare } from "../../shared/session-share";
@@ -111,6 +112,18 @@ export function SessionDetails(props: {
                  runtime); grouping is Sova's own bookkeeping for any session. */
               <div class="cluster session-actions">
                 <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged()} compact />
+                {/* The same Transport… as the row's ⋯ menu (§app.transport/start): this device's own chats. */}
+                <Show when={hostOf(props.path) === null && !archived() && !s().moved}>
+                  <button
+                    type="button"
+                    class="button button-sm session-action"
+                    title="Transport…"
+                    aria-label={`Transport ${s().title || "this chat"} to another device`}
+                    onClick={() => openTransport(props.path)}
+                  >
+                    <Icon name="external" small />
+                  </button>
+                </Show>
                 <Show when={s().origin === "web"}>
                   <ArchiveAction
                     session={s()}

@@ -14,7 +14,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import type { Hono } from "hono";
 import type { ChatClientMessage } from "../shared/protocol";
-import { assertNotLive, BusyError, chatHandleTakenBack } from "./chat-handle";
+import { assertNotLive, BusyError, chatHandleTakenBack, chatStartRefusal } from "./chat-handle";
 import { sessionsChanged } from "./list-generation";
 import { resolveSessionPath } from "./paths";
 import { notPage, type NotPage } from "./page-only";
@@ -331,6 +331,9 @@ export async function beforeChat(path: string, action: ChatAction): Promise<Acti
   const cold = action.type === "abort" || action.type === "reload_code" || action.type === "shell_list" || action.type === "shell_stop";
   // An archived chat starts for nothing a script asks (§chat.transcript/instant-open, "An archived chat");
   // Stop and Reload Now answer as for any chat that isn't open.
+  // A chat that moved away (or is in a Move's switch) says so, ahead of the archive its Moved row is (§app.transport/switch).
+  const moving = cold ? null : chatStartRefusal(path);
+  if (moving) return { status: 409, body: { error: moving, outcome: "refused", code: "moved" } };
   if (!cold && isArchived(idOf(path))) return { status: 409, body: { error: ARCHIVED_REFUSAL, outcome: "refused", code: "archived" } };
   if (!cold) return null;
   if (await chatHandleTakenBack(path)) return null;

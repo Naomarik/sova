@@ -5,6 +5,11 @@ import { stateRoot } from "./state-root";
 import { GROUP_LABEL_MAX, GROUP_NAME_MAX, type GroupMember, type GroupSeed, type SessionGroup } from "../shared/protocol";
 import { sessionsChanged } from "./list-generation";
 import { publishFeed } from "./session-feed";
+import { splitOut, withHome } from "./chat-homes/records";
+
+const ASSIGN_FIELD = "session-groups.json#assignments";
+/** The field of a home's `chat/meta.json` holding its chats' group membership (a Transport drops it). */
+export const GROUP_ASSIGN_FIELD = ASSIGN_FIELD;
 
 /** The user's sidebar groups, and which session belongs to which.
     Sova's own data, beside the archive and web-session id lists: the session files are never touched. */
@@ -146,8 +151,9 @@ function load(): Store {
     });
   }
   const assignments: Record<string, string> = {};
-  if (isObj(v.assignments)) {
-    for (const [sessionId, groupId] of Object.entries(v.assignments)) {
+  // A chat with a home keeps its assignment in `<home>/chat/meta.json`; the groups themselves stay here.
+  {
+    for (const [sessionId, groupId] of Object.entries(withHome(isObj(v.assignments) ? v.assignments : {}, "meta", ASSIGN_FIELD))) {
       if (typeof groupId === "string" && seen.has(groupId)) assignments[sessionId] = groupId;
     }
   }
@@ -159,9 +165,10 @@ function load(): Store {
 
 /** Atomic (tmp + rename), same as the archive and web-session lists: a crash never leaves a half file. */
 function save({ groups, assignments, extra, version }: Store): void {
+  const { legacy } = splitOut(assignments, "meta", ASSIGN_FIELD);
   mkdirSync(dirname(FILE), { recursive: true });
   const tmp = `${FILE}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify({ ...extra, version, groups, assignments }));
+  writeFileSync(tmp, JSON.stringify({ ...extra, version, groups, assignments: legacy }));
   renameSync(tmp, FILE);
   sessionsChanged();
   // Every open window re-reads its groups at once (§app.session-list/groups), whoever wrote: a route, the Overseer

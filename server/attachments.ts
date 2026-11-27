@@ -4,7 +4,9 @@ import { open } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { stateRoot } from "./state-root";
 import type { TmpAttachment } from "../shared/protocol";
-import { ATTACHMENT_TAIL, findTmpImagePaths, isPiClipboardName, SESSION_ID, TMP_IMAGE_PATH } from "../shared/tmp-paths";
+import { ATTACHMENT_TAIL, findTmpImagePaths, HOME_ATTACHMENT_TAIL, isPiClipboardName, SESSION_ID, TMP_IMAGE_PATH } from "../shared/tmp-paths";
+import { homeDirOf } from "./chat-homes/records";
+import { homesRoot, rebaseHomePath } from "./chat-homes/root";
 
 // Image paths named in transcript text (pi's TUI pastes a clipboard image by writing it to /tmp
 // and inserting the path as text; replies, tool output and subagent reports then quote it). We
@@ -20,9 +22,12 @@ const TMP_DIR = "/tmp";
     are named `sova-<uuid>`. */
 export const attachmentsRoot = () => join(stateRoot(), "attachments");
 
-/** One session's folder. The id must be a plain id (no separators or dots), or null. */
+/** One session's folder. The id must be a plain id (no separators or dots), or null. A chat with a home
+    (and each worker under it) keeps its uploads in `<home>/chat/attachments/`. */
 export function sessionAttachmentsDir(sessionId: string): string | null {
-  return SESSION_ID_RE.test(sessionId) ? join(attachmentsRoot(), sessionId) : null;
+  if (!SESSION_ID_RE.test(sessionId)) return null;
+  const home = homeDirOf(sessionId);
+  return home ? join(home, "chat", "attachments") : join(attachmentsRoot(), sessionId);
 }
 const SESSION_ID_RE = new RegExp(`^${SESSION_ID}$`);
 /** Same cap as a prompt's images (MAX_IMAGE_BYTES in chat-manager). */
@@ -125,8 +130,7 @@ let tmpReal: string | undefined;
 
 /** The attachments root as given and as resolved (~/.pi/agent may be a symlink): a path may be
     written either way. Resolved per call, like attachmentsRoot. null = no root on disk yet. */
-function roots(): { root: string; real: string | null } {
-  const root = attachmentsRoot();
+function roots(root = attachmentsRoot()): { root: string; real: string | null } {
   try {
     return { root, real: realpathSync(root) };
   } catch {
@@ -137,6 +141,23 @@ function roots(): { root: string; real: string | null } {
 /** `p` minus a leading `<root>/`, or null. */
 const under = (p: string, root: string | null) => (root && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : null);
 
+/** Where an attachment path may sit: the attachments root (`<root>/<id>/<name>`, the file two levels
+    below it) or a chat home's (`<homes>/<id>/chat/attachments/<name>`, four levels below the homes
+    root). null when `p` is neither shape. */
+function placeOf(p: string): { real: string | null; depth: number } | null {
+  const r = roots();
+  const tail = under(p, r.root) ?? under(p, r.real);
+  if (tail !== null) return ATTACHMENT_TAIL.test(tail) ? { real: r.real, depth: 2 } : null;
+  const h = roots(homesRoot());
+  const htail = under(p, h.root) ?? under(p, h.real);
+  return htail !== null && HOME_ATTACHMENT_TAIL.test(htail) ? { real: h.real, depth: 4 } : null;
+}
+
+/** Whether `p` is shaped like an attachment in the attachments root or a chat home's (no fs check of the file). */
+export const isAttachmentPath = (p: string): boolean => placeOf(p) !== null;
+
+const up = (p: string, n: number): string => (n <= 0 ? p : up(dirname(p), n - 1));
+
 /**
  * Whether `p` names an image file we may serve: shaped `/tmp/<name>.<image ext>` or
  * `<attachments root>/<session id>/<name>.<image ext>` (no other subdirs, no "." or ".."
@@ -145,14 +166,15 @@ const under = (p: string, root: string | null) => (root && p.startsWith(`${root}
  * the resolved root, at most 20MB. 400 = bad shape, 404 = missing, 403 = resolves elsewhere or
  * too large.
  */
-export function checkTmpImage(p: unknown): TmpImageCheck {
-  if (typeof p !== "string" || p.length > 1024) return badShape();
+export function checkTmpImage(raw: unknown): TmpImageCheck {
+  if (typeof raw !== "string" || raw.length > 1024) return badShape();
+  // An image named in a conversation under the folder its chat was in before a Chats folder move: the same file now.
+  const p = rebaseHomePath(raw);
   const inTmp = p.length <= 255 && TMP_IMAGE_PATH.test(p);
-  let r: { root: string; real: string | null } | null = null;
+  let r: { real: string | null; depth: number } | null = null;
   if (!inTmp) {
-    r = roots();
-    const tail = under(p, r.root) ?? under(p, r.real);
-    if (tail === null || !ATTACHMENT_TAIL.test(tail) || basename(p).length > 255) return badShape();
+    r = placeOf(p);
+    if (r === null || basename(p).length > 255) return badShape();
   }
   let real: string;
   try {
@@ -164,7 +186,7 @@ export function checkTmpImage(p: unknown): TmpImageCheck {
   const mimeType = MIME_BY_EXT[extname(real).toLowerCase()];
   // The resolved file must sit exactly one session folder below the resolved root: a symlinked
   // file or session folder pointing anywhere else is refused, whatever the literal path said.
-  const inside = inTmp ? dirname(real) === tmpReal : r!.real !== null && dirname(dirname(real)) === r!.real;
+  const inside = inTmp ? dirname(real) === tmpReal : r!.real !== null && up(real, r!.depth) === r!.real;
   if (!inside || !mimeType) return { ok: false, status: 403, error: inTmp ? "Not an image in /tmp" : "Not an image in the attachments folder" };
   let st;
   try {
@@ -189,14 +211,13 @@ function badShape(): TmpImageCheck {
  */
 export function deleteAttachment(p: unknown): { ok: true } | { ok: false; status: 400 | 403 | 404; error: string } {
   if (typeof p !== "string" || !p) return { ok: false, status: 400, error: "Missing ?path=" };
-  const r = roots();
-  const tail = under(p, r.root) ?? under(p, r.real);
-  if (tail === null || !ATTACHMENT_TAIL.test(tail)) return { ok: false, status: 403, error: "Only files in the attachments folder can be deleted" };
+  const r = placeOf(p);
+  if (r === null) return { ok: false, status: 403, error: "Only files in the attachments folder can be deleted" };
   const dir = dirname(p);
   let st;
   try {
-    // The session folder must really be one directly under the root (no symlinked folder).
-    if (r.real === null || dirname(realpathSync(dir)) !== r.real || lstatSync(dir).isSymbolicLink()) {
+    // The session folder must really be the one its path names under the root (no symlinked folder).
+    if (r.real === null || up(realpathSync(dir), r.depth - 1) !== r.real || lstatSync(dir).isSymbolicLink()) {
       return { ok: false, status: 403, error: "Only files in the attachments folder can be deleted" };
     }
     st = lstatSync(p);
@@ -208,8 +229,10 @@ export function deleteAttachment(p: unknown): { ok: true } | { ok: false; status
   return { ok: true };
 }
 
-/** Best-effort: a deleted session's attachments folder goes with it (cleanupSessions). */
+/** Best-effort: a deleted session's attachments folder goes with it (cleanupSessions). A chat with a home
+    keeps them in the home, which goes only with its chat's own Delete. */
 export function removeSessionAttachments(sessionId: string): void {
+  if (homeDirOf(sessionId)) return;
   const dir = sessionAttachmentsDir(sessionId);
   if (!dir) return;
   try {

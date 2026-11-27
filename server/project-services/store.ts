@@ -34,6 +34,23 @@ export function hostVars(project: string, file = hostVarsFile()): Record<string,
   }
 }
 
+/** Set host values for one project root, keeping every other project's and name's (by atomic rename, 0600): only the
+    operator's own Save writes it (a transport's card, §app.transport/agent). Values are never logged. */
+export function setHostVars(project: string, vars: Record<string, string>, file = hostVarsFile()): void {
+  let raw: { version?: unknown; projects?: Record<string, Record<string, unknown>> } = {};
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8")) as typeof raw;
+  } catch {
+    raw = {};
+  }
+  const projects = raw?.version === 1 && raw.projects && typeof raw.projects === "object" ? raw.projects : {};
+  const next = { ...raw, version: 1, projects: { ...projects, [project]: { ...(projects[project] ?? {}), ...vars } } };
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  renameSync(tmp, file);
+}
+
 /** Six hex of the state root's path: every unit name carries it, so two Sova servers on one user manager never touch each other's units. */
 export const stateHash = () => createHash("sha256").update(stateRoot()).digest("hex").slice(0, 6);
 

@@ -118,6 +118,9 @@ found so far (pi 1.5.2).
   `session_info`, `label`, `branch_summary`, `context_edit` (0.87.0+) (`SessionEntry` union,
   `<pi>/dist/core/session-manager.d.ts:128`). Cheap listing: read only the first few lines; first user
   `message` = title; first `model_change` = model. Docs: `<pi>/docs/session-format.md`.
+- Sova chats made since chat homes keep their transcripts (helpers' too) in a flat
+  `<homes root>/<chat id>/sessions/`, same file format, not in `~/.pi/agent/sessions/`; a chat gets the root as
+  `$SOVA_CHAT_HOMES_ROOT` (`server/chat-homes/root.ts`).
 - **Sova writes `custom` entries with `customType: "sova-rewind"`** (`data: {targetId, fromLeafId}`)
   into webapp-owned session files. `navigateTree(id, {summarize:false})` only moves the in-memory leaf
   and `SessionManager.open()` takes the file's LAST entry as the leaf, so without this marker a reload

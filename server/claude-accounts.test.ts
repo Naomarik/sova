@@ -9,6 +9,8 @@ import { fileURLToPath } from "node:url";
 import { after, describe, test } from "node:test";
 import { ClaudeAccountsService } from "./claude-accounts";
 import { normalizeEntry } from "./transcript";
+import { setNoteLogins } from "./claude-login-names";
+import { ClaudeLogins, writeAccounts } from "../pi-config/extensions/claude-code/accounts.ts";
 import { rowFor } from "./wire-rows";
 import type { ClaudeAccountsInfo } from "../shared/protocol";
 
@@ -65,5 +67,19 @@ describe("claude-login entries in the transcript", () => {
     assert.ok(w2.facts);
     assert.equal(w2.loginNote, true, "the mark survives wire 2, where facts replace meta");
     assert.deepEqual(normalizeEntry({ type: "custom", id: "e2", customType: "claude-login", data: { v: 1, login: "l-0000000a" } } as any), []);
+  });
+
+  test("a new chat's id-only entry is worded from this device's logins; one it doesn't know is named so (§app.claude-logins/login-ids)", () => {
+    const { agentDir, claudeDir } = service();
+    writeAccounts(agentDir, { version: 1, logins: [{ id: "l-0000000a", addedAt: 1, enabled: true, device: "local", label: "Work", identity: { accountUuid: "u1", email: "a@example.com" } }], devices: {} });
+    setNoteLogins(new ClaudeLogins({ agentDir, env: { HOME: agentDir, CLAUDE_CONFIG_DIR: claudeDir } as NodeJS.ProcessEnv }));
+    after(() => setNoteLogins(null));
+    const row = (data: unknown) => normalizeEntry({ type: "custom", id: "e3", customType: "claude-login", data } as any)[0];
+    const manual = row({ v: 1, login: "l-0000000a", from: "default", reason: "manual" });
+    assert.equal(manual?.text, "Claude: switched default → Work (chosen by you)");
+    assert.equal(manual?.loginNote, true);
+    assert.equal(row({ v: 1, login: "l-0000000a", from: "l-0000dead", reason: "moved", cause: "left" })?.text,
+      "Claude: switched a login not on this device → Work (a login not on this device left this device)");
+    assert.equal(row({ v: 1, login: "l-0000000a", from: "default", fromLabel: "me@example.com", reason: "manual" }), undefined, "an older entry without text renders nothing, as before");
   });
 });

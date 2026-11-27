@@ -1,4 +1,8 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
+import { MovedPanel } from "./TransportDialog";
+import { TransportHeadStatus } from "./TransportProgress";
+import { openTransport } from "./SessionContextMenu";
+import { liveTransportOf, lookForTransport } from "../lib/transport-follow";
 import { sharingOffHere } from "../lib/public-links";
 import { shareHref } from "../lib/share-slice";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../../shared/protocol";
@@ -270,6 +274,12 @@ export function SessionView(props: {
     return [paneName(), cwdLabel(s(), null), ...(cost ? [cost] : [])].filter(Boolean).join(" · ");
   };
 
+  // A transport of this chat under way from here (§app.transport/dialog): its line under the title, read from the
+  // page's one follower of it, asked for once as the chat opens. Transport is this device's own, never a peer's.
+  const transportChat = createMemo(() => (hostOf(path) ? null : (s()?.id ?? null)));
+  createEffect(on(transportChat, (id) => void (id && lookForTransport(id, true))));
+  const liveTransport = () => liveTransportOf(transportChat());
+
   /** The single-session view's head, unchanged: the whole width of the main column. */
   const FullHead = () => (
     <header class="session-head">
@@ -281,7 +291,8 @@ export function SessionView(props: {
         <p class="session-head-meta">
           {/* First on the path line, so the title above keeps the head's whole width. */}
           {/* A chat Sova names itself keeps that name: nothing to regenerate. */}
-          <Show when={!s().fixedName}>
+          {/* Nor a compressed one: Sova never reads it again (§app.session-list/archive-compression). */}
+          <Show when={!s().fixedName && !s().compressed}>
             <RegenerateTitleButton session={s()} onDone={props.onRefresh} />
           </Show>
           {/* A peer's session names its host first: the folder and everything else are that host's. */}
@@ -304,6 +315,7 @@ export function SessionView(props: {
             </span>
           </Show>
         </p>
+        <TransportHeadStatus t={liveTransport()} onOpen={() => openTransport(path)} />
       </div>
       <ContextGauge path={path} />
       <ProfileChip summary={s()} info={profileInfo()} />
@@ -325,7 +337,7 @@ export function SessionView(props: {
         </Chip>
       </Show>
       {/* The share page, where a slice of this session is picked and shared. */}
-      <Show when={!sharingOffHere(hostOf(path))}>
+      <Show when={!sharingOffHere(hostOf(path)) && !s().compressed}>
         <a class="button button-icon button-ghost session-share-open" href={shareHref(s().id, { host: hostOf(path) })} aria-label="Share session" title="Share session">
           <Icon name="share" />
         </a>
@@ -431,7 +443,19 @@ export function SessionView(props: {
       {/* The host's state, whichever view is open (§mesh/compatibility). */}
       <Show when={sendingOff(path) === "display" && hostOf(path)}>{(h) => <HostDisplayBar host={h()} />}</Show>
       <Show when={updateNeededFor(path) && hostOf(path)}>{(h) => <HostUpdatePage host={h()} />}</Show>
-      <Show when={updateNeededFor(path) ? null : viewKey()} keyed>
+      {/* A compressed chat never opens (§app.session-list/archive-compression): no transcript, no composer, no Unarchive. */}
+      <Show when={s().compressed}>
+        <div class="center-fill">
+          <div class="empty">
+            <Icon name="archive" class="empty-mark" />
+            <p class="empty-title">This chat is compressed.</p>
+            <p class="empty-body">Sova keeps it for the record and doesn't open it.</p>
+          </div>
+        </div>
+      </Show>
+      {/* A Moved row (§app.transport/moved-row): it runs on that device now; no transcript, no composer. */}
+      <Show when={!s().compressed && s().moved}>{(m) => <MovedPanel moved={m()} />}</Show>
+      <Show when={!s().compressed && !s().moved && (updateNeededFor(path) ? null : viewKey())} keyed>
         {(_key) => {
           const d = decision();
           return (

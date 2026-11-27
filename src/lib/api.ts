@@ -1,3 +1,4 @@
+import type { ChatsFolderInfo, ChatsFolderMove, ChatsFolderPreview } from "../../shared/chats-folder";
 import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
 import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
@@ -160,6 +161,7 @@ import { upgradeLegacyRows } from "./legacy-rows";
 import { COMPOSER_QUERY } from "./wire-stamp";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
+import type { NetworksView, RangeCheck, TrustBody, UntrustBody } from "../../shared/networks";
 import type { PlaybookCardEdits, PlaybookRunOpenBody, PlaybookRunView } from "../../shared/playbook-run";
 
 /**
@@ -228,7 +230,16 @@ async function requestWithHeaders<T>(url: string, init?: RequestInit): Promise<{
 }
 
 export const mintAccessCode = () =>
-  request<{ code: string; expiresAt: string; links?: { label: string; url: string }[] }>("/api/auth/pair", { method: "POST" });
+  request<{ code: string; expiresAt: string; links?: { label: string; url: string; kind?: "tailscale" | "trusted" | "here"; secure?: boolean }[] }>("/api/auth/pair", { method: "POST" });
+
+// ---- trusted networks (the Access page's Networks card): local-only; trusting is the page's own click ----
+export const getNetworks = () => request<NetworksView>("/api/auth/networks", { cache: "no-store" });
+export const checkRange = (range: string) =>
+  request<RangeCheck>("/api/auth/networks/check", { method: "POST", body: JSON.stringify({ range }) });
+export const trustRange = (body: TrustBody) =>
+  request<NetworksView>("/api/auth/networks/trust", { method: "POST", body: JSON.stringify(body) });
+export const untrustRange = (body: UntrustBody) =>
+  request<NetworksView>("/api/auth/networks/untrust", { method: "POST", body: JSON.stringify(body) });
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
@@ -523,6 +534,14 @@ export const getWebSettings = () => request<WebSettings>("/api/settings");
 /** Save part of Sova's own settings; the server keeps every key the body doesn't name. */
 export const putWebSettings = (settings: Partial<WebSettings>) =>
   request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
+
+/** Settings → General's Chats folder (server/chat-homes/move-routes.ts): where this computer keeps its chats. */
+export const getChatsFolder = () => request<ChatsFolderInfo>("/api/chats-folder", { cache: "no-store" });
+/** What a move of every chat to `path` would do, or why it can't. */
+export const previewChatsFolder = (path: string) => request<ChatsFolderPreview>(`/api/chats-folder/preview?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+/** Move Chats: answers once the move has started; its progress is getChatsFolder's `move`. */
+export const moveChatsFolder = (path: string) => request<{ move: ChatsFolderMove }>("/api/chats-folder/move", { method: "POST", body: JSON.stringify({ path }) });
+export const cancelChatsFolderMove = () => request<{ ok: true }>("/api/chats-folder/move/cancel", { method: "POST" });
 
 /** This machine's updates: what runs, the last check, the job. Always this host's own. */
 export const getUpdates = () => request<UpdatesState>("/api/updates", { cache: "no-store" });
@@ -880,7 +899,7 @@ function refusalsOf(body: unknown): BatchRefusal[] | null {
 }
 
 /** POST /api/sessions/cleanup `{ mode:"paths" }`: named session paths, e.g. one archived row. */
-export type PathsCleanupRequest = { mode: "paths"; paths: string[] };
+export type PathsCleanupRequest = { mode: "paths"; paths: string[]; action?: "compress" };
 
 /** One cleanup response, read leniently (`parseCleanupResult`), plus what paths mode refused. */
 export interface CleanupResponse extends CleanupResult {

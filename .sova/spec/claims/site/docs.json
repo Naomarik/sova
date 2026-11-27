@@ -691,13 +691,19 @@
       "§chat/composer",
       "§app.session-list/regions-top-and-archive",
       "§chat.transcript/message-actions",
-      "§app.shell/overview"
+      "§app.shell/overview",
+      "§app.access/networks"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
       "site/src/content/docs/phone.md"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-26T16:15Z",
+      "source": "pi-session:a4cea2f9-9509-4ec5-859b-51b9f0f41d49#8e7f2d91"
+    }
   },
   "§site.docs/playbooks-and-schedules": {
     "kind": "behavior",

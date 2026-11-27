@@ -312,15 +312,15 @@ the session with each recipient's state. No human confirms anything, on either h
   no link tools, so it could never answer.
 - **`dest` is the recipient host's.** `~` is that host's home (`~user` is refused), a relative path
   is under the member session's cwd, `..` is normalised and missing parents are created. Existing
-  files are overwritten. Sova's own state is never written: a `dest` inside Sova's state root or
-  the sessions directory is refused, and so is a `dest` above one of them when an offered path
+  files are overwritten. Sova's own state (state root, sessions directory, chat homes outside
+  `shared/`) is never written: a `dest` inside it is refused, and so is a `dest` above one of them when an offered path
   would land in it (offering `.pi` into `~`).
 - **Every archive is checked before it is unpacked**, whatever the sandbox. The recipient's host
   reads every path in the downloaded archive first and refuses the whole archive, extracting
   nothing, on the first path that is absolute or climbs with `..`; that would be written under
   anything the archive didn't itself create as a directory (so never through a link already on
   disk, such as one an earlier offer left); that is a hard link to anything but an earlier path of
-  the same archive; or that lies in Sova's state root or the sessions directory, links already on
+  the same archive; or that lies in Sova's own state, links already on
   disk resolved. The recipient's row then reads `refused`, with a sentence naming the path.
   Symlinks in the archive still land as links, whatever their target, and archives from Sova
   senders always carry their directories, so they pass.

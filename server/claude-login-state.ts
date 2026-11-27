@@ -5,6 +5,7 @@ import type { ChatClaudeLogin, ChatServerMessage } from "../shared/protocol";
 import { poolAgent } from "./claude-pool/index";
 import { stateViewOf } from "./harness/pi/state";
 import { CLAUDE_LOGIN } from "./harness/state-kinds";
+import { setPoolLoginName } from "./claude-login-names";
 import { loginContextForCwd } from "./projects/claude-login";
 import { loginContextFromEnv, type ClaudeLoginContext } from "../pi-config/extensions/claude-code/accounts.ts";
 
@@ -19,6 +20,12 @@ function newestLoginEntry(branch: readonly unknown[]): { login: string; label?: 
 }
 
 let hostLogins: ClaudeLogins | null = null;
+
+// A login note names a pool login this device's registry doesn't list the way loginName does (§app.claude-logins/login-ids).
+setPoolLoginName((id) => {
+  const pooled = poolAgent()?.doc().logins[id];
+  return pooled && !pooled.removed.value ? (pooled.label.value ?? pooled.identity?.email ?? id) : undefined;
+});
 
 /** Tests only: the registry chatClaudeLogin and loginName read when given none (null: this host's). */
 export function setHostLogins(logins: ClaudeLogins | null): void {

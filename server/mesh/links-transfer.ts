@@ -18,6 +18,7 @@ import { pipeline } from "node:stream/promises";
 import { createZstdCompress, createZstdDecompress } from "node:zlib";
 import type { LinkOfferRoot, LinkOfferWarning, OfferRefusal } from "../../shared/mesh-links";
 import { type TarMember, tarMembers } from "./tar-list";
+import { homesRoot, isHomeOwnState } from "../chat-homes/root";
 
 /** A refusal or failure with its reason and the sentence the agent reads. */
 export class TransferError extends Error {
@@ -532,6 +533,13 @@ export function checkDest(o: { resolvedDest: string; rootNames: readonly string[
       if (o.rootNames.includes(first)) throw new TransferError("protected", `${join(dest, first)} would reach into Sova's own state (${p}); choose another dest.`);
     }
   }
+  // A chat home is Sova's own state too, except its tool-writable shared/ (§app.chat-homes/sole-writer): one shape rule.
+  if (isHomeOwnState(dest)) throw new TransferError("protected", `${dest} is inside a chat's home, which a transfer never writes outside its shared folder.`);
+  const homes = homesRoot();
+  if (isWithin(homes, dest) && homes !== dest) {
+    const first = relative(dest, homes).split(sep)[0]!;
+    if (o.rootNames.includes(first)) throw new TransferError("protected", `${join(dest, first)} would reach into the chat homes (${homes}); choose another dest.`);
+  }
   let exists = false;
   try {
     exists = true;
@@ -591,6 +599,8 @@ export interface PullJob {
   onExtracting?(): void;
   /** Throws a TransferError (not-writable | protected | bad-dest) to refuse the archive. */
   prescan?(members: AsyncIterable<TarMember>): Promise<void>;
+  /** The sender's path to GET, when it isn't an offer's (a transport's package, §app.transport/package). */
+  path?: string;
 }
 
 export interface PullDeps {
@@ -698,7 +708,7 @@ export class Pulls {
     let restarted = false;
     let forbidden = 0;
     let backoff = 5_000;
-    const path = `/api/peer/links/${job.linkId}/offers/${job.offerId}/tar`;
+    const path = job.path ?? `/api/peer/links/${job.linkId}/offers/${job.offerId}/tar`;
     try {
       for (;;) {
         this.check(job.offerId);

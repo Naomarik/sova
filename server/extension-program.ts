@@ -115,11 +115,13 @@ export interface ProgramSpec {
   folder: string;
   /** http://127.0.0.1:<port>: PORT is its port. */
   api: string;
+  /** It reads chats (§app.extensions/reads-chats): its program gets SOVA_CHATS_DIR. */
+  chatsDir?: string;
 }
 
 /** The environment it gets: the small allow-list, its address and its key's file. Never Sova's token. */
 export function programEnv(spec: ProgramSpec, port: string, keyFile: string, dataDir: string, env: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  return { ...inheritedEnv(env), PORT: port, SOVA_URL: sovaOrigin(), SOVA_EXTENSION_ID: spec.id, SOVA_EXTENSION_KEY_FILE: keyFile, SOVA_EXTENSION_DATA_DIR: dataDir };
+  return { ...inheritedEnv(env), PORT: port, SOVA_URL: sovaOrigin(), SOVA_EXTENSION_ID: spec.id, SOVA_EXTENSION_KEY_FILE: keyFile, SOVA_EXTENSION_DATA_DIR: dataDir, ...(spec.chatsDir ? { SOVA_CHATS_DIR: spec.chatsDir } : {}) };
 }
 
 export class ProgramNotFound extends Error {

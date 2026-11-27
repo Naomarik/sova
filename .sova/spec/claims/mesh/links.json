@@ -145,7 +145,7 @@
   "§mesh.links/offers": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/mesh-links.ts",
       "server/mesh/links.ts",
@@ -188,7 +188,12 @@
       "§chat/sandbox",
       "§chat.worktrees/sandbox",
       "§chat.worktrees/entry"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:21Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    }
   },
   "§mesh.links/record": {
     "kind": "behavior",

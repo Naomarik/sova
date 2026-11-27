@@ -20,8 +20,11 @@
 // apart (half a minute), and stops writing when the caller hangs up. One whose turn (its user messages since the
 // last assistant message: the prompt, and any note Sova sends after it, as a sandboxed chat's) contains
 // `[[bash:<command>]]` and whose history has no tool result gets a `bash` call running <command> instead of the
-// `read` (server/shell-mode-zsh.integration.test.ts: what the agent's own command sees). Every other request is
-// answered exactly as above.
+// `read` (server/shell-mode-zsh.integration.test.ts: what the agent's own command sees). In a chat whose newest user
+// message holding `[[call:<tool name> <JSON arguments>]]` (a note Sova sends after the prompt, as the Overseer's cards,
+// may follow it) has no tool result after it, the reply is a call to that tool; once one came back, the closing text.
+// Any tool the chat has, an Overseer's session tools included, once per such prompt however many came before
+// (server/chat-homes/overseer-finds-homes.integration.test.ts). Every other request is answered exactly as above.
 import { createServer } from "node:http";
 
 const port = Number(process.argv[2] ?? 48732);
@@ -63,7 +66,23 @@ const server = createServer(async (req, res) => {
     return;
   }
   const bash = /\[\[bash:([\s\S]*?)\]\]/.exec(lastUserText);
-  if (!toolDone && bash) {
+  const CALL_RE = /\[\[call:([A-Za-z0-9_.-]+) ([\s\S]*?)\]\]/;
+  const asker = [...msgs].reverse().find((m) => m.role === "user" && CALL_RE.test(textOf(m)));
+  const call = asker ? CALL_RE.exec(textOf(asker)) : null;
+  if (call) {
+    if (!msgs.slice(msgs.lastIndexOf(asker) + 1).some((m) => m.role === "tool")) {
+      // The text came through JSON.stringify when the content is parts: undo its escapes.
+      const args = typeof asker.content === "string" ? call[2] : JSON.parse(`"${call[2]}"`);
+      chunk({ role: "assistant", content: "Calling it." });
+      chunk({ tool_calls: [{ index: 0, id: `call_${n}`, type: "function", function: { name: call[1], arguments: args } }] });
+      chunk({}, { finish_reason: "tool_calls" });
+      usage(900, 20);
+    } else {
+      chunk({ content: "Called it." });
+      chunk({}, { finish_reason: "stop" });
+      usage(1000, 12);
+    }
+  } else if (!toolDone && bash) {
     // The text came through JSON.stringify when the content is parts: undo its escapes.
     const command = lastUser && typeof lastUser.content === "string" ? bash[1] : JSON.parse(`"${bash[1]}"`);
     chunk({ role: "assistant", content: "Running it." });

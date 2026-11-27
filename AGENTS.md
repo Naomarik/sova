@@ -281,6 +281,8 @@ messages and `§workspace.groups/decisions`):
 - **CRITICAL: no file locking.** If a session is open in a TUI, the webapp must NEVER write to it (no
   prompt/steer). Detect via `~/.pi/agent/sessions/live/*.json`; live sessions are read-only via
   `/ws/watch`.
+- Sova chats made since chat homes keep their transcripts in a flat `<homes root>/<chat id>/sessions/`
+  (each chat gets `$SOVA_CHAT_HOMES_ROOT`), not in `~/.pi/agent/sessions/`; look in both.
 - Only the adapter, `server/harness/pi/`, reaches pi; any other import of `@earendil-works/*` fails
   `pnpm test`.
 - **The boundary baseline only shrinks.** Never add a file, raise a count or list a wrapper to make

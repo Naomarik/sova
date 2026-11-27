@@ -4,7 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +14,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const CLI = resolve(HERE, "../core/sova-spec-draft.mjs");
 // The runtime's SPEC_AGREE_SOURCE, SPEC_AGREE_GIVEN and PI_CODING_AGENT_DIR are dropped too: a test says where its
 // go-ahead came from (or that there is none), and pi's sessions are the fixture's own, under its HOME.
-const DROPPED = new Set(["SPEC_AGREE_SOURCE", "SPEC_AGREE_GIVEN", "PI_CODING_AGENT_DIR"]);
+// So are Sova's chat-home variables: a test running in a Sova chat never reads the real homes.
+const DROPPED = new Set(["SPEC_AGREE_SOURCE", "SPEC_AGREE_GIVEN", "PI_CODING_AGENT_DIR", "SOVA_CHAT_HOMES_ROOT", "SOVA_CHAT_HOMES", "SOVA_CHAT_STATE_ROOT", "SOVA_CHAT_HOME"]);
 const fixtureEnv = (root, extra = {}) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_") && !DROPPED.has(k))), HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "home"), ...extra });
 
 const roots = [];
@@ -30,9 +32,9 @@ const TOP = "# §app/list\n\nThe session list.\n";
 const promise = (sentence) => `${TOP}\n## ${ID}\n\n${sentence}\n`;
 const SIXTY = "A session title shows at most 60 characters, then an ellipsis.";
 
-/** A pi session file under agentDir/sessions: a header, then entries [id, type, role?]. */
-function piSession(agentDir, file, id, entries) {
-  write(agentDir, `sessions/--proj--/${file}`, [{ type: "session", version: 3, id, timestamp: "2026-10-19T00:00:00.000Z", cwd: "/p" },
+/** A pi session file under agentDir/sessions (or `sub`): a header, then entries [id, type, role?]. */
+function piSession(agentDir, file, id, entries, sub = "sessions/--proj--") {
+  write(agentDir, `${sub}/${file}`, [{ type: "session", version: 3, id, timestamp: "2026-10-19T00:00:00.000Z", cwd: "/p" },
     ...entries.map(([eid, type, role]) => ({ type, id: eid, parentId: null, timestamp: "2026-10-19T00:00:01.000Z", ...(role ? { message: { role, content: [{ type: "text", text: "t" }] } } : { customType: "x" }) }))]
     .map((e) => JSON.stringify(e)).join("\n") + "\n");
 }
@@ -301,6 +303,40 @@ test("a pi-session source resolves by file name or header, under PI_CODING_AGENT
   decided(root2, "talk");
   const b = agreeEnv(root2, {}, "--source", "pi-session:01a1-5137#e9f2");
   assert.equal(b.exit, 0, `found by its header: ${JSON.stringify(b)}`);
+});
+
+// A Sova chat made since chat homes keeps its conversations, and its helpers', in its home's flat sessions/.
+test("a pi-session source resolves in a Sova chat's home: under SOVA_CHAT_HOMES_ROOT, SOVA_CHAT_HOMES, the state root's marker, or the default folder", () => {
+  const homed = (homes, chat = "h1") => {
+    piSession(join(homes, chat), "2026-10-19T00-00-00-000Z_h1.jsonl", "h1", [["u1", "message", "user"], ["a1", "message", "assistant"]], "sessions");
+    piSession(join(homes, chat), "helper.jsonl", "w7", [["u2", "message", "user"]], "sessions");
+  };
+  for (const via of ["SOVA_CHAT_HOMES_ROOT", "SOVA_CHAT_HOMES", "marker", "default"]) for (const [ref, ok] of [["pi-session:h1#u1", true], ["pi-session:h1#a1", false]]) {
+    const root = project();
+    decided(root, "talk");
+    let homes = join(root, "homes"), env = {};
+    if (via === "marker") write(root, "home/.pi/agent/sova/chat-homes.json", JSON.stringify({ v: 1, homes }));
+    else if (via === "default") homes = join(root, "home", ".local", "state", "sova", "chats", createHash("sha256").update(join(realpathSync(root), "home", ".pi", "agent", "sova")).digest("hex").slice(0, 12));
+    else env = { [via]: homes };
+    homed(homes);
+    const a = agreeEnv(root, env, "--source", ref);
+    if (ok) assert.equal(a.exit, 0, `${via}: the chat's own file: ${JSON.stringify(a)}`);
+    else assert.deepEqual(codes(a), ["agree-source-unresolved"], `${via}: an assistant message in a home is no go-ahead`);
+  }
+  // a helper's file is in its top chat's home, found by its header; the agent dir's sessions still resolve beside homes
+  const root = project();
+  decided(root, "talk");
+  homed(join(root, "homes"), "top");
+  assert.equal(agreeEnv(root, { SOVA_CHAT_HOMES_ROOT: join(root, "homes") }, "--source", "pi-session:w7#u2").exit, 0, "a helper in another home");
+  const root2 = project();
+  decided(root2, "talk");
+  homed(join(root2, "homes"));
+  assert.equal(agreeEnv(root2, { SOVA_CHAT_HOMES_ROOT: join(root2, "homes") }, "--source", "pi-session:s1#e7").exit, 0, "the agent dir's sessions too");
+  // a relative override is ignored, as Sova ignores it
+  const root3 = project();
+  decided(root3, "talk");
+  homed(join(root3, "homes"));
+  assert.deepEqual(codes(agreeEnv(root3, { SOVA_CHAT_HOMES_ROOT: "homes" }, "--source", "pi-session:h1#u1")), ["agree-source-unresolved"], "a relative root");
 });
 
 test("a worker (SPEC_AGREE_GIVEN set by the spawn path) given no reference refuses any --source; given one, it stamps that", () => {

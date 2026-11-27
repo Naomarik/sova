@@ -192,6 +192,9 @@ export interface SessionFeedOptions {
   frameKey?: (frame: SessionFeedMessage) => string;
   /** Labels for rows sockets that name pairs; without it a socket's pairs are ignored. */
   labels?: FeedLabels<any>;
+  /** Frames a joining listener gets after its marks, when there is something to say (an extension's waiting mesh
+      proposals, §mesh.lan/proposals): none at all otherwise. */
+  joinFrames?: () => SessionFeedMessage[];
 }
 
 /** Once a minute: re-diffs are change-driven, this only catches what no source tells of. */
@@ -297,6 +300,7 @@ export class SessionFeed {
         send({ type: "rows_hello", epoch: this.epochId, version: this.version });
       }
       send({ type: "marks", full: true, sessions: [...this.sent.values()] });
+      for (const msg of this.opts.joinFrames?.() ?? []) send(msg);
       for (const msg of held.splice(0)) send(msg);
     });
     return () => {

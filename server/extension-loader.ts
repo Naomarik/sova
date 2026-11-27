@@ -15,6 +15,7 @@ import { chatsDirForExtensions, removeExtensionFolders } from "./extension-chats
 import { extensionDataDir, freePort, ProgramNotFound, programStatus, programUnits, startProgram, stopProgram } from "./extension-program";
 import { releaseViewWaiters } from "./card-views";
 import { cardOwnersChanged, closeCardsOfExtension, setCardsTrusted } from "./transcript-cards";
+import { forgetLinkTrust } from "./extension-link-trust";
 
 export class LoaderRefusal extends Error {
   constructor(message: string, readonly status: 400 | 404 | 409, readonly code?: string) {
@@ -271,6 +272,8 @@ export async function approveExtension(id: string, version: unknown): Promise<vo
   const raw = { ...c.raw };
   await givePort(raw);
   recordApproval(id, { version: v.version, entry: v.entry, code: v.code, sig: v.sig });
+  // A trust to link computers without asking was for the version approved before: approving again turns it off.
+  forgetLinkTrust(id);
   setCodeReading(id, { sig: v.sig, code: v.code });
   putEntry(raw);
   const started = settleProgram(raw);
@@ -290,6 +293,8 @@ export async function chooseFolder(id: string, folder: string, version: unknown)
   if (version !== v.version) throw new LoaderRefusal(CHANGED, 409, "changed");
   await givePort(raw);
   recordApproval(id, { version: v.version, entry: v.entry, code: v.code, sig: v.sig });
+  // A trust to link computers without asking was for the version approved before: approving again turns it off.
+  forgetLinkTrust(id);
   setCodeReading(id, { sig: v.sig, code: v.code });
   putEntry(raw);
   const started = settleProgram(raw);
@@ -344,6 +349,7 @@ async function forget(id: string, deleteData = false): Promise<void> {
   const real = validExtensionId(id);
   if (real) await stopOne(id);
   forgetApproval(id);
+  forgetLinkTrust(id);
   forgetCodeReading(id);
   clearHealthOf(id);
   stopped.delete(id);

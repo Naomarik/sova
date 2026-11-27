@@ -47,7 +47,12 @@ import { ensureLanIdentity, LanRuntime, readLanIdentity } from "./lan";
 import { lanNodeId } from "./lan-cert";
 import { bootBuild } from "./build-id";
 import { cleanBuild } from "./lan-handoff-protocol";
-import { applyLanPairing, applyLanRelay, lanRoutes, type LanRouteDeps } from "./lan-routes";
+import { applyLanPairing, applyLanRelay, lanRoutes, removeLanPairing, type LanRouteDeps } from "./lan-routes";
+import { forgetLinks, goneLinks, MeshProposals, proposalRoutes } from "./proposals";
+import type { MeshProposalsFeed } from "../../shared/mesh-proposals";
+import { publishFeed } from "../session-feed";
+import { readExtensions } from "../extensions";
+import { linkTrusted } from "../extension-link-trust";
 import { loginKindsPin } from "../sync/logins-merge";
 import { problemOf } from "../../shared/form-rules";
 import { FRONT_DOOR_RULE, HOST_LABEL_RULE } from "../../shared/mesh-limits";
@@ -473,8 +478,13 @@ export function updatePeers(change: (config: PeersConfig) => PeersConfig | { err
   if ("error" in v) return { error: v.error, status: 400 };
   writePeers(v.config);
   reload();
+  forgetGoneLinks(base.config, v.config);
   return v;
 }
+
+const proposalLinksFile = (): string => join(stateRoot(), "mesh-proposals.json");
+/** A pairing that went (or was paired again) is no extension's any more (§mesh.lan/proposals). */
+const forgetGoneLinks = (before: PeersConfig, after: PeersConfig): void => forgetLinks(proposalLinksFile(), goneLinks(before.peers, after.peers));
 
 /** The sentence refusing what a host does on its own with peer `id`, when both list their areas and
     this host reads it as Update needed (§mesh.compatibility/host-acts); else null. */
@@ -765,6 +775,7 @@ export async function applyMeshPeers(body: { peers?: unknown; grants?: unknown }
   if (opts.dry) return { status: 200, body: null };
   writePeers(v.config);
   reload();
+  forgetGoneLinks(base.config, v.config);
   applyPairingGrants(grants.set, grants.removed);
   return { status: 200, body: await meshInfo() };
 }
@@ -1003,6 +1014,7 @@ export function meshGrantOf(id: string): MeshGrant | null {
 const lanDeps: LanRouteDeps = {
   status: () => lanStatus(),
   ensureKey: () => ensureLanIdentity(),
+  ownPin: () => readLanIdentity()?.pin,
   updatePeers,
   applyGrants: applyPairingGrants,
   acceptorRunning: () => rt.lan?.acceptorRunning() ?? false,
@@ -1010,6 +1022,42 @@ const lanDeps: LanRouteDeps = {
 
 /** Add a pairing, as the Mesh page does; a Create card's Apply runs this too, with the pin the person's page sent. */
 export const applyMeshPairing = (body: Partial<LanPairingAdd>): Promise<MeshResult> => applyLanPairing(body, lanDeps);
+
+/** An extension's proposals (§mesh.lan/proposals): made on the first call that reaches them, so a server no extension
+    asks holds none, reads no file and runs no timer. Each change goes to every open page on the session feed. */
+let proposals: MeshProposals | null = null;
+export function meshProposals(): MeshProposals {
+  proposals ??= new MeshProposals({
+    now: () => Date.now(),
+    ownPin: () => readLanIdentity()?.pin,
+    ensureKey: () => ensureLanIdentity(),
+    peers: () => {
+      reloadIfChanged();
+      return meshPeers();
+    },
+    selfId: () => meshSelf().id,
+    relay: () => {
+      const r = rt.config?.self.relay;
+      return r ? { host: r.host, port: r.port } : null;
+    },
+    grantOf: (id) => meshGrantOf(id) ?? { preset: peerById(id)?.lan ? "presence" : "full" },
+    pair: (body, opts) => applyLanPairing(body, lanDeps, opts),
+    unpair: (id) => removeLanPairing(id, lanDeps),
+    setGrant: (peer, preset) => applyMeshAccess({ peer, grant: { preset } }),
+    setRelay: (relay, opts) => applyLanRelay(relay ? { ...relay, exposure: "lan" } : null, lanDeps, opts),
+    titleOf: (id) => readExtensions().find((e) => e.id === id)?.title?.trim() || id,
+    trusted: linkTrusted,
+    publish: (waiting) => publishFeed({ type: "mesh_proposals", proposals: waiting }),
+    linksFile: proposalLinksFile,
+  });
+  return proposals;
+}
+
+/** What a page that connects to the session feed is sent: the waiting proposals, only while any wait. */
+export function meshProposalJoinFrames(): MeshProposalsFeed[] {
+  const waiting = proposals?.waiting() ?? [];
+  return waiting.length ? [{ type: "mesh_proposals", proposals: waiting }] : [];
+}
 
 /** This host as a relay, as the Mesh page sets it; a Create card's Apply runs this too. */
 export const applyMeshRelay = (relay: LanRelayPut, opts: { dry?: boolean } = {}): MeshResult => applyLanRelay(relay, lanDeps, opts);
@@ -1061,6 +1109,8 @@ export function meshRoutes(app: Hono): void {
   app.put("/api/mesh/access", (c) => (localRequest(c) ? putAccess(c) : c.json({ error: "Not found" }, 404)));
   // Dial-out pairings (§mesh.lan/pairing): the same local-browser-only rule.
   lanRoutes(app, lanDeps);
+  // An extension's proposals and the person's answer (§mesh.lan/proposals), local only as well.
+  proposalRoutes(app, meshProposals);
 
   // Peer-only routes: reached through the peer listener alone. On the main listener they are the
   // same 404 as any unknown /api route.

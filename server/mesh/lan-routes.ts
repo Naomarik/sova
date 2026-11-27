@@ -19,6 +19,8 @@ export interface LanRouteDeps {
   status: () => LanStatus;
   /** This host's key, made on first use; its pin. */
   ensureKey: () => { pin: string };
+  /** This host's pin if its key exists; never makes one. */
+  ownPin?: () => string | undefined;
   updatePeers: (change: (config: PeersConfig) => PeersConfig | { error: string }) => { config: PeersConfig } | { error: string; status: 400 | 409 };
   /** Grants to write for newly paired nodes, and nodes whose grant goes (index.ts applyPairingGrants). */
   applyGrants: (set: Record<string, MeshPreset>, removed: string[]) => { ok: true } | { error: string };
@@ -61,16 +63,8 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
   app.delete(
     "/api/mesh/lan/pairings/:id",
     local((c) => {
-      const id = c.req.param("id");
-      let gone: PeerEntry | undefined;
-      const r = deps.updatePeers((config) => {
-        gone = config.peers.find((p) => p.id === id && p.lan);
-        if (!gone) return { error: "No such pairing" };
-        return { ...config, peers: config.peers.filter((p) => p !== gone) };
-      });
-      if ("error" in r) return c.json({ error: r.error }, r.error === "No such pairing" ? 404 : r.status);
-      deps.applyGrants({}, [gone!.nodeId]);
-      return c.json(deps.status());
+      const r = removeLanPairing(c.req.param("id") ?? "", deps);
+      return c.json(r.body as object, r.status as 200);
     }),
   );
 
@@ -86,8 +80,22 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
   );
 }
 
-/** Add a pairing: the route's code, and a Create card's Apply, whose pin only the person's page sends. */
-export async function applyLanPairing(body: Partial<LanPairingAdd>, deps: LanRouteDeps): Promise<{ status: number; body: unknown }> {
+/** Remove a pairing: the route's code, and an extension's `unpair` proposal (§mesh.lan/proposals). Its grant goes too. */
+export function removeLanPairing(id: string, deps: LanRouteDeps): { status: number; body: unknown } {
+  let gone: PeerEntry | undefined;
+  const r = deps.updatePeers((config) => {
+    gone = config.peers.find((p) => p.id === id && p.lan);
+    if (!gone) return { error: "No such pairing" };
+    return { ...config, peers: config.peers.filter((p) => p !== gone) };
+  });
+  if ("error" in r) return { status: r.error === "No such pairing" ? 404 : r.status, body: { error: r.error } };
+  deps.applyGrants({}, [gone!.nodeId]);
+  return { status: 200, body: deps.status() };
+}
+
+/** Add a pairing: the route's code, and a Create card's Apply, whose pin only the person's page sends. `dry`: every
+    check, nothing written (an extension's proposal is checked when it is made, §mesh.lan/proposals). */
+export async function applyLanPairing(body: Partial<LanPairingAdd>, deps: LanRouteDeps, opts: { dry?: boolean } = {}): Promise<{ status: number; body: unknown }> {
   if (body.internet !== undefined && typeof body.internet !== "boolean") return { status: 400, body: { error: "internet must be true or false" } };
   if (body.internet === true && body.role !== "dial") return { status: 400, body: { error: "Only a relay this host dials can be on the internet" } };
   const id = typeof body.id === "string" ? body.id.trim() : "";
@@ -98,8 +106,9 @@ export async function applyLanPairing(body: Partial<LanPairingAdd>, deps: LanRou
   const grant = body.grant ?? "presence";
   if (!(MESH_PRESETS as readonly unknown[]).includes(grant)) return { status: 400, body: { error: `grant must be one of ${MESH_PRESETS.join(", ")}` } };
   const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, LABEL_MAX) : id;
-  const own = deps.ensureKey();
-  if (samePin(own.pin, pin)) return { status: 400, body: { error: "That is this host's own fingerprint" } };
+  // A dry check makes no key: a host without one can't be shown its own pin, so none is refused yet.
+  const own = opts.dry ? deps.ownPin?.() : deps.ensureKey().pin;
+  if (own && samePin(own, pin)) return { status: 400, body: { error: "That is this host's own fingerprint" } };
   const nodeId = lanNodeId(pin);
   const entry: Record<string, unknown> = {
     id,
@@ -125,6 +134,7 @@ export async function applyLanPairing(body: Partial<LanPairingAdd>, deps: LanRou
     return "error" in v ? v : config;
   });
   if ("error" in judged) return { status: judged.status, body: { error: judged.error } };
+  if (opts.dry) return { status: 200, body: null };
   // Then the grant, before the pairing (§mesh.lan/pairing): a pairing never exists without the
   // grant it was given. If the grant can't be written, nothing is paired; if the pairing then
   // can't be saved, the grant goes again. (With no entry at all a pairing has presence: access.ts.)

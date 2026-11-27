@@ -375,6 +375,37 @@ transcript row's `id` up to its first `:`:
 - A late, malformed or oversized answer is dropped. After 3 in a row Sova stops asking until the
   page reloads. The user can hide what an extension adds from its page (`Hide Under Replies`).
 
+### Proposing a link between computers
+
+Your backend can propose a change to this computer's dial-out pairings (the Mesh page's Pair a Host), and Sova
+asks the person in its own dialog before anything that gives a computer more. With its key:
+
+- `POST /api/mesh/proposals` `{kind: "key"}` makes this computer's mesh key if it has none and answers its
+  `fingerprint`, with no click.
+- `{kind: "pair", role: "dial" | "accept", peer, label?, fingerprint, host?, port?, grant, relay?, why?}` proposes
+  a pairing (`dial`: with the other computer's `host` and `port`; `accept`: it dials this one, and `relay:
+  {host, port}` may name where this computer listens, a local-network address, when it has no relay yet). It
+  always waits for the person's **Link Computer**.
+- `{kind: "grant", peer, grant}` changes the preset of a link you made: applied at once when it gives nothing
+  more, otherwise it waits for **Give Access**. `{kind: "unpair", peer}` removes a link you made, at once.
+- Each answers `{proposal}`; `proposal.state` is `waiting`, `applied`, `declined`, `withdrawn`, `expired` (15
+  minutes) or `failed` (with `error`). Read one with `GET /api/mesh/proposals/:id`, yours and your links with
+  `GET /api/mesh/proposals`, and withdraw one that waits with `DELETE /api/mesh/proposals/:id`.
+- Sending the same pairing again while it waits (same `peer` and `fingerprint`) answers the one that waits, with
+  its old terms. To change a waiting request's terms (grant, role, address, relay), withdraw it first, then send
+  the new one.
+- The person can let your extension link computers without asking: **Let {title} link computers without asking**
+  in Settings → Extensions, off at first. Only their own click in Sova's page turns it on or off; your key and your
+  page are refused. While it is on, your `pair` and widening `grant` proposals are applied at once, at any preset,
+  after the same checks a confirm makes, and answer `applied` (or `failed` with `error`), never `waiting`; the link
+  is yours just as a confirmed one is. It holds for the version the person approved: approving your extension
+  again (a new version, another folder) turns it off, and it does nothing while your row reads Changed. Each
+  computer decides for itself, so handle `waiting` and `applied` alike on both sides.
+- Only the person answers: confirm and decline are Sova's page's own, refused to your key, and refused from
+  your page (a `Referer` under `/ext/`, a frame). Don't build your own confirm button: point the person at
+  Sova's dialog. `sessions` and `full` are in effect full access to the computer, and the dialog says so.
+- A Sova without this answers the propose with `403` and `extensionRefused: true`.
+
 ### Speaking in a chat, and what a key can't do (extension contract v1.19)
 
 An extension is a guest with a name badge. It hears what happens, shows things, asks with a card and
@@ -400,7 +431,7 @@ old: say so instead of half working.
   - `merge.*`, `release.*` and `deploy.*` writes (their status and logs still answer), all of
     `/api/merge-queue`;
   - writes to `/api/overseer`, a project overseer's routes, to-dos and ideas included, `/api/settings`,
-    `/api/mode`, `/api/baton`, `/api/orgs`, `/api/outreach` and `/api/mesh`;
+    `/api/mode`, `/api/baton`, `/api/orgs`, `/api/outreach` and `/api/mesh` (but proposing a link, above);
   - `session.group.send`, a new chat's first prompt (`prompt` on `POST /api/sessions`: open it, then
     `session.send`), an offer's button, dismissing a Needs You item, and approving anything.
 - **Its own cards only.** A key raises and changes only your card types, and answers only your cards,

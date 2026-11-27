@@ -5534,6 +5534,9 @@ export type SessionFeedMessage =
   | import("./merge-queue").MergeCardsFeed
   /** A project's release view changed (shared/release.ts ReleaseView, as release.status answers it). Never on connect. Additive. */
   | import("./release").ReleaseFeed
+  /** The extension proposals that wait for the person's click (§mesh.lan/proposals), all of them, on each change; on
+      connect only while any wait. Additive: a client that predates it ignores it. */
+  | import("./mesh-proposals").MeshProposalsFeed
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */

@@ -120,11 +120,22 @@ const reOf = (route: string): RegExp => {
 };
 const matchers = EXTENSION_DOORS.map((door) => ({ door, re: reOf(door.route) }));
 
+/**
+ * Where a key only proposes, inside a door above: an extension's mesh proposal (§mesh.lan/proposals). What widens
+ * access waits for the person's click in Sova's own dialog, whose confirm and decline stay behind the door.
+ */
+export const EXTENSION_OPENINGS: ReadonlyArray<{ method: "POST" | "DELETE"; route: string }> = [
+  { method: "POST", route: "/api/mesh/proposals" },
+  { method: "DELETE", route: "/api/mesh/proposals/:id" },
+];
+const openings = EXTENSION_OPENINGS.map((o) => ({ method: o.method, re: reOf(o.route) }));
+
 /** The door `method path` is, or null. A path the router can't be judged on is no door: the gate and the router refuse it. */
 export function closedDoor(method: string, pathname: string): ExtensionDoor | null {
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return null;
   const path = judgedPath(pathname);
   if (path === null) return null;
+  if (openings.some((o) => o.method === method && o.re.test(path))) return null;
   return matchers.find((m) => (m.door.method === "WRITE" || m.door.method === method) && m.re.test(path))?.door ?? null;
 }
 

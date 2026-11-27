@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 707 |
+| Routes registered | 714 |
 | Routes a catalogue entry points at | 250 |
 | Catalogue entries | 324 |
 | Class: Peer protocol | 54 |
@@ -24,10 +24,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 25 |
+| Class: Trust grants | 26 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 282 |
+| Class: Left as is, by choice | 288 |
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
@@ -528,7 +528,7 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (25)
+### Trust grants (26)
 
 Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval), adding, approving and changing an extension and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
 
@@ -537,6 +537,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `DELETE /api/extensions/:id` | full |
 | `POST /api/extensions/:id/approve` | full |
 | `POST /api/extensions/:id/folder` | full |
+| `POST /api/extensions/:id/link-trust` | full |
 | `POST /api/extensions/:id/off` | full |
 | `POST /api/extensions/:id/on` | full |
 | `POST /api/extensions/:id/program` | full |
@@ -580,7 +581,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (282)
+### Left as is, by choice (288)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -644,6 +645,12 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/mesh/logins` | full |
 | `POST /api/mesh/logins/claim` | full |
 | `PUT /api/mesh/peers` | full |
+| `GET /api/mesh/proposals` | full |
+| `POST /api/mesh/proposals` | full |
+| `DELETE /api/mesh/proposals/:id` | full |
+| `GET /api/mesh/proposals/:id` | full |
+| `POST /api/mesh/proposals/:id/confirm` | full |
+| `POST /api/mesh/proposals/:id/decline` | full |
 | `GET /api/mesh/resync` | full |
 | `POST /api/mesh/resync/:id` | full |
 | `GET /api/mesh/sessions` | full |

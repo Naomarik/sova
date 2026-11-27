@@ -68,7 +68,7 @@ import { setTailscaleAsk } from "./networks/probe";
 import { detachChatHost, startChatHost, stopWorkersOf, wakeOwnerOf, workerChatsOf } from "./chat-host";
 import { agentCpu } from "./agent-cpu";
 import { expectChatRouter } from "./chat-handle";
-import { meshApi, startMesh, stopMesh } from "./mesh";
+import { meshApi, meshProposalJoinFrames, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
@@ -408,6 +408,7 @@ configureSessionFeed({
   frameKey: feedFrameKey,
   // Rows sockets that name label pairs get those labels (server/session-labels.ts); the rest, the list as is.
   labels: { union: unionPairs, overlay: withLabels, project: projectLabels },
+  joinFrames: meshProposalJoinFrames,
 });
 // A label write is no listing change: the feed compares again, and only label sockets' rows move.
 onLabelled(() => sessionFeed()?.nudge());

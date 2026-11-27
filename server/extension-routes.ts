@@ -7,6 +7,7 @@ import { homedir, hostname } from "node:os";
 import { approveExtension, chooseFolder, installFolder, LoaderRefusal, programAction, programNotFound, programStartedAt, removeExtension, reviewEntry, reviewFolder, turnOff, turnOn } from "./extension-loader";
 import { programLog, programStatus, programUnits } from "./extension-program";
 import { clearHealthOf, contractWords, extensionHealth, listedExtension, listedExtensions, peerExtensionEntries, type ListedExtension } from "./extensions";
+import { LinkTrustRefusal, linkTrusted, setLinkTrust } from "./extension-link-trust";
 import { extensionPageRefusal, notPage, yourClickRefusal } from "./page-only";
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -42,7 +43,7 @@ export async function rowOf(l: ListedExtension): Promise<ExtensionRow> {
   if (l.state === "needs-newer" || l.state === "waiting") return { ...base, state: l.state, line: LINES[l.state]! };
   if (l.state === "changed") return { ...base, state: l.state, line: LINES.changed! };
   if (l.state === "off") return { ...base, state: "off", on: false };
-  const on: ExtensionRow = { ...base, on: true };
+  const on: ExtensionRow = { ...base, on: true, linkTrust: linkTrusted(e.id) };
   if (!run) {
     if (!e.api) return on;
     const own: ExtensionRow = { ...on, ownProgram: true, line: "You run this program yourself, so Sova doesn't start or stop it." };
@@ -161,6 +162,21 @@ export function registerExtensionRoutes(app: Hono<any>): void {
       return done(c);
     }),
   );
+  // "Let {title} link computers without asking" (§mesh.lan/proposals): on and off, the person's own click in Sova's
+  // page only; an extension's key, its page under /ext/ or a frame, a chat, a script and a peer are refused.
+  app.post("/api/extensions/:id/link-trust", async (c) => {
+    const refused = yourClickRefusal(c, "linkTrust") ?? extensionPageRefusal(c);
+    if (refused) return refused;
+    const b = (await c.req.json().catch(() => null)) as { on?: unknown } | null;
+    if (!b || typeof b.on !== "boolean") return c.json({ error: "Expected {on: true | false}." }, 400, NO_STORE);
+    try {
+      setLinkTrust(c.req.param("id") ?? "", b.on);
+    } catch (err) {
+      if (err instanceof LinkTrustRefusal) return c.json({ error: err.message }, err.status, NO_STORE);
+      throw err;
+    }
+    return done(c);
+  });
   app.delete(
     "/api/extensions/:id",
     page(async (c) => {

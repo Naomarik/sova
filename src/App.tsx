@@ -94,6 +94,7 @@ import { isSharesHash } from "./lib/session-shares";
 import { SharePage } from "./components/SharePage";
 import { shareRouteFromHash } from "./lib/share-slice";
 import { MeshDetails } from "./components/MeshDetails";
+import { MeshProposalDialog } from "./components/MeshProposalDialog";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
 import { ResourceMonitor } from "./components/ResourceMonitor";
 import { closeMonitor, monitorOpen } from "./lib/monitor-nav";
@@ -1541,6 +1542,8 @@ export function App() {
       <Show when={meshDetailsOpen() && meshOn()}>
         <MeshDetails onClose={closeMeshDetails} />
       </Show>
+      {/* An extension's mesh proposal waiting for the person (§mesh.lan/proposals): nothing renders while none waits. */}
+      <MeshProposalDialog />
       {/* Opened from the sidebar foot's monitor button or the spine; it polls only while open. */}
       <Show when={monitorOpen()}>
         <ResourceMonitor onClose={closeMonitor} titleOf={(path) => list()?.find((x) => x.path === path)?.title} />

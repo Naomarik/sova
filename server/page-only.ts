@@ -97,6 +97,8 @@ const DOORS = {
   turnOn: "Only the user turns on public links. Ask them to press Turn On in Settings → Public links. Nothing was turned on.",
   publicLinks: "Only the user changes where links open. Ask them to pick it in Settings → Public links. Nothing was changed.",
   trustNetwork: "Only the user trusts a network. Ask them to press Trust on the Access page. Nothing was trusted.",
+  meshProposal: "Only the user links a computer or gives it more access. Ask them to answer the dialog Sova shows in its page. Nothing changed.",
+  linkTrust: "Only the user lets an extension link computers without asking. Ask them to turn it on in Settings → Extensions. Nothing changed.",
 } as const;
 export type YourClickDoor = keyof typeof DOORS | { projectTool: string } | { cardsOf: string };
 
@@ -131,6 +133,11 @@ export function yourClickRefusal(c: Context, door: YourClickDoor, opts: { overse
  * a hostile page can leave the `Referer` off, as the screen says.
  */
 export function extensionPageRefusal(c: Context): Response | null {
+  return pageFrameRefusal(c, "An extension's page can't change extensions. Open Settings → Extensions in Sova itself. Nothing was changed.");
+}
+
+/** The same guard with a door's own words (an extension's mesh proposal, §mesh.lan/proposals). */
+export function pageFrameRefusal(c: Context, error: string): Response | null {
   const referer = c.req.header("referer");
   let path = "";
   try {
@@ -140,7 +147,7 @@ export function extensionPageRefusal(c: Context): Response | null {
   }
   const dest = c.req.header("sec-fetch-dest");
   if (path.startsWith("/ext/") || dest === "iframe" || dest === "frame" || dest === "embed" || dest === "object") {
-    return c.json({ error: "An extension's page can't change extensions. Open Settings → Extensions in Sova itself. Nothing was changed.", yourClick: true }, 403);
+    return c.json({ error, yourClick: true }, 403);
   }
   return null;
 }

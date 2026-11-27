@@ -39,6 +39,7 @@ describe("the table against the real app", () => {
   const KEPT = new Set([
     // Only your own page, at its own door in server/page-only.ts, which already refuses a key.
     "POST /api/extensions/:id/approve",
+    "POST /api/extensions/:id/link-trust",
     "POST /api/session-cards/trust",
     "POST /api/profiles/approve",
     "POST /api/schedules/approve",

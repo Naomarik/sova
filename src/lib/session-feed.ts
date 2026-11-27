@@ -17,6 +17,7 @@ import { applyMarks, createNudgeThrottle, EMPTY_OVERLAY, type MarksOverlay } fro
 import { createReconnectingSocket } from "./socket";
 import { loadPublicLinks } from "./public-links";
 import { onLabelsAsk, withLabels } from "./labels-ask";
+import { clearMeshProposals, noteMeshProposals } from "./mesh-proposals";
 
 const [overlay, setOverlay] = createSignal<MarksOverlay>(EMPTY_OVERLAY);
 /** What the feed has said, for `overlaid` (src/lib/signals.ts). Empty while the socket is down. */
@@ -116,6 +117,8 @@ export function openSessionFeed(refreshList: () => void): void {
       void refreshLandingSummary();
       // Where links open and its tunnels: read once per open; a change meanwhile was never pushed.
       void loadPublicLinks();
+      // An extension's waiting mesh proposals: the server sends them on connect only while any wait (§mesh.lan/proposals).
+      clearMeshProposals();
     },
     onMessage: (msg) => {
       if (following?.message(msg)) return;
@@ -145,6 +148,8 @@ export function openSessionFeed(refreshList: () => void): void {
       else if (msg.type === "merge_cards") noteMergeCards(msg);
       // A tunnel started or ended, or the setting changed (§mesh/tunnel): re-read it, never poll it.
       else if (msg.type === "public_links_changed") void loadPublicLinks();
+      // An extension's mesh proposals that wait for the person: Sova's own dialog shows them (§mesh.lan/proposals).
+      else if (msg.type === "mesh_proposals") noteMeshProposals(msg);
     },
   });
   createEffect(() => setOpen(socket.status() === "open"));

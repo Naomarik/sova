@@ -52,3 +52,21 @@ test("the feed's frame is the whole waiting list; an answer drops one; a reopene
   clearMeshProposals();
   assert.deepEqual(waitingMeshProposals(), []);
 });
+
+test("Sova's proposal dialog and its scrim sit over the toast stack, and every other modal stays under it", async () => {
+  const { readFileSync } = await import("node:fs");
+  const base = readFileSync(new URL("../design/base.css", import.meta.url), "utf8");
+  const mesh = readFileSync(new URL("../mesh.css", import.meta.url), "utf8");
+  /** The z-index the first rule whose selector is exactly `sel` declares, in `css`. */
+  const z = (css: string, sel: string): number => {
+    const at = css.search(new RegExp(`(^|\\n)${sel.replace(/[.]/g, "\\.")} \\{`));
+    assert.ok(at >= 0, `no rule ${sel}`);
+    const m = /z-index:\s*(\d+)/.exec(css.slice(at, css.indexOf("}", at)));
+    assert.ok(m, `${sel} declares no z-index`);
+    return Number(m[1]);
+  };
+  const toasts = z(base, ".toast-stack");
+  assert.ok(z(mesh, ".scrim.mesh-proposal-scrim") > toasts, "the scrim covers a toast, so a toast can't take the click");
+  assert.ok(z(mesh, ".modal.mesh-proposal") > z(mesh, ".scrim.mesh-proposal-scrim"), "the dialog over its own scrim");
+  assert.ok(z(base, ".modal") < toasts && z(base, ".scrim") < toasts, "other modals keep the toasts over them");
+});

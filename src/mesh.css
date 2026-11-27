@@ -104,6 +104,11 @@
 
 /* An extension's mesh proposal (§mesh.lan/proposals): Sova's own dialog, its facts as a two-column list, the
    extension's words quoted, the fingerprint in mono and wrapping, never cut off. */
+/* Over the toasts (60), as .drop-overlay is: on a phone the toast stack sits on the sheet's foot, and a
+   toast still timing out (or paused under the pointer) would cover Link Computer, the dialog's one click.
+   This dialog only; every other modal stays under the toasts. A toast still timing out shows again after. */
+.scrim.mesh-proposal-scrim { z-index: 61; }
+.modal.mesh-proposal { z-index: 62; }
 /* A bottom sheet on a phone, as every modal is; a capped dialog from 768px. */
 @media (min-width: 768px) { .mesh-proposal { max-width: min(560px, calc(100vw - var(--space-6))); } }
 .mesh-proposal .modal-head { flex-wrap: wrap; gap: var(--space-2); }

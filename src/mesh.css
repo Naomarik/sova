@@ -104,7 +104,8 @@
 
 /* An extension's mesh proposal (§mesh.lan/proposals): Sova's own dialog, its facts as a two-column list, the
    extension's words quoted, the fingerprint in mono and wrapping, never cut off. */
-.mesh-proposal { max-width: min(560px, calc(100vw - var(--space-6))); }
+/* A bottom sheet on a phone, as every modal is; a capped dialog from 768px. */
+@media (min-width: 768px) { .mesh-proposal { max-width: min(560px, calc(100vw - var(--space-6))); } }
 .mesh-proposal .modal-head { flex-wrap: wrap; gap: var(--space-2); }
 .mesh-proposal-count { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 .mesh-proposal-body { display: flex; flex-direction: column; gap: var(--space-3); }

@@ -156,7 +156,9 @@ export type ChatOpenFrame =
 /** Browser frames (ChatClientFrame without the chat id: one chat per process). */
 export type ChatClientWire =
   | { t: "client.attach"; clientId: string; client: ChatClientInfo }
-  | { t: "client.msg"; clientId: string; msg: ChatClientMessage }
+  /** `member`: who typed a prompt or steer (§app.extensions/senders), set by the server only while an active
+      extension asks for senders (server/member-frame.ts), never from the browser's frame. An older chat ignores it. */
+  | { t: "client.msg"; clientId: string; msg: ChatClientMessage; member?: { by: string; label?: string } }
   | { t: "client.detach"; clientId: string }
   /** Runtime → server: written to that browser's socket as it is. */
   | { t: "client.send"; clientId: string; json: string };

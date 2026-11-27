@@ -108,6 +108,8 @@ import { UsageView } from "./components/UsageView";
 import { GlobalRegions, Icon } from "./components/ui";
 import { ExtensionsContext } from "./lib/reply-place";
 import { setExtensionListRefresh } from "./lib/extensions-settings";
+import { createListPlace, ListPlaceContext } from "./lib/list-place";
+import { onLabelsAsk } from "./lib/labels-ask";
 
 /** The session the hash names. A peer's (`#/p/<host>/s/<path>`) records its host first, so every
     request the view makes for it goes there even before the peer's list has loaded. */
@@ -510,6 +512,11 @@ export function App() {
     const items = extensions.data();
     return items && items.length > 0 ? items : null;
   });
+  /** The list place (lib/list-place): an extension's people and owner key, asked once per list. With no
+      extension naming `list`: no request, no timer, a declaration of null everywhere. */
+  const listPlace = createListPlace({ sessions: list, extensions: extensions.data });
+  // The labels the declaration names (lib/labels-ask) changed: the peers' rows are read again at once.
+  onCleanup(onLabelsAsk(() => void loadPeerSessions()));
   const [creating, setCreating] = createSignal(false);
   /** A folder New Session opens set to (a Home project card's New Chat…); cleared when the dialog closes. */
   const [newSessionPrefill, setNewSessionPrefill] = createSignal<string | null>(null);
@@ -1194,6 +1201,7 @@ export function App() {
     // The extension list this page polls anyway, for every place on Sova's screens extensions add to
     // (lib/reply-place): no place makes a request of its own to learn which do.
     <ExtensionsContext.Provider value={extensions.data}>
+    <ListPlaceContext.Provider value={listPlace}>
       {/*
         In a workspace the transcripts are the panes': the link points at the focused one, and its
         name and target move together.
@@ -1561,6 +1569,7 @@ export function App() {
         <ShortcutSheet onClose={() => setShortcutsOpen(false)} />
       </Show>
       <GlobalRegions />
+    </ListPlaceContext.Provider>
     </ExtensionsContext.Provider>
   );
 }

@@ -138,3 +138,43 @@
 .session-row-chip-warn > .chip-dot { color: var(--status-warn); }
 .session-row-chip-error > .chip-dot { color: var(--status-error); }
 .session-row-chip-info > .chip-dot { color: var(--status-info); }
+
+/* The list place (lib/list-place, components/ListPlace.tsx): a row's owner as 2 letters in a round
+   mark on its meta line, before the host: a thin strong edge on a surface fill (the pane is sunken, so
+   a sunken fill vanishes in dark); yours on the tint your own messages wear, with the control-weight
+   edge, so it reads by its edge as well as its fill. Never a control. */
+.owner-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-full);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-ink-2);
+  font-family: var(--font-body);
+  font-size: var(--fs-micro);
+  line-height: 1;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.02em;
+}
+.owner-mark-self {
+  border: var(--stroke-icon) solid var(--color-border-strong);
+  background: var(--color-accent-tint);
+  color: var(--color-ink);
+}
+/* Everyone's place in the menu: the mark's box, holding the person glyph, so every name lines up. */
+.owner-mark-all { border-color: transparent; background: none; color: var(--color-ink-muted); }
+.list-meta-row > .owner-mark { margin-right: var(--space-1); }
+
+/* The person row of the pane's foot, beside the host row: the host row's shape (.insights-row). */
+.person-menu { min-width: 0; }
+.person-menu-trigger > .icon { color: var(--color-ink-muted); flex: none; }
+.person-menu-text { display: flex; align-items: center; gap: var(--space-1); }
+.person-menu-text > .icon { flex: none; color: var(--color-ink-muted); }
+.person-menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-menu-option-text { flex-direction: row; align-items: center; gap: var(--space-2); }
+@media (min-width: 768px) {
+  .model-menu.action-menu.person-menu-panel { max-width: min(320px, calc(100vw - var(--space-6))); }
+}

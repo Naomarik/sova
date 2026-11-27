@@ -79,6 +79,7 @@ export const METHODS: Impl = {
         ...(a.sentByOverseer ? { sentByOverseer: a.sentByOverseer } : {}),
         ...(a.sentByBaton ? { sentByBaton: a.sentByBaton } : {}),
         ...(a.sentBySession ? { sentBySession: a.sentBySession } : {}),
+        ...(a.sentByMember ? { sentByMember: a.sentByMember } : {}),
         ...(a.delivery ? { delivery: a.delivery } : {}),
         ...(a.confirm ? { confirm: a.confirm } : {}),
         ...(a.byPerson ? { byPerson: true as const } : {}),

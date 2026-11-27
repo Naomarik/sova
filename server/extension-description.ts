@@ -11,7 +11,7 @@ import { viewOffersOf } from "./extension-views";
 import { EXTENSION_CONTRACT } from "../shared/extension-contract";
 import { contractWords, EXTENSION_ID_RE, listedExtensions, plainTitle, TITLE_MAX } from "./extensions";
 
-const KEYS = new Set(["version", "id", "title", "description", "icon", "needsContract", "page", "backend", "commands", "screens", "cards", "drawings", "reads"]);
+const KEYS = new Set(["version", "id", "title", "description", "icon", "needsContract", "page", "backend", "commands", "screens", "cards", "drawings", "reads", "records"]);
 const BACKEND_KEYS = new Set(["run", "folder"]);
 
 /** What a folder describes, as the list entry it becomes (no `api`: Sova assigns that). */
@@ -73,6 +73,7 @@ export function asksOf(raw: Record<string, unknown>, id: string, title: string):
     ...(offers?.screens?.length ? { screens: offers.screens } : {}),
     ...(views.offers.drawings?.length ? { drawings: views.offers.drawings.map((d) => d.kind) } : {}),
     ...(readsChats(raw) ? { readsChats: true } : {}),
+    ...(offers?.records?.length ? { records: offers.records } : {}),
   };
   // Say why: "1 of its commands" alone is what the log says for itself.
   const said = dropped.map((d) => (/^\d+ of its commands$/.test(d) ? `${d}: a command needs a name of lower-case letters, digits and dashes, and a label` : d));
@@ -149,7 +150,7 @@ export function readDescription(folderIn: string, self?: string): { ok: true; de
     if (taken) return bad(`There's already an extension named ${d.id}, from ${typeof taken.raw.folder === "string" ? taken.raw.folder : "the list"}.`);
   }
   if (!hasBackend && (nonEmpty(d.commands) || nonEmpty(d.screens))) return bad("It lists commands or screens but no program to answer them.");
-  for (const k of ["commands", "screens", "cards", "drawings"]) if (d[k] !== undefined) entry[k] = d[k];
+  for (const k of ["commands", "screens", "cards", "drawings", "records"]) if (d[k] !== undefined) entry[k] = d[k];
   const { asks, leftOut } = asksOf(entry, d.id, title);
   return { ok: true, described: { entry, leftOut, asks, needs: d.needsContract as string } };
 }

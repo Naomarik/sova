@@ -465,6 +465,10 @@ export interface TranscriptItem {
       entry. Renders nothing itself; the client draws the sender header above the user row
       `targetId` (resolving by id in either arrival order) and hides that row's header line. */
   sessionMark?: { kind: "sent"; targetId: string; from: { sessionId: string; title: string }; hop: number };
+  /** Who typed the user message `targetId` (§app.extensions/senders): the invisible `sova-member-sent` entry, written
+      only while an active extension's offers name `senders`. Renders nothing itself; the client draws "From {name}"
+      above a row another computer typed, resolving by id in either arrival order. `by`: `peer:<nodeId>` or `operator`. */
+  memberMark?: { targetId: string; by: string; label?: string };
   /** The session's `sova-profile` entry (§chat.profiles/after-first-message): kind "info", drawn as
       the muted "Profile: {label}" row only once a user message is on the branch; null = Default. */
   profileMark?: { profile: SessionProfileField | null };
@@ -4754,7 +4758,12 @@ export interface ExtensionOffers {
   /** Since v1.17: its drawing kinds, each its checked declaration by its fence word `<id>.<name>`, with
       its view and guide paths inside `dist`. */
   drawings?: ExtensionDrawingOffer[];
+  /** Since v1.22: what it asks Sova to record for it (shared/extension-offers.ts RECORD_KINDS): `senders`, who started
+      each chat and who typed each message (§app.extensions/senders). */
+  records?: RecordKind[];
 }
+/** Something Sova records only while an active extension asks for it (ext-contract-v1.22). */
+export type RecordKind = "senders";
 /** An extension's drawing kind as its offers carry it (§app.extensions/views). */
 export type ExtensionDrawingOffer = Omit<import("./drawing-kinds").DrawingDecl, "guide" | "ext"> & { view: string; guide: string };
 export interface ExtensionCommandInfo {
@@ -4773,7 +4782,8 @@ export interface ExtensionCommandInfo {
 /** A place on Sova's screens that Sova's own features and extensions both add to: "reply", under a
     delivered message; "row", line 3 of a session row in the sessions pane (src/lib/row-place.ts);
     "card", the status line of an extension's home card (src/lib/card-place.ts). All ext-contract-v1.16. */
-export type ScreenPlace = "reply" | "row" | "card";
+/** `list` since v1.22: a declaration about the sessions pane's whole list (src/lib/list-place.ts). */
+export type ScreenPlace = "reply" | "row" | "card" | "list";
 
 // ---------------------------------------------------------------------------
 // Mesh: other Sova hosts on the tailnet (server/mesh/). The allowlist is `<state root>/peers.json`;
@@ -5234,6 +5244,10 @@ export interface SessionTags {
   user?: string[];
 }
 
+/** A chat's labels: `{<extension id>: {<key>: <value>}}`. Keys match /^[a-z0-9][a-z0-9-]{0,31}$/, at most 8
+    per extension per chat; values are plain text of 1 to 64 characters. */
+export type SessionLabels = Record<string, Record<string, string>>;
+
 export interface SessionAlign {
   openDocs: number;
   openQuestions: number;
@@ -5260,6 +5274,11 @@ export interface SessionSummary {
       digest. (A worker that ended in an error is the digest's deterministic "worker-error".) */
   workerSignals?: { stuck: number };
   tags?: SessionTags;
+  /** Labels extensions set on the chat (POST /api/sessions/labels, server/session-labels.ts), by
+      extension id then key. Sent only to a requester that names the pairs it reads (`labels=<extId>:<key>,…`
+      on the list, the row reads, the feed socket and the mesh list) and only those pairs; absent (never
+      empty) when none is set, and on every request that names none. */
+  labels?: SessionLabels;
   /** Merge readiness of the worktrees this session tracks (§chat.worktrees/readiness,
       server/merge-readiness.ts): git and the file, no model, read in the background, so a row
       gains it a moment after it first lists. Absent when the session tracks no worktree of its

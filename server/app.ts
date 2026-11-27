@@ -178,6 +178,9 @@ import { readNotes, writeNotes } from "./overseer-store";
 import { problemOf } from "../shared/form-rules";
 import { NOTES_RULE } from "../shared/overseer-limits";
 import { pathOfId, promptSession } from "./session-prompt";
+import { memberOfSend, noteStartedBy, sessionSenders } from "./session-senders";
+import { parseLabelPairs, rowWithLabels, withLabels } from "./session-labels";
+import { registerLabelRoutes } from "./session-labels-routes";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea, type IdeaUpdate } from "./overseer-ideas";
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
@@ -197,7 +200,7 @@ import { resourceMonitor } from "./resource-monitor";
 import { routeOpName } from "./stall-recorder-route";
 import { opEnd, opStart, stallRecording } from "./stall-recorder";
 import { registerNetworkRoutes } from "./networks/routes";
-import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
+import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, listenerPeer, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
 import { notPage, pageOnlyRefusal, personWatching, yourClickBody, yourClickRefusal } from "./page-only";
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
@@ -368,12 +371,19 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/sessions", async (c) => {
     // Several at once (tabs, peers) share a build that started after the request arrived.
     const arrived = Date.now();
+    // Labels only for a request that names the pairs it reads (server/session-labels.ts): none, the list as is.
+    const pairs = parseLabelPairs(c.req.query("labels"));
     const feed = sessionFeed();
-    if (!feed) return c.json(await listSessionsAfresh(arrived));
+    if (!feed) {
+      const list = await listSessionsAfresh(arrived);
+      return c.json(pairs ? withLabels(list, pairs) : list);
+    }
     const { body, epoch, version } = await feed.snapshot(() => listSessionsAfresh(arrived));
     c.header(LIST_VERSION_HEADER, `${epoch}:${version}`);
-    return c.json(body);
+    return c.json(pairs ? withLabels(body, pairs) : body);
   });
+  // Labels on a chat: an extension's key writes them, the main listener reads them back.
+  registerLabelRoutes(app, { pathOfId });
   registerProfileRoutes(app);
   registerProfileSwitchRoutes(app);
   registerTimeSpentRoutes(app);
@@ -424,7 +434,7 @@ export function buildApp(deps: AppDeps) {
     // One that can't be used (turned off, not signed in) leaves it on the new-chat default, and the answer says why.
     const opened = start.opening ? await openingTaken(made.path, start.opening) : null;
     if (start.prompt?.trim()) {
-      const sent = await promptSession(made.path, start.prompt);
+      const sent = await promptSession(made.path, start.prompt, { member: memberOfSend(c) });
       if (!sent.ok) return c.json({ error: `Created the session with its profile, but its first message was refused: ${sent.error}`, session: made }, sent.status);
     }
     const summary = (await getSessionSummary(made.path)) ?? made;
@@ -458,6 +468,8 @@ export function buildApp(deps: AppDeps) {
     const path = canonicalPath(made.path); // same key resolveSessionPath() will produce
     markOwned(path); // fresh mtime is ours, not a foreign writer's
     addWebSession(made.id);
+    // Who started it, only while an active extension asks for senders (§app.extensions/senders).
+    noteStartedBy(made.id, c);
     // Seen at birth: whoever made it is looking at it, so its first reply can later read as unread.
     markSeen(made.id);
     const summary = await getSessionSummary(path);
@@ -606,7 +618,7 @@ export function buildApp(deps: AppDeps) {
   // The notice is held while the chat is busy (never queued behind its turn) and dropped once that wait has ended.
   setTourNeedsYou(tourSignInNotifier({
     pathOf: pathOfId,
-    prompt: (path, text, key) => promptSession(path, text, undefined, "followUp", undefined, key),
+    prompt: (path, text, key) => promptSession(path, text, { delivery: "followUp", key }),
     busy: (path) => { const m = chatHandle(path)?.mirror; return !!m && !m.closed && (m.running || m.compacting || m.starting); },
     stillWaiting: (jobId, since) => ensureTourToolRuntime().stillWaitingSignIn(jobId, since),
     log: (line) => console.warn(line),
@@ -617,7 +629,7 @@ export function buildApp(deps: AppDeps) {
   const chatBusy = (m: { closed: boolean; running: boolean; compacting: boolean; starting: boolean } | undefined) => !!m && !m.closed && (m.running || m.compacting || m.starting);
   setTourResumed(tourResumedNotifier({
     pathOf: pathOfId,
-    prompt: (path, text, key) => promptSession(path, text, undefined, "followUp", undefined, key),
+    prompt: (path, text, key) => promptSession(path, text, { delivery: "followUp", key }),
     busy: (path) => chatBusy(chatHandle(path)?.mirror),
     busyOf: (sessionId) => chatBusy(chatHandleById(sessionId)?.mirror),
     stillContinuing: (jobId, at) => ensureTourToolRuntime().stillContinuing(jobId, at),
@@ -2092,9 +2104,19 @@ export function buildApp(deps: AppDeps) {
     const path = await pathOfId(id);
     const summary = path ? await getSessionSummary(path) : null;
     if (!summary) return c.json({ error: "No session with that id" }, 404);
-    return c.json(summary, 200, { "Cache-Control": "no-store" });
+    const pairs = parseLabelPairs(c.req.query("labels"));
+    return c.json(pairs ? rowWithLabels(summary, pairs) : summary, 200, { "Cache-Control": "no-store" });
   }
   app.get("/api/sessions/summary", (c) => summaryById(c, c.req.query("id") ?? ""));
+  // Who started a chat and who typed each message (§app.extensions/senders): this host's own callers only, never a
+  // linked computer's to read. Recorded only while an active extension asks for senders; nothing recorded answers empty.
+  app.get("/api/sessions/senders", async (c) => {
+    if (listenerPeer(c)) return c.json({ error: "Not found" }, 404);
+    const path = resolveSessionPath(c.req.query("path") ?? null);
+    if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    return c.json(await sessionSenders(path, idOf(path)));
+  });
   // The same answer at a path-shaped URL (§mesh.links/by-id): links fill a member's path, resolve a
   // tool's `to` and poll a member's state through it. A peer on an older build answers only ?id=.
   app.get("/api/sessions/by-id/:id", (c) => summaryById(c, c.req.param("id")));
@@ -2130,7 +2152,7 @@ export function buildApp(deps: AppDeps) {
       if ("error" in got) return c.json({ error: got.error }, got.status);
       if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
     }
-    const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery, undefined, undefined, extensionSenderOf(c));
+    const r = await promptSession(path, body.text, { sentBy: overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), delivery: body.delivery, fromExtension: extensionSenderOf(c), member: memberOfSend(c) });
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });
   // Installed extensions (server/extensions.ts), with each backend's cached health.

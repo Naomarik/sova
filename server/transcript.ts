@@ -19,6 +19,7 @@ import { normalizeTourCardDetails, redactTourToolArgs, TOUR_TOOLS, tourCardArgs 
 import { joinedText, rawOf, toHEntry, typedText } from "./harness/pi/reader";
 import { metaOf, withoutSignatures } from "./harness/pi/wire";
 import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../shared/profiles";
+import { MEMBER_SENT_ENTRY } from "../shared/senders";
 import { profileField, profileOnBranch } from "./session-profile";
 import {
   BATON_DECISION_ENTRY,
@@ -637,6 +638,16 @@ function sessionSentRow(id: string, h: StateEntry): TranscriptItem[] {
   return [it];
 }
 
+/** Who typed the user message `targetId` (§app.extensions/senders): renders nothing itself; the client draws
+    "From {name}" above that row when another computer typed it. */
+function memberSentRow(id: string, h: StateEntry): TranscriptItem[] {
+  const d: any = h.data;
+  if (!d || typeof d.targetId !== "string" || !d.targetId || typeof d.by !== "string" || !d.by) return [];
+  const it = item(id, "info", h);
+  it.memberMark = { targetId: d.targetId, by: d.by, ...(typeof d.label === "string" && d.label ? { label: d.label } : {}) };
+  return [it];
+}
+
 /** The session's profile entry (§chat.profiles/after-first-message): the client draws its row only
     once a user message is on the branch. */
 function profileRow(id: string, h: StateEntry): TranscriptItem[] {
@@ -879,6 +890,7 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   if (h.key === HANDOFF_RUN) return handoffRunRow(id, h);
   if (h.key === OVERSEER_SENT_ENTRY) return overseerSentRow(id, h);
   if (h.key === SESSION_SENT_ENTRY) return sessionSentRow(id, h);
+  if (h.key === MEMBER_SENT_ENTRY) return memberSentRow(id, h);
   if (h.key === PROFILE_ENTRY) return profileRow(id, h);
   if (h.key === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, h);
   if (h.key === TEAM_EVENT_TYPE) return teamEventRow(id, h);

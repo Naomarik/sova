@@ -52,6 +52,7 @@ import { loginKindsPin } from "../sync/logins-merge";
 import { problemOf } from "../../shared/form-rules";
 import { FRONT_DOOR_RULE, HOST_LABEL_RULE } from "../../shared/mesh-limits";
 import { agentRoot, stateRoot } from "../state-root";
+import { type LabelPairs, parseLabelPairs, peerRowLabels } from "../session-labels";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
 // here listens, polls, calls Tailscale or dials a peer, and every pre-existing route and socket
@@ -595,20 +596,30 @@ async function meshInfo(): Promise<MeshInfoView> {
 
 // ---- mesh sessions ----------------------------------------------------------------------------
 
-const lastGood = new Map<string, SessionSummary[]>();
+/** Each peer's last good list, per label filter asked ("" for none): a peer's rows with labels never stand in for its rows without. */
+const lastGood = new Map<string, Map<string, SessionSummary[]>>();
 
-async function meshSessions(): Promise<MeshSessionsView> {
+/** `labels`: the canonical label pairs the page reads (server/session-labels.ts), forwarded to each
+    peer as its own `labels=`; none, and each peer is asked exactly as before. */
+async function meshSessions(pairs?: LabelPairs | null): Promise<MeshSessionsView> {
+  const labels = pairs?.key;
+  const ask = labels ? `/api/sessions?labels=${encodeURIComponent(labels)}` : "/api/sessions";
+  const variant = labels ?? "";
   const peers = rt.config?.peers ?? [];
   const rows = await Promise.all(
     peers.map(async (p): Promise<MeshSessionsView["peers"][number]> => {
       const head = { id: p.id, label: p.label };
       try {
-        const res = await fetchPeer(p, "/api/sessions", { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
+        const res = await fetchPeer(p, ask, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
         const denied = noteAnswer(p.id, "sessions", res);
         if (res.ok) {
-          const sessions = (await res.json()) as SessionSummary[];
-          if (!Array.isArray(sessions)) throw new Error("not a session list");
-          lastGood.set(p.id, sessions);
+          const answered = (await res.json()) as SessionSummary[];
+          if (!Array.isArray(answered)) throw new Error("not a session list");
+          // Asked for labels: a peer's rows carry only the asked pairs, each value as this host would keep it.
+          const sessions = pairs ? answered.map((r) => peerRowLabels(r, pairs)) : answered;
+          let kept = lastGood.get(p.id);
+          if (!kept) lastGood.set(p.id, (kept = new Map()));
+          kept.set(variant, sessions);
           return { ...head, state: "up", sessions };
         }
         await res.body?.cancel();
@@ -622,7 +633,7 @@ async function meshSessions(): Promise<MeshSessionsView> {
       } catch (err) {
         const e = err as Error & { cause?: { code?: string } };
         const error = e.name === "TimeoutError" ? "no answer in time" : (e.cause?.code ?? e.message);
-        const kept = lastGood.get(p.id);
+        const kept = lastGood.get(p.id)?.get(variant);
         return { ...head, state: "down", error, ...(kept ? { sessions: kept, stale: true } : {}) };
       }
     }),
@@ -1031,7 +1042,7 @@ export function meshRoutes(app: Hono): void {
       return c.json({ error: (err as Error).message }, 502);
     }
   });
-  app.get("/api/mesh/sessions", async (c) => c.json(meshEnabled() ? await meshSessions() : { peers: [] }));
+  app.get("/api/mesh/sessions", async (c) => c.json(meshEnabled() ? await meshSessions(parseLabelPairs(c.req.query("labels"))) : { peers: [] }));
   app.get("/api/mesh/settings", (c) => c.json(readMeshSettings()));
   app.put("/api/mesh/settings", putSettings);
   // Generated only, from local state: no Tailscale call (this node's name is the one the listener

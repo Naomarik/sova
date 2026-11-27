@@ -304,6 +304,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "chats-folder.preview": "walks the whole chats folder; server/chat-homes/move-root.test.ts and move-folder.integration.test.ts cover it",
   "chats-folder.move": "stops every chat and copies the whole chats folder (your click only); server/chat-homes/move-root.test.ts and move-folder.integration.test.ts cover it",
   "chats-folder.cancel": "cancels a running chats folder move (your click only); server/chat-homes/move-root.test.ts and move-folder.integration.test.ts cover it",
+  "session.labels.set": "only an extension's key sets labels: the token this file runs with is refused before the body is read (server/session-labels.test.ts drives the key)",
   "session.approval.set": "acquires a chat handle, which starts the chat's process (server/approval-in-chat.ts's own tests drive it)",
   "session.configure": "acquires a chat handle, which starts the chat's process",
   "session.mode.set": "acquires a chat handle, which starts the chat's process",
@@ -435,6 +436,8 @@ function anchors(c: CommandEntry): Anchor[] {
   // The job id is checked before the session: a refused anchor (no such session) and a real one (no such job) both carry one.
   if (c.id === "session.job.stop") return [{ anchor: { session: missing[0], id: "j1" }, refuse: true, kind: "refused" }, { anchor: { session: session()[0], id: "j1" }, refuse: false, kind: "real" }];
   if (c.id === "session.tags.set") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
+  // Labels are read by id, for any id (an id with none reads as none); the write refuses every caller but a key before its body.
+  if (c.id === "session.labels.get") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
   if (c.params.session) {
     out.push({ anchor: { session: sessionArg(c, missing) }, refuse: true, kind: "refused" });
     if (!VALIDATE_ONLY[c.id]) out.push({ anchor: { session: sessionArg(c, session(c.id.includes("archive"))) }, refuse: false, kind: "real" });
@@ -549,6 +552,7 @@ const FIXTURES: Record<string, Fixture> = {
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.read": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.senders.get": { values: () => ({ session: session()[0] }), status: 200 },
   "session.pairs.list": { values: () => ({}), status: 200 },
   "session.pairs.unpair": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { v.pairing = (await import("./topics")).topicStore().openPair({ sessionId: `fz-a-${++n}`, path: join(root, `fz-a-${n}.jsonl`), job: "A." }, { sessionId: `fz-b-${n}`, path: join(root, `fz-b-${n}.jsonl`), job: "B." }).pair.id; }); return v; }, status: 200, oracle: async (_b, v) => assert.ok((await import("./topics")).topicStore().pair(String(v.pairing))?.endedAt) },
   "session.pairs.resume": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const s = (await import("./topics")).topicStore(); const p = s.openPair({ sessionId: `fz-c-${++n}`, path: join(root, `fz-c-${n}.jsonl`), job: "C." }, { sessionId: `fz-d-${n}`, path: join(root, `fz-d-${n}.jsonl`), job: "D." }).pair; for (let i = 0; i < 40; i++) s.countPairNote(p.id, "toA"); v.pairing = p.id; }); return v; }, status: 200, oracle: async (_b, v) => assert.equal((await import("./topics")).topicStore().pair(String(v.pairing))?.notes.toA, 0) },
@@ -610,6 +614,7 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
     oracle: async (_b, v) => assert.ok(JSON.stringify(await read("GET", `/api/sessions/summary?id=${v.session}`)).includes("fuzzed")),
   },
+  "session.labels.get": { values: () => ({ session: session()[1] }), status: 200 },
   "session.archive": {
     values: () => ({ session: session(true)[0] }),
     status: 200,

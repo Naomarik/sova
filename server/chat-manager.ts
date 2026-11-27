@@ -9,6 +9,8 @@ import { prepareOwnerArea } from "../shared/decisions";
 import { LOGIN_UNCHANGED } from "../shared/protocol";
 import { type ChatProfileEntryData, type ChatProfileState, type ProfileSwitchResult, type ProfileSwitchTarget } from "../shared/profile-switch";
 import { type BatonSentData, OPERATOR } from "../shared/baton";
+import type { MemberSentData } from "../shared/senders";
+import { frameMember } from "./member-frame";
 import type { ChatClaudeLogin, ChatClientMessage, ChatModeResult, ChatServerMessage, HeldChatState, V1EventFrame, V2EventFrame, ModeApplies, ModeInfo, OverseerDialogAnswerData, ProjectModeApproval, ProjectModeApprovalNeeded, OverseerSentMarkerData, QueueItem, RegenerateRefusal, SandboxApplyResult, SandboxInfo, ShellRefusal, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
 import type { LinkedAgentInfo } from "../shared/mesh-links";
@@ -64,7 +66,7 @@ import { workerModePaths } from "./harness/pi/own-code";
 import { modesBridgeExtension, type ModesHandle } from "./harness/pi/modes";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, CHAT_PROFILE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SHELL_CLOSED, SHELL_RUN, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, CHAT_PROFILE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, MEMBER_SENT, SHELL_CLOSED, SHELL_RUN, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
 import { ChatShell } from "./chat-shell";
 import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
@@ -1187,7 +1189,12 @@ const QUEUE_WAKE_EVENTS = new Set<HarnessEvent["type"]>(["queue", "message.start
 
 /** Who a marked message is from: the Overseer (`sova-overseer-sent`, §app.overseer/sent-marker) or a
     baton session's participant (`sova-baton-sent`, §app.baton/attribution). */
-type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: string } | { kind: "session"; sessionId: string; title: string; hop: number };
+type Sender =
+  | { kind: "overseer"; overseerId?: string }
+  | { kind: "baton"; by: string }
+  | { kind: "session"; sessionId: string; title: string; hop: number }
+  /** Who typed it, by caller (`sova-member-sent`, §app.extensions/senders). */
+  | { kind: "member"; by: string; label?: string };
 
 /** A message whose user entry still needs its sender marker. `itemId`: it rode in on a queue
     item; `held` while that item has not departed, so the settle sweep leaves the mark alone (its
@@ -1220,18 +1227,22 @@ export interface TopicBatchMark {
 }
 
 /** The sender a queue item carries, if any. */
-const senderOfItem = (item: Pick<WebQueueItem, "overseer" | "baton" | "session">): Sender | null =>
+const senderOfItem = (item: Pick<WebQueueItem, "overseer" | "baton" | "session" | "member">): Sender | null =>
   item.overseer
     ? { kind: "overseer", ...(item.overseer.overseerId ? { overseerId: item.overseer.overseerId } : {}) }
     : item.baton
       ? { kind: "baton", by: item.baton.by }
       : item.session
         ? { kind: "session", ...item.session }
-        : null;
+        : item.member
+          ? { kind: "member", ...item.member }
+          : null;
 
 /** Write a sender's invisible marker for the user entry `targetId`; returns the marker's id. */
 function appendSenderMarker(state: SessionStateWriter, targetId: string, sender: Sender): string {
   if (sender.kind === "baton") return state.append(BATON_SENT, { v: 1, targetId, by: sender.by } satisfies BatonSentData);
+  // State, never a message: the model never reads who typed it, and no "[From X]" line is added (§app.extensions/senders).
+  if (sender.kind === "member") return state.append(MEMBER_SENT, { v: 1, targetId, by: sender.by, ...(sender.label ? { label: sender.label } : {}) } satisfies MemberSentData);
   if (sender.kind === "session")
     return state.append(SESSION_SENT, { v: 1, targetId, from: { sessionId: sender.sessionId, title: sender.title }, hop: sender.hop } satisfies SessionSentData);
   return state.append(OVERSEER_SENT, { v: 1, targetId, ...(sender.overseerId ? { overseerId: sender.overseerId } : {}) } satisfies OverseerSentMarkerData);
@@ -3581,6 +3592,9 @@ class ChatSession {
       sentByBaton?: { by: string };
       /** Another session's `session_send` (§chat.profiles/delivery): marked `sova-session-sent`. */
       sentBySession?: { sessionId: string; title: string; hop: number };
+      /** Who typed it (§app.extensions/senders), set only while an active extension asks for senders: marked
+          `sova-member-sent` when no other sender names it. */
+      sentByMember?: { by: string; label?: string };
       delivery?: WebQueueItem["kind"];
       confirm?: string;
       /** A person typed it elsewhere (a group batch): its input source is `interactive` (inputSourceOf). */
@@ -3612,10 +3626,11 @@ class ChatSession {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
       const fromSession = opts?.sentBySession ? { session: opts.sentBySession } : {};
+      const member = opts?.sentByMember ? { member: opts.sentByMember } : {};
       const confirm = opts?.confirm ? { confirm: opts.confirm } : {};
       const byPerson = opts?.byPerson ? { byPerson: true as const } : {};
       const notUser = opts?.notUser ? { notUser: true as const } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson, ...notUser, ...(key !== undefined ? { key } : {}) });
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...member, ...confirm, ...byPerson, ...notUser, ...(key !== undefined ? { key } : {}) });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
@@ -3629,7 +3644,9 @@ class ChatSession {
         ? { kind: "baton", by: opts.sentByBaton.by }
         : opts?.sentBySession
           ? { kind: "session", ...opts.sentBySession }
-          : null;
+          : opts?.sentByMember
+            ? { kind: "member", ...opts.sentByMember }
+            : null;
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
     const program = source === "queued" || !!opts?.notUser;
     const send: SenderMark | null = sender || program ? { text, sender, ...(program ? { program } : {}) } : null;
@@ -3658,6 +3675,7 @@ class ChatSession {
         ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}),
         ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}),
         ...(opts?.sentBySession ? { session: opts.sentBySession } : {}),
+        ...(opts?.sentByMember ? { member: opts.sentByMember } : {}),
         ...(opts?.confirm ? { confirm: opts.confirm } : {}),
         ...(opts?.byPerson ? { byPerson: true as const } : {}),
         ...(opts?.notUser ? { notUser: true as const } : {}),
@@ -4126,7 +4144,8 @@ class ChatSession {
           // A confirm card's click in the Overseer or a project overseer (never a typed answer): the turn it opens may act on
           // the card's items.
           const confirm = this.takesClicks && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
-          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, { ...(confirm ? { confirm } : {}), ...(client.notUser ? { notUser: true as const } : {}) });
+          const member = frameMember(msg);
+          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, { ...(confirm ? { confirm } : {}), ...(client.notUser ? { notUser: true as const } : {}), ...(member ? { sentByMember: member } : {}) });
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
           this.ackSend(client, clientId, queued);
@@ -4291,7 +4310,8 @@ class ChatSession {
   private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
     this.assertModelAllowed();
     const text = String(msg.text ?? "");
-    const { queued, turn } = this.acceptPrompt(text, parseImages(msg.images), "client", clientId, { delivery: "steer", ...(client.notUser ? { notUser: true as const } : {}) });
+    const member = frameMember(msg);
+    const { queued, turn } = this.acceptPrompt(text, parseImages(msg.images), "client", clientId, { delivery: "steer", ...(client.notUser ? { notUser: true as const } : {}), ...(member ? { sentByMember: member } : {}) });
     this.ackSend(client, clientId, queued);
     turn.catch(fail);
   }

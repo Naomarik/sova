@@ -6,10 +6,13 @@ export type CommandId =
   | "session.list"
   | "session.get"
   | "session.read"
+  | "session.senders.get"
   | "session.create"
   | "session.title.set"
   | "session.title.reset"
   | "session.tags.set"
+  | "session.labels.set"
+  | "session.labels.get"
   | "session.archive"
   | "session.unarchive"
   | "session.configure"
@@ -339,6 +342,11 @@ export interface CommandParams {
     /** The session, by id or by path */
     "session"?: string;
   };
+  /** Who started a session and who typed each of its messages, as recorded while an extension asks for it. (only looks; needs the card's owner trusted) */
+  "session.senders.get": {
+    /** The session, by id or by path */
+    "session"?: string;
+  };
   /** A new empty session in a folder, optionally with a profile and a first message. (changes something; needs the card's owner trusted) */
   "session.create": {
     /** The folder it works in (an existing absolute directory) */
@@ -366,6 +374,18 @@ export interface CommandParams {
     "session"?: string;
     /** The tags, comma-separated */
     "tags": string[] | null;
+  };
+  /** An extension's own labels on a session, by its key only: merged, null deletes a key. (changes something; needs the card's owner trusted) */
+  "session.labels.set": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** The labels to change: { key: value | null } */
+    "labels": unknown;
+  };
+  /** The labels extensions set on a session, by extension. (only looks; needs the card's owner trusted) */
+  "session.labels.get": {
+    /** The session, by id or by path */
+    "session"?: string;
   };
   /** Move a session started in Sova to the archive. (changes something; needs the card's owner trusted) */
   "session.archive": {
@@ -5151,10 +5171,13 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.list": "looks",
   "session.get": "looks",
   "session.read": "looks",
+  "session.senders.get": "looks",
   "session.create": "changes",
   "session.title.set": "changes",
   "session.title.reset": "changes",
   "session.tags.set": "changes",
+  "session.labels.set": "changes",
+  "session.labels.get": "looks",
   "session.archive": "changes",
   "session.unarchive": "changes",
   "session.configure": "changes",

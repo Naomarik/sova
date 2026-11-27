@@ -104,7 +104,7 @@ const hasRun = (raw: Record<string, unknown>): boolean => Array.isArray(raw.run)
 /** The record approved for `described`, over the one on the list: its keys replaced, others kept, its port kept. */
 function mergedEntry(described: Record<string, unknown>, was: Record<string, unknown> | undefined): Record<string, unknown> {
   const out: Record<string, unknown> = { ...(was ?? {}) };
-  for (const k of ["description", "icon", "dist", "run", "programFolder", "commands", "screens", "cards", "drawings", "needsContract"]) delete out[k];
+  for (const k of ["description", "icon", "dist", "run", "programFolder", "commands", "screens", "cards", "drawings", "records", "needsContract"]) delete out[k];
   Object.assign(out, described);
   if (!hasRun(described)) {
     // A program it no longer names: the port goes too. A hand-written `api` with no `run` stays what it was.

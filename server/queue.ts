@@ -113,6 +113,9 @@ export interface WebQueueItem {
   baton?: { by: string };
   /** Another session sent it (`session_send`, §chat.profiles/delivery): marked `sova-session-sent` at hand-off. */
   session?: { sessionId: string; title: string; hop: number };
+  /** Who typed it (§app.extensions/senders), only while an active extension asks for senders: marked
+      `sova-member-sent` at hand-off. `by` is `peer:<nodeId>` or `operator`. */
+  member?: { by: string; label?: string };
   /** A person typed it outside this session's composer (a group batch the user sent): its input
       source is `user` although Sova queued it (inputSourceOf). */
   byPerson?: true;
@@ -360,6 +363,7 @@ export class WebQueue {
     overseer?: WebQueueItem["overseer"];
     baton?: WebQueueItem["baton"];
     session?: WebQueueItem["session"];
+    member?: WebQueueItem["member"];
     byPerson?: true;
     notUser?: true;
     confirm?: WebQueueItem["confirm"];
@@ -375,6 +379,7 @@ export class WebQueue {
       ...(input.overseer ? { overseer: input.overseer } : {}),
       ...(input.baton ? { baton: input.baton } : {}),
       ...(input.session ? { session: input.session } : {}),
+      ...(input.member ? { member: input.member } : {}),
       ...(input.byPerson ? { byPerson: true as const } : {}),
       ...(input.notUser ? { notUser: true as const } : {}),
       // A confirm card's click keeps its mark while it waits (§app.overseer/org-people-facing).

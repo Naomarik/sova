@@ -1,0 +1,9 @@
+{
+  "self": "kim",
+  "people": [
+    { "id": "kim", "name": "Kim Ortega", "initials": "KO", "callers": ["peer:REPLACE-WITH-KIMS-NODE-ID"] },
+    { "id": "lee", "name": "Lee Varga", "initials": "LV", "callers": ["peer:REPLACE-WITH-LEES-NODE-ID"] },
+    { "id": "ana", "name": "Ana Moreno", "initials": "AM", "callers": ["peer:REPLACE-WITH-ANAS-NODE-ID"] },
+    { "id": "ravi", "name": "Ravi Solberg", "initials": "RS", "callers": ["operator"] }
+  ]
+}

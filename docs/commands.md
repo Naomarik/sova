@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 704 |
-| Routes a catalogue entry points at | 247 |
-| Catalogue entries | 321 |
+| Routes registered | 707 |
+| Routes a catalogue entry points at | 250 |
+| Catalogue entries | 324 |
 | Class: Peer protocol | 54 |
 | Class: Auth | 8 |
 | Class: Share pages | 0 |
@@ -44,10 +44,13 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.list` | List Sessions | looks | `GET /api/sessions` | sessions |
 | `session.get` | Show Session | looks | `GET /api/sessions/summary` | sessions |
 | `session.read` | Read Transcript | looks | `GET /api/transcript` | sessions |
+| `session.senders.get` | Show Who Typed | looks | `GET /api/sessions/senders` | sessions |
 | `session.create` | New Session | changes | `POST /api/sessions` | sessions |
 | `session.title.set` | Rename Session | changes | `POST /api/sessions/title` | sessions |
 | `session.title.reset` | Reset Session Title | changes | `POST /api/sessions/title` | sessions |
 | `session.tags.set` | Set Session Tags | changes | `POST /api/sessions/tags` | sessions |
+| `session.labels.set` | Set Session Labels | changes | `POST /api/sessions/labels` | sessions |
+| `session.labels.get` | Show Session Labels | looks | `GET /api/sessions/labels` | sessions |
 | `session.archive` | Archive Session | changes | `POST /api/sessions/archive` | sessions |
 | `session.unarchive` | Unarchive Session | changes | `POST /api/sessions/archive` | sessions |
 | `session.configure` | Configure Session | changes | `POST /api/sessions/configure` | sessions |
@@ -1130,12 +1133,15 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/sessions/fork` | sessions | `session.fork` |
 | `GET /api/sessions/jobs` | sessions | `session.job.list` |
 | `POST /api/sessions/jobs/stop` | sessions | `session.job.stop` |
+| `GET /api/sessions/labels` | sessions | `session.labels.get` |
+| `POST /api/sessions/labels` | sessions | `session.labels.set` |
 | `GET /api/sessions/pairs` | sessions | `session.pairs.list` |
 | `POST /api/sessions/pairs/resume` | sessions | `session.pairs.resume` |
 | `POST /api/sessions/pairs/unpair` | sessions | `session.pairs.unpair` |
 | `DELETE /api/sessions/profile-switch` | sessions | `session.profile.switch.cancel` |
 | `POST /api/sessions/profile-switch` | sessions | `session.profile.switch` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
+| `GET /api/sessions/senders` | sessions | `session.senders.get` |
 | `GET /api/sessions/shell-output` | sessions | `session.shell.output` |
 | `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
 | `GET /api/sessions/summary` | sessions | `session.get` |

@@ -20,6 +20,8 @@ export interface ExtensionAsks {
   drawings?: string[];
   /** It reads every chat on this computer (`reads: ["chats"]`, §app.extensions/reads-chats). */
   readsChats?: boolean;
+  /** v1.22: what it asks Sova to record for it (shared/extension-offers.ts RECORD_KINDS). */
+  records?: string[];
 }
 
 /** An entry or description that says `reads: ["chats"]`, exactly. */

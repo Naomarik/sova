@@ -51,6 +51,8 @@ export interface EventSources {
   onAttention(fn: () => void): () => void;
   /** What happens to transcript cards (§app.events/card-news); left out: no such news. */
   onCard?(fn: (e: { name: "card.raised" | "card.changed" | "card.answered"; id: string; path: string; card: string; cardType: string }) => void): () => void;
+  /** Labels an extension changed on a chat (`session.labelled`); left out: no such news. */
+  onLabelled?(fn: (e: { id: string; path: string; extension: string }) => void): () => void;
   /** Hold the session feed's loop running as one client does; null when there is no feed. */
   holdFeed(): (() => void) | null;
   /** A chat made or removed as a whole (server/chat-home-events.ts); left out: no such news. */
@@ -316,6 +318,7 @@ export class EventHub {
     );
     this.offs.push(this.sources.onAttention(guard("an attention note", () => this.attentionSoon())));
     if (this.sources.onCard) this.offs.push(this.sources.onCard(guard("a card's news", (e) => this.record({ ...e, source: "hosted" }))));
+    if (this.sources.onLabelled) this.offs.push(this.sources.onLabelled(guard("a label's news", (e) => this.record({ name: "session.labelled", id: e.id, path: e.path, extension: e.extension, source: "hosted" }))));
     if (this.sources.onChatNews) this.offs.push(this.sources.onChatNews(guard("a chat's news", (n) => this.record({ name: n.name, source: "hosted", chat: n.chat, ...(n.home ? { home: n.home } : {}) }))));
   }
 

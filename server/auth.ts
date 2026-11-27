@@ -189,6 +189,16 @@ export function extensionCaller(header: string | undefined): string | null {
   }
 }
 
+/** The linked computer a request came from: the peer listener names it in `c.env.meshPeer`; undefined on the main listener. */
+export const listenerPeer = (c: Context): { nodeId: string; label: string } | undefined => (c.env as { meshPeer?: { nodeId: string; label: string } } | undefined)?.meshPeer;
+
+/** The extension whose key a request's x-sova-token shows, or null: a linked computer's request, the operator's token, none. */
+export function requestExtension(c: Context): string | null {
+  if (listenerPeer(c)) return null;
+  const token = c.req.header(TOKEN_HEADER);
+  return token !== undefined && !showsToken(token) ? extensionCaller(token) : null;
+}
+
 /** Whether a value is any extension's key (server/extensions.ts drops an Authorization holding one). */
 export function isExtensionKey(value: string): boolean {
   try {

@@ -321,7 +321,10 @@
     "chats-folder.get",
     "chats-folder.preview",
     "chats-folder.move",
-    "chats-folder.cancel"
+    "chats-folder.cancel",
+    "session.labels.set",
+    "session.labels.get",
+    "session.senders.get"
   ],
   "retired": [
     "settings.agents.get",

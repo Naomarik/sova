@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeDecision, MergeDecisionAction, MergeEntry, MergeRun, RunStep } from "../../shared/merge-queue";
 import type { ReleaseRecord, ReleaseStep } from "../../shared/release";
-import { INVALID_TITLE, reduceLanding, splitActions, runSegments, runNow, SHOWN_MS, type LandingAction, type LandingProjectInput, type LandingQueueCut, type LandingReleaseCut } from "./landing-bar";
+import { answeredKey, INVALID_TITLE, reduceLanding, withoutAnswered, splitActions, runSegments, runNow, SHOWN_MS, type LandingAction, type LandingProjectInput, type LandingQueueCut, type LandingReleaseCut } from "./landing-bar";
 import { BAR_ANSWERS, entryAnswers } from "./merge-answers";
 import { DECISION_ACTION_LABEL, DECISION_LABEL } from "./merge-standing";
 
@@ -245,6 +245,24 @@ test("a branch waiting for you, every decision kind and every state from before 
   assert.ok(barFaults(e, [{ ...answer, answer: "land", label: "Land", confirm: { ...answer.confirm, confirm: "Land" } } as LandingAction, ...good.slice(1)]).length);
   assert.ok(barFaults(e, [...good.filter((a) => a.label !== "Queue"), { kind: "link", label: "Queue", href: "#/projects/prj_a/merge-queue", place: true }]).length);
   assert.ok(barFaults(e, good.slice(1)).length);
+});
+
+test("an answered wait loses its buttons at once, only its own; a new decision on the same entry asks again", () => {
+  const dec = (id: string) => ({ id, kind: "out-of-tries" as const, question: "Tried 3 times", choices: [], raisedBy: "queue" as const, actions: ["land" as const], at: iso(0) });
+  const actionsOf = (...es: MergeEntry[]) => bar([proj({ queue: queue({ needsYou: es }) })])!.top.actions;
+  const a = entry({ id: "me_a", branch: "feat/a", state: "needs-user", decision: dec("dc_1") });
+  const u = entry({ id: "me_u", branch: "feat/u", state: "unattributed" });
+  const land = actionsOf(a).find((x) => x.kind === "answer")! as Extract<LandingAction, { kind: "answer" }>;
+  const answered = new Set([answeredKey(land)]);
+  // Still listed (the queue's frame hasn't come yet): no answer of it is drawn; places stay.
+  assert.deepEqual(withoutAnswered(actionsOf(a), answered).filter((x) => x.kind === "answer"), []);
+  assert.ok(withoutAnswered(actionsOf(a), answered).some((x) => x.label === "Queue"));
+  // Another entry's answers stay.
+  const legacy = actionsOf(u);
+  assert.deepEqual(withoutAnswered(legacy, answered), legacy);
+  // The same entry waiting on a new decision is a new wait: its Land is back.
+  const again = actionsOf(entry({ ...a, decision: dec("dc_2") }));
+  assert.equal(withoutAnswered(again, answered).filter((x) => x.kind === "answer").length, 1);
 });
 
 test("an answer in the bar asks first: what it does, at which commit, with the answer's own word and Not Yet's choice", () => {

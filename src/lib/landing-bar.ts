@@ -55,7 +55,7 @@ export interface LandingLine {
   href?: string;
 }
 /** The entry an answer acts on: what the routing reads (lib/merge-queue-client sendAnswer). */
-export type AnsweredEntry = Pick<MergeEntry, "id" | "branch" | "commit"> & { decision?: MergeEntry["decision"] };
+export type AnsweredEntry = Pick<MergeEntry, "id" | "branch" | "commit" | "state"> & { decision?: MergeEntry["decision"] };
 /** An action in the detail: done in place (Resume Queue, Continue, Retry Step, and a waiting entry's answers after one
     confirm), or a link to the tab that does it. */
 export type LandingAction =
@@ -64,6 +64,12 @@ export type LandingAction =
   | { kind: "continue"; label: "Continue"; root: string; release: string; step: string; stepLabel: string }
   | { kind: "retry"; label: "Retry Step"; root: string; release: string; step: string; stepLabel: string }
   | { kind: "link"; label: string; href: string; primary?: true; place?: true; aria?: string };
+
+/** Which wait an answer answers: the entry's decision (a later decision is a new wait), else its state at its commit. */
+export const answeredKey = (a: Extract<LandingAction, { kind: "answer" }>): string => `${a.entry.id}:${a.entry.decision?.id ?? `${a.entry.state}@${a.entry.commit}`}`;
+/** The actions with every answer to a wait already answered left out: its buttons go at once, before the queue's next
+    frame reaches the bar, and stay gone if the detail closes and opens again meanwhile. */
+export const withoutAnswered = (actions: LandingAction[], answered: ReadonlySet<string>): LandingAction[] => actions.filter((a) => a.kind !== "answer" || !answered.has(answeredKey(a)));
 
 /** A place to go: a link that only navigates (drawn as a text link on the places row, never a button). */
 const place = (label: string, href: string, aria: string): LandingAction => ({ kind: "link", label, href, place: true, aria });
@@ -284,7 +290,7 @@ const needsLine = (e: MergeEntry, pid: string): LandingLine => {
     the Needs you row's own routing (lib/merge-answers BAR_ANSWERS; Remove from Queue stays on the row and the run page).
     The private names' Send Back is that decision's own answer, never a failure's send-back. */
 function needsActions(e: MergeEntry, root: string, target: string): LandingAction[] {
-  const entry: AnsweredEntry = { id: e.id, branch: e.branch, commit: e.commit, ...(e.decision ? { decision: e.decision } : {}) };
+  const entry: AnsweredEntry = { id: e.id, branch: e.branch, commit: e.commit, state: e.state, ...(e.decision ? { decision: e.decision } : {}) };
   return entryAnswers(e)
     .filter((a) => BAR_ANSWERS[a])
     .map((a, i) => ({ kind: "answer", label: DECISION_ACTION_LABEL[a], answer: a, root, entry, confirm: answerConfirm(a, e, target), aria: answerAria(a, e.branch), ...(i === 0 ? { primary: true } : {}) }));

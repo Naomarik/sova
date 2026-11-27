@@ -7,7 +7,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, 
 import { Portal } from "solid-js/web";
 import { FLOAT_GAP_MOUSE, FLOAT_GAP_TOUCH, floatAbove } from "../lib/float-card";
 import { createHoldGesture } from "../lib/hold-select";
-import { splitActions, type LandingAction, type LandingBarModel, type LandingProjectBar, type LandingSegment } from "../lib/landing-bar";
+import { answeredKey, splitActions, withoutAnswered, type LandingAction, type LandingBarModel, type LandingProjectBar, type LandingSegment } from "../lib/landing-bar";
 import { refusal, resumeQueue, sendAnswer } from "../lib/merge-queue-client";
 import { answerDone } from "../lib/merge-answers";
 import { LandConfirmBox } from "./WorktreesModal";
@@ -182,6 +182,9 @@ function usePeek(suppress: () => boolean) {
 }
 
 type AnswerAction = Extract<LandingAction, { kind: "answer" }>;
+/** Waits answered from the bar, page-wide (lib/landing-bar answeredKey): the detail's every form and every opening of it
+    leave their buttons out until the queue's frame moves the card on. */
+const [answered, setAnswered] = createSignal<ReadonlySet<string>>(new Set());
 /** An answer's key: the same answer to the same entry across the model's rebuilds (one a second). */
 const answerKey = (a: AnswerAction) => `${a.entry.id}:${a.answer}`;
 
@@ -243,8 +246,6 @@ function createAnswerFlow(actions: () => LandingAction[]) {
   const [asking, setAsking] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [note, setNote] = createSignal<{ text: string; tone: "done" | "error" } | null>(null);
-  // Entries just answered: their buttons go at once, not when the queue's next frame reaches the bar.
-  const [answered, setAnswered] = createSignal<ReadonlySet<string>>(new Set());
   let root: HTMLElement | undefined;
   const open = () => actions().find((a): a is AnswerAction => a.kind === "answer" && answerKey(a) === asking());
   // The entry left (answered elsewhere, or it moved on): nothing is left to confirm.
@@ -273,7 +274,7 @@ function createAnswerFlow(actions: () => LandingAction[]) {
         announce(no);
       } else {
         const words = answerDone(a.answer, a.entry.branch, r.entry);
-        setAnswered(new Set([...answered(), a.entry.id]));
+        setAnswered(new Set([...answered(), answeredKey(a)]));
         // The card's line says it (a toast would cover the phone sheet's buttons); the live region reads it out.
         setNote({ text: words, tone: "done" });
         announce(words);
@@ -287,8 +288,8 @@ function createAnswerFlow(actions: () => LandingAction[]) {
       setAsking(null);
     }
   };
-  /** The actions to draw: an answered entry's answers left out. */
-  const shown = (list: LandingAction[]) => list.filter((a) => a.kind !== "answer" || !answered().has(a.entry.id));
+  /** The actions to draw: answers to a wait already answered left out. */
+  const shown = (list: LandingAction[]) => withoutAnswered(list, answered());
   return { open, busy, note, ask, cancel, confirm, shown, ref: (el: HTMLElement) => (root = el) };
 }
 

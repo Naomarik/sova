@@ -368,7 +368,9 @@ export type WorkerFeedWire = { t: "feed"; cursor: WorkerCursor; event: unknown }
 /** A design session's page while it is written (proto 4), runtime → server: slices
     coalesced to a few a second, never the raw deltas. `gen` numbers the page within the process; `at`
     is where in it `text` starts, 0 after a link came back. `thinking`: no page text, only a sign that it thinks. */
-export type DesignLiveWire = { t: "design.live"; thinking?: true; gen: number; at: number; text: string };
+/** `append`: the page is a part added to the end of the draft the server keeps, `at` counted from where that part
+    began (additive: a server without it draws the part alone until the page is finished). */
+export type DesignLiveWire = { t: "design.live"; thinking?: true; gen: number; at: number; text: string; append?: true };
 
 /**
  * A parent chat's worker host over its link (proto 3). Ops are idempotent (keys on start and send;

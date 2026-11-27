@@ -119,6 +119,9 @@ export interface DesignRecord {
   live?: {
     version: number;
     chars: number;
+    /** Names the document on show while it is written: a page written whole again, or the draft drawn again after an
+        edit, gets a new one, and the tile redraws in place. A part added to the end keeps it. */
+    draw?: number;
     /** An estimate, in dollars, of the session's cost so far: its finished replies' real cost plus the page written so
         far at the model's output price. Absent for a model with no price; the real `usage` replaces it when the reply ends. */
     estimateUsd?: number;
@@ -276,7 +279,8 @@ export interface DesignRun {
   imagesBusy?: "capturing" | "describing";
   /** The person's approval of a run above the free limit (q2). */
   confirmedSpend?: boolean;
-  /** The design skills this run's Creative Director and designers use, fixed when the run is made. Absent: none (or a run made before skills). */
+  /** The design skills this run's Creative Director and designers use: named when the run is made, changed by the main chat's
+      edit until Start on the brief (the designers get them as they stand at Start). Absent: none (or a run made before skills). */
   skills?: DesignSkill[];
   /** Skills the user named for this run that weren't found. */
   skillsMissing?: DesignSkillMissing[];

@@ -100,3 +100,42 @@ test("thinking says so at once and then once an interval, with no page text", ()
   think();
   assert.equal(h.frames.length, 2);
 });
+
+test("a part added to the end of the draft is a page of its own, its frames marked as continuing the draft", () => {
+  const h = harness();
+  h.start();
+  h.tool('{"label":"A","html":"<p>one</p>"}');
+  h.toolEnd();
+  h.start();
+  h.tool('{"label":"A","append":"<p>two');
+  h.timer();
+  h.tool('</p>"}', 0);
+  h.toolEnd();
+  assert.deepEqual(
+    h.frames.map((f) => [f.gen, f.at, f.text, f.append ?? false]),
+    [
+      [1, 0, "<p>one</p>", false],
+      [2, 0, "<p>two", true],
+      [2, 6, "</p>", true],
+    ],
+  );
+});
+
+test("a part told again after the link came back still says it continues the draft", () => {
+  const h = harness();
+  h.start();
+  h.tool('{"append":"abc');
+  h.timer();
+  h.live.resync();
+  assert.deepEqual(h.frames.at(-1), { gen: 1, at: 0, text: "abc", append: true });
+});
+
+test("a whole page after a part is a whole page again, unmarked", () => {
+  const h = harness();
+  h.start();
+  h.tool('{"append":"x"}');
+  h.toolEnd();
+  h.tool('{"html":"y"}', 1);
+  h.toolEnd();
+  assert.deepEqual(h.frames.map((f) => [f.gen, f.append ?? false]), [[1, true], [2, false]]);
+});

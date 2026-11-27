@@ -30,6 +30,8 @@ let imageCalls: string[][] = [];
 let acts: { label: string; act: string; toolCallId?: string }[] = [];
 let lookedAt: string[] = [];
 let designList: DesignRecord[] = [];
+/** Whether a send lands behind a turn under way (queued) or starts one. */
+let sendQueued = false;
 const DESIGN_A = { label: "A", direction: "D0", model: "zai/m0", parents: [], status: "ready", route: "tool", versions: [{ n: 1, at: "t", chars: 50000, note: { layout: "l", sections: "s", type: "t", color: "c" } }], vision: true, createdAt: "", updatedAt: "", runId: "r" } as unknown as DesignRecord;
 
 const model = (ref: string, over: Partial<DesignModelChoice> = {}): DesignModelChoice => ({ ref, name: ref, design: true, coordinator: false, vision: true, route: "tool", ...over });
@@ -50,6 +52,7 @@ beforeEach(() => {
   acts = [];
   lookedAt = [];
   designList = [DESIGN_A];
+  sendQueued = false;
   capture = async () => ({ kind: "refused", message: "no capture in this test" }) as never;
   readLook = async () => ({ text: "Calm navy on white.", model: "zai/vision" });
   nextBrowse = { kind: "pictures", url: "/settings", origin: "http://127.0.0.1:4810", outline: "OUTLINE", signedIn: false, shots: [{ size: "desktop", png: PNG, viewport: { w: 1440, h: 960 } }] };
@@ -57,7 +60,7 @@ beforeEach(() => {
     workers: () => ({
       start: async (req) => ((lastTask = req.task ?? ""), log.starts.push({ key: req.key, model: (req.spec as { model?: string }).model ?? "" }), { chatId: `worker-${parent.sessionId}-${log.starts.length}`, sessionFile: "/w.jsonl" }),
       stop: async (c) => void log.stops.push(c),
-      send: async (_c, i) => (log.sends.push(i), { queued: false }),
+      send: async (_c, i) => (log.sends.push(i), { queued: sendQueued }),
       state: () => workerState,
       watch: (_c, fn) => ((turnListener = fn), () => {}),
     }),
@@ -753,6 +756,107 @@ test("design_brief's skills picks which of the run's skills the designers use, a
   assert.deepEqual(brief(run.id).skills, ["brand"]);
   assert.ok(brief(run.id).rev > rev, "Start names the choice it was pressed on");
   assert.deepEqual(designerSkills(runOf(parent.sessionId, run.id)!).map((s) => s.name), ["brand"]);
+});
+
+// ---- skills changed through the main chat, until Start on the brief --------------------------------
+
+/** A skill folder on disk, as the main chat names one and a run holds it. */
+async function kit(name: string) {
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const dir = join(agentDir, "kits", name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: The ${name} rules.\n---\nUse --${name}.`);
+  return { name, description: `The ${name} rules.`, dir, from: "named" as const };
+}
+/** The main chat's lookbook tool, over this test's chat. */
+async function mainChat() {
+  const { mainDesignTools } = await import("./tools");
+  const tool = mainDesignTools(() => parent, () => agentDir).find((t) => t.name === "lookbook")!;
+  return async (params: Record<string, unknown>) => textOf(await tool.execute("call", params as never, undefined, undefined, undefined as never));
+}
+
+test("a skill added after Start Creative Director: Sova tells the Creative Director at once where to read it, Start waits for its turn, and a revived session knows it", async () => {
+  const run = runWith(2, 3, { skills: [await kit("brand"), await kit("playwright")] });
+  const t = await ready(run);
+  await t.design_brief({ baseRev: brief(run.id).textRev, skills: ["brand"] });
+  turnEnds();
+  log.sends.length = 0;
+  const edit = await mainChat();
+  const tokens = await kit("tokens");
+  const out = await edit({ op: "edit", skills: [tokens.dir] });
+  assert.match(out, /Sova told the Creative Director that the user added tokens; don't pass it on with tell\./);
+  assert.equal(log.sends.length, 1, "told at once, by Sova");
+  const told = log.sends[0]!.text;
+  assert.match(told, new RegExp(`Added:[\\s\\S]*- tokens \\(from elsewhere on disk\\): ${join(tokens.dir, "SKILL.md").replace(/[/.]/g, "\\$&")}`));
+  assert.match(told, /This run's skills now: brand, playwright, tokens\. The designers get: brand, tokens\./);
+  assert.match(told, new RegExp(`design_brief \\(baseRev ${brief(run.id).textRev}\\)`));
+  assert.deepEqual(brief(run.id).skills, ["brand", "tokens"]);
+  await startRefused(run, /Writing the Full Prompt/);
+  turnEnds();
+  // Its session ended meanwhile: the next change starts a fresh one that is told the run's skills as they stand.
+  workerState = "ended";
+  await edit({ op: "edit", removeSkills: ["playwright"] });
+  assert.equal(log.starts.length, 2);
+  assert.match(lastTask, /- tokens \(from elsewhere on disk\)/);
+  assert.match(lastTask, /Taken off: playwright\./);
+  workerState = "idle";
+  turnEnds();
+  await start(run);
+  assert.equal(log.launches.length, 1);
+});
+
+test("a skill taken off leaves the pick and is told with the list as it stands; design_brief with the old list still applies", async () => {
+  const run = runWith(2, 3, { skills: [await kit("brand"), await kit("playwright")] });
+  const t = await ready(run);
+  await t.design_brief({ baseRev: brief(run.id).textRev, skills: ["brand", "playwright"] });
+  log.sends.length = 0;
+  await (await mainChat())({ op: "edit", removeSkills: ["playwright"] });
+  assert.deepEqual(brief(run.id).skills, ["brand"]);
+  const told = log.sends.map((x) => x.text).join("\n");
+  assert.match(told, /Taken off: playwright\. The designers no longer get it: take every mention of it and its files out of the Full Prompt\./);
+  assert.match(told, /The designers get: brand\./);
+  // Its turn under way when that came: it writes with the list it knew.
+  const r = await t.design_brief({ baseRev: brief(run.id).textRev, summary: "S2", skills: ["brand", "playwright"] });
+  assert.doesNotMatch(textOf(r), /^Refused/);
+  assert.match(textOf(r), /playwright was taken off this run, so left out of skills\./);
+  assert.equal(brief(run.id).summary, "S2");
+  assert.deepEqual(brief(run.id).skills, ["brand"]);
+  // A name never on this run is still refused.
+  refused(await t.design_brief({ baseRev: brief(run.id).textRev, skills: ["tailwind"] }));
+});
+
+test("a pick sent in the turn before it hears of a skill added late keeps that skill; once it has heard, it may leave it out", async () => {
+  const run = runWith(2, 3, { skills: [await kit("brand")] });
+  const t = await started(run);
+  // It is at work preparing the brief: the news queues behind its turn.
+  workerState = "running";
+  sendQueued = true;
+  const tokens = await kit("tokens");
+  await (await mainChat())({ op: "edit", skills: [tokens.dir] });
+  assert.match(log.sends.at(-1)!.text, /Take this into the brief you are preparing\./);
+  const r = await t.design_brief({ baseRev: 0, summary: "S", skills: ["brand"] });
+  assert.match(textOf(r), /Kept tokens in skills: the user added it to this run after your last message\./);
+  assert.deepEqual(brief(run.id).skills, ["brand", "tokens"]);
+  // Having heard, a pick without it stands.
+  await t.design_brief({ baseRev: brief(run.id).textRev, skills: ["brand"] });
+  assert.deepEqual(brief(run.id).skills, ["brand"]);
+  // Heard at once (its turn starts with the news): its first pick may leave the skill out.
+  workerState = "idle";
+  sendQueued = false;
+  const more = await kit("motion");
+  await (await mainChat())({ op: "edit", skills: [more.dir] });
+  await t.design_brief({ baseRev: brief(run.id).textRev, skills: ["brand"] });
+  assert.deepEqual(brief(run.id).skills, ["brand"]);
+});
+
+test("a skill not found after Start Creative Director is named to the main chat only: the Creative Director isn't woken", async () => {
+  const run = runWith(2, 3, { skills: [await kit("brand")] });
+  await ready(run);
+  const out = await (await mainChat())({ op: "edit", skills: [join(agentDir, "kits", "nowhere")] });
+  assert.match(out, /Not changed:\n- .*nowhere: There is no such folder\./);
+  assert.doesNotMatch(out, /Sova told the Creative Director/);
+  assert.equal(log.sends.length, 0);
+  assert.equal(runOf(parent.sessionId, run.id)!.skillsMissing, undefined);
 });
 
 test("design_images brings files the coordinator read into the chat's images, until the designs start", async () => {

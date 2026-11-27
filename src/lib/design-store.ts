@@ -6,11 +6,22 @@ import { socketReconnects } from "./socket";
 /** A page being written, as far as this browser has it. */
 export interface DesignLive {
   version: number;
+  /** Names the document: the same version drawn again (written whole again, or redrawn after an edit) has another. */
+  draw?: number;
   text: string;
 }
 
 /** What the chat socket carries for designs (on the wire as SovaEvents). */
-export type DesignEvent = { type: "design.live"; label: string; version: number; at: number; text: string; chars?: number } | { type: "design.state"; state: DesignChatView };
+export type DesignEvent = { type: "design.live"; label: string; version: number; draw?: number; at: number; text: string; chars?: number } | { type: "design.state"; state: DesignChatView };
+
+/** The page as this browser has it after one slice: a new document from its start, more of the one held, or null when
+    the slice doesn't follow on from what is held and the whole page has to be asked for. */
+export function liveAfter(held: DesignLive | null, e: { version: number; draw?: number; at: number; text: string }): DesignLive | null {
+  const same = !!held && held.version === e.version && held.draw === e.draw;
+  if (e.at === 0 && (!same || held!.text.length === 0)) return { version: e.version, ...(e.draw !== undefined ? { draw: e.draw } : {}), text: e.text };
+  if (same && held!.text.length === e.at) return { ...held!, text: held!.text + e.text };
+  return null;
+}
 
 export const isDesignEvent = (e: unknown): e is DesignEvent => !!e && typeof e === "object" && ((e as { type?: unknown }).type === "design.live" || (e as { type?: unknown }).type === "design.state");
 
@@ -78,7 +89,10 @@ function make(path: string, host: string | null): Entry {
         setView((prev) => keepEstimates(prev, next));
         setError(null);
         // A page already being written when this browser arrived: fetch what's there.
-        for (const d of next.designs) if (d.live && pageOf(d.label)[0]()?.version !== d.live.version) resync(d.label);
+        for (const d of next.designs) {
+          const held = d.live && pageOf(d.label)[0]();
+          if (d.live && (held?.version !== d.live.version || (d.live.draw !== undefined && held.draw !== d.live.draw))) resync(d.label);
+        }
       } catch (e) {
         if (mine === run) setError(e instanceof Error ? e.message : "Designs couldn't be loaded.");
       }
@@ -102,9 +116,8 @@ function make(path: string, host: string | null): Entry {
         return schedule();
       }
       const [page, setPage] = pageOf(event.label);
-      const held = page();
-      if (event.at === 0 && (!held || held.version !== event.version || held.text.length === 0)) setPage({ version: event.version, text: event.text });
-      else if (held?.version === event.version && held.text.length === event.at) setPage({ version: event.version, text: held.text + event.text });
+      const next = liveAfter(page(), event);
+      if (next) setPage(next);
       else resync(event.label);
     };
 

@@ -589,7 +589,11 @@ only) reads `vis/lookbook-directions.md` for the 20 styles (one `- Name: definit
 module refuses to load) and `design/` for a design session's system prompt (`session/`) and the
 coordinator's (`coordinator.md`). Nothing autoloads for these sessions (no skills, no context files). A run's design skills are only those the user
 names with `lookbook`'s `skills`, listed in each run's messages by Sova: the Creative Director reads them with pi's `read`,
-its one built-in, and a design session only through the served `design_skill` reader.
+its one built-in, and a design session only through the served `design_skill` reader, at any point while it writes
+(SKILL.md first, then the files for the part it has reached). A session's prompt (`session/delivery-tool.md`) leaves
+it the choice to write its page in one `design_stream` call or to build it in steps (start, append, edit, read back);
+Sova checks the page at `design_hand_in`. A reply-route model (`session/delivery-reply.md`) still writes each page
+whole between the markers, and may change one with `design_stream` edits.
 
 A host may add a session's own drawing kinds through the `sova:vis-own-kinds` hook (`VIS_OWN_KINDS_HOOK`
 in `minor.ts`, a `globalThis` function `(sessionId) => [{kind, guide, line}]`; Sova's server installs it

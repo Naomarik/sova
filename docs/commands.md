@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 22 |
 | Chat socket frame types | 14 |
 | Document/window keydown listeners | 13 |
-| Hand-written tool specs | 156 |
+| Hand-written tool specs | 157 |
 
 ## Catalogue entries
 
@@ -1242,7 +1242,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/create-settings-tool.ts` | 1 | `sova_settings` |
 | `server/design/coordinator.ts` | 14 | `design_status`, `design_brief`, `design_browse`, `design_capture`, `design_send`, `design_new`, `design_stop`, `design_remove`, `design_restore`, `design_start_again`, `design_models`, `coordinator_card`, `project_verbs`, `design_images` |
 | `server/design/describe.ts` | 1 | `asset_report` |
-| `server/design/tools.ts` | 5 | `lookbook`, `design_skill`, `design_look`, `design_stream`, `design_hand_in` |
+| `server/design/tools.ts` | 6 | `lookbook`, `design_skill`, `design_look`, `design_stream`, `design_page`, `design_hand_in` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
 | `server/memory/tools.ts` | 3 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>`, `<computed: MEMORY_RECALL_TOOL>` |

@@ -86,7 +86,7 @@ export type SovaEvent =
   | { type: "activity"; what: "retry" | "compaction"; phase: "start" | "end"; wrote?: boolean }
   /** A design's page, an appended slice at character `at` (about 3 a second). A pane not holding exactly `at`
       characters reads the page so far from the design's live route. Sent to the parent chat's panes only. */
-  | { type: "design.live"; label: string; version: number; at: number; text: string; chars: number }
+  | { type: "design.live"; label: string; version: number; draw?: number; at: number; text: string; chars: number }
   /** The chat's designs, whole, when anything about them changed (coalesced): a DesignChatView (shared/design.ts). */
   | { type: "design.state"; state: unknown }
   /** One playbook run this chat shows, starts or conducts, whole, when anything about it changed (coalesced): a

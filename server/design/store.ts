@@ -14,7 +14,8 @@ interface DiskState {
   runs: DesignRun[];
   designs: DesignRecord[];
   coordinator: DesignCoordinatorView | null;
-  /** The page of an unfinished version, per label, until its hand-in. */
+  /** The draft of an unfinished version, per label, until its hand-in: whole or partly written, checked or not, a page
+      a hand-in refused included. A new request from anyone but the server drops it. */
   pending?: Record<string, { html: string; at: string }>;
   /** The parent chat's file and folder, so a restart can pick its designs back up. */
   parentPath?: string;
@@ -39,6 +40,10 @@ export interface DesignInternal {
   fixes?: number;
   /** Tokens in its session's context after its newest reply: the input of the reply that comes next. */
   context?: number;
+  /** The key of a request that drops the draft left from before it, once its session takes it up. */
+  dropDraftOn?: string;
+  /** A design_stream call came in this turn (kept or turned away), until the turn ends. */
+  streamed?: true;
   /** Why a design tool refused a page this turn, until the turn ends. */
   refused?: string;
   /** Stills kept of this design so far: the next one's number is one more. */

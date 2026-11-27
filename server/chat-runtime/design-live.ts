@@ -20,6 +20,9 @@ export interface DesignLiveFrame {
   /** Where in the page `text` starts. A receiver not holding exactly `at` characters resyncs. */
   at: number;
   text: string;
+  /** This page is a part added to the end of the draft the server keeps (the tool's `append`), not a page of its own:
+      `at` counts from the draft's end, and the document on show goes on instead of starting again. */
+  append?: true;
 }
 
 interface LiveClock {
@@ -38,6 +41,8 @@ const realClock: LiveClock = {
 export class DesignLive {
   private gen = 0;
   private page = "";
+  /** Whether the page being written is a part added to the draft's end. */
+  private appending = false;
   private sent = 0;
   private timer: unknown = null;
   private tools = new Map<number, HtmlArgDecoder>();
@@ -66,9 +71,10 @@ export class DesignLive {
     if (s.kind === "tool-call") {
       let d = this.tools.get(s.index ?? -1);
       if (!d) this.tools.set(s.index ?? -1, (d = new HtmlArgDecoder()));
-      this.add(d.feed(s.delta));
+      const text = d.feed(s.delta);
+      this.add(text, d.field === "append");
     } else if (s.kind === "text" && this.reply) {
-      this.add(this.reply.feed(s.delta));
+      this.add(this.reply.feed(s.delta), false);
     } else if (s.kind === "thinking") {
       this.thinkingSeen();
     } else if (s.kind === "tool-call.end" || s.kind === "text.end") {
@@ -85,9 +91,9 @@ export class DesignLive {
     this.thinkingTimer = this.clock.setTimeout(() => void (this.thinkingTimer = null), DESIGN_THINKING_EVERY_MS);
   }
 
-  private add(text: string): void {
+  private add(text: string, append: boolean): void {
     if (!text) return;
-    if (!this.page.length || this.isNew) this.begin();
+    if (!this.page.length || this.isNew) this.begin(append);
     this.page += text;
     this.isNew = false;
     if (this.timer === null) this.timer = this.clock.setTimeout(() => this.flush(), this.everyMs);
@@ -102,8 +108,9 @@ export class DesignLive {
     this.isNew = this.page.length > 0;
   }
 
-  private begin(): void {
+  private begin(append: boolean): void {
     this.gen++;
+    this.appending = append;
     this.page = "";
     this.sent = 0;
   }
@@ -115,7 +122,7 @@ export class DesignLive {
       const text = this.page.slice(this.sent);
       const at = this.sent;
       this.sent = this.page.length;
-      this.send({ gen: this.gen, at, text });
+      this.send({ gen: this.gen, at, text, ...(this.appending ? { append: true as const } : {}) });
     }
   }
 
@@ -126,6 +133,6 @@ export class DesignLive {
     if (this.timer !== null) this.clock.clearTimeout(this.timer);
     this.timer = null;
     this.sent = this.page.length;
-    this.send({ gen: this.gen, at: 0, text: this.page });
+    this.send({ gen: this.gen, at: 0, text: this.page, ...(this.appending ? { append: true as const } : {}) });
   }
 }

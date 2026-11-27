@@ -240,7 +240,7 @@ export async function createRun(parent: DesignParent, cwd: string, input: SetupI
   const chatModel = chatHandle(parent.path)?.mirror.model?.ref;
   const card = await setupCardFrom(input, chatModel ? { chatModel } : {});
   const setup = card.setup;
-  // The project's skills always, and the ones the user named: fixed on the run, so each run carries its own.
+  // The ones the user named, on the run, so each run carries its own; the main chat's edit may change them until Start on the brief.
   const { skills, missing } = await runSkills(cwd, input.skills ?? [], lister);
   const now = new Date().toISOString();
   const run: DesignRun = {

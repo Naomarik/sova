@@ -168,6 +168,9 @@ export interface SessionFeedOptions {
   after?: (list: readonly SessionSummary[]) => Promise<SessionFeedMessage[]>;
   /** What of an `after` frame is compared (default: all of it): a build's own time is no change. */
   frameKey?: (frame: SessionFeedMessage) => string;
+  /** Frames a joining listener gets after its marks, when there is something to say (an extension's waiting mesh
+      proposals, §mesh.lan/proposals): none at all otherwise. */
+  joinFrames?: () => SessionFeedMessage[];
 }
 
 /** Once a minute: re-diffs are change-driven, this only catches what no source tells of. */
@@ -263,6 +266,7 @@ export class SessionFeed {
         send({ type: "rows_hello", epoch: this.epochId, version: this.version });
       }
       send({ type: "marks", full: true, sessions: [...this.sent.values()] });
+      for (const msg of this.opts.joinFrames?.() ?? []) send(msg);
       for (const msg of held.splice(0)) send(msg);
     });
     return () => {

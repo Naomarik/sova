@@ -60,7 +60,7 @@ import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./
 import { detachChatHost, startChatHost, stopWorkersOf, wakeOwnerOf, workerChatsOf } from "./chat-host";
 import { agentCpu } from "./agent-cpu";
 import { expectChatRouter } from "./chat-handle";
-import { meshApi, startMesh, stopMesh } from "./mesh";
+import { meshApi, meshProposalJoinFrames, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
@@ -347,6 +347,7 @@ configureSessionFeed({
   },
   after: feedFrames,
   frameKey: feedFrameKey,
+  joinFrames: meshProposalJoinFrames,
 });
 // The LLM calls in flight, pushed on the same feed (server/llm-inflight.ts): this process's own
 // counter, the other processes' live records, and each peer's own count while a browser listens.

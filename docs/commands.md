@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 666 |
+| Routes registered | 672 |
 | Routes a catalogue entry points at | 228 |
 | Catalogue entries | 302 |
 | Class: Peer protocol | 39 |
@@ -27,7 +27,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 25 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 282 |
+| Class: Left as is, by choice | 288 |
 | Class: Page plumbing | 22 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
@@ -539,7 +539,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (282)
+### Left as is, by choice (288)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -603,6 +603,12 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/mesh/logins` | full |
 | `POST /api/mesh/logins/claim` | full |
 | `PUT /api/mesh/peers` | full |
+| `GET /api/mesh/proposals` | full |
+| `POST /api/mesh/proposals` | full |
+| `DELETE /api/mesh/proposals/:id` | full |
+| `GET /api/mesh/proposals/:id` | full |
+| `POST /api/mesh/proposals/:id/confirm` | full |
+| `POST /api/mesh/proposals/:id/decline` | full |
 | `GET /api/mesh/resync` | full |
 | `POST /api/mesh/resync/:id` | full |
 | `GET /api/mesh/sessions` | full |

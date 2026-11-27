@@ -102,6 +102,19 @@
 .mesh-resync-note { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 .mesh-resync-log { max-height: 14rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 
+/* An extension's mesh proposal (§mesh.lan/proposals): Sova's own dialog, its facts as a two-column list, the
+   extension's words quoted, the fingerprint in mono and wrapping, never cut off. */
+.mesh-proposal { max-width: min(560px, calc(100vw - var(--space-6))); }
+.mesh-proposal .modal-head { flex-wrap: wrap; gap: var(--space-2); }
+.mesh-proposal-count { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.mesh-proposal-body { display: flex; flex-direction: column; gap: var(--space-3); }
+.mesh-proposal-body p { margin: 0; }
+.mesh-proposal-from, .mesh-proposal-note { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.mesh-proposal-why { margin: 0; padding-left: var(--space-3); border-left: 2px solid var(--color-border); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.mesh-proposal-rows { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3); margin: 0; }
+.mesh-proposal-rows dt { color: var(--color-ink-muted); }
+.mesh-proposal-rows dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
 /* The stale-tab banner floats over the app's top edge: it concerns the whole tab, not one pane.
    Under Sova's dialogs and toasts (50+), over the app's own chrome. */
 .stale-tab {

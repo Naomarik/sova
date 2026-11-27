@@ -99,6 +99,15 @@ export function createSessionFile(opts: NewSessionFile): { path: string; id: str
   return { path: raw, id: header.id };
 }
 
+/**
+ * A fresh session id as pi mints one (its uuidv7), before any file exists: a chat with a home needs its id to name its
+ * folder. An in-memory manager mints it and is dropped; nothing touches the disk. The file pi then names
+ * `<timestamp>_<id>.jsonl` carries the same id (P49).
+ */
+export function mintSessionId(cwd: string): string {
+  return SessionManager.inMemory(cwd).getSessionId();
+}
+
 /** One record appended to a session file no runtime holds (pi opens it, appends, and writes at once). */
 export function appendToClosedFile<T>(path: string, kind: StateKind<T>, data: T): EntryId {
   return piSessionState(SessionManager.open(path)).append(kind, data);

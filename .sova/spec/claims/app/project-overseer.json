@@ -87,9 +87,9 @@
       "server/default-profile-accounts.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-24T13:41Z",
-      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+      "by": "user",
+      "at": "2026-11-25T18:43Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§app.project-overseer/coding-worktrees": {
@@ -245,7 +245,7 @@
   "§app.project-overseer/files": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§app/file-intake",
       "§app.project-overseer/tools",
@@ -258,7 +258,12 @@
       "server/overseer-org-part.ts",
       "server/project-overseer-prompt.md",
       "server/app.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    }
   },
   "§app.project-overseer/gaps": {
     "kind": "behavior",

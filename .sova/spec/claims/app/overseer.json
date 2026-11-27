@@ -542,7 +542,12 @@
       "server/project-overseer.ts",
       "server/project-overseer-tools.ts",
       "server/overseer-file-tools.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
+    }
   },
   "§app.overseer/head-layout": {
     "kind": "behavior",

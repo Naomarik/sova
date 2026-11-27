@@ -152,16 +152,23 @@
       "server/settings-browser-temp.test.helper.ts",
       "server/settings-browser-temp.test.ts",
       "server/forms-browser.test.helper.ts",
-      "server/test-helpers.test.ts"
+      "server/test-helpers.test.ts",
+      "server/chat-homes/scale.integration.test.ts",
+      "scripts/bench-chat-homes/bench.ts"
     ],
     "requires": [
       "§app.server-runtime/test-tiers"
-    ]
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-26T02:43Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
+    }
   },
   "§app.server-runtime/test-agent-fence": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/testing/scratch-agent-dir.ts",
       "server/merge-queue/wire-unserved.integration.test.ts",
@@ -172,8 +179,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-11T14:09Z",
-      "source": "pi-session:01a1ca84-b3de-7601-9d6d-7e61cbb746c9#a4b61b34"
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§app.server-runtime/test-env": {
@@ -280,9 +287,9 @@
       "§app.server-runtime/slow-groups"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-19T07:05Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
+      "by": "omar",
+      "at": "2026-11-26T02:43Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
     }
   },
   "§app.server-runtime/typecheck-reuse": {

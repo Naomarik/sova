@@ -15,12 +15,15 @@ export const EVENT_NAMES = [
   "session.renamed",
   "session.tagged",
   "session.archived",
+  "session.labelled",
   "turn.started",
   "turn.ended",
   "attention.changed",
   "card.raised",
   "card.changed",
   "card.answered",
+  "chat.created",
+  "chat.removed",
 ] as const;
 export type EventName = (typeof EVENT_NAMES)[number];
 
@@ -44,6 +47,9 @@ interface Base {
 interface OfSession {
   id: string;
   path: string;
+  /** The session's top-level chat: its own id for a chat, its parent chat's for a worker's or team
+      member's conversation. Absent only from an older server. */
+  chat?: string;
 }
 
 export type StreamEvent =
@@ -52,10 +58,14 @@ export type StreamEvent =
   | (Base & OfSession & { name: "session.renamed"; source: "observed"; from: string; title: string })
   | (Base & OfSession & { name: "session.tagged"; source: "observed"; tags: EventTags | null })
   | (Base & OfSession & { name: "session.archived"; source: "observed"; archived: boolean })
+  /** An extension changed its labels on the chat (POST /api/sessions/labels): its id only, never the values. */
+  | (Base & OfSession & { name: "session.labelled"; source: "hosted"; extension: string })
   | (Base & OfSession & { name: "turn.started" | "turn.ended"; source: EventSource })
   | (Base & { name: "attention.changed" })
   /** Ids and type only, never the card's data or answer (§app.events/card-news). */
-  | (Base & OfSession & { name: "card.raised" | "card.changed" | "card.answered"; source: "hosted"; card: string; cardType: string });
+  | (Base & OfSession & { name: "card.raised" | "card.changed" | "card.answered"; source: "hosted"; card: string; cardType: string })
+  /** A chat as a whole: its home made, or the chat deleted or moved off this device. */
+  | (Base & { name: "chat.created" | "chat.removed"; source: "hosted"; chat: string; home?: string });
 
 /** An event before the hub numbers it. */
 export type StreamEventBody = StreamEvent extends infer E ? (E extends StreamEvent ? Omit<E, "type" | "seq" | "at"> : never) : never;
@@ -91,6 +101,10 @@ export interface EventsErrorFrame {
 /** What a socket opened with `?with=command.ran` asks for (§app.command-audit/record). */
 export const COMMAND_RAN = "command.ran";
 export const WITH_COMMANDS = "command.ran";
+
+/** `?only=hosted`: only the events Sova raises itself; the socket never holds the session feed
+    (§app.events/idle). */
+export const ONLY_HOSTED = "hosted";
 
 /**
  * A call a token holder made, as Sova recorded it (§app.command-audit/record): only to a socket that

@@ -1,12 +1,14 @@
 // Run: pnpm test -- server/sessions-index-real.parity.test.ts
 //
 // The no-regression gate on REAL sessions: a sample of this checkout's hermetic copy of the user's
-// sessions (<checkout>/.agent/sessions, which the A/B bench fills; never ~/.pi) is copied into a
-// throwaway agent dir, with the list's own stores (titles, groups, archive marks, drafts, seen,
-// tags, web ids) when the copy has them. On it, the baseline revision's own full build, the new
+// sessions (<checkout>/.agent/sessions, only when its copied-sessions.json marks it a copy, as the
+// A/B bench's --prepare leaves it; never ~/.pi) is copied into a throwaway agent dir, with the
+// list's own stores (titles, groups, archive marks, drafts, seen, tags, web ids) when the copy has
+// them. On it, the baseline revision's own full build, the new
 // tracked list and the new full list must agree row for row; then an agent-like load appends real
 // lines (each a copy of one the file already holds) to random files, and they must agree after
-// each burst. With no copy present the file says so and checks nothing.
+// each burst. With no copy present (a plain hermetic .agent holds only this tree's own test chats) the
+// file says so and checks nothing.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
@@ -15,22 +17,20 @@ import { basename, dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { SessionSummary } from "../shared/protocol";
+import { paritySource } from "./sessions-index-real-source.test.helper";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "..");
-/** The copy to sample: this checkout's hermetic .agent, or what a local, untracked
-    .tmp/verifier/real-source names (one line: an agent dir, or a sessions folder itself, as the
-    bench's .tmp/bench-sessions; read only, never written). */
-const pointer = join(repo, ".tmp", "verifier", "real-source");
-const named = existsSync(pointer) ? resolve(repo, readFileSync(pointer, "utf8").trim()) : join(repo, ".agent");
-const sessionsRoot = existsSync(join(named, "sessions")) ? join(named, "sessions") : named;
-const source = existsSync(join(named, "sessions")) ? named : dirname(named);
+// The copy to sample, or why there is none (server/sessions-index-real-source.test.helper.ts).
+const chosen = paritySource(repo);
+const sessionsRoot = chosen.kind === "sample" ? chosen.sessionsRoot : "";
+const source = chosen.kind === "sample" ? chosen.source : "";
 const SAMPLE = 300;
 
 /** Every session file of the copy, by folder (the sessions dir's own layout). */
 function sourceFiles(): string[] {
   const root = sessionsRoot;
-  if (!existsSync(root)) return [];
+  if (!root || !existsSync(root)) return [];
   const out: string[] = [];
   for (const d of readdirSync(root, { withFileTypes: true })) {
     const p = join(root, d.name);
@@ -41,7 +41,11 @@ function sourceFiles(): string[] {
 }
 const all = sourceFiles();
 
-if (!all.length) {
+if (chosen.kind === "skip") {
+  test("real-session parity: no copy of the real chats here (nothing checked)", (t) => {
+    t.skip(chosen.reason);
+  });
+} else if (!all.length) {
   test("real-session parity: no copy of the real sessions in .agent/sessions yet (nothing checked)", (t) => {
     t.skip(`${sessionsRoot} holds no session files: run the bench's copy first`);
   });

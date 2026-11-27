@@ -705,7 +705,7 @@ describe("sova_send into a session mid-turn (the in-process route, as the server
       if (path !== "/api/sessions/prompt") return Response.json({ error: "not wired in this test" }, { status: 404 });
       const body = JSON.parse(String(init?.body));
       const sender = sender_.overseerSender(new Headers(init?.headers).get(sender_.OVERSEER_SENDER_HEADER) ?? undefined);
-      const r = await sessionPrompt.promptSession(body.path, body.text, sender, body.delivery);
+      const r = await sessionPrompt.promptSession(body.path, body.text, { sentBy: sender, delivery: body.delivery });
       return r.ok ? Response.json({ ok: true, queued: r.queued, kind: r.kind }) : Response.json({ error: r.error }, { status: r.status });
     });
     writeOverseerSettings({ ...defaultSettings() });

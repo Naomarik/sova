@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { seedReviewer } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { agentRoot, stateRoot } from "./state-root";
-import type { AlignmentWebSettings, ExperimentalSettings, WebSettings } from "../shared/protocol";
+import type { AlignmentWebSettings, ExperimentalSettings, StorageWebSettings, WebSettings } from "../shared/protocol";
 
 /**
  * Sova's own settings — the ones that belong to the webapp rather than to pi or to an
@@ -50,8 +50,18 @@ function storedReview(data: Record<string, unknown>): boolean {
   return isObject(data.experimental) && data.experimental.adversarialReview === true;
 }
 
-/** The defaults (every switch off): what a missing, unreadable or foreign-shaped file reads as. */
-const defaults = (): WebSettings => ({ experimental: knownSwitches({}), alignment: { review: false } });
+/**
+ * Settings → General's storage switches (§app.chat-homes/new-chats, §app.session-list/archive-compression): each ON
+ * unless stored `false`. `chatHomes` off makes new chats as before homes; chats that have a home stay listed either way.
+ */
+const STORAGE_KEYS: readonly (keyof StorageWebSettings)[] = ["chatHomes", "autoCompress"];
+function storedStorage(data: Record<string, unknown>): StorageWebSettings {
+  const storage = isObject(data.storage) ? data.storage : {};
+  return { chatHomes: storage.chatHomes !== false, autoCompress: storage.autoCompress !== false };
+}
+
+/** The defaults (every experimental switch off, storage on): what a missing, unreadable or foreign-shaped file reads as. */
+const defaults = (): WebSettings => ({ experimental: knownSwitches({}), alignment: { review: false }, storage: storedStorage({}) });
 
 /**
  * Read the stored settings, tolerantly: anything unexpected reads as the defaults rather than
@@ -61,7 +71,7 @@ export function readWebSettings(): WebSettings {
   try {
     const data = JSON.parse(readFileSync(FILE, "utf8")) as unknown;
     if (!isObject(data) || data.version !== 1) return defaults();
-    return { experimental: knownSwitches(isObject(data.experimental) ? data.experimental : {}), alignment: { review: storedReview(data) } };
+    return { experimental: knownSwitches(isObject(data.experimental) ? data.experimental : {}), alignment: { review: storedReview(data) }, storage: storedStorage(data) };
   } catch {
     return defaults(); // missing or corrupt: the defaults
   }
@@ -76,10 +86,19 @@ export function readWebSettings(): WebSettings {
  * instance added survives. Atomic via tmp + rename.
  */
 export function writeWebSettings(raw: unknown): WebSettings | { error: string } {
-  const bad = { error: "Expected { experimental?: { <switch>: boolean }, alignment?: { review?: boolean } }" };
+  const bad = { error: "Expected { experimental?: { <switch>: boolean }, alignment?: { review?: boolean }, storage?: { chatHomes?: boolean, autoCompress?: boolean } }" };
   if (!isObject(raw)) return bad;
   if (raw.experimental !== undefined && !isObject(raw.experimental)) return bad;
   if (raw.alignment !== undefined && !isObject(raw.alignment)) return bad;
+  if (raw.storage !== undefined && !isObject(raw.storage)) return bad;
+  const requestedStorage = isObject(raw.storage) ? raw.storage : {};
+  const storageChanges: Record<string, boolean> = {};
+  for (const key of STORAGE_KEYS) {
+    if (!(key in requestedStorage)) continue;
+    const value = requestedStorage[key];
+    if (typeof value !== "boolean") return { error: `Expected storage.${key} to be a boolean` };
+    storageChanges[key] = value;
+  }
   const requested = isObject(raw.experimental) ? raw.experimental : {};
   const changes: Record<string, boolean> = {};
   for (const key of EXPERIMENTAL_KEYS) {
@@ -117,13 +136,19 @@ export function writeWebSettings(raw: unknown): WebSettings | { error: string } 
       console.warn("[settings] seeding the default reviewer failed:", error instanceof Error ? error.message : error);
     }
   }
-  const next = { ...stored, version: 1, experimental, alignment, ...(Object.keys(seeded).length > 0 ? { seeded } : {}) };
+  const storage = { ...(isObject(stored.storage) ? stored.storage : {}), ...storageChanges };
+  const next = { ...stored, version: 1, experimental, alignment, storage, ...(Object.keys(seeded).length > 0 ? { seeded } : {}) };
   mkdirSync(dirname(FILE), { recursive: true });
   const tmp = `${FILE}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify(next, null, "\t")}\n`);
   renameSync(tmp, FILE);
-  return { experimental: knownSwitches(experimental), alignment: { review: alignment.review } };
+  return { experimental: knownSwitches(experimental), alignment: { review: alignment.review }, storage: storedStorage({ storage }) };
 }
 
 /** The review switch as saved now, for a chat's first start (chat-manager.ts sessionFlags). */
 export const reviewSaved = (): AlignmentWebSettings["review"] => readWebSettings().alignment.review;
+
+/** Settings → General's Chat homes switch as saved now (ON unless stored false): read where a chat is born. */
+export const chatHomesOn = (): boolean => readWebSettings().storage.chatHomes;
+/** Settings → General's automatic compression switch as saved now (ON unless stored false). */
+export const autoCompressOn = (): boolean => readWebSettings().storage.autoCompress;

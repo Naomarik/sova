@@ -275,13 +275,13 @@ export function forkPrefix(doc: SourceDoc, entryId: string): PrefixPlan {
 
 /**
  * Fork `sourcePath` through the assistant entry `entryId`: read once, select the branch prefix
- * through the reply, splice out transient registry state, and write the fork beside the source
- * in its own session dir (same cwd, same host) with a fresh id and a `parentSession` header
+ * through the reply, splice out transient registry state, and write the fork in the folder `place` names for its
+ * fresh id (its own chat home), else beside the source in its own session dir (same cwd, same host) with a fresh id and a `parentSession` header
  * pointing back at the source. Nothing is appended to the source, no runtime is opened, and no
  * model is called. The discarded SessionManager only mints the id, the header and the file
  * name; it never persists.
  */
-export function forkSessionFile(sourcePath: string, entryId: string): ForkOutcome {
+export function forkSessionFile(sourcePath: string, entryId: string, place?: (id: string) => string): ForkOutcome {
   let text: string;
   try {
     text = readFileSync(sourcePath, "utf8");
@@ -295,7 +295,13 @@ export function forkSessionFile(sourcePath: string, entryId: string): ForkOutcom
   const planned = forkPrefix(doc, entryId);
   if (!planned.ok) return planned;
   try {
-    const mint = SessionManager.create(doc.header.cwd, dirname(sourcePath), { parentSession: canonicalPath(sourcePath) });
+    // `place`: the fork is a new chat with a home of its own, so its id is minted first and names the folder
+    // (§app.chat-homes/new-chats); without it the fork goes beside its source, as before homes.
+    const id = place ? SessionManager.inMemory(doc.header.cwd).getSessionId() : undefined;
+    const mint = SessionManager.create(doc.header.cwd, id !== undefined && place ? place(id) : dirname(sourcePath), {
+      parentSession: canonicalPath(sourcePath),
+      ...(id !== undefined ? { id } : {}),
+    });
     const target = mint.getSessionFile();
     const header = mint.getHeader();
     if (!target || !header || typeof header.id !== "string")

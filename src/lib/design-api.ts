@@ -77,9 +77,9 @@ export function designApi(path: string, host: string | null) {
     uploadImage: (file: File) => uploadImage(file, path),
     coordinatorAnswer: (id: string, answer: unknown) => json<unknown>(url("/coordinator/answer"), post({ id, answer })),
     /** What has been written so far of the page in progress; null when there is none. */
-    live: async (l: string): Promise<{ version: number; text: string } | null> => {
+    live: async (l: string): Promise<{ version: number; draw?: number; text: string } | null> => {
       try {
-        return await json<{ version: number; text: string }>(url(`${label(l)}/live`));
+        return await json<{ version: number; draw?: number; text: string }>(url(`${label(l)}/live`));
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) return null;
         throw e;

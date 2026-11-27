@@ -15,7 +15,8 @@ and each letter has its own hidden session on its own model. The pages never ent
 unless it asks to read one.
 
 Owns: how a Lookbook rides vis, when the main chat opens one, its guide, the Lookbook card and its
-states, the model picker, design sessions, how a page streams and how its frame is sealed, the
+states, the model picker, design sessions, how a designer builds its page, in one go or in steps,
+how a page streams and how its frame is sealed, the
 Gallery's prototypes, labels, storage, the Creative Director, its name and its card, the skills a run
 uses, how the main chat and the Creative Director read a version and look at its views, what each
 design was told, research, the brief and Start, links and images, the limits on a launch, what the
@@ -90,9 +91,11 @@ The brief a design session gets:
   look.
 - Carries the anti-pattern list, among them no generic fonts (Inter, Roboto, Arial, Space Grotesk)
   and no cliched purple gradients.
-- When the run has skills, tells the designer to read first the parts the brief suggests, to read
-  any other part it needs, and to copy the rules and tokens it uses into the page
-  (§chat.design-mode/skills).
+- Tells the designer it may write its page in one go or build it in parts, whichever it chooses
+  (§chat.design-mode/building-in-steps).
+- When the run has skills, tells the designer to open each skill's `SKILL.md` first, then to consult
+  any other file when it reaches the part that file covers, at any point while it builds, and to
+  copy the rules and tokens it uses into the page (§chat.design-mode/skills).
 - Tells the designer to draw any imagery it isn't given (§chat.design-mode/page-images) in the page,
   since a prototype may load only Google Fonts
   (§chat.design-mode/prototype-frame).
@@ -106,8 +109,9 @@ The guide and the `lookbook` tool's own description also tell the main chat:
 
 - **Change the card itself.** When you ask for a change after the Setup card is up, the chat makes
   it with `lookbook {op:"edit"}`, changing only what you asked for, instead of sending you to the
-  card; after Start Creative Director only the designers, efforts, styles, layouts and how they
-  combine, the rest passed on with `tell` (§chat.design-mode/setup-card). It says in its reply what
+  card; after Start Creative Director, until Start on the brief, only the designers, efforts, styles,
+  layouts, how they combine and the run's skills, the rest passed on with `tell`
+  (§chat.design-mode/setup-card, §chat.design-mode/skills). It says in its reply what
   it changed.
 - **Where pictures may come from.** The three places a picture may be handed over from, and the
   reasons one is refused, so it puts a screenshot in the right place before it tries
@@ -181,9 +185,13 @@ chat filled in, which keeps the main chat's context clean."
   estimate (§chat.design-mode/brief).
 - **After Start Creative Director.** As the user decided, until Start on the brief the main chat may
   still change the designers, their efforts, the styles, the layouts and Pair Up or Every Mix, which
-  is what Change on the brief lets you change (§chat.design-mode/brief). Text, images and skills then
-  go to the Creative Director in your words with `tell`, as before (§chat.design-mode/main-chat).
-  Once Start has launched the designs, nothing on the card changes.
+  is what Change on the brief lets you change (§chat.design-mode/brief), and the run's skills, which
+  Sova then tells the Creative Director of itself (§chat.design-mode/skills), or, when it can't be
+  reached, the main chat's answer says so. A skill named then that
+  can't be found is reported in the main chat's answer, and the brief stays as it was. Text and
+  images then go to the Creative Director in your words with `tell`, as before
+  (§chat.design-mode/main-chat). Once Start has launched the designs, nothing on the card changes, and
+  a change the main chat asks for is refused.
 - **Clicks stay on the card.** No edit goes back into the transcript or wakes the main chat: each
   click is saved in the chat's design store (§chat.design-mode/storage), with nothing written to the
   chat's session per click, and a reload shows it as left. Start Creative Director records what was chosen
@@ -447,7 +455,7 @@ Each tile holds the page as it is written (§chat.design-mode/streaming) and:
   before it began; §chat.design-mode/stop-remove) or **Failed**;
 - its model and what it cost, in tokens and in dollars from Sova's own price table, at API prices on
   a subscription too, so an Ollama design shows a cost; while a page is being written the tile shows a
-  live estimate;
+  live estimate of what its current reply has written (§chat.design-mode/streaming);
 - three places that never change size: **Open** (or, on a stopped or failed design, **Start Again**
   or **Retry**), **Chat**, and **More** (a menu). Open shows the design full size, as it is written
   while it is being written (§chat.design-mode/chat-with). More holds **Open** when its place is
@@ -476,9 +484,10 @@ the parent is archived; §app.chat-processes/workers), and two things a worker d
   Agents tab or in `agent_list`; the Gallery is their home (§chat.design-mode/gallery).
 - **They report nothing to the parent** (§chat.design-mode/main-chat).
 
-A design session has only the tools that make its page: `design_stream {label, html}` (the whole
-document, or a find-and-replace list so a refine doesn't rewrite the page; never offered to a model
-that writes through its reply, §chat.design-mode/reply-route), `design_hand_in {label,
+A design session has only the tools that make its page: `design_stream {label, …}`, which writes its
+draft whole, adds to its end or changes it with a find-and-replace list, and `design_page`, which reads
+it back (§chat.design-mode/building-in-steps; a model that writes through its reply gets only the
+find-and-replace list and the read-back, §chat.design-mode/reply-route), `design_hand_in {label,
 note}` and `design_look`, and Sova's read-only skill reader, which opens files only inside its run's
 skill folders (§chat.design-mode/skills). It has no shell and none of pi's built-in file tools. It
 never opens as an ordinary chat, and
@@ -489,7 +498,8 @@ the refusal for a worker's session (§app.chat-processes/workers) holds for it.
   limit applies on top (§app/provider-limits). A design waiting for either reads Queued, and its tile
   says "Waiting for a free session". Once its session has started and waits only on its model's first
   reply, it reads **Starting** and its tile says "Waiting for its model to answer".
-- **Handing in.** A session finishes with `design_hand_in`. Its `note` is required and says, briefly,
+- **Handing in.** A session finishes with `design_hand_in`, which hands in its draft (or the page in
+  its reply) to be checked and kept as a version. Its `note` is required and says, briefly,
   the page's layout, sections, type and colour; that note is what the Creative Director knows of the page.
 - **Idle sessions go away and the pages don't.** An idle design session's process stops after the
   idle-stop time like any chat's (§app.chat-processes/idle-stop), so keeping designs for the life of
@@ -504,9 +514,21 @@ live typing leaves its process.
 
 - **Nothing runs until it is finished.** While a page is being written, nothing in it runs. Its
   buttons and animations start working once it is finished.
-- **One document, never reloaded.** While a design is being written its page is one document in one
-  frame that fills in as it arrives and is never reloaded. The model still writes plain HTML; the
-  filling in is Sova's.
+- **Never blank while written.** As the user decided, a tile being written never goes blank. Writing
+  that adds to the page fills in one document in one frame as it arrives, step after step, with no
+  reload. When the designer changes an earlier part or rewrites the page, the tile redraws in place:
+  the old picture stays until the new one has painted. The model still writes plain HTML; the filling
+  in is Sova's.
+- **It follows the draft.** The tile shows the session's draft (§chat.design-mode/building-in-steps):
+  between steps, while the designer looks something up, and after a Sova restart. A part added to the
+  end goes on in the document on show; when the tile shows something other than the draft (a page a
+  call turned away), it first redraws the draft in place. When the designer replaces its draft and
+  adds to it in the same message, the tile never shows the old draft with the new part on its end.
+  The token count a writing tile shows counts what its current reply has written.
+- **A refused page stays on show.** As the user decided, a page refused at hand-in stays on the tile
+  while it is fixed, with Fixing and its reason (§chat.design-mode/failed-designs). The fix's first
+  change redraws it in place, keeping the old picture until the new one has painted, and a Sova
+  restart during Fixing shows the refused draft again.
 - **Blank until its styles finish.** A page writes its styles first, and it stays blank until they
   have finished, roughly the first half of its characters. The tile shows progress until then: that
   it is writing and how far along it is, in tokens.
@@ -537,8 +559,74 @@ writes its page between markers in
 its reply, and that page reaches the tile the same way a tool's does. It still finishes with
 `design_hand_in`. The reply text carrying the page is kept out of what's shown as its transcript.
 
-Such a session is never offered `design_stream`, since a page sent that way would arrive whole at the
-end, so every Refine or fix on it rewrites the whole page.
+As the user decided, such a session may look things up at any point, change its page with
+`design_stream`'s find-and-replace list, applied to its draft or, when it has none, to the page in
+this turn's reply or its newest version (§chat.design-mode/building-in-steps), and read its page back
+with `design_page`. A page itself is still written whole in its reply, between the markers: `design_stream` refuses
+a whole page or an addition from it, pointing it to the markers, since a page sent that way would
+arrive whole at the end. A page in its reply written after the draft last changed replaces the draft,
+so a hand-in never takes an older one; a reply's page that didn't land becomes the draft its fix
+changes. Its hand-in takes the draft, else the page its reply streamed.
+
+## §chat.design-mode/building-in-steps — A page in one go or in steps
+
+A designer may write its page in one go or build it in parts: start it, add to it, change earlier
+parts and read it back, looking things up in its skills between steps. Neither way is required; it
+chooses, and writing the whole page at once stays fully supported. What it builds is its **draft**,
+which becomes a version only when it is handed in (§chat.design-mode/design-sessions). Each
+`design_stream` call does one of three things and saves the result as the draft:
+
+- **A whole page** (`html`), or its first part, starts the draft afresh or replaces it, from nothing.
+- **An addition** (`append`) goes on the end of the draft, and the tile goes on drawing the same
+  document. When one message replaces the draft and then adds to it, the addition goes on the new
+  draft, and the tile never shows the old draft with the new part on its end. With no draft started it is refused with a plain tool error that says so, and nothing is
+  added to a saved version.
+- **Edits** (a find-and-replace list) change the draft or, when there is none, a copy of the design's
+  newest version, which then becomes the draft. An edit whose text isn't found is a plain tool error,
+  and the draft stays as it was.
+
+A call that sends none of these, or more than one, is a plain tool error too.
+
+- **Reading back.** `design_page` returns the draft with its lines numbered, or the newest version
+  when there is no draft, from a line it names, at most 2,000 lines and a skill read's size at a time,
+  saying where it stopped so the next read goes on from there.
+- **Advice, never a try.** Each call's answer says what it kept and how long the draft is. Once the
+  draft ends with `</html>` it lists what the landing checks would object to
+  (§chat.design-mode/landing-checks), or says the page is whole and may be handed in. Nothing in
+  building the draft spends a fix try (§chat.design-mode/failed-designs).
+- **Landing at hand-in.** `design_hand_in` checks the saved draft and keeps it as a version when it
+  passes. Only the saved draft counts: a page a `design_stream` call turned away is never handed in. A
+  page the hand-in refuses stays the draft, kept on disk and on the tile, so the designer can fix it
+  with edits instead of writing it again (§chat.design-mode/streaming).
+- **A request that ends without a hand-in** (the model stops, its provider fails, it goes quiet) has
+  its saved draft checked as a hand-in would be. A page that passes lands; a half-built or broken draft
+  never becomes a version, and goes the way of §chat.design-mode/failed-designs. Only a session that
+  made no `design_stream` call in that request has a whole page it streamed taken instead, and such a
+  page that doesn't land becomes the draft its fix changes, staying on the tile while it is fixed
+  (§chat.design-mode/streaming). Sova keeps the fact of such a call with the design, through a
+  restart, until the request ends, a Retry or a Stop, or its session dies.
+- **A new request starts clean.** When a new request reaches the design from anyone but Sova itself
+  (your message, the Creative Director's, a Refine), the draft left from an earlier one is dropped and
+  the designer starts from the newest version: once its session takes the request up (a session still
+  at work keeps its draft until then), or at once when the request starts a fresh session. Sova's own
+  fix requests keep the draft, since the fix is to it.
+- **Kept through a restart.** The draft, a page refused at hand-in included, is saved with the design,
+  so a Sova restart loses no step and the tile still shows it (§chat.design-mode/streaming).
+
+A model that writes through its reply gets only the edits and the read-back
+(§chat.design-mode/reply-route).
+
+## §chat.design-mode/no-step-limit — No limit on a design's steps
+
+As the user decided, a design request has no limit on how many steps (tool calls or turns) it
+takes, whether it writes in one go or in parts (§chat.design-mode/building-in-steps). Three things
+bound it, and only these:
+
+- **Your Stop** (§chat.design-mode/stop-remove).
+- **Going quiet.** A session at work that sends nothing for 10 minutes is stopped: a change ends with
+  no new version and says so, and a design with no version yet goes to Failed, both with "Its session
+  went quiet and stopped responding." (§chat.design-mode/failed-designs).
+- **The safety stop on size**, about 1,000,000 characters (§chat.design-mode/streaming).
 
 ## §chat.design-mode/prototype-frame — How a page is sealed
 
@@ -603,9 +691,12 @@ hold still.
 
 - **One design's change touches one tile.** A finished design's page never reloads because another
   design changed; only the tile that changed updates.
-- **Writing never reloads it.** While a design is being written its page fills in place in one frame
-  and is never reloaded (§chat.design-mode/streaming), so once its styles have finished a tile never
-  shows a blank moment. What has been written stays until the finished page has drawn.
+- **Writing never blanks it.** While a design is being written its page fills in place in one frame
+  (§chat.design-mode/streaming), and when the designer changes an earlier part or rewrites it, the
+  tile redraws in place, keeping the old picture until the new one has painted, so once its styles
+  have finished a tile never shows a blank moment. What has been written stays until the finished
+  page has drawn. A page refused at hand-in stays on show while it is fixed, and the fix's first
+  change redraws it in place the same way (§chat.design-mode/streaming).
 - **Only what's near holds a page.** In a long chat, only tiles within about a screen of view hold a
   page. A tile scrolled away keeps its height.
 - **No layout shift.** As the user decided: "no content layout shift at all whatsoever", across the
@@ -660,10 +751,14 @@ What happens depends on whether the model can do anything about it.
 
 - **A reason the model can act on** (no page received, a page cut off or broken, or a failed check,
   §chat.design-mode/landing-checks), however the model ended its turn, is sent back to the design's
-  own session by Sova itself, up to 2 times. The tile shows **Fixing** and the reason meanwhile.
-- **A design tool's refusal spends a try too.** A page `design_stream` or `design_hand_in` turns away
-  counts as one of the 2, so a session that keeps handing in a broken page ends in Failed and its turn
-  stops.
+  own session by Sova itself, up to 2 times. The tile shows **Fixing** and the reason meanwhile; a
+  page refused at hand-in stays on show while it is fixed, after a restart too
+  (§chat.design-mode/streaming).
+- **Only a failed hand-in spends a try.** A page `design_hand_in` turns away counts as one of the 2,
+  and so does a request that ends without a hand-in on a broken or unfinished draft, so a session that
+  keeps handing in a broken page ends in Failed and its turn stops. Building the draft never spends
+  one: an edit that finds nothing to change, or an addition with no draft started, is a plain tool
+  error the designer can correct (§chat.design-mode/building-in-steps).
 - **Still not landed after those 2:** **Failed**, with the reason, and **Retry**.
 - **Your word gives fresh tries.** A person's Retry, Start Again or message in a design's chat gives
   the design 2 fresh tries.
@@ -725,8 +820,10 @@ Before a page counts as landed, Sova checks it mechanically:
   clicks deep, at most 20 views, and every mark on something that can be clicked and that submits
   no form.
 
-These checks run when a page is saved, when it is handed in, and when a session ends its turn with a
-page, each problem naming its line. Real breakage goes back to the session as a precise list, on the same 2 tries as
+These checks run when a page is handed in, and on the draft when a request ends without a hand-in
+(§chat.design-mode/building-in-steps), each problem naming its line. Building the draft is never
+checked as a landing: once the draft ends with `</html>`, `design_stream`'s answer lists what these
+checks would object to, as advice, and that spends no try. Real breakage goes back to the session as a precise list, on the same 2 tries as
 §chat.design-mode/failed-designs. Style issues never do: no page is sent back for how it looks.
 
 ## §chat.design-mode/gallery — The Gallery tab
@@ -882,8 +979,8 @@ As the user decided: "As long as the chat, only inside it". Designs follow the r
 
 - **Stored by chat.** A chat's designs are kept on this computer in its design store, with every
   version, and survive a reload and a Sova restart. The card's state and Setup's edits are kept there
-  too (§chat.design-mode/setup-card), and so are a stopped design's still
-  (§chat.design-mode/stop-remove), what each design was told (§chat.design-mode/prompt-history) and
+  too (§chat.design-mode/setup-card), and so are a design's draft not yet handed in
+  (§chat.design-mode/building-in-steps), a stopped design's still (§chat.design-mode/stop-remove), what each design was told (§chat.design-mode/prompt-history) and
   the pictures of each version's views (§chat.design-mode/views).
 - **Images too.** A chat's images follow this rule (§chat.design-mode/asset-storage).
 - **Archiving keeps them.** Only actual deletion of the chat removes them. Cleanup runs after a chat
@@ -935,7 +1032,20 @@ HTML they generate would be the issue."
   reaches them as one of the Lookbook's images (§chat.design-mode/own-images), and the pages stay
   sealed (§chat.design-mode/prototype-frame). Nothing loads for it by itself: no list of skills
   and no `AGENTS.md` or `CLAUDE.md`. It reads the skills you named, chooses which the designers get,
-  and suggests what each designer reads first (§chat.design-mode/skills).
+  and may say which file covers which part of a page, never what to read first
+  (§chat.design-mode/skills).
+- **Told when the skills change.** Until Start on the brief, when the main chat adds or takes off one
+  of the run's skills, Sova tells the Creative Director at once: a skill added, with where to read
+  it, or a skill taken off, the designers' skills as they now stand, and to bring the brief in line,
+  taking a removed skill's files out of the Full Prompt (§chat.design-mode/skills). A message that
+  comes mid-turn waits for its turn to end, and one to a Creative Director whose session has ended
+  starts it again. A skills pick it sends with `design_brief` that still names a skill the main chat
+  took off this run is applied without that name, with a note saying it was taken off, never
+  refused for it; any other name not on the run is still refused. A pick it sent before it heard
+  of a skill added late keeps that skill, with a note saying so, since it can't have meant to leave
+  it out; once it has heard, a pick may leave it out. Asked in its own box for a skill the run
+  doesn't have, it says on its card to ask the main chat, which finds skills; it never adds one
+  itself.
 - **Whose words are whose.** What you write reaches it under a label Sova writes ("The user wrote in
   your box", or the main chat passing on your words), byte for byte as typed, between marks drawn for
   that one message that the text doesn't contain, so nothing in it can close its fence. Everything a model or a page
@@ -986,30 +1096,49 @@ when you name them, with no new control on Setup.
 - **Only what you name.** A run's skills are the ones you named in your own words for it: by name
   ("use this project's design skill", "the brand skill"), found among the project's own skills first,
   or by a skill folder's path on this computer. A folder you name counts only if it holds a `SKILL.md`. Name none and the run has none.
-- **Never a guess.** A skill you name that can't be found becomes one of the Creative Director's
-  questions on the brief (§chat.design-mode/brief-questions) instead of a guess.
+- **Never a guess.** A skill you name before Start Creative Director that can't be found becomes one
+  of the Creative Director's questions on the brief (§chat.design-mode/brief-questions) instead of a
+  guess. As the user decided, one you name later that can't be found is reported by the main chat in
+  its answer right away, and the brief and the Creative Director are left as they were.
 - **The Creative Director chooses for the designers.** It reads the skills you named and picks in the
   brief which of them the designers get: all of them unless it leaves one out, and it leaves out a
-  skill that isn't about design (such as a testing or browser skill). It suggests in the brief which
-  sections each designer should read first. It never restricts them within a skill: a designer may
-  read any part of the skills it gets.
+  skill that isn't about design (such as a testing or browser skill). It may say in the brief which
+  file covers which part of a page, never which to read first. It never restricts them within a
+  skill: a designer opens a skill's `SKILL.md` first and may consult any file of the skills it gets
+  at any point while it builds, whenever it reaches the part that file covers. As the user decided, a
+  skill added after it has chosen goes straight into the designers' set, and the Creative Director may
+  take it out on purpose, by the same rule; a skill taken off leaves the designers' set and its
+  choice at once.
 - **Shown, never set.** The Setup card shows the skills you named for the run on one line ("Design
   skills: none" when you named none), with any not found (§chat.design-mode/setup-card), and, when you named any, the brief has a **Design skills: …** line
-  naming the ones the designers get (§chat.design-mode/brief). Neither has a control for them.
+  naming the ones the designers get (§chat.design-mode/brief), which, with the brief's estimate,
+  follows a change at once. Neither has a control for them.
 - **Designers read through Sova.** A design session reads a skill with a read-only skill reader Sova
   serves, which opens files only inside the skill folders the Creative Director chose for them, and only
   text files (Markdown, CSS, HTML, JSON, SVG, plain text) up to a size limit. It
   resolves each file's real path, so a link, a `..` or an absolute path that lands outside them is
   refused. Designers still have no shell and none of pi's built-in file tools
   (§chat.design-mode/design-sessions). They copy the rules and tokens they need into the page, since
-  the page stays sealed and loads only Google Fonts (§chat.design-mode/prototype-frame). While a
-  designer reads a skill before its page starts, its tile says **Reading the design skill**.
-- **The main chat may change them on Setup.** When you ask, the main chat adds or takes off a run's
-  skills on its Setup card (§chat.design-mode/setup-card), found the same way; after Start Creative
-  Director they go to the Creative Director in your words.
+  the page stays sealed and loads only Google Fonts (§chat.design-mode/prototype-frame). Before its
+  page is on the tile, the tile says **Reading the design skill** while the designer looks something
+  up and **Thinking about the page** while it thinks, whichever came last. Once a page is on the
+  tile, it stays on show while the designer looks something up.
+- **The main chat may change them until Start.** As the user decided, when you ask, the main chat
+  adds or takes off a run's skills with `lookbook {op:"edit"}`, found the same way, from the moment
+  the Setup card is up until Start on the brief (§chat.design-mode/setup-card). After Start Creative
+  Director it never passes them on in words: Sova itself tells the Creative Director what was added or
+  taken off (§chat.design-mode/coordinator). While the Creative Director takes the change in, Start
+  waits and reads **Writing the Full Prompt**, and when the Full Prompt is your own words the brief
+  asks **Keep My Prompt** or **Rewrite It** (§chat.design-mode/brief-start,
+  §chat.design-mode/brief-layers). If Sova can't tell the Creative Director (its session can't be
+  reached), Start never waits for ever: it reads **The Creative Director Hasn't Written the Prompt**,
+  and the main chat's answer says the Creative Director couldn't be told and to pass the change on
+  with `lookbook {op:"tell"}`. After Start on the brief a change is refused and the run's skills
+  stay as they were.
 - **Each run keeps its own.** A run's skills are stored on the run, and none carries over from an
-  earlier run. A Creative Director reused across runs follows the newest run's skills, and a design
-  revived after a restart keeps its run's skills.
+  earlier run. The designers get the run's skills as they stand when you press Start. A Creative
+  Director reused across runs follows the newest run's skills, and a design revived after a restart
+  keeps its run's skills.
 
 ## §chat.design-mode/creative-director — It is called the Creative Director
 
@@ -1051,7 +1180,10 @@ on what it does as designs land: "No note, it reads when asked".
 - **It passes things on word for word.** If you tell the main chat "tell B to go darker", it uses
   `lookbook {op:"tell", text}`, which forwards your words to the Creative Director and returns only an
   acknowledgement. An image attached to your message goes with it by reference
-  (§chat.design-mode/own-images).
+  (§chat.design-mode/own-images). A skill to add or take off is never passed on in words: until Start
+  on the brief it changes the run's skills with `lookbook {op:"edit"}`, and Sova tells the Creative
+  Director (§chat.design-mode/skills). Only when the edit's answer says the Creative Director couldn't
+  be told does the main chat pass the change on with `tell`.
 - **A screenshot you ask with goes in at the start.** A screenshot attached to the message in which
   you ask for a Lookbook is handed to the Lookbook when it starts: the Setup card shows it, and the
   Creative Director sees it on its first turn (§chat.design-mode/own-images).
@@ -1090,9 +1222,10 @@ menu, a dialog) names its views, so a read lists them and anyone reading can see
   screen once another view is open, at most 3 clicks deep, in the HTML itself. Every view opens by
   clicks alone from a fresh load, never by typing or submitting a form, and the first screen needs no
   mark. A design of an app opens signed in, with sample data.
-- **Read from the page, with no browser.** Sova reads a page's views from its markup when it is saved
-  or handed in, and a page whose marks are wrong is refused as a landing check, naming the line
-  (§chat.design-mode/landing-checks). Each version keeps the views its page names.
+- **Read from the page, with no browser.** Sova reads a page's views from its markup when it is handed
+  in, and a page whose marks are wrong is refused as a landing check, naming the line
+  (§chat.design-mode/landing-checks); a whole draft not yet handed in only gets them as advice
+  (§chat.design-mode/building-in-steps). Each version keeps the views its page names.
 - **Older and unmarked pages.** A page that marks none falls back to its tabs (its `role="tab"`
   controls), listed as found from its tabs. A version kept before views were read lists the views its
   page names, not yet checked.
@@ -1166,13 +1299,14 @@ opens on the same Lookbook card (**Lookbook · Brief**), then you press Start, a
   questions (§chat.design-mode/brief-questions); and a line saying how many designs on which models,
   styles and layouts, with an estimate priced by each design's model and effort
   (§chat.design-mode/launch-limits); and, when you named skills, a **Design skills: …** line
-  naming the ones the designers get (§chat.design-mode/skills).
+  naming the ones the designers get (§chat.design-mode/skills). The line and the estimate follow a
+  skill the main chat adds or takes off at once.
 - **Change.** On that line, **Change** reopens the Setup card's model picker, with its Models row
   open and each designer's effort (§chat.design-mode/model-picker), and direction picker
   (§chat.design-mode/directions) in the card itself, so a
-  different plan doesn't mean starting again. Until Start the main chat may change the same things
-  when you ask it (§chat.design-mode/setup-card); its change renews the plan line and estimate as
-  yours does.
+  different plan doesn't mean starting again. Until Start the main chat may change the same things,
+  and the run's skills, when you ask it (§chat.design-mode/setup-card); its change renews the plan
+  line and estimate as yours does.
 - **After Start.** The brief becomes the **Design Brief** row above the designs, with its facts (how
   many images it used among them) and the summary's first line. Its **Open Brief** opens the same
   dialog read only: what the designs were started from, the Full Prompt included.
@@ -1207,7 +1341,8 @@ user decided, the brief has no message box of its own.
 - **Yours stays yours.** The Creative Director can't overwrite what you saved, and your unsaved typing is
   never replaced.
 - **Keep My Prompt or Rewrite It.** If you've saved your own Full Prompt and something later would
-  change it (you edit the summary, tell the Creative Director something, or answer a question), the brief
+  change it (you edit the summary, tell the Creative Director something, answer a question, or have
+  the main chat add or take off a skill, §chat.design-mode/skills), the brief
   asks **Keep My Prompt** or **Rewrite It**, and Start waits until you pick, so the summary and the
   prompt can never quietly disagree.
 
@@ -1230,7 +1365,9 @@ told in the box.
   written, while a link's images are still being captured or described, while a screenshot's words
   for designers are still being drafted, while a screenshot has neither Rebuild This Screen nor Just
   Its Feel ("Choose Rebuild or Just Its Feel", §chat.design-mode/own-images), and while the brief waits
-  for Keep My Prompt or Rewrite It (§chat.design-mode/brief-layers), and its label says why ("Answer 1
+  for Keep My Prompt or Rewrite It (§chat.design-mode/brief-layers), a skills change the Creative
+  Director hasn't taken in yet included (§chat.design-mode/skills; one it couldn't be told of reads
+  "The Creative Director Hasn't Written the Prompt"), and its label says why ("Answer 1
   Question First", "Writing the Full Prompt", "The Creative Director Hasn't Written the Prompt", "Reading the page's images", "Describing the
   images"). A run past the limit can't start either (§chat.design-mode/launch-limits).
 - **A stopped Creative Director.** If the Creative Director has stopped, a Full Prompt you wrote or kept can still
@@ -1465,7 +1602,9 @@ it in the open view (§chat.design-mode/chat-with). The tile and the open view h
 and no Refine box, and there are no quick prompts. A message goes the way of
 §chat.design-mode/delivery and stays out of the main chat; one sent to a design whose session has
 ended starts a fresh session from its saved page, so nothing is lost. Each change that lands keeps
-the earlier page, as a new version of that label (§chat.design-mode/labels).
+the earlier page, as a new version of that label (§chat.design-mode/labels). The designer makes a
+change however suits it, a few edits, added parts or the whole page again
+(§chat.design-mode/building-in-steps), and is never told to deliver the complete page again.
 
 **Refine a Design** stays in the command list (§chat.design-mode/commands). As the user decided for
 it: "Same model, up to 2 look-and-fix passes, desktop and phone". The design session opens its own

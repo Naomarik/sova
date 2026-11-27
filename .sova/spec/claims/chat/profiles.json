@@ -83,12 +83,25 @@
       "shared/profiles.ts",
       "src/lib/profiles-settings.ts",
       "src/lib/profiles-settings.test.ts",
-      "src/components/ProfilesSettings.tsx"
+      "src/components/ProfilesSettings.tsx",
+      "server/default-start-notes.ts",
+      "server/chat-handle.ts",
+      "server/chat-handle-remote.ts",
+      "server/chat-handle-remote.test.ts",
+      "shared/protocol.ts",
+      "src/lib/default-not-applied.ts",
+      "src/lib/default-not-applied.test.ts",
+      "src/components/ChatView.tsx",
+      "server/session-fork-routes.test.ts",
+      "server/default-start-builtin-update.test.ts",
+      "server/profile-editor.ts",
+      "src/lib/profile-switch.ts",
+      "src/lib/profile-switch.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-24T13:41Z",
-      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§chat.profiles/delivery": {
@@ -139,9 +152,9 @@
       "src/lib/profiles-settings.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-24T13:41Z",
-      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§chat.profiles/edited": {
@@ -212,12 +225,15 @@
       "src/lib/api.ts",
       "src/lib/profiles-draft.ts",
       "src/lib/profiles-settings.ts",
-      "src/lib/profile-joined-cards.test.ts"
+      "src/lib/profile-joined-cards.test.ts",
+      "src/lib/profile-switch.ts",
+      "src/components/ProfileGrid.tsx",
+      "src/components/ModeMenu.tsx"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-24T13:41Z",
-      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§chat.profiles/limits": {
@@ -297,9 +313,9 @@
       "server/profile-editor.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-24T13:41Z",
-      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§chat.profiles/picker": {

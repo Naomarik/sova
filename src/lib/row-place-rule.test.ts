@@ -50,3 +50,10 @@ test("extension content is never markup or a control in the row", () => {
   const place = src("components/RowPlace.tsx");
   assert.doesNotMatch(place, /innerHTML|outerHTML|insertAdjacentHTML|<iframe|<a[\s>]|<button[\s>]|onClick|href=/);
 });
+
+test("on another host's row: no answered chip ever, and a label only by the key this computer's list declaration names", () => {
+  // The row-chips amendment (§app.extensions/row-chips): a peer's row is drawn from its labels only by
+  // the list place (src/lib/list-place.ts ownerIdOf), through the local declaration's ownerExt/ownerKey.
+  assert.match(src("lib/row-place.ts"), /return chips && hostOf\(s\.path\) === null \? chips : undefined;/);
+  assert.doesNotMatch(src("lib/row-place.ts") + src("components/RowPlace.tsx"), /\.labels\b/);
+});

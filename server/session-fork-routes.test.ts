@@ -88,7 +88,8 @@ test("fork route: a happy fork is a web-owned session with a parent reference", 
   assert.equal(summary.origin, "web");
   assert.equal(summary.title, "first question");
   assert.notEqual(summary.id, "src-happy");
-  assert.equal(dirname(summary.path), sessionsDir, "the fork is filed beside its source");
+  // A fork is a new chat: its own home while the Chat homes switch is on (the default; §app.chat-homes/new-chats).
+  assert.equal(dirname(summary.path), join(process.env.SOVA_CHAT_HOMES!, summary.id, "sessions"), "the fork is filed in its own home");
   assert.ok(typeof summary.seenAt === "number", "marked seen at birth");
   const [header, ...entries] = readFileSync(summary.path, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   assert.equal(header.parentSession, path);
@@ -305,5 +306,31 @@ describe("create route: an Overseer's start on this computer's default", () => {
     } finally {
       rmSync(policy, { force: true });
     }
+  });
+
+  test("a person's new chat that missed the default says why on its empty screen, until a pick takes", async () => {
+    const { defaultNotAppliedOf } = await import("./default-start-notes");
+    defaultIs({});
+    const policy = join(dir, "model-policy.json");
+    writeFileSync(policy, JSON.stringify({ version: 1, disabledProviders: ["openai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] }));
+    let path: string;
+    try {
+      const res = await create({}, here);
+      assert.equal(res.status, 201);
+      const body = (await res.json()) as { path: string; defaultNotApplied?: string };
+      path = body.path;
+      assert.match(body.defaultNotApplied ?? "", /openai is turned off/);
+    } finally {
+      rmSync(policy, { force: true });
+    }
+    // Kept on the server, which adds it to the chat's profile frames, so a reload or another tab shows it too.
+    const note = defaultNotAppliedOf(path);
+    assert.equal(note?.profile, "Reader");
+    assert.match(note?.reason ?? "", /openai is turned off/);
+    assert.doesNotMatch(note?.reason ?? "", /can't be picked here/, "the line names the profile once");
+    // A pick on the empty screen that takes spends it.
+    const picked = await request("POST", "/api/sessions/profile", { path, profile: "reader" });
+    assert.ok(picked.status < 300, `the pick took (${picked.status}: ${await picked.text()})`);
+    assert.equal(defaultNotAppliedOf(path), undefined);
   });
 });

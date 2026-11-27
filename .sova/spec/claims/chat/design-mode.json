@@ -57,7 +57,8 @@
       "server/design/setup-change.ts",
       "server/design/setup-change.test.ts",
       "server/design/routes.ts",
-      "src/lib/design-setup-view.ts"
+      "src/lib/design-setup-view.ts",
+      "server/design/coordinator.test.ts"
     ],
     "requires": [
       "§chat.design-mode/brief-layers",
@@ -72,8 +73,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-17T18:21Z",
-      "source": "pi-session:01a1e98a-0191-73a5-b351-9401784d2b61#f2e1b5f9"
+      "at": "2026-11-25T21:43Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/brief-images": {
@@ -107,15 +108,17 @@
       "src/components/DesignBrief.tsx",
       "src/lib/design-brief.ts",
       "src/lib/design-brief.test.ts",
-      "src/components/DesignBrief.css"
+      "src/components/DesignBrief.css",
+      "server/design/setup-change.ts",
+      "server/design/setup-change.test.ts"
     ],
     "requires": [
       "§chat.design-mode/brief-start"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:39Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-25T21:44Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/brief-questions": {
@@ -148,7 +151,10 @@
       "server/design/coordinator.ts",
       "src/components/DesignBrief.tsx",
       "src/lib/design-brief.ts",
-      "server/design/describe.ts"
+      "server/design/describe.ts",
+      "server/design/setup-change.ts",
+      "server/design/setup-change.test.ts",
+      "server/design/coordinator.test.ts"
     ],
     "requires": [
       "§chat.design-mode/launch-limits",
@@ -156,9 +162,39 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:39Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-25T21:44Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
+  },
+  "§chat.design-mode/building-in-steps": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/tools.ts",
+      "server/design/store.ts",
+      "server/design/live.ts",
+      "server/design/stream-decode.ts",
+      "server/design/stream-decode.test.ts",
+      "server/chat-runtime/design-live.ts",
+      "server/chat-runtime/design-live.test.ts",
+      "server/design/live-route.test.ts",
+      "shared/design.ts",
+      "pi-config/extensions/mode/design/session/delivery-tool.md",
+      "pi-config/extensions/mode/design/session/brief.md"
+    ],
+    "requires": [
+      "§chat.design-mode/design-sessions",
+      "§chat.design-mode/landing-checks",
+      "§chat.design-mode/failed-designs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-22T15:29Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
+    },
+    "evidence": "verified"
   },
   "§chat.design-mode/capture": {
     "kind": "behavior",
@@ -186,7 +222,7 @@
   "§chat.design-mode/card": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "shared/design.ts",
       "server/design/batch.ts",
@@ -317,7 +353,7 @@
   "§chat.design-mode/coordinator": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/coordinator.ts",
       "server/design/coordinator.test.ts",
@@ -343,8 +379,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-16T18:10Z",
-      "source": "pi-session:25837150-f0d7-4f22-8f0d-b46d3508306c#e76aa240"
+      "at": "2026-11-25T21:44Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/coordinator-card": {
@@ -482,8 +518,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:39Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-22T15:29Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/directions": {
@@ -523,7 +559,8 @@
       "src/lib/design-ui.ts",
       "src/lib/design-ui.test.ts",
       "src/components/DesignCard.tsx",
-      "src/components/DesignOpen.tsx"
+      "src/components/DesignOpen.tsx",
+      "server/design/live.ts"
     ],
     "requires": [
       "§chat.design-mode/landing-checks",
@@ -531,8 +568,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-12T10:39Z",
-      "source": "pi-session:c6e7f9da-6608-46f4-a4d9-6db219882520#b5acf41a"
+      "at": "2026-11-22T15:29Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/gallery": {
@@ -560,7 +597,7 @@
   "§chat.design-mode/guide": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "pi-config/extensions/mode/design-guide.ts",
       "pi-config/extensions/mode/vis/lookbook.md",
@@ -577,7 +614,8 @@
       "pi-config/extensions/mode/design/session/layout.md",
       "pi-config/extensions/mode/design/session/task-description-layout.md",
       "pi-config/extensions/mode/design/session/task-screenshot-layout.md",
-      "server/design/tools.ts"
+      "server/design/tools.ts",
+      "pi-config/extensions/mode/design/session/delivery-tool.md"
     ],
     "requires": [
       "§chat.design-mode/prototype-frame",
@@ -589,8 +627,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-17T18:21Z",
-      "source": "pi-session:01a1e98a-0191-73a5-b351-9401784d2b61#f2e1b5f9"
+      "at": "2026-11-25T21:44Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/labels": {
@@ -620,15 +658,16 @@
       "server/design/batch.ts",
       "server/design/tools.ts",
       "server/design/view-marks.ts",
-      "server/design/views.test.ts"
+      "server/design/views.test.ts",
+      "server/design/batch.test.ts"
     ],
     "requires": [
       "§chat.design-mode/prototype-frame"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:05Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-22T15:29Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/launch-limits": {
@@ -759,7 +798,8 @@
       "server/design/read-pages.test.ts",
       "server/app.ts",
       "server/design/setup-change.ts",
-      "server/design/setup-change.test.ts"
+      "server/design/setup-change.test.ts",
+      "server/design/coordinator.test.ts"
     ],
     "requires": [
       "§chat.design-mode/own-images",
@@ -768,8 +808,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-17T18:21Z",
-      "source": "pi-session:01a1e98a-0191-73a5-b351-9401784d2b61#f2e1b5f9"
+      "at": "2026-11-25T21:44Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/model-picker": {
@@ -828,6 +868,25 @@
       "at": "2026-11-17T18:21Z",
       "source": "pi-session:01a1e98a-0191-73a5-b351-9401784d2b61#f2e1b5f9"
     }
+  },
+  "§chat.design-mode/no-step-limit": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "code": [
+      "server/design/batch.ts"
+    ],
+    "requires": [
+      "§chat.design-mode/building-in-steps",
+      "§chat.design-mode/stop-remove",
+      "§chat.design-mode/failed-designs",
+      "§chat.design-mode/streaming"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-22T15:29Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
+    },
+    "evidence": "reviewed"
   },
   "§chat.design-mode/open-history": {
     "kind": "behavior",
@@ -1030,7 +1089,7 @@
   "§chat.design-mode/refine": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/batch.ts",
       "server/design/routes.ts",
@@ -1039,7 +1098,8 @@
       "src/components/DesignOpen.tsx",
       "src/components/DesignCard.tsx",
       "src/components/DesignGallery.tsx",
-      "src/lib/design-ui.ts"
+      "src/lib/design-ui.ts",
+      "pi-config/extensions/mode/design/session/brief.md"
     ],
     "requires": [
       "§chat.design-mode/delivery",
@@ -1060,9 +1120,17 @@
       "server/design/transcript.ts",
       "server/watch.ts",
       "pi-config/extensions/mode/design/session/delivery-reply.md",
-      "pi-config/extensions/mode/design/session/delivery-tool.md"
+      "pi-config/extensions/mode/design/session/delivery-tool.md",
+      "server/design/batch.test.ts"
     ],
-    "requires": []
+    "requires": [
+      "§chat.design-mode/building-in-steps"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-22T15:29Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
+    }
   },
   "§chat.design-mode/research": {
     "kind": "behavior",
@@ -1130,8 +1198,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-17T18:21Z",
-      "source": "pi-session:01a1e98a-0191-73a5-b351-9401784d2b61#f2e1b5f9"
+      "at": "2026-11-25T21:43Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/sites": {
@@ -1179,7 +1247,9 @@
       "server/harness/pi/worker-tools.test.ts",
       "server/design/setup.ts",
       "server/design/setup-change.ts",
-      "server/design/setup-change.test.ts"
+      "server/design/setup-change.test.ts",
+      "server/design/coordinator.test.ts",
+      "server/design/batch.test.ts"
     ],
     "requires": [
       "§chat.design-mode/brief-questions",
@@ -1191,14 +1261,14 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-17T18:21Z",
-      "source": "pi-session:01a1e98a-0191-73a5-b351-9401784d2b61#f2e1b5f9"
+      "at": "2026-11-22T15:29Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/steady-cards": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/DesignFrame.tsx",
       "src/components/DesignCard.tsx",
@@ -1219,7 +1289,13 @@
       "src/components/DesignCardFoot.tsx",
       "src/components/Thread.tsx",
       "src/components/DesignSetupControls.tsx",
-      "scripts/e2e/transcript-follow.mjs"
+      "scripts/e2e/transcript-follow.mjs",
+      "src/lib/design-stream-layers.ts",
+      "src/lib/design-stream-layers.test.ts",
+      "server/design/live.ts",
+      "server/design/batch.ts",
+      "server/design/batch.test.ts",
+      "server/design/live-route.test.ts"
     ],
     "requires": [
       "§chat.design-mode/prototype-frame",
@@ -1232,8 +1308,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-17T18:21Z",
-      "source": "pi-session:01a1e98a-0191-73a5-b351-9401784d2b61#f2e1b5f9"
+      "at": "2026-11-22T15:29Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/stop-remove": {
@@ -1274,7 +1350,7 @@
   "§chat.design-mode/storage": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/store.ts",
       "server/sessions-index.ts",
@@ -1296,7 +1372,7 @@
   "§chat.design-mode/streaming": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/stream-guard.ts",
       "server/stream-guard.test.ts",
@@ -1321,16 +1397,24 @@
       "src/lib/design-frame.test.ts",
       "src/lib/design-live-slots.ts",
       "src/lib/design-live-slots.test.ts",
-      "src/lib/design-store.ts"
+      "src/lib/design-store.ts",
+      "src/lib/design-stream-layers.ts",
+      "src/lib/design-stream-layers.test.ts",
+      "src/lib/design-store-live.browser.test.ts",
+      "shared/design.ts",
+      "server/design/batch.ts",
+      "server/design/tools.ts",
+      "server/design/batch.test.ts"
     ],
     "requires": [
       "§chat.design-mode/failed-designs",
-      "§chat.design-mode/reply-route"
+      "§chat.design-mode/reply-route",
+      "§chat.design-mode/building-in-steps"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-10T00:05Z",
-      "source": "pi-session:0e2ea24a-22d2-4ec7-a1df-46bf85135214#9497cb80"
+      "by": "user",
+      "at": "2026-11-22T15:29Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§chat.design-mode/turning-on": {
@@ -1394,7 +1478,7 @@
   "§chat.design-mode/views": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/design/view-marks.ts",
       "server/design/views.ts",

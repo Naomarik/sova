@@ -331,6 +331,17 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "chat.usage",
+    label: "Chat Usage",
+    summary: "One chat's spending and time, split by its conversations: the chat, then each helper.",
+    effect: "looks",
+    params: { chat: { type: "string", description: "The chat's id (its session id)", in: "path", key: "id", required: true } },
+    route: { method: "GET", path: "/api/chats/:id/usage" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "usage.sessions",
     label: "Sessions Usage",
     summary: "Several sessions' spending, by session id.",

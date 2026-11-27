@@ -5,13 +5,13 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 import { offersOf } from "../shared/extension-offers";
-import { contractTooNew, parseContract, type ExtensionAsks } from "../shared/extension-loader";
+import { contractTooNew, parseContract, readsChats, type ExtensionAsks } from "../shared/extension-loader";
 import { EXTENSION_DESCRIPTION, skippedPart } from "./extension-fingerprint";
 import { viewOffersOf } from "./extension-views";
 import { EXTENSION_CONTRACT } from "../shared/extension-contract";
 import { contractWords, EXTENSION_ID_RE, listedExtensions, plainTitle, TITLE_MAX } from "./extensions";
 
-const KEYS = new Set(["version", "id", "title", "description", "icon", "needsContract", "page", "backend", "commands", "screens", "cards", "drawings"]);
+const KEYS = new Set(["version", "id", "title", "description", "icon", "needsContract", "page", "backend", "commands", "screens", "cards", "drawings", "reads", "records"]);
 const BACKEND_KEYS = new Set(["run", "folder"]);
 
 /** What a folder describes, as the list entry it becomes (no `api`: Sova assigns that). */
@@ -72,6 +72,8 @@ export function asksOf(raw: Record<string, unknown>, id: string, title: string):
     ...(overseer.length ? { overseer: overseer.map((c) => c.label) } : {}),
     ...(offers?.screens?.length ? { screens: offers.screens } : {}),
     ...(views.offers.drawings?.length ? { drawings: views.offers.drawings.map((d) => d.kind) } : {}),
+    ...(readsChats(raw) ? { readsChats: true } : {}),
+    ...(offers?.records?.length ? { records: offers.records } : {}),
   };
   // Say why: "1 of its commands" alone is what the log says for itself.
   const said = dropped.map((d) => (/^\d+ of its commands$/.test(d) ? `${d}: a command needs a name of lower-case letters, digits and dashes, and a label` : d));
@@ -137,13 +139,18 @@ export function readDescription(folderIn: string, self?: string): { ok: true; de
     }
     hasBackend = true;
   }
+  // `reads: ["chats"]` (§app.extensions/reads-chats): the only value it takes.
+  if (d.reads !== undefined) {
+    if (!readsChats(d)) return usable("reads", 'may only be ["chats"]');
+    entry.reads = ["chats"];
+  }
   if (d.id.toLowerCase() === "project") return bad("The name project is Sova's own, so this can't be added.");
   if (d.id !== self) {
     const taken = (listedExtensions() ?? []).find((l) => l.valid?.entry.id === d.id && (l.raw.folder === undefined || resolve(l.raw.folder as string) !== folder));
     if (taken) return bad(`There's already an extension named ${d.id}, from ${typeof taken.raw.folder === "string" ? taken.raw.folder : "the list"}.`);
   }
   if (!hasBackend && (nonEmpty(d.commands) || nonEmpty(d.screens))) return bad("It lists commands or screens but no program to answer them.");
-  for (const k of ["commands", "screens", "cards", "drawings"]) if (d[k] !== undefined) entry[k] = d[k];
+  for (const k of ["commands", "screens", "cards", "drawings", "records"]) if (d[k] !== undefined) entry[k] = d[k];
   const { asks, leftOut } = asksOf(entry, d.id, title);
   return { ok: true, described: { entry, leftOut, asks, needs: d.needsContract as string } };
 }

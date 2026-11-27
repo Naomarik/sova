@@ -77,8 +77,8 @@ export function Unlock() {
         </button>
       </form>
       <p class="empty-body">
-        Unlocking covers this address only: <code>127.0.0.1</code>, <code>localhost</code> and a tailnet name each
-        need their own, while two ports of one host share one.
+        Unlocking covers this address only: <code>127.0.0.1</code>, <code>localhost</code>, a tailnet name and a
+        trusted network's address each need their own, while two ports of one host share one.
       </p>
     </main>
   );

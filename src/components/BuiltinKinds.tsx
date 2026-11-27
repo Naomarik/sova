@@ -1,4 +1,4 @@
-import { createMemo, For, Match, Show, Switch, type Component } from "solid-js";
+import { createMemo, For, Match, Show, Switch, useContext, type Component } from "solid-js";
 import type { BatonMark } from "../../shared/baton";
 import { Chip, Icon } from "./ui";
 import type { KindViewProps } from "../lib/transcript-kinds";
@@ -8,6 +8,8 @@ import { PlaybookRunMessage } from "./PlaybookRunMessage";
 import { PlaybookInlineCard } from "./PlaybookInlineCard";
 import type { RunMessageInfo } from "../../shared/playbook-run";
 import { isMergeQueueText } from "../../shared/senders";
+import { ListPlaceContext } from "../lib/list-place";
+import { memberName } from "../lib/member-sender";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import type { SettingsToolDetails } from "../../shared/project-settings";
 import { OfferCardView } from "./OfferCard";
@@ -19,6 +21,7 @@ import type { TourCardDetails } from "../../shared/tour";
 import type { DesignCardDetails } from "../lib/design-rows";
 import { DesignCard } from "./DesignCard";
 import { OwnerRequestNote } from "./OwnerRequestNote";
+import { TransportAgentCard } from "./TransportAgentCard";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
 import type { McpNote } from "../../shared/mcp";
@@ -58,6 +61,7 @@ export const BUILTIN_VIEWS = {
   design: (props: KindViewProps<DesignCardDetails>) => <DesignCard runId={props.value.runId} />,
   // An owner request a Start Chat put at the top (§app.project-assistant/request-chat).
   "owner-request": (props: KindViewProps<NonNullable<TranscriptItem["ownerRequest"]>>) => <OwnerRequestNote card={props.value} />,
+  "transport-agent": (props: KindViewProps<NonNullable<TranscriptItem["transportAgent"]>>) => <TransportAgentCard card={props.value} />,
   "handoff-run": (props: KindViewProps<HandoffRunInfo>) => <HandoffRunRow run={props.value} text={props.item.text ?? ""} />,
   "mcp-note": (props: KindViewProps<McpNote>) => <McpNoteRow note={props.value} />,
   "approval-pending": (props: KindViewProps<NonNullable<TranscriptItem["approvalPending"]>>) => <ApprovalPendingRow item={props.value} text={props.item.text ?? ""} path={props.limitPath} />,
@@ -264,6 +268,7 @@ function BatonCard(props: { mark: Exclude<BatonMark, { kind: "sent" }>; name(ref
 /** A user's turn, with who sent it when its marker says: the Overseer, a baton person, another session. */
 function UserRow(props: KindViewProps) {
   const rows = useThreadRows();
+  const people = useContext(ListPlaceContext);
   const item = props.item;
   return (
     <UserTurn
@@ -272,6 +277,7 @@ function UserRow(props: KindViewProps) {
       overseer={rows.senderOf(item.id)?.kind === "overseer"}
       mergeQueue={isMergeQueueText(item.text) || rows.senderOf(item.id)?.kind === "merge-queue"}
       sender={((s) => (s?.kind === "baton" ? rows.nameOf(s.by) : undefined))(rows.senderOf(item.id))}
+      fromMember={((s) => (s?.kind === "member" ? memberName(s, people) : undefined))(rows.senderOf(item.id))}
       fromSession={((s) => (s?.kind === "session" && !isMergeQueueText(item.text) ? { sessionId: s.sessionId, title: s.title, hop: s.hop } : s?.kind === "extension" ? { sessionId: s.sessionId, title: s.title } : undefined))(rows.senderOf(item.id))}
       images={item.images}
       attachments={item.attachments}

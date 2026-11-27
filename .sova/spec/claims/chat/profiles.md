@@ -98,7 +98,10 @@ first starts.
   default (§chat.profiles/default).
 - **The built-in profiles** (§chat.subagent-profiles/builtins) are rows under Built in, both parts,
   keyed `sova:<id>`, listed only where their account is connected; a profile of yours that takes one's
-  place (§chat.subagent-profiles/shadowing) is listed instead, under Yours. There is no Off row.
+  place (§chat.subagent-profiles/shadowing) is listed instead, under Yours, except an edited built-in
+  one (the copy with its id, §chat.subagent-profiles/edited-builtin), which keeps the built-in one's
+  place under Built in, with a Yours chip (the listing still gives it group `yours`, with
+  `replaces` naming the built-in key; the pages place it). There is no Off row.
 - **Its id.** A pair's id is its session profile's id; a library profile no session profile links
   to goes by its library id, a built-in one by its own. Each is what the Overseer takes
   (§chat.subagent-profiles/overseer).
@@ -633,15 +636,29 @@ Each computer has one default profile, and it decides everything a new chat star
 Chat Starts part and its Models part. It replaces the three separate defaults: the saved default
 modes, the new-session model and effort, and the default subagent profile.
 
-- **Choosing it.** **Make Default** in Settings → Profiles (§app.settings-dialog/profile-editor), or
-  **Make {name} the Default** in a chat's mode menu (§chat.subagent-profiles/menu). A built-in
-  profile can be the default. Make Default from a chat with no profile is refused (409, "This chat
+- **Choosing it.** **Make Default** in Settings → Profiles (§app.settings-dialog/profile-editor),
+  the one place it is chosen: a chat's mode menu has no button for it, and only names the default
+  and points to Settings → Profiles (§chat.mode-menu/menu). A built-in profile can be the default. Make Default from a chat with no profile is refused (409, "This chat
   has no profile to make the default."), and so is one naming Off ("There is no Off profile to make
   the default."). The default carries a **Default** chip wherever profiles are listed.
 - **New chats start on it.** A new chat's empty screen opens with it picked and its card checked
   (§chat.profiles/picker), under a muted line "New chat in {project}. The default is already
   picked." ("New chat. The default is already picked." outside a project; neither with no default at
   all, §chat.subagent-profiles/no-helper-profile); picking another card never changes the default.
+- **When the default couldn't be applied.** A new chat the server couldn't start on the default
+  (its create answers `defaultNotApplied` with the reason) says so on its empty screen: under the
+  screen's title, above the cards, one line in the warn tone with the attention icon (`role="note"`),
+  "This chat didn't start on {profile}: {reason}." ({profile}: the default's name; with no reason,
+  "This chat didn't start on {profile}."), the reason in the user's words, without the "{profile}
+  can't be picked here: " a refusal leads with. While it shows, the cards' muted line "The default is already picked." is hidden, so
+  nothing on the screen says the default was picked when it wasn't; it comes back once the warning
+  clears. The server keeps the reason for that chat and adds
+  it to the chat's `profile` message (`ChatProfileInfo.defaultNotApplied`, `{profile, reason}`)
+  while the chat has no message, so every page that shows its empty screen shows the line: landing
+  on the new chat, any other tab, a reload, and the page of the host that holds the chat. It clears
+  once the first message is sent or a card pick takes (a refused pick keeps it), and every open
+  page hears that. The server keeps it only in memory: after a server restart the chat shows no
+  such line (the server's log keeps the reason).
   A default with a session half (a chosen one, or a built-in one nobody chose,
   §chat.profiles/derived-default) is picked whole when the chat is made, its model included; one with
   helpers alone writes nothing, and the chat follows its helpers. So does every chat Sova starts with no profile named: New Session, a
@@ -652,10 +669,13 @@ modes, the new-session model and effort, and the default subagent profile.
   model and effort into `defaults.json`, and its helpers' id into `subagent-profiles-default.json`
   (a built-in one's id too, which an older reader takes for a default naming no profile; `off` is
   never written). So pi-config's extensions and an older Sova keep reading the default they always
-  did.
+  did. Saving into the chosen default from a chat's mode menu (Update {name},
+  §chat.subagent-profiles/menu) writes them again the same way, so `mode.json` never says something
+  other than the default profile it was written for.
 - **Nothing else moves it.** A pick, a switch or a model change in a chat, a new chat's composer
   pick included (§chat.model-menu/saved-default), a profile's save and every Overseer call change
-  only that chat or that profile.
+  only that chat or that profile (a save into the chosen default also rewrites the older files for
+  it, above, but never which profile is the default).
 - **Where it is kept.** `<state root>/default-profile.json`, `{"version": 1, "profile": <id>}`, a
   profile's id as §chat.profiles/joined forms it. It is this computer's own and never syncs, as
   `subagent-profiles-default.json` never did. A missing file, or an older build's `"off"`, is "not
@@ -700,8 +720,9 @@ place (§chat.subagent-profiles/shadowing). With none of them connected there is
   takes it the same way: the project's coding model and thinking first, then the built-in one's,
   then the older `defaults.json`'s. With no default, it has no helpers, the older model, and no
   profile is named for it.
-- **Deleting it.** A Make It Yours copy that is this default only because it takes the built-in
-  one's place can be deleted, and the built-in one is the default again (§chat.profiles/default).
+- **Resetting it.** An edited built-in one (§chat.subagent-profiles/edited-builtin) that is this
+  default can be reset to the built-in one, which is the default again, as shipped
+  (§chat.profiles/default).
 - **Never for Sova's own chats.** The merge thread, release chats, the Overseer's own chat and a
   playbook card's routing never fall back to it (§chat.subagent-profiles/no-helper-profile).
 
@@ -715,7 +736,8 @@ place (§chat.subagent-profiles/shadowing). With none of them connected there is
   (§chat.profiles/default). A built-in default chosen here is an id that device's library lacks, so
   it reads it as naming no profile, its own Off.
 - **The built-in profiles aren't there.** They are in no file, so an older device never lists them;
-  a Make It Yours copy is an ordinary profile of yours there. An older device may still seed "My
+  an edited built-in one (§chat.subagent-profiles/edited-builtin) is an ordinary profile of yours
+  there. An older device may still seed "My
   setup" and sync it here, where it is shown as Claude (§chat.subagent-profiles/shadowing), and what
   it writes for Off reads here as this computer's default (§chat.subagent-profiles/off).
 - **Nothing is deleted or converted.** No profile file is removed, moved or rewritten in a new

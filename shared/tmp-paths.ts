@@ -1,5 +1,6 @@
 // Image paths found in message text (TranscriptItem.attachments): directly in /tmp, or in a
-// session's folder under Sova's attachments root (<agent dir>/sova/attachments/<session id>/).
+// session's folder under Sova's attachments root (<agent dir>/sova/attachments/<session id>/), or in
+// a chat home's attachments folder (<homes root>/<chat id>/chat/attachments/).
 // Pure: the server uses it to detect them, the client to place inline chips in plain text. No fs
 // here, and no agent dir: the client doesn't know it, so an attachments path is recognised by its
 // tail; the server's checkTmpImage then decides whether it really sits under this machine's root.
@@ -12,12 +13,16 @@ export const SESSION_ID = String.raw`[A-Za-z0-9][A-Za-z0-9-]*`;
 export const TMP_IMAGE_PATH = new RegExp(`^/tmp/${NAME}$`, "i");
 /** Exactly `<id>/<name>`: what may follow the attachments root. */
 export const ATTACHMENT_TAIL = new RegExp(`^${SESSION_ID}/${NAME}$`, "i");
+/** Exactly `<chat id>/chat/attachments/<name>`: what may follow the homes root. */
+export const HOME_ATTACHMENT_TAIL = new RegExp(`^${SESSION_ID}/chat/attachments/${NAME}$`, "i");
 /** Where an attachments root ends, as seen in a path: stateRoot() + "attachments". */
 const ROOT_TAIL = "/sova/attachments/";
+/** A chat home's attachments folder, as seen in a path. */
+const HOME_TAIL = "/chat/attachments/";
 /** Standalone: not part of a longer path on either side; a trailing "." ends a sentence. An
     attachments path is any absolute path ending in the root's tail, then `<id>/<name>`; "~" is
     also refused before it, so "~/.pi/…" isn't read as "/.pi/…". */
-const TOKEN = String.raw`(?<![\w./-])(?:/tmp/${NAME}|(?<!~)(?:/[\w.-]+)*${ROOT_TAIL}${SESSION_ID}/${NAME})(?![\w/-]|\.\w)`;
+const TOKEN = String.raw`(?<![\w./-])(?:/tmp/${NAME}|(?<!~)(?:/[\w.-]+)*${ROOT_TAIL}${SESSION_ID}/${NAME}|(?<!~)(?:/[\w.-]+)*/${SESSION_ID}${HOME_TAIL}${NAME})(?![\w/-]|\.\w)`;
 /** Generated upload/paste names: pi's own (interactive-mode handleClipboardPaste,
     utils/clipboard-image) and Sova's POST /api/upload (`sova-<uuid>`). All strip/label the same (a
     generated reference, never a typed name). */
@@ -77,7 +82,7 @@ function maskCode(text: string): string {
 /** Every standalone image path (in /tmp or an attachments folder) outside markdown code, in
     order (duplicates included). */
 export function findTmpImagePaths(text: string): TmpPathMatch[] {
-  if (!text.includes("/tmp/") && !text.includes(ROOT_TAIL)) return [];
+  if (!text.includes("/tmp/") && !text.includes(ROOT_TAIL) && !text.includes(HOME_TAIL)) return [];
   const masked = maskCode(text);
   const re = new RegExp(TOKEN, "gi");
   const found: TmpPathMatch[] = [];

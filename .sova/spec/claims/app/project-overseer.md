@@ -769,7 +769,7 @@ user row.
   it, and `overseer.json` holds none (an older file's `codingMode` is ignored, and dropped at the
   file's next write). A `PATCH …/overseer` naming `codingMode`, `null` included, is refused (400)
   and writes nothing: "Projects have no coding mode: coding sessions start on this computer's
-  default profile. Make Default in Settings → Profiles, or in a chat's mode menu, changes it."
+  default profile. Make Default in Settings → Profiles changes it."
 - **Unnamed, this computer's default.** A coding session started with no profile or mode named
   starts on this computer's default profile (§chat.profiles/default, read when the session starts),
   with no other profile picked,
@@ -1338,7 +1338,8 @@ a plain name again. A branch in any other state has no popover: its name does no
     started (`sova_list_sessions`), addressed as everywhere else, and must have its own worktree on
     this host ("That coding session has no worktree of its own on this host: copy into one that
     does."). Refused when `incoming` is a link or resolves outside the worktree, when the target
-    is under Sova's own state or sessions folders, or where that session's sandbox would refuse
+    is under Sova's own state or sessions folders or in a chat home outside its `shared/`
+    (§app.chat-homes/sole-writer), or where that session's sandbox would refuse
     the write (its reason). It adds `/incoming/` to the repository's `info/exclude` once, so the
     copy never counts as an uncommitted change (Merge Branch and Remove Worktree stay possible). In
     a turn the operator did not start it needs the power `codingPrompt` On with no brake (else the

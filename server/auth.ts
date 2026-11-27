@@ -14,6 +14,8 @@ import { localRequest } from "./mesh/proxy";
 import { judgedPath } from "./mesh/paths";
 import { liveLinkOpens } from "./design/live-link";
 import { TOUR_RECORDER_HEADER } from "./tours/runner-header";
+import { onTrustedListener, openTrusted, trustedAt } from "./networks/live";
+import type { PairLink } from "../shared/networks";
 
 // The main listener's gate (§app.access/token, §app.access/gate): one per-install token, carried
 // as the install's cookie or an x-sova-token header, plus a Host rule and a cross-site rule that
@@ -187,6 +189,16 @@ export function extensionCaller(header: string | undefined): string | null {
   }
 }
 
+/** The linked computer a request came from: the peer listener names it in `c.env.meshPeer`; undefined on the main listener. */
+export const listenerPeer = (c: Context): { nodeId: string; label: string } | undefined => (c.env as { meshPeer?: { nodeId: string; label: string } } | undefined)?.meshPeer;
+
+/** The extension whose key a request's x-sova-token shows, or null: a linked computer's request, the operator's token, none. */
+export function requestExtension(c: Context): string | null {
+  if (listenerPeer(c)) return null;
+  const token = c.req.header(TOKEN_HEADER);
+  return token !== undefined && !showsToken(token) ? extensionCaller(token) : null;
+}
+
 /** Whether a value is any extension's key (server/extensions.ts drops an Authorization holding one). */
 export function isExtensionKey(value: string): boolean {
   try {
@@ -215,9 +227,10 @@ const loopbackBind = (): boolean => {
 };
 
 /** Whether the token is asked for at all. SOVA_AUTH=off turns it off for a test rig, and only on
-    a loopback bind: an exposed server always asks. The Host and cross-site rules hold either way. */
+    a loopback bind with no trusted network's listener open: an exposed server always asks, whatever
+    address that listener has (§app.access/networks). The Host and cross-site rules hold either way. */
 export function serverAuthEnabled(): boolean {
-  return !(process.env.SOVA_AUTH === "off" && loopbackBind());
+  return !(process.env.SOVA_AUTH === "off" && loopbackBind() && openTrusted().length === 0);
 }
 
 /** What the mesh knows of this host's names: its own MagicDNS name, its own URLs (the front door,
@@ -297,14 +310,15 @@ function extraHosts(): Set<string> {
 }
 
 /** A host name this app is reachable at: loopback names on any port, a MagicDNS (ts.net) name, this machine's hostname,
-    the bound address (every interface's address on a wildcard bind), the registered names and
-    SOVA_ALLOWED_HOSTS. A name that merely resolves here is not one. */
+    the bound addresses (the main listener's, every interface's address on a wildcard bind, and each open trusted
+    network's listener), the registered names and SOVA_ALLOWED_HOSTS. A name that merely resolves here is not one. */
 export function hostAllowed(name: string): boolean {
   if (isLoopbackName(name) || isTailnetName(name)) return true;
   const self = osHostname().toLowerCase();
   if (name === self || name === self.split(".")[0]) return true;
   const bound = boundHost();
   if (name === bound && !isWildcardBind(bound)) return true;
+  if (trustedAt(name)) return true;
   if (isWildcardBind(bound) && lanAddresses().has(name)) return true;
   return extraHosts().has(name);
 }
@@ -320,6 +334,8 @@ function isTailnetName(name: string): boolean {
 /** What the gate reads of a request, from Hono or a raw upgrade alike. */
 interface Asked {
   method: string;
+  /** It came in on a trusted network's listener: the token is always asked for there. */
+  trusted?: boolean;
   /** The path as the router will route it (judgedPath: Hono decodes %XX before matching, so
       "/%61pi/…" IS /api), or null when no one reading of it can be trusted. */
   path: string | null;
@@ -397,6 +413,8 @@ export function originAllowed(origin: string, host?: string, guardedForwardedHos
   const bound = boundHost();
   if (isWildcardBind(bound)) for (const addr of lanAddresses()) listed.push(at("http", addr));
   else if (!isLoopbackName(bound)) listed.push(at("http", bound));
+  // Each open trusted network's listener: its exact address and port, plain http.
+  for (const t of openTrusted()) listed.push(`http://${t.address.includes(":") ? `[${t.address}]` : t.address}:${t.port}`);
   listed.push(...(known.own ?? []), ...(known.peers ?? []), ...(process.env.SOVA_ALLOWED_ORIGINS ?? "").split(/[\s,]+/));
   return listed.some((v) => !!v && originOf(v) === o);
 }
@@ -444,7 +462,7 @@ function verdict(a: Asked, opts: { exempt: boolean }): 401 | 403 | null {
     return opts.exempt && isShell(a) && isNavigation(a) ? null : 403;
   }
   if (opts.exempt && tokenExempt(a)) return null;
-  if (!serverAuthEnabled()) return null;
+  if (!a.trusted && !serverAuthEnabled()) return null;
   if (presentsToken(a)) return null;
   // An installed extension's own key, in the token's header only (never a cookie): everything the
   // token opens but the credential routes (§app.extensions/backend-key).
@@ -484,6 +502,8 @@ const setAuthCookie = (c: Context, token: string): void => {
     curl with no metadata — keeps the rules above, token included. */
 function silentLocal(a: Asked, incoming: unknown): boolean {
   if (fromTourRecorder(a.header)) return false;
+  // A trusted network's listener is never the keyboard here, whatever its socket's address says.
+  if (a.trusted || onTrustedListener(incoming)) return false;
   if (a.method !== "GET" && a.method !== "HEAD") return false;
   const site = a.header("sec-fetch-site");
   if ((site !== "same-origin" && site !== "none") || a.header("sec-fetch-mode") !== "navigate") return false;
@@ -507,7 +527,7 @@ const RECORDER_SOCKET_REFUSED = "[auth] refused a guided-tour recorder's socket"
 export function authGate(c: Context): Response | null {
   const env = c.env as { incoming?: unknown; meshPeer?: unknown } | undefined;
   if (!env?.incoming || env.meshPeer) return null;
-  const a: Asked = { method: c.req.method, path: judgedPath(new URL(c.req.url).pathname), header: (n: string) => c.req.header(n) };
+  const a: Asked = { method: c.req.method, path: judgedPath(new URL(c.req.url).pathname), header: (n: string) => c.req.header(n), trusted: onTrustedListener(env.incoming) };
   // A recorder never changes a Sova: every non-GET is refused before anything else answers it,
   // even on a copy it is signed in to.
   if (fromTourRecorder(a.header) && a.method !== "GET" && a.method !== "HEAD") {
@@ -544,7 +564,7 @@ function upgradeStatus(req: IncomingMessage): 401 | 403 | null {
     console.warn(RECORDER_SOCKET_REFUSED);
     return 403;
   }
-  return verdict({ method: "GET", path, header }, { exempt: false });
+  return verdict({ method: "GET", path, header, trusted: onTrustedListener(req) }, { exempt: false });
 }
 
 /** A WebSocket upgrade on the main listener: the token plus the same Host and Origin rules. For
@@ -634,13 +654,16 @@ export async function unlock(c: Context): Promise<Response> {
   return c.json({ ok: true });
 }
 
-/** Pair at an origin, never at a literal IP. Loopback still has its honest local-only link. */
-function pairOrigin(value: string, local = false): URL | null {
+/** Pair at an origin, never at a literal IP, but for an open trusted network's listener (its address
+    and port, plain http). Loopback still has its honest local-only link. */
+export function pairOrigin(value: string, local = false): URL | null {
   try {
     const url = new URL(value);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
     const name = url.hostname.replace(/^\[|\]$/g, "");
     if (isIP(name)) {
+      const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+      if (url.protocol === "http:" && trustedAt(name, port)) return new URL(url.origin);
       if (!local || !isLoopbackName(name)) return null;
       url.hostname = "localhost";
     }
@@ -650,6 +673,15 @@ function pairOrigin(value: string, local = false): URL | null {
   }
 }
 
+/** The Tailscale https origin a phone pairs at (the mesh's serve URL, else MagicDNS on the serve port), or null. */
+export function tailnetPairOrigin(): URL | null {
+  const known = meshNames();
+  const serve = pairOrigin(known.own?.[0] ?? "");
+  const dns = hostnameOf(known.magicDns ?? "");
+  return serve?.protocol === "https:" ? serve :
+    dns && !isIP(dns) && !isLoopbackName(dns) ? pairOrigin(`https://${dns}:${DEFAULT_SERVE_PORT}`) : null;
+}
+
 /** Gated, local-only credential routes. Peer identity is not the owner's browser credential. */
 export function pair(c: Context): Response {
   c.header("Cache-Control", "no-store");
@@ -657,26 +689,28 @@ export function pair(c: Context): Response {
   const host = c.req.header("host");
   if (!host) return c.json({ error: "Forbidden" }, 403);
   const { code, expiresAt } = mintCode();
-  const known = meshNames();
-  const serve = pairOrigin(known.own?.[0] ?? "");
-  const dns = hostnameOf(known.magicDns ?? "");
-  const tailnet = serve?.protocol === "https:" ? serve :
-    dns && !isIP(dns) && !isLoopbackName(dns) ? pairOrigin(`https://${dns}:${DEFAULT_SERVE_PORT}`) : null;
-  const links: Array<{ label: string; url: string }> = [];
-  const add = (origin: URL | null, label: string) => {
+  const serve = pairOrigin(meshNames().own?.[0] ?? "");
+  const tailnet = tailnetPairOrigin();
+  const links: PairLink[] = [];
+  const add = (origin: URL | null, label: string, kind: PairLink["kind"], range?: string) => {
     if (!origin) return;
     origin.hash = `c=${code}`;
     const url = origin.href;
-    if (!links.some((link) => link.url === url)) links.push({ label, url });
+    if (!links.some((link) => link.url === url)) links.push({ label, url, kind, secure: origin.protocol === "https:", ...(range ? { range } : {}) });
   };
-  add(tailnet, "Phone · Tailscale");
+  add(tailnet, "Phone · Tailscale", "tailscale");
+  // Each trusted network Sova listens on now: plain http at its address (§app.access/networks).
+  for (const t of openTrusted()) {
+    const host = t.address.includes(":") ? `[${t.address}]` : t.address;
+    add(pairOrigin(`http://${host}:${t.port}`), `Phone · ${t.label ?? t.address}`, "trusted", t.ranges[0]);
+  }
   // A browser's Origin retains HTTPS on a non-default serve port. Forwarded headers
   // alone never determine a pairing address, and the real Host remains its authority.
   const browserOrigin = c.req.header("origin");
   const https = servedOverHttps(c) || browserOrigin === `https://${host}` ||
     (serve?.protocol === "https:" && serve.host === host);
   const own = pairOrigin(`${https ? "https" : "http"}://${host}`, true);
-  add(own, own?.hostname === "localhost" ? "This machine only" : "This address");
+  add(own, own?.hostname === "localhost" ? "This machine only" : "This address", "here");
   return c.json({ code, expiresAt, links });
 }
 

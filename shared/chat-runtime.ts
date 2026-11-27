@@ -288,6 +288,8 @@ export interface ChatSendInput {
   sentByOverseer?: { overseerId?: string };
   sentByBaton?: { by: string };
   sentBySession?: { sessionId: string; title: string; hop: number };
+  /** Who sent it (§app.extensions/senders): set only while an active extension asks for senders. */
+  sentByMember?: { by: string; label?: string };
   /** The kind it is queued as mid-turn. */
   delivery?: "steer" | "followUp";
   confirm?: string;

@@ -11,7 +11,7 @@ Owns: the two memory types and their credit, where memory can be turned on, each
 the Summary size each type uses, the message log, the summary tree and the view, the summarizer, what a turn sends, the
 recall tools (opening a line, finding a message by its words) and their rows, preparing an existing chat, recovering from failed summaries, zoomable compaction, the memory status and
 outline the web shows, Settings → Memory and the overseers' switches. Not here: the mode menu's rows
-and Make {name} the Default (§chat/mode-menu), and how a Claude Code chat's CLI takes a request
+and its foot (§chat/mode-menu), and how a Claude Code chat's CLI takes a request
 (§app/claude-code-provider).
 
 The engine is Sova's, server-side and harness-neutral (`server/memory/`): Sova's modes only
@@ -100,8 +100,9 @@ holds is ignored, never erased; so is a `memory.size` in a `POST /api/mode` body
 pick changes nothing and is not refused). The type is kept while memory is off, survives reopen,
 rewind (a rewind past the record falls back to the one before it) and restart, and reaches every tab
 in the chat's `mode` message (`memory`: the type and the size it resolves to), so a change of type
-alone is a new `mode` message. Save as default's successor, the mode menu's `Make {name} the Default`, saves the type with the chat's profile, and a `POST
-/api/mode` without a path saves only a type. An automation's `settings.memory` sets a session's type
+alone is a new `mode` message. The mode menu saves no type for new chats (its `Make {name} the Default` is gone, and Update {name}
+saves none, §chat.mode-menu/memory-panel); a `POST /api/mode?path=… { saveDefault: true }` from a
+script saves the type with the chat's profile, and a `POST /api/mode` without a path saves only a type. An automation's `settings.memory` sets a session's type
 the same way; a size it names is ignored. Only a chat whose menu can turn
 memory on gets `memory` in its `mode` message and in a switch's result (`ChatModeResult`): a runtime
 without the memory engine (a baton, another special loadout), a session that refuses mode switches

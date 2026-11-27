@@ -90,7 +90,7 @@
   "§app.settings-dialog/extensions": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "requires": [
       "§app/settings-dialog",
       "§app.settings-dialog/save-bar",
@@ -112,15 +112,15 @@
       "src/lib/extensions-settings.test.ts"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-11-06T21:55Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#537ac0e8"
+      "by": "user",
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§app.settings-dialog/general": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/lib/recent.ts",
       "src/lib/summary-line.ts",
@@ -132,12 +132,14 @@
       "src/lib/recent.test.ts",
       "src/components/form/index.tsx",
       "src/components/AgentCpuSettings.tsx",
-      "src/lib/approvals.ts"
+      "src/lib/approvals.ts",
+      "src/components/ChatStorageSetting.tsx",
+      "src/components/ChatsFolderSetting.tsx"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-17T12:59Z",
-      "source": "pi-session:a6acd616-a231-459f-bd68-f5bb4a996942#b4f08727"
+      "by": "omar",
+      "at": "2026-11-26T02:17Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#794f40ca"
     }
   },
   "§app.settings-dialog/memory": {
@@ -160,7 +162,12 @@
       "src/lib/settings-nav.test.ts",
       "src/lib/memory-help.ts",
       "src/lib/memory-ui.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
+    }
   },
   "§app.settings-dialog/models": {
     "kind": "behavior",
@@ -399,9 +406,9 @@
       "src/lib/settings-nav.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-24T13:41Z",
-      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§app.settings-dialog/profile-set-all": {
@@ -450,9 +457,9 @@
       "§chat.profiles/trust"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-24T13:41Z",
-      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§app.settings-dialog/save-bar": {

@@ -18,7 +18,25 @@ export type Sender =
   | { kind: "overseer" }
   /** A turn the merge queue started (Needs a fix, Send Back), by its prefix. */
   | { kind: "merge-queue" }
-  | { kind: "baton"; by: string };
+  | { kind: "baton"; by: string }
+  /** Who typed it, by the caller (§app.extensions/senders): recorded only while an active extension's offers name
+      `senders`. `by` is `peer:<nodeId>` (a linked computer, by its mesh node identity) or `operator` (this machine's
+      page); `label` is that computer's name when it was sent. Never the model's: the marker is state. */
+  | { kind: "member"; by: string; label?: string };
+
+/** `customType` of the invisible marker beside a user message, naming its caller (§app.extensions/senders). */
+export const MEMBER_SENT_ENTRY = "sova-member-sent";
+/** Its data: the user entry it names, and the caller. */
+export interface MemberSentData {
+  v: 1;
+  targetId: string;
+  by: string;
+  label?: string;
+}
+/** The caller strings, prefixed so a later kind (a signed-in member) fits beside them. */
+export const OPERATOR_CALLER = "operator";
+export const PEER_CALLER_PREFIX = "peer:";
+export const peerCaller = (nodeId: string): string => `${PEER_CALLER_PREFIX}${nodeId}`;
 
 /** The merge queue's sender, in one place: the id its wakes carry in their "another session" marker, and the prefix
     their text starts with (defined beside the cards' shape in shared/merge-queue.ts, re-exported here). Server and page
@@ -51,12 +69,12 @@ const entryOf = (rowId: string): string => {
 };
 
 /** Target entry id → sender, from every sender marker in `items`, in either arrival order. When two
-    markers name one row, another session wins over the Overseer, and the Overseer over a baton
-    participant (the transcript's own precedence). */
+    markers name one row, another session wins over the Overseer, the Overseer over a baton
+    participant, and every other marker over the caller's (the transcript's own precedence). */
 export function sendersOf(items: readonly TranscriptItem[]): Map<string, Sender> {
   // The merge queue's wakes carry the "another session" marker (so no tool reads them as the user's word),
   // named merge-queue: they are the queue's, never a link to a session of that name.
-  const rank: Record<Sender["kind"], number> = { "merge-queue": 4, session: 3, extension: 3, overseer: 2, baton: 1 };
+  const rank: Record<Sender["kind"], number> = { "merge-queue": 4, session: 3, extension: 3, overseer: 2, baton: 1, member: 0 };
   const out = new Map<string, Sender>();
   const put = (id: string, s: Sender) => {
     const was = out.get(id);
@@ -74,15 +92,16 @@ export function sendersOf(items: readonly TranscriptItem[]): Map<string, Sender>
       );
     if (it.overseerMark?.kind === "sent") put(it.overseerMark.targetId, { kind: "overseer" });
     if (it.batonMark?.kind === "sent") put(it.batonMark.targetId, { kind: "baton", by: it.batonMark.by });
+    if (it.memberMark) put(it.memberMark.targetId, { kind: "member", by: it.memberMark.by, ...(it.memberMark.label ? { label: it.memberMark.label } : {}) });
   }
   return out;
 }
 
 /** The sender of the row `rowId`, when someone other than the user sent it; the user's own baton
-    messages (`operator`) have none. */
+    messages and those this machine's page typed (`operator`) have none. */
 export function otherSender(senders: ReadonlyMap<string, Sender>, rowId: string): Sender | undefined {
   const s = senders.get(entryOf(rowId));
-  return s && !(s.kind === "baton" && s.by === "operator") ? s : undefined;
+  return s && !((s.kind === "baton" || s.kind === "member") && s.by === OPERATOR_CALLER) ? s : undefined;
 }
 
 /** The row's sender for the views: a marker's, else the Overseer's for a brief. */

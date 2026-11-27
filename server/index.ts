@@ -51,12 +51,20 @@ import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { wireRequestChats } from "./owner-request-chat";
-import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, indexedSessionPaths, lastListedRows, lastReplyOf, listSessions, listSessionsTracked, listStamps, monitorFixedOf, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { hotFolders } from "./session-watch-scope";
+import { startArchiveCompression } from "./archive-compress/start";
+import { serverStart } from "./project-services/self-host";
+import { markServerRunning } from "./archive-compress/server-mark";
+import { homeIdOfPath, homeSessionsDirs, isHomeSessionsDir } from "./chat-homes/root";
+import { viewedIds } from "./seen";
 import { startScheduleKeeper } from "./schedule-routes";
 import { cancelChatWakes, startWakeKeeper } from "./wake-keeper-live";
 import { monitorJobs, startJobKeeper, stopJobsOf, sweepJobs } from "./background-jobs";
 import { onWorkerKilled } from "./chat-workers";
-import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
+import { attachWebSockets, mainListenerUpgrade, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
+import { startTrustedListeners, stopTrustedListeners } from "./networks/listeners";
+import { setTailscaleAsk } from "./networks/probe";
 import { detachChatHost, startChatHost, stopWorkersOf, wakeOwnerOf, workerChatsOf } from "./chat-host";
 import { agentCpu } from "./agent-cpu";
 import { expectChatRouter } from "./chat-handle";
@@ -79,19 +87,21 @@ import { MessageLabeller } from "./message-labeller";
 import { messageLabelStore } from "./message-labels";
 import { configureSessionFeed, nudgeMarks, publishFeed, sessionFeed } from "./session-feed";
 import { startEvents } from "./events";
+import { onChatNews } from "./chat-home-events";
 import { onAttentionNotified } from "./attention-memo";
 import { configureLlmInflight } from "./llm-inflight";
 import { snapshot as llmSnapshot, subscribe as onLlmChange } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { verifiedPeerSocket } from "./mesh/peer-address";
 import { peerUrl } from "./mesh/peers";
 import { onTagsChanged } from "./session-tags";
+import { onLabelled, projectLabels, unionPairs, withLabels } from "./session-labels";
 import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
 import { checkReadinessInputs, configureReadiness } from "./merge-readiness";
 import { addOwnPid, readLiveRecords } from "./live";
 import { claimRecordedChats, scrubChatProcessEnv } from "./chat-runtime/supervisor";
 import { startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
-import { serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken } from "./auth";
+import { authListenPort, serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken } from "./auth";
 
 // A server started from a chat's own tools (a hermetic server in a worktree) inherits that chat
 // process's own variables: never this server's (§app.chat-processes/supervision).
@@ -164,7 +174,7 @@ if (PORT) setLinkOrigin(linkOrigin(PORT));
 // the shell reachable, with token checks refused until the file is deleted and we restart.
 initAuthToken();
 if (process.env.SOVA_AUTH === "off")
-  console.warn(serverAuthEnabled() ? `[auth] SOVA_AUTH=off ignored: ${HOST} is not a loopback bind` : "[auth] SOVA_AUTH=off: the token is not asked for");
+  console.warn(serverAuthEnabled() ? `[auth] SOVA_AUTH=off ignored: ${HOST} is not a loopback bind` : "[auth] SOVA_AUTH=off: the token is not asked for (while no trusted network's listener is open)");
 // What the gate knows from the mesh (server/auth.ts): this host's MagicDNS name, its front door and
 // serve URL (names it answers to, and pages it is served from), and the peers' serve URLs.
 setAuthHosts(() => {
@@ -222,6 +232,8 @@ function startRetirement(): Retirer | null {
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   setAuthPort(info.port);
+  // The backup and rollback commands refuse while this server runs (scripts/chat-homes).
+  markServerRunning(info.port, serverStart().startedAt);
   // The first start's approvals and a reading of what is approved, before anything is answered,
   // then each active extension's own key, kept in step with the list.
   startExtensionLoader();
@@ -229,6 +241,10 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port} (${SERVER_RUNTIME.name} ${SERVER_RUNTIME.version})`);
+  // Each trusted network's listener, on this port at that network's address (§app.access/networks). Tailscale's
+  // own addresses are asked for only while the mesh is on; with nothing trusted nothing is read until the page asks.
+  setTailscaleAsk(() => meshApi.enabled());
+  startTrustedListeners({ fetch: app.fetch, upgrade: mainListenerUpgrade, port: authListenPort, host: () => HOST });
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket, streamUpgrade: upgradeSovaStreamSocket });
   // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
   // Then the Cloudflare tunnels: the share tunnel's wiring, and the tunnels a previous server left
@@ -309,6 +325,8 @@ startResourceMonitor({
 startBudgetRecount();
 // The automatic session namer's sweep (off until Settings turns it on), nudged by summary lines.
 autoTitleSweep.start();
+// Archived chats older than 60 days are compressed in the background (Settings → automatic compression, on by default).
+startArchiveCompression();
 onSummaryLineChanged(() => autoTitleSweep.nudge());
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
@@ -320,14 +338,55 @@ const events = startEvents({
   onChatEvent,
   onAttention: onAttentionNotified,
   onCard: onCardNews,
+  onLabelled,
   holdFeed: () => sessionFeed()?.add(() => {}) ?? null,
   isHosted: (path) => chatHandle(path) !== undefined,
   idOf,
+  onChatNews,
+  // A worker's or team member's conversation names its parent's top-level chat: its home's id, read from the path,
+  // else (an older chat) the worker registry's map, in memory.
+  chatOf: (id, path) => {
+    const home = homeIdOfPath(path);
+    if (home) return home;
+    let at = id;
+    for (let i = 0; i < 8; i++) {
+      const parent = wakeOwnerOf(at)?.parentSessionId;
+      if (!parent || parent === at) break;
+      at = parent;
+    }
+    return at;
+  },
 });
 // Change-driven (§app.decisions/push): it compares when a watched input or an in-process store
 // changes, an org statechart moves or something the digest lists changes, and pushes the digest
 // and the Overseer's state built from its own list.
 let feedChanged: (() => void) | null = null;
+// §app.session-list/live-watch-scope: the open (a socket on it), held and live-recorded chats'
+// folders, plus every folder with a chat active in the last 7 days by the last listing's rows.
+const activeSessionFolders = (): Set<string> => {
+  const files: string[] = chatHandles().map((c) => c.path);
+  for (const r of readLiveRecords({ includeOwn: true })) if (r.sessionFile) files.push(r.sessionFile);
+  const byId = indexedSessionPaths();
+  for (const id of viewedIds()) {
+    const p = byId.get(id);
+    if (p) files.push(p);
+  }
+  return hotFolders({ rows: [], active: files });
+};
+const liveWatchScope = {
+  active: activeSessionFolders,
+  // Each chat home's sessions/ (§app.chat-homes/new-chats), under the same scope rule; a home made since the last
+  // resync is taken as soon as one of its chats is active.
+  folders: homeSessionsDirs,
+  accepts: isHomeSessionsDir,
+  hot: () => {
+    // Nothing listed yet (the first sync, at the feed's start): every folder, as before.
+    if (lastListedRows().size === 0) return null;
+    const hot = hotFolders({ rows: lastListedRows().values(), active: [] });
+    for (const d of activeSessionFolders()) hot.add(d);
+    return hot;
+  },
+};
 onOrgChange(() => feedChanged?.());
 configureSessionFeed({
   // Re-reads only the session files the watch named since the last build (with a full sweep).
@@ -336,7 +395,7 @@ configureSessionFeed({
   watch: (changed) => {
     feedChanged = changed;
     const tracked = trackSessionFiles();
-    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs, checkQueueViews], files: tracked.note });
+    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs, checkQueueViews], files: tracked.note, scope: liveWatchScope });
     const offAttention = onAttentionNotified(changed);
     return () => {
       feedChanged = null;
@@ -347,8 +406,12 @@ configureSessionFeed({
   },
   after: feedFrames,
   frameKey: feedFrameKey,
+  // Rows sockets that name label pairs get those labels (server/session-labels.ts); the rest, the list as is.
+  labels: { union: unionPairs, overlay: withLabels, project: projectLabels },
   joinFrames: meshProposalJoinFrames,
 });
+// A label write is no listing change: the feed compares again, and only label sockets' rows move.
+onLabelled(() => sessionFeed()?.nudge());
 // The LLM calls in flight, pushed on the same feed (server/llm-inflight.ts): this process's own
 // counter, the other processes' live records, and each peer's own count while a browser listens.
 configureLlmInflight({
@@ -444,6 +507,7 @@ async function shutdown() {
   stopResourceMonitor();
   meshLinks.stop();
   stopMesh();
+  stopTrustedListeners();
   stopShareRuntime();
   await stopVoice();
   // Every visit with an open share socket is seen now, so the commit below carries it.

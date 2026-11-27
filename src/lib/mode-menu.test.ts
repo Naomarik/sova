@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { APPROVAL_FOOT, approvalLead, barePrograms, bareProgramsNote, commandLine, createLimits, filterProfiles, FOOT_NOTE, footNote, nextProjectModes, projectGroupLabel, projectRowState, isDefaultMode, modeSummary, noProfileMatch, savableMode } from "./mode-menu";
+import { APPROVAL_FOOT, approvalLead, CHOOSE_DEFAULT_NOTE, type FootFacts, barePrograms, bareProgramsNote, commandLine, createLimits, filterProfiles, FOOT_NOTE, footNote, nextProjectModes, projectGroupLabel, projectRowState, isDefaultMode, modeSummary, noProfileMatch, savableMode } from "./mode-menu";
 
 const def = (mode: string, minorModes: string[], strict = false) => ({ mode, minorModes, strict });
 
@@ -33,12 +33,13 @@ test("modeSummary is the extension's own form: major, strict only when on, then 
   assert.equal(modeSummary(def("delegate", ["align"], true)), "delegate · strict · align");
 });
 
-test("a partial default save keeps the server's outcome instead of claiming nothing was saved", () => {
+test("the mode menu offers no Make Default: the default is chosen in Settings → Profiles", () => {
   const source = readFileSync(new URL("../components/ModeMenu.tsx", import.meta.url), "utf8");
-  const save = source.slice(source.indexOf("const saveAsDefault ="), source.indexOf("const updateProfile ="));
-  assert.match(save, /await putDefaultProfile\(\{ path: props\.control\.path/, "the server takes this chat's profile: the request names none");
-  assert.match(save, /title: "Couldn't save the default\.", body: `\$\{why\}\.`/);
-  assert.doesNotMatch(save, /Nothing was saved|unchanged/, "the backend owns partial-write outcomes; the UI must not append an unconditional outcome");
+  assert.doesNotMatch(source, /putDefaultProfile|the Default`|defaultLabel/);
+  // After a press the foot says what new chats start with, from the save's own answer (the listing it returns).
+  const update = source.slice(source.indexOf("const updateProfile ="), source.indexOf("const chooseProfile ="));
+  assert.match(update, /setListing\(await updateProfileFromChat\(.*\)\);\n(\s*\/\/.*\n)*\s*setSavedTo\(name\);/);
+  assert.match(source, /<p class="mode-menu-foot-line" aria-live="polite">/, "the line is announced as it changes");
 });
 
 test("the picker search is a case-insensitive name match that keeps list order", () => {
@@ -137,6 +138,32 @@ test("Create is never a default: a save writes the chat's last other mode, and t
   assert.equal(footNote({ mode: "normal", minorModes: [], strict: false }), FOOT_NOTE);
   assert.equal(footNote(null), FOOT_NOTE);
   assert.ok(!footNote(inCreate("delegate"), "Claude").includes("Update Claude saves create"), "Update never saves Create");
+});
+
+test("the foot says what new chats really start with: after a press, off the default, while this chat differs", () => {
+  const n = { name: "Claude", mode: "delegate", minorModes: ["align", "spec"] };
+  const chat = { mode: "delegate", minorModes: ["align", "spec"], strict: false };
+  const facts = (over: Partial<FootFacts> = {}): FootFacts => ({ newChats: n, onDefault: true, differs: false, saved: null, ...over });
+  // Right after Update {name}: the confirmation, worded from what was saved (the answer's newChats).
+  assert.equal(footNote(chat, null, facts({ saved: "Claude" })), "Saved. New chats start in delegate · align · spec.");
+  assert.equal(footNote(chat, null, facts({ saved: "Work", onDefault: false })), "Saved to Work. New chats still start from Claude.");
+  // This chat's profile isn't the default: the default named, and where it is chosen, whether or not this chat differs.
+  assert.equal(CHOOSE_DEFAULT_NOTE, "Choose the default in Settings → Profiles.");
+  assert.equal(footNote(chat, null, facts({ onDefault: false })), "New chats start from Claude. Choose the default in Settings → Profiles.");
+  assert.equal(footNote(chat, null, facts({ onDefault: false, differs: true })), "New chats start from Claude. Choose the default in Settings → Profiles.");
+  // While this chat differs: what new chats start with now, and the model and effort when they are what differs.
+  const plain = { ...n, mode: "normal", minorModes: [] };
+  assert.equal(footNote({ ...chat, mode: "normal" }, null, facts({ newChats: plain, differs: true })), "New chats start in normal.");
+  assert.equal(footNote(chat, null, facts({ differs: true, modelLine: "Opus 5.5 · medium" })), "New chats start in delegate · align · spec, on Opus 5.5 · medium.");
+  // Otherwise the general sentence, naming the default; "the default profile" while it isn't known or there is none.
+  assert.equal(footNote(chat, null, facts()), "A switch here is this chat's own. New chats start from Claude.");
+  assert.equal(footNote(chat, null, facts({ newChats: { ...n, name: "" }, onDefault: null })), "A switch here is this chat's own. New chats start from the default profile.");
+  assert.equal(footNote(chat, null, facts({ onDefault: null })), "A switch here is this chat's own. New chats start from Claude.", "unknown either side is not 'off the default'");
+  // An older server sends no newChats: the general sentence, never a confirmation it can't word.
+  assert.equal(footNote(chat, null, facts({ newChats: null, saved: "Claude" })), FOOT_NOTE);
+  // In Create a press's confirmation still wins; before one, Create's own sentence.
+  assert.equal(footNote({ ...chat, mode: "create", saveMode: "delegate" }, "Claude", facts({ differs: true })), "Create is chosen in each chat, so no profile starts in it. Update Claude saves delegate · align · spec.");
+  assert.equal(footNote({ ...chat, mode: "create", saveMode: "delegate" }, null, facts({ saved: "Claude" })), "Saved. New chats start in delegate · align · spec.");
 });
 
 test("what a chat that can do less can't do in Create: nothing when it can do everything", () => {

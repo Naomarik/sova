@@ -8,7 +8,7 @@ import { proxy } from "hono/proxy";
 import { getMimeType } from "hono/utils/mime";
 import { WebSocket } from "ws";
 import { cappedWebSocket, cappedWebSocketServer, connectionRefused, errorCode } from "./runtime-quirks";
-import type { ExtensionInfo, ExtensionOffers } from "../shared/protocol";
+import type { ExtensionInfo, ExtensionOffers, RecordKind } from "../shared/protocol";
 import { declaredCommands, offersOf } from "../shared/extension-offers";
 import { extCommandsFrom, extOverseerKeys, type ExtCommandEntry } from "../shared/commands-ext";
 import { EXTENSION_CONTRACT } from "../shared/extension-contract";
@@ -20,7 +20,7 @@ import { isExtensionKey, sovaToken } from "./auth";
 
 export const contractWords = (): string => `1.${EXTENSION_CONTRACT}`;
 
-// The generic extension host (ext-contract-v1.20: the folder, the list Sova writes and the program it runs,
+// The generic extension host (ext-contract-v1.22: chat labels, the list place's people and who typed each message, v1.22; an extension that reads chats, its `chat` events and a chat's usage, v1.21; the folder, the list Sova writes and the program it runs,
 // server/extension-loader.ts, v1.20; v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts, v1.16; card types and drawing kinds in chat transcripts, server/extension-views.ts, v1.17; a command's `overseer`, `description` and `job` keys, §app.overseer/extension-commands, v1.18). An extension is a static UI (`dist`) plus a
 // loopback HTTP backend (`api`), each optional, named in a manifest Settings → Extensions writes (a hand
 // edit waits for approval). Everything that acts reads the active entries; only that screen reads every entry.
@@ -296,8 +296,22 @@ function manifestEntries(): Valid[] | null {
     if (!l.active || !l.valid) continue;
     out.push(l.state === "changed" ? { ...l.valid, entry: { ...l.valid.entry, changed: true } } : l.valid);
   }
+  noteAsked(out);
   return out;
 }
+
+/** What the active list asked Sova to record, as of its last whole read (§app.extensions/senders). Every read of the
+    active list sets it: the key sync reads it every few seconds while anything is installed, and at once when the
+    list's file changes or an approval moves what is active (server/extension-keys.ts startExtensionKeys). So a hot
+    path asks it with no file read; with nothing installed it stays empty. */
+let asked: ReadonlySet<RecordKind> = new Set();
+function noteAsked(active: readonly Valid[]): void {
+  let next: Set<RecordKind> | null = null;
+  for (const v of active) for (const k of v.offers?.records ?? []) (next ??= new Set()).add(k);
+  if (next || asked.size) asked = next ?? new Set();
+}
+/** Whether an active extension asks Sova to record this, from the cached list: no file read. */
+export const recordsAsked = (kind: RecordKind): boolean => asked.has(kind);
 
 /** Every id on the list, active or not: a peer's entry never takes one. */
 export const listedIds = (): string[] => (listedExtensions() ?? []).flatMap((l) => (l.valid ? [l.valid.entry.id] : []));

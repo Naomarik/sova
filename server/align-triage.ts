@@ -8,6 +8,7 @@ import { alignDocsIn } from "./align-state";
 import { exclusionReason } from "./attention-signals";
 import { DecisionError, type DecisionProvider, type JsonObject, type Question } from "./decide";
 import { stateRoot } from "./state-root";
+import { splitOut, withHome } from "./chat-homes/records";
 
 /**
  * Triage on an alignment card (§app.decisions/align-triage): ONE decision per card version (`al_N`
@@ -46,7 +47,11 @@ interface TriageRecord {
 
 const isRec = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
 
-function load(file: string): Record<string, TriageRecord> {
+/** A chat with a home keeps its cards' triage in `<home>/chat/signals.json` (server/chat-homes/records.ts). */
+const FIELD = "align-triage.json#cards";
+const load = (file: string): Record<string, TriageRecord> => withHome(loadFile(file), "signals", FIELD);
+
+function loadFile(file: string): Record<string, TriageRecord> {
   const out: Record<string, TriageRecord> = Object.create(null);
   try {
     const v = JSON.parse(readFileSync(file, "utf8"));
@@ -63,8 +68,10 @@ function load(file: string): Record<string, TriageRecord> {
   return out;
 }
 
-function save(file: string, cards: Record<string, TriageRecord>): void {
+function save(file: string, only: string, next: Record<string, TriageRecord>): void {
   try {
+    const { legacy: cards, legacyChanged } = splitOut(next, "signals", FIELD, { only });
+    if (!legacyChanged) return;
     mkdirSync(dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify({ version: 1, cards }));
@@ -132,7 +139,7 @@ export async function alignTriage(s: SessionSummary, branch: readonly HEntry[], 
         rec = { rev: doc.rev, at: (deps.now ?? Date.now)(), provider: r.provider, model: r.model, stakes };
         cards = load(file);
         cards[key] = rec;
-        save(file, cards);
+        save(file, key, cards);
       } catch (err) {
         if (err instanceof DecisionError && err.failure === "bad-request") console.error("[align-triage] question rejected:", err.message);
         continue;

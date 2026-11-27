@@ -10,6 +10,7 @@ import { type ChatCall, type ChatId, type ChatMethod, type ChatMethods, type Cha
 import type { ChatAskMethod, ChatRuntimeMirror, ChatWireFrame, ExitCause, FrameOf } from "../shared/chat-runtime-wire";
 import type { EntryId, HEntry, ToolResult } from "../shared/harness";
 import { CHAT_CLOSED_CLOSE_CODE, type ChatClientMessage, type ChatServerMessage } from "../shared/protocol";
+import { isProfileFrame, withDefaultNote } from "./default-start-notes";
 import {
   answerChatAsk,
   type ChatClient,
@@ -22,6 +23,7 @@ import {
 } from "./chat-handle";
 import { awaitFrame, type Link, type LinkEnd } from "./chat-runtime/link";
 import { sessionsChanged } from "./list-generation";
+import { frameMember } from "./member-frame";
 
 /** The text a call gets when the chat's process can't be reached (design §2.5). */
 export const UNREACHABLE = "The chat's process is not reachable right now.";
@@ -239,8 +241,10 @@ export class RemoteChatHandle extends ChatHandle {
       // Closing quietly (an archive): the chat's own goodbye, "reconnect", never reaches a pane;
       // everything before it (an ack, a refusal) does, in order.
       if (this.quietClose && isReconnectGoodbye(f.json)) return;
-      if (c.sendRaw) c.sendRaw(f.json);
-      else c.send(JSON.parse(f.json));
+      if (isProfileFrame(f.json)) this.lastProfile = f.json;
+      const json = withDefaultNote(this.path, f.json);
+      if (c.sendRaw) c.sendRaw(json);
+      else c.send(JSON.parse(json));
     });
     for (const t of REQUEST_FRAMES) on(t, (f) => this.request(link, f));
     on("reload.request", (f) => this.hooks.reload?.(this, f.auto));
@@ -419,6 +423,16 @@ export class RemoteChatHandle extends ChatHandle {
       },
     });
   }
+  /** The chat's last `profile` frame, as its process sent it (before the server's note). */
+  private lastProfile: string | null = null;
+  override resendProfile(): void {
+    if (!this.lastProfile) return;
+    const json = withDefaultNote(this.path, this.lastProfile);
+    for (const c of this.clients.values()) {
+      if (c.sendRaw) c.sendRaw(json);
+      else c.send(JSON.parse(json));
+    }
+  }
   clientMessage(client: ChatClient, msg: ChatClientMessage): void {
     if ((msg.type === "prompt" || msg.type === "steer") && (this.gating > 0 || this.hooks.needsBeforeMessage?.(this))) {
       // In order, each after the folder is back and a first message's re-check; a chat whose folder is there costs one stat.
@@ -470,7 +484,8 @@ export class RemoteChatHandle extends ChatHandle {
   }
   private deliverClientMessage(client: ChatClient, msg: ChatClientMessage): void {
     const clientId = this.ids.get(client);
-    if (clientId && !this.ended && this.link.send({ t: "client.msg", clientId, msg })) return;
+    const member = frameMember(msg);
+    if (clientId && !this.ended && this.link.send({ t: "client.msg", clientId, msg, ...(member ? { member } : {}) })) return;
     // No process to take it (exited, stopping, or its link down): a prompt goes back to the pane.
     const refusal = unsentRefusal(msg);
     if (refusal) client.send(refusal);

@@ -13,6 +13,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import type { WebSettings } from "../shared/protocol";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-web-settings-"));
 after(() => rmSync(agentDir, { recursive: true, force: true }));
@@ -27,8 +28,9 @@ const put = (text: string) => {
 };
 const stored = () => JSON.parse(readFileSync(FILE, "utf8"));
 // "Nothing switched on" by the user: the defaults (Experimental has no switch).
-const NOTHING_ON = { experimental: {}, alignment: { review: false } };
-const REVIEW_ON = { experimental: {}, alignment: { review: true } };
+const STORAGE_ON = { chatHomes: true, autoCompress: true };
+const NOTHING_ON = { experimental: {}, alignment: { review: false }, storage: STORAGE_ON };
+const REVIEW_ON = { experimental: {}, alignment: { review: true }, storage: STORAGE_ON };
 
 test("a missing file reads as nothing switched on", () => {
   rmSync(FILE, { force: true });
@@ -97,7 +99,7 @@ test("a write re-reads the file, keeping every key it does not know about, the o
 test("a corrupt file is replaced rather than blocking the write", () => {
   put("{ this is not json");
   assert.deepEqual(writeWebSettings({ experimental: {} }), NOTHING_ON);
-  assert.deepEqual(stored(), { version: 1, experimental: {}, alignment: { review: false } });
+  assert.deepEqual(stored(), { version: 1, experimental: {}, alignment: { review: false }, storage: {} });
 });
 
 // ── Sova runs chat modes, always: an old switch is neither read nor written ─────────────────────
@@ -200,4 +202,14 @@ test("a malformed library is never overwritten, and the seeding waits for a late
   writeWebSettings({ alignment: { review: true } });
   assert.deepEqual(library()[0]!.reviewer, defaultReviewer());
   assert.deepEqual(stored().seeded, { adversarialReview: true });
+});
+
+test("the storage switches: on unless stored false; a write takes only booleans and keeps the other", () => {
+  put(JSON.stringify({ version: 1 }));
+  assert.deepEqual(readWebSettings().storage, STORAGE_ON);
+  assert.deepEqual((writeWebSettings({ storage: { chatHomes: false } }) as WebSettings).storage, { chatHomes: false, autoCompress: true });
+  assert.deepEqual((writeWebSettings({ storage: { autoCompress: false } }) as WebSettings).storage, { chatHomes: false, autoCompress: false });
+  assert.deepEqual(writeWebSettings({ storage: { chatHomes: "no" } }), { error: "Expected storage.chatHomes to be a boolean" });
+  assert.equal("error" in writeWebSettings({ storage: [] }), true);
+  assert.deepEqual(readWebSettings().storage, { chatHomes: false, autoCompress: false });
 });

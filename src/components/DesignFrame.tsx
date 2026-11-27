@@ -1,8 +1,9 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { cardBoxSupported } from "../lib/card-box";
 import type { DesignApi } from "../lib/design-api";
 import { DESIGN_FRAME_LEFT, DESIGN_PAGE_HEIGHT, DESIGN_PAGE_WIDTH, DESIGN_SHELL_ATTRS, DESIGN_STREAM_ATTRS, designHasFirstPaint, designHasStyles, designPageDoc, designShellDoc, fromDesignFrame, tokensOfText } from "../lib/design-frame";
 import { designLiveSlots } from "../lib/design-live-slots";
+import { noStreamLayers, streamKey, streamLayerList, streamLayers, streamNoteShown, streamTopHidden, type StreamLayerEvent, type StreamLayers } from "../lib/design-stream-layers";
 
 /** Every ancestor that scrolls, innermost first, with the element to watch in each. */
 function scrollChain(el: HTMLElement): { root: HTMLElement; target: HTMLElement }[] {
@@ -132,14 +133,17 @@ const FIRST_PAINT_MS = 250;
  * A page shows nothing until its styles are closed and its body has begun, so that wait reads as
  * progress, and the note goes only once the frame has had time to paint. When the response ends the connection is
  * given back and the document stays, so the last picture holds until the finished page has drawn.
+ * `draw`: the same version drawn again (written whole again, or redrawn after an edit) is a new document: the
+ * frame connects again and the picture it had stays beneath, in place, until the new one has painted.
  * `over`: an earlier version is on show beneath, so instead of the note the frame stays see-through
  * until the new page has something to see, and the earlier picture holds until then.
  * `still`: a small preview nobody scrolls (a grid tile): the page shows no scrollbar of its own.
  */
-export function DesignStreamFrame(props: { api: DesignApi; label: string; version: number | undefined; text: string; title: string; waiting?: string; priority?: boolean; over?: boolean; still?: boolean }) {
-  const [src, setSrc] = createSignal("");
+export function DesignStreamFrame(props: { api: DesignApi; label: string; version: number | undefined; draw?: number; text: string; title: string; waiting?: string; priority?: boolean; over?: boolean; still?: boolean }) {
+  const [layers, setLayers] = createSignal<StreamLayers>(noStreamLayers);
+  const step = (e: StreamLayerEvent) => setLayers((s) => streamLayers(s, e));
   const [turn, setTurn] = createSignal(false);
-  const [painted, setPainted] = createSignal(false);
+  const painted = () => layers().painted;
   let release: (() => void) | undefined;
   let since = 0;
   let asked = 0;
@@ -155,50 +159,45 @@ export function DesignStreamFrame(props: { api: DesignApi; label: string; versio
         if (ask !== asked) return;
         if (!live) return giveBack();
         since = performance.now();
-        setSrc(live.url);
+        step({ t: "connected", url: live.url });
       })
       .catch(() => {
         if (ask === asked) giveBack();
       });
   };
-  // A memo: the live text changes many times a second, its version only at a new page.
-  const version = createMemo(() => props.version);
+  // A memo: the live text changes many times a second, its version and draw only at a new document.
+  const key = createMemo(() => streamKey(props.version, props.draw));
   createEffect(
-    on(
-      version,
-      (v) => {
-        // The page's end takes its version away; the document on show stays.
-        if (v === undefined) return;
-        giveBack();
-        ++asked;
-        setSrc("");
-        setPainted(false);
-        setTurn(true);
-        release = designLiveSlots.ask({
-          priority: !!props.priority,
-          // A grant after a revoke is a fresh ask: the one this line began with is gone.
-          grant: () => connect(++asked),
-          revoke: () => {
-            ++asked;
-            setSrc("");
-            setPainted(false);
-            setTurn(true);
-          },
-        });
-      },
-    ),
+    on(key, (k) => {
+      // The page's end takes its version away; the document on show stays.
+      if (k === undefined) return;
+      giveBack();
+      ++asked;
+      step({ t: "reconnect" });
+      setTurn(true);
+      release = designLiveSlots.ask({
+        priority: !!props.priority,
+        // A grant after a revoke is a fresh ask: the one this line began with is gone.
+        grant: () => connect(++asked),
+        revoke: () => {
+          ++asked;
+          step({ t: "revoked" });
+          setTurn(true);
+        },
+      });
+    }),
   );
   onCleanup(() => {
     ++asked;
     giveBack();
   });
-  const drawable = createMemo(() => !!src() && designHasFirstPaint(props.text));
+  const drawable = createMemo(() => !!layers().top && designHasFirstPaint(props.text));
   createEffect(() => {
     if (!drawable() || painted()) return;
     let frame = 0;
     const hold = setTimeout(() => {
       frame = requestAnimationFrame(() => {
-        frame = requestAnimationFrame(() => setPainted(true));
+        frame = requestAnimationFrame(() => step({ t: "painted" }));
       });
     }, Math.max(0, since + FIRST_PAINT_MS - performance.now()));
     onCleanup(() => {
@@ -222,10 +221,21 @@ export function DesignStreamFrame(props: { api: DesignApi; label: string; versio
   };
   return (
     <>
-      <Show when={src()} keyed>
-        {(url) => <iframe class="design-frame" style={{ opacity: props.over && !painted() ? 0 : 1 }} title={props.title} ref={(el) => seal(el, url)} onLoad={giveBack} />}
-      </Show>
-      <Show when={!painted() && !props.over}>
+      {/* Keyed by layer: the picture beneath keeps its element (and its document) while the new one comes in. */}
+      <For each={streamLayerList(layers())}>
+        {(layer) => (
+          <iframe
+            class="design-frame"
+            style={{ opacity: layers().top === layer && streamTopHidden(layers(), !!props.over) ? 0 : 1 }}
+            title={props.title}
+            ref={(el) => seal(el, layer.url)}
+            onLoad={() => {
+              if (layers().top === layer) giveBack();
+            }}
+          />
+        )}
+      </For>
+      <Show when={streamNoteShown(layers(), !!props.over)}>
         <div class="design-frame-note" role="status">
           {/* A new node for each wording (the count moves often): new words re-centred in the old node count as a layout shift. */}
           <Show when={note()} keyed>

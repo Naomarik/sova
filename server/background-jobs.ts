@@ -22,7 +22,7 @@ import { publishWakes } from "../pi-config/extensions/subagents/wake-store.ts";
 import { cgroupProcs, JOBS_UNIT_PREFIX_ENV, realProc } from "./background-jobs-capture";
 import { stateHash } from "./project-services/store";
 import { stateRoot } from "./state-root";
-import { wakeDir, wakesOn } from "./wake-keeper";
+import { wakeDirFor, wakesOn } from "./wake-keeper";
 
 /**
  * Background jobs, the server's half (§app/background-jobs): the records a chat writes when it keeps a
@@ -89,7 +89,8 @@ export function endOf(j: JobRecord, at: number, bootId: string, exit: number | n
 
 export interface JobKeeperDeps {
   dir: string;
-  wakeDir: string | null;
+  /** Where a chat's wake records go (a chat with a home keeps them there); null: no wake store. */
+  wakeDir: string | ((sessionId: string) => string) | null;
   now(): number;
   bootId(): string;
   alive(j: JobRecord): Promise<boolean>;
@@ -183,7 +184,7 @@ export class JobKeeper {
       d.log(`${fresh.sessionId} ${fresh.id}: ended (${end.how}; card: ${end.card})`);
       if (end.card === "wake") {
         try {
-          publishJobWakes(d.dir, d.wakeDir, fresh.sessionId, fresh.path, now);
+          publishJobWakes(d.dir, typeof d.wakeDir === "function" ? d.wakeDir(fresh.sessionId) : d.wakeDir, fresh.sessionId, fresh.path, now);
         } catch (err) {
           d.log(`${fresh.sessionId}: wake not published: ${err instanceof Error ? err.message : String(err)}`);
         }
@@ -209,7 +210,7 @@ export function startJobKeeper(env: NodeJS.ProcessEnv = process.env): JobKeeper 
   const n = Number(env.SOVA_JOBS_TICK_MS);
   keeper = new JobKeeper({
     dir: jobsDir(),
-    wakeDir: wakesOn() ? wakeDir() : null,
+    wakeDir: wakesOn() ? wakeDirFor : null,
     now: Date.now,
     bootId: () => realProc.bootId(),
     alive: (j) => jobAlive(j),

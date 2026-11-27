@@ -9,12 +9,14 @@ import {
   EXT_CHANGED_LEAD,
   EXT_INTRO,
   EXT_KEY_LINE,
+  EXT_RECORDS_SENDERS,
   EXT_LOAD_FAILED,
   EXT_NO_MANAGER,
   EXT_NONE,
   EXT_PAGE_LINE,
   EXT_PICK_HINT,
   EXT_PICK_TITLE,
+  EXT_READS_CHATS,
   EXT_TRUST,
   extensionListChanged,
   found,
@@ -157,6 +159,19 @@ function ReviewDialog(props: { at: Reviewing; onClose: () => void; onDone: (r: E
                 </div>
               )}
             </Show>
+            {/* What it reads sits with what it asks for, above the closing Install only what you trust. */}
+            <Show when={a().readsChats}>
+              <div class="ext-reads-chats">
+                <dt>Chats</dt>
+                <dd>{EXT_READS_CHATS}</dd>
+              </div>
+            </Show>
+            <Show when={a().records?.includes("senders")}>
+              <div>
+                <dt>Records</dt>
+                <dd>{EXT_RECORDS_SENDERS}</dd>
+              </div>
+            </Show>
             <Show when={r().needs}>
               {(n) => (
                 <div>
@@ -183,6 +198,7 @@ function ReviewDialog(props: { at: Reviewing; onClose: () => void; onDone: (r: E
           </Show>
         </div>
         <div class="modal-foot">
+          <span class="modal-spacer" />
           <button type="button" class="button button-ghost" onClick={() => props.onClose()}>
             Cancel
           </button>
@@ -255,6 +271,7 @@ function ChooseDialog(props: { start?: string; forId?: string; onClose: () => vo
           </div>
         </div>
         <div class="modal-foot">
+          <span class="modal-spacer" />
           <button type="button" class="button button-ghost" onClick={() => props.onClose()}>
             Cancel
           </button>

@@ -1,3 +1,4 @@
+import type { ChatsFolderInfo, ChatsFolderMove, ChatsFolderPreview } from "../../shared/chats-folder";
 import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
 import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
@@ -106,6 +107,7 @@ import type {
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import { WIRE_PARAM, type ClaudeCatalogInfo, type ChatProfileState, type ProfileSwitchResult, type ShellOutputPage, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
+import { withLabels } from "./labels-ask";
 import type { ShellDraftMode } from "./draft-save";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
@@ -160,6 +162,7 @@ import { upgradeLegacyRows } from "./legacy-rows";
 import { COMPOSER_QUERY } from "./wire-stamp";
 import { onAuthorized, onUnauthorized } from "./auth";
 import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
+import type { NetworksView, RangeCheck, TrustBody, UntrustBody } from "../../shared/networks";
 import type { PlaybookCardEdits, PlaybookRunOpenBody, PlaybookRunView } from "../../shared/playbook-run";
 
 /**
@@ -228,7 +231,16 @@ async function requestWithHeaders<T>(url: string, init?: RequestInit): Promise<{
 }
 
 export const mintAccessCode = () =>
-  request<{ code: string; expiresAt: string; links?: { label: string; url: string }[] }>("/api/auth/pair", { method: "POST" });
+  request<{ code: string; expiresAt: string; links?: { label: string; url: string; kind?: "tailscale" | "trusted" | "here"; secure?: boolean }[] }>("/api/auth/pair", { method: "POST" });
+
+// ---- trusted networks (the Access page's Networks card): local-only; trusting is the page's own click ----
+export const getNetworks = () => request<NetworksView>("/api/auth/networks", { cache: "no-store" });
+export const checkRange = (range: string) =>
+  request<RangeCheck>("/api/auth/networks/check", { method: "POST", body: JSON.stringify({ range }) });
+export const trustRange = (body: TrustBody) =>
+  request<NetworksView>("/api/auth/networks/trust", { method: "POST", body: JSON.stringify(body) });
+export const untrustRange = (body: UntrustBody) =>
+  request<NetworksView>("/api/auth/networks/untrust", { method: "POST", body: JSON.stringify(body) });
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
@@ -244,7 +256,7 @@ export const resumePairing = (pairing: string) =>
   request<{ pair: PairView }>("/api/sessions/pairs/resume", { method: "POST", body: JSON.stringify({ pairing }) });
 /** The list and the feed version it is at (`X-Sova-List-Version`; null from a server without it). */
 export const listSessionsVersioned = async () => {
-  const { body, headers } = await requestWithHeaders<SessionSummary[]>("/api/sessions");
+  const { body, headers } = await requestWithHeaders<SessionSummary[]>(withLabels("/api/sessions"));
   return { rows: body, at: parseListVersion(headers.get(LIST_VERSION_HEADER)) };
 };
 export const sessionsDir = () => request<SessionsDirInfo>("/api/sessions/dir");
@@ -439,7 +451,7 @@ export const shortenSessionTitles = (dryRun = false) =>
   });
 
 /** One session by id, listed or not (the list omits sessions with no user message). 404: no file has that id. */
-export const getSessionSummaryById = (id: string) => request<SessionSummary>(`/api/sessions/summary?id=${encodeURIComponent(id)}`);
+export const getSessionSummaryById = (id: string) => request<SessionSummary>(withLabels(`/api/sessions/summary?id=${encodeURIComponent(id)}`));
 
 /** The Overseer: its current file (created on first ask), old files, and the entry button's counts. */
 export const getOverseer = () => request<OverseerInfo>("/api/overseer");
@@ -523,6 +535,14 @@ export const getWebSettings = () => request<WebSettings>("/api/settings");
 /** Save part of Sova's own settings; the server keeps every key the body doesn't name. */
 export const putWebSettings = (settings: Partial<WebSettings>) =>
   request<WebSettings>("/api/settings", { method: "PUT", body: JSON.stringify(settings) });
+
+/** Settings → General's Chats folder (server/chat-homes/move-routes.ts): where this computer keeps its chats. */
+export const getChatsFolder = () => request<ChatsFolderInfo>("/api/chats-folder", { cache: "no-store" });
+/** What a move of every chat to `path` would do, or why it can't. */
+export const previewChatsFolder = (path: string) => request<ChatsFolderPreview>(`/api/chats-folder/preview?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+/** Move Chats: answers once the move has started; its progress is getChatsFolder's `move`. */
+export const moveChatsFolder = (path: string) => request<{ move: ChatsFolderMove }>("/api/chats-folder/move", { method: "POST", body: JSON.stringify({ path }) });
+export const cancelChatsFolderMove = () => request<{ ok: true }>("/api/chats-folder/move/cancel", { method: "POST" });
 
 /** This machine's updates: what runs, the last check, the job. Always this host's own. */
 export const getUpdates = () => request<UpdatesState>("/api/updates", { cache: "no-store" });
@@ -752,15 +772,14 @@ export const approveProfile = (cwd: string, p: { id: string; grant: string[]; ov
 export const switchProfile = (path: string, profile: string, host?: string | null) =>
   request<ProfileSwitchResult>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { method: "POST", body: JSON.stringify({ profile }) });
 /** Update {name}: this chat's model, effort, mode and add-on modes into its profile (the server takes
-    the chat's). Answers the fresh listing; refused for Off, a project's file or one that can't be read. */
+    the chat's); a built-in profile's first update makes it yours. Answers the fresh listing; refused for Off, a project's file or one that can't be read. */
 export const updateProfileFromChat = (path: string, cwd?: string | null) =>
   request<ProfilesListing>("/api/profiles/update-from-chat", { method: "POST", body: JSON.stringify({ path, ...(cwd ? { cwd } : {}) }) });
 /** Cancel Switch: drop the switch waiting for the reply to end. */
 export const cancelProfileSwitch = (path: string, host?: string | null) =>
   request<{ cancelled: boolean; state: ChatProfileState }>(hostUrl(host, `/api/sessions/profile-switch?path=${encodeURIComponent(path)}`), { method: "DELETE" });
-/** Make a joined profile (its key, or "off") this computer's default; with `path` and no key, that chat's
-    profile, the chat's strict flag and memory type saved with it. Answers the fresh listing. */
-export const putDefaultProfile = (body: { key?: string; path?: string; cwd?: string | null }) =>
+/** Make a joined profile (its key) this computer's default (Settings → Profiles' Make Default). Answers the fresh listing. */
+export const putDefaultProfile = (body: { key: string; cwd?: string | null }) =>
   request<ProfilesListing>("/api/profiles/default", { method: "PUT", body: JSON.stringify({ ...body, cwd: body.cwd ?? undefined }) });
 
 export const setProfileHidden = (key: string, hidden: boolean, cwd?: string | null) =>
@@ -772,6 +791,9 @@ export const saveMyProfile = (body: ProfileSaveRequest) =>
 /** Delete one of yours; refused for the default, and a library half another profile links stays. */
 export const deleteMyProfile = (key: string, cwd?: string | null) =>
   request<ProfileWriteAnswer>("/api/profiles/mine/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, ...(cwd ? { cwd } : {}) }) });
+/** Reset to Built-in: delete the profile of yours taking a built-in one's place (the default too), so the built-in is back. */
+export const resetMyProfile = (key: string, cwd?: string | null) =>
+  request<ProfileWriteAnswer>("/api/profiles/mine/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, reset: true, ...(cwd ? { cwd } : {}) }) });
 /** A new session in `cwd` with a profile picked; nothing is sent (the chip's Run Again). */
 export const startProfileSession = (cwd: string, profile: ProfilePickRef) =>
   request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile }) });
@@ -878,7 +900,7 @@ function refusalsOf(body: unknown): BatchRefusal[] | null {
 }
 
 /** POST /api/sessions/cleanup `{ mode:"paths" }`: named session paths, e.g. one archived row. */
-export type PathsCleanupRequest = { mode: "paths"; paths: string[] };
+export type PathsCleanupRequest = { mode: "paths"; paths: string[]; action?: "compress" };
 
 /** One cleanup response, read leniently (`parseCleanupResult`), plus what paths mode refused. */
 export interface CleanupResponse extends CleanupResult {
@@ -1237,7 +1259,7 @@ export const putMeshLanRelay = (relay: LanRelayPut) => request<LanStatus>("/api/
 export const fetchMeshCandidates = () => request<MeshCandidate[]>("/api/mesh/candidates");
 
 /** Every peer's own session list, through the proxy. Only asked for while a peer is configured. */
-export const fetchMeshSessions = () => request<MeshSessions>("/api/mesh/sessions", meshReadInit(true));
+export const fetchMeshSessions = () => request<MeshSessions>(withLabels("/api/mesh/sessions"), meshReadInit(true));
 
 /** This host's mesh settings, with the fields only its own page uses (shared/mesh-local.ts). */
 export const getMeshSettings = () => request<MeshLocalSettings>("/api/mesh/settings");

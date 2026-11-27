@@ -1,0 +1,16 @@
+/* Settings → General's Chats folder row and its move dialog (ChatsFolderSetting.tsx). */
+.chats-folder { display: flex; flex-direction: column; gap: var(--space-2); }
+.chats-folder-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+.chats-folder-main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; flex: 1 1 16rem; }
+.chats-folder-path,
+.chats-folder-target code,
+.chats-folder-picked { font-family: var(--font-mono); font-size: var(--fs-mono); overflow-wrap: anywhere; }
+.chats-folder-row > .button { flex: none; }
+.chats-folder .field-hint { margin: 0; }
+.chats-folder-scrim { z-index: 52; }
+.chats-folder-modal { z-index: 53; }
+.chats-folder-target { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; }
+.chats-folder-picked { margin: 0; }
+.chats-folder-again { align-self: flex-start; }
+.chats-folder-progress { display: flex; flex-direction: column; gap: var(--space-3); }
+.chats-folder-progress > p { margin: 0; }

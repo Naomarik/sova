@@ -49,7 +49,10 @@ them, a project's own modes as one row), and links to the feature, extending and
 
 The major and minor modes side by side, the three major modes in the mode menu's words, switching
 them per chat from the composer's mode menu,
-the default for new sessions (memory's type with it; never Create, which is chosen per chat),
+saving a chat's modes for new chats with the menu's Update {name}, offered whenever it would change
+something, on a built-in profile too (it becomes yours), with the foot saying what new chats start
+with after the press, and that the default profile is chosen in Settings → Profiles, not in the
+menu (new chats' memory type and strict flag stay `mode.json`'s; never Create, which is chosen per chat),
 strict, how replies read in every chat you talk to, whatever its modes (a short summary; a quick question's
 answer in a line or two and nothing more, anything bigger the full report after it; nothing folded; a mode's own shape wins, workers, a project's assistant, a hand-off, the merge queue's own chats and a release's chat keep theirs, a playbook
 run follows its playbook's report where it sets one; §chat.mode-menu/reply-shape),
@@ -107,8 +110,9 @@ gets, else they run on the chat's own model). How a new chat starts on this comp
 profile, how a chat switches its profile after a usage limit, or any time, all at once (its Models part), what "(edited)"
 means, editing profiles in Settings → Profiles (there is no Subagents tab; the This chat chip, the
 Jump to row, Teams on the chat's own model), the built-in Claude, OpenAI and DeepSeek profiles (a
-**Built in** section with their routes, listed only where their account is connected, Make It
-Yours), and the default until you choose one, which follows the connected accounts (Claude, else
+**Built in** section with their routes, listed only where their account is connected, editable in
+place: your first saved change makes one yours, frozen, with a Yours chip and Reset to Built-in),
+and the default until you choose one, which follows the connected accounts (Claude, else
 OpenAI, else DeepSeek). There is no Off: no helpers means turning Delegate off. A profile never
 turns on a project mode. The page sits in the Features group, not under Modes: a profile is not a
 mode.
@@ -158,14 +162,24 @@ where, §chat.design-mode/setup-card, §chat.design-mode/model-picker, §chat.de
 through Start Creative Director and Lookbook · Brief to Start; how a link is used; how skills reach a run (only the skills you name, by
 name or by folder, with nothing loaded by itself; shown on Setup and, when you named some, on the
 brief's Design skills line; the Creative Director choosing which reach the designers and reading
-files you point it to, and designers reading only inside those skills, §chat.design-mode/skills); a Screenshots section on pasted screenshots (only your own
+files you point it to, its brief saying which file covers which part of the page, and designers
+reading only inside those skills, SKILL.md first and any other file at any point, the tile saying
+Reading the design skill meanwhile and a page already on the tile staying on show; asking your chat
+to add or take off a skill until Start on the brief, Sova telling the Creative Director itself, the
+brief's Design skills line and estimate following at once and Start waiting while the Creative
+Director takes the change in, a late skill not found reported by your chat,
+§chat.design-mode/skills); a Screenshots section on pasted screenshots (only your own
 images can be one, the helper marks the kind and you can change it; up to 8 measured colours as
 swatches with hex values; words for designers drafted by a helper, tuned by the Creative Director,
 yours always winning; Rebuild This Screen or Just Its Feel before Start, at most 4 reference
 pictures a design with Rebuild screenshots first and the rest as words only; every designer gets
 the words, and a screenshot is never put in the page, §chat.design-mode/own-images,
 §chat.design-mode/brief-start); and working with designs: statuses and cost, a page
-being written, Google Fonts only, Open and Chat (changing a design by telling it in its chat, an
+being written (in one go or in steps, as the designer chooses, adding to it, changing an earlier
+part or reading it back, the tile following what it has written and redrawing in place when an
+earlier part changes, keeping the old picture until the new one is painted, and Sova checking the
+page at hand-in and sending it back to be fixed if something is wrong,
+§chat.design-mode/building-in-steps), Google Fonts only, Open and Chat (changing a design by telling it in its chat, an
 ended session starting again from its saved page; on a phone the chat folded to a bar with its
 latest message, one tap away, §chat.design-mode/chat-placement), More with Stop and Remove (a stopped design's
 still and Start Again, the folded Removed section and Restore, §chat.design-mode/stop-remove), the
@@ -245,8 +259,10 @@ project mode.
 
 ## §site.docs/phone — Check in from your phone (`/docs/phone/`)
 
-Reaching Sova from a phone over the tailnet, pairing it with a one-use code, installing it as an
-app, and following sessions that are open in a terminal.
+Reaching Sova from a phone over the tailnet or a network trusted on the Access page, pairing it with
+a one-use code from a QR that points at the address picked for it (and what a phone misses at a
+trusted network's plain http address), installing it as an app, and following sessions that are
+open in a terminal.
 
 ## §site.docs/change-direction — Change direction (`/docs/change-direction/`)
 
@@ -270,7 +286,7 @@ cache), and the Claude Code models.
 
 The memory minor mode: what it does and that the transcript never changes, turning it on from the
 mode menu, the two types (UniiChat, credited to Victor Taelin with a link to his design, and
-zoomable compaction), the Memory type panel and Save as default, the `zoom` and `date` tools,
+zoomable compaction), the Memory type panel (new chats' type is `mode.json`'s; the mode menu no longer saves it), the `zoom` and `date` tools,
 updating, preparing and problems, rewind and fork, the Session pane's Memory outline, Settings →
 Memory with each type's summary size and its help, where memory can't be on (the terminal, workers, coding sessions, session
 profiles), and the overseers' own switches, on by default.

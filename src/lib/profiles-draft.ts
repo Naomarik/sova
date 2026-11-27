@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js";
 import type { ProfileSaveRequest, ProfilesListing, ProfileWriteAnswer } from "../../shared/profiles";
 import { OFF_KEY } from "../../shared/profiles";
-import { deleteMyProfile, putDefaultProfile, saveMyProfile } from "./api";
+import { deleteMyProfile, putDefaultProfile, resetMyProfile, saveMyProfile } from "./api";
 import { createDraftStore, SaveFailed } from "./settings-draft";
 import { canonical, draftOf, isNewKey, profilesDraftFields, typedDraft, type ProfilesDraft } from "./profiles-settings";
 
@@ -127,7 +127,11 @@ export const profilesDraft = createDraftStore<ProfilesDraft, ProfilesDraft, Prof
     // Deletes first, so a new profile may take a removed one's name; the old default's last, after
     // the default moved off it (the server refuses to delete the default).
     const gone = base.rows.filter((r) => !d.rows.some((x) => x.key === r.key)).map((r) => r.key);
-    for (const key of gone) if (key !== base.default) await step(() => deleteMyProfile(key, cwd));
+    // An edited built-in one left by Reset to Built-in (§chat.subagent-profiles/edited-builtin): the server's reset,
+    // which brings the built-in one back and is never refused for the default.
+    const edited = new Set((listing()?.joined ?? []).filter((j) => j.group === "yours" && j.replaces).map((j) => j.key));
+    const remove = (key: string) => (edited.has(key) ? resetMyProfile(key, cwd) : deleteMyProfile(key, cwd));
+    for (const key of gone) if (key !== base.default || edited.has(key)) await step(() => remove(key));
     const sent = new Set<string>();
     for (const r of d.rows) {
       const body = saveRequestOf(d, base, r.key, sent);
@@ -142,7 +146,7 @@ export const profilesDraft = createDraftStore<ProfilesDraft, ProfilesDraft, Prof
       const key = keys.get(d.default) ?? d.default;
       await step(() => putDefaultProfile({ key, cwd }));
     }
-    if (gone.includes(base.default)) await step(() => deleteMyProfile(base.default, cwd));
+    if (gone.includes(base.default) && !edited.has(base.default)) await step(() => deleteMyProfile(base.default, cwd));
     if (!last) throw new Error("Nothing to save"); // unreachable: same() gates the write
     const answer: ProfilesListing = last;
     setListingSignal(answer);

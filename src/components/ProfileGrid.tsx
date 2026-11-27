@@ -6,6 +6,13 @@ import { EffortRing } from "./EffortRing";
 import { foldFit } from "./fold-fit";
 import { ModeGlyph } from "./ModeGlyph";
 import { Icon } from "./ui";
+import { isEditedBuiltin } from "../lib/profile-switch";
+
+/** A card standing for an edited built-in one (§chat.subagent-profiles/edited-builtin): its Yours chip. */
+const editedBuiltin = (p: ListedProfile): boolean => {
+  const j = (p as ListedProfile & { joined?: { group: string; replaces?: string } }).joined;
+  return !!j && isEditedBuiltin(j);
+};
 import { SearchField } from "./form";
 
 /** Where focus goes when the grid mounts again after a pick (the runtime reopens and remounts the
@@ -123,6 +130,7 @@ export function ProfileGrid(props: {
                           off={!!props.unusable(p)}
                           {...(s.id === "mine" && props.mineKeeps ? { keeps: props.mineKeeps } : {})}
                           chips={[
+                            ...(editedBuiltin(p) ? [{ text: "Yours" }] : []),
                             ...(props.isDefault?.(p) ? [{ text: "Default" }] : []),
                             ...(p.approval === "needed" ? [{ text: "Needs approval", tone: "warn" as const }] : []),
                             ...(p.singleton ? [{ text: "One at a time" }] : []),

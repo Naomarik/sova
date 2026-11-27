@@ -204,7 +204,41 @@ export interface ProfilesListing {
   library?: { file: string; error?: string };
   /** What a New Profile's helpers start from: this computer's default profile's helpers. */
   template?: Omit<SubagentProfile, "id" | "name">;
+  /** What a field a profile leaves unset starts as (`startsFrom`): this computer's starting modes (mode.json, else
+      normal and none) and the new-chat model and effort (defaults.json). Absent from an older server. */
+  startsBase?: ChatStarts;
+  /** What a new chat started now really starts with: the default profile (`key`, `name`; "" for none) over
+      `startsBase`, as the server opens one (§chat.profiles/default). Absent from an older server. */
+  newChats?: ChatStarts & { key: string; name: string };
   error?: string;
+}
+
+/** What a chat starts with: its mode, the add-on modes a profile can hold (PROFILE_MINOR_MODES order), and its
+    model and effort when known. */
+export interface ChatStarts {
+  mode: string;
+  minorModes: ProfileMinorMode[];
+  model?: string;
+  thinking?: string;
+}
+
+/** The add-on modes a profile can hold, of `list`, in PROFILE_MINOR_MODES order (memory and project modes left out). */
+export const profileMinors = (list: readonly string[]): ProfileMinorMode[] => PROFILE_MINOR_MODES.filter((m) => list.includes(m));
+
+/**
+ * What a new chat on a profile starts with, field by field, as the server opens one (§chat.profiles/default): each
+ * field the profile's session half sets, else `base`'s (a profile with no session half: `base` whole). The mode and
+ * the add-on modes are separate fields: a profile may set one and not the other.
+ */
+export function startsFrom(half: Pick<Profile, "mode" | "minorModes" | "model" | "thinking"> | undefined, base: ChatStarts): ChatStarts {
+  const model = half?.model ?? base.model;
+  const thinking = half?.thinking ?? base.thinking;
+  return {
+    mode: half?.mode ?? base.mode,
+    minorModes: profileMinors(half?.minorModes ?? base.minorModes),
+    ...(model ? { model } : {}),
+    ...(thinking ? { thinking } : {}),
+  };
 }
 
 /** The row kinds of the joined list (§chat.profiles/joined). */

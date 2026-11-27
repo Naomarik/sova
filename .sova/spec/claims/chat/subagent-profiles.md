@@ -20,8 +20,9 @@ Models part is saved in the **helper library**, one library profile per profile,
   `mode-spec.json`), or none, when the session writes the spec itself.
 - **Reviewer** and **alignment settings**, each optional (§chat.subagent-profiles/file).
 
-Profiles are unlimited and named by the user, and Sova ships three of its own, read-only: Claude,
-OpenAI and DeepSeek, each listed only where its account is connected (§chat.subagent-profiles/builtins).
+Profiles are unlimited and named by the user, and Sova ships three of its own: Claude, OpenAI and
+DeepSeek, each listed only where its account is connected (§chat.subagent-profiles/builtins), edited
+in place, the first saved change making one yours, frozen (§chat.subagent-profiles/edited-builtin).
 There is no Off (§chat.subagent-profiles/off). They are edited in Settings → Profiles, the Models
 part of each profile's editor (§app.settings-dialog/profile-editor); this Sova has no Subagents tab
 (§chat.subagent-profiles/settings). With the mesh on, the library is shared by every device profile
@@ -104,8 +105,10 @@ Nothing replaces "no helper models": a chat that wants no helpers turns Delegate
 
 Sova ships three profiles, each a whole setup named after the account it runs on: its chat's own
 model and effort and its helpers. They are computed in code, in no saved list, so they never sync and
-an older Sova never sees them. They are read-only, and they name fixed models: a newer model never
-moves them.
+an older Sova never sees them. They name fixed models: a newer model never moves them. They are
+editable: the first save of a change to one (in Settings → Profiles, or Update {name} in a chat's
+mode menu) makes it yours, frozen from then on (§chat.subagent-profiles/shadowing); Sova's shipped
+one is never changed.
 
 | | Claude | OpenAI | DeepSeek |
 |---|---|---|---|
@@ -146,7 +149,8 @@ their keys `sova:claude`, `sova:openai` and `sova:deepseek`.
 ## §chat.subagent-profiles/shadowing — A profile of yours in a built-in one's place
 
 A profile of yours takes a built-in profile's place, so each is listed once: one with the built-in
-one's id (a copy made with Make It Yours, §app.settings-dialog/profile-editor), else one with its
+one's id (the copy the first save of a change to a built-in one makes,
+§chat.subagent-profiles/edited-builtin), else one with its
 name, ignoring case, else, for Claude only, the starter older builds seeded for everyone (library id
 `my-setup`). The built-in row is then not listed anywhere; your row stands in its place, so a chat,
 a default or the Overseer naming the built-in one (by id or key) finds yours, and a chat on it runs
@@ -160,12 +164,41 @@ your saved models, not the built-in ones.
   the library file, keeping its id `my-setup`, its models and a default that names it, so an older
   device still finds it and it still takes Claude's place. "My setup" is never shown. It holds helpers only, so as the default it
   gives a new chat its helpers alone (§chat.profiles/derived-default).
-- **Make It Yours, and back.** A copy made with Make It Yours is a profile of yours with both parts
-  and the built-in one's name, so once saved it takes the built-in one's place, the Default and This
-  chat chips included. Deleting it brings the built-in one back, also when it is the default only
-  because it takes the built-in one's place (§chat.profiles/default). Deleting a profile of yours whose
+- **An edited built-in one, and back** (§chat.subagent-profiles/edited-builtin). The copy a built-in
+  one's first saved change makes is a profile of yours with both parts, the built-in one's id and
+  name, so it takes the built-in one's place, the Default and This chat chips included. Reset to
+  Built-in deletes it and brings the built-in one back as shipped, also when it is the default
+  (chosen, or only because it takes the built-in one's place, §chat.profiles/default). Deleting a profile of yours whose
   helpers link a built-in id never deletes the library profile that takes that built-in one's place
   (the seeded starter, say): a library half is deleted only when it is that profile's own.
+
+## §chat.subagent-profiles/edited-builtin — Editing a built-in profile makes it yours, frozen
+
+A built-in profile (§chat.subagent-profiles/builtins) is edited like one of yours. Its first saved
+change, in Settings → Profiles (Save Changes) or from a chat's mode menu (Update {name},
+§chat.subagent-profiles/menu), transparently makes it yours: the server writes a copy of it as a
+profile of yours, both halves, linked, with the built-in one's id and name, the built-in one's models
+and settings with the change applied, and that copy takes the built-in one's place everywhere
+(§chat.subagent-profiles/shadowing). There is no separate Make It Yours step.
+
+- **Frozen.** From then on it is yours: it keeps its place in the lists (where the built-in one was
+  listed, under Built in) and its name, and it never again follows Sova's changes to that built-in
+  one (a newer Sova's models or settings for it reach only the shipped one, which it hides).
+- **It shows that it is yours.** Its row carries a **Yours** chip wherever the joined list shows it
+  (Settings → Profiles, the new chat's cards, the mode menu's picker), and its editor says it is
+  yours, changed from the built-in one, with a way back (§app.settings-dialog/profile-editor).
+- **The way back.** **Reset to Built-in**, in its editor, deletes the copy (each half that is its
+  own, §chat.subagent-profiles/shadowing; `POST /api/profiles/mine/delete` with `{key, reset: true}`,
+  refused for a profile that takes no built-in one's place) and the built-in one as shipped is
+  listed again in its place. A default, a chat or a helper pick naming it keeps naming the same id,
+  so it finds the built-in one again: Reset is never refused for being the default, nor for the
+  built-in one's account being disconnected. A default file naming another id the copy answered
+  for is written again as the built-in one's key. Reset never rewrites `mode.json`: after resetting
+  a default whose copy saved modes, new chats keep starting in those modes until `mode.json`
+  changes (the built-in one sets none).
+- **Everything a chat or the Overseer reads of it** is the copy's, as for any profile of yours in a
+  built-in one's place; an older device sees an ordinary profile of yours
+  (§chat.profiles/older-devices).
 
 ## §chat.subagent-profiles/no-seeding — A missing library is an empty one
 
@@ -220,8 +253,8 @@ The two cases:
   moves.
 - **The default.** A chat with no pick follows this device's default file, read again each time, so a
   new default reaches it too. That file holds the helpers of this computer's default profile, and it
-  is written only when the user chooses a default (§chat.profiles/default): Make Default in Settings →
-  Profiles, or Make {name} the Default in the mode menu. Until then a chat with no pick follows the
+  is written only when the user chooses a default (§chat.profiles/default), with Make Default in
+  Settings → Profiles, and again when the chosen default is updated from a chat's mode menu. Until then a chat with no pick follows the
   built-in profile the connected accounts give, which moves when they change
   (§chat.profiles/derived-default).
 - **Order.** Wherever these settings are read: the chat's pick; then this device's default; then the
@@ -283,19 +316,24 @@ description.
   first message, picking a row is a pick of that profile's card, both parts (§chat.profiles/applying),
   and closes the menu as the runtime reopens; a refused pick shows its banner in the open menu.
   Manage Profiles… closes the menu.
-- **The default.** The footer's button no longer saves the chat's modes as a default. It reads
-  **Make {name} the Default** while this chat's profile is not this computer's default, and makes
-  it the default (§chat.profiles/default); a chat with no profile has no such button; `Already the default` with a check, `aria-disabled`,
-  while it is: by the profile alone, where the old button reads "Already the default" only when this
-  chat's mode, strict flag, minor modes and subagent profile all match what new sessions start from.
-  Beside it, **Update {name}** saves this chat's model and effort, and its mode and
+- **No default button.** The footer has no button that makes this chat's profile the default (the
+  `Make {name} the Default` it had is gone, and the older `Save as default` with it); the default
+  is chosen with Make Default in Settings → Profiles (§chat.profiles/default), and the foot names it
+  and points there while this chat's profile isn't it (§chat.mode-menu/menu).
+- **Update {name}**, the footer's one button, saves this chat's model and effort, and its mode and
   add-on modes (in Create, its last normal or Delegate choice, §chat.create-mode/per-chat-only), into
   the This chat row and the When a Chat Starts part of its profile, through each half's writer
-  (§chat.profiles/joined). It is offered only while one of them differs from the profile and the
-  profile is one of yours (never a project's file, a built-in one, which answers "{name} is built
-  in, so it can't be updated here. Make It Yours first.", or a profile that can't be read). It saves no
-  helper (those are edited in Settings → Profiles) and switches nothing in this chat; other chats on
-  the profile follow as after a save in Settings.
+  (§chat.profiles/joined). It is offered whenever that would change something: while this chat
+  differs from what a new chat on its profile starts with, by the rule of §chat.mode-menu/menu (main
+  mode and add-on modes compared separately, each the profile's where it sets one, else this
+  computer's starting modes in `mode.json`, else normal and none; only align, spec and vis count; a
+  model or effort that differs from what the profile sets counts too). A profile with no saved
+  modes is offered it like any other. On a profile of yours it saves into that profile; on a
+  built-in one it saves too, and the built-in one becomes yours, frozen
+  (§chat.subagent-profiles/edited-builtin). It is never offered on a project's file or a profile that
+  can't be read. It saves no helper (those are edited in Settings → Profiles) and switches nothing
+  in this chat; other chats on the profile follow as after a save in Settings. Saving into this
+  computer's chosen default writes the older defaults again (§chat.profiles/default).
 - **Configure Delegate**, the gear on Delegate's row, opens Settings → Profiles on the profile in
   effect, the one whose helpers this chat runs (never Off), at its Models part, where its row
   carries the This chat chip (§app.settings-dialog/profiles); so do **Configure Create**, the gear on
@@ -315,7 +353,9 @@ are the library halves of these profiles (§chat.profiles/joined).
   listed here under Built in, with a Default chip on the one new sessions start from, a This chat
   chip on the one the chat Settings was opened from runs, and no search field at any length (the old
   tab gained one past six rows). There is no Off. In its editor a profile of yours has Duplicate,
-  Delete and Make Default; a built-in one has Make Default and Make It Yours.
+  Delete and Make Default; a built-in one has Make Default and is edited in place, the first save
+  making it yours (§chat.subagent-profiles/edited-builtin); an edited built-in one has Make Default
+  and Reset to Built-in.
   The list's head has New Profile alone: Save Current as Profile, which on the old tab's head took
   this chat's setup, otherwise what new sessions get now, saved under a new name, lives in the mode
   menu's picker and on the new chat's screen. Deleting the
@@ -346,7 +386,7 @@ are the library halves of these profiles (§chat.profiles/joined).
     seeded from the profile's last saved roles, else the legacy team defaults. Once chosen, each
     role has its worker row and fallback and an **Instructions** fold holding the role name and the
     role's extra instructions, and **Use Default Model** puts both back on the chat's own model
-    (`teams: null`). A built-in profile shows its own Teams rows read-only. A role name is 1 to 64 characters after trimming, never cut ("Name the role.",
+    (`teams: null`). A built-in profile shows its own Teams rows, editable like the rest of it (the first save makes it yours, §chat.subagent-profiles/edited-builtin). A role name is 1 to 64 characters after trimming, never cut ("Name the role.",
     "Coordinator role name can be at most 64 characters."), and instructions at most 4,000, with a
     count "{n} / 4,000", kept whole and red past it. The saved model choices are kept; the editor
     never writes `coordinator.enabled` or `monitor.enabled`. Once chosen, the monitor's own settings

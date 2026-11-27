@@ -11,7 +11,7 @@ import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "no
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ToolSpec } from "../../shared/harness";
-import { DESIGN_ASK_ABOVE, designBriefBlock, designerSkills, runOwnImage, designDirectionLine, designPlan, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer } from "../../shared/design";
+import { DESIGN_ASK_ABOVE, designBriefBlock, designerSkills, runOwnImage, designDirectionLine, designPlan, isDesignLinkUse, type DesignAsk, type DesignBrief, type DesignBriefBlock, type DesignCoordinatorView, type DesignLinkUse, type DesignLook, type DesignRecord, type DesignRun, type DesignSignInAnswer, type DesignSkill } from "../../shared/design";
 import { isTourOrigin, type TourSize } from "../../shared/tour";
 import { serverToolCall } from "../chat-handle";
 import { modelDenial, readModelPolicy } from "../model-policy";
@@ -86,6 +86,9 @@ export interface CoordinatorState {
       stop, remove, restore or start a design again (q2). Any other wake clears it. */
   userTurn?: boolean;
   shotSeq: number;
+  /** What it was told of its run's skills changing past Setup: names added that it may not have heard yet (the news was
+      queued behind a turn under way), and names taken off. Only for the run named. */
+  skillNews?: { runId: string; unheard: string[]; takenOff: string[] };
 }
 
 /** What this module needs of the design sessions and the worker registry: the real ones, or a test's. */
@@ -638,20 +641,67 @@ function openBrief(parent: BrowseParent, runId: string): { st: CoordinatorState;
   return { st, run: now as DesignRun & { brief: DesignBrief } };
 }
 
-/** The coordinator couldn't be reached: Start says so rather than waiting on a turn that isn't coming. */
-async function wakeForBrief(st: CoordinatorState, text: string, key: string, fromUser = false): Promise<void> {
+/** The coordinator couldn't be reached: Start says so rather than waiting on a turn that isn't coming. Null then. */
+async function wakeForBrief(st: CoordinatorState, text: string, key: string, fromUser = false): Promise<{ queued: boolean } | null> {
   try {
-    await wake(st, text, key, false, [], fromUser);
+    return await wake(st, text, key, false, [], fromUser);
   } catch (err) {
     console.warn(`[design] the coordinator of ${st.sessionId} wasn't reached: ${err instanceof Error ? err.message : String(err)}`);
-    changeBrief(st, (b) => {
-      if (b.writing) b.writing.stalled = true;
-      b.rev++;
-    });
+    // In researching there is no brief yet to say so on.
+    if (runOf(st.sessionId, st.runId)?.brief)
+      changeBrief(st, (b) => {
+        if (b.writing) b.writing.stalled = true;
+        b.rev++;
+      });
+    return null;
   }
 }
 
-const wakeSafely = (st: CoordinatorState, text: string, key: string): Promise<void> => wakeForBrief(st, text, key).catch(() => {});
+const wakeSafely = (st: CoordinatorState, text: string, key: string): Promise<void> => wakeForBrief(st, text, key).then(() => {}, () => {});
+
+/** This run's skills news, fresh for a run it hasn't had any on. */
+function skillNewsOf(st: CoordinatorState): NonNullable<CoordinatorState["skillNews"]> {
+  if (st.skillNews?.runId !== st.runId) st.skillNews = { runId: st.runId, unheard: [], takenOff: [] };
+  return st.skillNews;
+}
+
+/** The main chat changed this run's skills past Setup (until Start on the brief): Sova tells the Creative Director
+    itself, at once, what was added (and where to read it) or taken off, and asks it to bring the brief in line. The brief
+    already heard it, in the same change (commitSetup). True once it was told. */
+export async function skillsChanged(parent: BrowseParent, runId: string, change: { added: readonly DesignSkill[]; removed: readonly string[] }): Promise<boolean> {
+  const st = load(parent.sessionId);
+  const run = runOf(parent.sessionId, runId);
+  if (!st || st.parentPath !== parent.path || st.runId !== runId || !run || (run.phase !== "researching" && run.phase !== "brief") || run.brief?.startedRev !== undefined) return false;
+  if (!change.added.length && !change.removed.length) return false;
+  const added = change.added.map((k) => k.name);
+  const news = skillNewsOf(st);
+  // Until it has heard, a skills pick it sends keeps a skill added since: it can't have meant to leave that one out.
+  news.unheard = [...news.unheard.filter((n) => !change.removed.includes(n)), ...added.filter((n) => !news.unheard.includes(n))];
+  news.takenOff = [...news.takenOff.filter((n) => !added.includes(n)), ...change.removed.filter((n) => !news.takenOff.includes(n))];
+  st.briefNudged = false;
+  save(st);
+  const them = (names: readonly string[]) => (names.length === 1 ? "it" : "them");
+  const lines = ["Sova: the user changed this run's design skills, through the main chat."];
+  if (change.added.length) lines.push(`Added:\n${coordinatorSkillsBlock(change.added, [])}\nA skill added now goes to the designers unless you leave it out with design_brief's skills, by the same rule: only one that isn't about how pages look and read.`);
+  if (change.removed.length) lines.push(`Taken off: ${change.removed.join(", ")}. The designers no longer get ${them(change.removed)}: take every mention of ${them(change.removed)} and ${change.removed.length === 1 ? "its" : "their"} files out of the Full Prompt.`);
+  lines.push(`This run's skills now: ${(run.skills ?? []).map((k) => k.name).join(", ") || "none"}. The designers get: ${designerSkills(run).map((k) => k.name).join(", ") || "none"}.`);
+  const b = run.brief;
+  lines.push(
+    !b
+      ? "Take this into the brief you are preparing."
+      : b.promptBy === "user"
+        ? `The Full Prompt is the user's own, so don't change it: if this changes what gets built, update only the summary with design_brief (baseRev ${b.textRev}). The brief asks them whether to keep their prompt or have it rewritten.`
+        : `Bring the brief in line with design_brief (baseRev ${b.textRev}): the Full Prompt points at the files of a skill added and at none of a skill taken off. If it changes nothing, say so and end your turn.`,
+  );
+  const out = await wakeForBrief(st, lines.join("\n\n"), `${runId}:skills:${run.setupAt ?? run.updatedAt}`);
+  // Its turn starts with this message: it has heard. Queued behind a turn under way, it hasn't yet.
+  if (out && !out.queued) {
+    const now = skillNewsOf(st);
+    now.unheard = now.unheard.filter((n) => !added.includes(n));
+    save(st);
+  }
+  return out !== null;
+}
 
 /** What the coordinator is told of a Start; until it has heard it, a card it writes is still about the brief. */
 const START_NOTE = "The user pressed Start on brief revision ";
@@ -995,6 +1045,11 @@ async function readOneLook(parent: BrowseParent, st: CoordinatorState, url: stri
 function onTurnEnded(st: CoordinatorState): void {
   const run = runOf(st.sessionId, st.runId);
   const parent = { sessionId: st.sessionId, path: st.parentPath };
+  // A skills change queued behind the turn that just ended has been heard by now.
+  if (st.skillNews?.unheard.length) {
+    st.skillNews.unheard = [];
+    save(st);
+  }
   if (run?.phase === "researching") {
     if (st.ask) return;
     if (st.briefNudged) {
@@ -1265,12 +1320,20 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
         imageEdits.push({ name, ...(typeof x.use === "boolean" ? { use: x.use } : {}), ...(typeof x.kind === "string" ? { kind: x.kind } : {}), ...(x.screen ? { screen: x.screen as "rebuild" | "feel" } : {}), ...(words ? { words } : {}) });
       }
       let pickedSkills: string[] | undefined;
+      let skillLine = "";
+      const news = st.skillNews?.runId === st.runId ? st.skillNews : undefined;
       if (params.skills !== undefined) {
         const names = Array.isArray(params.skills) ? params.skills.filter((x): x is string => typeof x === "string") : null;
         const known = (run.skills ?? []).map((k) => k.name);
-        const unknown = names?.filter((x) => !known.includes(x)) ?? [];
+        // A name taken off this run since it last heard is left out, not the whole call refused.
+        const gone = names?.filter((x) => !known.includes(x) && news?.takenOff.includes(x)) ?? [];
+        const unknown = names?.filter((x) => !known.includes(x) && !gone.includes(x)) ?? [];
         if (!names || unknown.length) return refuse(`skills names this run's skills, from: ${known.join(", ") || "none"}${unknown.length ? `. Not one of them: ${unknown.join(", ")}` : ""}.`);
-        pickedSkills = [...new Set(names)];
+        pickedSkills = [...new Set(names.filter((x) => known.includes(x)))];
+        // One added since that it may not have heard of yet stays: it can't have meant to leave that out.
+        const kept = (news?.unheard ?? []).filter((x) => known.includes(x) && !pickedSkills!.includes(x));
+        pickedSkills.push(...kept);
+        skillLine = [gone.length ? ` ${gone.join(", ")} ${gone.length === 1 ? "was" : "were"} taken off this run, so left out of skills.` : "", kept.length ? ` Kept ${kept.join(", ")} in skills: the user added ${kept.length === 1 ? "it" : "them"} to this run after your last message. If one isn't about design, send skills again without it.` : ""].join("");
       }
       const outcome = changeDesigns(parent.sessionId, (s) => {
         const r = s.runs.find((x) => x.id === st.runId)!;
@@ -1318,6 +1381,8 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
           }
         });
       st.briefNudged = false;
+      // Its pick has been checked against the news once: from here it is heard, so a pick may leave a late skill out.
+      if (news && params.skills !== undefined) news.unheard = [];
       publish(st);
       changeDesigns(parent.sessionId, (s) => void delete s.runs.find((r) => r.id === st.runId)!.error);
       refreshLooks(parent, st);
@@ -1325,7 +1390,7 @@ export function coordinatorTools(sessionId: string): ToolSpec[] {
       const unset = (runOf(parent.sessionId, st.runId)?.setup.links ?? []).filter((l) => l.use === null).map((l) => l.url);
       const linkLine = unset.length ? ` Start waits until each link has a use: ${unset.join(", ")}. Set it in sources (images, feel, or content when it's only an address the page links to, such as a contact or booking link), or ask.` : "";
       const next = outcome.open ? `It waits on ${outcome.open} question${outcome.open === 1 ? "" : "s"}. End your turn; the answers come as your next message.` : outcome.unwritten ? `Now write the Full Prompt, with design_brief (prompt, baseRev ${outcome.rev}).` : "End your turn. The user reads it and presses Start; you launch nothing.";
-      return say(`The brief is on the user's card at revision ${outcome.rev}.${linkLine} ${next}`, { brief: true, rev: outcome.rev });
+      return say(`The brief is on the user's card at revision ${outcome.rev}.${skillLine}${linkLine} ${next}`, { brief: true, rev: outcome.rev });
     },
   };
 

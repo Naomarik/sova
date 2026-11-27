@@ -1,10 +1,10 @@
 // The tools Sova serves for the Lookbook. The main chat's: `lookbook` (put up a Setup card, read the
 // coordinator's card or one page, pass words on); its guide is vis's (`vis_guide {kind:"lookbook"}`). A design
-// session's: `design_stream` (the page, whole or as edits) and `design_hand_in` (it is done).
-import { assetNamesProblem } from "./assets";
+// session's: `design_stream` (the page, whole, in parts or as edits), `design_page` (its draft read back) and
+// `design_hand_in` (it is done: the page is checked here).
 import type { HEntry, ToolResult, ToolSpec } from "../../shared/harness";
 import { DESIGN_ASK_ABOVE, DESIGN_BATCH_MAX, DESIGN_TOOL, designDirectionLine, isDesignLabel, type DesignNote } from "../../shared/design";
-import { coordinatorCard, tellCoordinator } from "./coordinator";
+import { coordinatorCard, skillsChanged, tellCoordinator } from "./coordinator";
 import { createRun } from "./setup";
 import { editSetup, leftOutWords, SetupRefused, setupSummary, type EditDeps, type SetupDelta } from "./setup-change";
 import { ownImages } from "./asset-routes";
@@ -13,12 +13,13 @@ import { chatHandle } from "../chat-handle";
 import { sharedFolderOf } from "../../pi-config/extensions/sandbox/shared-folder.ts";
 import { designSectionName } from "../../shared/design-models";
 import type { DesignRun } from "../../shared/design";
-import { assertTakesPages, DESIGN_HAND_IN_TOOL, editBase, handIn, pageProblem, readingSkill, refusedPage, replyPageThisTurn, savePage, takeLook, type DesignParent } from "./batch";
+import { assertTakesPages, DESIGN_HAND_IN_TOOL, draftNow, streamCalled, editBase, handIn, landingProblem, readingSkill, refusedPage, savePage, takeLook, type DesignParent } from "./batch";
 import { listSkillFiles, readSkillFile, runSkills, SKILL_LIMITS, SkillReadRefused, skillNamesOf } from "./skills";
-import { livePage } from "./live";
+import { livePage, streamCallTurnedAway } from "./live";
 import { lookAtDesign } from "./look";
 import type { TourSize } from "../../shared/tour";
 import { changeDesigns, designOf, pendingPage, readPage, viewOf } from "./store";
+import { DESIGN_PAGE_END, DESIGN_PAGE_START } from "../../pi-config/extensions/mode/design-guide.ts";
 import { applyEdits, type Edit } from "./edits";
 import { pageSize, pickVersions, versionCount, versionHeading } from "./versions";
 import { chatTmpDir, pagePathFor, type PageReader } from "./page-paths";
@@ -28,6 +29,7 @@ export { applyEdits };
 
 export const DESIGN_STREAM_TOOL = "design_stream";
 export { DESIGN_HAND_IN_TOOL };
+export const DESIGN_PAGE_TOOL = "design_page";
 export const DESIGN_LOOK_TOOL = "design_look";
 /** The main chat's tools: active whenever vis is on, as the tour tools are. */
 export const DESIGN_TOOLS: ReadonlySet<string> = new Set([DESIGN_TOOL]);
@@ -42,7 +44,7 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
     {
       name: "lookbook",
       label: "lookbook",
-      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "edit" changes the open Setup card when the user asks for a change after it is up: send only what they asked to change (it never opens a second card and never starts anything); until Start Creative Director anything on it, then until Start on the brief only designers, efforts, styles, layouts and Pair Up/Every Mix (the request's words, images and skills then go to the Creative Director with tell). It answers with what the card now holds and anything that couldn't change, and why. op "read" without label: while the newest card is still in Setup, what it holds; else the Creative Director's card (the coordinator) and each design's version count. With label, where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, its views (the screens the page names: tabs, other pages, menus, dialogs), and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "look" returns one picture of one design: label (and version, or "A11"), view (one of its views by name; none: its first screen) and size ("desktop" or "phone"). op "tell" passes text word for word to the Creative Director. images: paths of pictures to add (a screenshot, a logo), each a PNG, JPEG, WebP or GIF up to 8 MB, from one of three places: directly in /tmp (yours, sandbox or not), Sova's attachments folder, or your own shared folder (any folder below it); a picture elsewhere is refused, so copy it into your shared folder first. On start and edit they join the run itself; on tell they go to the Creative Director. Call vis_guide with kind "lookbook" first.`,
+      description: `The Lookbook: one page designed by several models side by side. op "start" puts a Lookbook Setup card in the chat (the user finishes it there, up to ${DESIGN_BATCH_MAX} designs), only when the user asked for a Lookbook. op "edit" changes the open Setup card when the user asks for a change after it is up: send only what they asked to change (it never opens a second card and never starts anything); until Start Creative Director anything on it, then until Start on the brief only designers, efforts, styles, layouts, Pair Up/Every Mix and skills (the request's words and images then go to the Creative Director with tell; a skills change Sova tells it itself, so never pass that on). After Start on the brief nothing on it changes, its skills included. It answers with what the card now holds and anything that couldn't change, and why. op "read" without label: while the newest card is still in Setup, what it holds; else the Creative Director's card (the coordinator) and each design's version count. With label, where a design's page is: its latest version, unless label names one ("A11"); several at once with commas ("A11, A16"). Each comes as a header naming the version returned, when it was made and the versions that exist, its size, its views (the screens the page names: tabs, other pages, menus, dialogs), and the path of its saved file; the page itself isn't in the reply, so read the file (with offset and limit, or grep it). op "look" returns one picture of one design: label (and version, or "A11"), view (one of its views by name; none: its first screen) and size ("desktop" or "phone"). op "tell" passes text word for word to the Creative Director. images: paths of pictures to add (a screenshot, a logo), each a PNG, JPEG, WebP or GIF up to 8 MB, from one of three places: directly in /tmp (yours, sandbox or not), Sova's attachments folder, or your own shared folder (any folder below it); a picture elsewhere is refused, so copy it into your shared folder first. On start and edit they join the run itself; on tell they go to the Creative Director. Call vis_guide with kind "lookbook" first.`,
       parameters: {
         type: "object",
         properties: {
@@ -60,8 +62,8 @@ export function mainDesignTools(parent: () => DesignParent, cwd: () => string): 
           removeLayouts: list("edit: layouts to untick."),
           combine: str("edit: how styles and layouts mix: pair (Pair Up) or every (Every Mix).", { enum: ["pair", "every"] }),
           coordinator: str("start or edit: the model id for the Creative Director (the coordinator), only when the user named one. edit: only before Start Creative Director."),
-          skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none. edit: skills to add."),
-          removeSkills: list("edit: skills to take off, by name."),
+          skills: list("start: design skills the user named for this Lookbook, each a skill's name (this project's skills are found by name) or a folder holding SKILL.md (an absolute or ~ path). None loads by itself: with none named, pass none. edit: skills to add, until Start on the brief; after Start Creative Director one not found is only named in the result."),
+          removeSkills: list("edit: skills to take off, by name, until Start on the brief."),
           images: list("start, edit or tell: the paths of pictures to add (see the allowed places above)."),
           removeImages: list("edit: images to take off this run, by their names (img-1); they stay in the chat's images."),
           label: str('read: the page to locate: a design\'s label ("A") for its latest version, a label with a version number ("A11") for that version, or several separated by commas ("A11, A16"). You get each page\'s file path and size, not its text. look: one design\'s label ("A"), or with a version number ("A11").'),
@@ -197,6 +199,7 @@ function editDeps(p: DesignParent, pictures: { shared?: string | undefined; chat
     addImages: (paths) => ownImages(p, paths, pictures),
     findSkills: (names) => runSkills(cwd, names),
     runs: () => viewOf(p.sessionId).runs,
+    skillsChanged: (runId, change) => skillsChanged(p, runId, change),
     ...(chatModel ? { chatModel } : {}),
   };
 }
@@ -259,17 +262,40 @@ const noteOf = (v: unknown): DesignNote | null => {
 /** The page as its session has it now, for it to look at: one saved and not yet handed in (a Refine checks its
     change before handing it in), or on the reply route one written in this turn's reply; else its newest version. */
 export function pageNow(parent: DesignParent, label: string, ctx: { branch(): HEntry[] } | undefined): { html?: string } {
-  const html = pendingPage(parent.sessionId, label) ?? (ctx ? replyPageThisTurn(ctx.branch()) : null);
+  const html = draftNow(parent.sessionId, label, ctx ? ctx.branch() : null);
   return html === null ? {} : { html };
 }
 
 /** A design session's tools, bound to the design it was started for. A model that can't stream tool arguments
-    isn't offered `design_stream`: a page sent that way would arrive whole at the end, and its reply is how the
-    user watches it being written. */
+    writes its page in its reply, which is how the user watches it being written: its `design_stream` takes only
+    edits, a page sent whole or in parts that way would arrive only at the end. */
 export function sessionDesignTools(parent: DesignParent, label: string): ToolSpec[] {
   const d = designOf(parent.sessionId, label);
-  const tools = [...allSessionTools(parent, label), ...(d?.skills?.length ? [skillTool(parent, label)] : [])];
-  return d?.route === "reply" ? tools.filter((t) => t.name !== DESIGN_STREAM_TOOL) : tools;
+  return [...allSessionTools(parent, label, d?.route === "reply"), ...(d?.skills?.length ? [skillTool(parent, label)] : [])];
+}
+
+/** The most lines one read-back of the draft returns, besides its byte cap (a skill read's). */
+export const DESIGN_PAGE_READ_LINES = 2_000;
+
+/** The draft, or part of it, with its line numbers: from line `from` (1-based), at most `lines` lines and at most a
+    skill read's bytes. Says where it stopped, so the next read can go on from there. */
+export function draftLines(html: string, from = 1, lines = DESIGN_PAGE_READ_LINES): string {
+  const all = html.split("\n");
+  const first = Math.max(1, Math.floor(from));
+  if (first > all.length) return `The page has ${all.length} lines; there is no line ${first}.`;
+  const want = Math.max(1, Math.min(Math.floor(lines), DESIGN_PAGE_READ_LINES));
+  const out: string[] = [];
+  let bytes = 0;
+  let n = first;
+  for (; n <= all.length && n < first + want; n++) {
+    const line = `${n}\t${all[n - 1]}`;
+    bytes += Buffer.byteLength(line) + 1;
+    if (bytes > SKILL_LIMITS.readBytes && out.length) break;
+    out.push(line);
+  }
+  const last = n - 1;
+  const more = last < all.length ? `\n(lines ${first}-${last} of ${all.length}; read on with from ${last + 1})` : "";
+  return `${out.join("\n")}${more}`;
 }
 
 /** A design's skill reader: read only, inside the skill folders its own record names (never pi's file tools). */
@@ -301,7 +327,17 @@ function skillTool(parent: DesignParent, label: string): ToolSpec {
   };
 }
 
-function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
+/** What a design_stream call says back: what it kept, and once the draft is a whole document, what a hand-in would
+    object to in it, as advice (nothing is spent: the hand-in checks). */
+function savedText(sid: string, html: string, what: string, reply: boolean): string {
+  const size = `${what} (${html.length} characters).`;
+  if (!/<\/html>\s*$/i.test(html)) return reply ? `${size} It doesn't end with </html>, so it isn't a whole page yet.` : `${size} It isn't a whole page yet: go on with append, then call ${DESIGN_HAND_IN_TOOL} when it is complete.`;
+  const problem = landingProblem(sid, html);
+  if (problem) return `${size} Your page is whole, but ${DESIGN_HAND_IN_TOOL} would refuse it as it is: ${problem}\nFix that first, with edits or as suits you.`;
+  return `${size} Your page is whole: call ${DESIGN_HAND_IN_TOOL} when you are done with it, then stop.`;
+}
+
+function allSessionTools(parent: DesignParent, label: string, reply = false): ToolSpec[] {
   const own = (asked: unknown): void => {
     if (asked !== label) throw new Error(`You are design ${label}; label must be ${label}.`);
     assertTakesPages(parent.sessionId, label);
@@ -325,31 +361,69 @@ function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
     {
       name: DESIGN_STREAM_TOOL,
       label: "design stream",
-      description: "Write your page: html is the complete document, in one call; or edits, a list of exact find-and-replace pairs on your current page.",
+      description: reply
+        ? `Change your page with edits: a list of exact find-and-replace pairs, on the page your reply wrote between the marker lines (else your newest version). Your page itself is written in your reply, between the markers, never here.`
+        : `Write your page in one go or in parts, whichever suits you; each call is one of these. html: the whole document, or its first part (from <!DOCTYPE html>); it starts your draft, or replaces it. append: text added to the end of your draft, to write the page in parts. edits: exact find-and-replace pairs on your draft (else on your newest version). Nothing is checked until ${DESIGN_HAND_IN_TOOL}; ${DESIGN_PAGE_TOOL} reads your draft back.`,
       parameters: {
         type: "object",
         properties: {
           label: str("Your label."),
-          html: str("The complete HTML document."),
-          edits: { type: "array", items: { type: "object", properties: { find: { type: "string" }, replace: { type: "string" } }, required: ["find", "replace"] }, description: "Find-and-replace pairs, each matching exactly once, instead of html." },
+          ...(reply ? {} : { html: str("The whole HTML document, or its first part: starts your draft, or replaces it."), append: str("Text added to the end of your draft: the page's next part.") }),
+          edits: { type: "array", items: { type: "object", properties: { find: { type: "string" }, replace: { type: "string" } }, required: ["find", "replace"] }, description: reply ? "Find-and-replace pairs, each matching exactly once." : "Find-and-replace pairs on your draft, each matching exactly once, instead of html or append." },
         },
-        required: ["label"],
+        required: reply ? ["label", "edits"] : ["label"],
       },
-      async execute(_id, params: { label?: string; html?: string; edits?: Edit[] }) {
+      async execute(_id, params: { label?: string; html?: unknown; append?: unknown; edits?: Edit[] }, _signal, _update, ctx) {
         own(params?.label);
-        let html = params.html;
-        if (html === undefined) {
-          if (!params.edits?.length) throw new Error("Send html, or edits.");
-          const current = editBase(parent.sessionId, label);
-          if (!current) refusedPage(parent, label, "You have no page to edit yet; send html.");
-          const out = applyEdits(current, params.edits);
-          if ("error" in out) refusedPage(parent, label, out.error);
-          html = out.html;
+        streamCalled(parent.sessionId, label);
+        try {
+          const sent = (["html", "append", "edits"] as const).filter((k) => params[k] !== undefined);
+          if (reply && (params.html !== undefined || params.append !== undefined))
+            throw new Error(`Your page is written in your reply, between the line ${DESIGN_PAGE_START} and the line ${DESIGN_PAGE_END}; design_stream takes only edits.`);
+          if (sent.length !== 1) throw new Error(sent.length ? `Send one of html, append or edits per call, not ${sent.join(" and ")}.` : "Send html, append or edits.");
+          let html: string;
+          let what: string;
+          if (params.html !== undefined) {
+            if (typeof params.html !== "string" || !params.html.trim()) throw new Error("html is the page's text.");
+            html = params.html;
+            what = "Saved as your draft";
+          } else if (params.append !== undefined) {
+            if (typeof params.append !== "string" || !params.append) throw new Error("append is the text to add.");
+            const draft = pendingPage(parent.sessionId, label);
+            if (draft === null) throw new Error("You have no draft to add to yet: start the page with html (its first part, or all of it).");
+            html = draft + params.append;
+            what = "Added to your draft";
+          } else {
+            if (!Array.isArray(params.edits) || !params.edits.length) throw new Error("edits is a list of find-and-replace pairs.");
+            const current = editBase(parent.sessionId, label, ctx ? ctx.branch() : null);
+            if (current === null) throw new Error(reply ? "You have no page to edit yet: write it in your reply, between the marker lines." : "You have no page to edit yet; send html.");
+            const out = applyEdits(current, params.edits);
+            if ("error" in out) throw new Error(`${out.error} Nothing was changed.`);
+            html = out.html;
+            what = "Edits applied to your draft";
+          }
+          savePage(parent, label, html);
+          return say(savedText(parent.sessionId, html, what, reply), { label, chars: html.length });
+        } catch (err) {
+          // Its page, if it streamed one whole, is no page a later part goes on from.
+          streamCallTurnedAway(parent.sessionId, label);
+          throw err;
         }
-        const problem = pageProblem(html) ?? assetNamesProblem(parent.sessionId, html);
-        if (problem) refusedPage(parent, label, problem, html);
-        savePage(parent, label, html);
-        return say("Saved. Now call design_hand_in, then stop: the user is looking at your page.");
+      },
+    },
+    {
+      name: DESIGN_PAGE_TOOL,
+      label: "design page",
+      description: `Read your draft back, with line numbers: the page as you have it now (else your newest version). from: the first line (1 by default); lines: how many (at most ${DESIGN_PAGE_READ_LINES}).`,
+      parameters: { type: "object", properties: { label: str("Your label."), from: { type: "integer", description: "The first line to read, from 1." }, lines: { type: "integer", description: "How many lines." } }, required: ["label"] },
+      async execute(_id, params: { label?: string; from?: unknown; lines?: unknown }, _signal, _update, ctx) {
+        own(params?.label);
+        const draft = draftNow(parent.sessionId, label, ctx ? ctx.branch() : null);
+        const html = draft ?? readPage(parent.sessionId, label);
+        if (html === null) throw new Error(reply ? "You have no page yet: write it in your reply, between the marker lines." : "You have no draft yet: start it with design_stream html.");
+        const num = (v: unknown, dflt: number): number => (typeof v === "number" && Number.isFinite(v) && v >= 1 ? v : dflt);
+        const head = draft === null ? `You have no draft; this is your newest version (${html.length} characters).` : `Your draft (${html.length} characters):`;
+        return say(`${head}\n${draftLines(html, num(params.from, 1), num(params.lines, DESIGN_PAGE_READ_LINES))}`, { label, chars: html.length });
       },
     },
     {
@@ -372,15 +446,15 @@ function allSessionTools(parent: DesignParent, label: string): ToolSpec[] {
         own(params?.label);
         const note = noteOf(params.note);
         if (!note) throw new Error("note needs layout, sections, type and color.");
-        let html = pendingPage(parent.sessionId, label);
-        if (html === null) {
-          // A reply-route model: the page stands between its markers in a reply of this turn, not always this call's.
-          html = ctx ? replyPageThisTurn(ctx.branch()) : null;
-          if (html === null) html = livePage(parent.sessionId, label)?.text ?? null;
-        }
+        // Its draft; on the reply route a page written between its markers in a reply of this turn since, not always this call's.
+        let html = draftNow(parent.sessionId, label, ctx ? ctx.branch() : null);
+        // On the reply route the page may stand only in what its reply streamed; on the tool route only the draft counts:
+        // a live page there is a design_stream call that was turned away.
+        if (html === null && reply) html = livePage(parent.sessionId, label)?.text ?? null;
         if (html === null) refusedPage(parent, label, "You have no page to hand in yet.");
-        const problem = pageProblem(html) ?? assetNamesProblem(parent.sessionId, html);
-        if (problem) refusedPage(parent, label, problem);
+        // The checks run here: a refused page stays the draft, so the fix can be a small edit.
+        const problem = landingProblem(parent.sessionId, html);
+        if (problem) refusedPage(parent, label, problem, html);
         const v = handIn(parent, label, html, note);
         return say(`Handed in as version ${v.n}. Stop now.`, { label, version: v.n });
       },

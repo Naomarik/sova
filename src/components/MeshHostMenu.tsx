@@ -4,6 +4,7 @@ import { connectedCount, hostTone, openMeshDetails } from "../lib/mesh-details";
 import { meshPeers, meshState, peerReading, peerUnavailable, SELF_FILTER } from "../lib/mesh";
 import type { HostReading } from "../lib/mesh-compat";
 import { jobRunning, type MeshResync, RESYNC_POLL_MS, resyncNote, resyncView } from "../lib/mesh-resync";
+import { createPopoverMenu } from "../lib/popover-menu";
 import { MeshResyncSheet } from "./MeshResyncSheet";
 import { Icon } from "./ui";
 
@@ -20,10 +21,6 @@ interface Option {
 // Styles: src/mesh.css, loaded app-wide by MeshView. Not imported here: lib code that reaches this
 // file through the Sidebar (its sessionHref) runs under node in tests, which can't load CSS.
 
-/** The gap the panel keeps from the viewport edges and from its trigger. */
-const EDGE_GAP = 8;
-const TRIGGER_GAP = 4;
-
 /**
  * The session pane's host row, the first row of its foot (above the usage row): `All hosts ▾` with
  * `2/3 connected` at its right end, the whole row the menu's trigger. The menu picks one host's sessions (or All) — the choice is the filter — and ends with
@@ -35,9 +32,6 @@ const TRIGGER_GAP = 4;
 export function MeshHostMenu(props: { value: string | null; onChange(value: string | null): void }) {
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
-  const [open, setOpen] = createSignal(false);
-  /** The menu closed because of a choice: focus is placed by the choice, not the toggle. */
-  let chose = false;
 
   const selfName = () => meshState()?.self.label || meshState()?.self.hostname || "This host";
   const options = (): Option[] => [
@@ -47,6 +41,15 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
   ];
   const current = () => options().find((o) => o.value === props.value) ?? options()[0]!;
   const count = () => connectedCount(meshPeers());
+
+  // Placement, the keyboard walk and focus on close: the pane foot's menu (src/lib/popover-menu.ts).
+  const m = createPopoverMenu({
+    trigger: () => trigger,
+    menu: () => menu,
+    startAt: () => options().findIndex((o) => o.value === props.value),
+    onOpen: () => readResync(),
+  });
+  const { open, place, openMenu, closeMenu } = m;
 
   const [resync, setResync] = createSignal<MeshResync | null>(null);
   const [sheet, setSheet] = createSignal<string | null>(null);
@@ -71,84 +74,14 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
     return r && id !== null && id !== SELF_FILTER ? resyncView(r.hosts.find((h) => h.id === id), r.self) : { line: null, button: null };
   };
   const openSheet = (id: string) => {
-    chose = true;
-    closeMenu();
+    m.closeChosen();
     setSheet(id);
   };
 
-  const items = () => [...menu.querySelectorAll<HTMLElement>("[role^=menuitem]")];
-  const focusItem = (i: number) => {
-    const list = items();
-    if (!list.length) return;
-    list[((i % list.length) + list.length) % list.length]!.focus();
-  };
-
-  /** Below the trigger if it fits, else above (the foot's case), left edges aligned, clamped inside
-   *  the window (measured, not guessed). */
-  const place = () => {
-    if (!menu.isConnected || !menu.matches(":popover-open")) return;
-    const r = trigger.getBoundingClientRect();
-    const below = innerHeight - EDGE_GAP - (r.bottom + TRIGGER_GAP);
-    const above = r.top - TRIGGER_GAP - EDGE_GAP;
-    menu.style.setProperty("--menu-max", `${Math.round(Math.max(below, above, 140))}px`);
-    const box = menu.getBoundingClientRect();
-    const top = box.height <= below ? r.bottom + TRIGGER_GAP : r.top - TRIGGER_GAP - box.height;
-    menu.style.setProperty("--menu-top", `${Math.round(Math.min(Math.max(top, EDGE_GAP), Math.max(EDGE_GAP, innerHeight - EDGE_GAP - box.height)))}px`);
-    menu.style.setProperty("--menu-left", `${Math.round(Math.min(Math.max(r.left, EDGE_GAP), Math.max(EDGE_GAP, innerWidth - EDGE_GAP - box.width)))}px`);
-  };
-
-  const openMenu = () => {
-    chose = false;
-    menu.showPopover();
-    place();
-    const at = options().findIndex((o) => o.value === props.value);
-    queueMicrotask(() => focusItem(Math.max(0, at)));
-    readResync();
-  };
-  const closeMenu = () => {
-    if (menu.matches(":popover-open")) menu.hidePopover();
-  };
-  const choose = (value: string | null) => {
-    chose = true;
-    closeMenu();
-    trigger.focus();
-    props.onChange(value);
-  };
+  const choose = (value: string | null) => m.choose(() => props.onChange(value));
   const details = () => {
-    chose = true;
-    closeMenu();
+    m.closeChosen();
     openMeshDetails();
-  };
-
-  // Listeners exist only while the menu is open.
-  const follow = () => place();
-  const listen = (on: boolean) => {
-    if (on) {
-      addEventListener("resize", follow);
-      addEventListener("scroll", follow, true);
-    } else {
-      removeEventListener("resize", follow);
-      removeEventListener("scroll", follow, true);
-    }
-  };
-  onCleanup(() => listen(false));
-
-  const onKeyDown = (e: KeyboardEvent) => {
-    const list = items();
-    const at = list.indexOf(document.activeElement as HTMLElement);
-    const keys: Record<string, () => void> = {
-      ArrowDown: () => focusItem(at + 1),
-      ArrowUp: () => focusItem(at - 1),
-      Home: () => focusItem(0),
-      End: () => focusItem(list.length - 1),
-      Enter: () => (document.activeElement as HTMLElement | null)?.click(),
-      " ": () => (document.activeElement as HTMLElement | null)?.click(),
-      Tab: closeMenu,
-    };
-    const act = keys[e.key];
-    if (!act) return;
-    if (e.key !== "Tab") e.preventDefault();
-    act();
   };
 
   return (
@@ -178,13 +111,8 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
         ref={menu}
         class="model-menu action-menu host-menu-panel"
         popover="auto"
-        onKeyDown={onKeyDown}
-        onToggle={(e) => {
-          const isOpen = (e as ToggleEvent).newState === "open";
-          setOpen(isOpen);
-          listen(isOpen);
-          if (!isOpen && !chose && menu.contains(document.activeElement)) trigger.focus();
-        }}
+        onKeyDown={m.onKeyDown}
+        onToggle={m.onToggle}
       >
         <div class="model-menu-list" role="menu" aria-label="Host">
           <For each={options()}>

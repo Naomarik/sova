@@ -93,10 +93,10 @@ test("the request's words change before Start Creative Director, and its links a
   assert.deepEqual(c.now().setup.links, [{ url: "https://example.test/pricing", use: null }]);
 });
 
-test("with the brief open: designers, efforts and styles change, the brief's version goes up and its estimate is redone; words, images, skills and the Creative Director go to tell", async () => {
+test("with the brief open: designers, efforts and styles change, the brief's version goes up and its estimate is redone; words, images and the Creative Director go to tell", async () => {
   const c = chat({ phase: "brief", brief: { rev: 4, textRev: 1, summary: "s", prompt: "p", promptBy: "coordinator", writing: null, conflict: null, questions: [], looks: {}, estimateUsd: 123 } });
   const rev = c.now().brief!.rev;
-  const r = await c.call({ op: "edit", removeModels: ["glm-5.3"], efforts: { all: "high" }, brief: "something else", coordinator: "glm-5.3", removeImages: ["img-1"], removeSkills: ["brand"] });
+  const r = await c.call({ op: "edit", removeModels: ["glm-5.3"], efforts: { all: "high" }, brief: "something else", coordinator: "glm-5.3", removeImages: ["img-1"] });
   const run = c.now();
   assert.equal(run.brief!.rev, rev + 1);
   assert.notEqual(run.brief!.estimateUsd, 123, "the estimate is redone");
@@ -104,7 +104,8 @@ test("with the brief open: designers, efforts and styles change, the brief's ver
   assert.deepEqual(run.setup.models.filter((m) => m.design).map((m) => [m.ref, m.effort]), [["anthropic/claude-sonnet-4-5", "high"]]);
   assert.equal(run.setup.brief, "A pricing page");
   assert.equal(run.setup.models.find((m) => m.coordinator)!.ref, "anthropic/claude-sonnet-4-5");
-  for (const what of [/request's words go to the Creative Director now/, /Creative Director is already at work/, /Images go to the Creative Director now/, /Skills go to the Creative Director now/]) assert.match(r.text, what);
+  for (const what of [/request's words go to the Creative Director now/, /Creative Director is already at work/, /Images go to the Creative Director now/]) assert.match(r.text, what);
+  assert.equal(run.brief!.writing, null, "no skills changed, so Start waits on nothing new");
   // An effort change alone raises the price, against the same designers.
   const low = run.brief!.estimateUsd!;
   await c.call({ op: "edit", efforts: { all: "low" } });
@@ -241,4 +242,89 @@ test("a save from a card older than the newest change is refused, and the run is
   assert.ok(c.now().setupAt! > after.setupAt!, "a new stamp for the next save's base");
   // No base (a script): applies as before.
   assert.equal((await patch({ ...c.now().setup })).status, 200);
+});
+
+// ---- skills until Start on the brief -------------------------------------------------------------
+
+/** A skill folder on disk, as the edit names one, and as a run holds it. */
+async function kit(name: string, body = `Use --${name}.`) {
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const dir = join(agentDir, "kits", name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: The ${name} rules.\n---\n${body}`);
+  return { name, description: `The ${name} rules.`, dir, from: "named" as const };
+}
+const openBrief = (over: Record<string, unknown> = {}) => ({ rev: 4, textRev: 2, summary: "s", prompt: "p", promptBy: "coordinator" as const, writing: null, conflict: null, questions: [], looks: {}, estimateUsd: 123, ...over });
+
+test("skills on each stage: added, taken off and not found until Start on the brief; not found is recorded only before Start Creative Director; after Start nothing changes", async () => {
+  const brand = await kit("brand");
+  const tokens = await kit("tokens");
+  const stages: { stage: string; run: Partial<DesignRun>; records: boolean }[] = [
+    { stage: "Setup", run: {}, records: true },
+    { stage: "preparing", run: { phase: "researching" }, records: false },
+    { stage: "brief open", run: { phase: "brief", brief: openBrief() }, records: false },
+  ];
+  for (const { stage, run, records } of stages) {
+    const c = chat({ ...run, skills: [brand] });
+    const added = await c.call({ op: "edit", skills: [tokens.dir] });
+    assert.deepEqual(c.now().skills!.map((k) => k.name), ["brand", "tokens"], `${stage}: added`);
+    assert.doesNotMatch(added.text, /Not changed/, stage);
+    const missing = await c.call({ op: "edit", skills: [join(agentDir, "kits", "nowhere")] });
+    assert.match(missing.text, /nowhere: There is no such folder\./, `${stage}: named in the result at once`);
+    assert.deepEqual(c.now().skillsMissing?.map((m) => m.asked.endsWith("nowhere")) ?? [], records ? [true] : [], `${stage}: recorded for the brief to ask only before Start Creative Director`);
+    await c.call({ op: "edit", removeSkills: ["brand"] });
+    assert.deepEqual(c.now().skills!.map((k) => k.name), ["tokens"], `${stage}: taken off`);
+  }
+  const started = chat({ phase: "generating", skills: [brand], brief: openBrief({ startedRev: 4 }) });
+  for (const edit of [{ skills: [tokens.dir] }, { removeSkills: ["brand"] }]) await assert.rejects(started.call({ op: "edit", ...edit }), /has started its designs, so its Setup can't change any more, its skills included/);
+  assert.deepEqual(started.now().skills!.map((k) => k.name), ["brand"]);
+});
+
+test("past Setup a skill not found leaves the run and its brief as they were", async () => {
+  const c = chat({ phase: "brief", skills: [await kit("brand")], brief: openBrief() });
+  const before = structuredClone(c.now());
+  const r = await c.call({ op: "edit", skills: ["no-such-skill-anywhere"] });
+  assert.match(r.text, /Not changed:\n- no-such-skill-anywhere: /);
+  assert.deepEqual(c.now(), before, "nothing recorded, the brief's version unmoved");
+});
+
+test("a skill added with the brief open joins the Creative Director's pick, the estimate moves, and Start can't go on the brief as it was", async () => {
+  const c = chat({ phase: "brief", skills: [await kit("brand"), await kit("playwright")], brief: openBrief({ skills: ["brand"] }) });
+  const tokens = await kit("tokens", "x".repeat(40_000));
+  const { designerSkills, designBriefBlock } = await import("../../shared/design");
+  assert.equal(designBriefBlock(c.now()), null, "Start could go before the change");
+  await c.call({ op: "edit", skills: [tokens.dir] });
+  const run = c.now();
+  assert.deepEqual(designerSkills(run).map((k) => k.name), ["brand", "tokens"], "added late, it goes to the designers by default; the one left out stays out");
+  assert.notEqual(run.brief!.estimateUsd, 123, "what each designer reads is in the estimate");
+  // This chat has no Creative Director to tell, so the brief says it hasn't written the prompt (with one, Start waits
+  // for its turn: coordinator.test.ts).
+  assert.equal(run.brief!.writing?.cause, "told", "the change is news the Full Prompt has to take in");
+  assert.notEqual(designBriefBlock(run), null, "Start can't go on the brief as it was");
+});
+
+test("a skill taken off leaves the pick (none when the run has no skills left); with the user's own Full Prompt the brief asks Keep My Prompt or Rewrite It", async () => {
+  const c = chat({ phase: "brief", skills: [await kit("brand"), await kit("playwright")], brief: openBrief({ promptBy: "user", skills: ["brand", "playwright"] }) });
+  await c.call({ op: "edit", removeSkills: ["playwright"] });
+  assert.deepEqual(c.now().brief!.skills, ["brand"]);
+  assert.deepEqual(c.now().brief!.conflict, { cause: "told" });
+  assert.equal(c.now().brief!.prompt, "p", "the user's prompt stands");
+  await c.call({ op: "edit", removeSkills: ["brand"] });
+  assert.equal(c.now().skills, undefined);
+  assert.equal(c.now().brief!.skills, undefined, "no skills left: no pick");
+});
+
+test("a skills change the Creative Director can't be told of leaves Start saying it hasn't written the prompt, never waiting for ever, and the reply says so", async () => {
+  const { editSetup } = await import("./setup-change");
+  const { designBriefBlock } = await import("../../shared/design");
+  const x = await kit("x");
+  const ports = [{ skillsChanged: async () => false }, {}];
+  for (const port of ports) {
+    const c = chat({ phase: "brief", brief: openBrief() });
+    const out = await editSetup(c.sessionId, c.run.id, { skills: ["x"] }, { addImages: async () => ({ names: [], refused: [] }), findSkills: async () => ({ skills: [x], missing: [] }), runs: () => [c.now()], ...port });
+    assert.equal(c.now().brief!.writing?.stalled, true, port.skillsChanged ? "told nobody" : "no port to tell it");
+    assert.equal(designBriefBlock(c.now())?.code, "stalled");
+    assert.match(out.text, /The Creative Director couldn't be told that the user added x: pass it on with op tell\./);
+    assert.doesNotMatch(out.text, /Sova told the Creative Director/);
+  }
 });

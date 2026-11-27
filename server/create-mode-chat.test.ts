@@ -179,7 +179,7 @@ test("/mode create sent by a script or the Overseer is refused to the sender, an
   res = await send({ [OVERSEER_SENDER_HEADER]: senderSecret() });
   assert.equal(res.status, 409);
   assert.equal(((await res.json()) as { error: string }).error, createNotNamed("the Overseer"));
-  assert.equal(((await promptSession(path, "/mode create", undefined, "followUp", { projectOverseer: "po" })) as { error: string }).error, createNotNamed("a project overseer"));
+  assert.equal(((await promptSession(path, "/mode create", { delivery: "followUp", projectOverseer: { id: "po" } })) as { error: string }).error, createNotNamed("a project overseer"));
   assert.notEqual((await get(path)).mode, "create");
   assert.equal(readFileSync(path, "utf8").length, size, "no row");
 });

@@ -61,7 +61,7 @@ test("a chat open in a terminal is never written to: the prompt is refused, logg
   assert.ok(readLiveRecords().some(r => r.sessionFile === path), `precondition: the terminal record (pid ${process.ppid}) reads as live`);
   const { promptSession } = await import("../session-prompt");
   const logs: string[] = []; let prompts = 0;
-  const notify = tourSignInNotifier({ pathOf: async () => path, prompt: (p, text, key) => (prompts++, promptSession(p, text, undefined, "followUp", undefined, key)), log: l => logs.push(l) });
+  const notify = tourSignInNotifier({ pathOf: async () => path, prompt: (p, text, key) => (prompts++, promptSession(p, text, { delivery: "followUp", key })), log: l => logs.push(l) });
   notify(event({ sessionId: "s-live" }));
   for (let i = 0; i < 100 && !logs.length; i++) await flush();
   assert.equal(prompts, 1, "tried once, never again");

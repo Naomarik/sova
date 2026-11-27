@@ -97,7 +97,14 @@ places is a count that disagrees in one of them.
   browser's: the server keeps it on this computer only. A flip saves at once and is not part of any
   form, so Save Changes neither stages nor writes it; a save that fails puts the switch back with a
   toast. Turning it off is open to any caller; turning it back on is the operator's own page only.
-- **Agents' CPU · this computer** — after Context files and skills and before Server · this machine,
+- **Chats · this computer** — after Context files and skills, under its own heading: **Chat homes**
+  and **Compress old archived chats**, both on by default, this computer's, each saved at once
+  outside every form (§app.chat-homes/switch), and the **Chats folder** row: the folder chats with
+  a home are in, a warning when it is missing, and `Change…`, which moves every home to the folder
+  you pick (§app.chat-homes/chats-folder). The move is an action that runs on its own confirm, not
+  part of any form: Save Changes neither stages nor writes it. Fixed by the server's environment,
+  the row is read-only with the reason and has no `Change…`.
+- **Agents' CPU · this computer** — after Chats and before Server · this machine,
   under its own heading: one switch, **Limit agents' CPU**, **off by default**, and when on, the box
   **Agents may use at most [N] of M cores** (§app.load-priority/ceiling). It is this computer's, kept
   by the server; the switch and the box save at once and are not part of any form, so Save Changes
@@ -396,10 +403,9 @@ from each chat's next summary.
   comes sooner." Under both: "Applies from each chat's next message (UniiChat) or next compaction.
   Nothing is deleted: making it bigger keeps finer detail from now on, and older lines stay
   merged." The sizes wait for Save with the summarizer, in the same "Memory" draft.
-- The default memory type new chats start from is saved by the mode menu's Make {name} the Default
-  (§chat.mode-menu/memory-panel); a save here keeps it. The footnote says so under the file's
-  path ("Stored in ~/….json. The memory type new chats start from is saved from a chat's mode
-  menu, with Make Default.").
+- The default memory type new chats start from is `mode.json`'s (§chat.mode-menu/memory-panel); a
+  save here keeps it. The mode menu no longer saves it, so the footnote under the file's path says
+  only where it is stored ("Stored in ~/….json.").
 
 ## §app.settings-dialog/themes — Themes
 
@@ -573,7 +579,8 @@ on a narrow panel (under 480px of the tab's width) the editor sits under the lis
   (§chat.subagent-profiles/off). The system profiles are never listed. Each row is the profile's name
   over its footprint ("Opus 5.5 + GPT-6.2 Sol", §chat.profiles/joined): its models only, never its
   modes (delegate, align, spec) or tools (Edit files, say), and no source badge, since the group a row sits under says
-  where it comes from. The default row carries a **Default** chip (this computer's default,
+  where it comes from. A built-in one you have edited keeps its place under Built in, with a
+  **Yours** chip (§chat.subagent-profiles/edited-builtin). The default row carries a **Default** chip (this computer's default,
   §chat.profiles/default); a project profile that needs your approval (§chat.profiles/trust), one
   that reads and messages sessions say, carries **Needs approval**, gone once approved; and one
   hidden from the pickers carries **Hidden** once hidden. The row of the profile in effect for the
@@ -648,7 +655,7 @@ on this profile." under the head. Under it, two tabs: **Models** and **When a Ch
   its next turn or team action. Make Default saves with it.
 - **Also for yours:** **Duplicate**, **Delete** (disabled, with the title "Make another profile the
   default first.", on a chosen default, one made the default in this unsaved draft included; enabled
-  on a default only the connected accounts give, such as a Make It Yours copy, whose delete brings
+  on a default only the connected accounts give, whose delete brings
   the built-in one back and writes no default, §chat.profiles/default; a shared library half stays for the profiles still linking it,
   §chat.profiles/joined, and one in a built-in one's place stays, §chat.subagent-profiles/shadowing) and **Hide From Picker** (**Show In Picker** once hidden, saved at once).
 - **A project's profile** shows every field read-only, its name included, and a warn notice: "This
@@ -656,15 +663,19 @@ on this profile." under the head. Under it, two tabs: **Models** and **When a Ch
   for ("It asks to read and message sessions."), and, while it needs your approval
   (§chat.profiles/trust), **Approve Profile**, which saves at once and only from your own click;
   once approved the notice keeps its first sentence. Make Default and Hide From Picker stay offered.
-- **A built-in profile** (§chat.subagent-profiles/builtins) shows both parts read-only, its name
-  included, with Make Default (or the Default chip), Hide From Picker and **Make It Yours**, and the
-  line "Built in for your {account} account. Make It Yours to change it." ({account}: Claude, OpenAI
-  or Ollama Cloud; "Built in. Make It Yours to change it." when its models name none or several).
-  **Make It Yours** adds an editable copy under Yours, both parts, with the built-in one's name, and
-  opens it where the built-in one was; it is saved with Save Changes, and once saved takes the
-  built-in one's place (§chat.subagent-profiles/shadowing). While one of yours already has that name it
-  is disabled, its title "One of yours is already named {name}.". Update and Set All To aren't
-  offered on it.
+- **A built-in profile** (§chat.subagent-profiles/builtins) opens straight in the editor, both
+  parts editable like one of yours, Set All To included (the name field only once another change
+  made it yours), with Make Default (or the Default chip), Hide From Picker and the line "Built in
+  for your {account} account. Your changes make it yours." ({account}: Claude, OpenAI or Ollama
+  Cloud; "Built in. Your changes make it yours." when its models name none or several). No Make It
+  Yours step: Save Changes after an edit makes it yours, frozen
+  (§chat.subagent-profiles/edited-builtin), in its place and still open.
+- **An edited built-in one** sits under Built in with the **Yours** chip, is edited like one of
+  yours, and reads "Yours, changed from the built-in {name}. Sova's updates to {name} no longer
+  reach it." with **Reset to Built-in** in Delete's place: never refused for the default or a
+  disconnected account, it waits in the draft and saves with Save Changes, and the editor moves to
+  the built-in one. An unsaved copy's reset brings the built-in one back at once; a saved copy's
+  shows it again only once Save Changes has saved the reset (until then neither is listed).
 
 ## §app.settings-dialog/profile-set-all — Set All To
 
@@ -977,8 +988,8 @@ waits for the dialog's Save Changes. Its words are §design.copy-deck/settings-e
 - **The review**, shown before anything is on, and again for Waiting for You and Changed, states:
   the exact program, and that it runs as you with no sandbox; that its page runs on Sova's own address and
   can do what you can, including adding other extensions; that its key opens nearly all of Sova, with its
-  calls recorded under its name; its cards, commands and what it offers the Overseer; which rules it
-  needs; and what was left out and why. A part it doesn't have is left out of the review. Nothing runs
+  calls recorded under its name; its cards, commands and what it offers the Overseer; whether it
+  reads your chats (§app.extensions/reads-chats); which rules it needs; and what was left out and why. A part it doesn't have is left out of the review. Nothing runs
   before **Install and Turn On**, or **Approve** for one already on the list. Cancel changes nothing.
 - **Once on.** The row goes to Starting and Running with no restart (§app.extensions/loader), and a toast says
   so; for an extension with cards it adds that new chats can use them and open chats keep what they started

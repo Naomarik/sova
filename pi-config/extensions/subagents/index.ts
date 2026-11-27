@@ -102,7 +102,7 @@ import { RestoredWorker, isRestored } from "./restored.ts";
 import { placeholderDir, placeholderRoot, toRemotePath } from "../remote/argv.ts";
 import { REMOTE_DISCOVER_EVENT, REMOTE_SESSION_EVENT, type RemoteSessionEvent } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
-import { chatSharedFolder, SHARED_DIR_ENV, sharedTeamsDir } from "../sandbox/shared-folder.ts";
+import { CHAT_HOME_ENV, chatSharedFolder, SHARED_DIR_ENV, sharedTeamsDir } from "../sandbox/shared-folder.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
 
@@ -3024,7 +3024,13 @@ export function registerSubagents(
 		if (!open && !byMembers && !c.auto) return [];
 		return [`${indent}Inbox: ${open} open · closed by members ${byMembers} · automatically ${c.auto}`];
 	};
-	const sessionMailbox = () => path.join(agentDir(), "sova", "teams", sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey), "mailbox");
+	// A chat with a home (SOVA_CHAT_HOME, set by the server for it and every helper under it) keeps each lead's mailbox in
+	// `<home>/teams/<lead key>/`; an older chat's stays in the agent dir.
+	const sessionMailbox = () => {
+		const key = sessionDirKey(activeCtx?.sessionManager.getSessionId?.(), unsavedSessionKey);
+		const home = process.env[CHAT_HOME_ENV];
+		return home && path.isAbsolute(home) ? path.join(home, "teams", key) : path.join(agentDir(), "sova", "teams", key, "mailbox");
+	};
 	const ensureMailbox = (): string => {
 		if (!mailboxRoot) {
 			// Beside the session's handover notes, and kept: a reattached or resumed member keeps its inbox,
@@ -3541,6 +3547,26 @@ export function registerSubagents(
 		for (const entry of views) if (!agents.some((a) => a.id === entry.manifest.workerId)) restoredViews.set(entry.manifest.workerId, entry);
 		applyBranch(ctx);
 	};
+	/**
+	 * A worker's recorded conversation, or the same conversation found by its session id beside this
+	 * session's own file when the recorded path is gone: a chat whose home moved to another device keeps
+	 * every conversation of its team in one folder, under pi's own file names (§app.transport/arrival).
+	 */
+	const sessionFileHere = (ctx: ExtensionContext, locator: string, sessionId: string | undefined): string => {
+		if (fs.existsSync(locator)) return locator;
+		const own = ctx.sessionManager.getSessionFile?.();
+		if (!own) return locator;
+		const dir = path.dirname(own);
+		const name = path.basename(locator);
+		if (fs.existsSync(path.join(dir, name))) return path.join(dir, name);
+		if (!sessionId) return locator;
+		try {
+			const hit = fs.readdirSync(dir).find((n) => n.endsWith(`_${sessionId}.jsonl`));
+			return hit ? path.join(dir, hit) : locator;
+		} catch {
+			return locator;
+		}
+	};
 	/** How long a resumed worker may take to come up idle (pi startup, Claude initialize). */
 	const RESUME_READY_MS = 180_000;
 	const resumingIds = new Set<string>();
@@ -3628,7 +3654,9 @@ export function registerSubagents(
 				lastOutput: current?.finalOutput() || old?.summary?.lastAssistantText || "",
 			});
 			try {
-				seeded = seedContinuationSession(path.join(agentDir(), "sessions", sessionDirName(dir)), dir, text, CURRENT_SESSION_VERSION);
+				// A helper of a chat with a home continues in that home's sessions/ (Sova sets SOVA_CHAT_HOME), else in pi's folder.
+				const home = process.env.SOVA_CHAT_HOME;
+				seeded = seedContinuationSession(home && path.isAbsolute(home) ? path.join(home, "sessions") : path.join(agentDir(), "sessions", sessionDirName(dir)), dir, text, CURRENT_SESSION_VERSION);
 			} catch (error) {
 				throw new Error(`Cannot resume ${id}: could not write its new session (${error instanceof Error ? error.message : String(error)}).`);
 			}
@@ -3636,7 +3664,7 @@ export function registerSubagents(
 		} else {
 			const ref = manifest.ref!;
 			identity = ref.kind === "pi-session-file"
-				? { sessionFile: ref.locator, ...(ref.sessionId ? { sessionId: ref.sessionId } : {}) }
+				? { sessionFile: sessionFileHere(ctx, ref.locator, ref.sessionId), ...(ref.sessionId ? { sessionId: ref.sessionId } : {}) }
 				: { sessionId: ref.locator };
 		}
 		resumingIds.add(id);

@@ -123,6 +123,7 @@ import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { isChangeRow, isProfileRow, isLoginNoteRow } from "../lib/change-rows";
 import { ProfilePicker } from "./ProfilePicker";
+import { defaultNotAppliedLine } from "../lib/default-not-applied";
 import { handBackText, type RewindControl, type RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
 import type { CardInfo } from "../../shared/transcript-cards";
@@ -2829,6 +2830,11 @@ export function ChatView(props: {
                       <p class="empty-title">
                         New session in <code>{props.cwdLabel}</code>.
                       </p>
+                      <Show when={profileInfo()?.defaultNotApplied}>{(note) => (
+                          <p class="empty-body text-warn" role="note">
+                            <Icon name="attention" small /> {defaultNotAppliedLine(note())}
+                          </p>
+                        )}</Show>
                       <Show when={profileInfo()?.pickable && !profileInfo()?.locked && profileInfo()}>
                         {(info) => (
                           <ProfilePicker

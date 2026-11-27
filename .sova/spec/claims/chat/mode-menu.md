@@ -2,8 +2,10 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 The mode menu is the control in a chat's composer foot that switches that chat's major and minor
-modes, switches its profile's Models part, and makes its profile the default for new chats (a chat
-with no profile has none to make the default, §chat.subagent-profiles/no-helper-profile).
+modes, switches its profile's Models part, and saves this chat's setup into its profile, so new
+chats on that profile start the same way (a chat with no profile has none to save into,
+§chat.subagent-profiles/no-helper-profile). Choosing which profile is the default is Settings →
+Profiles' (§chat.profiles/default); the menu only names it.
 
 Owns: the trigger and the menu, how a switch reaches one chat, the mode prompt holding across turn
 starters and minor toggles, which minor modes reach workers, the reply shape every chat's prompt
@@ -42,8 +44,10 @@ them; so is one naming `create`, which no default holds either, §chat.create-mo
 neither touches an open chat.
 
 **A switch never writes the default** — not even in a session that has sent no message yet. The
-default moves only when someone asks for exactly that: choosing a default profile (the menu's
-**Make {name} the Default** button below, or Settings → Profiles) or a `POST /api/mode` with no `?path=`. A new chat is no
+default moves only when someone asks for exactly that: choosing a default profile (Make Default in
+Settings → Profiles; the menu has no such button), saving into the chosen default profile (the
+menu's **Update {name}** below, which writes the older defaults again, §chat.profiles/default) or a
+`POST /api/mode` with no `?path=`. A new chat is no
 longer a side effect of being new: setting one up is not a statement about every chat you start
 next, and the state that made it look like one (an empty session) was invisible in the act of
 switching.
@@ -119,7 +123,8 @@ this slot (§app.overseer/quick-actions).
 ## §chat.mode-menu/menu — Menu
 
 The menu is a popover above the trigger with the major modes, the minor modes and the Profile
-picker, and a foot whose button makes this chat's profile the default, and whose button beside it updates the profile.
+picker, and a foot that says what new chats start with and whose one button saves this chat's
+setup into its profile whenever that would change something.
 
 It uses the model menu's popover shell (`.model-menu`): a `[popover="auto"]` right-aligned
 **above** the trigger (the composer is pinned to the pane's bottom edge, so it grows upward, like
@@ -163,10 +168,9 @@ popover (§chat.subagent-profiles/menu), with the profile in effect checked and 
     </div>
   </div>
   <div class="mode-menu-foot">
-    <p class="mode-menu-foot-line"><span class="text-mono">strict: off</span> · A switch here is this
-      chat's own. New chats start from the default profile.</p>
-    <button type="button" class="button button-ghost button-sm mode-menu-update">Update Claude</button>   <!-- only then -->
-    <button type="button" class="button button-ghost button-sm mode-menu-save">Make Claude the Default</button>
+    <p class="mode-menu-foot-line" aria-live="polite"><span class="text-mono">strict: off</span> · New chats
+      start in normal · align.</p>   <!-- while this chat differs; after a press: Saved. New chats start in delegate · align · spec. -->
+    <button type="button" class="button button-ghost button-sm mode-menu-update">Update Claude</button>   <!-- only while it would change something -->
   </div>
 </div>
 ```
@@ -211,34 +215,9 @@ popover (§chat.subagent-profiles/menu), with the profile in effect checked and 
   one of this project's modes is listed only here, its state line adding "Replaces this project's
   {id}."; the project's own row is gone. A chat with no personal modes, and one that offers no
   project modes, has no such group.
-- **`Make {name} the Default`** is the menu's one write of the default. Pressing it makes **this
-  chat's** profile this computer's default (§chat.profiles/default), which writes the older defaults
-  for it: its major mode and built-in minor modes in `mode.json`, its model in `defaults.json`, and its
-  helpers in the device default file. With it, as `Save as default` did with the chat's major mode, strict flag, minors and helpers, it saves this chat's strict
-  flag and (where the chat has one) memory type for new chats (`POST /api/mode?path=… { saveDefault:
-  true }`). In a chat in Create the mode it saves is the chat's last normal or Delegate choice, never
-  Create (§chat.create-mode/per-chat-only). The request carries no profile of its own: the server
-  takes this chat's profile and its effective subagent profile (its helper pick). The write re-reads each file first, so
-  `mode.json`'s shortcuts and anything else in it are kept, and a chat's modes read it at each
-  `session_start`: the next session starts on it. **`Update {name}`**, whose button sits beside it,
-  saves this chat's model, effort, mode and add-on modes into its profile (§chat.subagent-profiles/menu).
-- **What it moves, and when.** This chat keeps what it is on; pinned chats keep their own picks.
-  Chats without a subagent pick follow the new device default from their next turn or team action.
-  Like any write of the default, a session that has never switched (no mode entry on its branch)
-  follows it too from its next start or reopen. "Unchanged" is true now, not forever. It stays
-  pressable in a chat that can't switch (`This chat can't switch.`).
-- **The button states.** A chat with no profile (§chat.subagent-profiles/no-helper-profile) shows
-  neither button. `Make {name} the Default` while this chat's profile is not this computer's
-  default (its project modes never count, on or off, since no default holds them); `Already the
-  default` with a check, `aria-disabled`, while it is — a button offering to save what is already
-  saved is the thing this wording exists to rule out. What new sessions start from is the server's
-  answer (read on every open, or the save's reply), never a switch's reply. The visible label is the
-  accessible name; the `title` adds what the press makes true: "New chats will start on {name}."
-  While the save is in flight it reads `Saving…`, and only then; during a switch it keeps its label
-  and is `aria-disabled`. Unknown either side (the default unread, this chat's profile not arrived)
-  is **not** "already the default": the button stays pressable. The footer sentence beside it is the
-  same in every state: `strict: off|on` — the one flag the menu does not switch — then "A switch here
-  is this chat's own. New chats start from the default profile."
+- **The foot** says what new chats start with, and its one button, **`Update {name}`**, saves this
+  chat's setup into its profile whenever that would change something; the menu has no button that
+  makes a profile the default (§chat.mode-menu/save-for-new-chats).
 
 - **Choosing.** Picking a major mode switches this chat and keeps the menu open: the check moves
   and focus stays on the picked row. Picking the mode already checked does nothing. Toggling a
@@ -268,12 +247,70 @@ popover (§chat.subagent-profiles/menu), with the profile in effect checked and 
   - `↑` / `↓` move and wrap. `Home` / `End` jump.
   - `Enter` or `Space` chooses or toggles.
   - `Esc` closes (native) and focus returns to the trigger.
-  - `Tab` from a row goes to the footer's buttons (`Update {name}` when shown, then `Make {name} the
-    Default`), real buttons and tab stops inside
+  - `Tab` from a row goes to the footer's button (`Update {name}`, when shown), a real button and
+    tab stop inside
     the menu (still reachable when `aria-disabled`); `Tab` from there leaves the menu, which closes
     it and moves on. Keys pressed on the button are the button's own: `Enter` or `Space` presses
     it, never whichever row was last focused, and the arrows do not move the rows from there.
 - **Motion.** The same single fade as §chat/model-menu.
+
+## §chat.mode-menu/save-for-new-chats — Saving this chat's setup for new chats
+
+The mode menu's foot says what new chats start with, and its one button, **Update {name}**, saves
+this chat's model, effort, mode and add-on modes into its profile whenever that would change what a
+new chat on it starts with.
+
+- **`Update {name}`** is the foot's one button. It saves this chat's model, effort, mode and add-on
+  modes into this chat's profile (§chat.subagent-profiles/menu), whether that profile is one of
+  yours or a built-in one (a built-in one becomes yours by it, frozen, §chat.subagent-profiles/edited-builtin).
+  The menu has no button that makes a profile the default (there is no `Make {name} the Default`
+  and no `Already the default`): the default is chosen in Settings → Profiles with Make Default
+  (§app.settings-dialog/profile-editor). Saving into the chosen default profile writes the older
+  defaults again (§chat.profiles/default). In a chat in Create the mode it saves is the chat's last
+  normal or Delegate choice, never Create (§chat.create-mode/per-chat-only).
+- **When it is offered.** Whenever pressing it would change something: while this chat differs from
+  what a new chat on its profile would start with, worked out the way the server works it out when
+  it opens a new chat (the server's answer, read on every open of the menu and returned by each
+  save, never a switch's reply, never worked out again in the page). The main mode and the add-on
+  modes are compared separately: a profile can set one and not the other, and the one it leaves out
+  is this computer's starting modes (`mode.json`), else normal and no add-on modes. Only the add-on
+  modes a profile can hold count (align, spec, vis); memory and this project's or your own modes are
+  left out, on or off, so they never keep the button showing. A model or effort that differs from
+  what the profile sets counts too. What isn't known on either side (this chat's mode not arrived,
+  an older server that doesn't say what new chats start with) is no difference. A chat with no
+  profile, a profile that can't be read or can't be used here, and a project's profile (a file in
+  the project) show no button.
+- **What it moves, and when.** This chat keeps what it is on and switches nothing. New chats on the
+  profile start with what was saved; chats already on it follow its Models part as after a save in
+  Settings. A session that has never switched (no mode entry on its branch) follows `mode.json`
+  from its next start or reopen, as after any write of the default. It stays pressable in a chat
+  that can't switch (`This chat can't switch.`).
+- **The foot line** says what new chats start with, after `strict: off|on` — the one flag the menu
+  does not switch. The first that applies:
+  - just after a press: the confirmation (below);
+  - in Create: Create's own sentence, with what Update {name} saves (§design.copy-deck/mode-menu);
+  - an older server that doesn't say what new chats start with: "A switch here is this chat's own.
+    New chats start from the default profile.";
+  - this chat's profile isn't this computer's default (a known default and a known profile that
+    differ): it names the default and points to where it is chosen, "New chats start from
+    {default}. Choose the default in Settings → Profiles.";
+  - this chat differs from a new chat on its profile: what new chats start with now, "New chats
+    start in {mode · add-ons}." (the add-ons only those a profile can hold; ", on {model} ·
+    {effort}" after them when the model or effort is what differs);
+  - otherwise the general sentence, "A switch here is this chat's own. New chats start from
+    {default}." ({default}: the default profile's name; "the default profile" while it isn't known,
+    or with no default).
+- **After a press**, the foot line says what new chats will now really start with, worded from what
+  was actually saved (the save's reply, never the chat's own state): "Saved. New chats start in
+  {mode · add-ons}." when this chat's profile is the default, else "Saved to {name}. New chats still
+  start from {default}." The line is announced as it changes (`aria-live`, polite), so the press
+  has one confirmation, seen and heard (there is no separate announcement). It shows while nothing
+  differs, and goes at the next switch or when the menu is opened again; the button is gone
+  meanwhile, since nothing differs any more.
+- **The button states.** The visible label is the accessible name; its `title` says what the press
+  makes true (§design.copy-deck/profiles). While the save is in flight it reads `Saving…`, and only
+  then; during a switch it keeps its label and is `aria-disabled`. A refused save shows its error
+  banner in the open menu, and the profile is unchanged.
 
 ## §chat.mode-menu/how-a-switch-reaches-the-chat — How a switch reaches the chat
 
@@ -314,8 +351,9 @@ The chat then:
   rows read now; the chat's `mode` message carries the same rows, an on mode's from the copy it
   runs, never from the files. A remote chat, the Overseer and Sova's special sessions have none.
 
-`Make {name} the Default` takes both this chat's profile and its effective subagent profile (its
-helper pick), with its strict flag and memory type. Like the old button, it checks the new default
+The mode menu no longer calls `{ saveDefault: true }` (its old `Make {name} the Default` button
+did); the route stays for scripts and older pages. It takes both this chat's profile and its
+effective subagent profile (its helper pick), with its strict flag and memory type. It checks the new default
 first: an unusable library refuses the save before anything is written. The server writes this
 computer's default profile, then the older files it keeps written (the default subagent profile,
 `defaults.json`, `mode.json`); there is no cross-file transaction. A failure leaves what was already
@@ -812,9 +850,9 @@ line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — S
   panel open; the check moves when the chat's `mode` message says so. The foot line reads "This chat only. Kept while memory is off." While a pick is saving
   the rows are `aria-disabled`; a refused pick shows "Couldn't change memory." with the reason, and
   the choice is unchanged.
-- **Make {name} the Default** saves the chat's type with its profile (§chat.memory/choice), and
-  reads "Already the default" by the profile alone, not by the saved default type (`GET /api/mode`'s
-  `memory`).
+- **New chats' type.** The menu saves no memory type for new chats: a profile holds none, so
+  Update {name} saves none and memory never counts as a difference (§chat.mode-menu/menu). The type
+  new chats start with is `mode.json`'s (`GET /api/mode`'s `memory`), as last saved.
 
 ## §chat.mode-menu/strict — strict: Delegate or Create without edit and write
 
@@ -832,8 +870,8 @@ line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — S
 - **Setting it.** `/mode strict on|off`, per session like the rest of the mode, with a transcript
   marker ("Strict mode on" / "Strict mode off") and a notice that adds "(edit/write removed from the
   orchestrator)" or "(edit/write restored to the orchestrator)" when it applied at once. It is off
-  by default; `mode.json`'s `strict` sets what new sessions start with, and the
-  menu's `Make {name} the Default` saves this chat's flag there. There is no launch flag for it.
+  by default; `mode.json`'s `strict` sets what new sessions start with. The menu saves no strict
+  flag for new chats (Update {name} saves none: a profile holds none). There is no launch flag for it.
 - **Shown.** The web
   mode menu shows it read-only in its foot (`strict: off|on`, §chat.mode-menu/menu); the trigger's
   label never names it.
@@ -990,12 +1028,13 @@ What the trigger and the menu show in each state, from a mode not known yet to a
 | Mid-turn switch | Info banner "Applies after this turn." (trigger name adds it too) |
 | Chat can't switch | Warn banner "This chat can't switch." |
 | Switch failed | Error banner "Couldn't switch the mode." with the reason. The mode is unchanged |
-| Saving the default | `Make {name} the Default` reads `Saving…`, `aria-disabled` — only the save does this; a switch keeps the label |
-| Default save failed | Error banner "Couldn't save the default." with the reason. The mode is unchanged |
+| Chat differs from a new chat on its profile | Foot line "New chats start in {mode · add-ons}." (or, on a profile that isn't the default, "New chats start from {default}. Choose the default in Settings → Profiles.") and `Update {name}` |
+| Saving into the profile | `Update {name}` reads `Saving…`, `aria-disabled` — only the save does this; a switch keeps the label |
+| Saved | Foot line "Saved. New chats start in {mode · add-ons}." (or "Saved to {name}. New chats still start from {default}."), announced; no button |
+| Update refused | Error banner "Couldn't update {name}." with the reason. The profile is unchanged |
 | Profile switch waits for the reply (§chat.profiles/switch) | A line in the thread above the composer, "Switching to {name} when this chat is free. …" with Cancel Switch; once it applies, the same place says "This chat and its helpers are on {name}." |
 | Profile switch refused | Error banner "Couldn't switch to {name}." with the reason. The chat's model and helpers are unchanged |
 | Chat's model changed by hand (§chat.profiles/edited) | Profile row and Delegate's detail line read "{name} (edited)" |
-| Already the default | `Already the default` with the check, `aria-disabled` |
 | Load failed | Error banner "Couldn't load the modes." |
 | Project mode asks before turning on (§chat.mode-menu/project-modes) | Row off, its state line "Asks before turning on: it runs {n} tool(s)."; turning it on opens the approval panel; nothing switched until approved |
 | Approving | `Approve and Turn On` reads `Turning On…` |

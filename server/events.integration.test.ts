@@ -176,6 +176,20 @@ test("a title set: one session.renamed (observed); a resume after a disconnect g
   back.ws.close();
 });
 
+test("a new chat: one chat.created naming it and its home, heard by a hosted-only socket", async () => {
+  const ev = eventsClient("?only=hosted");
+  await ev.opened;
+  await ev.until((f) => f.type === "hello");
+  mkdirSync(join(tmp, "proj"), { recursive: true });
+  const res = await fetch(`http://${host}/api/sessions`, { method: "POST", headers: { ...headers(), "content-type": "application/json" }, body: JSON.stringify({ cwd: join(tmp, "proj") }) });
+  const made = (await res.json()) as { id: string; path: string };
+  const created = await ev.until((f) => f.type === "event" && f.name === "chat.created" && "chat" in f && f.chat === made.id);
+  assert.ok(created.f.type === "event" && "home" in created.f && typeof created.f.home === "string" && made.path.startsWith(`${created.f.home}/`), JSON.stringify(created.f));
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(ev.frames.filter((x) => x.f.type === "event" && x.f.name === "chat.created" && "chat" in x.f && x.f.chat === made.id).length, 1);
+  ev.ws.close();
+});
+
 test("a client frame over the cap closes the socket 1009", async () => {
   const ev = eventsClient();
   await ev.opened;

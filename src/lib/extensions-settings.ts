@@ -11,8 +11,13 @@ export const EXT_PICK_HINT = "Folders on the computer Sova runs on";
 export const EXT_CHANGED_LEAD = "This extension changed, so it needs your approval again.";
 export const EXT_PAGE_LINE = "Runs on Sova's own address and can do what you can, including adding other extensions.";
 export const EXT_KEY_LINE = "Opens nearly all of Sova. Its calls are recorded under its name.";
+/** What `records: ["senders"]` asks for (§app.extensions/senders). */
+export const EXT_RECORDS_SENDERS = "Who started each chat and who typed each message, by computer. Never sent to the model.";
 export const EXT_NO_MANAGER = "If it stops while Sova isn't running, it comes back when Sova starts, not by itself at login.";
 export const EXT_TRUST = "Install only what you trust.";
+/** The review's line for an extension that says `reads: ["chats"]` (§app.extensions/reads-chats). */
+export const EXT_READS_CHATS =
+  "Reads every chat on this computer: conversations as written, titles, tags, memory, attachments and helpers' work. It never gets your unsent drafts.";
 export const EXT_APPROVE_CHANGED = "This extension changed since you looked. Check what it asks for, then approve it again.";
 
 export const STATE_WORD: Record<ExtensionRowState, string> = {

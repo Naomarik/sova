@@ -162,8 +162,7 @@ on and moves no other minor mode. Align is an ordinary minor mode from then on: 
 off in Create, and leaving Create leaves it as it is.
 
 **No default holds Create.** **Update {name}** in a Create chat saves the chat's last normal or Delegate
-choice, with its minor modes, into its profile. **Make {name} the Default** makes its profile the
-default, never Create, and saves the chat's strict flag. A chat that has been in no other mode
+choice, with its minor modes, into its profile, never Create. A chat that has been in no other mode
 saves normal. Nothing else can name it either: a profile, a playbook or schedule through a profile, an
 automation and both Overseers are refused, and nothing is created or changed. So it never spreads to
 your other computers as a default.

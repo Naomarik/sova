@@ -69,6 +69,6 @@ export function mountDesignLiveRoutes(app: Hono, parentOf: (c: Context) => { ses
     const live = designOf(p.sessionId, label) ? livePage(p.sessionId, label) : null;
     if (!live) return c.json({ error: "Nothing is being written." }, 404);
     const { token, expires } = mintLiveLink(p.sessionId, label, live.version);
-    return c.json({ url: liveLinkUrl(token), version: live.version, expires }, 200, { "Cache-Control": "no-store" });
+    return c.json({ url: liveLinkUrl(token), version: live.version, draw: live.draw, expires }, 200, { "Cache-Control": "no-store" });
   });
 }

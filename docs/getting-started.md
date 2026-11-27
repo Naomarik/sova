@@ -74,9 +74,10 @@ server's `PI_CODING_AGENT_DIR`), and `pnpm run auth:token` in the checkout print
 
 To bring a phone in, open the app on a browser that is already unlocked and use **Access** on the
 home page: it makes a **pairing code** that works once and expires in five minutes, and shows the
-link the other device must open — as a QR to scan with its camera, and as text to copy. The QR and
-the link use an address that device can actually reach (a tailnet name, never an IP address), so
-open Sova at that address before making the code; if it cannot, the page says so rather than
+link the other device must open — as a QR to scan with its camera, and as text to copy. The QR
+points at an address that device can actually reach: your tailnet name, or this computer's address
+on a network you trusted in the page's **Networks** card (a VPN such as WireGuard or ZeroTier, or a
+private range you type). **QR points at** picks among them. With none, the page says so rather than
 offering a link the phone cannot open. The code can be typed or pasted on the other device's unlock
 screen, or the link is opened there — either way that device is in, and the install's token never
 had to leave the first browser.
@@ -132,6 +133,12 @@ Use an authenticated tunnel or an HTTPS reverse proxy with authentication and We
 Keep Sova on loopback when the tunnel or proxy runs on the same host. Protect **all** routes,
 including `/api` and `/ws`, and firewall the backend port against direct access.
 
+For a VPN other than Tailscale, trust it on the **Access** page instead of widening `HOST`: Sova
+then also listens at this computer's address on that network, accepts only devices inside its
+range (private ranges only), and still asks each one for a pairing code once. That address is
+plain HTTP, so the phone gets no notifications, app install, or voice input there; trust a Wi-Fi
+or wired network only if you control it, since anyone on it can read the traffic.
+
 Setting `HOST=0.0.0.0` exposes the backend on all interfaces. Sova's only protection is its
 per-install token (in `~/.pi/agent/sova/auth-token`; deleting it and restarting revokes every
 browser), and anyone who has it can read files and run commands with the server user's
@@ -166,7 +173,7 @@ experimenting with configuration. Never commit credentials, transcripts, or pers
 ## Reinstall or remove
 
 Running the install command again updates to the newest stable release (or the latest of the
-`SOVA_REF` you set; `SOVA_REF=v0.18.1` stays on that release). An install already at that commit isn't rebuilt;
+`SOVA_REF` you set; `SOVA_REF=v0.18.3` stays on that release). An install already at that commit isn't rebuilt;
 `--reinstall` rebuilds it anyway. Pass the same options again: without `--port`, a re-run goes back
 to 4800. The installer stages the build before replacing the installation and refuses tracked
 local changes. Don't store your own files in the install directory: untracked files do not prevent

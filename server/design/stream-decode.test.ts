@@ -42,6 +42,27 @@ test("a tool argument with no html field decodes to nothing", () => {
   assert.equal(d.feed('{"label":"A","note":{"layout":"x","html":"not this"}}'), "");
 });
 
+test("a part added to the end (`append`) decodes like a page, and the decoder says which it was, however it is cut", () => {
+  const json = `{"label":"A","append":${JSON.stringify('<section class="x">\n  <p>"more"</p>\n</section>')}}`;
+  for (const chunks of cuts(json)) {
+    const d = new HtmlArgDecoder();
+    assert.equal(chunks.map((c) => d.feed(c)).join(""), '<section class="x">\n  <p>"more"</p>\n</section>');
+    assert.equal(d.field, "append");
+  }
+  const page = new HtmlArgDecoder();
+  page.feed('{"label":"A","html":"<p>');
+  assert.equal(page.field, "html");
+});
+
+test("edits decode to nothing, and only the first page argument is decoded", () => {
+  const edits = new HtmlArgDecoder();
+  assert.equal(edits.feed('{"label":"A","edits":[{"find":"<p>a</p>","replace":"<p>b</p>"}]}'), "");
+  assert.equal(edits.field, null);
+  const both = new HtmlArgDecoder();
+  assert.equal(both.feed('{"append":"one","html":"two"}'), "one");
+  assert.equal(both.field, "append");
+});
+
 test("a page between marker lines is what the reply decoder gives, however the reply is cut", () => {
   const O = "<<<design-page>>>";
   const C = "<<<end-design-page>>>";

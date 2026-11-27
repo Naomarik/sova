@@ -465,11 +465,16 @@ and an agent cannot attest an agreement it can't point to. While `SPEC_AGREE_SOU
 reference and saying to omit `--source`). A source, from either place, must be a reference, never a
 description: a scheme, a colon and a locator with no spaces (`pi-session:<session id>#<entry id>`,
 which needs both ids, a URL, `chat:c1#m3`); anything else is refused (`agree-source-not-reference`,
-exit 1). A `pi-session:<session id>#<entry id>` source must resolve: a session file under
-`$PI_CODING_AGENT_DIR/sessions` (else `~/.pi/agent/sessions`), at any depth, whose name ends
+exit 1). A `pi-session:<session id>#<entry id>` source must resolve: a session file in a Sova chat
+home's flat `sessions/` (the chat's own home, named by the session id, first, then any other home's:
+a helper's file is in its top chat's home) or under `$PI_CODING_AGENT_DIR/sessions` (else
+`~/.pi/agent/sessions`), at any depth, whose name ends
 `_<session id>.jsonl` or whose header line carries that id, holding an entry with that id of type
 `message` whose role is `user`; otherwise `agree` refuses (`agree-source-unresolved`, exit 1, saying
-it needs the id of a user message in that session). Every other scheme is checked for its form only,
+it needs the id of a user message in that session, and naming both places). The homes root is the one
+Sova uses, found without Sova: an absolute `$SOVA_CHAT_HOMES_ROOT`, else `$SOVA_CHAT_HOMES`, else the
+folder the state root's `chat-homes.json` names, else Sova's default folder for that state root;
+where Sova never ran there is none and only the agent dir is looked in. Every other scheme is checked for its form only,
 for projects whose go-ahead lives outside pi. A process the agent's runtime started as a worker (it
 sets `SPEC_AGREE_GIVEN`, empty when it had no reference to give) refuses any `--source` when it was
 given none (`agree-source-not-given`, exit 1): it reports the records ready to agree instead. These

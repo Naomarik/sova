@@ -86,6 +86,18 @@ test("a dev server's socket opens and receives on both sizes; every frame the pa
   } finally { s.close(); }
 });
 
+test("a slow approval: the socket stays connecting until approved, so every frame the page sends is still counted", { timeout: 120_000 }, async () => {
+  // The page sends its first frames the moment its socket opens; were it opened before the approval
+  // ended, those frames would pass with no handler to count them.
+  const s = await site(self => page(`${self.replace("http:", "ws:")}/hmr`));
+  try {
+    const result = await record(script(s.origin, 1), () => new Promise(r => setTimeout(r, 50)));
+    assert.equal(outcome(result), "recorded");
+    assert.equal(s.frames(), 0, "no page frame reached the server");
+    assert.equal((result as TourAttemptResult).quietAborts, 8, "4 frames per size, counted");
+  } finally { s.close(); }
+});
+
 test("a socket to an unapproved origin is refused before any upgrade; once approved it opens", { timeout: 120_000 }, async () => {
   const other = await site();
   const s = await site(() => page(`ws://127.0.0.1:${other.port}/live`));

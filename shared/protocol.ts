@@ -16,6 +16,7 @@ import type { OverseerCard } from "./overseer-card";
 import type { PlaybookSpec } from "./playbook-format";
 import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 import type { OwnerRequestCard } from "./project-assistant";
+import type { TransportAgentNote } from "./transport-agent-card";
 import type { CardInfo } from "./transcript-cards";
 import type { ChatProfileState } from "./profile-switch";
 export type { ChatProfileState, ProfileSwitchResult, ProfileSwitchTarget } from "./profile-switch";
@@ -144,6 +145,14 @@ export interface SessionSummary {
       ~/.pi/agent/sova/archived-sessions.json). Only moves it between regions; it opens as before,
       and a live one still shows on top. Absent from older servers: treat as false. */
   archived: boolean;
+  /** An archived chat Sova compressed (§app.session-list/archive-compression): the row is the one it kept
+      when compressing (its file is never read again), it shows "{time} · Compressed", it never opens
+      and has no Unarchive; Clean Up can still delete it. Absent: not compressed, or an older server. */
+  compressed?: true;
+  /** A chat Moved to another device (§app.transport/moved-row): this device keeps its archived row, which reads
+      "Moved to {to}", never runs here and has no Unarchive; `tid` names the transport (Move Back's), `path` its
+      conversation there (Open There). Absent: it runs here, or an older server. */
+  moved?: { to: string; peer: string; tid: string; at: string; path?: string };
   /** The user's group for this session (`SessionGroup.id`, POST /api/session-groups/assign; ids
       persist in ~/.pi/agent/sova/session-groups.json). One group at most, and purely additive:
       a grouped session stays in its region (Live & web, or the Archive) as well. Absent when it
@@ -456,6 +465,10 @@ export interface TranscriptItem {
       entry. Renders nothing itself; the client draws the sender header above the user row
       `targetId` (resolving by id in either arrival order) and hides that row's header line. */
   sessionMark?: { kind: "sent"; targetId: string; from: { sessionId: string; title: string }; hop: number };
+  /** Who typed the user message `targetId` (§app.extensions/senders): the invisible `sova-member-sent` entry, written
+      only while an active extension's offers name `senders`. Renders nothing itself; the client draws "From {name}"
+      above a row another computer typed, resolving by id in either arrival order. `by`: `peer:<nodeId>` or `operator`. */
+  memberMark?: { targetId: string; by: string; label?: string };
   /** The session's `sova-profile` entry (§chat.profiles/after-first-message): kind "info", drawn as
       the muted "Profile: {label}" row only once a user message is on the branch; null = Default. */
   profileMark?: { profile: SessionProfileField | null };
@@ -480,6 +493,9 @@ export interface TranscriptItem {
   /** kind "info" only: an owner request Start Chat put in the chat as a note (§app.project-assistant/request-chat),
       drawn as its card; `text` is the note the model read. */
   ownerRequest?: OwnerRequestCard;
+  /** kind "info" only: the Transport agent's card note (§app.transport/agent), drawn as its card, which reads the
+      agent live by its transport; `text` is the note the model read. */
+  transportAgent?: TransportAgentNote;
   /** kind "align" only: the `align` tool result's `details`, checked by the extension's own
       `normalizeAlignDetails` (pi-config/extensions/mode/align.ts, §chat.alignment/state): the
       touched document's snapshot after the call, or an exemption. `toolCallId` pairs it with its
@@ -823,7 +839,11 @@ export interface SessionsDirInfo {
 //                                  or non-web session)
 // POST /api/sessions/cleanup { mode:"age", minAgeDays:7|30, dryRun? } | { mode:"husks", dryRun? }
 //     | { mode:"paths", paths: string[] (1–100, each validated like the archive route's path), dryRun? }
+//     + action?: "delete" | "compress" (absent: delete; anything else is a 400 "action must be delete or compress")
 //     -> { deletedCount, deletedIds: string[], skipped:{live,busy,recent,failed}, refused?:[{path,reason}] }
+//     (with action "compress": compressedCount and compressedIds in place of the deleted ones, deletedCount 0; only
+//     archived sessions are taken, others and compressed ones left out silently, an open one skipped as live;
+//     §app.session-list/archive-compress. A Delete of a compressed chat removes its compressed files.)
 //     (permanently deletes transcript files; dryRun reports candidates in deletedIds with deletedCount
 //     0; live, mid-turn and just-written sessions are skipped and counted. paths mode deletes named
 //     session files, only ones carrying the archive mark — an unarchived session is refused with a
@@ -1110,7 +1130,7 @@ export interface PlaybookCatalog {
 }
 
 // GET /api/settings              -> WebSettings
-// PUT /api/settings              -> WebSettings (400 bad body; `experimental` and `alignment`, when
+// PUT /api/settings              -> WebSettings (400 bad body; `experimental`, `alignment` and `storage`, when
 //                                   present, must be objects, a known key a boolean; unknown keys
 //                                   are ignored)
 // GET /api/settings/claude-status -> ClaudeCliStatus
@@ -1125,6 +1145,17 @@ export interface WebSettings {
   experimental: ExperimentalSettings;
   /** Settings → Alignment's part of this file (eagerness, style and visuals are mode-align.json's, AlignSettingsInfo). */
   alignment: AlignmentWebSettings;
+  /** Settings → General's storage switches, each ON unless stored `false`. */
+  storage: StorageWebSettings;
+}
+
+/** Where new chats are kept, and whether old archived ones are compressed (§app.chat-homes/new-chats,
+    §app.session-list/archive-compression). */
+export interface StorageWebSettings {
+  /** New chats get a chat home. Off: new chats are stored as before homes; chats that have a home stay listed. */
+  chatHomes: boolean;
+  /** Archived chats older than 60 days are compressed automatically. */
+  autoCompress: boolean;
 }
 
 /** Settings → Experimental's switches, each a boolean, off unless stored `true`. None today (the tab says so).
@@ -2828,6 +2859,14 @@ export interface ChatProfileInfo {
   granted: string[];
   /** With a profile: what picking My settings puts back (the entry's `mine`, §chat.profiles/applying). */
   mine?: import("./profiles").ProfileMine;
+  /** A new chat that couldn't start on this computer's default profile, and why; only while it has no message. */
+  defaultNotApplied?: DefaultNotApplied;
+}
+
+/** Why a new chat isn't on the default profile: the profile's name, and the reason in the user's words. */
+export interface DefaultNotApplied {
+  profile: string;
+  reason: string;
 }
 
 /** Why a `queue_remove` was refused, and nothing was removed.
@@ -4719,7 +4758,12 @@ export interface ExtensionOffers {
   /** Since v1.17: its drawing kinds, each its checked declaration by its fence word `<id>.<name>`, with
       its view and guide paths inside `dist`. */
   drawings?: ExtensionDrawingOffer[];
+  /** Since v1.22: what it asks Sova to record for it (shared/extension-offers.ts RECORD_KINDS): `senders`, who started
+      each chat and who typed each message (§app.extensions/senders). */
+  records?: RecordKind[];
 }
+/** Something Sova records only while an active extension asks for it (ext-contract-v1.22). */
+export type RecordKind = "senders";
 /** An extension's drawing kind as its offers carry it (§app.extensions/views). */
 export type ExtensionDrawingOffer = Omit<import("./drawing-kinds").DrawingDecl, "guide" | "ext"> & { view: string; guide: string };
 export interface ExtensionCommandInfo {
@@ -4738,7 +4782,8 @@ export interface ExtensionCommandInfo {
 /** A place on Sova's screens that Sova's own features and extensions both add to: "reply", under a
     delivered message; "row", line 3 of a session row in the sessions pane (src/lib/row-place.ts);
     "card", the status line of an extension's home card (src/lib/card-place.ts). All ext-contract-v1.16. */
-export type ScreenPlace = "reply" | "row" | "card";
+/** `list` since v1.22: a declaration about the sessions pane's whole list (src/lib/list-place.ts). */
+export type ScreenPlace = "reply" | "row" | "card" | "list";
 
 // ---------------------------------------------------------------------------
 // Mesh: other Sova hosts on the tailnet (server/mesh/). The allowlist is `<state root>/peers.json`;
@@ -5199,6 +5244,10 @@ export interface SessionTags {
   user?: string[];
 }
 
+/** A chat's labels: `{<extension id>: {<key>: <value>}}`. Keys match /^[a-z0-9][a-z0-9-]{0,31}$/, at most 8
+    per extension per chat; values are plain text of 1 to 64 characters. */
+export type SessionLabels = Record<string, Record<string, string>>;
+
 export interface SessionAlign {
   openDocs: number;
   openQuestions: number;
@@ -5225,6 +5274,11 @@ export interface SessionSummary {
       digest. (A worker that ended in an error is the digest's deterministic "worker-error".) */
   workerSignals?: { stuck: number };
   tags?: SessionTags;
+  /** Labels extensions set on the chat (POST /api/sessions/labels, server/session-labels.ts), by
+      extension id then key. Sent only to a requester that names the pairs it reads (`labels=<extId>:<key>,…`
+      on the list, the row reads, the feed socket and the mesh list) and only those pairs; absent (never
+      empty) when none is set, and on every request that names none. */
+  labels?: SessionLabels;
   /** Merge readiness of the worktrees this session tracks (§chat.worktrees/readiness,
       server/merge-readiness.ts): git and the file, no model, read in the background, so a row
       gains it a moment after it first lists. Absent when the session tracks no worktree of its

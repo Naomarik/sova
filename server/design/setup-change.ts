@@ -1,6 +1,8 @@
 // Every change to an open Setup card goes through here: the user's whole-card save and the main chat's edit alike. The
 // latest change wins the whole card. Inside one store change it checks the card, refreshes what follows from it (the
-// links its words name, and with the brief open the brief's version and estimate), and stamps the run.
+// links its words name; a skills change in the brief's pick, and with the brief open its version, its estimate and
+// what Start waits on), and stamps the run. The main chat's skills change past Setup is told to the Creative Director
+// by editSetup, through its port.
 import { designEffortOf, designerSkills, designHasEfforts, designPlan, runOwnImage, type DesignModelChoice, type DesignRun, type DesignSetup, type DesignSkill, type DesignSkillMissing } from "../../shared/design";
 import { designInGroup, designSectionOf, designSectionOfWord } from "../../shared/design-models";
 import { readAssets } from "./assets";
@@ -8,6 +10,7 @@ import { cleanSetup, effortProblem, estimateUsd } from "./setup";
 import { skillReadTokens, SKILL_LIMITS } from "./skills";
 import { changeDesigns } from "./store";
 import { rememberHidden } from "./standing";
+import { userTold } from "./brief";
 
 /** A change that can't be made: words, and the status a route answers with. */
 export class SetupRefused extends Error {
@@ -23,6 +26,23 @@ export class SetupRefused extends Error {
 
 /** The stamp a save names as the card it was made from: the newest Setup change, else the run's making. */
 export const setupBase = (run: Pick<DesignRun, "setupAt" | "createdAt">): string => run.setupAt ?? run.createdAt;
+
+/** What a change did to a run's skills: the ones it gained, and the names it lost (a skill not found among them). */
+export interface SkillsChange {
+  added: DesignSkill[];
+  removed: string[];
+}
+
+/** The skills `after` gained over `before`, and the names it no longer has. */
+export function skillsChange(before: Pick<DesignRun, "skills" | "skillsMissing">, after: Pick<DesignRun, "skills" | "skillsMissing">): SkillsChange {
+  const had = new Set((before.skills ?? []).map((k) => k.name));
+  const has = new Set((after.skills ?? []).map((k) => k.name));
+  const asked = new Set((after.skillsMissing ?? []).map((m) => m.asked));
+  return {
+    added: (after.skills ?? []).filter((k) => !had.has(k.name)),
+    removed: [...(before.skills ?? []).filter((k) => !has.has(k.name)).map((k) => k.name), ...(before.skillsMissing ?? []).filter((m) => !asked.has(m.asked)).map((m) => m.asked)],
+  };
+}
 
 /** The phases a Setup may still change in: setup (all of it), and until Start on the brief (the smaller set). */
 export const setupOpen = (run: Pick<DesignRun, "phase">): boolean => run.phase === "setup" || run.phase === "researching" || run.phase === "brief";
@@ -52,16 +72,27 @@ export function commitSetup(sessionId: string, runId: string, make: (run: Design
     // Hidden as the card stood before this change: a Hide itself unticks its rows and moves the seat.
     const next = cleanSetup(r.setup, change.setup, briefOpen, r.hiddenSections ?? []);
     if (typeof next === "string") throw new SetupRefused(next);
+    const was = { skills: r.skills, skillsMissing: r.skillsMissing };
     r.setup = next;
     Object.assign(r, change.run ?? {});
     for (const k of ["images", "imagesLeftOut", "skills", "skillsMissing", "hiddenSections", "hiddenAsked"] as const) if (Array.isArray(r[k]) && !r[k]!.length) delete r[k];
+    const skills = skillsChange(was, r);
+    const skillsMoved = skills.added.length + skills.removed.length > 0;
+    if (r.brief?.skills && skillsMoved) {
+      // The Creative Director's pick follows: a skill added late goes to the designers until it leaves it out, and one
+      // taken off leaves the pick. Absent means all of them, so with no pick there is nothing to follow.
+      if (!r.skills?.length) delete r.brief.skills;
+      else r.brief.skills = [...r.brief.skills.filter((n) => !skills.removed.includes(n)), ...skills.added.map((k) => k.name).filter((n) => !r.brief!.skills!.includes(n))];
+    }
     // Always later than the stamp before, even within one millisecond: it is the next save's base.
     const at = new Date(Math.max(Date.now(), r.setupAt ? Date.parse(r.setupAt) + 1 : 0)).toISOString();
     r.setupAt = at;
     r.updatedAt = at;
     if (r.phase === "brief" && r.brief && r.brief.startedRev === undefined) {
-      // On the card, so what Start starts from has moved; and so has what it should cost.
-      r.brief.rev++;
+      // On the card, so what Start starts from has moved; and so has what it should cost. A skills change is news for
+      // the Creative Director as the user's words are: Start waits for its turn, or asks the user when the prompt is theirs.
+      if (skillsMoved) userTold(r.brief);
+      else r.brief.rev++;
       const estimate = estimateUsd(next, Date.now(), skillReadTokens(designerSkills(r)));
       if (estimate === null) delete r.brief.estimateUsd;
       else r.brief.estimateUsd = estimate;
@@ -144,8 +175,9 @@ function rowFor(rows: readonly DesignModelChoice[], name: string, chatModel?: st
 
 /**
  * The whole card a delta makes of `run`, with what couldn't be applied and why. Only rows the card offers; a hidden
- * section's rows are refused with its name; the brief's words, images, skills and the Creative Director only before
- * Start Creative Director (after it, those go to the Creative Director with tell).
+ * section's rows are refused with its name; the brief's words, images and the Creative Director only before Start
+ * Creative Director (after it, those go to the Creative Director with tell). Skills until Start on the brief: after Start
+ * Creative Director one not found is only named here, never recorded for the brief to ask about.
  */
 export function applySetupDelta(run: DesignRun, delta: SetupDelta, briefOpen: boolean, fetched: DeltaFetched = {}, chatModel?: string): { change: SetupChange; notes: string[] } {
   const notes: string[] = [];
@@ -232,9 +264,10 @@ export function applySetupDelta(run: DesignRun, delta: SetupDelta, briefOpen: bo
       runFields.images = (runFields.images ?? run.images ?? []).filter((n) => !out.has(n));
     }
   }
-  // Skills: only before Start Creative Director; after, the Creative Director reads them and is told.
+  // Skills: until Start on the brief (Sova tells the Creative Director of a change past Setup). One not found is asked
+  // about on the brief only when named before Start Creative Director; after it, the chat's result alone says so.
   if (fetched.skills || delta.removeSkills?.length) {
-    if (briefOpen) notes.push("Skills go to the Creative Director now: pass the change on with op tell.");
+    if (run.brief?.startedRev !== undefined) notes.push(STARTED_SKILLS);
     else {
       let skills = [...(run.skills ?? [])];
       let missing = [...(run.skillsMissing ?? [])];
@@ -248,7 +281,7 @@ export function applySetupDelta(run: DesignRun, delta: SetupDelta, briefOpen: bo
       }
       for (const m of fetched.skills?.missing ?? []) {
         notes.push(`${m.asked}: ${m.reason}`);
-        if (!missing.some((x) => x.asked === m.asked)) missing.push(m);
+        if (!briefOpen && !missing.some((x) => x.asked === m.asked)) missing.push(m);
       }
       for (const n of delta.removeSkills ?? []) {
         const had = skills.length + missing.length;
@@ -265,6 +298,8 @@ export function applySetupDelta(run: DesignRun, delta: SetupDelta, briefOpen: bo
   const setup: DesignSetup = { ...card, brief, models, directions, ...(layouts ? { layouts } : {}), ...(combine ? { combine } : {}) };
   return { change: { setup, run: runFields }, notes };
 }
+
+const STARTED_SKILLS = "The designs have started, so this run's skills can't change any more.";
 
 /** Why a provider was left off a card, in a few words. */
 export function leftOutWords(why: NonNullable<DesignRun["leftOut"]>[number]["why"]): string {
@@ -315,10 +350,10 @@ export function setupSummary(sessionId: string, run: DesignRun): string {
 // ---- the main chat's edit, whole -----------------------------------------------------------------
 
 /** The run a chat's edit means: the one named, else the chat's newest run while its Setup is open. */
-export function editableRun(sessionId: string, runId: string | undefined, runs: readonly DesignRun[]): DesignRun {
+export function editableRun(sessionId: string, runId: string | undefined, runs: readonly DesignRun[], skills = false): DesignRun {
   const run = runId ? runs.find((r) => r.id === runId) : runs.at(-1);
   if (!run) throw new SetupRefused(runId ? `There's no Lookbook run ${runId} in this chat.` : "This chat has no Lookbook Setup card to change: put one up with op start.", 404);
-  if (!setupOpen(run)) throw new SetupRefused(`Run ${run.id} has started its designs, so its Setup can't change any more. Ask the Creative Director with op tell, or start a new Lookbook only if the user asks for one.`, 409);
+  if (!setupOpen(run)) throw new SetupRefused(`Run ${run.id} has started its designs, so its Setup can't change any more${skills ? ", its skills included" : ""}. Ask the Creative Director with op tell, or start a new Lookbook only if the user asks for one.`, 409);
   return run;
 }
 
@@ -333,12 +368,14 @@ export interface EditDeps {
   addImages(paths: readonly string[]): Promise<{ names: string[]; refused: string[] }>;
   findSkills(names: readonly string[]): Promise<{ skills: DesignSkill[]; missing: DesignSkillMissing[] }>;
   runs(): readonly DesignRun[];
+  /** Tell the Creative Director of a skills change past Setup: true once it was told. */
+  skillsChanged?(runId: string, change: SkillsChange): Promise<boolean>;
   chatModel?: string;
 }
 
 /** The main chat's edit of an open card, whole: images and skills fetched first, then one change through commitSetup. */
 export async function editSetup(sessionId: string, runId: string | undefined, delta: SetupDelta & { images?: string[]; skills?: string[] }, deps: EditDeps): Promise<EditOutcome> {
-  const before = editableRun(sessionId, runId, deps.runs());
+  const before = editableRun(sessionId, runId, deps.runs(), !!(delta.skills?.length || delta.removeSkills?.length));
   const briefOpen = before.phase !== "setup";
   const early: string[] = [];
   const fetched: DeltaFetched = { ownImages: runImageNames(sessionId, before) };
@@ -350,15 +387,43 @@ export async function editSetup(sessionId: string, runId: string | undefined, de
       early.push(...got.refused);
     }
   }
-  if (delta.skills?.length && !briefOpen) fetched.skills = await deps.findSkills(delta.skills);
-  else if (delta.skills?.length) early.push("Skills go to the Creative Director now: pass the change on with op tell.");
+  if (delta.skills?.length) fetched.skills = await deps.findSkills(delta.skills);
+  // Past Setup, a skill not found is only named here: with nothing else asked, the run and its brief stay as they are.
+  const found = fetched.skills?.skills.filter((k) => !(before.skills ?? []).some((x) => x.dir === k.dir || lower(x.name) === lower(k.name))) ?? [];
+  if (briefOpen && fetched.skills && !found.length && Object.keys(delta).every((k) => k === "skills")) {
+    const all = [...early, ...(before.brief?.startedRev !== undefined ? [STARTED_SKILLS] : fetched.skills.missing.map((m) => `${m.asked}: ${m.reason}`))];
+    return { run: before, text: [setupSummary(sessionId, before), all.length ? `Not changed:\n${all.map((n) => `- ${n}`).join("\n")}` : ""].filter(Boolean).join("\n\n") };
+  }
   let notes: string[] = [];
+  let was: Pick<DesignRun, "skills" | "skillsMissing" | "phase"> = before;
   const run = commitSetup(sessionId, before.id, (r, open) => {
+    was = structuredClone({ skills: r.skills, skillsMissing: r.skillsMissing, phase: r.phase });
     // The images are read again here: one added since the fetch is the run's too.
     const out = applySetupDelta(r, delta, open, { ...fetched, ownImages: runImageNames(sessionId, r) }, deps.chatModel);
     notes = out.notes;
     return out.change;
   });
   const all = [...early, ...notes];
-  return { run, text: [setupSummary(sessionId, run), all.length ? `Not changed:\n${all.map((n) => `- ${n}`).join("\n")}` : ""].filter(Boolean).join("\n\n") };
+  // Past Setup, Sova itself tells the Creative Director, so the main chat passes no skills on in words.
+  const change = skillsChange(was, run);
+  let told = "";
+  let current = run;
+  if (was.phase !== "setup" && change.added.length + change.removed.length) {
+    const what = [change.added.length ? `added ${change.added.map((k) => k.name).join(", ")}` : "", change.removed.length ? `took off ${change.removed.join(", ")}` : ""].filter(Boolean).join(" and ");
+    if (deps.skillsChanged && (await deps.skillsChanged(run.id, change))) told = `Sova told the Creative Director that the user ${what}; don't pass it on with tell.`;
+    else {
+      // No turn is coming to take the change in: Start says the Creative Director hasn't written the prompt rather than
+      // waiting for ever (as a wake that fails does).
+      current = changeDesigns(sessionId, (s) => {
+        const r = s.runs.find((x) => x.id === run.id)!;
+        if (r.brief?.writing && !r.brief.writing.stalled && r.brief.startedRev === undefined) {
+          r.brief.writing.stalled = true;
+          r.brief.rev++;
+        }
+        return structuredClone(r);
+      });
+      told = `The Creative Director couldn't be told that the user ${what}: pass it on with op tell.`;
+    }
+  }
+  return { run: current, text: [setupSummary(sessionId, current), told, all.length ? `Not changed:\n${all.map((n) => `- ${n}`).join("\n")}` : ""].filter(Boolean).join("\n\n") };
 }

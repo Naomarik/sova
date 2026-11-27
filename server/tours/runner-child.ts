@@ -255,7 +255,9 @@ async function run(input: TourAttemptInput): Promise<void> {
           server = socket.connectToServer();
         };
         await context.routeWebSocket("**/*", socket => {
-          if (!input.sova) { void admitSocket(socket, socketPath(socket.url())); return; }
+          // Returned, not left running: Playwright keeps the page's socket connecting until the handler
+          // settles, so the page can send nothing before admitSocket has set its counting handler.
+          if (!input.sova) return admitSocket(socket, socketPath(socket.url()));
           // Only a verified managed Sova copy's own /ws/watch opens; its answers pass, and any frame
           // the page sends aborts the attempt (the allowed client-to-server set is empty).
           // Failures name the socket's path only, never its query or any frame.

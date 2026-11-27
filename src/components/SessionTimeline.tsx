@@ -1,4 +1,6 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, useContext } from "solid-js";
+import { ListPlaceContext } from "../lib/list-place";
+import { memberName } from "../lib/member-sender";
 import type { OutlineSnapshot, RewindInfo, SessionOutline, SessionSummary, TranscriptItem } from "../../shared/protocol";
 import { clockTime, relativeTime } from "../lib/format";
 import {
@@ -366,44 +368,57 @@ function PlainBody(props: { row: TimelineRow }) {
  */
 function SenderLine(props: { sender: Sender; names: Record<string, string> }) {
   const s = () => props.sender;
+  const people = useContext(ListPlaceContext);
+  // Your own message from another computer names no one, as the transcript doesn't.
+  const shown = () => s().kind !== "member" || !!memberName(s() as Extract<Sender, { kind: "member" }>, people);
   return (
-    <p class="session-sender timeline-sender">
-      <Show when={s().kind === "session" && (s() as Extract<Sender, { kind: "session" }>)}>
-        {(from) => (
-          <>
-            <Icon name="network" small />
-            <span>
-              From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>
-            </span>
-            <span class="text-muted">· hop {from().hop}</span>
-          </>
-        )}
-      </Show>
-      <Show when={s().kind === "extension" && (s() as Extract<Sender, { kind: "extension" }>)}>
-        {(from) => (
-          <>
-            <Icon name="sliders" small />
-            <span>From {from().title || "an extension"}</span>
-          </>
-        )}
-      </Show>
-      <Show when={s().kind === "overseer"}>
-        <Icon name="eye" small />
-        <span>From the Overseer</span>
-      </Show>
-      <Show when={s().kind === "merge-queue"}>
-        <Icon name="branch" small />
-        <span>From the merge queue</span>
-      </Show>
-      <Show when={s().kind === "baton" && (s() as Extract<Sender, { kind: "baton" }>)}>
-        {(b) => (
-          <>
-            <Icon name="chat" small />
-            <span>From {props.names[b().by] ?? "Someone"}</span>
-          </>
-        )}
-      </Show>
-    </p>
+    <Show when={shown()}>
+      <p class="session-sender timeline-sender">
+        <Show when={s().kind === "session" && (s() as Extract<Sender, { kind: "session" }>)}>
+          {(from) => (
+            <>
+              <Icon name="network" small />
+              <span>
+                From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>
+              </span>
+              <span class="text-muted">· hop {from().hop}</span>
+            </>
+          )}
+        </Show>
+        <Show when={s().kind === "extension" && (s() as Extract<Sender, { kind: "extension" }>)}>
+          {(from) => (
+            <>
+              <Icon name="sliders" small />
+              <span>From {from().title || "an extension"}</span>
+            </>
+          )}
+        </Show>
+        <Show when={s().kind === "overseer"}>
+          <Icon name="eye" small />
+          <span>From the Overseer</span>
+        </Show>
+        <Show when={s().kind === "merge-queue"}>
+          <Icon name="branch" small />
+          <span>From the merge queue</span>
+        </Show>
+        <Show when={s().kind === "member" && memberName(s() as Extract<Sender, { kind: "member" }>, people)}>
+          {(name) => (
+            <>
+              <Icon name="network" small />
+              <span>From {name()}</span>
+            </>
+          )}
+        </Show>
+        <Show when={s().kind === "baton" && (s() as Extract<Sender, { kind: "baton" }>)}>
+          {(b) => (
+            <>
+              <Icon name="chat" small />
+              <span>From {props.names[b().by] ?? "Someone"}</span>
+            </>
+          )}
+        </Show>
+      </p>
+    </Show>
   );
 }
 

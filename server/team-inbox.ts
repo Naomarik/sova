@@ -5,6 +5,7 @@
 import { stat, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { foldItemsText, isOpen, type InboxItem } from "../pi-config/extensions/subagents/inbox.ts";
+import { homeDirOf } from "./chat-homes/records";
 import type { TeamInboxBody, TeamInboxCounts, TeamInboxItemInfo, TeamInboxView, TeamInfo } from "../shared/protocol";
 
 /** The newest items a list answer carries; `total` still counts them all. */
@@ -14,13 +15,16 @@ const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 export const validSegment = (s: string | undefined): s is string => !!s && SEGMENT.test(s);
 
 /** `<agentDir>/sova/teams/<session key>/mailbox`: where the main chat's extension keeps its
-    members' folders. A session the extension never saved (no id) has no folder this can name. */
+    members' folders; `<home>/teams/<session key>` for a chat with a home (and a lead under it). A
+    session the extension never saved (no id) has no folder this can name. */
 export function mailboxRootOf(agentDir: string, sessionId: string | null): string | null {
   if (!sessionId) return null;
   // The extension's sessionDirKey (subagents/coordination.ts), with no fallback: an unsaved
   // session's folder is named by a key only its own process knows.
   const key = sessionId.trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._-]+/, "").slice(0, 128);
-  return key ? join(agentDir, "sova", "teams", key, "mailbox") : null;
+  if (!key) return null;
+  const home = homeDirOf(sessionId);
+  return home ? join(home, "teams", key) : join(agentDir, "sova", "teams", key, "mailbox");
 }
 export const itemsFileOf = (root: string, teamId: string, workerId: string): string => join(root, teamId, workerId, "items.jsonl");
 

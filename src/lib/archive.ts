@@ -67,7 +67,10 @@ export function groupByArchiveDate<T extends { lastActiveAt: string }>(
 // Cleanup (POST /api/sessions/cleanup)
 // ---------------------------------------------------------------------------
 
-export type CleanupRequest = { mode: "age"; minAgeDays: 7 | 30 } | { mode: "husks" };
+export type CleanupRequest = ({ mode: "age"; minAgeDays: 7 | 30 } | { mode: "husks" }) & {
+  /** "compress" (§app.session-list/archive-compress): the archived ones are compressed instead of deleted. */
+  action?: "compress";
+};
 
 export interface CleanupResult {
   /** Files deleted (0 on a dry run). */
@@ -84,9 +87,11 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 export function parseCleanupResult(raw: unknown): CleanupResult {
   const r = isObj(raw) ? raw : {};
   const skipped = isObj(r.skipped) ? r.skipped : {};
+  // A compress answers compressedCount/compressedIds in place of the deleted ones: read into the same fields.
+  const ids = Array.isArray(r.compressedIds) ? r.compressedIds : r.deletedIds;
   return {
-    deletedCount: count(r.deletedCount),
-    deletedIds: Array.isArray(r.deletedIds) ? r.deletedIds.filter((x): x is string => typeof x === "string") : null,
+    deletedCount: count(Array.isArray(r.compressedIds) ? r.compressedCount : r.deletedCount),
+    deletedIds: Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : null,
     skipped: { live: count(skipped.live), busy: count(skipped.busy), recent: count(skipped.recent) },
   };
 }

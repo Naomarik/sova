@@ -16,6 +16,7 @@ import type { ListRows } from "./list-rows";
 import { applyMarks, createNudgeThrottle, EMPTY_OVERLAY, type MarksOverlay } from "./signals";
 import { createReconnectingSocket } from "./socket";
 import { loadPublicLinks } from "./public-links";
+import { onLabelsAsk, withLabels } from "./labels-ask";
 import { clearMeshProposals, noteMeshProposals } from "./mesh-proposals";
 
 const [overlay, setOverlay] = createSignal<MarksOverlay>(EMPTY_OVERLAY);
@@ -97,7 +98,9 @@ export function openSessionFeed(refreshList: () => void): void {
     nudges.cancel();
     readList = null;
   });
-  const socket = createReconnectingSocket<SessionFeedMessage>(sessionFeedUrl(), {
+  // The labels this page reads (lib/labels-ask) ride on the URL, read at each connect.
+  const url = sessionFeedUrl();
+  const socket = createReconnectingSocket<SessionFeedMessage>(() => withLabels(url), {
     onOpen: (isReconnect) => {
       following?.socketOpened();
       setOverlay(EMPTY_OVERLAY);
@@ -150,6 +153,9 @@ export function openSessionFeed(refreshList: () => void): void {
     },
   });
   createEffect(() => setOpen(socket.status() === "open"));
+  // Labels read or no longer read: a fresh socket with the new URL (its first frame is a snapshot,
+  // and the reconnect re-reads the list). Never fires while no extension declares a list.
+  onCleanup(onLabelsAsk(() => socket.reconnect()));
   const onFocus = () => {
     if (socket.status() === "failed") socket.retry();
   };

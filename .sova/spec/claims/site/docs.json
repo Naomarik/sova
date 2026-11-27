@@ -259,8 +259,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-17T18:22Z",
-      "source": "pi-session:01a1e98a-0191-73a5-b351-9401784d2b61#f2e1b5f9"
+      "at": "2026-11-25T21:44Z",
+      "source": "pi-session:0690221d-509c-4d34-b2b8-f0c80820ea6d#f888578f"
     }
   },
   "§site.docs/drawing-kinds": {
@@ -480,7 +480,12 @@
     "evidence": "reviewed",
     "code": [
       "site/src/content/docs/modes/memory.md"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
+    }
   },
   "§site.docs/merge-queue": {
     "kind": "behavior",
@@ -575,8 +580,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-13T05:15Z",
-      "source": "pi-session:01a1d023-6988-7481-af78-b02082042586#f37a584f"
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§site.docs/needs-you": {
@@ -686,13 +691,19 @@
       "§chat/composer",
       "§app.session-list/regions-top-and-archive",
       "§chat.transcript/message-actions",
-      "§app.shell/overview"
+      "§app.shell/overview",
+      "§app.access/networks"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
       "site/src/content/docs/phone.md"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-26T16:15Z",
+      "source": "pi-session:a4cea2f9-9509-4ec5-859b-51b9f0f41d49#8e7f2d91"
+    }
   },
   "§site.docs/playbooks-and-schedules": {
     "kind": "behavior",
@@ -888,9 +899,9 @@
       "site/src/content/docs/subagent-profiles.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-24T13:41Z",
-      "source": "pi-session:85046b90-411b-4ac3-8415-281a9614ae6e#6e0b0870"
+      "by": "user",
+      "at": "2026-11-25T18:42Z",
+      "source": "pi-session:035ccc80-e979-4620-b29b-f7110105ad86#aa3b2278"
     }
   },
   "§site.docs/teams": {

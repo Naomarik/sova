@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { after, before, test } from "node:test";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
 
@@ -191,9 +191,13 @@ test("Stop on a chat that isn't open starts nothing", async () => {
 
 test("an action stamps no seen mark; the web app's chat socket does", async () => {
   const ses = await oneExchange();
+  // A chat with a home keeps its stamp there (<home>/chat/seen.json, server/chat-homes/records.ts); an older one in seen.json.
+  const home = basename(dirname(ses.path)) === "sessions" && existsSync(join(dirname(dirname(ses.path)), "home.json")) ? dirname(dirname(ses.path)) : null;
   const seen = () => {
-    const f = join(s.agentDir, "sova", "seen.json");
-    return existsSync(f) ? (JSON.parse(readFileSync(f, "utf8")) as Record<string, number>)[ses.id] : undefined;
+    const f = home ? join(home, "chat", "seen.json") : join(s.agentDir, "sova", "seen.json");
+    if (!existsSync(f)) return undefined;
+    const v = JSON.parse(readFileSync(f, "utf8")) as Record<string, unknown>;
+    return ((home ? v["seen.json"] : v) as Record<string, number> | undefined)?.[ses.id];
   };
   const was = seen();
   const r = await sova(["run", "chat.compact", "--session", ses.path, "--wait", "0"]);

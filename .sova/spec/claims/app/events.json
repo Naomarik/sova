@@ -48,7 +48,9 @@
       "server/events.ts",
       "server/index.ts",
       "server/events.test.ts",
-      "scripts/perf-events.mjs"
+      "scripts/perf-events.mjs",
+      "server/events-ws.ts",
+      "shared/events.ts"
     ],
     "requires": [
       "§app.decisions/push"
@@ -79,16 +81,17 @@
       "server/index.ts",
       "server/attention-memo.ts",
       "server/events.test.ts",
-      "server/events.integration.test.ts"
+      "server/events.integration.test.ts",
+      "server/chat-home-events.ts"
     ],
     "requires": [
       "§app.decisions/push"
     ],
-    "evidence": "verified",
+    "evidence": "unreviewed",
     "agreed": {
       "by": "user",
-      "at": "2026-11-06T21:52Z",
-      "source": "pi-session:01a1acdc-5fed-7735-96f5-96f6019e339d#c412bec1"
+      "at": "2026-11-24T11:20Z",
+      "source": "pi-session:bba371e6-c04d-4cbe-88ff-2e14aab0de49#1a08fb1a"
     }
   },
   "§app.events/resume": {

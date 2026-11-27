@@ -82,6 +82,7 @@ const KEYS: Record<MeshProposalKind, readonly string[]> = {
 };
 
 export const NOT_ITS_LINK = "An extension changes only the links it made. Nothing changed.";
+export const NO_SUCH_LINK = "No such link here. Nothing changed.";
 
 export class MeshProposals {
   private readonly kept = new Map<string, Kept>();
@@ -144,8 +145,10 @@ export class MeshProposals {
 
     // grant and unpair: only on a link this extension made.
     const link = this.deps.peers().find((p) => p.id === peer);
+    // Gone already (removed on the Mesh page, say): 404, so the extension can read it as done.
+    if (!link) return refuse(404, NO_SUCH_LINK);
     const owner = this.readLinks().links[peer];
-    if (!link || !owner || owner.extension !== extension || owner.nodeId !== link.nodeId) return refuse(403, NOT_ITS_LINK);
+    if (!owner || owner.extension !== extension || owner.nodeId !== link.nodeId) return refuse(403, NOT_ITS_LINK);
 
     if (kind === "unpair") {
       const r = this.deps.unpair(peer);

@@ -9,7 +9,7 @@ import { after, describe, test } from "node:test";
 import { grantCaps, MESH_CAPS, MESH_PRESETS, type MeshGrant, type MeshPreset } from "../../shared/mesh-access";
 import type { LanPairingAdd } from "../../shared/mesh-lan";
 import { PROPOSAL_TTL_MS, WAITING_MAX, type MeshProposal } from "../../shared/mesh-proposals";
-import { MeshProposals, NOT_ITS_LINK, type ProposalDeps, type Result } from "./proposals";
+import { MeshProposals, NO_SUCH_LINK, NOT_ITS_LINK, type ProposalDeps, type Result } from "./proposals";
 import type { PeerEntry } from "./peers";
 
 after(() => dropScratchAgentDir());
@@ -141,16 +141,16 @@ describe("what waits for the person and what applies at once", () => {
 });
 
 describe("an extension touches only the links it made", () => {
-  test("another extension's link, a link made on the Mesh page and a missing one are refused, and nothing changes", async () => {
+  test("another extension's link and a link made on the Mesh page are refused 403, a missing one is 404, and nothing changes", async () => {
     const r = rig();
     await linked(r, "company");
     r.peers.push({ id: "my-vps", label: "VPS", nodeId: `lan:${PIN2.toLowerCase()}`, lan: { role: "dial", pin: PIN2, host: "10.0.0.2", port: 4803 } } as unknown as PeerEntry);
     r.calls.length = 0;
-    for (const [ext, peer] of [["other-ext", "co-omar"], ["company", "my-vps"], ["company", "nobody"]] as const) {
+    for (const [ext, peer, status] of [["other-ext", "co-omar", 403], ["company", "my-vps", 403], ["company", "nobody", 404]] as const) {
       for (const body of [{ kind: "unpair", peer }, { kind: "grant", peer, grant: "none" }]) {
         const res = await r.store.propose(ext, body);
-        assert.equal(res.status, 403, `${ext} ${body.kind} ${peer}`);
-        assert.equal(errOf(res), NOT_ITS_LINK);
+        assert.equal(res.status, status, `${ext} ${body.kind} ${peer}`);
+        assert.equal(errOf(res), status === 403 ? NOT_ITS_LINK : NO_SUCH_LINK);
       }
     }
     assert.deepEqual(r.calls, []);

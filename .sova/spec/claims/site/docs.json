@@ -134,6 +134,29 @@
       "site/src/content/docs/change-direction.md"
     ]
   },
+  "§site.docs/chats-folder": {
+    "kind": "behavior",
+    "requires": [
+      "§app/chat-homes",
+      "§app.chat-homes/location",
+      "§app.chat-homes/layout",
+      "§app.chat-homes/new-chats",
+      "§app.chat-homes/sole-writer",
+      "§app.chat-homes/lifetime",
+      "§app.chat-homes/switch",
+      "§app.chat-homes/chats-folder",
+      "§app.chat-homes/change-log",
+      "§app.session-list/archive-compression",
+      "§app.access/your-click",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/chats-folder.md",
+      "site/src/data/docs.ts"
+    ]
+  },
   "§site.docs/chrome": {
     "kind": "behavior",
     "requires": [
@@ -952,6 +975,32 @@
     "evidence": "reviewed",
     "code": [
       "site/src/content/docs/themes.md",
+      "site/src/data/docs.ts"
+    ]
+  },
+  "§site.docs/transport": {
+    "kind": "behavior",
+    "requires": [
+      "§app/transport",
+      "§app.transport/start",
+      "§app.transport/dialog",
+      "§app.transport/progress",
+      "§app.transport/package",
+      "§app.transport/switch",
+      "§app.transport/copy",
+      "§app.transport/moved-row",
+      "§app.transport/edge-cases",
+      "§app.transport/agent",
+      "§app.transport/agent-sandbox",
+      "§app.transport/safe-transport",
+      "§app.access/your-click",
+      "§site.docs/chats-folder",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/transport.md",
       "site/src/data/docs.ts"
     ]
   },

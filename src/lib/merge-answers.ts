@@ -149,13 +149,28 @@ export function answerDone(a: DecisionAction, branch: string, after?: (Pick<Merg
   return a === "try-again" && now === "checking now" ? `${lead} now.` : `${lead} · ${now}.`;
 }
 
-/** What became of a run's entry since, in one sentence for its run page: "It waits for your answer below.", "Now 2nd in
- *  line.", "Now waiting for a fix: …". Empty when the queue no longer lists it. */
-export function nowWords(e: (AnswerFacts & Partial<Pick<MergeEntry, "position" | "standing" | "reason">>) | null | undefined): string {
-  if (!e) return "";
-  if (answersHere(e)) return "It waits for your answer below.";
-  if (e.state === "cancelled") return "It was taken off the queue since.";
-  return `Now ${standsNow(e)}.`;
+/** Does the run page of `run` show the entry's answers? It waits for you, and at this run: its own newest run (or its
+ *  decision's), or any run when neither names one. The page's decision block and its "below" read this one test. */
+export function answersAtRun(e: AnswerFacts & Partial<Pick<MergeEntry, "run">>, run: string): boolean {
+  if (!answersHere(e)) return false;
+  const d = openDecision(e);
+  return (e.run ?? d?.run ?? run) === run || d?.run === run;
+}
+
+/** The run where a waiting entry's answers are: its decision's, else its own newest. */
+export const answersRun = (e: AnswerFacts & Partial<Pick<MergeEntry, "run">>): string | undefined => openDecision(e)?.run ?? e.run;
+
+/** What became of a run's entry since, in one sentence for the page of `run`: "It waits for your answer below." only
+ *  where the answers are on that page; on an older run, "It waits for your answer at its newest run." with that run
+ *  (`at`, which the page links); else "Now 2nd in line.", "Now waiting for a fix: …". Empty when the queue no longer
+ *  lists it. */
+export function nowWords(e: (AnswerFacts & Partial<Pick<MergeEntry, "position" | "standing" | "reason" | "run">>) | null | undefined, run: string): { text: string; at?: string } {
+  if (!e) return { text: "" };
+  if (answersAtRun(e, run)) return { text: "It waits for your answer below." };
+  // Not at this run, so another one is named: its decision's or its own newest.
+  if (answersHere(e)) return { text: "It waits for your answer at its newest run.", at: answersRun(e)! };
+  if (e.state === "cancelled") return { text: "It was taken off the queue since." };
+  return { text: `Now ${standsNow(e)}.` };
 }
 
 /** A plain Land's words (no decision), from the entry merge.add answered with; `how` the Land's option words. */

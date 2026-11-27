@@ -4,6 +4,51 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.19.0 — 2026-11-27
+
+Chat homes, Transport to another device, compression of old archived chats, extensions that can
+propose mesh links and label the chat list, and answering a waiting branch right where the merge
+queue shows it. 9 commits on the main line since v0.18.3 (5 merged branches). The highlights:
+
+- **Each new chat has a home.** Every chat you start now keeps its conversation, its helpers'
+  conversations and its records together in one folder. By default that folder is under
+  `~/.local/state/sova/chats/`, not pi's `sessions/` folder, so `pi -r` and `pi -c` in a terminal no
+  longer list new chats. Chats from before stay where they are and work as before. **Settings →
+  General → Chats · this computer** has the **Chat homes** switch (on by default; off stores new
+  chats as before) and a **Chats folder** row whose **Change…** moves every home to a folder you pick,
+  such as one you back up. The move is checked and flushed to disk before Sova switches over. If
+  that folder goes missing (an unmounted disk, say), Settings and the chat list warn you instead of
+  showing a short list.
+- **Transport a chat to another of your devices.** **Transport…** in a chat's ⋯ menu sends the whole
+  chat to a paired device: its home, its code with every unfinished change, and its team. **Copy**
+  leaves the original as it is. **Move** hands the chat over and leaves a Moved row, which offers
+  **Move Back** for 7 days while nothing has happened there. A Transport agent gets the destination
+  ready in its own sandbox: it installs only through the project's build tools and never changes a
+  folder on your PATH. The dialog shows each step as it runs, with a Sending meter (MB, speed, time
+  left), and the chat's header shows the progress too. Download caches and build output never
+  travel.
+- **Old archived chats are compressed.** In the background, Sova compresses every archived chat
+  last active more than 60 days ago. It stays in the Archive, marked **Compressed**, keeps its row
+  and can still be deleted, but it no longer opens. **Compress old archived chats** in Settings →
+  General turns the automatic pass off; the first pass runs 10 minutes after Sova starts, so turn it
+  off within those minutes of your first start on v0.19.0 if you want to keep opening old archived
+  chats. Clean Up gains **Compress** for a range or a single chat.
+- **Extensions.** An extension can propose a mesh link. Sova applies a proposal that only takes
+  access away at once and asks you in its own dialog before anything that gives a computer more
+  access, unless you let that extension link computers without asking. When the extension's code
+  changes, that permission no longer counts. On the chat list (extension contract v1.21–v1.22), an
+  extension can list people and add a person filter and a two-letter owner mark, and it can see who
+  started a chat and who typed each message. `examples/extensions/team-bar` shows it all.
+- **Merge queue.** You answer a waiting branch where the queue shows it. An answered wait's buttons
+  stay gone until the card moves on.
+- **Lookbook.** Designers can build a page in one go or in steps. The main chat can add or remove
+  design skills until **Start** on the brief.
+
+**Going back to v0.18.3:** v0.18.3 doesn't know chat homes. Chats started on v0.19.0, with their
+helpers and records, disappear from its list until you upgrade again; nothing is deleted. Chats that
+v0.19.0 compressed stay as `.gz` files, which v0.18.3 can't open. Back up `~/.pi/agent/sova/` and
+your Chats folder first.
+
 ## v0.18.3 — 2026-11-26
 
 Trusted networks on the Access page (a Networks card, a trust confirmation, pairing QR codes per trusted network, sign-in always asked there), and steadier tests.

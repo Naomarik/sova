@@ -745,10 +745,12 @@ Merge Queue tab's Needs you (§app.merge-queue/view) and in the landing bar
 - **Queue answers act at once.** Accept, Land Anyway, Try Again, Land and Remove from Queue on a
   decision, and **Allow**, **Send Back** and **Ask the Merge Thread** on a Private names decision
   (§app.merge-queue/names-step), act on the queue directly, like the other card actions and as the
-  Merge Queue tab's run view does, and send nothing to the chat: Allow marks the flagged places fine
+  Merge Queue tab's run view does (in the landing bar, after one confirmation in its card,
+  §app.merge-queue/landing-bar-detail), and send nothing to the chat: Allow marks the flagged places fine
   for this project so the push goes on, Send Back sends them back to the branch's chat to remove,
-  and Ask the Merge Thread gives the merge thread the places and opens it. A toast names the action
-  taken. A card button the card doesn't recognize shows an error and does nothing: no card answer
+  and Ask the Merge Thread gives the merge thread the places and opens it (from the landing bar, it
+  gives them and says so). A toast names the action taken; the landing bar says it in its card
+  instead. A card button the card doesn't recognize shows an error and does nothing: no card answer
   ever falls back to a Land.
 - **Only the user answers.** A decision's buttons count only as the user's own click in Sova's page,
   and its answer only as the user's own message sent from the chat's message box

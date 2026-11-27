@@ -419,9 +419,9 @@
       "§app.merge-queue/fix"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-19T07:07Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
+      "by": "user",
+      "at": "2026-11-27T12:11Z",
+      "source": "pi-session:e62b714b-a751-4ccc-9b22-fdfb4f88ac34#4522f02a"
     },
     "code": [
       "src/components/WorktreesControl.tsx",
@@ -455,7 +455,8 @@
       "src/lib/merge-standing.ts",
       "src/lib/branch-place.ts",
       "src/components/BranchPlaceLine.tsx",
-      "server/landed-branch-agreement.integration.test.ts"
+      "server/landed-branch-agreement.integration.test.ts",
+      "src/lib/merge-answers.ts"
     ]
   },
   "§chat/composer": {

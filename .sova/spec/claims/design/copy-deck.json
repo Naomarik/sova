@@ -259,7 +259,10 @@
       "server/merge-queue/fix.ts",
       "server/merge-queue/setup-branch.ts",
       "server/merge-queue/queue.ts",
-      "shared/merge-queue-settings.ts"
+      "shared/merge-queue-settings.ts",
+      "src/lib/merge-answers.ts",
+      "src/components/EntryDecision.tsx",
+      "src/components/LandingBar.tsx"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {

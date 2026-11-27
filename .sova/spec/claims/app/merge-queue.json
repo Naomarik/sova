@@ -871,12 +871,15 @@
       "src/lib/landing-bar-store.ts",
       "src/components/LandingBar.css",
       "src/lib/landing-bar.ts",
-      "src/lib/landing-bar.test.ts"
+      "src/lib/landing-bar.test.ts",
+      "src/lib/merge-answers.ts",
+      "src/lib/merge-answers.test.ts",
+      "src/lib/merge-queue-client.ts"
     ],
     "agreed": {
-      "by": "operator",
-      "at": "2026-11-20T09:50Z",
-      "source": "pi-session:01a1f626-6a7d-7310-ab0c-516a02f2bec5#b76fd41e"
+      "by": "user",
+      "at": "2026-11-27T12:11Z",
+      "source": "pi-session:e62b714b-a751-4ccc-9b22-fdfb4f88ac34#4522f02a"
     }
   },
   "§app.merge-queue/landing-bar-states": {
@@ -898,12 +901,13 @@
       "src/lib/landing-bar.ts",
       "src/components/LandingBar.tsx",
       "src/lib/landing-bar.test.ts",
-      "src/lib/merge-standing.ts"
+      "src/lib/merge-standing.ts",
+      "src/lib/merge-answers.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-19T07:07Z",
-      "source": "pi-session:682ac9e0-ebd2-4ad7-8dad-6ccfdc7d16ce#5344d2b5"
+      "by": "user",
+      "at": "2026-11-27T12:11Z",
+      "source": "pi-session:e62b714b-a751-4ccc-9b22-fdfb4f88ac34#4522f02a"
     }
   },
   "§app.merge-queue/master-moved": {
@@ -1957,8 +1961,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-22T15:50Z",
-      "source": "pi-session:3c7c31a0-41b4-469e-8e92-be7b5d04e0df#f285ca2b"
+      "at": "2026-11-27T12:11Z",
+      "source": "pi-session:e62b714b-a751-4ccc-9b22-fdfb4f88ac34#4522f02a"
     },
     "code": [
       "server/merge-queue/view.ts",
@@ -2011,7 +2015,11 @@
       "server/cleanup-switch.ts",
       "src/components/pipeline/LandedHistory.tsx",
       "src/lib/merge-queue-card.ts",
-      "src/lib/merge-queue-card.test.ts"
+      "src/lib/merge-queue-card.test.ts",
+      "src/components/EntryDecision.tsx",
+      "src/lib/entry-decision.test.ts",
+      "src/lib/merge-answers.ts",
+      "src/lib/merge-answers.test.ts"
     ]
   },
   "§app/merge-queue": {

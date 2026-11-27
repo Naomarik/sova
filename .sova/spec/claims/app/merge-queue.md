@@ -1647,7 +1647,10 @@ its **Back to Queue** returns there. Coming back from a run's page (Back to Queu
 "Merge queue" or the browser's Back) scrolls the page so the tab strip is at its top, where the
 rows the run was opened from are; any other visit opens at the top of the page. Opening the Merge
 Queue tab from anywhere else (the project page's tab strip, the project card, the landing bar's
-Queue, a chat's View Merge Queue) opens **Ready to land**. An address naming a tab the project
+Queue, a chat's View Merge Queue) opens **Ready to land**, but for a branch waiting for you: the
+landing bar's Queue while its card is about a waiting branch, and the bar's line for a waiting
+branch that has no run (§app.merge-queue/landing-bar-detail), open **Needs you**. A waiting branch's
+run page whose address names no tab leads back to Needs you (below). An address naming a tab the project
 doesn't show (Waiting on GitHub on a project that lands locally) shows Ready to land. A typed or
 pasted `…/merge-queue/ready` (and `…/merge-queue/ready/<run>`) opens Ready to land (or that run),
 and the address is put back as the plain one in place, adding no history entry.
@@ -1709,12 +1712,18 @@ The tabs' rows:
   row with only drafts left says "{n} spec drafts" where the commits would be, and its menu has no Land
   Without Its Specs….
   Land here asks once as the modal's does, its confirmation right-aligned under the row
-  (§chat.composer/land-confirm), and only Land {n} Commits queues the branch.
+  (§chat.composer/land-confirm), and only Land {n} Commits queues the branch. Its toast says what the
+  queue did with it, as Needs you's does: queued and its place in line, or approved and waiting for a
+  fix, and why (§design.copy-deck/merge-queue).
   Land there names no chat: the queue records the branch's owner by the same rule the row shows
   (§app.merge-queue/owner), so the chat the row shows is the one the queue records and tells.
 - **Needs you**: entries waiting for the user's decision (§app.merge-queue/needs-user), in full
   words, each with Remove from Queue. No row here has a text box: a decision answered in words
-  links to the branch's chat, where the user answers in its message box (§chat.merge-queue/decision):
+  links to the branch's chat, where the user answers in its message box (§chat.merge-queue/decision).
+  Once an answer goes through, a toast (and the screen reader) says what the queue did, read from
+  the entry it answered with (§design.copy-deck/merge-queue): after Land, that it is queued and its
+  place in line, or that it is approved and waits for a fix, and why; a refusal shows under the row.
+  The rows:
   - **Behaviour differs · waiting for you**, with the target's side, the branch's side, the merge
     thread's question and proposal, Accept when it proposed a resolution, and **Answer in Chat**;
   - **Needs you · {branch}**, a question the merge thread or the chat raised, with its choices
@@ -1850,7 +1859,9 @@ Land's size. Nothing is offered only on hover.
 **The run page** (`…/merge-queue/<run>`) shows:
 - its path, "Merge queue › {branch}" (a dry run's adds "· Dry run" and says a dry run's words,
   §app.merge-queue/dry-runs), led by a back arrow named **Back to Queue** that opens the
-  tab on the status tab the run was opened from (44px square on a touch screen);
+  tab on the status tab the run was opened from (44px square on a touch screen); while the run's
+  entry waits for you and the address names no tab, the back arrow and the path's "Merge queue"
+  both open **Needs you**;
 - the branch and its verdict, the base, the branch's commit and the tested commit, when it started
   and how long it took, its chat, and how it was approved;
 - one action row: **View Logs** (outlined, opening full width below the row: every step's log, in
@@ -1866,16 +1877,27 @@ Land's size. Nothing is offered only on hover.
 - "Nothing has merged from this run. {target} moves only once every check passes." while it runs,
   waits or conflicts, except on a run whose owner can't be told, where its own banner says it once;
 - a verdict in plain words: the branch broke a check (back with its chat, its try count); the merge
-  thread's resolution failed one (back to the merge thread, the branch not blamed); red on the
+  thread's resolution failed one (the branch not blamed), then where its entry stands now: it waits
+  for your answer (in the block below, said only on the run page that shows that block; on an older
+  run, at its newest run, with a link to that run's page opened from Needs you), its place in line, waiting for a fix, back with its chat,
+  checking, landed, or taken off the queue since, and nothing when the queue no longer lists it;
+  never "It comes back to you"; red on the
   target too, or flaky (noted, not blocking); can't tell
   whose failure it is ("Can't tell whose failure · waiting for you", with the checks that failed
   on both sides, "Nobody is blamed. Land Anyway lands the commit it tested; Try Again checks it
-  afresh.", Land Anyway, Try Again and Remove from Queue); a test check broken on the target (a warning banner per
+  afresh.", its answers in the decision block below); a test check broken on the target (a warning banner per
   such check, "{check} is broken on {target}: no test ran ({first line})", with "Skipped for this
   branch; it doesn't block. Every branch skips it until it's fixed on {target}.", with **Fix in New
   Chat** (§app.merge-queue/fix), beside the run's own verdict, §app.merge-queue/blame); stopped at a
   step, not the branch's fault (retried once, then paused, no chat told); stopped before it
   finished (nothing blamed); or passed, the target moved to exactly the tested commit;
+- under the verdict, while the run's entry waits for you at this run (any decision, and the waiting
+  states from before decisions; never while the merge thread is still ruling on whose failure it
+  is): a **Waiting for you** block with the Needs you row's own parts, its decision's chip, its
+  question ("can't be settled without you" when it came from a chat's Can't), its choices, the held
+  note's line, both sides and the proposal, its answers (Accept, Land Anyway, Try Again, Land, Allow,
+  Send Back, Ask the Merge Thread, as it offers), **Answer in Chat** for one answered in words, and
+  **Remove from Queue** last, acting and saying what the queue did as they do there;
 - for a red run, a "Whose failure is it?" block (machine or setup, already failing on the target,
   flaky), drawn from the reruns (§app.merge-queue/blame);
 - **Checks and why**, its legend under the title: every step with its tag and reason, its failures,
@@ -1915,8 +1937,9 @@ Settings and Open on GitHub only
 open a place. The view follows the queue live,
 from the session feed's merge-queue frames, at desktop and phone widths. The same frames, every
 served
-project's, also drive the sidebar's landing bar, which opens this tab at an entry for the actions it
-doesn't take in place (§app.merge-queue/landing-bar).
+project's, also drive the sidebar's landing bar, which answers a waiting decision in place after one
+confirmation and opens this tab only through its links (§app.merge-queue/landing-bar,
+§app.merge-queue/landing-bar-detail).
 
 ## §app.merge-queue/dry-runs — Dry runs, shown wherever the branch and the queue show
 
@@ -2498,8 +2521,12 @@ shows to about two lines in the hover card and in full in the detail:
   Chat**, **Checks** (its run page) and **Queue**. It never reads Landing.
 - **Needs you** (warn tone): an entry waiting for the user's decision (Behaviour differs, a
   question the merge thread or the chat raised, Can't tell whose failure, Out of tries, a fix that
-  needs your OK, Drafts changed since you approved, Review the request; §app.merge-queue/needs-user),
-  its branch and one line of why, in the tab's words. An entry back with its chat is never one, nor one
+  needs your OK, Drafts changed since you approved, Review the request; §app.merge-queue/needs-user).
+  Its title is that decision's own words, as the Needs you row names it ("A fix needs your OK",
+  "Behaviour differs", "Can't tell whose failure", "Out of tries", "Drafts changed", "Private names
+  and secrets", "Needs you" for a question), never a general "Waiting for you" (a state from before
+  decisions keeps its own state words); its sub line is the
+  branch and one line of why, in the tab's words. An entry back with its chat is never one, nor one
 waiting for the merge thread's ruling on whose failure it is (§app.merge-queue/needs-user). A conflict the merge thread is judging is not one: at most the detail
   says "{branch} · conflict being judged". While a landing runs, a waiting entry does not take the bar
   and adds nothing to it (no chip, no count): it appears only in the detail. With nothing running,
@@ -2537,34 +2564,52 @@ nothing in it is pushed, resized or scrolled by the panel. A second click on the
 click anywhere outside the panel closes it; after Escape, focus returns to the bar. Its head repeats
 the full title, sub line and count in words. The panel holds everything
 the row cuts short: the full title and sub line, the full note or reason, and each entry waiting for
-you while a landing runs (its branch and why, with a link that opens the Merge Queue tab at it),
-which shows nowhere else in the bar. For a landing: "{target} {base} + branch →
+you while a landing runs (its branch and why, with a link that opens its run from the Merge Queue
+tab's Needs you, `…/merge-queue/needs-you/<run>`, or the Needs you tab when it has no run, never
+Ready to land), which shows nowhere else in the bar. For a landing: "{target} {base} + branch →
 {tip}", the current step and how long it has run, the review's state (with its attempt, and a link to
 the reviewer's chat while it runs), the next three branches in line with when each should start,
 **Branch Chat**, **Checks** (the run page,
 `#/projects/<pid>/merge-queue/<run>`) and **Queue** (`#/projects/<pid>/merge-queue`); a request just
-opened adds **On GitHub** (or **On GitLab**), the request's page. For a
+opened adds **On GitHub** (or **On GitLab**), the request's page. The detail's **Queue** opens the
+Merge Queue tab on **Needs you** while the bar is about a branch waiting for you (the Needs you
+state), and on **Ready to land** otherwise (§app.merge-queue/view). For a
 release: its base and commit, the release chat's last report, each step's one-line summary, why
 Publish isn't offered yet, **Release Chat** and **Releases**.
 
 **Links and buttons.** In the floating panel, the phone sheet and the collapsed popover alike, the
 places to go (Branch Chat, Checks, Queue, Release Chat, Releases, On GitHub or On GitLab) are plain
 links on one row, which never runs past the panel's edge. The things that do something (Land Anyway,
-Accept, Try Again, Land, Remove from Queue, Answer in Chat, Resume Queue, Continue, Retry Step) are
-buttons on their own row above the links, drawn only when there are any. There is no Send Back, and
-no re-land button.
+Accept, Try Again, Land, Allow, Send Back, Ask the Merge Thread, Answer in Chat, Resume Queue,
+Continue, Retry Step) are buttons on their own row above the links, drawn only when there are any.
+Remove from Queue is never in the bar: it stays on the Needs you row and the run page. The only
+Send Back is a Private names decision's own answer: there is no Send Back of a failure, and no
+re-land button.
 
 **Decisions.** Each entry waiting for the user's decision (§app.merge-queue/needs-user) shows in the
-detail with its branch, its question or reason and its answers. A decision answered in words offers
+detail with its branch, its question or reason and its answers; with the bar on one, that decision's
+question is the detail's first line. A decision answered in words offers
 **Answer in Chat**, which opens the branch's chat at its card, where the user answers in the message
 box (§chat.merge-queue/decision); the bar never holds a text box. An entry back with its chat isn't
 listed as needing you.
 
-**Actions in place, or the tab.** Resume Queue, Retry Step and Continue act right there, through the
+**Actions in place.** Resume Queue, Retry Step and Continue act right there, through the
 same catalogue commands the tabs use (the verbs `merge.resume`, `release.retry` and `release.continue`,
-§app.project-services/merge-verbs, §app.release/verbs). Land Anyway,
-Accept, Try Again, Land and Remove from Queue open the Merge Queue tab at that entry, where the
-user's own click acts (§app.access/your-click); Publish and Cancel Release open the
+§app.project-services/merge-verbs, §app.release/verbs). A decision's answers (Land, Accept, Land
+Anyway, Try Again, and a Private names decision's Allow, Send Back and Ask the Merge Thread) act
+right there too, after **one confirmation in the card**, never by opening the Merge Queue tab, in
+the floating panel, the phone sheet and the spine's popover alike: pressing one puts, in place of
+the card's buttons, a question naming the answer and the branch, with its commit where it matters
+("Land feat/x at 20e78aa?"), one line saying what it does, the answer's own word as its button and
+**Not Yet** (the words: §design.copy-deck/merge-queue). Not Yet, or Escape inside it, puts the
+buttons back with focus on the one pressed, sends nothing and leaves the panel open. The confirmed
+answer goes through the same queue command the Needs you row uses, as the user's own click
+(§app.access/your-click). While it goes, the confirmation is busy and can't be pressed again. Then
+the answered entry's buttons leave the card at once, and one line in the card says what the queue
+did, read from the entry it answered with (after Land: queued and its place in line, or approved and
+waiting for a fix, and why), or the queue's refusal word for word, as an alert; a screen reader is
+told the same. The bar shows no toast for it. Ask the Merge Thread hands the places to the merge
+thread and says so; it doesn't open the thread from the bar. Publish and Cancel Release open the
 Releases tab. Neither Publish nor Cancel Release is ever in the bar.
 
 **On a phone (<768px).** The bar is the same 44px row, directly above the foot bar

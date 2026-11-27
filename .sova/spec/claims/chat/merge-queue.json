@@ -208,8 +208,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-23T18:45Z",
-      "source": "pi-session:a89b7801-d883-480f-b663-e5c494b8914e#221e7a9f"
+      "at": "2026-11-27T12:11Z",
+      "source": "pi-session:e62b714b-a751-4ccc-9b22-fdfb4f88ac34#4522f02a"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -229,7 +229,9 @@
       "src/lib/merge-standing.test.ts",
       "src/lib/branch-place.ts",
       "src/components/MergeQueueTab.tsx",
-      "src/lib/merge-queue-card.test.ts"
+      "src/lib/merge-queue-card.test.ts",
+      "src/lib/merge-answers.ts",
+      "src/components/LandingBar.tsx"
     ]
   },
   "§chat.merge-queue/names-interview": {

@@ -939,6 +939,10 @@ project), with its why, and that Land still takes the approval. Then comes one r
   - **Accept** on Behaviour differs with a proposal, and **Answer in Chat** on a decision answered
     in words, which closes the modal and puts focus in the message box (§chat.merge-queue/decision);
   - **Land Anyway** and **Try Again** on Can't tell whose failure;
+  - after Land, on any row (one waiting for you included), the toast says what the queue did, read
+    from the entry it answered with (§design.copy-deck/merge-queue): queued and its place in line
+    ("Queued feat/x · 2nd in line."), or approved and waiting for a fix, and why ("Approved feat/x ·
+    waiting for a fix: …");
   - **Remove from Queue** on every row of an approval that stands (below);
   - **Remove Worktree**, last, where the server offers it: an install where automatic cleanup is off
     (§chat.worktrees/pane);

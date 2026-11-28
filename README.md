@@ -36,8 +36,8 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/instal
 That builds the latest release (the `stable` tag) in `~/.local/share/sova` and adds **Sova** to
 your app launcher. Open it from there, or run `sova open`: it starts the server and opens
 `http://127.0.0.1:4800` already unlocked, in a window of its own when Chrome, Chromium, Brave,
-Edge or Vivaldi is installed (on macOS, an app of its own: its own Dock icon, no title bar). It
-uses your existing pi provider login.
+Edge or Vivaldi is installed. That window is your own browser profile, so links open there with
+your logins and extensions. It uses your existing pi provider login.
 [Requirements and first login](docs/getting-started.md).
 
 ## Why you'd run it
